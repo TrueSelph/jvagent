@@ -3,6 +3,7 @@
 from typing import Any, Dict, List, Optional
 
 from jvspatial.api import endpoint
+from jvspatial.api.decorators import EndpointField
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceConflictError, ResourceNotFoundError
 from jvspatial.core import Node, Root, Walker, on_visit
@@ -62,9 +63,21 @@ class CreateAgent(Walker):
     Connects Agent to Agents node with bidirectional edge
     """
     
-    name: str
-    status: str = "active"
-    description: str = ""
+    name: str = EndpointField(
+        description="Unique name for the agent",
+        min_length=1,
+        examples=["my_agent", "agent_1"]
+    )
+    status: str = EndpointField(
+        default="active",
+        description="Agent status",
+        examples=["active", "inactive", "paused"]
+    )
+    description: str = EndpointField(
+        default="",
+        description="Optional description of the agent",
+        examples=["My agent description"]
+    )
     
     @on_visit(Root)
     async def visit_root(self, here: Root) -> None:
