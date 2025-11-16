@@ -11,6 +11,8 @@ from jvspatial.core.pager import ObjectPager
 
 from jvagent.core.agents import Agents
 from jvagent.core.app import App
+from jvagent.action.actions import Actions
+from jvagent.memory.memory import Memory
 
 
 class Agent(Node):
@@ -47,10 +49,28 @@ class Agent(Node):
                     "description": "My agent description",
                 },
             ),
+            "actions": ResponseField(
+                field_type=Dict[str, Any],
+                description="Created Actions node information",
+                example={
+                    "id": "actions_456",
+                    "edge_id": "edge_789",
+                    "edge_bidirectional": True,
+                },
+            ),
+            "memory": ResponseField(
+                field_type=Dict[str, Any],
+                description="Created Memory node information",
+                example={
+                    "id": "memory_012",
+                    "edge_id": "edge_345",
+                    "edge_bidirectional": True,
+                },
+            ),
             "message": ResponseField(
                 field_type=str,
                 description="Success message",
-                example="Agent created successfully",
+                example="Agent created successfully with Actions and Memory nodes connected",
             ),
         }
     ),
@@ -151,12 +171,30 @@ class CreateAgent(Walker):
                 here.active_agents += 1
             await here.save()
             
+            # Create and connect Actions node
+            actions = await Actions.create()
+            actions_edge = await agent.connect(actions, direction="both")
+            
+            # Create and connect Memory node
+            memory = await Memory.create()
+            memory_edge = await agent.connect(memory, direction="both")
+            
             # Report success with edge information
             await self.report({
                 "agent": agent.export(),
                 "edge_id": edge.id,
                 "edge_bidirectional": edge.bidirectional,
-                "message": "Agent created successfully and connected with bidirectional edge"
+                "actions": {
+                    "id": actions.id,
+                    "edge_id": actions_edge.id,
+                    "edge_bidirectional": actions_edge.bidirectional
+                },
+                "memory": {
+                    "id": memory.id,
+                    "edge_id": memory_edge.id,
+                    "edge_bidirectional": memory_edge.bidirectional
+                },
+                "message": "Agent created successfully with Actions and Memory nodes connected"
             })
             
         except Exception as e:

@@ -13,5 +13,4 @@ class Agents(Node):
         total_agents: Total number of agents registered
         active_agents: Number of currently active agents
     """
-    total_agents: int = 0
-    active_agents: int = 0
+    pass
