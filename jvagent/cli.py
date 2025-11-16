@@ -32,7 +32,7 @@ async def bootstrap_application_graph() -> None:
     
     Ensures:
     1. Root node exists (created automatically by jvspatial if needed)
-    2. App node is created and connected to Root node
+    2. App node is created and connected to Root node (with file storage configuration)
     3. Agents node is created and connected to App node
     
     All operations are idempotent - existing nodes and connections are preserved.
@@ -52,14 +52,21 @@ async def bootstrap_application_graph() -> None:
     if existing_apps:
         app = existing_apps[0]
         logger.info(f"App node already exists: {app.id}")
+        # Update cache with existing App node
+        App._cached_app = app
     else:
-        # Create App node
+        # Create App node with file storage configuration
         app = await App.create(
             name="jvAgent",
             version=__version__,
-            description="jvagent Application"
+            description="jvagent Application",
+            file_storage_provider=os.getenv("JVSPATIAL_FILE_INTERFACE", "local"),
+            file_storage_root_dir=os.getenv("JVSPATIAL_FILES_ROOT_PATH", ".files"),
+            file_storage_enabled=True
         )
         logger.info(f"Created App node: {app.id}")
+        # Update cache with newly created App node
+        App._cached_app = app
     
     # Step 3: Ensure App node is connected to Root node
     # Use is_connected_to() for reliable bidirectional edge checking
