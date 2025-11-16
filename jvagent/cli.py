@@ -62,9 +62,8 @@ async def bootstrap_application_graph() -> None:
         logger.info(f"Created App node: {app.id}")
     
     # Step 3: Ensure App node is connected to Root node
-    # Check if App is already connected to Root (checking incoming edges from Root)
-    root_connections = await app.nodes(direction="in", node=Root)
-    if not root_connections:
+    # Use is_connected_to() for reliable bidirectional edge checking
+    if not await root.is_connected_to(app):
         # Connect App to Root (Root -> App)
         await root.connect(app)
         logger.info("Connected App node to Root node")
@@ -93,9 +92,8 @@ async def bootstrap_application_graph() -> None:
         logger.info(f"Created Agents node: {agents.id}")
     
     # Step 5: Ensure Agents node is connected to App node
-    # Check if Agents is already connected to App
-    app_to_agents = await app.nodes(node=Agents)
-    if agents not in app_to_agents:
+    # Use is_connected_to() for reliable bidirectional edge checking
+    if not await app.is_connected_to(agents):
         # Connect Agents to App (App -> Agents)
         await app.connect(agents)
         logger.info("Connected Agents node to App node")
