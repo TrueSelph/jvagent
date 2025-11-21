@@ -13,7 +13,7 @@ from jvspatial.api.auth.models import User
 from jvspatial.api.auth.service import AuthenticationService
 
 from jvagent.core.app import App
-from jvagent.core.agents import Agents
+from jvagent.core import Agents
 from jvagent import __version__
 
 # Load environment variables
@@ -275,10 +275,6 @@ def main() -> None:
     # Create server from configuration
     # This initializes the database context
     server = create_server_from_config()
-    
-    # Import agent module to register endpoints
-    # This must be done after server creation so the server is available as current server
-    from jvagent.core import agent  # noqa: F401
     
     # Perform bootstrap tasks before server starts
     # This ensures App, Agents, and admin user are ready
