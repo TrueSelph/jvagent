@@ -11,7 +11,6 @@ from jvspatial.core.pager import ObjectPager
 
 from jvagent.core.agents import Agents
 from jvagent.core.app import App
-from jvagent.action.actions import Actions
 from jvagent.memory.memory import Memory
 
 
@@ -19,188 +18,17 @@ class Agent(Node):
     """Individual agent node in the system.
     
     Attributes:
-        name: Unique name for the agent (required)
-        status: Agent status (e.g., "active", "inactive", "paused")
+        namespace: Namespace for the agent (e.g., 'jvagent', 'contrib')
+        name: Unique machine name for the agent within the namespace (required, static)
+        alias: Human-readable display name for the agent (optional)
+        enabled: Whether the agent is enabled (default: True)
         description: Optional description of the agent
     """
+    namespace: str = ""
     name: str = ""
-    status: str = "active"  # active, inactive, paused
+    alias: str = ""
+    enabled: bool = True
     description: str = ""
-
-
-# =============================================================================
-# WALKER: Create Agent
-# =============================================================================
-
-@endpoint(
-    "/agents",
-    methods=["POST"],
-    auth=True,
-    tags=["Agent"],
-    response=success_response(
-        data={
-            "agent": ResponseField(
-                field_type=Dict[str, Any],
-                description="Created agent information",
-                example={
-                    "id": "agent_123",
-                    "name": "my_agent",
-                    "status": "active",
-                    "description": "My agent description",
-                },
-            ),
-            "actions": ResponseField(
-                field_type=Dict[str, Any],
-                description="Created Actions node information",
-                example={
-                    "id": "actions_456",
-                    "edge_id": "edge_789",
-                    "edge_bidirectional": True,
-                },
-            ),
-            "memory": ResponseField(
-                field_type=Dict[str, Any],
-                description="Created Memory node information",
-                example={
-                    "id": "memory_012",
-                    "edge_id": "edge_345",
-                    "edge_bidirectional": True,
-                },
-            ),
-            "message": ResponseField(
-                field_type=str,
-                description="Success message",
-                example="Agent created successfully with Actions and Memory nodes connected",
-            ),
-        }
-    ),
-)
-class CreateAgent(Walker):
-    """Walker to create a new Agent node and attach it to the Agents node.
-    
-    Traverses: Root -> App -> Agents
-    Creates Agent node with unique name validation
-    Connects Agent to Agents node with bidirectional edge
-    """
-    
-    name: str = EndpointField(
-        description="Unique name for the agent",
-        min_length=1,
-        examples=["my_agent", "agent_1"]
-    )
-    status: str = EndpointField(
-        default="active",
-        description="Agent status",
-        examples=["active", "inactive", "paused"]
-    )
-    description: str = EndpointField(
-        default="",
-        description="Optional description of the agent",
-        examples=["My agent description"]
-    )
-    
-    @on_visit(Root)
-    async def visit_root(self, here: Root) -> None:
-        """Start traversal from Root to connected App nodes."""
-        connected_nodes = await here.nodes()
-        app_nodes = [n for n in connected_nodes if isinstance(n, App)]
-        if app_nodes:
-            await self.visit(app_nodes)
-        else:
-            await self.report({
-                "error": "App node not found. Please bootstrap the application first."
-            })
-    
-    @on_visit(App)
-    async def visit_app(self, here: App) -> None:
-        """Continue traversal from App to connected Agents node."""
-        connected_nodes = await here.nodes()
-        agents_nodes = [n for n in connected_nodes if isinstance(n, Agents)]
-        if agents_nodes:
-            await self.visit(agents_nodes)
-        else:
-            await self.report({
-                "error": "Agents node not found. Please bootstrap the application first."
-            })
-    
-    @on_visit(Agents)
-    async def create_and_attach_agent(self, here: Agents) -> None:
-        """Create Agent node and attach it to Agents node with bidirectional edge."""
-        # Validate name is provided
-        if not self.name or not self.name.strip():
-            await self.report({
-                "error": "Agent name is required"
-            })
-            return
-        
-        name = self.name.strip()
-        
-        # Check for uniqueness - find existing agents with the same name
-        existing_agents = await Agent.find({"context.name": name})
-        if existing_agents:
-            await self.report({
-                "error": f"Agent with name '{name}' already exists",
-                "conflict": True
-            })
-            return
-        
-        # Create the Agent node
-        try:
-            agent = await Agent.create(
-                name=name,
-                status=self.status,
-                description=self.description
-            )
-            
-            # Connect Agent to Agents node with bidirectional edge
-            # Using direction="both" ensures the edge is bidirectional, allowing
-            # traversal from Agents -> Agent and Agent -> Agents
-            edge = await here.connect(agent, direction="both")
-            
-            # Verify the edge is bidirectional
-            if not edge.bidirectional:
-                await self.report({
-                    "error": "Failed to create bidirectional edge",
-                    "warning": "Edge created but may not be bidirectional"
-                })
-                return
-            
-            # Update Agents node counters
-            here.total_agents += 1
-            if self.status == "active":
-                here.active_agents += 1
-            await here.save()
-            
-            # Create and connect Actions node
-            actions = await Actions.create()
-            actions_edge = await agent.connect(actions, direction="both")
-            
-            # Create and connect Memory node
-            memory = await Memory.create()
-            memory_edge = await agent.connect(memory, direction="both")
-            
-            # Report success with edge information
-            await self.report({
-                "agent": agent.export(),
-                "edge_id": edge.id,
-                "edge_bidirectional": edge.bidirectional,
-                "actions": {
-                    "id": actions.id,
-                    "edge_id": actions_edge.id,
-                    "edge_bidirectional": actions_edge.bidirectional
-                },
-                "memory": {
-                    "id": memory.id,
-                    "edge_id": memory_edge.id,
-                    "edge_bidirectional": memory_edge.bidirectional
-                },
-                "message": "Agent created successfully with Actions and Memory nodes connected"
-            })
-            
-        except Exception as e:
-            await self.report({
-                "error": f"Failed to create agent: {str(e)}"
-            })
 
 
 # =============================================================================
@@ -219,8 +47,10 @@ class CreateAgent(Walker):
                 description="Agent information",
                 example={
                     "id": "agent_123",
+                    "namespace": "jvagent",
                     "name": "my_agent",
-                    "status": "active",
+                    "alias": "My Agent",
+                    "enabled": True,
                     "description": "Agent description",
                 },
             )
@@ -264,8 +94,10 @@ async def get_agent(agent_id: str) -> Dict[str, Any]:
                 description="Updated agent information",
                 example={
                     "id": "agent_123",
-                    "name": "updated_agent",
-                    "status": "active",
+                    "namespace": "jvagent",
+                    "name": "my_agent",
+                    "alias": "Updated Agent Display Name",
+                    "enabled": True,
                     "description": "Updated description",
                 },
             ),
@@ -279,16 +111,19 @@ async def get_agent(agent_id: str) -> Dict[str, Any]:
 )
 async def update_agent(
     agent_id: str,
-    name: Optional[str] = None,
-    status: Optional[str] = None,
+    alias: Optional[str] = None,
+    enabled: Optional[bool] = None,
     description: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Update an existing Agent node.
     
+    Note: The 'name' field is static and cannot be changed after creation.
+    Use 'alias' to update the display name.
+    
     Args:
         agent_id: ID of the agent to update
-        name: New name for the agent (must be unique if provided)
-        status: New status for the agent
+        alias: New display name (alias) for the agent
+        enabled: Whether the agent should be enabled
         description: New description for the agent
     
     Returns:
@@ -296,7 +131,6 @@ async def update_agent(
     
     Raises:
         ResourceNotFoundError: If agent not found
-        ResourceConflictError: If new name conflicts with existing agent
     """
     # Get the agent
     agent = await Agent.get(agent_id)
@@ -306,32 +140,28 @@ async def update_agent(
             details={"agent_id": agent_id}
         )
     
-    # Check name uniqueness if name is being changed
-    if name is not None and name.strip() != agent.name:
-        new_name = name.strip()
-        existing_agents = await Agent.find({"context.name": new_name})
-        if existing_agents and existing_agents[0].id != agent_id:
-            raise ResourceConflictError(
-                message=f"Agent with name '{new_name}' already exists",
-                details={"name": new_name, "agent_id": agent_id}
-            )
-        agent.name = new_name
+    # Note: 'name' is static and cannot be changed after creation
+    # Use 'alias' to update the display name instead
     
-    # Update status if provided
-    if status is not None:
-        old_status = agent.status
-        agent.status = status
+    # Update alias if provided
+    if alias is not None:
+        agent.alias = alias.strip()
+    
+    # Update enabled if provided
+    if enabled is not None:
+        old_enabled = agent.enabled
+        agent.enabled = enabled
         
-        # Update Agents node counters if status changed
-        if old_status != status:
+        # Update Agents node counters if enabled status changed
+        if old_enabled != enabled:
             # Find the Agents node connected to this agent
             connected_nodes = await agent.nodes()
             agents_nodes = [n for n in connected_nodes if isinstance(n, Agents)]
             if agents_nodes:
                 agents_node = agents_nodes[0]
-                if old_status == "active" and status != "active":
+                if old_enabled and not enabled:
                     agents_node.active_agents = max(0, agents_node.active_agents - 1)
-                elif old_status != "active" and status == "active":
+                elif not old_enabled and enabled:
                     agents_node.active_agents += 1
                 await agents_node.save()
     
@@ -383,8 +213,8 @@ async def delete_agent(agent_id: str) -> Dict[str, Any]:
             details={"agent_id": agent_id}
         )
     
-    # Get agent status before deletion for counter update
-    was_active = agent.status == "active"
+    # Get agent enabled status before deletion for counter update
+    was_enabled = agent.enabled
     
     # Find the Agents node connected to this agent
     connected_nodes = await agent.nodes()
@@ -397,7 +227,7 @@ async def delete_agent(agent_id: str) -> Dict[str, Any]:
     if agents_nodes:
         agents_node = agents_nodes[0]
         agents_node.total_agents = max(0, agents_node.total_agents - 1)
-        if was_active:
+        if was_enabled:
             agents_node.active_agents = max(0, agents_node.active_agents - 1)
         await agents_node.save()
     
@@ -420,7 +250,7 @@ async def delete_agent(agent_id: str) -> Dict[str, Any]:
                     {
                         "id": "agent_123",
                         "name": "my_agent",
-                        "status": "active",
+                        "enabled": True,
                         "description": "Agent description",
                     }
                 ],
@@ -471,7 +301,7 @@ async def delete_agent(agent_id: str) -> Dict[str, Any]:
 async def list_agents(
     page: int = 1,
     per_page: int = 10,
-    status: Optional[str] = None,
+    enabled: Optional[bool] = None,
     search: Optional[str] = None,
 ) -> Dict[str, Any]:
     """List all agents with pagination and optional filtering.
@@ -479,16 +309,16 @@ async def list_agents(
     Args:
         page: Page number (default: 1)
         per_page: Number of agents per page (default: 10)
-        status: Filter by status (optional)
-        search: Search by name or description (optional)
+        enabled: Filter by enabled status (optional)
+        search: Search by name, alias, or description (optional)
     
     Returns:
         Dictionary with paginated list of agents and pagination metadata
     """
     # Build filters for pagination
     filters = {}
-    if status:
-        filters["context.status"] = status
+    if enabled is not None:
+        filters["context.enabled"] = enabled
     
     # Create pager with filters
     pager = ObjectPager(Agent, page_size=per_page, filters=filters)
@@ -501,7 +331,9 @@ async def list_agents(
         search_lower = search.lower()
         agents = [
             a for a in agents
-            if search_lower in a.name.lower() or search_lower in a.description.lower()
+            if search_lower in a.name.lower() 
+            or search_lower in (a.alias.lower() if a.alias else "")
+            or search_lower in a.description.lower()
         ]
     
     # Convert to dictionaries using export
