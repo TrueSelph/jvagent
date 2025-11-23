@@ -3,20 +3,17 @@
 from typing import Any, Dict, List, Optional
 
 from jvspatial.api import endpoint
-from jvspatial.api.decorators import EndpointField
 from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.api.exceptions import ResourceConflictError, ResourceNotFoundError
-from jvspatial.core import Node, Root, Walker, on_visit
+from jvspatial.api.exceptions import ResourceNotFoundError
+from jvspatial.core import Node
 from jvspatial.core.pager import ObjectPager
 
 from jvagent.core.agents import Agents
-from jvagent.core.app import App
-from jvagent.memory.memory import Memory
 
 
 class Agent(Node):
     """Individual agent node in the system.
-    
+
     Attributes:
         namespace: Namespace for the agent (e.g., 'jvagent', 'contrib')
         name: Unique machine name for the agent within the namespace (required, static)
@@ -24,6 +21,7 @@ class Agent(Node):
         enabled: Whether the agent is enabled (default: True)
         description: Optional description of the agent
     """
+
     namespace: str = ""
     name: str = ""
     alias: str = ""
@@ -34,6 +32,7 @@ class Agent(Node):
 # =============================================================================
 # ENDPOINTS: Get, Update, Delete, List Agents
 # =============================================================================
+
 
 @endpoint(
     "/agents/{agent_id}",
@@ -59,13 +58,13 @@ class Agent(Node):
 )
 async def get_agent(agent_id: str) -> Dict[str, Any]:
     """Get a specific agent by ID.
-    
+
     Args:
         agent_id: ID of the agent to retrieve
-    
+
     Returns:
         Dictionary with agent information
-    
+
     Raises:
         ResourceNotFoundError: If agent not found
     """
@@ -73,13 +72,10 @@ async def get_agent(agent_id: str) -> Dict[str, Any]:
     agent = await Agent.get(agent_id)
     if not agent:
         raise ResourceNotFoundError(
-            message=f"Agent with ID '{agent_id}' not found",
-            details={"agent_id": agent_id}
+            message=f"Agent with ID '{agent_id}' not found", details={"agent_id": agent_id}
         )
-    
-    return {
-        "agent": agent.export()
-    }
+
+    return {"agent": await agent.export()}
 
 
 @endpoint(
@@ -116,19 +112,19 @@ async def update_agent(
     description: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Update an existing Agent node.
-    
+
     Note: The 'name' field is static and cannot be changed after creation.
     Use 'alias' to update the display name.
-    
+
     Args:
         agent_id: ID of the agent to update
         alias: New display name (alias) for the agent
         enabled: Whether the agent should be enabled
         description: New description for the agent
-    
+
     Returns:
         Dictionary with updated agent information and success message
-    
+
     Raises:
         ResourceNotFoundError: If agent not found
     """
@@ -136,46 +132,42 @@ async def update_agent(
     agent = await Agent.get(agent_id)
     if not agent:
         raise ResourceNotFoundError(
-            message=f"Agent with ID '{agent_id}' not found",
-            details={"agent_id": agent_id}
+            message=f"Agent with ID '{agent_id}' not found", details={"agent_id": agent_id}
         )
-    
+
     # Note: 'name' is static and cannot be changed after creation
     # Use 'alias' to update the display name instead
-    
+
     # Update alias if provided
     if alias is not None:
         agent.alias = alias.strip()
-    
+
     # Update enabled if provided
     if enabled is not None:
-        old_enabled = agent.enabled
+        previous_enabled = agent.enabled
         agent.enabled = enabled
-        
+
         # Update Agents node counters if enabled status changed
-        if old_enabled != enabled:
+        if previous_enabled != enabled:
             # Find the Agents node connected to this agent
             connected_nodes = await agent.nodes()
             agents_nodes = [n for n in connected_nodes if isinstance(n, Agents)]
             if agents_nodes:
                 agents_node = agents_nodes[0]
-                if old_enabled and not enabled:
+                if previous_enabled and not enabled:
                     agents_node.active_agents = max(0, agents_node.active_agents - 1)
-                elif not old_enabled and enabled:
+                elif not previous_enabled and enabled:
                     agents_node.active_agents += 1
                 await agents_node.save()
-    
+
     # Update description if provided
     if description is not None:
         agent.description = description
-    
+
     # Save the updated agent
     await agent.save()
-    
-    return {
-        "agent": agent.export(),
-        "message": "Agent updated successfully"
-    }
+
+    return {"agent": await agent.export(), "message": "Agent updated successfully"}
 
 
 @endpoint(
@@ -195,13 +187,13 @@ async def update_agent(
 )
 async def delete_agent(agent_id: str) -> Dict[str, Any]:
     """Delete an Agent node.
-    
+
     Args:
         agent_id: ID of the agent to delete
-    
+
     Returns:
         Dictionary with success message
-    
+
     Raises:
         ResourceNotFoundError: If agent not found
     """
@@ -209,20 +201,19 @@ async def delete_agent(agent_id: str) -> Dict[str, Any]:
     agent = await Agent.get(agent_id)
     if not agent:
         raise ResourceNotFoundError(
-            message=f"Agent with ID '{agent_id}' not found",
-            details={"agent_id": agent_id}
+            message=f"Agent with ID '{agent_id}' not found", details={"agent_id": agent_id}
         )
-    
+
     # Get agent enabled status before deletion for counter update
     was_enabled = agent.enabled
-    
+
     # Find the Agents node connected to this agent
     connected_nodes = await agent.nodes()
     agents_nodes = [n for n in connected_nodes if isinstance(n, Agents)]
-    
+
     # Delete the agent (this will also remove edges and cascade to dependent nodes)
     await agent.delete()
-    
+
     # Update Agents node counters
     if agents_nodes:
         agents_node = agents_nodes[0]
@@ -230,10 +221,8 @@ async def delete_agent(agent_id: str) -> Dict[str, Any]:
         if was_enabled:
             agents_node.active_agents = max(0, agents_node.active_agents - 1)
         await agents_node.save()
-    
-    return {
-        "message": "Agent deleted successfully"
-    }
+
+    return {"message": "Agent deleted successfully"}
 
 
 @endpoint(
@@ -305,13 +294,13 @@ async def list_agents(
     search: Optional[str] = None,
 ) -> Dict[str, Any]:
     """List all agents with pagination and optional filtering.
-    
+
     Args:
         page: Page number (default: 1)
         per_page: Number of agents per page (default: 10)
         enabled: Filter by enabled status (optional)
         search: Search by name, alias, or description (optional)
-    
+
     Returns:
         Dictionary with paginated list of agents and pagination metadata
     """
@@ -319,29 +308,32 @@ async def list_agents(
     filters = {}
     if enabled is not None:
         filters["context.enabled"] = enabled
-    
+
     # Create pager with filters
     pager = ObjectPager(Agent, page_size=per_page, filters=filters)
-    
+
     # Get the requested page
     agents: List[Agent] = await pager.get_page(page=page)
-    
+
     # Apply text search if provided (post-filter on results)
     if search:
         search_lower = search.lower()
         agents = [
-            a for a in agents
-            if search_lower in a.name.lower() 
+            a
+            for a in agents
+            if search_lower in a.name.lower()
             or search_lower in (a.alias.lower() if a.alias else "")
             or search_lower in a.description.lower()
         ]
-    
+
     # Convert to dictionaries using export
-    agents_list = [a.export() for a in agents]
-    
+    import asyncio
+
+    agents_list = await asyncio.gather(*[agent.export() for agent in agents])
+
     # Get pagination info from pager
     pagination_info = pager.to_dict()
-    
+
     return {
         "agents": agents_list,
         "total": pagination_info["total_items"],

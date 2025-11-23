@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.core import Node, Root
+from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
 
 from jvagent.core.app import App
@@ -15,11 +15,11 @@ if TYPE_CHECKING:
 
 class Agents(Node):
     """Structural branchpoint node for organizing and aggregating all agents.
-    
+
     The Agents node serves as a collection branchpoint in the spatial graph hierarchy,
     following the jvspatial object-spatial arrangement pattern. It provides structural
     organization and aggregation capabilities for all agents in the application.
-    
+
     **Purpose:**
     - Structural organization: Groups all Agent nodes under a single branchpoint,
       creating a clear hierarchy (App → Agents → Agent)
@@ -27,41 +27,42 @@ class Agents(Node):
       that are updated when agents are created, modified, or deleted
     - Traversal waypoint: Serves as a standard waypoint for walkers following the
       path Root → App → Agents → Agent
-    
+
     **Note:** CRUD operations for individual agents are handled by the Agent node
     (get_agent, update_agent, delete_agent, list_agents). This node focuses solely
     on structural organization and aggregate statistics.
-    
+
     Attributes:
         total_agents: Total number of agents registered in the system
         active_agents: Number of currently enabled agents (enabled=True)
     """
+
     total_agents: int = attribute(default=0, description="Total number of agents registered")
     active_agents: int = attribute(default=0, description="Number of currently active agents")
-    
+
     # ============================================================================
     # Helper Methods
     # ============================================================================
-    
+
     async def get_connected_agents(self) -> List["Agent"]:
         """Get all Agent nodes connected to this Agents node.
-        
+
         Returns:
             List of Agent nodes connected to this Agents node
         """
         # Import here to avoid circular import
         from jvagent.core.agent import Agent
-        
+
         connected_nodes = await self.nodes()
         return [n for n in connected_nodes if isinstance(n, Agent)]
-    
+
     async def sync_counters(self) -> Dict[str, int]:
         """Recalculate and sync counters from actual agent data.
-        
+
         This method queries all connected agents and updates the counters
         to match the actual state. Useful for ensuring counters stay accurate
         if agents are modified outside of standard CRUD operations.
-        
+
         Returns:
             Dictionary with updated counter values:
             {
@@ -72,19 +73,16 @@ class Agents(Node):
         agents = await self.get_connected_agents()
         total = len(agents)
         active = len([a for a in agents if a.enabled])
-        
+
         self.total_agents = total
         self.active_agents = active
         await self.save()
-        
-        return {
-            "total_agents": total,
-            "active_agents": active
-        }
-    
+
+        return {"total_agents": total, "active_agents": active}
+
     async def get_enabled_breakdown(self) -> Dict[str, int]:
         """Get breakdown of agents by enabled status.
-        
+
         Returns:
             Dictionary mapping enabled status to count:
             {
@@ -94,23 +92,19 @@ class Agents(Node):
             }
         """
         agents = await self.get_connected_agents()
-        breakdown = {
-            "enabled": 0,
-            "disabled": 0,
-            "total": len(agents)
-        }
-        
+        breakdown = {"enabled": 0, "disabled": 0, "total": len(agents)}
+
         for agent in agents:
             if agent.enabled:
                 breakdown["enabled"] += 1
             else:
                 breakdown["disabled"] += 1
-        
+
         return breakdown
-    
+
     async def get_healthcheck_data(self) -> Dict[str, Any]:
         """Collect healthcheck data from all connected agents.
-        
+
         Returns:
             Dictionary with healthcheck summary:
             {
@@ -120,14 +114,11 @@ class Agents(Node):
                 "agent_health": List[Dict[str, Any]]  # Per-agent health data
             }
         """
-        # Import here to avoid circular import
-        from jvagent.core.agent import Agent
-        
         agents = await self.get_connected_agents()
         agent_health = []
         healthy_count = 0
         unhealthy_count = 0
-        
+
         for agent in agents:
             health_data = {
                 "agent_id": agent.id,
@@ -137,7 +128,7 @@ class Agents(Node):
                 "description": agent.description,
                 "enabled": agent.enabled,
             }
-            
+
             # Try to get healthcheck if agent has the method
             try:
                 if hasattr(agent, "healthcheck") and callable(getattr(agent, "healthcheck")):
@@ -154,64 +145,61 @@ class Agents(Node):
                     health_data["healthy"] = agent.enabled
                     health_data["health"] = {
                         "status": 200 if agent.enabled else 503,
-                        "message": f"Agent enabled: {agent.enabled}"
+                        "message": f"Agent enabled: {agent.enabled}",
                     }
             except Exception as e:
                 health_data["healthy"] = False
-                health_data["health"] = {
-                    "status": 500,
-                    "error": str(e)
-                }
-            
+                health_data["health"] = {"status": 500, "error": str(e)}
+
             if health_data.get("healthy", False):
                 healthy_count += 1
             else:
                 unhealthy_count += 1
-            
+
             agent_health.append(health_data)
-        
+
         return {
             "total_agents": len(agents),
             "healthy_agents": healthy_count,
             "unhealthy_agents": unhealthy_count,
-            "agent_health": agent_health
+            "agent_health": agent_health,
         }
-    
+
     @classmethod
     async def get(cls) -> Optional["Agents"]:
         """Get the Agents node from the graph.
-        
+
         Traverses: Root -> App -> Agents
-        
+
         Returns:
             Agents node if found, None otherwise
         """
         app = await App.get()
         if not app:
             return None
-        
+
         connected_nodes = await app.nodes()
         agents_nodes = [n for n in connected_nodes if isinstance(n, Agents)]
-        
+
         if agents_nodes:
             return agents_nodes[0]
-        
+
         return None
-    
+
     async def get_statistics(
         self,
         sync: bool = False,
         include_health: bool = True,
     ) -> Dict[str, Any]:
         """Get comprehensive statistics about all agents.
-        
+
         Provides aggregate statistics including counters, enabled breakdown,
         and optional healthcheck data for all agents in the system.
-        
+
         Args:
             sync: If True, recalculate counters from actual agent data before returning
             include_health: If True, include healthcheck data for each agent
-        
+
         Returns:
             Dictionary with comprehensive statistics:
             {
@@ -235,33 +223,26 @@ class Agents(Node):
         # Sync counters if requested
         if sync:
             await self.sync_counters()
-        
+
         # Get statistics
-        counters = {
-            "total_agents": self.total_agents,
-            "active_agents": self.active_agents
-        }
-        
+        counters = {"total_agents": self.total_agents, "active_agents": self.active_agents}
+
         enabled_breakdown = await self.get_enabled_breakdown()
-        
-        statistics = {
-            "counters": counters,
-            "enabled_breakdown": enabled_breakdown
-        }
-        
+
+        statistics = {"counters": counters, "enabled_breakdown": enabled_breakdown}
+
         # Include healthcheck data if requested
         if include_health:
             healthcheck_data = await self.get_healthcheck_data()
             statistics["healthcheck"] = healthcheck_data
-        
-        return {
-            "statistics": statistics
-        }
+
+        return {"statistics": statistics}
 
 
 # ============================================================================
 # ENDPOINT: Get Agents Status/Statistics
 # ============================================================================
+
 
 @endpoint(
     "/status",
@@ -274,21 +255,14 @@ class Agents(Node):
                 field_type=Dict[str, Any],
                 description="Comprehensive statistics about all agents",
                 example={
-                    "counters": {
-                        "total_agents": 10,
-                        "active_agents": 8
-                    },
-                    "enabled_breakdown": {
-                        "enabled": 8,
-                        "disabled": 2,
-                        "total": 10
-                    },
+                    "counters": {"total_agents": 10, "active_agents": 8},
+                    "enabled_breakdown": {"enabled": 8, "disabled": 2, "total": 10},
                     "healthcheck": {
                         "total_agents": 10,
                         "healthy_agents": 9,
                         "unhealthy_agents": 1,
-                        "agent_health": []
-                    }
+                        "agent_health": [],
+                    },
                 },
             )
         }
@@ -299,17 +273,17 @@ async def get_status(
     include_health: bool = True,
 ) -> Dict[str, Any]:
     """Get comprehensive statistics about all agents.
-    
+
     Provides aggregate statistics including counters, enabled breakdown,
     and optional healthcheck data for all agents in the system.
-    
+
     This endpoint requires authentication as it exposes sensitive system
     information including agent counts, status breakdowns, and health data.
-    
+
     Args:
         sync: If True, recalculate counters from actual agent data before returning
         include_health: If True, include healthcheck data for each agent
-    
+
     Returns:
         Dictionary with comprehensive statistics:
         {
@@ -340,12 +314,6 @@ async def get_status(
                 "error": "Agents node not found. Please bootstrap the application first."
             }
         }
-    
+
     # Get statistics from the Agents node
-    return await agents_node.get_statistics(
-        sync=sync,
-        include_health=include_health
-    )
-
-
-
+    return await agents_node.get_statistics(sync=sync, include_health=include_health)
