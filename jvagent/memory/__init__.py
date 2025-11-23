@@ -10,4 +10,3 @@ This module provides the memory management system including:
 from jvagent.memory.memory import Memory
 
 __all__ = ["Memory"]
-

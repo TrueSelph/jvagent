@@ -1,2 +1,1 @@
 """Action system tests."""
-
