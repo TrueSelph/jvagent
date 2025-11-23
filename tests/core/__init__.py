@@ -1,0 +1,2 @@
+"""Core component tests."""
+

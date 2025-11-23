@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.core import Node, Root
-from pydantic import Field
+from jvspatial.core.annotations import attribute
 
 from jvagent.core.app import App
 
@@ -34,10 +34,10 @@ class Agents(Node):
     
     Attributes:
         total_agents: Total number of agents registered in the system
-        active_agents: Number of currently active agents (status="active")
+        active_agents: Number of currently enabled agents (enabled=True)
     """
-    total_agents: int = Field(default=0, description="Total number of agents registered")
-    active_agents: int = Field(default=0, description="Number of currently active agents")
+    total_agents: int = attribute(default=0, description="Total number of agents registered")
+    active_agents: int = attribute(default=0, description="Number of currently active agents")
     
     # ============================================================================
     # Helper Methods
@@ -71,7 +71,7 @@ class Agents(Node):
         """
         agents = await self.get_connected_agents()
         total = len(agents)
-        active = len([a for a in agents if a.status == "active"])
+        active = len([a for a in agents if a.enabled])
         
         self.total_agents = total
         self.active_agents = active
@@ -82,34 +82,29 @@ class Agents(Node):
             "active_agents": active
         }
     
-    async def get_status_breakdown(self) -> Dict[str, int]:
-        """Get breakdown of agents by status.
+    async def get_enabled_breakdown(self) -> Dict[str, int]:
+        """Get breakdown of agents by enabled status.
         
         Returns:
-            Dictionary mapping status to count:
+            Dictionary mapping enabled status to count:
             {
-                "active": int,
-                "inactive": int,
-                "paused": int,
+                "enabled": int,
+                "disabled": int,
                 "total": int
             }
         """
         agents = await self.get_connected_agents()
         breakdown = {
-            "active": 0,
-            "inactive": 0,
-            "paused": 0,
+            "enabled": 0,
+            "disabled": 0,
             "total": len(agents)
         }
         
         for agent in agents:
-            status = agent.status.lower() if agent.status else "inactive"
-            if status == "active":
-                breakdown["active"] += 1
-            elif status == "paused":
-                breakdown["paused"] += 1
+            if agent.enabled:
+                breakdown["enabled"] += 1
             else:
-                breakdown["inactive"] += 1
+                breakdown["disabled"] += 1
         
         return breakdown
     
@@ -136,8 +131,11 @@ class Agents(Node):
         for agent in agents:
             health_data = {
                 "agent_id": agent.id,
+                "namespace": agent.namespace,
                 "name": agent.name,
-                "status": agent.status,
+                "alias": agent.alias,
+                "description": agent.description,
+                "enabled": agent.enabled,
             }
             
             # Try to get healthcheck if agent has the method
@@ -152,11 +150,11 @@ class Agents(Node):
                         health_data["healthy"] = bool(health_result)
                         health_data["health"] = {"status": 200 if health_result else 500}
                 else:
-                    # Basic health based on status
-                    health_data["healthy"] = agent.status == "active"
+                    # Basic health based on enabled status
+                    health_data["healthy"] = agent.enabled
                     health_data["health"] = {
-                        "status": 200 if agent.status == "active" else 503,
-                        "message": f"Agent status: {agent.status}"
+                        "status": 200 if agent.enabled else 503,
+                        "message": f"Agent enabled: {agent.enabled}"
                     }
             except Exception as e:
                 health_data["healthy"] = False
@@ -207,7 +205,7 @@ class Agents(Node):
     ) -> Dict[str, Any]:
         """Get comprehensive statistics about all agents.
         
-        Provides aggregate statistics including counters, status breakdown,
+        Provides aggregate statistics including counters, enabled breakdown,
         and optional healthcheck data for all agents in the system.
         
         Args:
@@ -221,10 +219,9 @@ class Agents(Node):
                     "total_agents": int,
                     "active_agents": int
                 },
-                "status_breakdown": {
-                    "active": int,
-                    "inactive": int,
-                    "paused": int,
+                "enabled_breakdown": {
+                    "enabled": int,
+                    "disabled": int,
                     "total": int
                 },
                 "healthcheck": {
@@ -245,11 +242,11 @@ class Agents(Node):
             "active_agents": self.active_agents
         }
         
-        status_breakdown = await self.get_status_breakdown()
+        enabled_breakdown = await self.get_enabled_breakdown()
         
         statistics = {
             "counters": counters,
-            "status_breakdown": status_breakdown
+            "enabled_breakdown": enabled_breakdown
         }
         
         # Include healthcheck data if requested
@@ -281,10 +278,9 @@ class Agents(Node):
                         "total_agents": 10,
                         "active_agents": 8
                     },
-                    "status_breakdown": {
-                        "active": 8,
-                        "inactive": 1,
-                        "paused": 1,
+                    "enabled_breakdown": {
+                        "enabled": 8,
+                        "disabled": 2,
                         "total": 10
                     },
                     "healthcheck": {
@@ -304,7 +300,7 @@ async def get_status(
 ) -> Dict[str, Any]:
     """Get comprehensive statistics about all agents.
     
-    Provides aggregate statistics including counters, status breakdown,
+    Provides aggregate statistics including counters, enabled breakdown,
     and optional healthcheck data for all agents in the system.
     
     This endpoint requires authentication as it exposes sensitive system
@@ -322,10 +318,9 @@ async def get_status(
                     "total_agents": int,
                     "active_agents": int
                 },
-                "status_breakdown": {
-                    "active": int,
-                    "inactive": int,
-                    "paused": int,
+                "enabled_breakdown": {
+                    "enabled": int,
+                    "disabled": int,
                     "total": int
                 },
                 "healthcheck": {

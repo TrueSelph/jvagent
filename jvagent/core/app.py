@@ -9,7 +9,6 @@ from jvspatial.core import Node, Root
 from jvspatial.core.annotations import attribute
 from jvspatial.storage import create_storage, get_proxy_manager
 from jvspatial.storage.exceptions import StorageError
-from pydantic import Field
 
 
 class App(Node):
@@ -37,15 +36,15 @@ class App(Node):
     status: str = "active"  # active, inactive, maintenance
     
     # File storage configuration
-    file_storage_provider: str = Field(
+    file_storage_provider: str = attribute(
         default="local",
         description="Storage provider type (local, s3, etc.)"
     )
-    file_storage_root_dir: str = Field(
+    file_storage_root_dir: str = attribute(
         default=".files",
         description="Root directory for local storage"
     )
-    file_storage_enabled: bool = Field(
+    file_storage_enabled: bool = attribute(
         default=True,
         description="Whether file storage is enabled"
     )

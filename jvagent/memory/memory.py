@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 from datetime import datetime
 
 from jvspatial.core import Node
-from pydantic import Field
+from jvspatial.core.annotations import attribute
 
 
 class Memory(Node):
@@ -23,12 +23,12 @@ class Memory(Node):
     """
     
     # Counters
-    total_users: int = Field(default=0, description="Total number of users")
-    total_conversations: int = Field(default=0, description="Total number of conversations")
-    total_collections: int = Field(default=0, description="Total number of collections")
+    total_users: int = attribute(default=0, description="Total number of users")
+    total_conversations: int = attribute(default=0, description="Total number of conversations")
+    total_collections: int = attribute(default=0, description="Total number of collections")
     
     # Maintenance
-    last_cleanup: Optional[datetime] = Field(
+    last_cleanup: Optional[datetime] = attribute(
         default=None,
         description="Timestamp of last cleanup operation"
     )
