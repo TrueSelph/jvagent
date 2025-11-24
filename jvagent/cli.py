@@ -29,34 +29,38 @@ logger = logging.getLogger(__name__)
 logging.getLogger("asyncio").setLevel(logging.WARNING)
 
 
-def load_app_env() -> None:
-    """Load .env file from the current working directory.
+def load_app_env(app_root: str = None) -> None:
+    """Load .env file from the app root directory.
 
     This ensures that when running jvagent from an app directory,
     the .env file in that directory is loaded. The function will:
-    1. Try to load .env from the current working directory
+    1. Try to load .env from the app root directory
     2. Log if a .env file was found and loaded
+
+    Args:
+        app_root: Path to the app root directory. If None, uses current working directory.
     """
-    cwd = os.getcwd()
-    env_path = os.path.join(cwd, ".env")
+    if app_root is None:
+        app_root = os.getcwd()
+
+    env_path = os.path.join(app_root, ".env")
 
     if os.path.exists(env_path):
         load_dotenv(env_path, override=True)
         logger.info(f"Loaded .env file from: {env_path}")
     else:
-        # Still try to load from current directory (dotenv will search automatically)
-        # This handles cases where .env might be in a parent directory
-        load_dotenv(override=True)
-        if os.path.exists(".env"):
-            logger.info("Loaded .env file from current directory")
+        # Still try to load from app root directory
+        load_dotenv(env_path, override=True)
+        if os.path.exists(env_path):
+            logger.info(f"Loaded .env file from: {env_path}")
         else:
-            logger.debug("No .env file found in current directory")
+            logger.debug(f"No .env file found in app root: {app_root}")
 
 
-async def bootstrap_application_graph(update_if_exists: bool = False) -> None:
+async def bootstrap_application_graph(update_if_exists: bool = False, app_root: str = None) -> None:
     """Bootstrap the application graph with App and Agents nodes.
 
-    If an app.yaml file is found in the current directory, uses AppLoader to
+    If an app.yaml file is found in the app root directory, uses AppLoader to
     bootstrap the application declaratively, including:
     - Creating/updating the App node from app.yaml
     - Installing all agents listed in app.yaml
@@ -67,20 +71,24 @@ async def bootstrap_application_graph(update_if_exists: bool = False) -> None:
     Args:
         update_if_exists: If True, update existing agents and actions with values from YAML files.
                          If False (default), use existing agents/actions without overwriting their context.
+        app_root: Path to the app root directory. If None, uses current working directory.
 
     All operations are idempotent - existing nodes and connections are preserved.
     """
+    if app_root is None:
+        app_root = os.getcwd()
+
     bootstrap_log = BootstrapLogger("Bootstrap")
 
-    # Check if app.yaml exists in current directory
-    app_yaml_path = os.path.join(os.getcwd(), "app.yaml")
+    # Check if app.yaml exists in app root directory
+    app_yaml_path = os.path.join(app_root, "app.yaml")
 
     if os.path.exists(app_yaml_path):
         mode = "update" if update_if_exists else "sync"
         bootstrap_log.start(f"Application graph ({mode} mode)")
 
         # Use AppLoader for declarative bootstrap
-        app_loader = AppLoader(os.getcwd())
+        app_loader = AppLoader(app_root)
         app = await app_loader.bootstrap_application(update_if_exists=update_if_exists)
 
         if app:
@@ -247,7 +255,9 @@ def create_server_from_config(debug: bool = False) -> Server:
     return server
 
 
-async def pre_startup_bootstrap(server: Server, update_if_exists: bool = False) -> bool:
+async def pre_startup_bootstrap(
+    server: Server, update_if_exists: bool = False, app_root: str = None
+) -> bool:
     """Perform bootstrap tasks before server starts.
 
     This runs after the server is created (so context is initialized)
@@ -257,13 +267,14 @@ async def pre_startup_bootstrap(server: Server, update_if_exists: bool = False) 
         server: Server instance with initialized context
         update_if_exists: If True, update existing agents and actions from YAML files.
                          If False (default), use existing agents/actions without overwriting.
+        app_root: Path to the app root directory. If None, uses current working directory.
 
     Returns:
         True if admin user exists, False otherwise
     """
     try:
         # Bootstrap application graph
-        await bootstrap_application_graph(update_if_exists=update_if_exists)
+        await bootstrap_application_graph(update_if_exists=update_if_exists, app_root=app_root)
 
         # Ensure admin user exists
         admin_exists = await ensure_admin_user()
@@ -312,12 +323,34 @@ def main() -> None:
     """Main entry point for jvagent application."""
     import asyncio
     import sys
-
-    # Load .env file from current working directory first
-    load_app_env()
+    from pathlib import Path
 
     # Parse command-line arguments
     args = sys.argv[1:]
+
+    # Extract app root path (first positional argument that's not a flag or command)
+    app_root = None
+    commands = ["run", "status", "agent", "action", "bootstrap"]
+    flags = ["--debug", "--update", "--migrate"]
+
+    # Find app root: first argument that's not a command or flag
+    for i, arg in enumerate(args):
+        if arg not in commands and arg not in flags and not arg.startswith("-"):
+            # Check if it's a valid path
+            potential_path = Path(arg).expanduser().resolve()
+            if potential_path.exists() and potential_path.is_dir():
+                app_root = str(potential_path)
+                args = args[:i] + args[i + 1 :]  # Remove from args
+                break
+
+    # Default to current working directory if not provided
+    if app_root is None:
+        app_root = os.getcwd()
+
+    logger.debug(f"Using app root: {app_root}")
+
+    # Load .env file from app root directory
+    load_app_env(app_root=app_root)
 
     # Check for --debug flag
     debug_flag = "--debug" in args
@@ -335,19 +368,19 @@ def main() -> None:
 
     # If no arguments or "run" command, start the server
     if not args or args[0] == "run":
-        run_server(update_if_exists=update_flag, debug=debug_flag)
+        run_server(update_if_exists=update_flag, debug=debug_flag, app_root=app_root)
     elif args[0] == "status":
         # Show application status
-        asyncio.run(show_status())
+        asyncio.run(show_status(app_root=app_root))
     elif args[0] == "agent":
         # Agent management commands
-        handle_agent_command(args[1:])
+        handle_agent_command(args[1:], app_root=app_root)
     elif args[0] == "action":
         # Action management commands
-        handle_action_command(args[1:])
+        handle_action_command(args[1:], app_root=app_root)
     elif args[0] == "bootstrap":
         # Bootstrap application graph
-        asyncio.run(bootstrap_only(update_if_exists=update_flag))
+        asyncio.run(bootstrap_only(update_if_exists=update_flag, app_root=app_root))
     else:
         print_usage()
 
@@ -359,17 +392,24 @@ def print_usage() -> None:
 jvagent - Agentive Platform
 
     Usage:
-        jvagent [run] [--update] [--debug]   Start the jvagent server (default)
+        jvagent [<app_root>] [run] [--update] [--debug]   Start the jvagent server (default)
+        jvagent <app_root> [run] [--update] [--debug]    Start server with app root path
                                 --update: Update existing agents/actions from YAML files
-    jvagent status             Show application status
-    jvagent bootstrap [--update]  Bootstrap application graph
+    jvagent [<app_root>] status             Show application status
+    jvagent [<app_root>] bootstrap [--update]  Bootstrap application graph
                                   --update: Update existing agents/actions from YAML files
-    jvagent agent list         List all agents
-    jvagent agent install      Install agents from app.yaml
-    jvagent agent uninstall <name>    Uninstall an agent
-    jvagent action list <agent_name>  List actions for an agent
-    jvagent action enable <agent_name> <action_id>   Enable an action
-    jvagent action disable <agent_name> <action_id>  Disable an action
+    jvagent [<app_root>] agent list         List all installed agents
+    jvagent [<app_root>] agent uninstall <name>    Uninstall an agent
+    jvagent [<app_root>] action list <agent_name>  List actions for an agent
+    jvagent [<app_root>] action enable <agent_name> <action_id>   Enable an action
+    jvagent [<app_root>] action disable <agent_name> <action_id>  Disable an action
+
+Note: Agents are installed automatically from app.yaml when you run jvagent or bootstrap.
+      There is no direct agent installation command - agents must be defined in app.yaml.
+
+Arguments:
+    <app_root>                Path to the app root directory (default: current directory)
+                              Must be a valid directory path. If not provided, uses current working directory.
 
 Flags:
     --update, --migrate        Force update of existing agents and actions from YAML files
@@ -382,19 +422,29 @@ Environment Variables:
     JVAGENT_PORT              Server port (default: 8000)
     JVSPATIAL_DB_PATH         Database path (default: ./jvdb)
     JVSPATIAL_FILES_ROOT_PATH File storage path (default: .files)
+
+Examples:
+    jvagent                                    # Run from current directory
+    jvagent /path/to/my_app                    # Run from specified app directory
+    jvagent /path/to/my_app --update           # Run with update flag
+    jvagent /path/to/my_app bootstrap          # Bootstrap from specified directory
     """
     )
 
 
-def run_server(update_if_exists: bool = False, debug: bool = False) -> None:
+def run_server(update_if_exists: bool = False, debug: bool = False, app_root: str = None) -> None:
     """Start the jvagent server.
 
     Args:
         update_if_exists: If True, update existing agents and actions from YAML files.
                          If False (default), use existing agents/actions without overwriting.
         debug: If True, enable debug logging.
+        app_root: Path to the app root directory. If None, uses current working directory.
     """
     import asyncio
+
+    if app_root is None:
+        app_root = os.getcwd()
 
     bootstrap_log = BootstrapLogger("Startup")
     bootstrap_log.start("jvagent application")
@@ -403,7 +453,9 @@ def run_server(update_if_exists: bool = False, debug: bool = False) -> None:
     server = create_server_from_config(debug=debug)
 
     # Perform bootstrap tasks before server starts
-    admin_exists = asyncio.run(pre_startup_bootstrap(server, update_if_exists=update_if_exists))
+    admin_exists = asyncio.run(
+        pre_startup_bootstrap(server, update_if_exists=update_if_exists, app_root=app_root)
+    )
 
     # If admin user exists, disable the register endpoint
     if admin_exists:
@@ -421,9 +473,16 @@ def run_server(update_if_exists: bool = False, debug: bool = False) -> None:
     server.run()
 
 
-async def show_status() -> None:
-    """Show application status."""
+async def show_status(app_root: str = None) -> None:
+    """Show application status.
+
+    Args:
+        app_root: Path to the app root directory. If None, uses current working directory.
+    """
     from jvagent.core.app_loader import AppLoader
+
+    if app_root is None:
+        app_root = os.getcwd()
 
     # Initialize database context
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
@@ -435,7 +494,7 @@ async def show_status() -> None:
     set_current_db_type(db_type)
     set_current_db_path(db_path)
 
-    app_loader = AppLoader(os.getcwd())
+    app_loader = AppLoader(app_root)
     status = await app_loader.get_app_status()
 
     print("\n=== jvagent Application Status ===\n")
@@ -472,15 +531,19 @@ async def show_status() -> None:
     print()
 
 
-async def bootstrap_only(update_if_exists: bool = False) -> None:
+async def bootstrap_only(update_if_exists: bool = False, app_root: str = None) -> None:
     """Bootstrap the application graph without starting the server.
 
     Args:
         update_if_exists: If True, update existing agents and actions from YAML files.
                          If False (default), use existing agents/actions without overwriting.
+        app_root: Path to the app root directory. If None, uses current working directory.
     """
-    # Load .env file from current working directory
-    load_app_env()
+    if app_root is None:
+        app_root = os.getcwd()
+
+    # Load .env file from app root directory
+    load_app_env(app_root=app_root)
 
     # Initialize database context
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
@@ -492,7 +555,7 @@ async def bootstrap_only(update_if_exists: bool = False) -> None:
     set_current_db_type(db_type)
     set_current_db_path(db_path)
 
-    await bootstrap_application_graph(update_if_exists=update_if_exists)
+    await bootstrap_application_graph(update_if_exists=update_if_exists, app_root=app_root)
     await ensure_admin_user()
 
     if update_if_exists:
@@ -501,13 +564,28 @@ async def bootstrap_only(update_if_exists: bool = False) -> None:
         print("Bootstrap complete! (Used existing agents and actions)")
 
 
-def handle_agent_command(args: List[str]) -> None:
-    """Handle agent management commands."""
+def handle_agent_command(args: List[str], app_root: str = None) -> None:
+    """Handle agent management commands.
+
+    Note: Agents are installed automatically from app.yaml when running jvagent or bootstrap.
+    This command is for listing and uninstalling existing agents only.
+
+    Args:
+        args: Command arguments
+        app_root: Path to the app root directory. If None, uses current working directory.
+    """
     import asyncio
+
+    if app_root is None:
+        app_root = os.getcwd()
 
     if not args:
         print("Usage: jvagent agent <command>")
-        print("Commands: list, install, uninstall")
+        print("Commands: list, uninstall")
+        print("\nNote: Agents are installed automatically from app.yaml.")
+        print(
+            "      To install agents, add them to app.yaml and run 'jvagent' or 'jvagent bootstrap'."
+        )
         return
 
     command = args[0]
@@ -523,8 +601,6 @@ def handle_agent_command(args: List[str]) -> None:
 
     if command == "list":
         asyncio.run(list_agents())
-    elif command == "install":
-        asyncio.run(install_agents())
     elif command == "uninstall":
         if len(args) < 2:
             print("Usage: jvagent agent uninstall <namespace/agent_name>")
@@ -537,14 +613,27 @@ def handle_agent_command(args: List[str]) -> None:
             return
 
         namespace, agent_name = agent_ref.split("/", 1)
-        asyncio.run(uninstall_agent(namespace, agent_name))
+        asyncio.run(uninstall_agent(namespace, agent_name, app_root=app_root))
     else:
         print(f"Unknown agent command: {command}")
+        print("Available commands: list, uninstall")
+        print("\nNote: Agents are installed automatically from app.yaml.")
+        print(
+            "      To install agents, add them to app.yaml and run 'jvagent' or 'jvagent bootstrap'."
+        )
 
 
-def handle_action_command(args: List[str]) -> None:
-    """Handle action management commands."""
+def handle_action_command(args: List[str], app_root: str = None) -> None:
+    """Handle action management commands.
+
+    Args:
+        args: Command arguments
+        app_root: Path to the app root directory. If None, uses current working directory.
+    """
     import asyncio
+
+    if app_root is None:
+        app_root = os.getcwd()
 
     if not args:
         print("Usage: jvagent action <command>")
@@ -614,21 +703,39 @@ async def list_agents() -> None:
         print()
 
 
-async def install_agents() -> None:
-    """Install agents from app.yaml."""
+async def install_agents(app_root: str = None) -> None:
+    """Install agents from app.yaml.
+
+    Note: This function is deprecated. Agents are automatically installed when running
+    jvagent or bootstrap. Use 'jvagent bootstrap' or 'jvagent' to install agents.
+
+    Args:
+        app_root: Path to the app root directory. If None, uses current working directory.
+    """
+    print(
+        "Note: Agents are installed automatically from app.yaml when you run 'jvagent' or 'jvagent bootstrap'."
+    )
+    print("      There is no separate install command. Add agents to app.yaml and run jvagent.")
+    print("\nTo install agents:")
+    print("  1. Add agents to app.yaml")
+    print("  2. Run: jvagent <app_root>")
+    print("     Or:  jvagent <app_root> bootstrap")
+
+
+async def uninstall_agent(namespace: str, agent_name: str, app_root: str = None) -> None:
+    """Uninstall an agent.
+
+    Args:
+        namespace: Agent namespace
+        agent_name: Agent name
+        app_root: Path to the app root directory. If None, uses current working directory.
+    """
     from jvagent.core.agent_loader import AgentLoader
 
-    loader = AgentLoader(os.getcwd())
-    agents = await loader.install_all_agents(update_if_exists=True)
+    if app_root is None:
+        app_root = os.getcwd()
 
-    print(f"\nInstalled {len(agents)} agent(s)")
-
-
-async def uninstall_agent(namespace: str, agent_name: str) -> None:
-    """Uninstall an agent."""
-    from jvagent.core.agent_loader import AgentLoader
-
-    loader = AgentLoader(os.getcwd())
+    loader = AgentLoader(app_root)
     success = await loader.uninstall_agent(namespace, agent_name)
 
     if success:

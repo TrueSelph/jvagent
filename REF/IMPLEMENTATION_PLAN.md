@@ -83,7 +83,7 @@ jvagent/
 │   ├── action/
 │   │   ├── __init__.py
 │   │   ├── actions.py          # Actions manager
-│   │   ├── action.py            # Base action class
+│   │   ├── base.py              # Base action class
 │   │   ├── model_action.py     # Base for model actions
 │   │   ├── language_model_action.py
 │   │   ├── interact_action.py
@@ -645,7 +645,7 @@ graph LR
   - `discover_action_packages()` - Discover plugins
 
 #### Base Action
-- **File:** `jvagent/action/action.py`
+- **File:** `jvagent/action/base.py`
 - **Dependencies:** jvspatial Node
 - **Key Methods:**
   - `on_register()` - Registration hook

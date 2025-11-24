@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
 
-from jvagent.action.action import Action
+from jvagent.action.base import Action
 
 logger = logging.getLogger(__name__)
 

@@ -41,20 +41,28 @@ If you don't have a requirements.txt, the dependencies are:
 
 ### 3. Run the Application
 
+**Option 1: Using app root path (recommended)**
 ```bash
+# From the jvagent repository root
+jvagent examples/jvagent_app
+```
+
+**Option 2: From within the app directory**
+```bash
+cd examples/jvagent_app
 jvagent
 ```
 
-Or with the update flag to refresh configurations:
-
+**With flags:**
 ```bash
-jvagent --update
-```
+# Update configurations
+jvagent examples/jvagent_app --update
 
-With debug logging:
+# Debug logging
+jvagent examples/jvagent_app --debug
 
-```bash
-jvagent --debug
+# Both
+jvagent examples/jvagent_app --update --debug
 ```
 
 ## Using the Model Action

@@ -22,10 +22,43 @@ jvagent_app/
 
 ## Quick Start
 
+### Running the Example Application
+
+After installing jvagent, you can run this example application:
+
+1. **Navigate to the jvagent repository root** (where you installed jvagent)
+
+2. **Set up environment variables** (if not already done):
+   ```bash
+   cd examples/jvagent_app
+   cp .env.example .env
+   # Edit .env and set at minimum:
+   # - JVAGENT_ADMIN_PASSWORD (required)
+   # - OPENAI_API_KEY (optional, for model_openai action)
+   cd ../..
+   ```
+
+3. **Run the example application**:
+   ```bash
+   # From the jvagent repository root
+   jvagent examples/jvagent_app
+   ```
+
+   Or change to the example directory first:
+   ```bash
+   cd examples/jvagent_app
+   jvagent
+   ```
+
+4. **Access the API**:
+   - API Documentation: http://localhost:8000/docs
+   - Server: http://localhost:8000
+
+### Using This as a Template
+
 1. **Copy this boilerplate** to your project directory:
    ```bash
-   cp -r jvagent_app my_agent_app
-   cd my_agent_app
+   cp -r examples/jvagent_app /path/to/my_agent_app
    ```
 
 2. **Configure the application descriptor**:
@@ -35,19 +68,24 @@ jvagent_app/
 
 3. **Configure environment variables**:
    ```bash
+   cd /path/to/my_agent_app
    cp .env.example .env
    # Edit .env with your configuration
    ```
 
 4. **Add your custom agents** to the `agents/` directory (see [Agents](#agents) below)
 
-5. **Add actions to each agent** by placing them in `agents/{agent_id}/actions/` (see [Actions](#actions) below)
+5. **Add actions to each agent** by placing them in `agents/{namespace}/{agent_name}/actions/` (see [Actions](#actions) below)
 
 6. **Update app.yaml** to include your agents in the agents list
 
-7. **Run jvagent** from this app directory:
+7. **Run jvagent** with your app directory:
    ```bash
-   cd /path/to/jvagent_app
+   # Recommended: Specify app root path
+   jvagent /path/to/my_agent_app
+   
+   # Or change to the directory first
+   cd /path/to/my_agent_app
    jvagent
    ```
 
@@ -56,8 +94,8 @@ jvagent_app/
 The `app.yaml` file is the main application descriptor that defines:
 - Application metadata (name, version, description, etc.)
 - Application configuration defaults
-- List of agents to install in installation order
-- Location of each agent package
+- List of agents (agents listed here are automatically installed when you run jvagent)
+- Location of each agent package (discovered from the `agents/` directory structure)
 
 ### Example app.yaml
 
@@ -77,7 +115,8 @@ context:
   file_storage_root_dir: ./.files
   file_storage_enabled: true
 
-# Agents to Install (list of namespace/agent_name strings)
+# Agents (list of namespace/agent_name strings)
+# Agents listed here are automatically installed when you run jvagent or bootstrap
 agents:
   - jvagent/example_agent
 ```
@@ -124,10 +163,10 @@ agents/
 
 ### Action Implementation
 
-Your action class should extend `jvagent.action.action.Action`:
+Your action class should extend `jvagent.action.base.Action`:
 
 ```python
-from jvagent.action.action import Action
+from jvagent.action.base import Action
 
 class MyAction(Action):
     """My custom action implementation."""
@@ -179,6 +218,8 @@ package:
 ## Agents
 
 Agents define the behavior and configuration of individual agent instances. Each agent package is stored in its own subdirectory under `agents/`.
+
+**Important**: Agents are installed automatically from `app.yaml` when you run jvagent or bootstrap. There is no direct agent installation - agents must be listed in the `agents` section of `app.yaml`.
 
 ### Agent Structure
 
@@ -254,22 +295,37 @@ The `.env` file contains runtime-specific configuration that overrides `app.yaml
 
 ### Using jvagent CLI
 
+**Option 1: Specify app root path (recommended)**
+```bash
+# Run from anywhere, specifying the app directory path
+jvagent /path/to/jvagent_app
+
+# With flags
+jvagent /path/to/jvagent_app --update --debug
+
+# Or using Python module
+python -m jvagent /path/to/jvagent_app
+```
+
+**Option 2: Run from within the app directory**
 ```bash
 # Navigate to your app directory
 cd /path/to/jvagent_app
 
-# Run jvagent (it will automatically detect app.yaml)
+# Run jvagent (uses current directory as app root)
 jvagent
 
 # Or using Python module
 python -m jvagent
 ```
 
+**Note:** jvagent automatically detects `app.yaml` in the specified app root directory (or current directory if not specified).
+
 ### Bootstrap Process
 
-When jvagent starts with an app folder:
+When jvagent starts with an app directory (either specified as a path or from within the directory):
 
-1. **Load application descriptor** from `app.yaml` and resolve environment variables
+1. **Load application descriptor** from `app.yaml` in the app root directory and resolve environment variables
 2. **Bootstrap the application graph** with App and Agents nodes
 3. **Discover agents** from `agents/{namespace}/{agent_name}/` directory structure
 4. **For each agent** listed in `app.yaml`:
@@ -277,7 +333,7 @@ When jvagent starts with an app folder:
    - Create/update the Agent node
    - Discover actions from `actions/{namespace}/{action_name}/` directories
    - Read `info.yaml` for each action and resolve environment variables
-   - Load action classes and import `endpoints.py` modules
+   - Load action classes and import `endpoints.py` modules via `__init__.py`
    - Register actions with their configuration from `agent.yaml`
 5. **Start the API server** with all discovered endpoints
 
@@ -328,18 +384,31 @@ my_new_action/
 
 ### Adding a New Agent
 
-1. Create a new directory under `agents/`:
+1. Create a new directory under `agents/{namespace}/`:
    ```bash
-   mkdir -p agents/my_new_agent
+   mkdir -p agents/jvagent/my_new_agent
    ```
 
-2. Create `agent.yaml` with agent configuration and action assignments
+2. Create `agent.yaml` with agent configuration and action assignments (use `namespace/agent_name` format)
 
-3. Add actions to `actions/` subdirectory within the agent folder
+3. Add actions to `actions/{namespace}/{action_name}/` subdirectories within the agent folder
 
 4. Update `agent.yaml` to assign actions in the `actions` section
 
-5. Restart jvagent to create the agent instance
+5. **Add the agent to `app.yaml`** in the `agents` list:
+   ```yaml
+   agents:
+     - jvagent/my_new_agent
+   ```
+
+6. Run jvagent or bootstrap to install the agent:
+   ```bash
+   jvagent /path/to/jvagent_app
+   # Or
+   jvagent /path/to/jvagent_app bootstrap
+   ```
+
+**Note**: Agents are only installed via `app.yaml` - there is no direct agent installation command.
 
 ## Documentation
 

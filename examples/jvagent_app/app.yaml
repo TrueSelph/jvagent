@@ -1,5 +1,6 @@
 # jvagent Application Descriptor
-# This file defines the application metadata, configuration defaults, and lists agents to be installed
+# This file defines the application metadata, configuration defaults, and lists agents.
+# Agents listed in the 'agents' section are automatically installed when you run jvagent or bootstrap.
 # 
 # In production, this package will be used to bootstrap a running jvagent instance.
 # Runtime-specific settings (paths, secrets) should be configured via .env or environment variables.
@@ -63,14 +64,15 @@ config:
     email: admin@jvagent.example
     # Password should be set via JVAGENT_ADMIN_PASSWORD environment variable
 
-# Agents to Install
-# List of agents in installation order
+# Agents
+# List of agents (automatically installed when you run jvagent or bootstrap)
 # Agents are referenced using the format: namespace/agent_name
 # Agents are discovered from the agents/ folder structure: agents/{namespace}/{agent_name}/
+# Note: Agents can only be installed via this list in app.yaml - there is no direct agent installation
 agents:
   # Example agent - will be loaded from agents/jvagent/example_agent/
   - jvagent/example_agent
-  
-  # Add more agents here in installation order
+
+  # Add more agents here - they will be installed automatically when you run jvagent
   # - contrib/another_agent
   # - custom/custom_agent

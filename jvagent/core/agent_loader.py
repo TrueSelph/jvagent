@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
-from jvagent.action.action import Action
+from jvagent.action.base import Action
 from jvagent.action.action_loader import ActionLoader
 from jvagent.action.actions import Actions
 from jvagent.core.agent import Agent
