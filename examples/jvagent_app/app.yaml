@@ -1,0 +1,76 @@
+# jvagent Application Descriptor
+# This file defines the application metadata, configuration defaults, and lists agents to be installed
+# 
+# In production, this package will be used to bootstrap a running jvagent instance.
+# Runtime-specific settings (paths, secrets) should be configured via .env or environment variables.
+
+# Application reference
+app: jvagent_demo_app
+
+# Application metadata
+version: 1.0.0
+author: Your Name/Organization
+
+# jvagent version requirement (optional)
+jvagent: ~2.1.0
+
+# Application context: Properties that configure the App node
+context:
+  name: jvagent Demo App
+  description: A demo application showcasing jvagent capabilities
+  file_storage_provider: local
+  file_storage_root_dir: ./.files
+  file_storage_enabled: true
+
+# Application metadata (not stored in App node)
+license: MIT
+homepage: https://github.com/your-org/jvagent_demo_app
+tags:
+  - demo
+  - example
+  - boilerplate
+
+# Application configuration defaults
+# These are application-level defaults that can be overridden by .env or environment variables
+# In production, the running jvagent instance will use its own paths and settings
+config:
+  # Server configuration
+  server:
+    title: jvagent Demo App API
+    description: API for jvagent Demo App
+    host: 0.0.0.0
+    port: 8000
+  
+  # Database configuration (defaults - production will override)
+  database:
+    type: json
+    path: ./jvdb
+  
+  # File storage configuration (defaults - production will override)
+  file_storage:
+    provider: local
+    root_dir: ./.files
+    enabled: true
+  
+  # Authentication configuration (defaults - production MUST override secrets)
+  auth:
+    enabled: true
+    jwt_expire_minutes: 60
+  
+  # Admin user configuration (defaults - production MUST override password)
+  admin:
+    username: admin
+    email: admin@jvagent.example
+    # Password should be set via JVAGENT_ADMIN_PASSWORD environment variable
+
+# Agents to Install
+# List of agents in installation order
+# Agents are referenced using the format: namespace/agent_name
+# Agents are discovered from the agents/ folder structure: agents/{namespace}/{agent_name}/
+agents:
+  # Example agent - will be loaded from agents/jvagent/example_agent/
+  - jvagent/example_agent
+  
+  # Add more agents here in installation order
+  # - contrib/another_agent
+  # - custom/custom_agent

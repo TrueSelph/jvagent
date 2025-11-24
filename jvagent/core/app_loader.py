@@ -133,6 +133,11 @@ class AppLoader:
                 print(f"Empty app descriptor: {app_file}")
                 return None
 
+            # Resolve environment variable placeholders
+            from jvagent.core.env_resolver import resolve_env_placeholders
+
+            data = resolve_env_placeholders(data)
+
             return AppDescriptor(data, self.base_path)
 
         except Exception as e:

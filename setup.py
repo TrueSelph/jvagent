@@ -37,6 +37,9 @@ setup(
     install_requires=[
         "jvspatial>=0.0.1",
         "python-dotenv>=1.0.0",
+        "pyyaml>=6.0.0",
+        "httpx>=0.27.0",
+        "jinja2>=3.1.0",
     ],
     extras_require={
         "dev": [
@@ -74,4 +77,3 @@ setup(
     ],
     python_requires=">=3.8",
 )
-

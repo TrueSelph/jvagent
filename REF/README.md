@@ -1,7 +1,9 @@
 # jvagent Architecture Specification
 
+> **⚠️ Note:** This is an architecture specification document. It may contain planned features, design proposals, or outdated information. For current implementation details and usage, refer to the main [README.md](../README.md) and [examples](../examples/jvagent_app/README.md).
+
 **Version:** 1.0.0  
-**Status:** Living Document  
+**Status:** Specification Document  
 **Last Updated:** 2025-10-05  
 **Author:** Eldon Marks
 

@@ -271,6 +271,11 @@ class ActionLoader:
                     if not data:
                         continue
 
+                    # Resolve environment variable placeholders
+                    from jvagent.core.env_resolver import resolve_env_placeholders
+
+                    data = resolve_env_placeholders(data)
+
                     # Create metadata object with namespace
                     metadata = ActionMetadata(data, action_dir, namespace=namespace)
                     discovered.append(metadata)
@@ -285,6 +290,10 @@ class ActionLoader:
     def load_action_class(self, metadata: ActionMetadata) -> Optional[Type[Action]]:
         """Load the action class from its module.
 
+        Supports loading from either:
+        - A package with __init__.py (preferred, allows endpoint discovery)
+        - A single module file (backward compatible)
+
         Args:
             metadata: Action metadata containing module and class information
 
@@ -294,8 +303,55 @@ class ActionLoader:
         if not metadata.module:
             return None
 
-        # Construct module file path
+        # Construct paths
+        init_file = metadata.path / "__init__.py"
         module_file = metadata.path / f"{metadata.module}.py"
+
+        # Try loading as package first (if __init__.py exists)
+        if init_file.exists():
+            try:
+                # Load the package (__init__.py will be executed, importing endpoints)
+                module_name = f"jvagent.actions.{metadata.namespace}.{metadata.name}"
+                spec = importlib.util.spec_from_file_location(module_name, init_file)
+
+                if spec is None or spec.loader is None:
+                    logger.warning(f"Could not load spec for package: {init_file}")
+                    # Fall through to try module file
+                else:
+                    package = importlib.util.module_from_spec(spec)
+                    sys.modules[spec.name] = package
+                    spec.loader.exec_module(package)
+
+                    # Get the action class from the package
+                    # It should be imported in __init__.py
+                    action_class = getattr(package, metadata.class_name, None)
+
+                    if action_class is None:
+                        # Try getting from the module file if not in package
+                        if module_file.exists():
+                            module_spec = importlib.util.spec_from_file_location(
+                                f"{module_name}.{metadata.module}", module_file
+                            )
+                            if module_spec and module_spec.loader:
+                                module = importlib.util.module_from_spec(module_spec)
+                                module_spec.loader.exec_module(module)
+                                action_class = getattr(module, metadata.class_name, None)
+                                # Also make it available on the package
+                                setattr(package, metadata.class_name, action_class)
+
+                    if action_class is not None:
+                        # Verify it's a subclass of Action
+                        if not issubclass(action_class, Action):
+                            logger.warning(
+                                f"Class {metadata.class_name} is not a subclass of Action"
+                            )
+                            return None
+                        return action_class
+            except Exception as e:
+                logger.warning(f"Error loading package from {init_file}: {e}")
+                # Fall through to try module file
+
+        # Fall back to loading module file directly (backward compatible)
         if not module_file.exists():
             logger.warning(f"Module file not found: {module_file}")
             return None
@@ -437,9 +493,15 @@ class ActionLoader:
         discovered = self.discover_actions(namespace, agent_name)
 
         # Build action config lookup (using namespace/action_name format)
+        # Resolve environment variable placeholders in action configs
+        from jvagent.core.env_resolver import resolve_env_placeholders
+
         config_lookup = {}
         if action_configs:
             for cfg in action_configs:
+                # Resolve environment variables in action config
+                cfg = resolve_env_placeholders(cfg)
+
                 # Action reference: "namespace/action_name" in 'action' field
                 action_ref = cfg.get("action")
 

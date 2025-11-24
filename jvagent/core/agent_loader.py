@@ -121,6 +121,11 @@ class AgentLoader:
                 logger.warning(f"Empty agent descriptor: {agent_file}")
                 return None
 
+            # Resolve environment variable placeholders
+            from jvagent.core.env_resolver import resolve_env_placeholders
+
+            data = resolve_env_placeholders(data)
+
             return AgentDescriptor(data, agent_path, namespace=namespace)
 
         except Exception as e:

@@ -1,0 +1,60 @@
+# Example Agent Configuration
+# This file defines the agent's metadata, configuration, and action assignments
+
+# Agent reference in namespace/agent_name format
+agent: jvagent/example_agent
+
+# Agent metadata
+version: 1.0.0
+author: Your Name
+
+# jvagent version requirement (optional)
+jvagent: ~2.1.0
+
+# Agent context: Properties that configure the agent
+context:
+  alias: Example Agent
+  description: An example agent demonstrating jvagent agent configuration
+  enabled: true
+
+# Action Assignments
+# Actions are discovered from namespace subdirectories: actions/{namespace}/{action_name}/
+# Actions are referenced using the format: namespace/action_name
+actions:
+  # OpenAI Model Action - LLM integration with multimodal support
+  # Located at: agents/jvagent/example_agent/actions/jvagent/model_openai/
+  - action: jvagent/model_openai
+    context:
+      enabled: true
+      description: "OpenAI GPT-4o model action with vision support"
+      # API Configuration
+      api_key: ${OPENAI_API_KEY}  # Set in .env or environment
+      api_endpoint: "https://api.openai.com/v1"
+      # Model Configuration
+      model: gpt-4o  # Supports text and multimodal (vision) queries
+      temperature: 0.7
+      max_tokens: 2000
+      top_p: 1.0
+      timeout: 60
+  
+  # Example action from the 'jvagent' namespace
+  # Located at: agents/jvagent/example_agent/actions/jvagent/example_action/
+  - action: jvagent/example_action
+    context:
+      enabled: true
+      description: "Customized example action for demonstration"
+      timeout: 60
+      retries: 5
+      api_endpoint: "https://prod.api.example.com"
+  
+  # Add more action assignments here
+  # Actions can be from different namespaces:
+  # - action: custom/custom_action
+  #   context:
+  #     enabled: true
+  #     custom_property: value
+  # 
+  # - action: contrib/another_action
+  #   context:
+  #     enabled: true
+  #     timeout: 120
