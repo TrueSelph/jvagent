@@ -199,9 +199,7 @@ class AgentLoader:
 
             if existing_agents:
                 if not update_if_exists:
-                    logger.debug(
-                        f"Agent '{descriptor.namespace}/{descriptor.name}' already exists (skipping)"
-                    )
+                    # Agent already exists - skip silently (summary will show installed count)
                     return existing_agents[0]
 
                 # Update existing agent
@@ -397,18 +395,24 @@ class AgentLoader:
 
                 if existing_actions and update_if_exists:
                     updated_count += 1
+                    logger.debug(f"    ✓ Action: {action.namespace}/{action_label} (updated)")
                 else:
                     registered_count += 1
+                    logger.debug(f"    ✓ Action: {action.namespace}/{action_label}")
             else:
                 logger.warning(f"Failed to register action: {action_label}")
                 failed_count += 1
 
+        # Log summary with action count per agent
+        total_actions = registered_count + updated_count
         if failed_count > 0:
             logger.warning(
-                f"Action registration: {registered_count} registered, {updated_count} updated, {failed_count} failed"
+                f"Actions for {agent.name}: {registered_count} registered, {updated_count} updated, {failed_count} failed"
             )
-        elif registered_count > 0 or updated_count > 0:
-            logger.debug(f"Actions: {registered_count} registered, {updated_count} updated")
+        elif total_actions > 0:
+            logger.debug(
+                f"Actions for {agent.name}: {total_actions} total ({registered_count} registered, {updated_count} updated)"
+            )
 
     async def _dedupe_agent_actions(self, agent: Agent, actions_manager: Actions) -> None:
         """Ensure only one action node exists per (namespace, label) for the agent."""
@@ -420,12 +424,6 @@ class AgentLoader:
                 if isinstance(node, Action) and node.agent_id == agent.id
             ]
             total_connected = len(action_nodes)
-            logger.info(
-                "Traversed Actions node %s: found %d connected action node(s) for agent %s",
-                actions_manager.id,
-                total_connected,
-                agent.id,
-            )
             if total_connected == 0:
                 return
 
@@ -462,11 +460,6 @@ class AgentLoader:
                         await actions_manager.disconnect(orphan)
                     await orphan.delete()
                     removed += 1
-                    logger.warning(
-                        "Removed orphan action node %s for agent %s",
-                        orphan.id,
-                        agent.id,
-                    )
                 except Exception as exc:
                     logger.error(
                         f"Error removing orphan action {orphan.id}: {exc}",
@@ -480,13 +473,7 @@ class AgentLoader:
 
             if removed > 0:
                 await actions_manager.save()
-                agent_namespace = getattr(agent, "namespace", getattr(agent, "name", "unknown"))
-                logger.warning(
-                    "Removed %d duplicate/orphan action node(s) for agent %s (%s)",
-                    removed,
-                    agent.id,
-                    agent_namespace,
-                )
+                logger.debug(f"Cleaned {removed} duplicate/orphan action(s) for agent {agent.name}")
         except Exception as exc:
             logger.error(
                 f"Failed to deduplicate actions for agent {agent.id}: {exc}", exc_info=True

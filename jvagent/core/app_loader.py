@@ -16,6 +16,7 @@ from jvagent.core.agent import Agent  # noqa: F401
 from jvagent.core.agent_loader import AgentLoader
 from jvagent.core.agents import Agents
 from jvagent.core.app import App
+from jvagent.core.bootstrap_logger import BootstrapLogger
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +160,8 @@ class AppLoader:
             logger.error("Failed to load app descriptor")
             return None
 
-        logger.info(f"Bootstrapping application: {descriptor.name} v{descriptor.version}")
+        bootstrap_log = BootstrapLogger(f"App: {descriptor.name}")
+        bootstrap_log.start(f"v{descriptor.version}")
 
         try:
             # Step 0: Pre-import all action __init__.py modules
@@ -194,10 +196,9 @@ class AppLoader:
 
             # Step 5: Install agents from app.yaml
             if descriptor.agents:
-                logger.info(f"Installing {len(descriptor.agents)} agent(s)...")
                 await self._install_agents(descriptor, update_if_exists)
 
-            logger.info("Application bootstrap complete")
+            bootstrap_log.complete()
             return app
 
         except Exception as e:
@@ -330,6 +331,7 @@ class AppLoader:
             update_if_exists: If True, update existing agents; if False, skip existing
         """
         installed_count = 0
+        updated_count = 0
         failed_count = 0
 
         for agent_ref in descriptor.agents:
@@ -343,22 +345,39 @@ class AppLoader:
 
             namespace, agent_name = agent_ref.split("/", 1)
 
+            # Check if agent already exists
+            existing_agents = await Agent.find(
+                {"context.name": agent_name, "context.namespace": namespace}
+            )
+            was_existing = bool(existing_agents)
+
             # Install the agent (this will also load actions from agent.yaml)
             # Pass update_if_exists to ensure agent properties are updated
             agent = await self.agent_loader.install_agent(namespace, agent_name, update_if_exists)
 
             if agent:
-                installed_count += 1
+                if was_existing and update_if_exists:
+                    updated_count += 1
+                    logger.debug(f"  ✓ Agent: {namespace}/{agent_name} (updated)")
+                else:
+                    installed_count += 1
+                    logger.debug(f"  ✓ Agent: {namespace}/{agent_name}")
             else:
                 logger.error(f"Failed to install agent: {namespace}/{agent_name}")
                 failed_count += 1
 
+        # Log summary (debug logs for individual agents already shown above)
         if failed_count > 0:
             logger.warning(
-                f"Agent installation: {installed_count} succeeded, {failed_count} failed"
+                f"Agents: {installed_count} installed, {updated_count} updated, {failed_count} failed"
             )
-        elif installed_count > 0:
-            logger.debug(f"Agent installation: {installed_count} succeeded")
+        elif installed_count > 0 or updated_count > 0:
+            parts = []
+            if installed_count > 0:
+                parts.append(f"{installed_count} installed")
+            if updated_count > 0:
+                parts.append(f"{updated_count} updated")
+            logger.info(f"Agents: {', '.join(parts)}")
 
     async def get_app_status(self) -> Dict[str, Any]:
         """Get the current application status.

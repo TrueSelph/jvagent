@@ -209,16 +209,14 @@ class ActionLoader:
                             action_class = getattr(module, archetype, None)
                             if action_class and issubclass(action_class, Action):
                                 imported_count += 1
-                                logger.debug(
-                                    f"Pre-imported action class: {action_namespace_dir.name}/{action_name} ({archetype})"
-                                )
+                                # Individual action pre-import logs removed - summary is logged
 
                         except Exception as e:
                             logger.warning(f"Error pre-importing action from {action_dir}: {e}")
                             continue
 
         if imported_count > 0:
-            logger.info(f"Pre-imported {imported_count} action class(es) for class discovery")
+            logger.debug(f"Pre-imported {imported_count} action class(es) for class discovery")
 
     def discover_actions(self, namespace: str, agent_name: str) -> List[ActionMetadata]:
         """Discover all actions for a given agent.
