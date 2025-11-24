@@ -77,9 +77,10 @@ class MyAnalysisAction(Action):
         
         # Get complete response
         analysis = await result.get_response()
-        tokens_used = result.usage['total_tokens']
+        tokens_used = result.metrics['total_tokens']
+        duration = result.metrics.get('duration', 0)
         
-        return {"analysis": analysis, "tokens": tokens_used}
+        return {"analysis": analysis, "tokens": tokens_used, "duration": duration}
 ```
 
 #### Streaming Query
@@ -100,8 +101,10 @@ class MyStreamingAction(Action):
             # Process chunk in real-time
             print(chunk, end="", flush=True)
         
-        # Get usage after streaming
-        print(f"\nTokens used: {result.usage.get('total_tokens', 'N/A')}")
+        # Get metrics after streaming
+        tokens = result.metrics.get('total_tokens', 'N/A')
+        duration = result.metrics.get('duration', 'N/A')
+        print(f"\nTokens used: {tokens}, Duration: {duration}s")
 ```
 
 #### Using Templates
@@ -156,6 +159,8 @@ class MyToolAction(Action):
 
 ### API Usage
 
+**Note**: The `model` parameter can be passed in the request body to override the action's default model for a single query.
+
 #### Synchronous Query
 
 ```bash
@@ -165,6 +170,7 @@ Content-Type: application/json
 {
   "prompt": "Explain quantum computing",
   "system": "You are a physics expert",
+  "model": "gpt-4o",
   "temperature": 0.7,
   "max_tokens": 500
 }
@@ -174,14 +180,16 @@ Response:
 ```json
 {
   "response": "Quantum computing is...",
-  "usage": {
+  "metrics": {
     "prompt_tokens": 20,
     "completion_tokens": 150,
-    "total_tokens": 170
+    "total_tokens": 170,
+    "duration": 1.234
   },
   "model": "gpt-4o-mini",
   "provider": "openai",
-  "finish_reason": "stop"
+  "finish_reason": "stop",
+  "tool_calls": []
 }
 ```
 
@@ -193,16 +201,17 @@ Content-Type: application/json
 
 {
   "prompt": "Tell me a story",
-  "stream": true
+  "stream": true,
+  "model": "gpt-4o-mini"
 }
 ```
 
 Response (Server-Sent Events):
 ```
-data: {"delta": "Once", "usage": null, "finish_reason": null}
-data: {"delta": " upon", "usage": null, "finish_reason": null}
+data: {"delta": "Once", "metrics": null, "finish_reason": null}
+data: {"delta": " upon", "metrics": null, "finish_reason": null}
 ...
-data: {"delta": "", "usage": {...}, "finish_reason": "stop", "tool_calls": []}
+data: {"delta": "", "metrics": {"prompt_tokens": 10, "completion_tokens": 200, "total_tokens": 210, "duration": 2.456}, "finish_reason": "stop", "tool_calls": []}
 data: [DONE]
 ```
 
@@ -274,6 +283,8 @@ Response:
   "total_requests": 150,
   "total_tokens": 45000,
   "total_cost": 0.675,
+  "total_duration": 125.5,
+  "average_duration": 0.837,
   "model": "gpt-4o-mini",
   "provider": "openai"
 }
@@ -452,9 +463,10 @@ class CustomModelAction(ModelAction):
         response = await self.call_custom_api(messages)
         return ModelActionResult(
             response=response,
-            usage={...},
+            usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             model=self.model,
-            provider="custom"
+            provider="custom",
+            duration=0.0
         )
     
     async def _query_stream(self, messages, tools=None, **kwargs):
@@ -465,9 +477,10 @@ class CustomModelAction(ModelAction):
         
         return ModelActionResult(
             stream=stream_gen(),
-            usage={},
+            usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             model=self.model,
-            provider="custom"
+            provider="custom",
+            duration=0.0
         )
 ```
 

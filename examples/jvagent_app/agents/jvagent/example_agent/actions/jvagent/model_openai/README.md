@@ -50,9 +50,10 @@ class MyAction(Action):
         
         # Get complete response
         response = await result.get_response()
-        tokens = result.usage['total_tokens']
+        tokens = result.metrics['total_tokens']
+        duration = result.metrics.get('duration', 0)
         
-        return {"analysis": response, "tokens": tokens}
+        return {"analysis": response, "tokens": tokens, "duration": duration}
 ```
 
 ### Streaming Example
@@ -95,6 +96,8 @@ async def query_with_context(self, query: str, context: str):
 
 ## API Usage
 
+**Note**: The `model` parameter can be passed in the request body to override the action's default model for a single query.
+
 ### Synchronous Query
 
 ```bash
@@ -104,6 +107,7 @@ Content-Type: application/json
 {
   "prompt": "Explain quantum computing",
   "system": "You are a physics expert",
+  "model": "gpt-4o",
   "temperature": 0.7,
   "max_tokens": 500
 }
@@ -113,14 +117,16 @@ Response:
 ```json
 {
   "response": "Quantum computing is...",
-  "usage": {
+  "metrics": {
     "prompt_tokens": 20,
     "completion_tokens": 150,
-    "total_tokens": 170
+    "total_tokens": 170,
+    "duration": 1.234
   },
   "model": "gpt-4o-mini",
   "provider": "openai",
-  "finish_reason": "stop"
+  "finish_reason": "stop",
+  "tool_calls": []
 }
 ```
 
@@ -132,17 +138,18 @@ Content-Type: application/json
 
 {
   "prompt": "Tell me a story",
-  "stream": true
+  "stream": true,
+  "model": "gpt-4o-mini"
 }
 ```
 
 Response (Server-Sent Events):
 ```
-data: {"delta": "Once", "usage": null, "finish_reason": null}
-data: {"delta": " upon", "usage": null, "finish_reason": null}
-data: {"delta": " a", "usage": null, "finish_reason": null}
+data: {"delta": "Once", "metrics": null, "finish_reason": null}
+data: {"delta": " upon", "metrics": null, "finish_reason": null}
+data: {"delta": " a", "metrics": null, "finish_reason": null}
 ...
-data: {"delta": "", "usage": {...}, "finish_reason": "stop", "tool_calls": []}
+data: {"delta": "", "metrics": {"prompt_tokens": 10, "completion_tokens": 200, "total_tokens": 210, "duration": 2.456}, "finish_reason": "stop", "tool_calls": []}
 data: [DONE]
 ```
 
@@ -158,6 +165,8 @@ Response:
   "total_requests": 150,
   "total_tokens": 45000,
   "total_cost": 0.675,
+  "total_duration": 125.5,
+  "average_duration": 0.837,
   "model": "gpt-4o-mini",
   "provider": "openai"
 }
