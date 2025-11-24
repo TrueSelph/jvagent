@@ -212,7 +212,7 @@ async def delete_agent(agent_id: str) -> Dict[str, Any]:
     agents_nodes = [n for n in connected_nodes if isinstance(n, Agents)]
 
     # Delete the agent (this will also remove edges and cascade to dependent nodes)
-    await agent.delete()
+    await agent.delete(cascade=True)
 
     # Update Agents node counters
     if agents_nodes:

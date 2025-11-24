@@ -17,12 +17,16 @@ from jvagent import __version__
 from jvagent.core import Agents
 from jvagent.core.app import App
 from jvagent.core.app_loader import AppLoader
+from jvagent.core.bootstrap_logger import BootstrapLogger
 
-# Configure logging
+# Configure logging (will be updated based on --debug flag)
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+# Suppress noisy asyncio selector logs
+logging.getLogger("asyncio").setLevel(logging.WARNING)
 
 
 def load_app_env() -> None:
@@ -66,44 +70,29 @@ async def bootstrap_application_graph(update_if_exists: bool = False) -> None:
 
     All operations are idempotent - existing nodes and connections are preserved.
     """
-    logger.info("Bootstrapping application graph...")
+    bootstrap_log = BootstrapLogger("Bootstrap")
 
     # Check if app.yaml exists in current directory
     app_yaml_path = os.path.join(os.getcwd(), "app.yaml")
 
     if os.path.exists(app_yaml_path):
-        logger.info(f"Found app.yaml at {app_yaml_path} - using declarative bootstrap")
-        if update_if_exists:
-            logger.info("Update mode: Existing agents and actions will be updated from YAML files")
-            logger.info("This will:")
-            logger.info("  1. Create/update App node from app.yaml")
-            logger.info(
-                "  2. Install/update agents from agents/ directory as specified in app.yaml"
-            )
-            logger.info(
-                "  3. Load and register/update actions for each agent from agent.yaml files"
-            )
-        else:
-            logger.info("Default mode: Using existing agents and actions (no updates)")
-            logger.info("This will:")
-            logger.info("  1. Create App node if it doesn't exist")
-            logger.info("  2. Install new agents from agents/ directory (skip existing)")
-            logger.info("  3. Register new actions (skip existing)")
-            logger.info("Use --update flag to update existing agents and actions from YAML files")
+        mode = "update" if update_if_exists else "sync"
+        bootstrap_log.start(f"Application graph ({mode} mode)")
 
         # Use AppLoader for declarative bootstrap
         app_loader = AppLoader(os.getcwd())
         app = await app_loader.bootstrap_application(update_if_exists=update_if_exists)
 
         if app:
-            logger.info("✓ Declarative bootstrap complete - agents and actions installed")
+            bootstrap_log.complete("Application graph ready")
         else:
-            logger.error("✗ Declarative bootstrap failed - falling back to manual bootstrap")
+            bootstrap_log.error("Declarative bootstrap failed - falling back to manual bootstrap")
             await _manual_bootstrap()
     else:
-        logger.info("No app.yaml found - using manual bootstrap (no agents will be installed)")
-        logger.info("To install agents, create an app.yaml file in the current directory")
+        bootstrap_log.start("Application graph (manual mode, no app.yaml)")
+        bootstrap_log.info("No app.yaml found - using manual bootstrap")
         await _manual_bootstrap()
+        bootstrap_log.complete("Manual bootstrap complete")
 
 
 async def _manual_bootstrap() -> None:
@@ -176,7 +165,7 @@ async def ensure_admin_user() -> bool:
         True if admin user exists (either already existed or was just created),
         False if admin user could not be created (missing password).
     """
-    logger.info("Checking for admin user...")
+    logger.debug("Checking for admin user...")
 
     # Get admin credentials from environment
     admin_username = os.getenv("JVAGENT_ADMIN_USERNAME", "admin")
@@ -191,7 +180,7 @@ async def ensure_admin_user() -> bool:
     existing_users = await User.find({"context.email": admin_email})
 
     if existing_users:
-        logger.info(f"Admin user already exists: {admin_email}")
+        logger.debug(f"Admin user already exists: {admin_email}")
         return True
 
     # Create admin user
@@ -210,7 +199,7 @@ async def ensure_admin_user() -> bool:
     return True
 
 
-def create_server_from_config() -> Server:
+def create_server_from_config(debug: bool = False) -> Server:
     """Create and configure Server instance from environment variables.
 
     Returns:
@@ -234,9 +223,11 @@ def create_server_from_config() -> Server:
     jwt_secret = os.getenv("JVSPATIAL_JWT_SECRET", "jvagent-secret-key-change-in-production")
     jwt_expire_minutes = int(os.getenv("JVSPATIAL_JWT_EXPIRE_MINUTES", "60"))
 
-    logger.info(f"Creating server: {title} v{version}")
-    logger.info(f"Database: {db_type} at {db_path}")
-    logger.info(f"Authentication: {'enabled' if auth_enabled else 'disabled'}")
+    # Log server creation details only in debug mode
+    if debug:
+        logger.debug(f"Creating server: {title} v{version}")
+        logger.debug(f"Database: {db_type} at {db_path}")
+        logger.debug(f"Authentication: {'enabled' if auth_enabled else 'disabled'}")
 
     # Create server with configuration
     server = Server(
@@ -277,10 +268,9 @@ async def pre_startup_bootstrap(server: Server, update_if_exists: bool = False) 
         # Ensure admin user exists
         admin_exists = await ensure_admin_user()
 
-        logger.info("Pre-startup bootstrap completed successfully")
         return admin_exists
     except Exception as e:
-        logger.error(f"Error during pre-startup bootstrap: {e}", exc_info=True)
+        logger.error(f"❌ Bootstrap failed: {e}", exc_info=True)
         raise
 
 
@@ -299,9 +289,8 @@ def disable_register_endpoint(server: Server) -> None:
         # The path should be relative to the router prefix ("/auth")
         # The method will automatically build the full path "/auth/register"
         success = server.disable_auth_endpoint("/register")
-        if success:
-            logger.info("Disabled /auth/register endpoint (admin user exists)")
-        else:
+        # Endpoint disabling is logged by server.disable_auth_endpoint()
+        if not success:
             # If the endpoint wasn't found, check if auth is enabled
             # This might happen if auth is disabled or the endpoint wasn't registered
             if hasattr(server, "_auth_endpoints_registered") and server._auth_endpoints_registered:
@@ -330,6 +319,15 @@ def main() -> None:
     # Parse command-line arguments
     args = sys.argv[1:]
 
+    # Check for --debug flag
+    debug_flag = "--debug" in args
+    if debug_flag:
+        args = [arg for arg in args if arg != "--debug"]
+        # Set logging to DEBUG level
+        logging.getLogger().setLevel(logging.DEBUG)
+        for handler in logging.getLogger().handlers:
+            handler.setLevel(logging.DEBUG)
+
     # Check for --update flag
     update_flag = "--update" in args or "--migrate" in args
     if update_flag:
@@ -337,7 +335,7 @@ def main() -> None:
 
     # If no arguments or "run" command, start the server
     if not args or args[0] == "run":
-        run_server(update_if_exists=update_flag)
+        run_server(update_if_exists=update_flag, debug=debug_flag)
     elif args[0] == "status":
         # Show application status
         asyncio.run(show_status())
@@ -360,8 +358,8 @@ def print_usage() -> None:
         """
 jvagent - Agentive Platform
 
-Usage:
-    jvagent [run] [--update]   Start the jvagent server (default)
+    Usage:
+        jvagent [run] [--update] [--debug]   Start the jvagent server (default)
                                 --update: Update existing agents/actions from YAML files
     jvagent status             Show application status
     jvagent bootstrap [--update]  Bootstrap application graph
@@ -376,6 +374,7 @@ Usage:
 Flags:
     --update, --migrate        Force update of existing agents and actions from YAML files
                                 By default, existing agents/actions are used as-is
+    --debug                    Enable debug logging (verbose output for troubleshooting)
 
 Environment Variables:
     JVAGENT_ADMIN_PASSWORD     Admin user password (required)
@@ -387,36 +386,38 @@ Environment Variables:
     )
 
 
-def run_server(update_if_exists: bool = False) -> None:
+def run_server(update_if_exists: bool = False, debug: bool = False) -> None:
     """Start the jvagent server.
 
     Args:
         update_if_exists: If True, update existing agents and actions from YAML files.
                          If False (default), use existing agents/actions without overwriting.
+        debug: If True, enable debug logging.
     """
     import asyncio
 
-    logger.info("Starting jvagent application...")
+    bootstrap_log = BootstrapLogger("Startup")
+    bootstrap_log.start("jvagent application")
 
     # Create server from configuration
-    server = create_server_from_config()
+    server = create_server_from_config(debug=debug)
 
     # Perform bootstrap tasks before server starts
-    logger.info("Performing pre-startup bootstrap...")
     admin_exists = asyncio.run(pre_startup_bootstrap(server, update_if_exists=update_if_exists))
 
     # If admin user exists, disable the register endpoint
     if admin_exists:
-        logger.info("Admin user exists - disabling registration endpoint")
         disable_register_endpoint(server)
+        if debug:
+            bootstrap_log.info("Admin user configured - registration disabled")
     else:
-        logger.warning(
-            "Admin user not found - registration endpoint will remain enabled. "
+        bootstrap_log.warning(
+            "Admin user not found - registration enabled. "
             "Set JVAGENT_ADMIN_PASSWORD in .env to create admin user."
         )
 
     # Start the server
-    logger.info("Starting server...")
+    bootstrap_log.complete("Ready")
     server.run()
 
 
