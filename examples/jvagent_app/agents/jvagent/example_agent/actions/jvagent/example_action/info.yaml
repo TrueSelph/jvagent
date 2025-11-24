@@ -1,0 +1,38 @@
+# Example Action Package Descriptor
+# This file defines the action's package metadata, dependencies, and configuration
+
+package:
+  # Action name in namespace/action_name format
+  # Note: The namespace is also determined by the folder structure
+  # This action is located at: agents/{agent_name}/actions/jvagent/example_action/
+  # Therefore, its namespace is "jvagent"
+  name: jvagent/example_action
+  
+  # Package author
+  author: Your Name/Organization
+  
+  # Archetype: The main Action class name (same as the Action Node class)
+  archetype: ExampleAction
+  
+  # Package version
+  version: 1.0.0
+  
+  # Package metadata
+  meta:
+    title: Example Action
+    description: A boilerplate action demonstrating jvagent action structure
+    group: jvagent
+    type: action
+  
+  # Package configuration
+  config:
+    order:
+      weight: 0
+  
+  # Package dependencies
+  dependencies:
+    # jvagent version requirement
+    jvagent: ~2.1.0
+    # Other action dependencies (by namespace/action_name)
+    actions:
+      # - jvagent/another_action: ~1.0.0

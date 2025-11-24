@@ -49,6 +49,23 @@ If you have a built distribution:
 pip install dist/jvagent-*.whl
 ```
 
+## Examples
+
+A complete example application is provided in the `examples/jvagent_app/` directory. This includes:
+
+- **Example Agent** (`jvagent/example_agent`): Demonstrates agent configuration and action setup
+- **Example Action** (`jvagent/example_action`): Shows action structure, lifecycle hooks, and API endpoints
+- **Model Action** (`jvagent/model_openai`): Demonstrates LLM integration with OpenAI
+
+To explore the examples:
+
+```bash
+cd examples/jvagent_app
+jvagent
+```
+
+See [examples/jvagent_app/README.md](examples/jvagent_app/README.md) for detailed information about the example application structure.
+
 ## Quick Start
 
 ### 1. Configure Environment
@@ -290,9 +307,11 @@ jvagent_app/
 │       └── actions/
 │           └── {namespace}/   # Namespace directory
 │               └── {action_name}/
-│                   ├── info.yaml  # Action metadata
-│                   ├── {action_name}.py  # Action implementation
-│                   ├── requirements.txt   # Action dependencies
+│                   ├── __init__.py      # Package initialization (imports action & endpoints)
+│                   ├── {action_name}.py  # Action implementation (Action class)
+│                   ├── endpoints.py      # API endpoints (standard pattern)
+│                   ├── info.yaml         # Action metadata
+│                   ├── requirements.txt  # Action dependencies
 │                   └── README.md
 └── .env
 ```
@@ -308,8 +327,10 @@ jvagent_app/
 │       └── actions/
 │           ├── jvagent/              # Official namespace
 │           │   └── example_action/
-│           │       ├── info.yaml
+│           │       ├── __init__.py
 │           │       ├── example_action.py
+│           │       ├── endpoints.py
+│           │       ├── info.yaml
 │           │       └── requirements.txt
 │           ├── contrib/              # Community namespace
 │           │   └── slack_notifier/
@@ -469,10 +490,13 @@ package:
 - Override these properties in agent.yaml using the `context` object
 
 **Key Points:**
-- `name`: Action identifier (not `id`)
-- `title`: Human-readable display name
-- Namespace is determined by folder structure, not in this file
-- No `config` section - use typed properties in Action class
+- `package.name`: Action reference in `namespace/action_name` format
+- `package.archetype`: The Action class name (must match the class in the Python file)
+- `package.meta`: Metadata object with title, description, group, and type
+- `package.config`: Configuration object (e.g., for ordering)
+- `package.dependencies`: Dependencies object with `jvagent` version and `actions` list
+- All configuration should be defined as typed properties in your Action class using `attribute()`
+- Override these properties in `agent.yaml` using the `context` object
 
 ## Creating Actions
 
@@ -487,24 +511,37 @@ cd jvagent/my_action
 ### Step 2: Create info.yaml
 
 ```yaml
-name: my_action
-title: My Action
-version: 1.0.0
-description: Does something useful
-enabled: true
-
-module: my_action
-class: MyAction
-
-dependencies:
-  python:
-    - requests>=2.31.0
-  actions: []
-
-lifecycle:
-  auto_enable: false
-  enable_pulse: true
-  pulse_interval: 60
+package:
+  # Action name in namespace/action_name format
+  name: jvagent/my_action
+  
+  # Package author
+  author: Your Name/Organization
+  
+  # Archetype: The main Action class name (same as the Action Node class)
+  archetype: MyAction
+  
+  # Package version
+  version: 1.0.0
+  
+  # Package metadata
+  meta:
+    title: My Action
+    description: Does something useful
+    group: jvagent
+    type: action
+  
+  # Package configuration
+  config:
+    order:
+      weight: 0
+  
+  # Package dependencies
+  dependencies:
+    # jvagent version requirement
+    jvagent: ~2.1.0
+    # Other action dependencies (by namespace/action_name)
+    actions: []
 ```
 
 ### Step 3: Create Action Class
@@ -512,18 +549,18 @@ lifecycle:
 ```python
 # my_action.py
 from typing import Any, Dict
-from pydantic import Field
 
 from jvagent.action.action import Action
+from jvspatial.core.annotations import attribute
 
 
 class MyAction(Action):
     """My custom action implementation."""
     
     # Define type-safe configuration properties
-    timeout: int = Field(default=30, description="Operation timeout in seconds", ge=1)
-    retries: int = Field(default=3, description="Number of retry attempts", ge=0, le=10)
-    api_endpoint: str = Field(default="https://api.example.com", description="API endpoint URL")
+    timeout: int = attribute(default=30, description="Operation timeout in seconds", ge=1)
+    retries: int = attribute(default=3, description="Number of retry attempts", ge=0, le=10)
+    api_endpoint: str = attribute(default="https://api.example.com", description="API endpoint URL")
     
     async def on_register(self) -> None:
         """Called when action is registered."""
@@ -555,13 +592,91 @@ class MyAction(Action):
         return result
 ```
 
+### Step 3b: Create API Endpoints (Optional but Recommended)
+
+For actions that expose HTTP endpoints, create an `endpoints.py` file following the standard pattern:
+
+```python
+# endpoints.py
+"""API endpoints for my_action.
+
+This module defines all HTTP endpoints for this action.
+Endpoints are automatically discovered when this module is imported.
+"""
+
+import logging
+from typing import Any, Dict
+
+from jvspatial.api import endpoint
+from jvspatial.api.endpoints.response import ResponseField, success_response
+from jvspatial.api.exceptions import ResourceNotFoundError
+
+from .my_action import MyAction
+
+logger = logging.getLogger(__name__)
+
+
+@endpoint(
+    "/actions/{action_id}/custom",
+    methods=["POST"],
+    auth=True,
+    tags=["My Action"],
+    response=success_response(
+        data={
+            "result": ResponseField(
+                field_type=str,
+                description="Custom action result",
+            ),
+        }
+    ),
+)
+async def custom_endpoint(action_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Custom endpoint for my action.
+    
+    Args:
+        action_id: ID of the action instance
+        data: Request data
+        
+    Returns:
+        Result dictionary
+    """
+    action = await MyAction.get(action_id)
+    if not action:
+        raise ResourceNotFoundError(
+            message=f"Action with ID '{action_id}' not found",
+            details={"action_id": action_id},
+        )
+    
+    # Use action instance to perform operations
+    result = await action.execute(data)
+    
+    return {"result": result}
+```
+
+**Important**: Create an `__init__.py` file in the action directory to import the action class and endpoints:
+
+```python
+# __init__.py
+"""My Action Package"""
+
+# Import the action class so it can be imported from the package
+from .my_action import MyAction
+
+# Import endpoints module to ensure endpoints are discovered and registered
+from . import endpoints  # noqa: F401
+
+__all__ = ["MyAction"]
+```
+
+This is the standard pattern that ensures endpoints are discovered when the action package is loaded.
+
 ### Step 4: Register in agent.yaml
 
 ```yaml
 actions:
-  - name: jvagent/my_action
-    enabled: true
+  - action: jvagent/my_action
     context:
+      enabled: true
       timeout: 60
       retries: 5
       api_endpoint: "https://prod.api.example.com"
@@ -613,11 +728,13 @@ Actions have well-defined lifecycle hooks:
 All action configuration is done through **typed Pydantic fields**, not dictionaries:
 
 ```python
+from jvspatial.core.annotations import attribute
+
 class MyAction(Action):
     # Type-safe properties with validation
-    timeout: int = Field(default=30, ge=1, le=300)
-    api_url: str = Field(default="https://api.example.com")
-    retries: int = Field(default=3, ge=0, le=10)
+    timeout: int = attribute(default=30, description="Operation timeout in seconds", ge=1, le=300)
+    api_url: str = attribute(default="https://api.example.com", description="API endpoint URL")
+    retries: int = attribute(default=3, description="Number of retry attempts", ge=0, le=10)
 ```
 
 **Benefits:**
@@ -633,10 +750,9 @@ Properties are overridden in `agent.yaml` using the `context` object:
 
 ```yaml
 actions:
-  - name: jvagent/my_action
-    enabled: true
-    
+  - action: jvagent/my_action
     context:
+      enabled: true
       timeout: 60
       retries: 5
       api_url: "https://prod.api.example.com"
@@ -689,9 +805,9 @@ Actions are referenced using `namespace/action_name` format:
 
 ```yaml
 actions:
-  - name: jvagent/example_action
-  - name: contrib/slack_notifier
-  - name: custom/custom_workflow
+  - action: jvagent/example_action
+  - action: contrib/slack_notifier
+  - action: custom/custom_workflow
 ```
 
 **Benefits:**
@@ -711,9 +827,25 @@ Example: `agent_123 / jvagent / example_action`
 
 ## API Usage
 
+### Action Structure and Endpoints
+
+Actions follow a standard structure that separates business logic from API endpoints:
+
+- **Action Class** (`{action_name}.py`): Contains the `Action` subclass with business logic, lifecycle hooks, and configuration properties
+- **Endpoints Module** (`endpoints.py`): Contains all HTTP API endpoints decorated with `@endpoint`. This is the **standard pattern** for organizing action endpoints.
+
+**Benefits of the `__init__.py` + `endpoints.py` pattern:**
+- ✅ **Separation of concerns**: Business logic separate from API layer
+- ✅ **Clean organization**: Action class focused on core functionality
+- ✅ **Package structure**: Standard Python package pattern with `__init__.py`
+- ✅ **Automatic discovery**: Endpoints discovered when action package is loaded
+- ✅ **Scalable**: Actions can have multiple modules, all organized in `__init__.py`
+- ✅ **Easy to maintain**: All endpoints in one place, package initialization centralized
+- ✅ **Consistent structure**: Standard pattern across all actions
+
 ### Action CRUD Endpoints
 
-Actions have full CRUD endpoints colocated in the Action class:
+Actions have full CRUD endpoints automatically provided by the Action base class:
 
 - `GET /actions/{action_id}` - Get action by ID
 - `PUT /actions/{action_id}` - Update action
@@ -803,14 +935,20 @@ jvagent/
 │   ├── action/           # Action system
 │   │   ├── action.py     # Action base class
 │   │   ├── actions.py    # Actions manager
-│   │   └── loader.py     # Action loader
+│   │   ├── action_loader.py  # Action loader
+│   │   └── model/        # Model action implementations
 │   ├── core/             # Core entities
 │   │   ├── app.py        # App node
 │   │   ├── agent.py      # Agent node
 │   │   ├── agents.py     # Agents manager
-│   │   ├── loader.py     # Agent loader
-│   │   └── app_loader.py # App loader
+│   │   ├── agent_loader.py  # Agent loader
+│   │   ├── app_loader.py # App loader
+│   │   └── env_resolver.py  # Environment variable resolver
+│   ├── memory/           # Memory system
 │   └── version.py        # Version info
+├── examples/             # Example applications
+│   └── jvagent_app/      # Example app with agents and actions
+├── tests/                # Test suite
 ├── .env.example          # Environment template
 ├── pyproject.toml        # Package configuration
 └── README.md             # This file
@@ -818,7 +956,7 @@ jvagent/
 
 ## What Happens on Startup
 
-When jvagent starts, it automatically:
+When jvagent starts from an app directory, it automatically:
 
 1. **Bootstraps the application graph**:
    - Creates an `App` node (if it doesn't exist)
@@ -828,31 +966,41 @@ When jvagent starts, it automatically:
 
 2. **Loads application configuration**:
    - Reads `app.yaml` if present
+   - Resolves environment variable placeholders (e.g., `${VAR_NAME}`)
    - Installs/updates agents from configuration
 
 3. **Discovers and loads actions**:
-   - Scans `agents/{agent_name}/actions/` for namespaces
+   - Scans `agents/{namespace}/{agent_name}/actions/{namespace}/{action_name}/` for actions
    - Discovers actions from `info.yaml` files
+   - Resolves environment variables in action configs
    - Loads action classes dynamically
+   - Imports `endpoints.py` modules for endpoint discovery
    - Applies configuration from `agent.yaml`
 
 4. **Creates admin user** (if it doesn't exist):
    - Uses credentials from `.env` file
    - Hashed password stored securely
 
+5. **Starts the API server**:
+   - Registers all discovered endpoints
+   - Enables authentication if configured
+   - Serves API documentation at `/docs`
+
 ## Best Practices
 
 ### 1. Use Type-Safe Properties
 
 ```python
+from jvspatial.core.annotations import attribute
+
 # Good: Type-safe properties
 class MyAction(Action):
-    timeout: int = Field(default=30, ge=1, le=300)
-    api_url: str = Field(default="https://api.example.com")
+    timeout: int = attribute(default=30, description="Operation timeout", ge=1, le=300)
+    api_url: str = attribute(default="https://api.example.com", description="API endpoint")
 
 # Avoid: Unvalidated dictionary
 class MyAction(Action):
-    config: Dict[str, Any] = Field(default_factory=dict)
+    config: Dict[str, Any] = {}  # Not recommended
 ```
 
 ### 2. Use Context for Property Overrides
@@ -860,16 +1008,16 @@ class MyAction(Action):
 ```yaml
 # Good: Properties in context
 actions:
-  - name: jvagent/my_action
-    enabled: true
+  - action: jvagent/my_action
     context:
+      enabled: true
       timeout: 60
 
 # Avoid: Mixing levels
 actions:
-  - name: jvagent/my_action
-    enabled: true
-    timeout: 60  # Should be in context
+  - action: jvagent/my_action
+    enabled: true  # Should be in context
+    timeout: 60   # Should be in context
 ```
 
 ### 3. Use Namespace/Action_Name Format
@@ -877,18 +1025,20 @@ actions:
 ```yaml
 # Good: Explicit namespace
 actions:
-  - name: jvagent/example_action
+  - action: jvagent/example_action
 
 # Avoid: Missing namespace
 actions:
-  - name: example_action
+  - action: example_action  # Missing namespace
 ```
 
 ### 4. Document Your Properties
 
 ```python
+from jvspatial.core.annotations import attribute
+
 class MyAction(Action):
-    timeout: int = Field(
+    timeout: int = attribute(
         default=30,
         description="Operation timeout in seconds",
         ge=1,
@@ -899,12 +1049,14 @@ class MyAction(Action):
 ### 5. Provide Sensible Defaults
 
 ```python
+from jvspatial.core.annotations import attribute
+
 class MyAction(Action):
     # Good: Always provide defaults
-    timeout: int = Field(default=30)
+    timeout: int = attribute(default=30, description="Operation timeout")
     
     # Not recommended: Forces user to always provide value
-    # required_setting: str = Field(...)
+    # required_setting: str = attribute(...)  # No default
 ```
 
 ## License

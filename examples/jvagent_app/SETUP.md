@@ -1,0 +1,197 @@
+# jvagent App Setup Guide
+
+Quick setup guide for running your jvagent application with the OpenAI model action.
+
+## Prerequisites
+
+- Python 3.10+
+- jvagent and jvspatial installed
+- OpenAI API account
+
+## Setup Steps
+
+### 1. Environment Configuration
+
+Copy the example environment file:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and add your OpenAI API key:
+
+```bash
+OPENAI_API_KEY=sk-your-actual-openai-api-key-here
+```
+
+Get your API key from: https://platform.openai.com/api-keys
+
+### 2. Install Dependencies
+
+```bash
+cd /path/to/jvagent_app
+pip install -r requirements.txt
+```
+
+If you don't have a requirements.txt, the dependencies are:
+- jvagent
+- jvspatial
+- httpx>=0.27.0
+- jinja2>=3.1.0
+
+### 3. Run the Application
+
+```bash
+jvagent
+```
+
+Or with the update flag to refresh configurations:
+
+```bash
+jvagent --update
+```
+
+With debug logging:
+
+```bash
+jvagent --debug
+```
+
+## Using the Model Action
+
+### From API
+
+Query the model action:
+
+```bash
+# Text query
+curl -X POST http://localhost:8000/actions/{action_id}/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Explain quantum computing in simple terms",
+    "temperature": 0.7
+  }'
+
+# Vision query
+curl -X POST http://localhost:8000/actions/{action_id}/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": [
+      {"type": "text", "text": "What is in this image?"},
+      {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
+    ]
+  }'
+```
+
+### From Another Action
+
+```python
+from jvagent.action.model import OpenAIModelAction
+
+class MyAction(Action):
+    async def my_method(self):
+        # Get the model action (use actual ID or find by label)
+        model = await OpenAIModelAction.find_one({"context.label": "model_openai"})
+        
+        # Text query
+        result = await model.query_sync("Hello, how are you?")
+        response = await result.get_response()
+        
+        # Vision query
+        content = model.create_image_content(
+            text="What's in this image?",
+            image_url="https://example.com/image.jpg"
+        )
+        result = await model.query_sync(content)
+        response = await result.get_response()
+```
+
+## Configuration
+
+The model action is configured in `agents/jvagent/example_agent/agent.yaml`:
+
+```yaml
+actions:
+  - action: jvagent/model_openai
+    context:
+      model: gpt-4o  # Change model here
+      temperature: 0.7  # Adjust temperature
+      max_tokens: 2000  # Adjust max tokens
+```
+
+### Available Models
+
+**Text + Vision (Multimodal)**:
+- `gpt-4o` - Latest, best for vision (recommended)
+- `gpt-4-turbo` - Fast GPT-4 with vision
+- `gpt-4-vision-preview` - Vision preview
+
+**Text Only**:
+- `gpt-4o-mini` - Fast and cost-effective
+- `gpt-3.5-turbo` - Older model (still supported)
+
+## Troubleshooting
+
+### "API key not found"
+- Make sure `.env` file exists in the app directory
+- Verify `OPENAI_API_KEY` is set correctly
+- Restart the application after changing `.env`
+
+### "Module not found" errors
+- Install all dependencies: `pip install -r requirements.txt`
+- Make sure jvagent and jvspatial are installed
+
+### "Model not found" or "Invalid model"
+- Check that you're using a valid OpenAI model name
+- Verify your API key has access to the model
+- For vision models, ensure you're using gpt-4o or gpt-4-vision-preview
+
+### Vision queries not working
+- Only use multimodal models (gpt-4o, gpt-4-turbo, gpt-4-vision-preview)
+- Ensure image URLs are publicly accessible
+- Check image format (JPEG, PNG, GIF, WebP)
+- Verify image size is under 20MB
+
+## Cost Management
+
+Monitor your usage:
+
+```bash
+# Get metrics
+curl http://localhost:8000/actions/{action_id}/metrics
+```
+
+Response:
+```json
+{
+  "total_requests": 150,
+  "total_tokens": 45000,
+  "total_cost": 0.675,
+  "model": "gpt-4o"
+}
+```
+
+**Estimated costs (per 1M tokens)**:
+- GPT-4o: $2.50 input, $10.00 output
+- GPT-4o-mini: $0.15 input, $0.60 output
+- GPT-3.5-turbo: $0.50 input, $1.50 output
+
+Tips for cost reduction:
+- Use `gpt-4o-mini` for simple queries
+- Set lower `max_tokens` values
+- Use `image_detail="low"` for vision queries
+- Cache common responses
+
+## Documentation
+
+- Main README: `agents/jvagent/example_agent/actions/jvagent/model_openai/README.md`
+- Multimodal guide: `agents/jvagent/example_agent/actions/jvagent/model_openai/MULTIMODAL.md`
+- Core docs: `jvagent/action/model/README.md`
+
+## Support
+
+For issues or questions:
+- Check the documentation files
+- Review test examples in `tests/action/model/`
+- OpenAI docs: https://platform.openai.com/docs
+
