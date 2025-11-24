@@ -9,7 +9,7 @@ All configuration is done via typed Pydantic fields, not a config dictionary.
 import logging
 from typing import Any, Dict
 
-from jvagent.action.action import Action
+from jvagent.action.base import Action
 from jvspatial.core.annotations import attribute
 
 logger = logging.getLogger(__name__)

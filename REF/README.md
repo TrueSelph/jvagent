@@ -591,7 +591,7 @@ async def get_actions_by_type(
 The **Action** entity represents the base type for all actions in the system.
 
 **Type:** [`Node`](jvspatial/jvspatial/core/entities/node.py) (extends Node)  
-**Location:** `jvagent/action/action.py` (to be created)
+**Location:** `jvagent/action/base.py` (to be created)
 
 **Attributes:**
 ```python
@@ -691,7 +691,7 @@ Action (base)
 
 **Purpose:** Integration with Large Language Model APIs (OpenAI, Anthropic, etc.)
 
-**Type:** Extends [`ModelAction`](jv/jvagent/action/action.py:17)  
+**Type:** Extends [`ModelAction`](jv/jvagent/action/base.py:17)  
 **Location:** `jv/jvagent/action/language_model_action.py`
 
 **Additional Attributes:**
@@ -742,7 +742,7 @@ print(f"Tokens used: {result.usage.total_tokens}")
 
 **Purpose:** Subscribe to the main execution pipeline for conversational interactions
 
-**Type:** Extends [`Action`](jv/jvagent/action/action.py:17)  
+**Type:** Extends [`Action`](jv/jvagent/action/base.py:17)  
 **Location:** `jv/jvagent/action/interact_action.py`
 
 **Additional Attributes:**
@@ -802,7 +802,7 @@ class GreetingAction(InteractAction):
 
 **Purpose:** Tool-type action with state-driven flow (e.g., multi-step workflows)
 
-**Type:** Extends [`Action`](jv/jvagent/action/action.py:17)  
+**Type:** Extends [`Action`](jv/jvagent/action/base.py:17)  
 **Location:** `jv/jvagent/action/state_graph_action.py` (to be created)
 
 **Additional Attributes:**
@@ -852,7 +852,7 @@ checkout = await StateGraphAction.create(
 
 **Purpose:** Integration with vector database systems
 
-**Type:** Extends [`Action`](jv/jvagent/action/action.py:17)  
+**Type:** Extends [`Action`](jv/jvagent/action/base.py:17)  
 **Location:** `jv/jvagent/action/vectorstore_action.py` (to be created)
 
 **Additional Attributes:**
@@ -1060,7 +1060,7 @@ transcript = result.content
 
 **Purpose:** Base class for model-based actions with usage tracking
 
-**Type:** Extends [`Action`](jv/jvagent/action/action.py:17)  
+**Type:** Extends [`Action`](jv/jvagent/action/base.py:17)  
 **Location:** `jv/jvagent/action/model_action.py`
 
 **Additional Attributes:**
@@ -5308,7 +5308,7 @@ class TestWeatherAction(AgentTestCase):
 | Conversation | Conversation Node | New: replaces Frame concept |
 | Interaction obj | Interaction Object | References conversation_id (not frame_id) |
 | Collection | Collection under Memory | Moved from Action to Memory for safer persistence |
-| Action node | [`Action`](jv/jvagent/action/action.py:17) Node | Protocol-based, no JAC, references collections |
+| Action node | [`Action`](jv/jvagent/action/base.py:17) Node | Protocol-based, no JAC, references collections |
 | InteractAction | InteractAction | Cleaner interface, type-based retrieval |
 | Actions node | [`Actions`](jv/jvagent/action/actions.py:29) Node | Type-based action accessors |
 | interact walker | Interact Walker | Pure Python, no JAC |
@@ -5390,7 +5390,7 @@ result = await walker.spawn(agent)
 
 - **jvspatial Documentation:** [`jvspatial/QUICKSTART.md`](jvspatial/QUICKSTART.md)
 - **jvagent README:** [`jv/jvagent/README.md`](jv/jvagent/README.md)
-- **Action Implementation:** [`jv/jvagent/action/action.py`](jv/jvagent/action/action.py)
+- **Action Implementation:** [`jv/jvagent/action/base.py`](jv/jvagent/action/base.py)
 - **Agent Implementation:** [`jv/jvagent/core/agent.py`](jv/jvagent/core/agent.py)
 - **Memory Implementation:** [`jv/jvagent/memory/memory.py`](jv/jvagent/memory/memory.py)
 

@@ -6,7 +6,7 @@ can be overridden through YAML descriptors using the context mechanism.
 
 import pytest
 
-from jvagent.action.action import Action
+from jvagent.action.base import Action
 from jvagent.action.actions import Actions
 from jvagent.core.agent import Agent
 from jvagent.core.agent_loader import AgentLoader
@@ -90,7 +90,7 @@ class TestActionPropertyOverrides:
         # Create action implementation
         action_py = action_dir / "test_action.py"
         action_py.write_text(
-            """from jvagent.action.action import Action
+            """from jvagent.action.base import Action
 from jvspatial.core.annotations import attribute
 
 class TestAction(Action):
@@ -193,7 +193,7 @@ actions:
         # Create action implementation with both property and config usage
         action_py = action_dir / "test_action.py"
         action_py.write_text(
-            """from jvagent.action.action import Action
+            """from jvagent.action.base import Action
 from jvspatial.core.annotations import attribute
 
 class TestAction(Action):

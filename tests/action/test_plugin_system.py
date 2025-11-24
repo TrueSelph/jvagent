@@ -32,7 +32,7 @@ class TestActionLoader:
         # Create action implementation
         action_py = action_dir / "test_action.py"
         action_py.write_text(
-            """from jvagent.action.action import Action
+            """from jvagent.action.base import Action
 
 class TestAction(Action):
     pass
@@ -70,7 +70,7 @@ module: test_action
         # Create action implementation
         action_py = action_dir / "test_action.py"
         action_py.write_text(
-            """from jvagent.action.action import Action
+            """from jvagent.action.base import Action
 
 class TestAction(Action):
     pass
@@ -112,7 +112,7 @@ class TestAction(Action):
         # Create action implementation
         action_py = action_dir / "test_action.py"
         action_py.write_text(
-            """from jvagent.action.action import Action
+            """from jvagent.action.base import Action
 
 class TestAction(Action):
     pass

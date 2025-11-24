@@ -6,7 +6,7 @@ This module provides the action management system including:
 - ActionLoader: Dynamic action discovery and loading
 """
 
-from jvagent.action.action import Action
+from jvagent.action.base import Action
 from jvagent.action.action_loader import ActionLoader, ActionMetadata
 from jvagent.action.actions import Actions
 

@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Type
 
 import yaml
 
-from jvagent.action.action import Action
+from jvagent.action.base import Action
 
 logger = logging.getLogger(__name__)
 

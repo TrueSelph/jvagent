@@ -57,12 +57,35 @@ A complete example application is provided in the `examples/jvagent_app/` direct
 - **Example Action** (`jvagent/example_action`): Shows action structure, lifecycle hooks, and API endpoints
 - **Model Action** (`jvagent/model_openai`): Demonstrates LLM integration with OpenAI
 
-To explore the examples:
+### Running the Bundled Example
 
+After installing jvagent, you can run the bundled example application:
+
+**Option 1: Using app root path (recommended)**
+```bash
+# From the jvagent repository root
+jvagent examples/jvagent_app
+```
+
+**Option 2: Change to the example directory first**
 ```bash
 cd examples/jvagent_app
 jvagent
 ```
+
+**With flags:**
+```bash
+# Run with debug logging
+jvagent examples/jvagent_app --debug
+
+# Run with update mode
+jvagent examples/jvagent_app --update
+```
+
+**Note:** Before running the example, ensure you have:
+1. Set up a `.env` file in `examples/jvagent_app/` with at least:
+   - `JVAGENT_ADMIN_PASSWORD` - Admin user password
+   - `OPENAI_API_KEY` - (Optional) For the model_openai action
 
 See [examples/jvagent_app/README.md](examples/jvagent_app/README.md) for detailed information about the example application structure.
 
@@ -114,7 +137,7 @@ curl -X POST "http://localhost:8000/auth/login" \
 
 ## Running jvagent in an App Directory
 
-jvagent is designed to work with a declarative app directory structure. When you run `jvagent` from a directory containing an `app.yaml` file, it automatically discovers and loads all agents and actions defined in your YAML configuration files.
+jvagent is designed to work with a declarative app directory structure. You can run jvagent with a path to your app directory, or from within the app directory itself. When an `app.yaml` file is found, jvagent automatically discovers and loads all agents and actions defined in your YAML configuration files.
 
 ### Creating a jvagent App Directory
 
@@ -131,31 +154,50 @@ my_jvagent_app/
             └── actions/
                 └── {namespace}/
                     └── {action_name}/
+                        ├── __init__.py
+                        ├── {action_name}.py
+                        ├── endpoints.py
                         ├── info.yaml
-                        └── {action_name}.py
+                        └── requirements.txt
 ```
 
 ### Running jvagent from an App Directory
 
-1. **Navigate to your app directory:**
-   ```bash
-   cd /path/to/my_jvagent_app
-   ```
+jvagent supports two ways to specify the app directory:
 
-2. **Ensure `app.yaml` exists:**
-   ```bash
-   ls app.yaml  # Should exist
-   ```
+**Option 1: Specify app root path (recommended)**
+```bash
+# Run from anywhere, specifying the app directory path
+jvagent /path/to/my_jvagent_app
 
-3. **Run jvagent:**
-   ```bash
-   jvagent
-   ```
-   
-   Or using Python module:
-   ```bash
-   python -m jvagent
-   ```
+# With flags
+jvagent /path/to/my_jvagent_app --update --debug
+```
+
+**Option 2: Run from within the app directory**
+```bash
+# Navigate to your app directory
+cd /path/to/my_jvagent_app
+
+# Run jvagent (uses current directory as app root)
+jvagent
+```
+
+**Using Python module:**
+```bash
+# With path
+python -m jvagent /path/to/my_jvagent_app
+
+# From within directory
+cd /path/to/my_jvagent_app
+python -m jvagent
+```
+
+**Benefits of specifying the app root path:**
+- Run jvagent from any directory
+- Easier to manage multiple app directories
+- Better for scripts and automation
+- Clearer which app you're running
 
 ### What Happens When You Run jvagent
 
@@ -175,9 +217,10 @@ When jvagent starts in a directory with `app.yaml`, it automatically:
 
 **Default Behavior (No `--update` flag):**
 - Uses existing agents and actions from the database
-- Only installs new agents/actions that don't exist
+- Only installs new agents/actions from `app.yaml` that don't exist
 - Does **not** overwrite existing agent/action context
 - Safe for repeated runs - won't overwrite manual changes
+- **Important**: Agents can only be installed via `app.yaml` - there is no direct agent installation
 
 **Update Mode (`--update` or `--migrate` flag):**
 - Updates existing agents and actions with values from YAML files
@@ -189,7 +232,11 @@ When jvagent starts in a directory with `app.yaml`, it automatically:
 
 **Example 1: First Run (Default Mode)**
 ```bash
-cd my_jvagent_app
+# Using app root path
+jvagent /path/to/my_jvagent_app
+
+# Or from within the directory
+cd /path/to/my_jvagent_app
 jvagent
 ```
 This will:
@@ -200,8 +247,7 @@ This will:
 
 **Example 2: Subsequent Runs (Default Mode)**
 ```bash
-cd my_jvagent_app
-jvagent
+jvagent /path/to/my_jvagent_app
 ```
 This will:
 - Use existing App node (won't overwrite)
@@ -211,8 +257,7 @@ This will:
 
 **Example 3: Update Existing Configuration**
 ```bash
-cd my_jvagent_app
-jvagent --update
+jvagent /path/to/my_jvagent_app --update
 ```
 This will:
 - Update App node from `app.yaml`
@@ -222,8 +267,7 @@ This will:
 
 **Example 4: Bootstrap Only (No Server)**
 ```bash
-cd my_jvagent_app
-jvagent bootstrap
+jvagent /path/to/my_jvagent_app bootstrap
 ```
 This will:
 - Bootstrap the application graph
@@ -232,27 +276,38 @@ This will:
 
 **Example 5: Bootstrap with Updates**
 ```bash
-cd my_jvagent_app
-jvagent bootstrap --update
+jvagent /path/to/my_jvagent_app bootstrap --update
 ```
 This will:
 - Update all agents and actions from YAML files
 - Exit without starting the server
 
+**Example 6: Run with Debug Logging**
+```bash
+jvagent /path/to/my_jvagent_app --debug
+```
+This will:
+- Start the server with verbose debug logging
+- Show detailed information about bootstrap process
+- Display individual agent and action registration
+
 ### Running Without an App Directory
 
-If you run `jvagent` from a directory without `app.yaml`:
+If you run `jvagent` without specifying an app directory (or from a directory without `app.yaml`):
 - jvagent will start with a basic App node
 - No agents or actions will be automatically installed
-- You can manually create agents via the API
-- Useful for testing or development without a full app structure
+- Agents can only be installed via `app.yaml` - there is no direct agent installation
+- To use agents, create an app directory with `app.yaml` and agent definitions
+- Useful for testing the API without a full app structure
 
 ### Best Practices
 
-1. **Always run from your app directory:**
+1. **Specify app root path explicitly:**
    ```bash
-   cd /path/to/my_jvagent_app
-   jvagent
+   # Recommended: Always specify the app root path
+   jvagent /path/to/my_jvagent_app
+   
+   # This makes it clear which app you're running and works from any directory
    ```
 
 2. **Use default mode for normal operation:**
@@ -269,6 +324,16 @@ If you run `jvagent` from a directory without `app.yaml`:
    - Track `app.yaml`, `agent.yaml`, and `info.yaml` files
    - Don't commit `.env` or database files
    - Use `.env.example` for documentation
+
+5. **Use absolute paths for clarity:**
+   ```bash
+   # Clear and explicit
+   jvagent /absolute/path/to/my_jvagent_app
+   
+   # Relative paths also work
+   jvagent ./my_jvagent_app
+   jvagent ../other_app
+   ```
 
 ## Core Concepts
 
@@ -287,7 +352,8 @@ If you run `jvagent` from a directory without `app.yaml`:
 - Contain one or more actions
 - Have their own configuration and metadata
 - Are defined via `agent.yaml` descriptors
-- Can be dynamically loaded and managed
+- Are installed automatically from `app.yaml` when you run jvagent or bootstrap
+- **Important**: Agents can only be installed via `app.yaml` - there is no direct agent installation command
 
 ### Namespaces
 
@@ -389,7 +455,8 @@ config:
     root_dir: ./.files
     enabled: true
 
-# Agents to Install (list of namespace/agent_name strings)
+# Agents (list of namespace/agent_name strings)
+# Agents listed here are automatically installed when you run jvagent or bootstrap
 agents:
   - jvagent/example_agent
   - contrib/another_agent
@@ -489,14 +556,6 @@ package:
 - All configuration should be defined as typed Pydantic fields in your Action class
 - Override these properties in agent.yaml using the `context` object
 
-**Key Points:**
-- `package.name`: Action reference in `namespace/action_name` format
-- `package.archetype`: The Action class name (must match the class in the Python file)
-- `package.meta`: Metadata object with title, description, group, and type
-- `package.config`: Configuration object (e.g., for ordering)
-- `package.dependencies`: Dependencies object with `jvagent` version and `actions` list
-- All configuration should be defined as typed properties in your Action class using `attribute()`
-- Override these properties in `agent.yaml` using the `context` object
 
 ## Creating Actions
 
@@ -550,7 +609,7 @@ package:
 # my_action.py
 from typing import Any, Dict
 
-from jvagent.action.action import Action
+from jvagent.action.base import Action
 from jvspatial.core.annotations import attribute
 
 
@@ -933,7 +992,7 @@ jvagent/
 ├── jvagent/              # Main package
 │   ├── cli.py            # CLI entry point
 │   ├── action/           # Action system
-│   │   ├── action.py     # Action base class
+│   │   ├── base.py       # Action base class
 │   │   ├── actions.py    # Actions manager
 │   │   ├── action_loader.py  # Action loader
 │   │   └── model/        # Model action implementations
@@ -965,9 +1024,9 @@ When jvagent starts from an app directory, it automatically:
    - Connects `Agents` to `App`
 
 2. **Loads application configuration**:
-   - Reads `app.yaml` if present
+   - Reads `app.yaml` from the app root directory if present
    - Resolves environment variable placeholders (e.g., `${VAR_NAME}`)
-   - Installs/updates agents from configuration
+   - Installs agents listed in `app.yaml` (agents can only be installed via app.yaml)
 
 3. **Discovers and loads actions**:
    - Scans `agents/{namespace}/{agent_name}/actions/{namespace}/{action_name}/` for actions
