@@ -17,7 +17,7 @@ from jvagent.action.actions import Actions
 from jvagent.core.agent import Agent
 from jvagent.core.agents import Agents
 from jvagent.core.app import App
-from jvagent.memory.memory import Memory
+from jvagent.memory import Memory
 
 logger = logging.getLogger(__name__)
 

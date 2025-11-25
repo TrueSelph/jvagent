@@ -104,7 +104,7 @@ The `app.yaml` file is the main application descriptor that defines:
 app: jvagent_demo_app
 
 # Application metadata
-version: 1.0.0
+  version: 1.0.0
 author: Your Name/Organization
 
 # Application context: Properties that configure the App node
@@ -149,7 +149,7 @@ Each action package should be placed within its agent's `actions/` subdirectory:
 agents/
 └── {namespace}/
     └── {agent_name}/
-        ├── actions/          # Actions packaged with this agent
+    ├── actions/          # Actions packaged with this agent
         │   └── {namespace}/   # Namespace directory
         │       └── {action_name}/
         │           ├── {action_name}.py  # Main action implementation (Action class)
@@ -198,21 +198,21 @@ package:
   archetype: MyAction
   
   # Package version
-  version: 1.0.0
+version: 1.0.0
   
   # Package metadata
   meta:
     title: My Custom Action
-    description: A description of what this action does
+description: A description of what this action does
     group: jvagent
     type: action
   
   # Package dependencies
-  dependencies:
+dependencies:
     # jvagent version requirement
     jvagent: ~2.1.0
     # Other action dependencies (by namespace/action_name)
-    actions: []
+  actions: []
 ```
 
 ## Agents
@@ -257,7 +257,7 @@ context:
 actions:
   - action: jvagent/example_action
     context:
-      enabled: true
+    enabled: true
       description: "Customized example action for demonstration"
       timeout: 60
       retries: 5

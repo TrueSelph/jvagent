@@ -27,6 +27,8 @@ class ModelActionResult:
     interface for API endpoints and programmatic calls from other actions.
 
     Attributes:
+        prompt: The prompt that produced the response
+        system: System message used (if any)
         response: Complete response text (sync mode)
         stream: Async generator yielding chunks (streaming mode)
         metrics: Query metrics including token usage and duration
@@ -58,6 +60,8 @@ class ModelActionResult:
         finish_reason: Optional[str] = None,
         tool_calls: Optional[List[Dict[str, Any]]] = None,
         duration: Optional[float] = None,
+        prompt: Optional[str] = None,
+        system: Optional[str] = None,
     ):
         """Initialize a model action result.
 
@@ -70,6 +74,8 @@ class ModelActionResult:
             finish_reason: Reason for completion
             tool_calls: Function/tool calls made (if any)
             duration: Query duration in seconds
+            prompt: The prompt that produced the response
+            system: System message used (if any)
         """
         self.response = response
         self.stream = stream
@@ -78,6 +84,8 @@ class ModelActionResult:
         self.finish_reason = finish_reason
         self.tool_calls = tool_calls or []
         self.is_streaming = stream is not None
+        self.prompt = prompt
+        self.system = system
 
         # Build metrics dict with usage and duration
         self.metrics: Dict[str, Any] = {}
@@ -131,6 +139,8 @@ class ModelActionResult:
             Dictionary representation of the result
         """
         return {
+            "prompt": self.prompt,
+            "system": self.system,
             "response": self.response,
             "metrics": self.metrics,
             "model": self.model,
@@ -315,6 +325,12 @@ class ModelAction(Action, ABC):
 
         # Calculate duration
         duration = time.time() - start_time
+
+        # Store the prompt and system in the result for logging
+        # Convert prompt to string if it's a list (multimodal content)
+        prompt_str = prompt if isinstance(prompt, str) else str(prompt)
+        result.prompt = prompt_str
+        result.system = system
 
         # Update metrics with duration
         result.metrics["duration"] = duration
