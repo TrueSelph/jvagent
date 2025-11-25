@@ -41,14 +41,28 @@ logger = logging.getLogger(__name__)
 async def multiply_endpoint(action_id: str) -> Dict[str, Any]:
     """Calculate and return var_a * var_b.
 
-    This endpoint demonstrates runtime property access and can be used
-    to test that property updates via the update endpoint take effect.
+    This endpoint demonstrates:
+
+    - Runtime property access from action instances
+    - Custom action-specific endpoints
+    - Testing property updates via the base action update endpoint
+
+    Use Case:
+        Update var_a and var_b via PUT /actions/{action_id} with properties,
+        then call this endpoint to verify the multiplication uses updated values.
 
     Args:
-        action_id: ID of the action
+        action_id: ID of the ExampleAction instance
 
     Returns:
-        Dictionary with multiplication result and current variable values
+        Dictionary containing:
+
+            - result: Product of var_a * var_b
+            - var_a: Current value of var_a
+            - var_b: Current value of var_b
+
+    Raises:
+        ResourceNotFoundError: If action not found
     """
     action = await ExampleAction.get(action_id)
     if not action:

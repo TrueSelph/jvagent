@@ -31,11 +31,41 @@ actions:
       api_key: ${OPENAI_API_KEY}  # Set in .env or environment
       api_endpoint: "https://api.openai.com/v1"
       # Model Configuration
-      model: gpt-4o  # Supports text and multimodal (vision) queries
+      model: gpt-4o-mini  # Default model for queries
       temperature: 0.7
       max_tokens: 2000
       top_p: 1.0
       timeout: 60
+  
+  # Persona Action - Core interact action for agent behavioral modeling
+  # Located at: agents/jvagent/example_agent/actions/jvagent/persona/
+  - action: jvagent/persona
+    context:
+      enabled: true
+      description: "Example persona action with LLM-driven behavioral parameters"
+      # Persona Identity
+      persona_name: "Example Assistant"
+      persona_role: "A helpful AI assistant for demonstrations"
+      persona_description: >
+        You are a friendly and knowledgeable assistant that helps users
+        understand how the jvagent framework works. You provide clear,
+        concise answers and demonstrate best practices.
+      persona_capabilities:
+        - "Answer questions about jvagent"
+        - "Demonstrate action delegation"
+        - "Process user interactions with behavioral parameters"
+        - "Provide streaming and non-streaming responses"
+      # Model Configuration (uses OpenAI model action by entity type)
+      model_action_type: "OpenAIModelAction"  # Entity type to find dynamically
+      model_name: "gpt-4o-mini"
+      light_model_name: "gpt-4o-mini"
+      model_temperature: 0.3
+      model_max_tokens: 4096
+      # Behavior
+      canned_responses_enabled: false
+      streaming: false
+      history_enabled: true
+      history_size: 5
   
   # Example action from the 'jvagent' namespace
   # Located at: agents/jvagent/example_agent/actions/jvagent/example_action/

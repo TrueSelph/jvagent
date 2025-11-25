@@ -1,0 +1,3 @@
+# Persona Action Requirements
+# No additional dependencies required - uses core jvagent
+

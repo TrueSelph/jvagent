@@ -577,11 +577,21 @@ class Action(Node):
 async def get_action(action_id: str) -> Dict[str, Any]:
     """Get a specific action by ID.
 
+    Retrieves full action information including:
+
+    - Identity: namespace, label, description
+    - Status: enabled/disabled
+    - Configuration and metadata
+    - Package information (version, type)
+
+    The action ID follows the format: n.{ActionType}.{unique_id}
+    (e.g., n.ExampleAction.abc123, n.OpenAIModelAction.xyz789)
+
     Args:
         action_id: ID of the action to retrieve
 
     Returns:
-        Dictionary with action information
+        Dictionary with complete action information
 
     Raises:
         ResourceNotFoundError: If action not found

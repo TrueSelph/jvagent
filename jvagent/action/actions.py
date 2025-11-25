@@ -14,17 +14,17 @@ logger = logging.getLogger(__name__)
 
 class Actions(Node):
     """Central node for managing agent actions.
-
+    
     The Actions node manages the registration and discovery of actions for an agent.
     It maintains statistics and provides helper queries, but delegates all lifecycle
     operations (enable, disable, reload) to the Action class itself.
-
+    
     Attributes:
         registered_count: Number of registered actions
         enabled_count: Number of enabled actions
         _lock: Async lock for thread-safe operations (private, not persisted)
     """
-
+    
     # Statistics
     registered_count: int = attribute(default=0, description="Number of registered actions")
     enabled_count: int = attribute(default=0, description="Number of enabled actions")
