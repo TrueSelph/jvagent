@@ -225,6 +225,9 @@ def create_server_from_config(debug: bool = False) -> Server:
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
     db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvdb")
 
+    # Graph endpoint configuration
+    graph_endpoint_enabled = os.getenv("JVSPATIAL_GRAPH_ENDPOINT_ENABLED", "false").lower() == "true"
+
     # Authentication configuration (enabled by default for jvagent)
     auth_enabled = os.getenv("JVAGENT_AUTH_ENABLED", "true").lower() == "true"
     jwt_auth_enabled = os.getenv("JVSPATIAL_JWT_AUTH_ENABLED", "true").lower() == "true"
@@ -250,6 +253,7 @@ def create_server_from_config(debug: bool = False) -> Server:
         jwt_auth_enabled=jwt_auth_enabled,
         jwt_secret=jwt_secret,
         jwt_expire_minutes=jwt_expire_minutes,
+        graph_endpoint_enabled=graph_endpoint_enabled,
     )
 
     return server
