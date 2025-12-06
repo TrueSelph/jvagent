@@ -14,134 +14,10 @@ from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
 logger = logging.getLogger(__name__)
 
 
-@endpoint(
-    "/actions/{action_id}/interact",
-    methods=["POST"],
-    auth=True,
-    tags=["Persona Action"],
-    response=success_response(
-        data={
-            "user_id": ResponseField(
-                field_type=str,
-                description="User identifier (always returned)",
-                example="usr_abc123",
-            ),
-            "session_id": ResponseField(
-                field_type=str,
-                description="Session identifier (always returned)",
-                example="sess_xyz789",
-            ),
-            "response": ResponseField(
-                field_type=str,
-                description="Complete agent response",
-                example="Hello! How can I help you today?",
-            ),
-            "canned_response": ResponseField(
-                field_type=Optional[str],  # type: ignore[arg-type]
-                description="Immediate response (if canned responses enabled)",
-                example="Please wait while I process your request...",
-            ),
-            "interaction": ResponseField(
-                field_type=Dict[str, Any],
-                description="Interaction details",
-                example={
-                    "id": "int_123",
-                    "utterance": "Hello",
-                    "response": "Hi there!",
-                    "actions": ["PersonaAction", "OpenAIModelAction"],
-                    "directives": [],
-                    "parameters": [{"id": "param_1", "condition": "...", "response": "..."}],
-                    "model_log": [{"prompt": "...", "response": "...", "metrics": {"total_tokens": 100, "duration": 1.5}}],
-                },
-            ),
-            "events": ResponseField(
-                field_type=List[Dict[str, Any]],
-                description="All events emitted during interaction",
-                example=[
-                    {
-                        "event_type": "interaction_started",
-                        "interaction_id": "int_123",
-                        "timestamp": "2025-01-01T12:00:00",
-                        "data": {},
-                    }
-                ],
-            ),
-        }
-    ),
-)
-async def interact_endpoint(
-    action_id: str,
-    utterance: str,
-    user_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-    channel: str = "default",
-    stream: bool = False,
-) -> Dict[str, Any]:
-    """Process a user interaction through the PersonaAction.
-
-    This endpoint handles the main interaction flow:
-    - Resolves or creates User/Conversation based on provided IDs
-    - Processes the utterance through parameter filtering and action delegation
-    - Returns the agent response along with all interaction events
-
-    Request Scenarios:
-    1. First message (no user_id, no session_id):
-       Creates User + Conversation, returns both IDs
-
-    2. Continue conversation (session_id only):
-       Uses existing Conversation, returns user_id from session
-
-    3. New conversation for existing user (user_id only):
-       Gets/Creates User, creates new Conversation, returns new session_id
-
-    4. Both provided (user_id + session_id):
-       Validates they match, uses existing Conversation
-
-    Args:
-        action_id: ID of the PersonaAction to use
-        utterance: User's input text
-        user_id: Optional user identifier
-        session_id: Optional session identifier to continue conversation
-        channel: Communication channel (default, whatsapp, web, etc.)
-        stream: Whether to stream the response (not yet supported)
-
-    Returns:
-        Dictionary with user_id, session_id, response, and events
-    """
-    from jvagent.action.persona.base import PersonaAction
-
-    # Get the action
-    action = await PersonaAction.get(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"PersonaAction with ID '{action_id}' not found",
-            details={"action_id": action_id},
-        )
-
-    if not isinstance(action, PersonaAction):
-        raise ValidationError(
-            message=f"Action '{action_id}' is not a PersonaAction",
-            details={"action_id": action_id, "action_type": type(action).__name__},
-        )
-
-    if not utterance or not utterance.strip():
-        raise ValidationError(
-            message="utterance is required and cannot be empty",
-            details={"utterance": utterance},
-        )
-
-    try:
-        result = await action.interact(
-            utterance=utterance.strip(),
-            user_id=user_id,
-            session_id=session_id,
-            channel=channel,
-            stream=stream,
-        )
-        return result.to_dict()
-    except ValueError as e:
-        raise ValidationError(message=str(e), details={"error": str(e)})
-
+# NOTE: The /actions/{action_id}/interact endpoint has been removed.
+# Use /agents/{agent_id}/interact instead, which uses the InteractWalker
+# to traverse InteractActions. PersonaAction is now a tool-based action
+# and does not participate in the interact subsystem directly.
 
 @endpoint(
     "/actions/{action_id}/parameters",
@@ -199,9 +75,15 @@ async def list_parameters_endpoint(
             details={"action_id": action_id},
         )
 
-    parameters = await action.get_parameters(enabled_only=enabled_only)
+    # Get parameters from the action's parameters attribute
+    parameters = action.parameters or []
+    
+    # Filter by enabled if requested (parameters may have 'enabled' key)
+    if enabled_only:
+        parameters = [p for p in parameters if p.get("enabled", True)]
+    
     return {
-        "parameters": [p.to_dict() for p in parameters],
+        "parameters": parameters,
         "count": len(parameters),
     }
 
@@ -274,16 +156,25 @@ async def create_parameter_endpoint(
             details={"response": response},
         )
 
-    param_id = await action_node.add_parameter({
+    # Add parameter to the parameters list
+    if action_node.parameters is None:
+        action_node.parameters = []
+    
+    new_param = {
         "condition": condition.strip(),
         "response": response.strip(),
-        "action": action,
         "enabled": enabled,
-        "metadata": metadata or {},
-    })
+    }
+    if action:
+        new_param["action"] = action
+    if metadata:
+        new_param["metadata"] = metadata
+    
+    action_node.parameters.append(new_param)
+    await action_node.save()
 
     return {
-        "id": param_id,
+        "id": f"param_{len(action_node.parameters) - 1}",  # Use index as ID
         "message": "Parameter created successfully",
     }
 
@@ -369,15 +260,31 @@ async def update_parameter_endpoint(
             details={},
         )
 
-    param = await action_node.update_parameter(param_id, updates)
-    if not param:
+    # Parse param_id as index (format: "param_0", "param_1", etc.)
+    try:
+        param_index = int(param_id.replace("param_", ""))
+    except (ValueError, AttributeError):
+        raise ValidationError(
+            message=f"Invalid parameter ID format: '{param_id}'",
+            details={"param_id": param_id},
+        )
+
+    # Get parameters list
+    if action_node.parameters is None:
+        action_node.parameters = []
+    
+    if param_index < 0 or param_index >= len(action_node.parameters):
         raise ResourceNotFoundError(
             message=f"Parameter with ID '{param_id}' not found",
             details={"param_id": param_id},
         )
 
+    # Update the parameter
+    action_node.parameters[param_index].update(updates)
+    await action_node.save()
+
     return {
-        "parameter": param.to_dict(),
+        "parameter": action_node.parameters[param_index],
         "message": "Parameter updated successfully",
     }
 
@@ -425,12 +332,28 @@ async def delete_parameter_endpoint(
             details={"action_id": action_id},
         )
 
-    deleted = await action_node.delete_parameter(param_id)
-    if not deleted:
+    # Parse param_id as index (format: "param_0", "param_1", etc.)
+    try:
+        param_index = int(param_id.replace("param_", ""))
+    except (ValueError, AttributeError):
+        raise ValidationError(
+            message=f"Invalid parameter ID format: '{param_id}'",
+            details={"param_id": param_id},
+        )
+
+    # Get parameters list
+    if action_node.parameters is None:
+        action_node.parameters = []
+    
+    if param_index < 0 or param_index >= len(action_node.parameters):
         raise ResourceNotFoundError(
             message=f"Parameter with ID '{param_id}' not found",
             details={"param_id": param_id},
         )
+
+    # Delete the parameter
+    action_node.parameters.pop(param_index)
+    await action_node.save()
 
     return {"message": "Parameter deleted successfully"}
 
@@ -489,8 +412,23 @@ async def import_parameters_endpoint(
             details={},
         )
 
-    count = await action_node.import_parameters(parameters)
+    # Initialize parameters list if needed
+    if action_node.parameters is None:
+        action_node.parameters = []
+    
+    # Add all parameters
+    imported_count = 0
+    for param in parameters:
+        # Validate required fields
+        if not param.get("condition") or not param.get("response"):
+            continue
+        
+        action_node.parameters.append(param)
+        imported_count += 1
+    
+    await action_node.save()
+    
     return {
-        "imported": count,
-        "message": f"Imported {count} parameters",
+        "imported": imported_count,
+        "message": f"Imported {imported_count} parameters",
     }

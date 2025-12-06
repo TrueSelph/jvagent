@@ -21,7 +21,7 @@ class ExamplePersonaAction(PersonaAction):
     for a specific agent. The persona is configured with:
     - Custom name, role, and description
     - Specific capabilities
-    - Custom base parameters
+    - Custom parameters
 
     Configuration can be overridden via agent.yaml context.
     """
@@ -53,8 +53,8 @@ class ExamplePersonaAction(PersonaAction):
         description="List of agent capabilities",
     )
 
-    # Custom base parameters for this agent
-    base_parameters: List[Dict[str, Any]] = attribute(
+    # Custom parameters for this agent
+    parameters: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {
                 "condition": "User asks about jvagent",
@@ -69,7 +69,7 @@ class ExamplePersonaAction(PersonaAction):
                 "response": "Give accurate technical details while keeping explanations accessible.",
             },
         ],
-        description="Base behavioral parameters for this agent",
+        description="Standard collection of configurable parameters to apply when executing the prompt",
     )
 
     async def on_register(self) -> None:

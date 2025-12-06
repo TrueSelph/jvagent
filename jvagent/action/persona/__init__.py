@@ -1,43 +1,21 @@
 """PersonaAction module for agent behavioral modeling.
 
-This module provides the PersonaAction, a core action for agent behavioral modeling
-with LLM-driven parameters, action delegation, and an event bus for asynchronous
-response handling.
+This module provides the PersonaAction, a simplified tool-based action for applying
+agent prompts with configurable parameters.
 
 Key Components:
-- PersonaAction: Core action class with interact() method
-- PersonaActionResult: Result container with event bus access
-- InteractionEventBus: Event bus for async response handling
-- PersonaParameter: Behavioral parameter definition
-- ResponseAggregator: Collects events into final result
+- PersonaAction: Simplified tool-based action with respond() method
+- Prompts: Prompt composition utilities
 
-Inspired by the Parlant PersonaInteractAction pattern.
+Note: PersonaAction is a tool-based action, not an InteractAction.
+It is typically called by InteractActions via the InteractWalker.
 """
 
-from jvagent.action.persona.base import PersonaAction, PersonaActionResult
-from jvagent.action.persona.events import (
-    InteractionEvent,
-    InteractionEventBus,
-    InteractionEventType,
-    ResponseAggregator,
-)
-from jvagent.action.persona.parameter import (
-    DEFAULT_BASE_PARAMETERS,
-    ParameterManager,
-    PersonaParameter,
-)
+from jvagent.action.persona.base import PersonaAction
 
 # Import endpoints for automatic discovery
 from jvagent.action.persona import endpoints  # noqa: F401
 
 __all__ = [
     "PersonaAction",
-    "PersonaActionResult",
-    "InteractionEvent",
-    "InteractionEventBus",
-    "InteractionEventType",
-    "ResponseAggregator",
-    "PersonaParameter",
-    "ParameterManager",
-    "DEFAULT_BASE_PARAMETERS",
 ]
