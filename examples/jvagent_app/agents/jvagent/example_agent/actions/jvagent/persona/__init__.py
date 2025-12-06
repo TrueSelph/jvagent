@@ -2,14 +2,14 @@
 
 This package provides the PersonaAction class for agent behavioral modeling.
 
-The PersonaAction is a core interact action that:
-- Processes user interactions via LLM-driven parameters
-- Supports canned responses for quick replies
-- Delegates to helper actions for complex tasks
-- Uses an event bus for asynchronous response handling
+The PersonaAction is a simplified tool-based action that:
+- Applies agent prompts with configurable parameters
+- Composes system prompts from persona attributes
+- Integrates with ModelAction for LLM queries
+- Provides a simple respond() method interface
 
-Note: API endpoints are defined in the core jvagent.action.persona.endpoints module
-and are automatically discovered when the jvagent package is imported.
+Note: PersonaAction is a tool-based action, not an InteractAction.
+It is typically called by InteractActions via the InteractWalker.
 """
 
 # Import the action class so it can be imported from the package

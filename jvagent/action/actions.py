@@ -233,7 +233,7 @@ class Actions(Node):
             # Build query filters - get agent_id from connected agent
             # Traverse to get agent_id
             # Alternative: store agent_id on Actions node
-            connected_nodes = await self.nodes(direction="both")
+            connected_nodes = await self.nodes()
             agent = None
             for node in connected_nodes:
                 # Import here to avoid circular dependency
@@ -271,7 +271,7 @@ class Actions(Node):
         """
         try:
             # Get agent_id
-            connected_nodes = await self.nodes(direction="both")
+            connected_nodes = await self.nodes()
             agent = None
             for node in connected_nodes:
                 from jvagent.core.agent import Agent

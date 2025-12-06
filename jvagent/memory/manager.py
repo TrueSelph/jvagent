@@ -1,7 +1,8 @@
 """Memory manager node for agent memory, user, and conversation management."""
 
+import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
@@ -129,6 +130,80 @@ class Memory(Node):
             if conv:
                 return user
         return None
+
+    async def get_session(
+        self,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        channel: str = "default",
+    ) -> Tuple["User", "Conversation", str, str]:
+        """Resolve or create User and Conversation based on provided IDs.
+
+        Handles four scenarios for user/session resolution:
+        1. No user_id, no session_id → Create new User + Conversation
+        2. session_id only → Lookup existing Conversation, get associated User
+        3. user_id only → Get/Create User, create new Conversation
+        4. Both provided → Validate session belongs to user, return both
+
+        Args:
+            user_id: Optional user identifier
+            session_id: Optional session identifier
+            channel: Communication channel (e.g., 'default', 'whatsapp', 'email')
+
+        Returns:
+            Tuple of (User, Conversation, resolved_user_id, resolved_session_id)
+
+        Raises:
+            RuntimeError: If user creation/lookup fails
+            ValueError: If session not found or validation fails
+        """
+        from jvagent.memory.conversation import Conversation
+        from jvagent.memory.user import User
+
+        # Case 1: No IDs - create new user and conversation
+        if not user_id and not session_id:
+            new_user_id = f"user_{uuid.uuid4().hex[:16]}"
+            user = await self.get_user(new_user_id, create_if_missing=True)
+            if not user:
+                raise RuntimeError("Failed to create user")
+            conversation = await user.create_conversation(channel=channel)
+            return user, conversation, new_user_id, conversation.session_id
+
+        # Case 2: session_id only - lookup conversation
+        if session_id and not user_id:
+            conversation = await self.get_conversation_by_session(session_id)
+            if not conversation:
+                raise ValueError(f"Session '{session_id}' not found")
+            user = await self.get_user(
+                conversation.user_id, create_if_missing=False
+            )
+            if not user:
+                raise RuntimeError(f"User for session '{session_id}' not found")
+            return user, conversation, conversation.user_id, session_id
+
+        # Case 3: user_id only - get/create user, create conversation
+        if user_id and not session_id:
+            user = await self.get_user(user_id, create_if_missing=True)
+            if not user:
+                raise RuntimeError(f"Failed to get/create user '{user_id}'")
+            conversation = await user.create_conversation(channel=channel)
+            return user, conversation, user_id, conversation.session_id
+
+        # Case 4: Both provided - validate and use
+        if user_id and session_id:
+            conversation = await self.get_conversation_by_session(session_id)
+            if not conversation:
+                raise ValueError(f"Session '{session_id}' not found")
+            if conversation.user_id != user_id:
+                raise ValueError(
+                    f"Session '{session_id}' does not belong to user '{user_id}'"
+                )
+            user = await self.get_user(user_id, create_if_missing=False)
+            if not user:
+                raise RuntimeError(f"User '{user_id}' not found")
+            return user, conversation, user_id, session_id
+
+        raise ValueError("Invalid user_id/session_id combination")
 
     async def memory_healthcheck(self, user_id: str = "") -> Dict[str, int]:
         """Get memory health statistics.

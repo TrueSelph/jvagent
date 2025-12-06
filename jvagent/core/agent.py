@@ -41,7 +41,7 @@ class Agent(Node):
         Returns:
             Actions manager node if found, None otherwise
         """
-        connected = await self.nodes(node="Actions", direction="both")
+        connected = await self.nodes(node="Actions")
         return connected[0] if connected else None
 
     async def get_action(self, action_label: str) -> Optional[Any]:
@@ -100,7 +100,7 @@ class Agent(Node):
         Returns:
             Memory node if found, None otherwise
         """
-        connected = await self.nodes(node="Memory", direction="both")
+        connected = await self.nodes(node="Memory")
         return connected[0] if connected else None
 
 

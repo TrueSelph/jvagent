@@ -16,14 +16,12 @@ package:
   # Package metadata
   meta:
     title: Persona Action
-    description: Core interact action for agent behavioral modeling with LLM-driven parameters
+    description: Simplified tool-based action for applying agent prompts with configurable parameters
     group: jvagent
-    type: interact_action
+    type: action
   
   # Package configuration
   config:
-    order:
-      weight: 100  # Higher weight = later in pipeline
     singleton: true  # Only one persona action per agent
   
   # Package dependencies

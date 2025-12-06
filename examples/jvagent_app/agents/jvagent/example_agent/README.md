@@ -74,8 +74,10 @@ actions:
       enabled: true
       persona_name: "Example Assistant"
       persona_role: "A helpful AI assistant"
+      model_action_type: "OpenAIModelAction"
       model_name: gpt-4o-mini
-      history_enabled: true
+      model_temperature: 0.3
+      model_max_tokens: 4096
   
   # Example action for demonstrations
   - action: jvagent/example_action
@@ -95,16 +97,15 @@ Provides LLM integration with OpenAI models:
 
 ### Persona Action
 
-Core interact action for agent behavioral modeling:
-- LLM-driven behavioral parameters
-- Action delegation for complex tasks
-- Canned responses for quick replies
-- Session management with user_id/session_id
-- Event bus for async response handling
+Simplified tool-based action for applying agent prompts:
+- Prompt composition with persona attributes
+- Configurable parameters for behavioral instructions
+- Model integration via ModelAction
+- Simple `respond()` method interface
 
-**Interact Endpoint:**
+**Interact Endpoint (via InteractWalker):**
 ```http
-POST /api/actions/{action_id}/interact
+POST /api/agents/{agent_id}/interact
 ```
 
 **Request:**
@@ -113,7 +114,8 @@ POST /api/actions/{action_id}/interact
   "utterance": "Hello!",
   "user_id": null,
   "session_id": null,
-  "channel": "web"
+  "channel": "default",
+  "data": {}
 }
 ```
 
@@ -123,8 +125,16 @@ POST /api/actions/{action_id}/interact
   "user_id": "usr_abc123",
   "session_id": "sess_xyz789",
   "response": "Hello! How can I help you?",
-  "interaction": {...},
-  "events": [...]
+  "interaction": {
+    "id": "int_123",
+    "utterance": "Hello!",
+    "response": "Hello! How can I help you?",
+    "actions": ["PersonaAction", "OpenAIModelAction"],
+    "directives": [],
+    "parameters": [],
+    "model_log": [...]
+  },
+  "report": [...]
 }
 ```
 

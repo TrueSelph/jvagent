@@ -1,15 +1,14 @@
 # Persona Action
 
-The Persona Action is a core interact action for agent behavioral modeling with LLM-driven parameters.
+The Persona Action is a simplified tool-based action for applying agent prompts with configurable parameters.
 
 ## Overview
 
 This action provides:
-- **LLM-Driven Parameters**: Behavioral parameters that are filtered by an LLM based on conversation context
-- **Action Delegation**: Parameters can trigger other actions that contribute directives to the final response
-- **Canned Responses**: Quick responses for simple requests before full processing
-- **Event Bus**: Asynchronous response handling with streaming support
-- **Session Management**: User and conversation tracking with session_id
+- **Prompt Composition**: Applies the main agent prompt template with persona attributes
+- **Configurable Parameters**: Behavioral parameters that are included in the prompt
+- **Model Integration**: Uses ModelAction (e.g., OpenAIModelAction) for LLM queries
+- **Simple Interface**: Single `respond()` method that takes an Interaction and returns a response
 
 ## Configuration
 
@@ -29,25 +28,62 @@ actions:
         - "Process requests"
       
       # Model Configuration
-      model_action_id: "jvagent.OpenAIModelAction.xxx"  # ID of ModelAction to use
+      model_action_type: "OpenAIModelAction"  # Entity type to find dynamically
       model_name: "gpt-4o-mini"
-      light_model_name: "gpt-4o-mini"  # For parameter filtering
       model_temperature: 0.3
       model_max_tokens: 4096
       
-      # Behavior
-      canned_responses_enabled: false
-      streaming: false
-      history_enabled: true
-      history_size: 5
+      # Optional: Custom prompt template (uses default if not provided)
+      # prompt: "Your custom prompt template here. Use {parameters} and {directives} as placeholders."
+      
+      # Optional: Custom parameters (can also be set in the action class)
+      # parameters:
+      #   - condition: "User asks about pricing"
+      #     response: "Provide pricing information from the pricing directive"
 ```
 
-## API Endpoints
+## Attributes
 
-### Interact
+- **prompt**: Main agent prompt template (optional, uses default template if not provided)
+- **parameters**: List of parameter dictionaries with `condition` and `response` keys
+- **model_action_type**: Entity type of the ModelAction to use (e.g., "OpenAIModelAction")
+- **model_name**: Default model name for LLM queries
+- **model_temperature**: Temperature for LLM generation
+- **model_max_tokens**: Max tokens for LLM generation
+- **persona_name**: Agent display name (for prompt formatting)
+- **persona_role**: Agent role description (for prompt formatting)
+- **persona_description**: Detailed agent description (for prompt formatting)
+- **persona_capabilities**: List of agent capabilities (for prompt formatting)
+
+## Usage
+
+PersonaAction is a tool-based action that is typically called by InteractActions via the InteractWalker. The main entry point is the `respond()` method:
+
+```python
+from jvagent.action.persona import PersonaAction
+from jvagent.memory import Interaction
+
+# Get the action
+action = await PersonaAction.get(action_id)
+
+# Get or create an interaction
+interaction = await conversation.create_interaction(
+    utterance="Hello, how can you help me?",
+    channel="default"
+)
+
+# Generate a response
+response = await action.respond(interaction)
+
+print(f"Response: {response}")
+```
+
+## Interact Endpoint
+
+PersonaAction is typically used through the InteractWalker, which provides the common entry point for agent interactions:
 
 ```http
-POST /api/actions/{action_id}/interact
+POST /api/agents/{agent_id}/interact
 ```
 
 **Request Body:**
@@ -56,7 +92,8 @@ POST /api/actions/{action_id}/interact
   "utterance": "Hello, how can you help me?",
   "user_id": "optional_user_id",
   "session_id": "optional_session_id",
-  "channel": "default"
+  "channel": "default",
+  "data": {}
 }
 ```
 
@@ -66,87 +103,70 @@ POST /api/actions/{action_id}/interact
   "user_id": "usr_abc123",
   "session_id": "sess_xyz789",
   "response": "Hello! I'm here to help you...",
-  "canned_response": null,
   "interaction": {
     "id": "int_123",
     "utterance": "Hello, how can you help me?",
     "response": "Hello! I'm here to help you...",
     "actions": ["PersonaAction", "OpenAIModelAction"],
     "directives": [],
-    "parameters": [{"id": "param_1", "condition": "...", "response": "..."}],
+    "parameters": [],
     "model_log": [{"prompt": "...", "system": "...", "response": "...", "metrics": {"total_tokens": 100, "duration": 1.5}}]
   },
-  "events": [...]
+  "report": [...]
 }
-```
-
-### Session Management
-
-- **First message (no IDs)**: Creates new user and conversation, returns both IDs
-- **Continue conversation (session_id only)**: Uses existing conversation
-- **New conversation (user_id only)**: Creates new conversation for existing user
-- **Resume specific (both IDs)**: Validates and uses existing conversation
-
-### Parameters
-
-```http
-GET /api/actions/{action_id}/parameters
-POST /api/actions/{action_id}/parameters
-PUT /api/actions/{action_id}/parameters/{param_id}
-DELETE /api/actions/{action_id}/parameters/{param_id}
-POST /api/actions/{action_id}/parameters/import
 ```
 
 ## Parameters
 
-Parameters define conditional behaviors:
+Parameters define conditional behaviors that are included in the prompt:
 
 ```json
 {
-  "id": "param_1",
   "condition": "User asks about pricing",
-  "response": "Provide pricing information from the pricing directive",
-  "action": "PricingAction",
-  "enabled": true
+  "response": "Provide pricing information from the pricing directive"
 }
 ```
 
-- **condition**: When this parameter applies (evaluated by LLM)
-- **response**: Behavioral instruction for the response
-- **action**: Optional action label to trigger (calls `execute()`)
-- **enabled**: Whether this parameter is active
+- **condition**: When this parameter applies (descriptive text)
+- **response**: Behavioral instruction for the response (included in prompt)
 
-## Event Bus
+Parameters can be:
+- Configured in the action class as the `parameters` attribute
+- Set in `agent.yaml` under the action's context
+- Added dynamically to the Interaction object by other actions
 
-The interaction emits events throughout processing:
+## Prompt Composition
 
-- `interaction_started` - Processing begins
-- `canned_response` - Quick response sent
-- `parameter_filtered` - Parameters selected by LLM
-- `action_triggered` - Helper action called
-- `action_result` - Directive from action
-- `response_chunk` - Streaming chunk
-- `response_complete` - Final response
-- `interaction_complete` - Processing finished
+The system prompt is composed from:
+1. The main `prompt` attribute (or default template if not provided)
+2. Persona attributes (name, role, description, capabilities)
+3. Parameters from `self.parameters` and `interaction.parameters`
+4. Directives from `interaction.directives`
 
-## Example Usage
+The default template includes placeholders for `{parameters}` and `{directives}` that are automatically filled in.
+
+## Example Implementation
 
 ```python
-from jvagent.action.persona import PersonaAction
+from jvagent.action.persona.base import PersonaAction
+from jvspatial.core.annotations import attribute
+from typing import List, Dict, Any
 
-# Get the action
-action = await PersonaAction.get(action_id)
-
-# Process an interaction
-result = await action.interact(
-    utterance="Hello!",
-    user_id=None,  # Auto-generate
-    session_id=None,  # Auto-generate
-    channel="web"
-)
-
-print(f"User: {result.user_id}")
-print(f"Session: {result.session_id}")
-print(f"Response: {result.response}")
+class MyPersonaAction(PersonaAction):
+    # Override persona defaults
+    persona_name: str = attribute(
+        default="My Assistant",
+        description="Agent display name",
+    )
+    
+    # Custom parameters
+    parameters: List[Dict[str, Any]] = attribute(
+        default_factory=lambda: [
+            {
+                "condition": "User asks about X",
+                "response": "Provide information about X",
+            },
+        ],
+        description="Standard collection of configurable parameters",
+    )
 ```
-

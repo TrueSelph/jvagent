@@ -9,5 +9,6 @@ This module provides the action management system including:
 from jvagent.action.base import Action
 from jvagent.action.action_loader import ActionLoader, ActionMetadata
 from jvagent.action.actions import Actions
+from jvagent.action import interact  # noqa: F401
 
 __all__ = ["Actions", "Action", "ActionLoader", "ActionMetadata"]
