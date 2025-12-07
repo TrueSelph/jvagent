@@ -41,8 +41,7 @@ class Agent(Node):
         Returns:
             Actions manager node if found, None otherwise
         """
-        connected = await self.nodes(node="Actions")
-        return connected[0] if connected else None
+        return await self.node(node="Actions")
 
     async def get_action(self, action_label: str) -> Optional[Any]:
         """Get an action by its label.
@@ -72,13 +71,12 @@ class Agent(Node):
         """
         from jvagent.action.base import Action
 
-        # Use entity-centric find with explicit entity filter
+        # Use entity-centric find_one with explicit entity filter
         # This queries for the specific entity type belonging to this agent
-        actions = await Action.find({
+        return await Action.find_one({
             "entity": entity_type,
             "context.agent_id": self.id,
         })
-        return actions[0] if actions else None
 
     async def get_actions(self, enabled_only: bool = False) -> List[Any]:
         """Get all actions for this agent.
@@ -100,8 +98,7 @@ class Agent(Node):
         Returns:
             Memory node if found, None otherwise
         """
-        connected = await self.nodes(node="Memory")
-        return connected[0] if connected else None
+        return await self.node(node="Memory")
 
 
 # =============================================================================

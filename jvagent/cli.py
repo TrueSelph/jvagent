@@ -113,10 +113,9 @@ async def _manual_bootstrap() -> None:
     logger.info(f"Root node ready: {root.id}")
 
     # Step 2: Create App node if it doesn't exist
-    existing_apps = await App.find({"context.name": "jvAgent"})
+    app = await App.find_one({"context.name": "jvAgent"})
 
-    if existing_apps:
-        app = existing_apps[0]
+    if app:
         logger.info(f"App node already exists: {app.id}")
         App._cached_app = app
     else:
@@ -185,9 +184,9 @@ async def ensure_admin_user() -> bool:
         return False
 
     # Check if admin user already exists by email
-    existing_users = await User.find({"context.email": admin_email})
+    existing_user = await User.find_one({"context.email": admin_email})
 
-    if existing_users:
+    if existing_user:
         logger.debug(f"Admin user already exists: {admin_email}")
         return True
 
@@ -754,20 +753,13 @@ async def list_actions(agent_name: str) -> None:
     from jvagent.core.agent import Agent
 
     # Find the agent
-    agents = await Agent.find({"context.name": agent_name})
-    if not agents:
+    agent = await Agent.find_one({"context.name": agent_name})
+    if not agent:
         print(f"Agent not found: {agent_name}")
         return
 
-    agent = agents[0]
-
     # Get Actions manager
-    connected_nodes = await agent.nodes()
-    actions_manager = None
-    for node in connected_nodes:
-        if isinstance(node, Actions):
-            actions_manager = node
-            break
+    actions_manager = await agent.node(node="Actions")
 
     if not actions_manager:
         print(f"No Actions manager found for agent: {agent_name}")
@@ -796,20 +788,13 @@ async def enable_action(agent_name: str, action_label: str) -> None:
     from jvagent.core.agent import Agent
 
     # Find the agent
-    agents = await Agent.find({"context.name": agent_name})
-    if not agents:
+    agent = await Agent.find_one({"context.name": agent_name})
+    if not agent:
         print(f"Agent not found: {agent_name}")
         return
 
-    agent = agents[0]
-
     # Get Actions manager
-    connected_nodes = await agent.nodes()
-    actions_manager = None
-    for node in connected_nodes:
-        if isinstance(node, Actions):
-            actions_manager = node
-            break
+    actions_manager = await agent.node(node="Actions")
 
     if not actions_manager:
         print(f"No Actions manager found for agent: {agent_name}")
@@ -832,20 +817,13 @@ async def disable_action(agent_name: str, action_label: str) -> None:
     from jvagent.core.agent import Agent
 
     # Find the agent
-    agents = await Agent.find({"context.name": agent_name})
-    if not agents:
+    agent = await Agent.find_one({"context.name": agent_name})
+    if not agent:
         print(f"Agent not found: {agent_name}")
         return
 
-    agent = agents[0]
-
     # Get Actions manager
-    connected_nodes = await agent.nodes()
-    actions_manager = None
-    for node in connected_nodes:
-        if isinstance(node, Actions):
-            actions_manager = node
-            break
+    actions_manager = await agent.node(node="Actions")
 
     if not actions_manager:
         print(f"No Actions manager found for agent: {agent_name}")
