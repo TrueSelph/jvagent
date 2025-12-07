@@ -13,7 +13,7 @@ version: 1.0.0
 author: Your Name/Organization
 
 # jvagent version requirement (optional)
-jvagent: ~2.1.0
+jvagent: ~0.0.1
 
 # Application context: Properties that configure the App node
 context:

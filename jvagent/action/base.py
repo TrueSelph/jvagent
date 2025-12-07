@@ -588,7 +588,7 @@ async def get_action(action_id: str) -> Dict[str, Any]:
     - Package information (version, type)
 
     The action ID follows the format: n.{ActionType}.{unique_id}
-    (e.g., n.ExampleAction.abc123, n.OpenAIModelAction.xyz789)
+    (e.g., n.ExampleAction.abc123, n.OpenAILanguageModelAction.xyz789)
 
     Args:
         action_id: ID of the action to retrieve

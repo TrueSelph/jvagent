@@ -151,8 +151,17 @@ class InteractWalker(Walker):
             return
 
         # Apply routing filter if InteractRouter has executed
+        # Check if InteractRouter has run by checking if interpretation exists
+        # InteractRouter always sets interpretation when it runs (even if empty anchors)
         if self.interaction and self.interaction.interpretation:
+            logger.debug(
+                f"InteractWalker: InteractRouter has executed. "
+                f"Interpretation: {self.interaction.interpretation[:100]}, "
+                f"Anchors: {self.interaction.anchors}"
+            )
             enabled_actions = await self._filter_by_routing(enabled_actions)
+        else:
+            logger.debug("InteractWalker: InteractRouter has not executed yet, allowing all actions")
 
         # Sort by weight (negative first, then ascending)
         # Actions with same weight maintain descriptor order (stable sort)
@@ -176,10 +185,11 @@ class InteractWalker(Walker):
 
         This method is automatically called when the walker visits an InteractAction.
         It:
-        1. Executes the action's execute() method
-        2. Finds connected InteractActions (sub-actions) in graph-based arrangement
-        3. Queues them for depth-first traversal (weight is NOT considered for sub-actions)
-        4. The walker continues naturally to process queued actions
+        1. Checks if action should execute based on routing (if InteractRouter has run)
+        2. Executes the action's execute() method
+        3. Finds connected InteractActions (sub-actions) in graph-based arrangement
+        4. Queues them for depth-first traversal (weight is NOT considered for sub-actions)
+        5. The walker continues naturally to process queued actions
 
         Note:
             Sub-actions are traversed in graph-based arrangement without weight
@@ -200,6 +210,29 @@ class InteractWalker(Walker):
                 }
             )
             return
+
+        # Check routing if InteractRouter has executed
+        # If InteractRouter has executed (interpretation is set), check if this action should execute
+        if self.interaction and self.interaction.interpretation:
+            routed_entity_names = set(self.interaction.anchors) if self.interaction.anchors else set()
+            action_entity_name = here.__class__.__name__
+            
+            # Skip if not in routed entities (unless it's InteractRouter itself, which must execute first)
+            if action_entity_name not in routed_entity_names and action_entity_name != "InteractRouter":
+                logger.debug(
+                    f"InteractWalker: Skipping {action_entity_name} (label: {here.label}) - "
+                    f"not in routed entities: {routed_entity_names}"
+                )
+                await self.report(
+                    {
+                        "action_skipped": {
+                            "action": here.label,
+                            "weight": here.weight,
+                            "reason": f"not routed (routed entities: {list(routed_entity_names)})",
+                        }
+                    }
+                )
+                return
 
         try:
             # Execute the action
@@ -259,27 +292,44 @@ class InteractWalker(Walker):
     ) -> List["InteractAction"]:
         """Filter InteractActions based on routing results from InteractRouter.
 
-        If InteractRouter has executed and set anchors on the interaction, only
-        actions whose entity names (from their anchors) match the routed anchors
-        will be allowed. The order of actions is preserved (filtering only, no reordering).
+        If InteractRouter has executed (indicated by interpretation being set), only
+        actions whose class/entity names are in the interaction.anchors list (plus
+        exceptions from InteractRouter) will be allowed. The order of actions is preserved
+        (filtering only, no reordering).
 
         Args:
             actions: List of InteractActions to filter
 
         Returns:
-            Filtered list of InteractActions that match routing or have no anchors
+            Filtered list of InteractActions that match routing (anchors + exceptions)
         """
-        if not self.interaction or not self.interaction.anchors:
-            # No routing information, allow all actions
+        if not self.interaction:
             return actions
 
-        routed_entity_names = set(self.interaction.anchors)
+        # If InteractRouter has executed (interpretation is set), apply strict filtering
+        # Even if anchors list is empty, only allow exceptions (if any)
+        # Anchors list already includes both routed entities and exceptions from InteractRouter
+        routed_entity_names = set(self.interaction.anchors) if self.interaction.anchors else set()
+        
+        logger.debug(
+            f"InteractWalker: Applying routing filter. "
+            f"Interpretation: {self.interaction.interpretation[:100] if self.interaction.interpretation else None}, "
+            f"Routed entities: {routed_entity_names}, "
+            f"Total actions to filter: {len(actions)}"
+        )
+        
         filtered: List["InteractAction"] = []
 
         for action in actions:
             # Check if this action should be allowed
             if self._should_allow_action(action, routed_entity_names):
                 filtered.append(action)
+
+        logger.info(
+            f"InteractWalker: Routing filter applied. "
+            f"Original: {len(actions)}, Filtered: {len(filtered)}, "
+            f"Routed entities: {list(routed_entity_names)}"
+        )
 
         if len(filtered) < len(actions):
             await self.report(
@@ -299,22 +349,26 @@ class InteractWalker(Walker):
     ) -> bool:
         """Check if an action should be allowed based on routing.
 
-        An action is allowed if:
-        1. It has no anchors published (backward compatibility - allow it)
-        2. Any of its anchor entity names are in the routed entity names
+        When InteractRouter has executed, an action is allowed only if:
+        1. Its class/entity name is in the routed entity names (anchors + exceptions)
 
         Args:
             action: The InteractAction to check
-            routed_entity_names: Set of entity names that were routed to
+            routed_entity_names: Set of entity names that were routed to (anchors + exceptions)
 
         Returns:
             True if action should be allowed, False otherwise
         """
-        # If action has no anchors, allow it (backward compatibility)
-        if not action.anchors:
-            return True
-
-        # Check if any of this action's anchor entity names are in the routed anchors
-        action_entity_names = set(action.anchors.keys())
-        return bool(action_entity_names & routed_entity_names)
+        # Get the action's entity name (class name)
+        action_entity_name = action.__class__.__name__
+        
+        # Check if this action's entity name is in the routed anchors/exceptions
+        is_allowed = action_entity_name in routed_entity_names
+        
+        logger.debug(
+            f"InteractWalker: Checking {action_entity_name} (label: {action.label}) - "
+            f"Allowed: {is_allowed}, Routed entities: {routed_entity_names}"
+        )
+        
+        return is_allowed
 

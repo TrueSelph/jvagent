@@ -13,7 +13,7 @@ from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError
 
-from jvagent.action.model.base import ModelAction
+from jvagent.action.model.language.base import LanguageModelAction
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,8 @@ async def query_model_action(
 ) -> Any:
     """Query a model action with a prompt.
 
-    This endpoint handles LLM queries through the model action:
+    This endpoint handles language model queries through the model action.
+    Supports both text-only and multimodal (text + images) queries:
 
     - Supports both synchronous and streaming responses
     - Handles text-only and multimodal (text + images) queries
@@ -155,7 +156,7 @@ async def query_model_action(
             }
     """
     # Get the model action
-    action = await ModelAction.get(action_id)
+    action = await LanguageModelAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(
             message=f"Model action with ID '{action_id}' not found",
@@ -302,7 +303,7 @@ async def get_model_action_metrics(action_id: str) -> Dict[str, Any]:
     Raises:
         ResourceNotFoundError: If action not found
     """
-    action = await ModelAction.get(action_id)
+    action = await LanguageModelAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(
             message=f"Model action with ID '{action_id}' not found",
@@ -322,7 +323,7 @@ async def get_model_action_metrics(action_id: str) -> Dict[str, Any]:
         "average_duration": average_duration,
         "model": action.model,
         "provider": getattr(
-            action, "provider", action.__class__.__name__.replace("ModelAction", "").lower()
+            action, "provider", action.__class__.__name__.replace("LanguageModelAction", "").lower()
         ),
     }
 
@@ -365,7 +366,7 @@ async def list_model_action_templates(action_id: str) -> Dict[str, Any]:
     Raises:
         ResourceNotFoundError: If action not found
     """
-    action = await ModelAction.get(action_id)
+    action = await LanguageModelAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(
             message=f"Model action with ID '{action_id}' not found",
@@ -373,7 +374,7 @@ async def list_model_action_templates(action_id: str) -> Dict[str, Any]:
         )
 
     # Get template manager and list templates
-    from jvagent.action.model.templates import TemplateManager
+    from jvagent.action.model.language.templates import TemplateManager
 
     manager = TemplateManager(action)
     templates = await manager.list_templates()
@@ -424,7 +425,7 @@ async def render_model_action_template(
     Raises:
         ResourceNotFoundError: If action or template not found
     """
-    action = await ModelAction.get(action_id)
+    action = await LanguageModelAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(
             message=f"Model action with ID '{action_id}' not found",

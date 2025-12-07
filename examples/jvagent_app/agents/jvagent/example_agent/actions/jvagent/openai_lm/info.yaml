@@ -2,13 +2,13 @@
 
 package:
   # Action name in namespace/action_name format
-  name: jvagent/model_openai
+  name: jvagent/openai_lm
   
   # Package author
   author: jvagent
   
   # Archetype: The main Action class name
-  archetype: OpenAIModelAction
+  archetype: OpenAILanguageModelAction
   
   # Package version
   version: 1.0.0
@@ -27,5 +27,9 @@ package:
   
   # Package dependencies
   dependencies:
-    jvagent: ~2.1.0
+    jvagent: ~0.0.1
+    # Pip dependencies (installed automatically before action loading)
+    pip:
+      - openai>=1.0.0
+      - httpx>=0.24.0
 

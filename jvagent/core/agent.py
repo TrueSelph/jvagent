@@ -65,11 +65,11 @@ class Agent(Node):
     async def get_action_by_type(self, entity_type: str) -> Optional[Any]:
         """Get the first action matching the given entity type.
 
-        This is useful for finding actions like "OpenAIModelAction" without
+        This is useful for finding actions like "OpenAILanguageModelAction" without
         needing to know the specific ID or label.
 
         Args:
-            entity_type: Entity type name (e.g., "OpenAIModelAction", "PersonaAction")
+            entity_type: Entity type name (e.g., "OpenAILanguageModelAction", "PersonaAction")
 
         Returns:
             Action instance if found, None otherwise

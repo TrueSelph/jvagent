@@ -7,6 +7,8 @@ Typesense is a fast, typo-tolerant search engine that supports vector search.
 import logging
 from typing import Any, Dict, List, Optional
 
+from jvspatial.core.annotations import attribute
+
 from jvagent.action.vectorstore.base import VectorStore
 
 logger = logging.getLogger(__name__)
@@ -72,6 +74,10 @@ class TypesenseVectorStore(VectorStore):
     async def on_register(self) -> None:
         """Initialize Typesense client connection."""
         await super().on_register()
+
+        # Skip if already initialized
+        if self._client:
+            return
 
         if not TYPESENSE_AVAILABLE:
             raise RuntimeError(
@@ -144,23 +150,19 @@ class TypesenseVectorStore(VectorStore):
             raise
 
     async def _generate_embedding(self, text: str) -> List[float]:
-        """Generate embedding for text.
+        """Generate embedding for text using the configured embedding model.
 
         Args:
             text: Text to embed
 
         Returns:
             Embedding vector
+
+        Raises:
+            RuntimeError: If embedding model is not available
         """
-        # For now, return a placeholder
-        # In a full implementation, this would use an embedding model
-        # Users should provide their own embedding generation
-        logger.warning(
-            "Embedding generation not implemented. "
-            "Please provide pre-computed embeddings or implement embedding generation."
-        )
-        # Return zero vector as placeholder
-        return [0.0] * self.embedding_dimensions
+        # Use base class method to generate embedding via EmbeddingModelAction
+        return await self._embed_text(text)
 
     async def store(
         self,
@@ -182,6 +184,10 @@ class TypesenseVectorStore(VectorStore):
         Returns:
             List of document IDs that were stored
         """
+        # Ensure client is initialized
+        if not self._client:
+            await self.on_register()
+        
         if not TYPESENSE_AVAILABLE or not self._client:
             raise RuntimeError("Typesense client not available")
 
@@ -243,6 +249,10 @@ class TypesenseVectorStore(VectorStore):
             - distance: Distance metric (lower is more similar)
             - metadata: Document metadata
         """
+        # Ensure client is initialized
+        if not self._client:
+            await self.on_register()
+        
         if not TYPESENSE_AVAILABLE or not self._client:
             raise RuntimeError("Typesense client not available")
 
@@ -261,12 +271,14 @@ class TypesenseVectorStore(VectorStore):
             if filter_parts:
                 filter_by = " && ".join(filter_parts)
 
-        # Build search parameters
+        # Build search parameters using multi_search endpoint for vector queries
+        # This avoids the 4000 character limit on query strings
         # Typesense vector query format: vector:([0.1,0.2,0.3], k:10)
-        vector_str = ",".join(map(str, query_vector))
+        # We'll use multi_search which accepts the vector as a list in the request body
         search_parameters: Dict[str, Any] = {
+            "collection": collection,
             "q": "*",
-            "vector_query": f'vector:([{vector_str}], k:{k})',
+            "vector_query": f'vector:([{",".join(map(str, query_vector))}], k:{k})',
             "query_by": "content",
             "per_page": k,
         }
@@ -275,9 +287,24 @@ class TypesenseVectorStore(VectorStore):
             search_parameters["filter_by"] = filter_by
 
         try:
-            results = self._client.collections[collection].documents.search(
-                search_parameters
-            )
+            # Use multi_search endpoint for vector queries to avoid query string length limits
+            # The multi_search endpoint sends the request in the body as JSON, avoiding URL query string limits
+            # This is necessary because vector queries with embeddings can be very long
+            multi_search_request = {
+                "searches": [search_parameters]
+            }
+            
+            # Perform multi_search - this sends the request in the body, not the URL
+            # The vector_query string is sent as part of the JSON body, not in the URL
+            results_response = self._client.multi_search.perform(multi_search_request, {})
+            
+            # Extract results from multi_search response
+            # multi_search returns {"results": [{"hits": [...], ...}]}
+            if results_response and "results" in results_response and len(results_response["results"]) > 0:
+                results = results_response["results"][0]
+            else:
+                logger.warning("Typesense multi_search returned no results")
+                results = {"hits": []}
 
             # Convert to standard format
             formatted_results = []
@@ -372,6 +399,10 @@ class TypesenseVectorStore(VectorStore):
         Returns:
             True if collection was deleted
         """
+        # Ensure client is initialized
+        if not self._client:
+            await self.on_register()
+        
         if not TYPESENSE_AVAILABLE or not self._client:
             return False
 

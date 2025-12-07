@@ -447,7 +447,7 @@ version: 1.0.0
 author: Your Name/Organization
 
 # jvagent version requirement (optional)
-jvagent: ~2.1.0
+jvagent: ~0.0.1
 
 # Application context: Properties that configure the App node
 context:
@@ -499,7 +499,7 @@ version: 1.0.0
 author: Your Name
 
 # jvagent version requirement (optional)
-jvagent: ~2.1.0
+jvagent: ~0.0.1
 
 # Agent context: Properties that configure the agent
 context:
@@ -567,7 +567,7 @@ package:
   # Package dependencies
   dependencies:
     # jvagent version requirement
-    jvagent: ~2.1.0
+    jvagent: ~0.0.1
     # Other action dependencies (by namespace/action_name)
     actions:
       # - jvagent/another_action: ~1.0.0
@@ -624,7 +624,7 @@ package:
   # Package dependencies
   dependencies:
     # jvagent version requirement
-    jvagent: ~2.1.0
+    jvagent: ~0.0.1
     # Other action dependencies (by namespace/action_name)
     actions: []
 ```

@@ -7,7 +7,7 @@ The Persona Action is a simplified tool-based action for applying agent prompts 
 This action provides:
 - **Prompt Composition**: Applies the main agent prompt template with persona attributes
 - **Configurable Parameters**: Behavioral parameters that are included in the prompt
-- **Model Integration**: Uses ModelAction (e.g., OpenAIModelAction) for LLM queries
+- **Model Integration**: Uses LanguageModelAction (e.g., OpenAILanguageModelAction) for LLM queries
 - **Simple Interface**: Single `respond()` method that takes an Interaction and returns a response
 
 ## Configuration
@@ -28,7 +28,7 @@ actions:
         - "Process requests"
       
       # Model Configuration
-      model_action_type: "OpenAIModelAction"  # Entity type to find dynamically
+      model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
       model_name: "gpt-4o-mini"
       model_temperature: 0.3
       model_max_tokens: 4096
@@ -46,7 +46,7 @@ actions:
 
 - **prompt**: Main agent prompt template (optional, uses default template if not provided)
 - **parameters**: List of parameter dictionaries with `condition` and `response` keys
-- **model_action_type**: Entity type of the ModelAction to use (e.g., "OpenAIModelAction")
+- **model_action_type**: Entity type of the LanguageModelAction to use (e.g., "OpenAILanguageModelAction")
 - **model_name**: Default model name for LLM queries
 - **model_temperature**: Temperature for LLM generation
 - **model_max_tokens**: Max tokens for LLM generation
@@ -107,7 +107,7 @@ POST /api/agents/{agent_id}/interact
     "id": "int_123",
     "utterance": "Hello, how can you help me?",
     "response": "Hello! I'm here to help you...",
-    "actions": ["PersonaAction", "OpenAIModelAction"],
+    "actions": ["PersonaAction", "OpenAILanguageModelAction"],
     "directives": [],
     "parameters": [],
     "model_log": [{"prompt": "...", "system": "...", "response": "...", "metrics": {"total_tokens": 100, "duration": 1.5}}]

@@ -15,7 +15,7 @@ class ToolDefinition:
     """Represents a tool/function definition for LLM function calling.
 
     Follows OpenAI's function calling format, which is widely supported
-    across different LLM providers.
+    across different language model providers (including multimodal implementations).
 
     Examples:
         >>> tool = ToolDefinition(

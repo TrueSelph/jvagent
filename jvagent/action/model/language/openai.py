@@ -1,7 +1,8 @@
 """OpenAI model action implementation.
 
 Provides integration with OpenAI's Chat Completions API with support for
-both synchronous and streaming responses.
+both synchronous and streaming responses. Supports multimodal queries
+(text + images) for visual understanding.
 """
 
 import json
@@ -11,16 +12,17 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 import httpx
 from jvspatial.core.annotations import attribute
 
-from jvagent.action.model.base import ModelAction, ModelActionResult
+from jvagent.action.model.language.base import LanguageModelAction, ModelActionResult
 
 logger = logging.getLogger(__name__)
 
 
-class OpenAIModelAction(ModelAction):
-    """OpenAI LLM integration action.
+class OpenAILanguageModelAction(LanguageModelAction):
+    """OpenAI language model integration action.
 
-    Implements the ModelAction interface for OpenAI's Chat Completions API.
+    Implements the LanguageModelAction interface for OpenAI's Chat Completions API.
     Supports all OpenAI models including GPT-4, GPT-3.5, and others.
+    Supports multimodal queries (text + images) for visual understanding.
 
     Configuration:
         api_key: OpenAI API key (from environment or config)
@@ -32,7 +34,7 @@ class OpenAIModelAction(ModelAction):
 
     Examples:
         Programmatic usage:
-        >>> action = await OpenAIModelAction.get(action_id)
+        >>> action = await OpenAILanguageModelAction.get(action_id)
         >>> result = await action.query_sync("What is AI?")
         >>> response = await result.get_response()
 

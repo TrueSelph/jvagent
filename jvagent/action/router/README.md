@@ -16,18 +16,18 @@ InteractRouter serves as the entry point for intent-based routing in the interac
 
 ### Anchor System
 
-InteractActions can publish anchors that describe when they should be used. Anchors are defined as a dictionary mapping entity names to lists of anchor statements:
+InteractActions can publish anchors that describe when they should be used. Anchors are defined as a simple list of anchor statements. The action's class/entity name is automatically used as the key when collected by InteractRouter:
 
 ```python
 class MyInteractAction(InteractAction):
-    anchors: Dict[str, List[str]] = {
-        "MyAction": [
-            "User requests a report update",
-            "User asks about report status",
-            "User wants to check report progress"
-        ]
-    }
+    anchors: List[str] = [
+        "User requests a report update",
+        "User asks about report status",
+        "User wants to check report progress"
+    ]
 ```
+
+The InteractRouter automatically uses the class name (`MyInteractAction`) as the entity name when collecting anchors, so you don't need to specify it yourself.
 
 ### Routing Flow
 
@@ -63,7 +63,7 @@ After InteractRouter stores routing information, other InteractActions can:
 
 ### Properties
 
-- `model_action_type`: Type of ModelAction to use (e.g., "OpenAIModelAction"). If empty, uses first available ModelAction.
+- `model_action_type`: Type of LanguageModelAction to use (e.g., "OpenAILanguageModelAction"). If empty, uses first available LanguageModelAction.
 - `history_limit`: Number of previous interactions to include in conversation history (default: 10)
 - `weight`: Execution weight (default: -100 to run first)
 
@@ -74,7 +74,7 @@ actions:
   - action: jvagent/interact_router
     context:
       enabled: true
-      model_action_type: "OpenAIModelAction"
+      model_action_type: "OpenAILanguageModelAction"
       history_limit: 15
 ```
 
@@ -86,22 +86,21 @@ To enable routing to your InteractAction, publish anchors:
 
 ```python
 from jvagent.action.interact.base import InteractAction
-from typing import Dict, List
+from typing import List
 
 class ReportAction(InteractAction):
-    anchors: Dict[str, List[str]] = {
-        "ReportAction": [
-            "User requests a report update",
-            "User asks about report status",
-            "User wants to check report progress",
-            "User needs report information"
-        ]
-    }
+    anchors: List[str] = [
+        "User requests a report update",
+        "User asks about report status",
+        "User wants to check report progress",
+        "User needs report information"
+    ]
     
-    async def execute(self, here, visitor):
+    async def execute(self, visitor):
         interaction = visitor.interaction
         
         # Check if this action was routed to
+        # The entity name is automatically the class name
         if "ReportAction" not in interaction.anchors:
             return  # Skip if not routed
         
@@ -115,12 +114,14 @@ class ReportAction(InteractAction):
 InteractActions can check routing results:
 
 ```python
-async def execute(self, here, visitor):
+async def execute(self, visitor):
     interaction = visitor.interaction
     
     # Check if routed to this action
-    if self.label not in interaction.anchors:
-        logger.debug(f"{self.label} not routed, skipping")
+    # Use the class name as the entity name
+    entity_name = self.__class__.__name__
+    if entity_name not in interaction.anchors:
+        logger.debug(f"{entity_name} not routed, skipping")
         return
     
     # Use interpretation for context
@@ -148,7 +149,7 @@ The system prompt emphasizes precision and only matching when there's clear alig
 
 ## Dependencies
 
-- Requires a ModelAction to be registered (e.g., OpenAIModelAction)
+- Requires a LanguageModelAction to be registered (e.g., OpenAILanguageModelAction)
 - Requires other InteractActions to publish anchors for routing to work
 - Uses conversation history from the Interaction chain
 
@@ -165,36 +166,21 @@ The system prompt emphasizes precision and only matching when there's clear alig
 ### Example 1: Simple Action with Anchors
 
 ```python
+from typing import List
+
 class WeatherAction(InteractAction):
-    anchors: Dict[str, List[str]] = {
-        "WeatherAction": [
-            "User asks about weather",
-            "User wants weather forecast",
-            "User requests weather information",
-            "User asks what's the weather like"
-        ]
-    }
+    anchors: List[str] = [
+        "User asks about weather",
+        "User wants weather forecast",
+        "User requests weather information",
+        "User asks what's the weather like"
+    ]
     
-    async def execute(self, here, visitor):
+    async def execute(self, visitor):
+        # The entity name is automatically the class name
         if "WeatherAction" not in visitor.interaction.anchors:
             return
         # Process weather request...
-```
-
-### Example 2: Action with Multiple Entity Names
-
-```python
-class ReportAction(InteractAction):
-    anchors: Dict[str, List[str]] = {
-        "ReportAction": [
-            "User requests a report update",
-            "User asks about report status"
-        ],
-        "ReportGenerator": [
-            "User wants to generate a report",
-            "User requests new report creation"
-        ]
-    }
 ```
 
 ## Troubleshooting
@@ -204,7 +190,7 @@ class ReportAction(InteractAction):
 If InteractRouter reports "No anchors available":
 - Ensure other InteractActions have published anchors
 - Check that InteractActions are enabled
-- Verify anchors are defined as `Dict[str, List[str]]`
+- Verify anchors are defined as `List[str]` (entity name is automatically the class name)
 
 ### No Matches Found
 
