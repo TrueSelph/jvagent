@@ -4,9 +4,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from jvspatial.core import Node
-from jvspatial.core.annotations import attribute
+from jvspatial.core.annotations import attribute, compound_index
 
 
+@compound_index([("context.conversation_id", 1), ("context.started_at", -1)], name="conv_timestamp")
 class Interaction(Node):
     """Single exchange within a Conversation.
 
@@ -42,7 +43,7 @@ class Interaction(Node):
 
     # Context
     conversation_id: str = attribute(
-        default="", description="Parent conversation ID"
+        indexed=True, default="", description="Parent conversation ID"
     )
     user_id: str = attribute(default="", description="User ID")
     utterance: str = attribute(default="", description="User input text")
@@ -79,7 +80,9 @@ class Interaction(Node):
 
     # Timestamps
     started_at: datetime = attribute(
-        default_factory=lambda: datetime.now(timezone.utc), description="Interaction start timestamp"
+        indexed=True, index_direction=-1,
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Interaction start timestamp"
     )
     completed_at: Optional[datetime] = attribute(
         default=None, description="Interaction completion timestamp"

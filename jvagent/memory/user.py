@@ -32,7 +32,7 @@ class User(Node):
         last_seen: Timestamp of last user activity
     """
 
-    user_id: str = attribute(default="", description="Unique user identifier")
+    user_id: str = attribute(indexed=True, index_unique=True, default="", description="Unique user identifier")
     created_at: datetime = attribute(
         default_factory=lambda: datetime.now(timezone.utc), description="Timestamp of user creation"
     )
@@ -41,23 +41,40 @@ class User(Node):
     )
 
     async def create_conversation(
-        self, session_id: Optional[str] = None, channel: str = "default"
+        self,
+        session_id: Optional[str] = None,
+        channel: str = "default",
+        interaction_limit: Optional[int] = None,
     ) -> "Conversation":
         """Create and connect a new Conversation via edge.
 
         Args:
             session_id: Optional session identifier. If None, auto-generates one.
             channel: Communication channel (e.g., 'default', 'whatsapp', 'web')
+            interaction_limit: Optional interaction limit. If None, uses agent's default.
 
         Returns:
             Newly created Conversation node connected to this User
         """
         from jvagent.memory.conversation import Conversation
+        from jvagent.memory.manager import Memory
+
+        # Get agent's default interaction_limit if not provided
+        if interaction_limit is None:
+            # Get Memory node (User is connected to Memory via incoming edge)
+            memory = await self.node(direction="in", node=Memory)
+            if memory:
+                # Get Agent from Memory
+                from jvagent.core.agent import Agent
+                agent = await memory.node(node=Agent)
+                if agent and hasattr(agent, "interaction_limit"):
+                    interaction_limit = agent.interaction_limit
 
         conv = await Conversation.create(
             session_id=session_id or f"sess_{uuid.uuid4().hex[:16]}",
             user_id=self.user_id,
             channel=channel,
+            interaction_limit=interaction_limit or 0,
         )
         await self.connect(conv)  # Creates edge: User --> Conversation
         return conv

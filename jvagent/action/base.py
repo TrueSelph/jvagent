@@ -15,13 +15,15 @@ from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.core import Node
-from jvspatial.core.annotations import attribute
+from jvspatial.core.annotations import attribute, compound_index
 from jvspatial.core.pager import ObjectPager
 
 if TYPE_CHECKING:
     pass  # App imported locally when needed
 
 
+@compound_index([("context.agent_id", 1), ("context.enabled", 1)], name="agent_enabled")
+@compound_index([("context.agent_id", 1), ("context.label", 1)], name="agent_label", unique=True)
 class Action(Node):
     """Base action class for all action types.
 
@@ -71,14 +73,15 @@ class Action(Node):
 
     # Core Attributes
     agent_id: str = attribute(
+        indexed=True,
         protected=True, default="", description="ID of the agent this action belongs to"
     )
-    enabled: bool = attribute(default=True, description="Whether the action is currently enabled")
+    enabled: bool = attribute(indexed=True, default=True, description="Whether the action is currently enabled")
     namespace: str = attribute(
         default="", description="Namespace for the action (e.g., 'jvagent', 'contrib')"
     )
     label: str = attribute(
-        default="", description="Human-readable label for the action (used as identifier)"
+        indexed=True, default="", description="Human-readable label for the action (used as identifier)"
     )
     description: str = attribute(
         default="basic agent action", description="Description of what the action does"

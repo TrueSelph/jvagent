@@ -6,6 +6,7 @@ from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.core import Node
+from jvspatial.core.annotations import attribute
 from jvspatial.core.pager import ObjectPager
 
 from jvagent.core.agents import Agents
@@ -25,11 +26,15 @@ class Agent(Node):
         description: Optional description of the agent
     """
 
-    namespace: str = ""
-    name: str = ""
-    alias: str = ""
-    enabled: bool = True
-    description: str = ""
+    namespace: str = attribute(indexed=True, description="Namespace for the agent")
+    name: str = attribute(indexed=True, index_unique=True, description="Unique machine name for the agent")
+    alias: str = attribute(description="Human-readable display name")
+    enabled: bool = attribute(default=True, description="Whether the agent is enabled")
+    description: str = attribute(description="Optional description of the agent")
+    interaction_limit: int = attribute(
+        default=0,
+        description="Default interaction limit for conversations (0 = disabled, no pruning). Can be overridden per conversation."
+    )
 
     # =========================================================================
     # Graph Navigation Helpers
@@ -123,6 +128,7 @@ class Agent(Node):
                     "alias": "My Agent",
                     "enabled": True,
                     "description": "Agent description",
+                    "interaction_limit": 100,
                 },
             )
         }
@@ -175,6 +181,7 @@ async def get_agent(agent_id: str) -> Dict[str, Any]:
                     "alias": "Updated Agent Display Name",
                     "enabled": True,
                     "description": "Updated description",
+                    "interaction_limit": 100,
                 },
             ),
             "message": ResponseField(
@@ -190,6 +197,7 @@ async def update_agent(
     alias: Optional[str] = None,
     enabled: Optional[bool] = None,
     description: Optional[str] = None,
+    interaction_limit: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Update an existing Agent node.
 
@@ -198,6 +206,7 @@ async def update_agent(
     - alias: Display name shown in UI (name is static)
     - enabled: Enable/disable the agent
     - description: Agent description text
+    - interaction_limit: Default interaction limit for conversations (0 = disabled)
 
     Important Notes:
 
@@ -210,6 +219,7 @@ async def update_agent(
         alias: New display name (alias) for the agent
         enabled: Whether the agent should be enabled
         description: New description for the agent
+        interaction_limit: Default interaction limit for conversations (0 = disabled)
 
     Returns:
         Dictionary with:
@@ -255,6 +265,10 @@ async def update_agent(
     # Update description if provided
     if description is not None:
         agent.description = description
+
+    # Update interaction_limit if provided
+    if interaction_limit is not None:
+        agent.interaction_limit = interaction_limit
 
     # Save the updated agent
     await agent.save()
