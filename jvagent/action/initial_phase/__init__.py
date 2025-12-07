@@ -22,7 +22,6 @@ from jvagent.action.initial_phase.models import (
     Parameter,
     Workflow,
 )
-from jvagent.action.initial_phase.typesense_manager import TypesenseManager
 
 __all__ = [
     # Main classes

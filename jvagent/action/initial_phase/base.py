@@ -29,7 +29,6 @@ from jvagent.action.initial_phase.prompts import (
     format_history_for_prompt,
     format_parameters_for_prompt,
 )
-from jvagent.action.initial_phase.typesense_manager import TypesenseManager
 from jvagent.memory import Conversation, Interaction, Memory, User
 
 logger = logging.getLogger(__name__)
