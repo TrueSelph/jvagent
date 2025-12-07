@@ -10,10 +10,10 @@ import logging
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from jvspatial.core import Walker, on_visit
 from jvagent.memory.interaction import Interaction
+from jvagent.action.interact.base import InteractAction
 
 if TYPE_CHECKING:
     from jvagent.action.actions import Actions
-    from jvagent.action.interact.base import InteractAction
     from jvagent.core.agent import Agent
     from jvagent.memory.conversation import Conversation
     from jvagent.memory.manager import Memory
@@ -128,10 +128,11 @@ class InteractWalker(Walker):
     async def on_actions(self, here: Any) -> None:
         """Visit Actions node and queue top-level InteractActions for traversal.
 
-        Gets all connected InteractActions, filters to enabled ones, sorts by weight
-        (weight is only considered at this top tier), and queues them for traversal.
-        The @on_visit("InteractAction") handler will process each action with
-        depth-first traversal of sub-actions (without weight consideration).
+        Gets all connected InteractActions, filters to enabled ones, applies routing
+        filter if InteractRouter has executed, sorts by weight (weight is only considered
+        at this top tier), and queues them for traversal. The @on_visit("InteractAction")
+        handler will process each action with depth-first traversal of sub-actions
+        (without weight consideration).
 
         Args:
             here: The Actions node being visited
@@ -139,14 +140,19 @@ class InteractWalker(Walker):
         from jvagent.action.interact.base import InteractAction
 
         # Get all enabled InteractActions (forward direction from Actions node)
+        # Use class type instead of string to match by isinstance() (includes subclasses like InteractRouter)
         # Filter by enabled=True directly in the query using kwargs
         enabled_actions: List[InteractAction] = await here.nodes(
-            node="InteractAction", enabled=True
+            node=InteractAction, enabled=True
         )
 
         if not enabled_actions:
             await self.report({"info": "No enabled InteractActions found"})
             return
+
+        # Apply routing filter if InteractRouter has executed
+        if self.interaction and self.interaction.interpretation:
+            enabled_actions = await self._filter_by_routing(enabled_actions)
 
         # Sort by weight (negative first, then ascending)
         # Actions with same weight maintain descriptor order (stable sort)
@@ -164,7 +170,7 @@ class InteractWalker(Walker):
         # Queue actions for traversal (walker will process them via @on_visit)
         await self.visit(sorted_actions)
 
-    @on_visit("InteractAction")
+    @on_visit(InteractAction)
     async def on_interact_action(self, here: "InteractAction") -> None:
         """Visit an InteractAction node: execute it, then traverse sub-actions depth-first.
 
@@ -197,7 +203,8 @@ class InteractWalker(Walker):
 
         try:
             # Execute the action
-            await here.execute(here, self)
+            # Note: 'here' is the node (self from node's perspective), 'self' is the walker (visitor)
+            await here.execute(self)
             await self.report(
                 {
                     "action_executed": {
@@ -209,9 +216,11 @@ class InteractWalker(Walker):
 
             # Find connected enabled InteractActions (sub-actions) for depth-first traversal
             # Using forward direction from the current InteractAction
+            # Use class type instead of string to match by isinstance() (includes subclasses like InteractRouter)
             # Filter by enabled=True directly in the query using kwargs
+            # Note: Routing filtering is NOT applied to sub-actions, only to top-level actions
             enabled_sub_actions: List["InteractAction"] = await here.nodes(
-                node="InteractAction", enabled=True
+                node=InteractAction, enabled=True
             )
 
             if enabled_sub_actions:
@@ -244,4 +253,68 @@ class InteractWalker(Walker):
                 }
             )
             # Continue to next action (don't raise, let walker continue)
+
+    async def _filter_by_routing(
+        self, actions: List["InteractAction"]
+    ) -> List["InteractAction"]:
+        """Filter InteractActions based on routing results from InteractRouter.
+
+        If InteractRouter has executed and set anchors on the interaction, only
+        actions whose entity names (from their anchors) match the routed anchors
+        will be allowed. The order of actions is preserved (filtering only, no reordering).
+
+        Args:
+            actions: List of InteractActions to filter
+
+        Returns:
+            Filtered list of InteractActions that match routing or have no anchors
+        """
+        if not self.interaction or not self.interaction.anchors:
+            # No routing information, allow all actions
+            return actions
+
+        routed_entity_names = set(self.interaction.anchors)
+        filtered: List["InteractAction"] = []
+
+        for action in actions:
+            # Check if this action should be allowed
+            if self._should_allow_action(action, routed_entity_names):
+                filtered.append(action)
+
+        if len(filtered) < len(actions):
+            await self.report(
+                {
+                    "routing_filter_applied": {
+                        "original_count": len(actions),
+                        "filtered_count": len(filtered),
+                        "routed_entities": list(routed_entity_names),
+                    }
+                }
+            )
+
+        return filtered
+
+    def _should_allow_action(
+        self, action: "InteractAction", routed_entity_names: set
+    ) -> bool:
+        """Check if an action should be allowed based on routing.
+
+        An action is allowed if:
+        1. It has no anchors published (backward compatibility - allow it)
+        2. Any of its anchor entity names are in the routed entity names
+
+        Args:
+            action: The InteractAction to check
+            routed_entity_names: Set of entity names that were routed to
+
+        Returns:
+            True if action should be allowed, False otherwise
+        """
+        # If action has no anchors, allow it (backward compatibility)
+        if not action.anchors:
+            return True
+
+        # Check if any of this action's anchor entity names are in the routed anchors
+        action_entity_names = set(action.anchors.keys())
+        return bool(action_entity_names & routed_entity_names)
 

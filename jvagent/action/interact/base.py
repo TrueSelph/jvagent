@@ -6,7 +6,7 @@ defines the interface for actions that participate in the interact subsystem.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Dict, List
 
 from jvspatial.core import on_visit
 from jvspatial.core.annotations import attribute
@@ -57,19 +57,30 @@ class InteractAction(Action, ABC):
         ),
     )
 
+    # Anchors for routing (published by InteractRouter)
+    anchors: Dict[str, List[str]] = attribute(
+        default_factory=dict,
+        description=(
+            "Anchor statements for routing. Format: {'entity_name': ['anchor1', 'anchor2']}. "
+            "Published during registration to enable InteractRouter to match user intents."
+        ),
+    )
+
     @on_visit(InteractWalker if InteractWalker is not None else "InteractWalker")  # type: ignore
     @abstractmethod
-    async def execute(
-        self, here: "InteractAction", visitor: "InteractWalker"
-    ) -> None:
+    async def execute(self, visitor: "InteractWalker") -> None:
         """Execute the action's logic on the interaction.
 
         This method is called when an InteractWalker visits this InteractAction.
         Implementations should perform evaluation checks at the start and return
         early if conditions aren't met.
 
+        Note: Child classes must also apply the @on_visit decorator since the
+        decorator on the abstract method doesn't apply to overridden implementations.
+
         Example:
-            async def execute(self, here: "InteractAction", visitor: "InteractWalker") -> None:
+            @on_visit(InteractWalker)
+            async def execute(self, visitor: "InteractWalker") -> None:
                 # Evaluation checks at the start
                 if not self._should_run(visitor):
                     return  # Early return if conditions not met
@@ -79,12 +90,47 @@ class InteractAction(Action, ABC):
                 # ... perform action logic ...
 
         Args:
-            here: The InteractAction node being visited (this action instance)
             visitor: The InteractWalker visiting this action
 
         Note:
             Access the Interaction via visitor.interaction
-            Access action properties via here (self)
+            Access action properties via self (the node instance)
         """
         pass
+
+    def should_execute(self, visitor: "InteractWalker") -> bool:
+        """Optional helper to check if this action should execute based on routing.
+
+        This method checks if the action's entity name (from anchors) is in the
+        interaction's anchors list. Actions can use this to skip execution if
+        they weren't routed to by InteractRouter.
+
+        Args:
+            visitor: The InteractWalker visiting this action
+
+        Returns:
+            True if action should execute, False otherwise
+
+        Note:
+            This is an optional helper. Actions can implement their own routing
+            logic or ignore routing entirely. This method provides a convenient
+            default implementation for anchor-based routing.
+        """
+        interaction = visitor.interaction
+        if not interaction or not interaction.anchors:
+            # No routing information, allow execution (backward compatibility)
+            return True
+
+        # Check if any of this action's anchor entity names are in the routed anchors
+        if not self.anchors:
+            # No anchors published, allow execution
+            return True
+
+        # Check if any entity name from this action's anchors matches routed anchors
+        for entity_name in self.anchors.keys():
+            if entity_name in interaction.anchors:
+                return True
+
+        # Not routed to this action
+        return False
 

@@ -113,7 +113,7 @@ class PersonaAction(Action):
             RuntimeError: If PersonaAction is not attached to an agent or model action not found
         """
         # Get agent
-        agent = await self._get_agent()
+        agent = await self.get_agent()
         if not agent:
             raise RuntimeError("PersonaAction not attached to an agent")
 
@@ -159,14 +159,6 @@ class PersonaAction(Action):
         except Exception as e:
             logger.error(f"Error in PersonaAction.respond: {e}", exc_info=True)
             raise
-
-    async def _get_agent(self) -> Optional[Any]:
-        """Get the agent this action belongs to."""
-        from jvagent.core.agent import Agent
-
-        if self.agent_id:
-            return await Agent.get(self.agent_id)
-        return None
 
     def _compose_prompt(self, interaction: Interaction) -> str:
         """Compose the system prompt from the main prompt and interaction context.
@@ -268,7 +260,7 @@ class PersonaAction(Action):
         """
         try:
             # Check if model action is available
-            agent = await self._get_agent()
+            agent = await self.get_agent()
             if agent and self.model_action_type:
                 from jvagent.action.model.base import ModelAction
                 action = await agent.get_action_by_type(self.model_action_type)

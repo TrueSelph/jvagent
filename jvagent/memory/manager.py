@@ -108,6 +108,18 @@ class Memory(Node):
         # Use find_one for optimal performance
         return await Conversation.find_one({"context.session_id": session_id})
 
+    async def get_agent(self) -> Optional[Any]:
+        """Get the Agent node this Memory belongs to.
+
+        Memory is connected to Agent via bidirectional edge.
+
+        Returns:
+            Agent instance if found, None otherwise
+        """
+        from jvagent.core.agent import Agent
+
+        return await self.node(node=Agent)
+
     async def get_user_by_session(self, session_id: str) -> Optional["User"]:
         """Find the User that owns a specific session.
 
