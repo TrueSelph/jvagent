@@ -15,10 +15,13 @@ class Interaction(Node):
     parent Conversation.
 
     Entity Relationships:
-        - Connected to Conversation via incoming edge
+        - Connected to Conversation via incoming edge (first interaction only)
+        - Chained to other Interactions via bidirectional edges:
+          Interaction1 <-> Interaction2 <-> Interaction3
+          (allows forward and backward traversal)
 
     Cascade Delete Behavior:
-        - Deleting the parent Conversation cascades to delete this Interaction
+        - Deleting the parent Conversation cascades to delete all chained Interactions
 
     Attributes:
         conversation_id: Parent conversation ID
@@ -193,3 +196,43 @@ class Interaction(Node):
         if self.events:
             entry["events"] = self.events
         return entry
+
+    async def get_next_interaction(self) -> Optional["Interaction"]:
+        """Get the next interaction in the chain (forward traversal).
+
+        Returns:
+            Next Interaction node, or None if this is the last interaction
+        """
+        from jvagent.memory.interaction import Interaction
+
+        # Get the next interaction via outgoing edges (forward direction)
+        # Filter by conversation_id to ensure it's part of the same chain
+        # With bidirectional edges, there should be at most one next interaction
+        next_int = await self.node(
+            node=Interaction, direction="out", conversation_id=self.conversation_id
+        )
+        
+        # Verify timestamp ordering (safety check)
+        if next_int and next_int.started_at >= self.started_at:
+            return next_int
+        return None
+
+    async def get_previous_interaction(self) -> Optional["Interaction"]:
+        """Get the previous interaction in the chain (backward traversal).
+
+        Returns:
+            Previous Interaction node, or None if this is the first interaction
+        """
+        from jvagent.memory.interaction import Interaction
+
+        # Get the previous interaction via incoming edges (backward direction)
+        # Filter by conversation_id to ensure it's part of the same chain
+        # With bidirectional edges, there should be at most one previous interaction
+        prev_int = await self.node(
+            node=Interaction, direction="in", conversation_id=self.conversation_id
+        )
+        
+        # Verify timestamp ordering (safety check)
+        if prev_int and prev_int.started_at <= self.started_at:
+            return prev_int
+        return None

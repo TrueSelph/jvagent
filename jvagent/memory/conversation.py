@@ -19,10 +19,12 @@ class Conversation(Node):
 
     Entity Relationships:
         - Connected to User via incoming edge
-        - Connected to Interactions via outgoing edge
+        - Connected to first Interaction via outgoing edge
+        - Interactions are chained: Interaction1 <-> Interaction2 <-> Interaction3
+          (bidirectional edges allow forward and backward traversal)
 
     Cascade Delete Behavior:
-        - Deleting a Conversation cascades to all connected Interactions
+        - Deleting a Conversation cascades to all chained Interactions
 
     Attributes:
         session_id: Session identifier (can be set or auto-generated)
@@ -32,6 +34,7 @@ class Conversation(Node):
         created_at: Timestamp of conversation creation
         last_interaction_at: Timestamp of last interaction
         interaction_count: Number of interactions in this conversation
+        interaction_limit: Maximum number of interactions to keep (0 = disabled, no pruning)
         context: Conversation context dictionary for storing state
     """
 
@@ -50,24 +53,119 @@ class Conversation(Node):
     interaction_count: int = attribute(
         default=0, description="Number of interactions"
     )
+    interaction_limit: int = attribute(
+        default=0, description="Maximum number of interactions to keep (0 = disabled, no pruning)"
+    )
     context: Dict[str, Any] = attribute(
         default_factory=dict, description="Conversation context dictionary"
     )
 
-    async def add_interaction(self, interaction: "Interaction") -> "Interaction":
-        """Connect an Interaction to this Conversation via edge.
-
-        Args:
-            interaction: Interaction node to connect
+    async def get_first_interaction(self) -> Optional["Interaction"]:
+        """Get the first interaction in the chain.
 
         Returns:
-            The connected Interaction node
+            First Interaction node, or None if no interactions exist
         """
-        await self.connect(interaction)  # Creates edge: Conversation --> Interaction
+        from jvagent.memory.interaction import Interaction
+
+        # Get interactions connected directly from conversation (first interaction only)
+        interactions = await self.nodes(node=Interaction, direction="out")
+        return interactions[0] if interactions else None
+
+    async def get_last_interaction(self) -> Optional["Interaction"]:
+        """Get the last interaction in the chain by traversing forward.
+
+        Returns:
+            Last Interaction node, or None if no interactions exist
+        """
+        first = await self.get_first_interaction()
+        if not first:
+            return None
+
+        # Traverse forward through the chain
+        current = first
+        while True:
+            next_interaction = await current.get_next_interaction()
+            if not next_interaction:
+                return current
+            current = next_interaction
+
+    async def add_interaction(self, interaction: "Interaction") -> "Interaction":
+        """Add an Interaction to the chain with bidirectional edges.
+
+        Interactions are chained chronologically: Interaction1 <-> Interaction2 <-> Interaction3
+        The conversation connects to the first interaction only.
+
+        Args:
+            interaction: Interaction node to add
+
+        Returns:
+            The added Interaction node
+        """
+        from jvagent.memory.interaction import Interaction
+
+        last_interaction = await self.get_last_interaction()
+
+        if last_interaction:
+            # Chain the new interaction after the last one (bidirectional edge)
+            await last_interaction.connect(interaction, direction="both")
+        else:
+            # This is the first interaction - connect conversation to it
+            await self.connect(interaction, direction="out")
+
         self.interaction_count += 1
         self.last_interaction_at = datetime.now(timezone.utc)
         await self.save()
+
+        # Apply rolling window pruning if limit is set and exceeded
+        if self.interaction_limit > 0 and self.interaction_count > self.interaction_limit:
+            await self._prune_old_interactions()
+
         return interaction
+
+    async def _prune_old_interactions(self) -> None:
+        """Prune interactions outside the rolling window limit.
+
+        Removes the oldest interactions when the count exceeds interaction_limit.
+        Only runs if interaction_limit > 0.
+        """
+        if self.interaction_limit <= 0:
+            return
+
+        # Count how many to remove
+        to_remove = self.interaction_count - self.interaction_limit
+        if to_remove <= 0:
+            return
+
+        # Start from the first interaction and remove the oldest ones
+        current = await self.get_first_interaction()
+        removed = 0
+
+        while current and removed < to_remove:
+            next_interaction = await current.get_next_interaction()
+
+            # Disconnect from conversation if this is the first interaction
+            if removed == 0:
+                if await self.is_connected_to(current):
+                    await self.disconnect(current)
+                # If there's a next interaction, connect conversation to it (new first)
+                if next_interaction:
+                    await self.connect(next_interaction, direction="out")
+
+            # Disconnect from next interaction if it exists
+            if next_interaction:
+                if await current.is_connected_to(next_interaction):
+                    await current.disconnect(next_interaction)
+
+            # Delete the interaction
+            await current.delete()
+            removed += 1
+            self.interaction_count -= 1
+
+            # Move to next
+            current = next_interaction
+
+        await self.save()
 
     async def create_interaction(
         self,
@@ -93,22 +191,37 @@ class Conversation(Node):
         )
         return await self.add_interaction(interaction)
 
-    async def get_interactions(self, limit: int = 50) -> List["Interaction"]:
-        """Get connected Interactions ordered by timestamp.
+    async def get_interactions(self, limit: int = 0, reverse: bool = False) -> List["Interaction"]:
+        """Get Interactions by traversing the chain in chronological order.
 
         Args:
             limit: Maximum number of interactions to return (0 for all)
+            reverse: If True, return in reverse chronological order (newest first)
 
         Returns:
-            List of Interaction nodes sorted by started_at
+            List of Interaction nodes in chronological order (oldest first by default)
         """
         from jvagent.memory.interaction import Interaction
 
-        interactions: List[Interaction] = await self.nodes(node=Interaction)
-        # Sort by started_at
-        interactions.sort(key=lambda i: i.started_at)
-        if limit:
-            return interactions[-limit:]
+        interactions: List[Interaction] = []
+        
+        if reverse:
+            # Start from last interaction and traverse backward
+            current = await self.get_last_interaction()
+            while current:
+                interactions.append(current)
+                if limit > 0 and len(interactions) >= limit:
+                    break
+                current = await current.get_previous_interaction()
+        else:
+            # Start from first interaction and traverse forward
+            current = await self.get_first_interaction()
+            while current:
+                interactions.append(current)
+                if limit > 0 and len(interactions) >= limit:
+                    break
+                current = await current.get_next_interaction()
+
         return interactions
 
     async def get_transcript(
@@ -120,14 +233,17 @@ class Conversation(Node):
         """Get conversation transcript as list of messages.
 
         Args:
-            limit: Maximum number of interactions to include
+            limit: Maximum number of interactions to include (most recent)
             max_statement_length: Maximum length for each statement
             with_events: Whether to include events in transcript
 
         Returns:
             List of message dictionaries with 'human', 'ai', or 'event' keys
         """
-        interactions = await self.get_interactions(limit=limit)
+        # Get most recent interactions (reverse=True gives newest first)
+        interactions = await self.get_interactions(limit=limit, reverse=True)
+        # Reverse to get chronological order (oldest first) for transcript
+        interactions.reverse()
         transcript: List[Dict[str, str]] = []
 
         for interaction in interactions:
