@@ -379,6 +379,26 @@ class Conversation(Node):
         self.status = "closed"
         await self.save()
 
+    async def delete(self, cascade: bool = True) -> None:
+        """Delete this conversation and update Memory's total_conversations counter.
+
+        Args:
+            cascade: Whether to cascade deletion to dependent nodes (default: True)
+        """
+        from jvagent.memory.manager import Memory
+        from jvagent.memory.user import User
+
+        # Get Memory node to update counter before deletion
+        user = await self.node(direction="in", node=User)
+        if user:
+            memory = await user.node(direction="in", node=Memory)
+            if memory:
+                memory.total_conversations = max(0, memory.total_conversations - 1)
+                await memory.save()
+
+        # Call parent delete to perform actual deletion
+        await super().delete(cascade=cascade)
+
     async def get_statistics(self) -> Dict[str, Any]:
         """Get conversation statistics.
 
