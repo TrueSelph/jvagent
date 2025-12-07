@@ -224,10 +224,9 @@ class AppLoader:
         """
         try:
             # Check for existing App node
-            existing_apps = await App.find({"context.name": descriptor.name})
+            app = await App.find_one({"context.name": descriptor.name})
 
-            if existing_apps:
-                app = existing_apps[0]
+            if app:
 
                 if update_if_exists:
                     # Update existing app with context properties
@@ -351,10 +350,10 @@ class AppLoader:
             namespace, agent_name = agent_ref.split("/", 1)
 
             # Check if agent already exists
-            existing_agents = await Agent.find(
+            existing_agent = await Agent.find_one(
                 {"context.name": agent_name, "context.namespace": namespace}
             )
-            was_existing = bool(existing_agents)
+            was_existing = existing_agent is not None
 
             # Install the agent (this will also load actions from agent.yaml)
             # Pass update_if_exists to ensure agent properties are updated
@@ -396,12 +395,7 @@ class AppLoader:
                 return {"status": "not_initialized", "message": "App node not found"}
 
             # Get Agents manager
-            app_nodes = await app.nodes()
-            agents_manager = None
-            for node in app_nodes:
-                if isinstance(node, Agents):
-                    agents_manager = node
-                    break
+            agents_manager = await app.node(node="Agents")
 
             if not agents_manager:
                 return {

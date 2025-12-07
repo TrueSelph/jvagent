@@ -1,6 +1,6 @@
 """Interaction node for representing single exchanges within a conversation."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from jvspatial.core import Node
@@ -76,7 +76,7 @@ class Interaction(Node):
 
     # Timestamps
     started_at: datetime = attribute(
-        default_factory=datetime.utcnow, description="Interaction start timestamp"
+        default_factory=lambda: datetime.now(timezone.utc), description="Interaction start timestamp"
     )
     completed_at: Optional[datetime] = attribute(
         default=None, description="Interaction completion timestamp"
@@ -161,7 +161,7 @@ class Interaction(Node):
     def close_interaction(self) -> None:
         """Close the interaction."""
         self.closed = True
-        self.completed_at = datetime.utcnow()
+        self.completed_at = datetime.now(timezone.utc)
 
     def get_duration(self) -> float:
         """Get interaction duration in seconds.

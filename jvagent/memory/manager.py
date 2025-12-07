@@ -1,7 +1,7 @@
 """Memory manager node for agent memory, user, and conversation management."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from jvspatial.core import Node
@@ -66,14 +66,13 @@ class Memory(Node):
         """
         from jvagent.memory.user import User
 
-        # Search connected Users
-        users: List[User] = await self.nodes(node=User)
-        for user in users:
-            if user.user_id == user_id:
-                # Update last seen
-                user.last_seen = datetime.utcnow()
-                await user.save()
-                return user
+        # Use node() to get a single connected user (no need to dereference list)
+        user = await self.node(node=User, user_id=user_id)
+        if user:
+            # Update last seen
+            user.last_seen = datetime.now(timezone.utc)
+            await user.save()
+            return user
 
         if create_if_missing:
             user = await User.create(user_id=user_id)
@@ -104,14 +103,10 @@ class Memory(Node):
         Returns:
             Conversation node if found, None otherwise
         """
-        from jvagent.memory.user import User
+        from jvagent.memory.conversation import Conversation
 
-        users: List[User] = await self.nodes(node=User)
-        for user in users:
-            conv = await user.get_conversation_by_session(session_id)
-            if conv:
-                return conv
-        return None
+        # Use find_one for optimal performance
+        return await Conversation.find_one({"context.session_id": session_id})
 
     async def get_user_by_session(self, session_id: str) -> Optional["User"]:
         """Find the User that owns a specific session.
@@ -122,14 +117,16 @@ class Memory(Node):
         Returns:
             User node if found, None otherwise
         """
+        from jvagent.memory.conversation import Conversation
         from jvagent.memory.user import User
 
-        users: List[User] = await self.nodes(node=User)
-        for user in users:
-            conv = await user.get_conversation_by_session(session_id)
-            if conv:
-                return user
-        return None
+        # Use find_one for optimal performance
+        conversation = await Conversation.find_one({"context.session_id": session_id})
+        if not conversation:
+            return None
+        
+        # Get user by user_id from conversation
+        return await User.find_one({"context.user_id": conversation.user_id})
 
     async def get_session(
         self,
@@ -214,26 +211,32 @@ class Memory(Node):
         Returns:
             Dictionary with memory statistics
         """
+        from jvagent.memory.conversation import Conversation
+        from jvagent.memory.interaction import Interaction
         from jvagent.memory.user import User
 
+        # Use count() for efficient database-level counting without loading records
+        user_query = {}
+        if user_id:
+            user_query = {"context.user_id": user_id}
+        
         stats = {
-            "total_users": 0,
+            "total_users": await User.count(user_query),
             "total_conversations": 0,
             "total_interactions": 0,
         }
 
-        users: List[User] = await self.nodes(node=User)
+        # Count conversations using count() for optimal performance
+        conv_query = {}
         if user_id:
-            users = [u for u in users if u.user_id == user_id]
+            conv_query = {"context.user_id": user_id}
+        stats["total_conversations"] = await Conversation.count(conv_query)
 
-        stats["total_users"] = len(users)
-
-        for user in users:
-            conversations = await user.list_conversations()
-            stats["total_conversations"] += len(conversations)
-            for conv in conversations:
-                interactions = await conv.get_interactions(limit=0)
-                stats["total_interactions"] += len(interactions)
+        # Count interactions using count() for optimal performance
+        interaction_query = {}
+        if user_id:
+            interaction_query = {"context.user_id": user_id}
+        stats["total_interactions"] = await Interaction.count(interaction_query)
 
         return stats
 
@@ -250,10 +253,12 @@ class Memory(Node):
         """
         from jvagent.memory.user import User
 
-        users: List[User] = await self.nodes(node=User)
+        # Use nodes() with filters to leverage graph structure and database-level filtering
         if user_id:
-            users = [u for u in users if u.user_id == user_id]
-
+            users = await self.nodes(node=User, user_id=user_id)
+        else:
+            users = await self.nodes(node=User)
+        
         if not users:
             return None
 
@@ -275,24 +280,29 @@ class Memory(Node):
         Returns:
             Dictionary with exported memory data
         """
+        from jvagent.memory.interaction import Interaction
         from jvagent.memory.user import User
 
-        users: List[User] = await self.nodes(node=User)
+        # Use nodes() with filters to leverage graph structure and database-level filtering
         if user_id:
-            users = [u for u in users if u.user_id == user_id]
-
+            users = await self.nodes(node=User, user_id=user_id)
+        else:
+            users = await self.nodes(node=User)
+        
         export_data: Dict[str, Any] = {"users": []}
 
         for user in users:
             user_data = await user.export()
             user_data["conversations"] = []
 
-            conversations = await user.list_conversations()
+            # Use nodes() to get connected conversations (leverages graph structure)
+            conversations = await user.nodes(node="Conversation")
             for conv in conversations:
                 conv_data = await conv.export()
                 conv_data["interactions"] = []
 
-                interactions = await conv.get_interactions(limit=0)
+                # Use nodes() to get connected interactions (leverages graph structure)
+                interactions = await conv.nodes(node=Interaction)
                 for interaction in interactions:
                     interaction_data = await interaction.export()
                     conv_data["interactions"].append(interaction_data)

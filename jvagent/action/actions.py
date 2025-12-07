@@ -283,10 +283,8 @@ class Actions(Node):
             if not agent:
                 return None
 
-            # Use entity-centric find
-            actions = await Action.find({"context.agent_id": agent.id, "context.label": label})
-
-            return actions[0] if actions else None
+            # Use entity-centric find_one
+            return await Action.find_one({"context.agent_id": agent.id, "context.label": label})
 
         except Exception as e:
             logger.error(f"Error getting action by label {label}: {e}", exc_info=True)

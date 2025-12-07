@@ -1,6 +1,6 @@
 """Conversation node for managing conversation sessions."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core import Node
@@ -42,7 +42,7 @@ class Conversation(Node):
     )
     channel: str = attribute(default="default", description="Communication channel")
     created_at: datetime = attribute(
-        default_factory=datetime.utcnow, description="Timestamp of creation"
+        default_factory=lambda: datetime.now(timezone.utc), description="Timestamp of creation"
     )
     last_interaction_at: Optional[datetime] = attribute(
         default=None, description="Timestamp of last interaction"
@@ -65,7 +65,7 @@ class Conversation(Node):
         """
         await self.connect(interaction)  # Creates edge: Conversation --> Interaction
         self.interaction_count += 1
-        self.last_interaction_at = datetime.utcnow()
+        self.last_interaction_at = datetime.now(timezone.utc)
         await self.save()
         return interaction
 

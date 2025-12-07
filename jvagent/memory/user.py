@@ -1,7 +1,7 @@
 """User node for representing users interacting with the agent."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, List, Optional
 
 from jvspatial.core import Node
@@ -34,10 +34,10 @@ class User(Node):
 
     user_id: str = attribute(default="", description="Unique user identifier")
     created_at: datetime = attribute(
-        default_factory=datetime.utcnow, description="Timestamp of user creation"
+        default_factory=lambda: datetime.now(timezone.utc), description="Timestamp of user creation"
     )
     last_seen: datetime = attribute(
-        default_factory=datetime.utcnow, description="Timestamp of last user activity"
+        default_factory=lambda: datetime.now(timezone.utc), description="Timestamp of last user activity"
     )
 
     async def create_conversation(
@@ -75,11 +75,12 @@ class User(Node):
         """
         from jvagent.memory.conversation import Conversation
 
-        conversations: List[Conversation] = await self.nodes(node=Conversation)
-        for conv in conversations:
-            if conv.session_id == session_id:
-                return conv
-        return None
+        # Use find_one for optimal performance
+        # Filter by both session_id and user_id to ensure it belongs to this user
+        return await Conversation.find_one({
+            "context.session_id": session_id,
+            "context.user_id": self.user_id,
+        })
 
     async def list_conversations(self, active_only: bool = False) -> List["Conversation"]:
         """Get all connected Conversations.
@@ -92,10 +93,12 @@ class User(Node):
         """
         from jvagent.memory.conversation import Conversation
 
-        conversations: List[Conversation] = await self.nodes(node=Conversation)
+        # Use direct database search for optimal performance
+        query = {"context.user_id": self.user_id}
         if active_only:
-            conversations = [c for c in conversations if c.status == "active"]
-        return conversations
+            query["context.status"] = "active"
+        
+        return await Conversation.find(query)
 
     async def get_active_conversation(self) -> Optional["Conversation"]:
         """Get the most recent active conversation.
@@ -114,5 +117,5 @@ class User(Node):
 
     async def record_activity(self) -> None:
         """Update last_seen timestamp to current time."""
-        self.last_seen = datetime.utcnow()
+        self.last_seen = datetime.now(timezone.utc)
         await self.save()

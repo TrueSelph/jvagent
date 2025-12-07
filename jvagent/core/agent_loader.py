@@ -198,17 +198,17 @@ class AgentLoader:
 
         try:
             # Check if agent already exists (by namespace and name)
-            existing_agents = await Agent.find(
+            existing_agent = await Agent.find_one(
                 {"context.name": descriptor.name, "context.namespace": descriptor.namespace}
             )
 
-            if existing_agents:
+            if existing_agent:
                 if not update_if_exists:
                     # Agent already exists - skip silently (summary will show installed count)
-                    return existing_agents[0]
+                    return existing_agent
 
                 # Update existing agent
-                agent = existing_agents[0]
+                agent = existing_agent
                 agent.enabled = descriptor.enabled
                 agent.description = descriptor.description
                 agent.alias = descriptor.alias
@@ -242,11 +242,9 @@ class AgentLoader:
                 # Connect to Agents manager
                 app = await App.get()
                 if app:
-                    app_nodes = await app.nodes()
-                    agents_nodes = [n for n in app_nodes if isinstance(n, Agents)]
+                    agents_manager = await app.node(node="Agents")
 
-                    if agents_nodes:
-                        agents_manager = agents_nodes[0]
+                    if agents_manager:
                         await agents_manager.connect(agent, direction="both")
 
                         # Update statistics
@@ -307,10 +305,9 @@ class AgentLoader:
         from jvagent.action.actions import Actions
 
         # Check if Actions node already connected
-        connected_nodes = await agent.nodes()
-        for node in connected_nodes:
-            if isinstance(node, Actions):
-                return node
+        actions = await agent.node(node="Actions")
+        if actions:
+            return actions
 
         # Create new Actions node
         actions = await Actions.create()
@@ -329,10 +326,9 @@ class AgentLoader:
             Memory node instance
         """
         # Check if Memory node already connected
-        connected_nodes = await agent.nodes()
-        for node in connected_nodes:
-            if isinstance(node, Memory):
-                return node
+        memory = await agent.node(node="Memory")
+        if memory:
+            return memory
 
         # Create new Memory node
         memory = await Memory.create()
@@ -524,28 +520,26 @@ class AgentLoader:
         """
         try:
             # Find the agent by namespace and name
-            existing_agents = await Agent.find(
+            agent = await Agent.find_one(
                 {"context.name": agent_name, "context.namespace": namespace}
             )
 
-            if not existing_agents:
+            if not agent:
                 logger.warning(f"Agent '{namespace}/{agent_name}' not found")
                 return False
-
-            agent = existing_agents[0]
             was_enabled = agent.enabled
 
             # Get Agents manager for statistics update
-            connected_nodes = await agent.nodes()
-            agents_nodes = [n for n in connected_nodes if isinstance(n, Agents)]
+            # Need to get it before deleting the agent
+            app = await App.get()
+            agents_manager = await app.node(node="Agents") if app else None
 
             # Delete the agent (cascades to connected nodes)
             await agent.delete()
             logger.info(f"Uninstalled agent: {namespace}/{agent_name}")
 
             # Update Agents manager statistics
-            if agents_nodes:
-                agents_manager = agents_nodes[0]
+            if agents_manager:
                 agents_manager.total_agents = max(0, agents_manager.total_agents - 1)
                 if was_enabled:
                     agents_manager.active_agents = max(0, agents_manager.active_agents - 1)
