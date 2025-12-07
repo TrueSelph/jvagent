@@ -355,6 +355,30 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
 - Are installed automatically from `app.yaml` when you run jvagent or bootstrap
 - **Important**: Agents can only be installed via `app.yaml` - there is no direct agent installation command
 
+### Memory System
+
+**Memory System** manages user conversations and interactions with optimized architecture:
+
+**Interaction Chaining:**
+- Interactions are stored as a chronological chain using bidirectional edges
+- Pattern: `Interaction1 <-> Interaction2 <-> Interaction3`
+- Enables efficient forward and backward traversal through conversation history
+- Conversation connects only to the first interaction for optimal structure
+
+**Rolling Window Pruning:**
+- Conversations can automatically prune old interactions when a limit is set
+- Configure via `interaction_limit` attribute on Conversation (0 = disabled)
+- When limit is exceeded, oldest interactions are automatically removed
+- Maintains conversation continuity while managing memory usage
+- Ideal for long-running conversations with memory constraints
+
+**Performance Optimizations:**
+- Uses database-level `count()` for efficient record counting
+- Uses `find_one()` for optimized single-record retrieval
+- Uses `node()` for direct single-node graph traversal
+- Automatic database indexes on frequently queried fields
+- Cached reference to last interaction for O(1) access
+
 ### Namespaces
 
 **Namespaces** organize actions to prevent naming conflicts:
@@ -482,6 +506,7 @@ context:
   alias: Example Agent
   description: An example agent demonstrating jvagent agent configuration
   enabled: true
+  interaction_limit: 100  # Default interaction limit for conversations (0 = disabled)
   custom_field: value  # Any additional public properties
 
 # Action Assignments
@@ -504,8 +529,9 @@ actions:
 
 **Key Points:**
 - `agent`: Agent reference in `namespace/agent_name` format
-- `context`: Object containing all overridable agent properties (alias, description, enabled, etc.)
+- `context`: Object containing all overridable agent properties (alias, description, enabled, interaction_limit, etc.)
 - `actions`: List of action assignments, each with `action: namespace/action_name` and `context:` for overridable properties
+- `interaction_limit`: Default interaction limit for all conversations created by this agent (0 = disabled, no pruning)
 
 ### info.yaml
 
@@ -1004,6 +1030,10 @@ jvagent/
 │   │   ├── app_loader.py # App loader
 │   │   └── env_resolver.py  # Environment variable resolver
 │   ├── memory/           # Memory system
+│   │   ├── manager.py    # Memory manager (root node)
+│   │   ├── user.py       # User node
+│   │   ├── conversation.py  # Conversation node (with chaining & pruning)
+│   │   └── interaction.py   # Interaction node (chained)
 │   └── version.py        # Version info
 ├── examples/             # Example applications
 │   └── jvagent_app/      # Example app with agents and actions
@@ -1044,6 +1074,115 @@ When jvagent starts from an app directory, it automatically:
    - Registers all discovered endpoints
    - Enables authentication if configured
    - Serves API documentation at `/docs`
+
+## Memory System Usage
+
+### Working with Conversations and Interactions
+
+The memory system provides efficient conversation and interaction management:
+
+#### Creating Conversations with Interaction Limits
+
+Interaction limits can be configured at the agent level or per-conversation:
+
+```python
+from jvagent.core.agent import Agent
+from jvagent.memory.conversation import Conversation
+
+# Configure agent-level default (applies to all new conversations)
+agent = await Agent.get(agent_id)
+agent.interaction_limit = 100  # Default limit for all conversations
+await agent.save()
+
+# Create conversation (uses agent's default limit)
+conversation = await user.create_conversation(
+    session_id="session456",
+    channel="web"
+    # Will use agent.interaction_limit (100 in this example)
+)
+
+# Override agent default for specific conversation
+conversation = await user.create_conversation(
+    session_id="session456",
+    channel="web",
+    interaction_limit=50  # Override: use 50 instead of agent's default
+)
+
+# Disable pruning for specific conversation
+conversation = await user.create_conversation(
+    session_id="session456",
+    channel="web",
+    interaction_limit=0  # No pruning (keep all interactions)
+)
+```
+
+#### Adding Interactions (Automatic Chaining)
+
+```python
+# Create and add interaction (automatically chained)
+interaction = await conversation.create_interaction(
+    utterance="Hello, how are you?",
+    channel="web"
+)
+
+# Interactions are automatically chained chronologically
+# Pattern: Interaction1 <-> Interaction2 <-> Interaction3
+```
+
+#### Accessing Interactions
+
+```python
+# Get last interaction (optimized O(1) access via cached reference)
+last_interaction = await conversation.get_last_interaction()
+
+# Get first interaction
+first_interaction = await conversation.get_first_interaction()
+
+# Get all interactions (chronological order)
+all_interactions = await conversation.get_interactions()
+
+# Get interactions in reverse order (newest first)
+recent_interactions = await conversation.get_interactions(reverse=True)
+
+# Get limited number of interactions
+recent_10 = await conversation.get_interactions(limit=10, reverse=True)
+
+# Traverse chain manually
+current = await conversation.get_first_interaction()
+while current:
+    print(f"Interaction: {current.utterance}")
+    current = await current.get_next_interaction()  # Forward traversal
+```
+
+#### Rolling Window Pruning
+
+```python
+# Set interaction limit (triggers auto-pruning)
+conversation.interaction_limit = 50
+await conversation.save()
+
+# When adding interactions beyond the limit, oldest are auto-pruned
+# Example: If limit is 50 and conversation has 51 interactions,
+# the oldest interaction is automatically removed
+```
+
+#### Optimized Query Patterns
+
+```python
+from jvagent.memory.user import User
+from jvagent.memory.conversation import Conversation
+
+# Use count() for efficient counting
+active_count = await Conversation.count({"context.status": "active"})
+
+# Use find_one() for single record retrieval
+conversation = await Conversation.find_one({
+    "context.session_id": "session123"
+})
+
+# Use node() for direct graph traversal
+user = await memory.node(node=User, user_id="user123")
+```
 
 ## Best Practices
 
@@ -1116,6 +1255,52 @@ class MyAction(Action):
     
     # Not recommended: Forces user to always provide value
     # required_setting: str = attribute(...)  # No default
+```
+
+### 6. Use Optimized Query Methods
+
+```python
+# Good: Use count() for counting
+active_count = await Conversation.count({"context.status": "active"})
+
+# Bad: Inefficient - loads all records into memory
+all_conversations = await Conversation.find({"context.status": "active"})
+active_count = len(all_conversations)
+
+# Good: Use find_one() for single record
+conversation = await Conversation.find_one({"context.session_id": "session123"})
+
+# Bad: Inefficient - fetches all, then takes first
+conversations = await Conversation.find({"context.session_id": "session123"})
+conversation = conversations[0] if conversations else None
+
+# Good: Use node() for single-node traversal
+user = await memory.node(node=User, user_id="user123")
+
+# Bad: Inefficient - fetches all, then takes first
+users = await memory.nodes(node=User, user_id="user123")
+user = users[0] if users else None
+```
+
+### 7. Configure Interaction Limits Appropriately
+
+```python
+from jvagent.core.agent import Agent
+
+# Set agent-level default (recommended for consistency)
+agent = await Agent.get(agent_id)
+agent.interaction_limit = 100  # Applies to all new conversations
+await agent.save()
+
+# Or configure per-conversation if needed
+conversation.interaction_limit = 50  # Override for specific conversation
+await conversation.save()
+
+# Consider your use case:
+# - Chatbots: 50-100 interactions (set at agent level)
+# - Support tickets: 0 (keep full history)
+# - Analytics: 0 (preserve all data)
+# - Mixed use: Set agent default, override per-conversation as needed
 ```
 
 ## License

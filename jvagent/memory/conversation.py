@@ -4,12 +4,13 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core import Node
-from jvspatial.core.annotations import attribute
+from jvspatial.core.annotations import attribute, compound_index
 
 if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
 
 
+@compound_index([("context.user_id", 1), ("context.status", 1)], name="user_status")
 class Conversation(Node):
     """Session-based conversation. session_id can be set or auto-generated.
 
@@ -38,10 +39,10 @@ class Conversation(Node):
         context: Conversation context dictionary for storing state
     """
 
-    session_id: str = attribute(default="", description="Session identifier")
-    user_id: str = attribute(default="", description="Owning user ID")
+    session_id: str = attribute(indexed=True, index_unique=True, default="", description="Session identifier")
+    user_id: str = attribute(indexed=True, default="", description="Owning user ID")
     status: str = attribute(
-        default="active", description="Conversation status: active, archived, closed"
+        indexed=True, default="active", description="Conversation status: active, archived, closed"
     )
     channel: str = attribute(default="default", description="Communication channel")
     created_at: datetime = attribute(
@@ -55,6 +56,9 @@ class Conversation(Node):
     )
     interaction_limit: int = attribute(
         default=0, description="Maximum number of interactions to keep (0 = disabled, no pruning)"
+    )
+    last_interaction_id: Optional[str] = attribute(
+        default=None, description="ID of the last interaction in the chain (for optimized access)"
     )
     context: Dict[str, Any] = attribute(
         default_factory=dict, description="Conversation context dictionary"
@@ -72,8 +76,8 @@ class Conversation(Node):
         interactions = await self.nodes(node=Interaction, direction="out")
         return interactions[0] if interactions else None
 
-    async def get_last_interaction(self) -> Optional["Interaction"]:
-        """Get the last interaction in the chain by traversing forward.
+    async def _find_last_interaction(self) -> Optional["Interaction"]:
+        """Find the last interaction by traversing the chain (used when reference is stale).
 
         Returns:
             Last Interaction node, or None if no interactions exist
@@ -89,6 +93,42 @@ class Conversation(Node):
             if not next_interaction:
                 return current
             current = next_interaction
+
+    async def get_last_interaction(self) -> Optional["Interaction"]:
+        """Get the last interaction in the chain using cached reference.
+
+        Returns:
+            Last Interaction node, or None if no interactions exist
+        """
+        from jvagent.memory.interaction import Interaction
+
+        if not self.last_interaction_id:
+            # No cached reference, try to find by traversal
+            last = await self._find_last_interaction()
+            if last:
+                # Cache the reference for future use
+                self.last_interaction_id = last.id
+                await self.save()
+            return last
+
+        # Directly access the last interaction using the cached reference
+        last_interaction = await Interaction.get(self.last_interaction_id)
+        
+        # If the reference is stale (interaction was deleted), rebuild by traversal
+        if not last_interaction:
+            last = await self._find_last_interaction()
+            if last:
+                # Update the reference
+                self.last_interaction_id = last.id
+                await self.save()
+                return last
+            else:
+                # No interactions exist
+                self.last_interaction_id = None
+                await self.save()
+                return None
+
+        return last_interaction
 
     async def add_interaction(self, interaction: "Interaction") -> "Interaction":
         """Add an Interaction to the chain with bidirectional edges.
@@ -113,6 +153,8 @@ class Conversation(Node):
             # This is the first interaction - connect conversation to it
             await self.connect(interaction, direction="out")
 
+        # Update the last interaction reference
+        self.last_interaction_id = interaction.id
         self.interaction_count += 1
         self.last_interaction_at = datetime.now(timezone.utc)
         await self.save()
@@ -164,6 +206,20 @@ class Conversation(Node):
 
             # Move to next
             current = next_interaction
+
+        # Update last_interaction_id reference after pruning
+        # The last interaction should still be valid (we only remove from the start)
+        # But verify it still exists
+        if self.last_interaction_id:
+            from jvagent.memory.interaction import Interaction
+            last = await Interaction.get(self.last_interaction_id)
+            if not last:
+                # Reference is stale, rebuild it by traversal
+                last = await self._find_last_interaction()
+                if last:
+                    self.last_interaction_id = last.id
+                else:
+                    self.last_interaction_id = None
 
         await self.save()
 
