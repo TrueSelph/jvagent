@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type, Union
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
@@ -217,44 +217,33 @@ class Actions(Node):
     # Action Query - Entity-Centric
     # ============================================================================
 
-    async def get_actions(self, enabled_only: bool = False) -> List[Action]:
-        """Get all actions for this agent using entity-centric queries.
+    async def get_actions(
+        self, enabled_only: bool = False, entity: Optional[Union[Type[Action], str]] = None
+    ) -> List[Action]:
+        """Get all actions for this agent using node traversal.
 
-        Uses Action.find() to query actions by agent_id, following jvspatial
-        entity-centric patterns.
+        Uses self.nodes() to get all connected Action nodes (including subclasses).
+        Optionally filters by enabled status and/or specific action entity type.
 
         Args:
             enabled_only: If True, only return enabled actions
+            entity: Optional action type to filter by (e.g., InteractAction, "InteractAction").
+                   If None, returns all Action types. If specified, returns only that type
+                   and its subclasses.
 
         Returns:
             List of action instances
         """
         try:
-            # Build query filters - get agent_id from connected agent
-            # Traverse to get agent_id
-            # Alternative: store agent_id on Actions node
-            connected_nodes = await self.nodes()
-            agent = None
-            for node in connected_nodes:
-                # Import here to avoid circular dependency
-                from jvagent.core.agent import Agent
+            # Determine node filter - use entity if provided, otherwise default to Action
+            node_filter: Union[Type[Action], str] = entity if entity is not None else Action
 
-                if isinstance(node, Agent):
-                    agent = node
-                    break
-
-            if not agent:
-                return []
-
-            # Build entity-centric query
-            filters = {"context.agent_id": agent.id}
+            # Build kwargs for property filtering
+            kwargs = {}
             if enabled_only:
-                filters["context.enabled"] = True
+                kwargs["enabled"] = True
 
-            # Use entity-centric find
-            actions = await Action.find(filters)
-
-            return actions
+            return await self.nodes(node=node_filter, **kwargs)
 
         except Exception as e:
             logger.error(f"Error getting actions: {e}", exc_info=True)

@@ -94,12 +94,12 @@ curl -X POST http://localhost:8000/actions/{action_id}/query \
 ### From Another Action
 
 ```python
-from jvagent.action.model import OpenAIModelAction
+from jvagent.action.model import OpenAILanguageModelAction
 
 class MyAction(Action):
     async def my_method(self):
         # Get the model action (use actual ID or find by label)
-        model = await OpenAIModelAction.find_one({"context.label": "model_openai"})
+        model = await OpenAILanguageModelAction.find_one({"context.label": "openai_lm"})
         
         # Text query
         result = await model.query_sync("Hello, how are you?")
@@ -120,7 +120,7 @@ The model action is configured in `agents/jvagent/example_agent/agent.yaml`:
 
 ```yaml
 actions:
-  - action: jvagent/model_openai
+  - action: jvagent/openai_lm
     context:
       model: gpt-4o  # Change model here
       temperature: 0.7  # Adjust temperature
@@ -192,8 +192,8 @@ Tips for cost reduction:
 
 ## Documentation
 
-- Main README: `agents/jvagent/example_agent/actions/jvagent/model_openai/README.md`
-- Multimodal guide: `agents/jvagent/example_agent/actions/jvagent/model_openai/MULTIMODAL.md`
+- Main README: `agents/jvagent/example_agent/actions/jvagent/openai_lm/README.md`
+- Multimodal guide: `agents/jvagent/example_agent/actions/jvagent/openai_lm/MULTIMODAL.md`
 - Core docs: `jvagent/action/model/README.md`
 
 ## Support

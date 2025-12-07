@@ -1,7 +1,8 @@
 """OpenRouter model action implementation.
 
 Provides integration with OpenRouter's API, which is OpenAI-compatible and
-supports multiple LLM providers through a single interface.
+supports multiple language model providers through a single interface.
+Supports multimodal queries (text + images) where the underlying provider supports it.
 """
 
 import logging
@@ -9,17 +10,18 @@ from typing import Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
-from jvagent.action.model.openai import OpenAIModelAction
+from jvagent.action.model.language.openai import OpenAILanguageModelAction
 
 logger = logging.getLogger(__name__)
 
 
-class OpenRouterModelAction(OpenAIModelAction):
-    """OpenRouter LLM integration action.
+class OpenRouterLanguageModelAction(OpenAILanguageModelAction):
+    """OpenRouter language model integration action.
 
-    Implements the ModelAction interface using OpenRouter's API, which is
+    Implements the LanguageModelAction interface using OpenRouter's API, which is
     OpenAI-compatible. Supports multiple providers including OpenAI, Anthropic,
-    Google, Meta, and others.
+    Google, Meta, and others. Supports multimodal queries (text + images) where
+    the underlying provider supports it.
 
     Configuration:
         api_key: OpenRouter API key (from environment or config)
@@ -33,7 +35,7 @@ class OpenRouterModelAction(OpenAIModelAction):
 
     Examples:
         Programmatic usage:
-        >>> action = await OpenRouterModelAction.get(action_id)
+        >>> action = await OpenRouterLanguageModelAction.get(action_id)
         >>> result = await action.query_sync("What is AI?", system="You are an expert")
         >>> response = await result.get_response()
 

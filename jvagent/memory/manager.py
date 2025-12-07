@@ -231,7 +231,7 @@ class Memory(Node):
         user_query = {}
         if user_id:
             user_query = {"context.user_id": user_id}
-        
+
         stats = {
             "total_users": await User.count(user_query),
             "total_conversations": 0,
@@ -270,7 +270,7 @@ class Memory(Node):
             users = await self.nodes(node=User, user_id=user_id)
         else:
             users = await self.nodes(node=User)
-        
+
         if not users:
             return None
 
@@ -321,8 +321,8 @@ class Memory(Node):
                 # Conversation.delete() will handle decrementing total_conversations counter
                 await conversation.delete(cascade=True)
 
-            await self.save()
-            return purged
+        await self.save()
+        return purged
 
     async def export_memory(self, user_id: str = "") -> Dict[str, Any]:
         """Export memory state for backup/migration.
@@ -341,7 +341,7 @@ class Memory(Node):
             users = await self.nodes(node=User, user_id=user_id)
         else:
             users = await self.nodes(node=User)
-        
+
         export_data: Dict[str, Any] = {"users": []}
 
         for user in users:

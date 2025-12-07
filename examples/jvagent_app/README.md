@@ -34,7 +34,7 @@ After installing jvagent, you can run this example application:
    cp .env.example .env
    # Edit .env and set at minimum:
    # - JVAGENT_ADMIN_PASSWORD (required)
-   # - OPENAI_API_KEY (optional, for model_openai action)
+   # - OPENAI_API_KEY (optional, for openai_lm action)
    cd ../..
    ```
 
@@ -210,7 +210,7 @@ description: A description of what this action does
   # Package dependencies
 dependencies:
     # jvagent version requirement
-    jvagent: ~2.1.0
+    jvagent: ~0.0.1
     # Other action dependencies (by namespace/action_name)
   actions: []
 ```

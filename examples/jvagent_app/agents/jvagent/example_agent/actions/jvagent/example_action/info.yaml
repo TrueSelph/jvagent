@@ -32,7 +32,7 @@ package:
   # Package dependencies
   dependencies:
     # jvagent version requirement
-    jvagent: ~2.1.0
+    jvagent: ~0.0.1
     # Other action dependencies (by namespace/action_name)
     actions:
       # - jvagent/another_action: ~1.0.0

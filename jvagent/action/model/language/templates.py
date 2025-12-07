@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 from jinja2 import Environment, FileSystemLoader, Template, TemplateNotFound
 
 if TYPE_CHECKING:
-    from jvagent.action.model.base import ModelAction
+    from jvagent.action.model.language.base import LanguageModelAction
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +33,11 @@ class TemplateManager:
         >>> result = await model_action.query_sync(prompt)
     """
 
-    def __init__(self, action: "ModelAction"):
+    def __init__(self, action: "LanguageModelAction"):
         """Initialize template manager for an action.
 
         Args:
-            action: ModelAction instance
+            action: LanguageModelAction instance
         """
         self.action = action
         self._env: Optional[Environment] = None

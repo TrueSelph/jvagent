@@ -1,31 +1,31 @@
-# InteractRouter Action Package Descriptor
+# TypesenseVectorStore Action Package Descriptor
 # This file defines the action's package metadata, dependencies, and configuration
 
 package:
   # Action name in namespace/action_name format
   # Note: The namespace is also determined by the folder structure
-  name: jvagent/interact_router
+  name: jvagent/typesense_vectorstore
   
   # Package author
   author: jvagent
   
   # Archetype: The main Action class name (same as the Action Node class)
-  archetype: InteractRouter
+  archetype: TypesenseVectorStore
   
   # Package version
   version: 1.0.0
   
   # Package metadata
   meta:
-    title: InteractRouter
-    description: Intent-based routing action that analyzes utterances and routes to appropriate InteractActions
+    title: TypesenseVectorStore
+    description: VectorStore implementation using Typesense for semantic search
     group: jvagent
-    type: interact_action
+    type: vectorstore
   
   # Package configuration
   config:
     order:
-      weight: -100
+      weight: 0
   
   # Package dependencies
   dependencies:
@@ -33,4 +33,7 @@ package:
     jvagent: ~0.0.1
     # Other action dependencies (by namespace/action_name)
     actions: []
+    # Pip dependencies (installed automatically before action loading)
+    pip:
+      - typesense>=0.21.0
 

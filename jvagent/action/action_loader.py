@@ -29,7 +29,12 @@ class ActionMetadata:
       - version: package version
       - meta: object with title, description, group, type
       - config: configuration object
-      - dependencies: object with jvagent and actions dependencies
+      - dependencies: object with jvagent, actions, and pip dependencies
+        - jvagent: jvagent version requirement (e.g., "~2.1.0")
+        - actions: list of action dependencies (by namespace/action_name)
+        - pip: list of pip package specifications (e.g., ["requests>=2.25.0", "numpy"])
+
+    Pip dependencies are automatically installed before the action is loaded.
 
     Configuration should be defined as Pydantic fields on the Action class.
     """
@@ -183,6 +188,11 @@ class ActionLoader:
 
                             archetype = package.get("archetype", "Action")
 
+                            # Install pip dependencies before importing
+                            from jvagent.core.dependency_installer import install_action_dependencies
+
+                            install_action_dependencies(data, action_name, action_dir)
+
                             # Import the action class file directly (same as load_action_class)
                             action_file = action_dir / f"{action_name}.py"
                             if not action_file.exists():
@@ -203,7 +213,15 @@ class ActionLoader:
                             # Execute the module to register the Action subclass
                             module = importlib.util.module_from_spec(spec)
                             sys.modules[spec.name] = module
-                            spec.loader.exec_module(module)
+                            try:
+                                spec.loader.exec_module(module)
+                            except (ImportError, NameError, ModuleNotFoundError) as e:
+                                # Log import errors but continue with other actions
+                                logger.warning(
+                                    f"Error importing action module {action_file}: {e}. "
+                                    f"This may be due to missing dependencies or import errors."
+                                )
+                                continue
 
                             # Verify the class exists and is an Action subclass
                             action_class = getattr(module, archetype, None)
@@ -275,6 +293,23 @@ class ActionLoader:
                     from jvagent.core.env_resolver import resolve_env_placeholders
 
                     data = resolve_env_placeholders(data)
+
+                    # Install pip dependencies before creating metadata
+                    from jvagent.core.dependency_installer import install_action_dependencies
+
+                    # Extract action name for logging
+                    package = data.get("package", {})
+                    if isinstance(package, dict):
+                        package_name = package.get("name", "")
+                        if package_name and "/" in package_name:
+                            _, action_name = package_name.split("/", 1)
+                        else:
+                            action_name = package.get("name", action_dir.name)
+                    else:
+                        action_name = action_dir.name
+
+                    # Install dependencies
+                    install_action_dependencies(data, action_name, action_dir)
 
                     # Create metadata object with namespace
                     metadata = ActionMetadata(data, action_dir, namespace=namespace)

@@ -26,5 +26,5 @@ package:
   
   # Package dependencies
   dependencies:
-    jvagent: ~2.1.0
+    jvagent: ~0.0.1
 

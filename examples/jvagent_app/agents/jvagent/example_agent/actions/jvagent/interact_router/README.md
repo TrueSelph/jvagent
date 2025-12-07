@@ -18,7 +18,7 @@ The InteractRouter can be configured in `agent.yaml`:
 - action: jvagent/interact_router
   context:
     enabled: true
-    model_action_type: "OpenAIModelAction"  # Entity type to find dynamically
+    model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
     history_limit: 10  # Number of previous interactions to include in context
     exceptions: []  # Optional: List of InteractAction entity names that must always execute
 ```

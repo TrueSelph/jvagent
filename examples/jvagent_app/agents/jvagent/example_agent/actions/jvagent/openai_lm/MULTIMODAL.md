@@ -13,10 +13,10 @@ The OpenAI Model Action supports multimodal queries combining text and images us
 ### 1. Analyze Image from URL
 
 ```python
-from jvagent.action.model import OpenAIModelAction
+from jvagent.action.model import OpenAILanguageModelAction
 
 async def analyze_image(model_action_id: str, image_url: str):
-    model = await OpenAIModelAction.get(model_action_id)
+    model = await OpenAILanguageModelAction.get(model_action_id)
     
     # Create content with text and image
     content = model.create_image_content(
@@ -35,7 +35,7 @@ async def analyze_image(model_action_id: str, image_url: str):
 import base64
 
 async def analyze_local_image(model_action_id: str, image_path: str):
-    model = await OpenAIModelAction.get(model_action_id)
+    model = await OpenAILanguageModelAction.get(model_action_id)
     
     # Load and encode image
     with open(image_path, "rb") as f:
@@ -56,7 +56,7 @@ async def analyze_local_image(model_action_id: str, image_path: str):
 
 ```python
 async def compare_images(model_action_id: str, img1_url: str, img2_url: str):
-    model = await OpenAIModelAction.get(model_action_id)
+    model = await OpenAILanguageModelAction.get(model_action_id)
     
     # Create content with multiple images
     content = model.create_multimodal_content(

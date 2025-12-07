@@ -58,11 +58,11 @@ class InteractAction(Action, ABC):
     )
 
     # Anchors for routing (published by InteractRouter)
-    anchors: Dict[str, List[str]] = attribute(
-        default_factory=dict,
+    anchors: List[str] = attribute(
+        default_factory=list,
         description=(
-            "Anchor statements for routing. Format: {'entity_name': ['anchor1', 'anchor2']}. "
-            "Published during registration to enable InteractRouter to match user intents."
+            "Anchor statements for routing. List of statements describing when this action should be used. "
+            "The action's class/entity name is automatically used as the key when collected by InteractRouter."
         ),
     )
 
@@ -97,40 +97,4 @@ class InteractAction(Action, ABC):
             Access action properties via self (the node instance)
         """
         pass
-
-    def should_execute(self, visitor: "InteractWalker") -> bool:
-        """Optional helper to check if this action should execute based on routing.
-
-        This method checks if the action's entity name (from anchors) is in the
-        interaction's anchors list. Actions can use this to skip execution if
-        they weren't routed to by InteractRouter.
-
-        Args:
-            visitor: The InteractWalker visiting this action
-
-        Returns:
-            True if action should execute, False otherwise
-
-        Note:
-            This is an optional helper. Actions can implement their own routing
-            logic or ignore routing entirely. This method provides a convenient
-            default implementation for anchor-based routing.
-        """
-        interaction = visitor.interaction
-        if not interaction or not interaction.anchors:
-            # No routing information, allow execution (backward compatibility)
-            return True
-
-        # Check if any of this action's anchor entity names are in the routed anchors
-        if not self.anchors:
-            # No anchors published, allow execution
-            return True
-
-        # Check if any entity name from this action's anchors matches routed anchors
-        for entity_name in self.anchors.keys():
-            if entity_name in interaction.anchors:
-                return True
-
-        # Not routed to this action
-        return False
 

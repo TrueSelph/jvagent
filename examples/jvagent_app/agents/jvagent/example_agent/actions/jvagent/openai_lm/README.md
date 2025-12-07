@@ -18,7 +18,7 @@ Configure in your agent.yaml:
 
 ```yaml
 actions:
-  - action: jvagent/model_openai
+  - action: jvagent/openai_lm
     context:
       api_key: ${OPENAI_API_KEY}  # From environment variable
       model: gpt-4o-mini
@@ -32,7 +32,7 @@ actions:
 ### From Another Action
 
 ```python
-from jvagent.action.model import OpenAIModelAction
+from jvagent.action.model import OpenAILanguageModelAction
 
 class MyAction(Action):
     # Reference to the model action ID
@@ -40,7 +40,7 @@ class MyAction(Action):
     
     async def analyze_text(self, text: str):
         # Get the model action instance
-        model = await OpenAIModelAction.get(self.model_action_id)
+        model = await OpenAILanguageModelAction.get(self.model_action_id)
         
         # Synchronous query
         result = await model.query_sync(
@@ -60,7 +60,7 @@ class MyAction(Action):
 
 ```python
 async def generate_story(self, topic: str):
-    model = await OpenAIModelAction.get(self.model_action_id)
+    model = await OpenAILanguageModelAction.get(self.model_action_id)
     
     # Streaming query
     result = await model.query_stream(
@@ -81,7 +81,7 @@ async def generate_story(self, topic: str):
 
 ```python
 async def query_with_context(self, query: str, context: str):
-    model = await OpenAIModelAction.get(self.model_action_id)
+    model = await OpenAILanguageModelAction.get(self.model_action_id)
     
     # Apply template
     prompt = await model.apply_template(

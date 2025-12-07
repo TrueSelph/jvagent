@@ -2,7 +2,7 @@
 
 import pytest
 
-from jvagent.action.model.tools import (ToolCall, ToolDefinition, ToolManager,
+from jvagent.action.model.language.tools import (ToolCall, ToolDefinition, ToolManager,
                                         create_calculator_tool,
                                         create_weather_tool)
 
