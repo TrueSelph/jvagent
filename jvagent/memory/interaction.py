@@ -78,6 +78,20 @@ class Interaction(Node):
         default_factory=list, description="ModelActionResult data for all model calls"
     )
 
+    # Routing (from InteractRouter)
+    interpretation: Optional[str] = attribute(
+        default=None,
+        description="LLM-generated interpretation of user intent (< 50 words)"
+    )
+    anchors: List[str] = attribute(
+        default_factory=list,
+        description="Matched entity names from anchor matching"
+    )
+    routing_confidence: Optional[float] = attribute(
+        default=None,
+        description="Confidence score for routing match (0.0-1.0)"
+    )
+
     # Timestamps
     started_at: datetime = attribute(
         indexed=True, index_direction=-1,
@@ -199,6 +213,24 @@ class Interaction(Node):
         if self.events:
             entry["events"] = self.events
         return entry
+
+    async def get_agent(self) -> Optional[Any]:
+        """Get the Agent node this Interaction belongs to.
+
+        Traverses: Interaction -> Conversation (via conversation_id) -> User -> Memory -> Agent.
+
+        Returns:
+            Agent instance if found, None otherwise
+        """
+        from jvagent.memory.conversation import Conversation
+
+        # Get Conversation node using conversation_id
+        if self.conversation_id:
+            conversation = await Conversation.get(self.conversation_id)
+            if conversation:
+                # Get Agent from Conversation using its get_agent() method
+                return await conversation.get_agent()
+        return None
 
     async def get_next_interaction(self) -> Optional["Interaction"]:
         """Get the next interaction in the chain (forward traversal).

@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List, Optional, Any
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
@@ -61,14 +61,9 @@ class User(Node):
 
         # Get agent's default interaction_limit if not provided
         if interaction_limit is None:
-            # Get Memory node (User is connected to Memory via incoming edge)
-            memory = await self.node(direction="in", node=Memory)
-            if memory:
-                # Get Agent from Memory
-                from jvagent.core.agent import Agent
-                agent = await memory.node(node=Agent)
-                if agent and hasattr(agent, "interaction_limit"):
-                    interaction_limit = agent.interaction_limit
+            agent = await self.get_agent()
+            if agent and hasattr(agent, "interaction_limit"):
+                interaction_limit = agent.interaction_limit
 
         conv = await Conversation.create(
             session_id=session_id or f"sess_{uuid.uuid4().hex[:16]}",
@@ -78,6 +73,23 @@ class User(Node):
         )
         await self.connect(conv)  # Creates edge: User --> Conversation
         return conv
+
+    async def get_agent(self) -> Optional[Any]:
+        """Get the Agent node this User belongs to.
+
+        Traverses: User -> Memory (incoming edge) -> Agent.
+
+        Returns:
+            Agent instance if found, None otherwise
+        """
+        from jvagent.memory.manager import Memory
+
+        # Get Memory node (User is connected to Memory via incoming edge)
+        memory = await self.node(direction="in", node=Memory)
+        if memory:
+            # Get Agent from Memory using its get_agent() method
+            return await memory.get_agent()
+        return None
 
     async def get_conversation_by_session(
         self, session_id: str

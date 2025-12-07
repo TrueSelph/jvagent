@@ -64,6 +64,23 @@ class Conversation(Node):
         default_factory=dict, description="Conversation context dictionary"
     )
 
+    async def get_agent(self) -> Optional[Any]:
+        """Get the Agent node this Conversation belongs to.
+
+        Traverses: Conversation -> User (incoming edge) -> Memory -> Agent.
+
+        Returns:
+            Agent instance if found, None otherwise
+        """
+        from jvagent.memory.user import User
+
+        # Get User node (Conversation is connected to User via incoming edge)
+        user = await self.node(direction="in", node=User)
+        if user:
+            # Get Agent from User using its get_agent() method
+            return await user.get_agent()
+        return None
+
     async def get_first_interaction(self) -> Optional["Interaction"]:
         """Get the first interaction in the chain.
 
