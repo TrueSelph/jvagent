@@ -81,8 +81,8 @@ class InteractRouter(InteractAction):
             visitor: The InteractWalker visiting this action
         """
 
-        logger.debug(f"InteractRouter: Executing with visitor: {visitor}") 
-        
+        logger.debug(f"InteractRouter: Executing with visitor: {visitor}")
+
         interaction = visitor.interaction
         if not interaction:
             logger.warning("InteractRouter: No interaction available")
@@ -158,7 +158,7 @@ class InteractRouter(InteractAction):
                 interaction.interpretation = f"User said: {interaction.utterance[:50]}"
                 interaction.anchors = self.exceptions.copy()  # Only exceptions if no routing data
                 interaction.routing_confidence = 0.0
-            
+
             await interaction.save()
 
             if routing_data:
@@ -232,7 +232,7 @@ class InteractRouter(InteractAction):
         anchors_dict: Dict[str, List[str]] = {}
         for action in interact_actions:
             entity_name = action.get_class_name()
-            
+
             # Get anchors - check both attribute and context directly
             anchors = getattr(action, 'anchors', None)
             if anchors is None:
@@ -242,12 +242,12 @@ class InteractRouter(InteractAction):
                     anchors = context.get('anchors', [])
                 else:
                     anchors = []
-            
+
             logger.debug(
                 f"InteractRouter: Checking {entity_name} (id: {action.id}, enabled: {action.enabled}) "
                 f"for anchors: {anchors} (type: {type(anchors)})"
             )
-            
+
             # Ensure anchors is a list and not empty
             if anchors and isinstance(anchors, list) and len(anchors) > 0:
                 # Automatically ascribe the entity name to the anchor statements
@@ -280,7 +280,7 @@ class InteractRouter(InteractAction):
         # Get previous interactions (excluding current)
         # Get more than needed to ensure we have enough after filtering
         all_recent = await conversation.get_interactions(
-            limit=self.history_limit + 5,  # Get extra to account for current interaction
+            limit=self.history_limit,  # Get extra to account for current interaction
             reverse=True
         )
 
@@ -329,14 +329,14 @@ class InteractRouter(InteractAction):
         # Build conversation history text
         history_text = ""
         if conversation_context:
-            history_text = "\n\n## Conversation History:\n"
+            history_text = "\n\n## Previous Intents:\n"
             for i, entry in enumerate(conversation_context, 1):
                 history_text += f"\n### Turn {i}:\n"
-                history_text += f"User: {entry.get('utterance', '')}\n"
-                if entry.get("response"):
-                    history_text += f"Assistant: {entry.get('response')}\n"
-                if entry.get("events"):
-                    history_text += f"Events: {', '.join(entry.get('events', []))}\n"
+                # history_text += f"User: {entry.get('utterance', '')}\n"
+                # if entry.get("response"):
+                #     history_text += f"Assistant: {entry.get('response')}\n"
+                # if entry.get("events"):
+                #     history_text += f"Events: {', '.join(entry.get('events', []))}\n"
                 if entry.get("interpretation"):
                     history_text += f"Previous Intent: {entry.get('interpretation')}\n"
 
@@ -347,43 +347,37 @@ class InteractRouter(InteractAction):
         if self.routing_prompt:
             return self.routing_prompt.format(
                 utterance=utterance,
-                conversation_history=history_text,
+                previous_intents=history_text,
                 anchors_json=anchors_text,
             )
 
         # Default routing prompt template
-        prompt = f"""Analyze the user's utterance and determine which InteractActions should handle it.
+        prompt = f"""## Current Utterance:
+        {utterance}
 
-## Current Utterance:
-{utterance}
-{history_text}
+        {history_text}
 
-## Available Anchors:
-The following anchors represent capabilities of different InteractActions. Each entity name maps to a list of anchor statements that describe when that action should be used.
+        ## Available Anchors:
+        The following anchors represent capabilities of different InteractActions. Each entity name maps to a list of anchor statements that describe when that action should be used.
 
-{anchors_text}
+        {anchors_text}
 
-## Task:
-1. Generate a concise interpretation (under 50 words) that summarizes the user's intent with applicable contextual references.
-   Example: "User has requested a report update bearing reference number 12345"
+        ## Task:
+        1. Generate a concise interpretation (under 50 words) that summarizes the user's intent with applicable contextual references.
+          Note if the user is responding to question or any ongoing events
+          This interpretation should mention if the user is requesting information, providing information or doing both.
+          Example: "User has requested an update on the report bearing reference number 12345"
 
-2. Match the interpretation against the anchor statements to identify which entity names (InteractActions) should handle this request.
+        2. Match the interpretation against the anchor statements to identify which entity names (InteractActions) should handle this request.
 
-3. Return your analysis in JSON format:
-{{
-    "interpretation": "Your concise interpretation here",
-    "entities": ["entity_name1", "entity_name2"],
-    "confidence": 0.85
-}}
+        3. Return your analysis in JSON format:
+        {{
+            "interpretation": "Your concise interpretation here",
+            "entities": ["entity_name1", "entity_name2"],
+            "confidence": 0.85
+        }}
 
-If no anchors match, return an empty entities list:
-{{
-    "interpretation": "Your interpretation here",
-    "entities": [],
-    "confidence": 0.0
-}}
-
-Return ONLY valid JSON, no additional text."""
+        Return ONLY valid JSON, no additional text."""
 
         return prompt
 
@@ -465,4 +459,3 @@ Be precise and only match when there's clear alignment between the user's intent
             logger.warning(f"InteractRouter: Failed to parse JSON response: {e}")
             logger.debug(f"InteractRouter: Response text: {response_text[:200]}")
             return None
-
