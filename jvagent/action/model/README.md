@@ -1,6 +1,6 @@
 # Model Action System
 
-A lightweight, extensible LLM integration system for jvagent that provides both programmatic (library-style) and API interfaces for language model interactions.
+A lightweight, extensible language model integration system for jvagent that provides both programmatic (library-style) and API interfaces for language model interactions. Supports both text-only and multimodal (text + images) queries.
 
 ## Features
 
@@ -12,18 +12,69 @@ A lightweight, extensible LLM integration system for jvagent that provides both 
 - **Token Tracking**: Automatic usage and cost estimation
 - **Template System**: Jinja2-based prompt templating
 - **Function Calling**: OpenAI-compatible tool/function calling
+- **Multimodal Support**: Text + images for visual understanding (LanguageModelAction implementations)
 - **Action-Level Config**: Per-action configuration with agent overrides
 
 ## Architecture
 
+### Package Structure
+
+The `action/model` package is organized into subpackages to clearly separate concerns:
+
+```
+action/model/
+├── base.py              # BaseModelAction (common base for all model types)
+├── language/            # Language model implementations and utilities
+│   ├── __init__.py     # Package exports
+│   ├── base.py         # LanguageModelAction base class and ModelActionResult
+│   ├── openai.py       # OpenAI implementation
+│   ├── openrouter.py   # OpenRouter implementation
+│   ├── templates.py    # Template management (Jinja2)
+│   ├── tools.py        # Function calling support
+│   └── endpoints.py    # API endpoints for language models
+└── embedding/          # Embedding model implementations
+    ├── __init__.py     # Package exports
+    ├── base.py         # EmbeddingModelAction base class
+    ├── openai.py       # OpenAI embeddings implementation
+    ├── huggingface.py  # HuggingFace Inference API implementation
+    ├── openrouter.py   # OpenRouter embeddings implementation
+    └── generic.py      # Generic RESTful API implementation
+```
+
+This structure provides clear separation between:
+- **Language models**: Text generation and multimodal interactions
+- **Embedding models**: Vector embedding generation
+- **Shared base classes**: Common functionality for all model types
+
 ### Core Components
 
-1. **ModelActionResult**: Standardized result object supporting both sync and streaming
-2. **ModelAction**: Base class defining the interface for all providers
-3. **OpenAIModelAction**: OpenAI Chat Completions API implementation
-4. **OpenRouterModelAction**: OpenRouter API implementation
-5. **TemplateManager**: Jinja2-based prompt templating
-6. **ToolManager**: Function calling support with validation
+1. **BaseModelAction**: Generic base class with common attributes and operations (api_key, api_endpoint, model, timeout, metrics)
+2. **ModelActionResult**: Standardized result object supporting both sync and streaming (language models only)
+3. **LanguageModelAction**: Base class for language model actions (text generation and multimodal) extending BaseModelAction
+4. **EmbeddingModelAction**: Base class for embedding model actions extending BaseModelAction
+5. **OpenAILanguageModelAction**: OpenAI Chat Completions API implementation (extends LanguageModelAction)
+6. **OpenRouterLanguageModelAction**: OpenRouter API implementation (extends LanguageModelAction)
+7. **OpenAIEmbeddingModelAction**: OpenAI embeddings API implementation (extends EmbeddingModelAction)
+8. **HuggingFaceEmbeddingModelAction**: HuggingFace Inference API implementation (extends EmbeddingModelAction)
+9. **OpenRouterEmbeddingModelAction**: OpenRouter embeddings API implementation (extends EmbeddingModelAction)
+10. **GenericEmbeddingModelAction**: Generic RESTful API implementation for custom embedding services
+11. **TemplateManager**: Jinja2-based prompt templating (language models)
+12. **ToolManager**: Function calling support with validation (language models)
+
+### Class Hierarchy
+
+```
+Action (base)
+└── BaseModelAction (generic base with common attributes/operations)
+    ├── LanguageModelAction (text generation and multimodal - chat completions)
+    │   ├── OpenAILanguageModelAction
+    │   └── OpenRouterLanguageModelAction
+    └── EmbeddingModelAction (embeddings)
+        ├── OpenAIEmbeddingModelAction
+        ├── HuggingFaceEmbeddingModelAction
+        ├── OpenRouterEmbeddingModelAction
+        └── GenericEmbeddingModelAction
+```
 
 ### Design Principles
 
@@ -60,14 +111,14 @@ export OPENROUTER_API_KEY="sk-or-..."
 #### Synchronous Query
 
 ```python
-from jvagent.action.model import OpenAIModelAction
+from jvagent.action.model import OpenAILanguageModelAction
 
 class MyAnalysisAction(Action):
     model_action_id: str = attribute(default="")
     
     async def analyze_text(self, text: str):
         # Get model action instance
-        model = await OpenAIModelAction.get(self.model_action_id)
+        model = await OpenAILanguageModelAction.get(self.model_action_id)
         
         # Make synchronous query
         result = await model.query_sync(
@@ -88,7 +139,7 @@ class MyAnalysisAction(Action):
 ```python
 class MyStreamingAction(Action):
     async def generate_report(self, topic: str):
-        model = await OpenAIModelAction.get(self.model_action_id)
+        model = await OpenAILanguageModelAction.get(self.model_action_id)
         
         # Make streaming query
         result = await model.query_stream(
@@ -114,7 +165,7 @@ from datetime import datetime
 
 class MyTemplatedAction(Action):
     async def query_with_context(self, query: str, context: str):
-        model = await OpenAIModelAction.get(self.model_action_id)
+        model = await OpenAILanguageModelAction.get(self.model_action_id)
         
         # Apply template
         formatted_prompt = await model.apply_template(
@@ -131,11 +182,11 @@ class MyTemplatedAction(Action):
 #### Function Calling
 
 ```python
-from jvagent.action.model.tools import create_weather_tool
+from jvagent.action.model.language.tools import create_weather_tool
 
 class MyToolAction(Action):
     async def answer_with_tools(self, query: str):
-        model = await OpenAIModelAction.get(self.model_action_id)
+        model = await OpenAILanguageModelAction.get(self.model_action_id)
         
         # Define tools
         weather_tool = create_weather_tool()
@@ -318,7 +369,7 @@ In `info.yaml`:
 ```yaml
 package:
   name: jvagent/model_openai
-  archetype: OpenAIModelAction
+  archetype: OpenAILanguageModelAction
   version: 1.0.0
 ```
 
@@ -373,7 +424,7 @@ prompt = await model.apply_template(
 ### Defining Tools
 
 ```python
-from jvagent.action.model.tools import ToolDefinition
+from jvagent.action.model.language.tools import ToolDefinition
 
 tool = ToolDefinition(
     name="get_weather",
@@ -452,12 +503,12 @@ actions:
 
 ### Custom Providers
 
-Extend `ModelAction` to add custom providers:
+Extend `LanguageModelAction` to add custom language model providers:
 
 ```python
-from jvagent.action.model.base import ModelAction, ModelActionResult
+from jvagent.action.model.language.base import LanguageModelAction, ModelActionResult
 
-class CustomModelAction(ModelAction):
+class CustomModelAction(LanguageModelAction):
     async def _query(self, messages, tools=None, **kwargs):
         # Implement sync query
         response = await self.call_custom_api(messages)
@@ -521,7 +572,7 @@ See the example action:
 
 To add a new provider:
 1. Create a new file in `jvagent/action/model/`
-2. Extend `ModelAction`
+2. Extend `LanguageModelAction` for language model providers or `EmbeddingModelAction` for embedding providers
 3. Implement `_query()` and `_query_stream()`
 4. Add provider-specific configuration attributes
 5. Export in `__init__.py`

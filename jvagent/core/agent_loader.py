@@ -4,8 +4,10 @@ This module provides functionality to install and configure agents based on
 their agent.yaml descriptors, including action setup and initialization.
 """
 
+import importlib
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -262,7 +264,13 @@ class AgentLoader:
             # Load and register/update actions from agent.yaml
             # Always use update_if_exists when update is requested at app level
             # This ensures any remaining actions (if removal didn't catch them) are properly handled
+            # On restart, we always reload actions to ensure core actions are discovered and registered
             if descriptor.actions:
+                # Reset core action path and cache to ensure they're re-validated on restart
+                # This is important because the working directory or paths might have changed
+                self.action_loader._core_action_path = None
+                self.action_loader._core_action_cache = None
+                
                 await self._install_actions(
                     agent, descriptor, actions_manager, update_if_exists=update_if_exists
                 )
@@ -337,6 +345,84 @@ class AgentLoader:
 
         return memory
 
+    def _get_expected_actions_from_descriptor(
+        self, descriptor: AgentDescriptor
+    ) -> set[Tuple[str, str]]:
+        """Extract expected action references from agent.yaml descriptor.
+
+        Args:
+            descriptor: Agent descriptor with action configurations
+
+        Returns:
+            Set of (namespace, label) tuples for actions expected in agent.yaml
+        """
+        expected = set()
+        for action_config in descriptor.actions:
+            if not isinstance(action_config, dict):
+                continue
+            action_ref = action_config.get("action", "")
+            if action_ref and "/" in action_ref:
+                namespace, label = action_ref.split("/", 1)
+                expected.add((namespace, label))
+        return expected
+
+    async def _get_existing_actions_for_agent(
+        self, agent: Agent, actions_manager: Optional[Actions] = None
+    ) -> List[Action]:
+        """Get all existing actions for an agent.
+
+        Uses graph connections to find all Action subclasses (including distant descendants).
+
+        Args:
+            agent: Agent instance
+            actions_manager: Optional Actions manager node (if not provided, will be fetched)
+
+        Returns:
+            List of existing Action instances for the agent
+        """
+        # If actions_manager is provided, use graph connections (more reliable for subclasses)
+        if actions_manager:
+            # Actions manager is unique per agent; no need to filter by agent_id again
+            return await actions_manager.nodes(node=Action)
+        
+        # Fallback to database query if actions_manager not available
+        return await Action.find({"context.agent_id": agent.id})
+
+    def _sync_actions_with_descriptor(
+        self, expected_actions: set[Tuple[str, str]], existing_actions: List[Action]
+    ) -> Dict[str, List[Action]]:
+        """Compare expected actions from agent.yaml with existing actions in database.
+
+        Args:
+            expected_actions: Set of (namespace, label) tuples from agent.yaml
+            existing_actions: List of existing Action instances
+
+        Returns:
+            Dictionary with keys:
+            - 'to_remove': Actions in DB but not in agent.yaml
+            - 'to_update': Actions in both (need module reload + update)
+            - 'to_add': Actions in agent.yaml but not in DB
+        """
+        existing_set = {(action.namespace, action.label) for action in existing_actions}
+        existing_map = {(action.namespace, action.label): action for action in existing_actions}
+
+        to_remove = [
+            action
+            for action in existing_actions
+            if (action.namespace, action.label) not in expected_actions
+        ]
+        to_update = [
+            existing_map[key]
+            for key in expected_actions & existing_set
+        ]
+        to_add_keys = expected_actions - existing_set
+
+        return {
+            "to_remove": to_remove,
+            "to_update": to_update,
+            "to_add": list(to_add_keys),
+        }
+
     async def _install_actions(
         self,
         agent: Agent,
@@ -350,16 +436,83 @@ class AgentLoader:
         1. Discovered from filesystem: agents/{namespace}/{agent_name}/actions/{namespace}/{action_name}/info.yaml
         2. Configured in agent.yaml: actions list with context overrides
 
-        Existing actions will be updated with new context values if update_if_exists=True.
+        When update_if_exists=True, this method makes agent.yaml the source of truth:
+        - Removes actions not in agent.yaml
+        - Reloads modules for actions that exist (ensuring code changes take effect)
+        - Adds new actions from agent.yaml
 
         Args:
             agent: Agent instance
             descriptor: Agent descriptor with action configurations
             actions_manager: Actions manager node
-            update_if_exists: If True, update existing actions; if False, skip if exists
+            update_if_exists: If True, sync with agent.yaml as source of truth; if False, skip if exists
         """
+        # Always deduplicate existing action nodes before registering new ones.
+        await self._dedupe_agent_actions(agent, actions_manager)
+
+        # If update mode, sync with agent.yaml as source of truth
+        if update_if_exists:
+            # Get expected actions from agent.yaml
+            expected_actions = self._get_expected_actions_from_descriptor(descriptor)
+            
+            # Get existing actions using graph connections (finds all Action subclasses)
+            existing_actions = await self._get_existing_actions_for_agent(agent, actions_manager)
+            
+            # Compare and categorize
+            sync_result = self._sync_actions_with_descriptor(expected_actions, existing_actions)
+            
+            # Remove actions not in agent.yaml
+            for action_to_remove in sync_result["to_remove"]:
+                try:
+                    logger.debug(
+                        f"Deregistering action {action_to_remove.namespace}/{action_to_remove.label} "
+                        f"(not in agent.yaml)"
+                    )
+                    await actions_manager.deregister_action(action_to_remove.id)
+                except Exception as e:
+                    logger.error(
+                        f"Error deregistering action {action_to_remove.id}: {e}",
+                        exc_info=True,
+                    )
+
+        # If update mode, reload modules for actions that will be updated
+        # This ensures fresh code is loaded when actions are recreated
+        if update_if_exists:
+            # Get existing actions using graph connections (finds all Action subclasses)
+            existing_actions = await self._get_existing_actions_for_agent(agent, actions_manager)
+            expected_actions = self._get_expected_actions_from_descriptor(descriptor)
+            existing_map = {
+                (action.namespace, action.label): action for action in existing_actions
+            }
+
+            # Reload modules for actions that exist and are in agent.yaml (will be updated)
+            for (namespace, label) in expected_actions:
+                if (namespace, label) in existing_map:
+                    existing_action = existing_map[(namespace, label)]
+                    try:
+                        # Get metadata to determine if this is a core action
+                        metadata_dict = existing_action._metadata
+                        is_core = metadata_dict.get("is_core_action", False)
+                        core_module_path = metadata_dict.get("core_module_path")
+                        
+                        if is_core and core_module_path:
+                            # For core actions, use importlib.reload()
+                            if core_module_path in sys.modules:
+                                importlib.reload(sys.modules[core_module_path])
+                                logger.debug(f"Reloaded core action module: {core_module_path}")
+                        else:
+                            # For local actions, unload modules to ensure fresh import
+                            await existing_action._unload_action_modules()
+                            logger.debug(f"Unloaded modules for action {namespace}/{label} (will reload)")
+                    except Exception as e:
+                        logger.warning(
+                            f"Error reloading modules for action {namespace}/{label}: {e}",
+                            exc_info=True,
+                        )
+
         # Load actions using ActionLoader
         # This discovers actions from filesystem and applies configuration from agent.yaml
+        # If modules were unloaded above, fresh imports will occur here
         actions = self.action_loader.load_actions_for_agent(
             descriptor.namespace, descriptor.name, agent.id, descriptor.actions
         )
@@ -368,9 +521,6 @@ class AgentLoader:
             logger.debug(f"No actions found for agent {agent.name}")
             return
 
-        # Always deduplicate existing action nodes before registering new ones.
-        await self._dedupe_agent_actions(agent, actions_manager)
-
         # Register or update actions with the manager
         results = await actions_manager.register_actions(actions, update_if_exists=update_if_exists)
 
@@ -378,6 +528,7 @@ class AgentLoader:
         registered_count = 0
         updated_count = 0
         failed_count = 0
+        removed_count = len(sync_result.get("to_remove", [])) if update_if_exists else 0
 
         # Check which actions were updates vs new registrations
         for action in actions:
@@ -386,12 +537,11 @@ class AgentLoader:
 
             if success:
                 # Check if this was an update by looking for existing action
-                existing_actions = await Action.find(
-                    {
-                        "context.agent_id": action.agent_id,
-                        "context.namespace": action.namespace,
-                        "context.label": action.label,
-                    }
+                # Use graph connections to find all Action subclasses (including distant descendants)
+                existing_actions = await actions_manager.nodes(
+                    node=Action,
+                    namespace=action.namespace,
+                    label=action.label,
                 )
 
                 if existing_actions and update_if_exists:
@@ -406,7 +556,12 @@ class AgentLoader:
 
         # Log summary with action count per agent
         total_actions = registered_count + updated_count
-        if failed_count > 0:
+        if update_if_exists and removed_count > 0:
+            logger.info(
+                f"Actions for {agent.name}: {removed_count} removed, "
+                f"{registered_count} registered, {updated_count} updated, {failed_count} failed"
+            )
+        elif failed_count > 0:
             logger.warning(
                 f"Actions for {agent.name}: {registered_count} registered, {updated_count} updated, {failed_count} failed"
             )
@@ -418,7 +573,7 @@ class AgentLoader:
     async def _dedupe_agent_actions(self, agent: Agent, actions_manager: Actions) -> None:
         """Ensure only one action node exists per (namespace, label) for the agent."""
         try:
-            connected_nodes = await actions_manager.nodes(direction="out")
+            connected_nodes = await actions_manager.nodes(direction="out", node=Action)
             action_nodes = [
                 node
                 for node in connected_nodes
@@ -452,7 +607,9 @@ class AgentLoader:
 
             connected_ids = {action.id for action in dedupe_map.values()}
             # Remove orphan actions that still reference the agent but are not connected
-            orphan_candidates = await Action.find({"context.agent_id": agent.id})
+            # Use graph connections to find all Action subclasses (including distant descendants)
+            all_connected_actions = await actions_manager.nodes(node=Action)
+            orphan_candidates = [a for a in all_connected_actions if a.id not in connected_ids]
             for orphan in orphan_candidates:
                 if orphan.id in connected_ids:
                     continue

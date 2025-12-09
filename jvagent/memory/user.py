@@ -72,6 +72,13 @@ class User(Node):
             interaction_limit=interaction_limit or 0,
         )
         await self.connect(conv)  # Creates edge: User --> Conversation
+        
+        # Update Memory's total_conversations counter
+        memory = await self.node(direction="in", node=Memory)
+        if memory:
+            memory.total_conversations += 1
+            await memory.save()
+        
         return conv
 
     async def get_agent(self) -> Optional[Any]:

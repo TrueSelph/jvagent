@@ -14,7 +14,7 @@ from jvspatial.core import on_visit
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
-from jvagent.action.model.base import ModelAction
+from jvagent.action.model.language.base import LanguageModelAction
 
 if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
@@ -32,15 +32,17 @@ class InteractRouter(InteractAction):
     4. Store routing results on Interaction node
 
     Attributes:
-        model_action_type: Type of ModelAction to use (e.g., "OpenAIModelAction")
+        model_action_type: Type of LanguageModelAction to use (e.g., "OpenAILanguageModelAction")
         history_limit: Number of previous interactions to include in context (default: 10)
         weight: Execution weight (default: -100 to run first)
         exceptions: List of InteractAction entity names that must always execute, regardless of routing
+        system_prompt: Optional override for the system prompt used during routing
+        routing_prompt: Optional template for the routing prompt with placeholders: {utterance}, {conversation_history}, {anchors_json}
     """
 
     model_action_type: str = attribute(
         default="",
-        description="Type of ModelAction to use for LLM calls (e.g., 'OpenAIModelAction'). If empty, uses first available."
+        description="Type of LanguageModelAction to use for LLM calls (e.g., 'OpenAILanguageModelAction'). If empty, uses first available."
     )
     history_limit: int = attribute(
         default=10,
@@ -54,6 +56,18 @@ class InteractRouter(InteractAction):
     exceptions: List[str] = attribute(
         default_factory=list,
         description="List of InteractAction entity names that must always execute, regardless of routing results"
+    )
+    system_prompt: Optional[str] = attribute(
+        default=None,
+        description="Optional override for the system prompt used during routing. If not provided, uses default system prompt."
+    )
+    routing_prompt: Optional[str] = attribute(
+        default=None,
+        description=(
+            "Optional template for the routing prompt. "
+            "Placeholders: {utterance}, {conversation_history}, {anchors_json}. "
+            "If not provided, uses default routing prompt template."
+        )
     )
 
     @on_visit(InteractWalker)
@@ -122,7 +136,7 @@ class InteractRouter(InteractAction):
 
             # Log model result
             if result:
-                interaction.add_action(self.__class__.__name__)
+                interaction.add_action(self.get_class_name())
                 interaction.add_model_result(result.to_dict())
 
             # Parse response
@@ -130,19 +144,33 @@ class InteractRouter(InteractAction):
             routing_data = self._parse_routing_response(response_text)
 
             # Store on interaction
+            # Always set interpretation to indicate InteractRouter has executed
             if routing_data:
-                interaction.interpretation = routing_data.get("interpretation")
+                interaction.interpretation = routing_data.get("interpretation", "")
                 # Combine routed entities with exceptions (exceptions always included)
                 routed_entities = routing_data.get("entities", [])
                 all_allowed = list(set(routed_entities + self.exceptions))
                 interaction.anchors = all_allowed
                 interaction.routing_confidence = routing_data.get("confidence")
-                await interaction.save()
+            else:
+                # Even if parsing fails, set interpretation to indicate router executed
+                # This ensures the walker knows routing was attempted
+                interaction.interpretation = f"User said: {interaction.utterance[:50]}"
+                interaction.anchors = self.exceptions.copy()  # Only exceptions if no routing data
+                interaction.routing_confidence = 0.0
+            
+            await interaction.save()
 
+            if routing_data:
                 logger.info(
                     f"InteractRouter: Routed to {len(routed_entities)} entities "
                     f"(+ {len(self.exceptions)} exceptions, total: {len(all_allowed)}) "
                     f"(confidence: {interaction.routing_confidence})"
+                )
+            else:
+                logger.warning(
+                    f"InteractRouter: Failed to parse routing response, "
+                    f"only exceptions will execute: {self.exceptions}"
                 )
 
         except Exception as e:
@@ -150,27 +178,27 @@ class InteractRouter(InteractAction):
             # Don't raise - let other actions continue
 
 
-    async def _get_model_action(self, agent: Any) -> Optional[ModelAction]:
+    async def _get_model_action(self, agent: Any) -> Optional[LanguageModelAction]:
         """Get the model action for LLM calls.
 
         Args:
             agent: Agent instance
 
         Returns:
-            ModelAction instance or None
+            LanguageModelAction instance or None
         """
         if self.model_action_type:
             model_action = await agent.get_action_by_type(self.model_action_type)
-            if model_action and isinstance(model_action, ModelAction):
+            if model_action and isinstance(model_action, LanguageModelAction):
                 return model_action
 
-        # Fallback: find first available ModelAction
-        from jvagent.action.model.base import ModelAction as ModelActionBase
+        # Fallback: find first available LanguageModelAction
+        from jvagent.action.model.language.base import LanguageModelAction as LanguageModelActionBase
         actions_manager = await agent.get_actions_manager()
         if actions_manager:
             all_actions = await actions_manager.get_actions(enabled_only=True)
             for action in all_actions:
-                if isinstance(action, ModelActionBase):
+                if isinstance(action, LanguageModelActionBase):
                     return action
 
         return None
@@ -191,22 +219,44 @@ class InteractRouter(InteractAction):
             return {}
 
         # Get all InteractActions (excluding this router)
-        all_actions = await actions_manager.get_actions(enabled_only=True)
-        interact_actions = [
-            a for a in all_actions
-            if isinstance(a, InteractAction) and a.id != self.id
-        ]
+        # Use entity parameter to filter directly to InteractAction types
+        all_interact_actions = await actions_manager.get_actions(
+            enabled_only=True, entity=InteractAction
+        )
+        # Filter out this router
+        interact_actions = [a for a in all_interact_actions if a.id != self.id]
+
+        logger.debug(f"InteractRouter: Found {len(interact_actions)} InteractActions (excluding router)")
 
         # Collect anchors
         anchors_dict: Dict[str, List[str]] = {}
         for action in interact_actions:
-            if action.anchors:
-                # Merge anchors by entity name
-                for entity_name, anchor_list in action.anchors.items():
-                    if entity_name not in anchors_dict:
-                        anchors_dict[entity_name] = []
-                    anchors_dict[entity_name].extend(anchor_list)
+            entity_name = action.get_class_name()
+            
+            # Get anchors - check both attribute and context directly
+            anchors = getattr(action, 'anchors', None)
+            if anchors is None:
+                # Try to get from context if attribute not set
+                context = getattr(action, 'context', {}) if hasattr(action, 'context') else {}
+                if isinstance(context, dict):
+                    anchors = context.get('anchors', [])
+                else:
+                    anchors = []
+            
+            logger.debug(
+                f"InteractRouter: Checking {entity_name} (id: {action.id}, enabled: {action.enabled}) "
+                f"for anchors: {anchors} (type: {type(anchors)})"
+            )
+            
+            # Ensure anchors is a list and not empty
+            if anchors and isinstance(anchors, list) and len(anchors) > 0:
+                # Automatically ascribe the entity name to the anchor statements
+                if entity_name not in anchors_dict:
+                    anchors_dict[entity_name] = []
+                anchors_dict[entity_name].extend(anchors)
+                logger.debug(f"InteractRouter: Added {len(anchors)} anchors for {entity_name}")
 
+        logger.debug(f"InteractRouter: Collected anchors from {len(anchors_dict)} actions: {list(anchors_dict.keys())}")
         return anchors_dict
 
     async def _build_conversation_context(
@@ -293,6 +343,15 @@ class InteractRouter(InteractAction):
         # Build anchors text
         anchors_text = json.dumps(anchors_dict, indent=2)
 
+        # Use custom routing prompt template if provided
+        if self.routing_prompt:
+            return self.routing_prompt.format(
+                utterance=utterance,
+                conversation_history=history_text,
+                anchors_json=anchors_text,
+            )
+
+        # Default routing prompt template
         prompt = f"""Analyze the user's utterance and determine which InteractActions should handle it.
 
 ## Current Utterance:
@@ -334,6 +393,11 @@ Return ONLY valid JSON, no additional text."""
         Returns:
             System prompt string
         """
+        # Use custom system prompt if provided
+        if self.system_prompt:
+            return self.system_prompt
+
+        # Default system prompt
         return """You are an intent analysis system that interprets user utterances and routes them to appropriate InteractActions based on published anchor statements.
 
 Your role is to:

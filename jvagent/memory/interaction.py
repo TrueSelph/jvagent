@@ -53,10 +53,6 @@ class Interaction(Node):
     response: Optional[str] = attribute(
         default=None, description="Agent response text"
     )
-    canned_response: Optional[str] = attribute(
-        default=None, description="Immediate response before full processing"
-    )
-
     # Processing tracking
     actions: List[str] = attribute(
         default_factory=list, description="Actions involved in processing (in order)"

@@ -231,7 +231,7 @@ class Memory(Node):
         user_query = {}
         if user_id:
             user_query = {"context.user_id": user_id}
-        
+
         stats = {
             "total_users": await User.count(user_query),
             "total_conversations": 0,
@@ -270,15 +270,56 @@ class Memory(Node):
             users = await self.nodes(node=User, user_id=user_id)
         else:
             users = await self.nodes(node=User)
-        
+
         if not users:
             return None
 
         purged = []
         for user in users:
             purged.append(user)
+            # Cascade delete will call Conversation.delete() for each conversation,
+            # which will properly decrement total_conversations counter
             await user.delete(cascade=True)
             self.total_users = max(0, self.total_users - 1)
+
+        await self.save()
+        return purged
+
+    async def purge_conversation(
+        self, conversation_id: Optional[str] = None
+    ) -> Optional[List["Conversation"]]:
+        """Purge conversation(s) (cascade deletes interactions).
+
+        Args:
+            conversation_id: Optional specific conversation ID to purge. If None, purges all conversations.
+
+        Returns:
+            List of purged conversations, or None if no conversations found
+        """
+        from jvagent.memory.conversation import Conversation
+
+        if conversation_id:
+            # Purge specific conversation by ID
+            conversation = await Conversation.get(conversation_id)
+            if not conversation:
+                return None
+            
+            # Conversation.delete() will handle decrementing total_conversations counter
+            await conversation.delete(cascade=True)
+            await self.save()
+            return [conversation]
+        else:
+            # Purge all conversations
+            conversations = await Conversation.find()
+            
+            if not conversations:
+                return None
+
+            purged = []
+            for conversation in conversations:
+                purged.append(conversation)
+                # Conversation.delete() will handle decrementing total_conversations counter
+                await conversation.delete(cascade=True)
 
         await self.save()
         return purged
@@ -300,7 +341,7 @@ class Memory(Node):
             users = await self.nodes(node=User, user_id=user_id)
         else:
             users = await self.nodes(node=User)
-        
+
         export_data: Dict[str, Any] = {"users": []}
 
         for user in users:

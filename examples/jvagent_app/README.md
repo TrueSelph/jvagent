@@ -34,7 +34,7 @@ After installing jvagent, you can run this example application:
    cp .env.example .env
    # Edit .env and set at minimum:
    # - JVAGENT_ADMIN_PASSWORD (required)
-   # - OPENAI_API_KEY (optional, for model_openai action)
+   # - OPENAI_API_KEY (optional, for openai_lm action)
    cd ../..
    ```
 
@@ -75,7 +75,9 @@ After installing jvagent, you can run this example application:
 
 4. **Add your custom agents** to the `agents/` directory (see [Agents](#agents) below)
 
-5. **Add actions to each agent** by placing them in `agents/{namespace}/{agent_name}/actions/` (see [Actions](#actions) below)
+5. **Configure actions** in each agent's `agent.yaml`:
+   - Use core actions directly (e.g., `jvagent/interact_router`)
+   - Add custom actions in `agents/{namespace}/{agent_name}/actions/` (see [Actions](#actions) below)
 
 6. **Update app.yaml** to include your agents in the agents list
 
@@ -139,11 +141,27 @@ When jvagent starts from an app directory, it:
 
 ## Actions
 
-Actions are pluggable components that extend agent functionality. **Actions are now packaged within each agent folder**, allowing agents to be self-contained packages with their own actions.
+Actions are pluggable components that extend agent functionality. Actions can be:
+1. **Core actions** from the jvagent library (loaded automatically)
+2. **Local actions** packaged within each agent folder
+3. **Local overrides** of core actions (takes precedence over core)
+
+### Action Discovery
+
+Actions are discovered in the following order:
+1. **Local actions** from `actions/{namespace}/{action_name}/` (takes precedence)
+2. **Core actions** from jvagent library (`jvagent/action/*/`) if not found locally
+3. Error if action not found in either location
+
+### Using Core Actions
+
+This example app demonstrates using core actions directly from the jvagent library. Core actions like `interact_router`, `openai_lm`, `openai_embedding`, `typesense_vectorstore`, and `retrieval_interact_action` are referenced in `agent.yaml` without requiring stub directories.
 
 ### Action Structure
 
-Each action package should be placed within its agent's `actions/` subdirectory:
+#### Local Actions
+
+Each local action package should be placed within its agent's `actions/` subdirectory:
 
 ```
 agents/
@@ -153,6 +171,7 @@ agents/
         │   └── {namespace}/   # Namespace directory
         │       └── {action_name}/
         │           ├── {action_name}.py  # Main action implementation (Action class)
+        │           ├── __init__.py        # Package initialization
         │           ├── endpoints.py      # API endpoints (standard pattern)
         │           ├── info.yaml        # Action metadata and configuration
         │           ├── requirements.txt  # Python dependencies (optional)
@@ -161,9 +180,38 @@ agents/
         └── README.md         # Agent documentation (optional)
 ```
 
+#### Example App Actions
+
+This example app includes:
+- **Core actions** (loaded from jvagent library):
+  - `jvagent/interact_router` - Intent-based routing
+  - `jvagent/openai_lm` - OpenAI language model
+  - `jvagent/openai_embedding` - OpenAI embeddings
+  - `jvagent/typesense_vectorstore` - Typesense vector store
+  - `jvagent/retrieval_interact_action` - Context retrieval
+
+- **Local actions**:
+  - `jvagent/example_action` - Custom example action
+  - `jvagent/persona` - Local override of core persona action
+
+### Using Core Actions
+
+To use a core action, simply reference it in `agent.yaml`:
+
+```yaml
+actions:
+  - action: jvagent/interact_router
+    context:
+      enabled: true
+      model_action_type: "OpenAILanguageModelAction"
+      history_limit: 10
+```
+
+No stub directory needed - the action is automatically loaded from the core library.
+
 ### Action Implementation
 
-Your action class should extend `jvagent.action.base.Action`:
+For custom actions, your action class should extend `jvagent.action.base.Action`:
 
 ```python
 from jvagent.action.base import Action
@@ -210,7 +258,7 @@ description: A description of what this action does
   # Package dependencies
 dependencies:
     # jvagent version requirement
-    jvagent: ~2.1.0
+    jvagent: ~0.0.1
     # Other action dependencies (by namespace/action_name)
   actions: []
 ```

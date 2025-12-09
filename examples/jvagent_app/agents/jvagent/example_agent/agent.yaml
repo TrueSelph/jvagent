@@ -6,10 +6,10 @@ agent: jvagent/example_agent
 
 # Agent metadata
 version: 1.0.0
-author: Your Name
+author: V75 Inc.
 
 # jvagent version requirement (optional)
-jvagent: ~2.1.0
+jvagent: ~0.0.1
 
 # Agent context: Properties that configure the agent
 context:
@@ -18,26 +18,144 @@ context:
   enabled: true
 
 # Action Assignments
-# Actions are discovered from namespace subdirectories: actions/{namespace}/{action_name}/
+# Actions are discovered from:
+# 1. Local actions: actions/{namespace}/{action_name}/ (takes precedence)
+# 2. Core actions: jvagent library (jvagent/action/*/) if not found locally
 # Actions are referenced using the format: namespace/action_name
+# 
+# Core actions (loaded from jvagent library if no local override exists):
+# - jvagent/interact_router
+# - jvagent/openai_embedding, jvagent/openai_lm
+# - jvagent/typesense_vectorstore
+# - jvagent/retrieval_interact_action
+#
+# Local overrides/custom actions:
+# - jvagent/persona (custom ExamplePersonaAction override)
+# - jvagent/example_action (custom action)
 actions:
   # InteractRouter Action - Intent-based routing for InteractActions
-  # Located at: jvagent/action/router/
+  # Core action from jvagent library (jvagent/action/router/)
   - action: jvagent/interact_router
     context:
       enabled: true
       description: "Intent-based routing action that analyzes utterances and routes to appropriate InteractActions"
       # Model Configuration (uses OpenAI model action by entity type)
-      model_action_type: "OpenAIModelAction"  # Entity type to find dynamically
+      model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
       history_limit: 10  # Number of previous interactions to include in context
+
+      system_prompt: |
+        You are an intent analysis system that interprets user utterances and routes them to appropriate InteractActions based on published anchor statements.
+      
+        Your role is to:
+        1. Understand the user's intent from their utterance and conversation context
+        2. Generate a concise interpretation (under 50 words) that captures the intent
+        3. Match the interpretation against available anchor statements
+        4. Return the matching entity names (InteractAction identifiers) in JSON format
+      
+        Be precise and only match when there's clear alignment between the user's intent and an anchor statement.
+      routing_prompt: |
+        Analyze the user's utterance and determine which InteractActions should handle it.
+      
+        ## Current Utterance:
+        {utterance}
+        {conversation_history}
+      
+        ## Available Anchors:
+        The following anchors represent capabilities of different InteractActions. Each entity name maps to a list of anchor statements that describe when that action should be used.
+      
+        {anchors_json}
+      
+        ## Task:
+        1. Generate a concise interpretation (under 50 words) that summarizes the user's intent with applicable contextual references.
+           Example: "User has requested a report update bearing reference number 12345"
+      
+        2. Match the interpretation against the anchor statements to identify which entity names (InteractActions) should handle this request.
+      
+        3. Return your analysis in JSON format:
+        {{
+            "interpretation": "Your concise interpretation here",
+            "entities": ["entity_name1", "entity_name2"],
+            "confidence": 0.85
+        }}
+      
+        If no anchors match, return an empty entities list:
+        {{
+            "interpretation": "Your interpretation here",
+            "entities": [],
+            "confidence": 0.0
+        }}
+      
+        Return ONLY valid JSON, no additional text.
       # Optional: List of InteractAction entity names that must always execute
       # exceptions:
       #   - "PersonaAction"
       #   - "AnotherAction"
   
-  # OpenAI Model Action - LLM integration with multimodal support
-  # Located at: agents/jvagent/example_agent/actions/jvagent/model_openai/
-  - action: jvagent/model_openai
+  # OpenAI Embedding Model Action - Vector embeddings for semantic search
+  # Core action from jvagent library (jvagent/action/model/embedding/openai/)
+  - action: jvagent/openai_embedding
+    context:
+      enabled: true
+      description: "OpenAI embeddings API for generating vector embeddings"
+      # API Configuration
+      api_key: ${OPENAI_API_KEY}  # Set in .env or environment
+      api_endpoint: "https://api.openai.com/v1"
+      # Model Configuration
+      model: text-embedding-3-small  # Default embedding model
+      embedding_dimensions: 1536  # Expected dimensions (0 = auto-detect)
+      timeout: 30
+  
+  # TypesenseVectorStore Action - Vector store for semantic search
+  # Core action from jvagent library (jvagent/action/vectorstore/typesense/)
+  - action: jvagent/typesense_vectorstore
+    context:
+      enabled: true
+      description: "Typesense vector store for semantic search and context retrieval"
+      # Typesense Configuration
+      host: localhost
+      port: 8108
+      protocol: http
+      api_key: ${TYPESENSE_API_KEY}  # Set in .env or environment
+      connection_timeout_seconds: 2
+      embedding_dimensions: 1536  # Must match embedding model dimensions
+      # Embedding Model Configuration
+      embedding_model_action_type: "OpenAIEmbeddingModelAction"  # Entity type to find dynamically
+      embedder_type: model_action  # Use model action instead of sentence-transformers
+      default_collection: example_agent
+  
+  # RetrievalInteractAction - Context retrieval from vector stores
+  # Core action from jvagent library (jvagent/action/retrieval/)
+  - action: jvagent/retrieval_interact_action
+    context:
+      enabled: true
+      description: "Retrieves context from vector stores and adds directives for PersonaAction"
+      # VectorStore Configuration
+      vectorstore_action_type: "TypesenseVectorStore"  # Entity type to find dynamically
+      collection: "example_agent"  # Collection name to search in
+      k: 5  # Number of search results to retrieve
+      weight: -50  # Runs after InteractRouter but before PersonaAction
+      # Anchors for routing - published to InteractRouter
+      # The entity name (RetrievalInteractAction) is automatically used as the key
+      anchors:
+        - "User asks a knowledge-based question"
+        - "User requests information from knowledge base"
+        - "User needs context or knowledge retrieval"
+        - "User asks a question requiring search"
+        - "User wants to find information"
+        - "User queries knowledge base"
+        - "User seeks information or facts"
+        - "User asks about something that requires context retrieval"
+      # Optional: Minimum similarity score threshold (0.0-1.0)
+      # min_score_threshold: 0.7
+      # Optional: Customize directive template (default shown for reference)
+      directive_template: |
+        Context retrieved from knowledge base:
+        {results}
+        Use this context to inform your response to the user's query.
+  
+  # OpenAI Language Model Action - LLM integration with multimodal support
+  # Core action from jvagent library (jvagent/action/model/language/openai/)
+  - action: jvagent/openai_lm
     context:
       enabled: true
       description: "OpenAI GPT-4o model action with vision support"
@@ -52,7 +170,8 @@ actions:
       timeout: 60
   
   # Persona Action - Core interact action for agent behavioral modeling
-  # Located at: agents/jvagent/example_agent/actions/jvagent/persona/
+  # Override: Custom implementation at agents/jvagent/example_agent/actions/jvagent/persona/
+  # (Local override takes precedence over core jvagent/action/persona/)
   - action: jvagent/persona
     context:
       enabled: true
@@ -70,7 +189,7 @@ actions:
         - "Process user interactions with behavioral parameters"
         - "Provide streaming and non-streaming responses"
       # Model Configuration (uses OpenAI model action by entity type)
-      model_action_type: "OpenAIModelAction"  # Entity type to find dynamically
+      model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
       model_name: "gpt-4o-mini"
       model_temperature: 0.3
       model_max_tokens: 4096

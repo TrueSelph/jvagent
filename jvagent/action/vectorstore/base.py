@@ -6,7 +6,7 @@ canned responses, and glossary terms.
 """
 
 import logging
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
 from jvagent.action.base import Action
@@ -15,7 +15,7 @@ from jvspatial.core.annotations import attribute
 logger = logging.getLogger(__name__)
 
 
-class VectorStore(Action):
+class VectorStore(Action, ABC):
     """Base action for vector database operations.
 
     VectorStore provides a standard interface for storing documents with embeddings
@@ -26,14 +26,19 @@ class VectorStore(Action):
     backend implementations (e.g., Typesense, Pinecone, Weaviate).
 
     Attributes:
-        embedder_type: Type of embedder to use for generating embeddings
+        embedder_type: Type of embedder to use for generating embeddings (deprecated, use embedding_model_action_type)
+        embedding_model_action_type: Entity type of EmbeddingModelAction to use (e.g., "OpenAIEmbeddingModelAction")
         default_collection: Default collection name to use if not specified
     """
 
     # Configuration
     embedder_type: str = attribute(
         default="sentence-transformers",
-        description="Type of embedder to use (e.g., 'sentence-transformers', 'openai')",
+        description="Type of embedder to use (deprecated, use embedding_model_action_type)",
+    )
+    embedding_model_action_type: str = attribute(
+        default="",
+        description="Entity type of EmbeddingModelAction to use (e.g., 'OpenAIEmbeddingModelAction'). If empty, uses first available.",
     )
     default_collection: str = attribute(
         default="default",
@@ -95,12 +100,12 @@ class VectorStore(Action):
         pass
 
     @abstractmethod
-    async def delete(
+    async def delete_document(
         self,
         collection: str,
         document_ids: List[str],
     ) -> bool:
-        """Delete documents from a collection.
+        """Delete documents from a collection (VectorStore-specific).
 
         Args:
             collection: Collection name to delete from
@@ -108,10 +113,6 @@ class VectorStore(Action):
 
         Returns:
             True if all deletions succeeded, False otherwise
-
-        Raises:
-            ValueError: If collection doesn't exist
-            RuntimeError: If deletion operation fails
         """
         pass
 
@@ -150,6 +151,60 @@ class VectorStore(Action):
         # Subclasses can override if deletion is supported
         return False
 
+    async def _get_embedding_model(self) -> Optional[Any]:
+        """Get the embedding model action for generating embeddings.
+
+        Returns:
+            EmbeddingModelAction instance or None if not found
+        """
+        from jvagent.action.model.embedding.base import EmbeddingModelAction
+
+        agent = await self.get_agent()
+        if not agent:
+            logger.warning("VectorStore: Agent not found, cannot retrieve embedding model")
+            return None
+
+        if self.embedding_model_action_type:
+            embedding_model = await agent.get_action_by_type(self.embedding_model_action_type)
+            if embedding_model and isinstance(embedding_model, EmbeddingModelAction):
+                return embedding_model
+
+        # Fallback: find first available EmbeddingModelAction
+        actions_manager = await agent.get_actions_manager()
+        if actions_manager:
+            all_actions = await actions_manager.get_actions(enabled_only=True)
+            for action in all_actions:
+                if isinstance(action, EmbeddingModelAction):
+                    return action
+
+        logger.warning("VectorStore: No embedding model action found")
+        return None
+
+    async def _embed_text(self, text: str) -> List[float]:
+        """Generate embedding vector for text using the configured embedding model.
+
+        Args:
+            text: Text to embed
+
+        Returns:
+            Embedding vector as list of floats
+
+        Raises:
+            RuntimeError: If embedding model is not available or embedding fails
+        """
+        embedding_model = await self._get_embedding_model()
+        if not embedding_model:
+            raise RuntimeError(
+                "Embedding model not found. Configure embedding_model_action_type or register an EmbeddingModelAction."
+            )
+
+        try:
+            vector = await embedding_model.embed(text)
+            return vector
+        except Exception as e:
+            logger.error(f"VectorStore: Failed to generate embedding: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to generate embedding: {e}") from e
+
     async def healthcheck(self) -> Dict[str, Any]:
         """Perform health check for the vector store.
 
@@ -159,8 +214,12 @@ class VectorStore(Action):
             - collections: List of available collections
             - embedder: Information about the embedder
         """
+        embedder_info = {"type": self.embedder_type}
+        if self.embedding_model_action_type:
+            embedder_info["model_action_type"] = self.embedding_model_action_type
+
         return {
             "healthy": True,
             "collections": [],
-            "embedder": {"type": self.embedder_type},
+            "embedder": embedder_info,
         }

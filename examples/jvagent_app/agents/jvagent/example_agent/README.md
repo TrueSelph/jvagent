@@ -23,11 +23,16 @@ example_agent/
 │       │   ├── info.yaml
 │       │   ├── requirements.txt
 │       │   └── README.md
-│       ├── model_openai/    # OpenAI model action
+│       ├── openai_lm/    # OpenAI language model action
 │       │   ├── __init__.py
-│       │   ├── model_openai.py
+│       │   ├── openai_lm.py
 │       │   ├── info.yaml
 │       │   ├── requirements.txt
+│       │   └── README.md
+│       ├── openai_embedding/  # OpenAI embedding model action
+│       │   ├── __init__.py
+│       │   ├── openai_embedding.py
+│       │   ├── info.yaml
 │       │   └── README.md
 │       └── persona/         # Persona interact action
 │           ├── __init__.py
@@ -62,7 +67,7 @@ context:
 # Action Assignments
 actions:
   # Model action for LLM queries
-  - action: jvagent/model_openai
+  - action: jvagent/openai_lm
     context:
       enabled: true
       api_key: ${OPENAI_API_KEY}
@@ -74,7 +79,7 @@ actions:
       enabled: true
       persona_name: "Example Assistant"
       persona_role: "A helpful AI assistant"
-      model_action_type: "OpenAIModelAction"
+      model_action_type: "OpenAILanguageModelAction"
       model_name: gpt-4o-mini
       model_temperature: 0.3
       model_max_tokens: 4096
@@ -94,6 +99,25 @@ Provides LLM integration with OpenAI models:
 - Sync and streaming queries
 - Multimodal support (vision)
 - Token usage tracking
+
+**API Endpoints:**
+- `POST /actions/{action_id}/query` - Query the language model
+- `GET /actions/{action_id}/metrics` - Get usage metrics
+- `GET /actions/{action_id}/templates` - List available templates
+- `POST /actions/{action_id}/templates/{template_name}/render` - Render a template
+
+### Embedding OpenAI Action
+
+Provides embedding model integration with OpenAI's Embeddings API:
+- Vector embedding generation
+- Multiple model support (text-embedding-3-small, text-embedding-3-large, text-embedding-ada-002)
+- Auto-dimension detection
+- Metrics tracking
+
+**API Endpoints:**
+- `POST /actions/{action_id}/embed` - Generate embedding for text
+- `POST /actions/{action_id}/embed/batch` - Generate embeddings for multiple texts
+- `GET /actions/{action_id}/embedding/metrics` - Get usage metrics
 
 ### Persona Action
 
@@ -129,7 +153,7 @@ POST /api/agents/{agent_id}/interact
     "id": "int_123",
     "utterance": "Hello!",
     "response": "Hello! How can I help you?",
-    "actions": ["PersonaAction", "OpenAIModelAction"],
+    "actions": ["PersonaAction", "OpenAILanguageModelAction"],
     "directives": [],
     "parameters": [],
     "model_log": [...]
@@ -171,6 +195,7 @@ To create your own agent:
 ## Environment Variables
 
 This agent uses environment variables for configuration:
-- `${OPENAI_API_KEY}`: OpenAI API key for the model action (set in `.env` file)
+- `${OPENAI_API_KEY}`: OpenAI API key for the model and embedding actions (set in `.env` file)
+- `${TYPESENSE_API_KEY}`: Typesense API key for the vector store (set in `.env` file)
 
 See the main [jvagent README](../../../../../../README.md) for more information about environment variable resolution.

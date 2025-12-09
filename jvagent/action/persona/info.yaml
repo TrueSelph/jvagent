@@ -1,0 +1,34 @@
+# Persona Action Package Descriptor
+# This file defines the action's package metadata, dependencies, and configuration
+
+package:
+  # Action name in namespace/action_name format
+  name: jvagent/persona
+  
+  # Package author
+  author: jvagent
+  
+  # Archetype: The main Action class name (same as the Action Node class)
+  archetype: PersonaAction
+  
+  # Package version
+  version: 1.0.0
+  
+  # Package metadata
+  meta:
+    title: Persona Action
+    description: Simplified tool-based action for applying agent prompts with configurable parameters
+    group: jvagent
+    type: action
+  
+  # Package configuration
+  config:
+    singleton: true  # Only one persona action per agent
+  
+  # Package dependencies
+  dependencies:
+    # jvagent version requirement
+    jvagent: ~0.0.1
+    # Other action dependencies (by namespace/action_name)
+    actions: []
+

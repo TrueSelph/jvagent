@@ -1,0 +1,34 @@
+# OpenRouter Language Model Action Package Descriptor
+
+package:
+  # Action name in namespace/action_name format
+  name: jvagent/openrouter_lm
+  
+  # Package author
+  author: jvagent
+  
+  # Archetype: The main Action class name
+  archetype: OpenRouterLanguageModelAction
+  
+  # Package version
+  version: 1.0.0
+  
+  # Package metadata
+  meta:
+    title: OpenRouter Language Model Action
+    description: LLM integration for OpenRouter API (OpenAI-compatible) supporting multiple providers. Supports multimodal queries where supported.
+    group: jvagent
+    type: language_model_action
+  
+  # Package configuration
+  config:
+    order:
+      weight: 0
+  
+  # Package dependencies
+  dependencies:
+    jvagent: ~0.0.1
+    # Pip dependencies (installed automatically before action loading)
+    pip:
+      - httpx>=0.24.0
+

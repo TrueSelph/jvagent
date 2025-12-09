@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type, Union
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
@@ -176,11 +176,12 @@ class Actions(Node):
     async def deregister_action(self, action_id: str) -> bool:
         """Deregister an action from this manager.
 
-        This method:
-        1. Calls the action's on_deregister() lifecycle hook
-        2. Removes connections
-        3. Deletes the action node
+        This method performs complete cleanup:
+        1. Unregisters all endpoints associated with the action
+        2. Unloads action-specific modules (if safe)
+        3. Calls the action's on_deregister() lifecycle hook
         4. Updates statistics
+        5. Deletes the action node (removes graph edges)
 
         Args:
             action_id: ID of the action to deregister
@@ -195,15 +196,35 @@ class Actions(Node):
                 if not action:
                     return False
 
-                # Call lifecycle hook
+                # Step 1: Unregister endpoints associated with this action
+                try:
+                    endpoints_unregistered = await action._unregister_endpoints()
+                    if endpoints_unregistered > 0:
+                        logger.debug(
+                            f"Unregistered {endpoints_unregistered} endpoint(s) for action {action_id}"
+                        )
+                except Exception as e:
+                    logger.warning(f"Error unregistering endpoints for action {action_id}: {e}")
+
+                # Step 2: Unload action-specific modules (if safe)
+                try:
+                    modules_unloaded = await action._unload_action_modules()
+                    if modules_unloaded > 0:
+                        logger.debug(
+                            f"Unloaded {modules_unloaded} module(s) for action {action_id}"
+                        )
+                except Exception as e:
+                    logger.warning(f"Error unloading modules for action {action_id}: {e}")
+
+                # Step 3: Call lifecycle hook (allows action-specific cleanup)
                 await action.on_deregister()
 
-                # Update statistics
+                # Step 4: Update statistics
                 self.registered_count = max(0, self.registered_count - 1)
                 if action.enabled:
                     self.enabled_count = max(0, self.enabled_count - 1)
 
-                # Delete the action (this also removes edges)
+                # Step 5: Delete the action (this also removes edges)
                 await action.delete()
                 await self.save()
 
@@ -217,44 +238,33 @@ class Actions(Node):
     # Action Query - Entity-Centric
     # ============================================================================
 
-    async def get_actions(self, enabled_only: bool = False) -> List[Action]:
-        """Get all actions for this agent using entity-centric queries.
+    async def get_actions(
+        self, enabled_only: bool = False, entity: Optional[Union[Type[Action], str]] = None
+    ) -> List[Action]:
+        """Get all actions for this agent using node traversal.
 
-        Uses Action.find() to query actions by agent_id, following jvspatial
-        entity-centric patterns.
+        Uses self.nodes() to get all connected Action nodes (including subclasses).
+        Optionally filters by enabled status and/or specific action entity type.
 
         Args:
             enabled_only: If True, only return enabled actions
+            entity: Optional action type to filter by (e.g., InteractAction, "InteractAction").
+                   If None, returns all Action types. If specified, returns only that type
+                   and its subclasses.
 
         Returns:
             List of action instances
         """
         try:
-            # Build query filters - get agent_id from connected agent
-            # Traverse to get agent_id
-            # Alternative: store agent_id on Actions node
-            connected_nodes = await self.nodes()
-            agent = None
-            for node in connected_nodes:
-                # Import here to avoid circular dependency
-                from jvagent.core.agent import Agent
+            # Determine node filter - use entity if provided, otherwise default to Action
+            node_filter: Union[Type[Action], str] = entity if entity is not None else Action
 
-                if isinstance(node, Agent):
-                    agent = node
-                    break
-
-            if not agent:
-                return []
-
-            # Build entity-centric query
-            filters = {"context.agent_id": agent.id}
+            # Build kwargs for property filtering
+            kwargs = {}
             if enabled_only:
-                filters["context.enabled"] = True
+                kwargs["enabled"] = True
 
-            # Use entity-centric find
-            actions = await Action.find(filters)
-
-            return actions
+            return await self.nodes(node=node_filter, **kwargs)
 
         except Exception as e:
             logger.error(f"Error getting actions: {e}", exc_info=True)

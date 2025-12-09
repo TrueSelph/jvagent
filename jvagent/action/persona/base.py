@@ -34,7 +34,7 @@ class PersonaAction(Action):
     Attributes:
         prompt: Main agent prompt template (default property)
         parameters: Standard collection of configurable parameters to apply when executing the prompt
-        model_action_type: Entity type of the ModelAction (e.g., "OpenAIModelAction")
+        model_action_type: Entity type of the LanguageModelAction (e.g., "OpenAILanguageModelAction")
         model_name: Default model name
         model_temperature: Temperature for LLM generation
         model_max_tokens: Max tokens for LLM generation
@@ -57,8 +57,8 @@ class PersonaAction(Action):
 
     # Model Configuration
     model_action_type: str = attribute(
-        default="OpenAIModelAction",
-        description="Entity type of the ModelAction to use (e.g., OpenAIModelAction)",
+        default="OpenAILanguageModelAction",
+        description="Entity type of the LanguageModelAction to use (e.g., OpenAILanguageModelAction)",
     )
     model_name: str = attribute(
         default="gpt-4o", description="Default model name"
@@ -118,10 +118,10 @@ class PersonaAction(Action):
             raise RuntimeError("PersonaAction not attached to an agent")
 
         # Get model action
-        from jvagent.action.model.base import ModelAction
+        from jvagent.action.model.language.base import LanguageModelAction
 
         model_action = await agent.get_action_by_type(self.model_action_type)
-        if not model_action or not isinstance(model_action, ModelAction):
+        if not model_action or not isinstance(model_action, LanguageModelAction):
             raise RuntimeError(
                 f"Model action of type '{self.model_action_type}' not found for agent"
             )
@@ -262,9 +262,9 @@ class PersonaAction(Action):
             # Check if model action is available
             agent = await self.get_agent()
             if agent and self.model_action_type:
-                from jvagent.action.model.base import ModelAction
+                from jvagent.action.model.language.base import LanguageModelAction
                 action = await agent.get_action_by_type(self.model_action_type)
-                if not action or not isinstance(action, ModelAction):
+                if not action or not isinstance(action, LanguageModelAction):
                     return False
 
             return True

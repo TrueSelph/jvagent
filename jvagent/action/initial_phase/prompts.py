@@ -3,6 +3,43 @@
 This module provides prompt templates for the Initial Phase processing,
 including parameter filtering and instruction generation.
 """
+INTERPRETATION_PROMPT = """Analyze the user's utterance and determine which InteractActions should handle it.
+
+## Current Utterance:
+{utterance}
+
+## Conversation History:
+{context}
+
+## Available Anchors:
+The following anchors represent capabilities of different InteractActions. Each entity name maps to a list of anchor statements that describe when that action should be used.
+
+{anchors}
+
+## Task:
+1. Generate a concise interpretation (under 50 words) that summarizes the user's intent with applicable contextual references.
+   This interpretation should enscapulate the entire context as well as the user_utterance. Note if the user is responding to question or any ongoing events
+   The interpretation should mention if the user is asking for information, providing information or doing both.
+   Example: "User has requested a report update bearing reference number 12345"
+
+2. Match the interpretation against the anchor statements to identify which entity names (InteractActions) should handle this request.
+
+3. Return your analysis in JSON format:
+{{
+    "interpretation": "Your concise interpretation here",
+    "competencies": ["competency_name1", "competency_name2"],
+    "confidence": "0.85"
+}}
+
+If no anchors match, return an empty competencies list:
+{{
+    "interpretation": "Your interpretation here",
+    "competencies": [],
+    "confidence": 0.0
+}}
+
+Return ONLY valid JSON, no additional text.
+"""
 
 # Prompt for initial intent simplification and instruction generation
 INITIAL_PHASE_EVALUATION_PROMPT = """You are an intelligent routing system analyzing user requests to generate structured instructions.

@@ -447,7 +447,7 @@ version: 1.0.0
 author: Your Name/Organization
 
 # jvagent version requirement (optional)
-jvagent: ~2.1.0
+jvagent: ~0.0.1
 
 # Application context: Properties that configure the App node
 context:
@@ -499,7 +499,7 @@ version: 1.0.0
 author: Your Name
 
 # jvagent version requirement (optional)
-jvagent: ~2.1.0
+jvagent: ~0.0.1
 
 # Agent context: Properties that configure the agent
 context:
@@ -510,9 +510,18 @@ context:
   custom_field: value  # Any additional public properties
 
 # Action Assignments
-# Actions are discovered from namespace subdirectories: actions/{namespace}/{action_name}/
+# Actions are discovered from:
+# 1. Local actions: actions/{namespace}/{action_name}/ (takes precedence)
+# 2. Core actions: jvagent library (jvagent/action/*/) if not found locally
 # Actions are referenced using the format: namespace/action_name
 actions:
+  # Core action from jvagent library (no stub directory needed)
+  - action: jvagent/interact_router
+    context:
+      enabled: true
+      model_action_type: "OpenAILanguageModelAction"
+  
+  # Local custom action
   - action: jvagent/example_action
     context:
       enabled: true
@@ -521,6 +530,7 @@ actions:
       retries: 5
       api_endpoint: "https://prod.api.example.com"
   
+  # Another custom action from different namespace
   - action: contrib/slack_notifier
     context:
       enabled: true
@@ -567,7 +577,7 @@ package:
   # Package dependencies
   dependencies:
     # jvagent version requirement
-    jvagent: ~2.1.0
+    jvagent: ~0.0.1
     # Other action dependencies (by namespace/action_name)
     actions:
       # - jvagent/another_action: ~1.0.0
@@ -585,7 +595,36 @@ package:
 
 ## Creating Actions
 
-### Step 1: Create Action Directory
+### Using Core Actions
+
+jvagent provides many core actions that can be used directly. Simply reference them in your `agent.yaml`:
+
+```yaml
+actions:
+  - action: jvagent/interact_router
+    context:
+      enabled: true
+      model_action_type: "OpenAILanguageModelAction"
+  
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      api_key: ${OPENAI_API_KEY}
+      model: gpt-4o-mini
+```
+
+**Available Core Actions:**
+- **Interact Actions**: `jvagent/interact_router`, `jvagent/retrieval_interact_action`
+- **Language Models**: `jvagent/openai_lm`, `jvagent/openrouter_lm`
+- **Embedding Models**: `jvagent/openai_embedding`, `jvagent/openrouter_embedding`, `jvagent/huggingface_embedding`, `jvagent/generic_embedding`
+- **Vector Stores**: `jvagent/typesense_vectorstore`
+- **Other**: `jvagent/persona` (can be overridden locally)
+
+The action loader automatically discovers core actions from the jvagent library if they're not found locally.
+
+### Creating Custom Actions
+
+#### Step 1: Create Action Directory
 
 ```bash
 cd agents/my_agent/actions
@@ -624,7 +663,7 @@ package:
   # Package dependencies
   dependencies:
     # jvagent version requirement
-    jvagent: ~2.1.0
+    jvagent: ~0.0.1
     # Other action dependencies (by namespace/action_name)
     actions: []
 ```
@@ -805,6 +844,11 @@ Actions have well-defined lifecycle hooks:
    - Final cleanup
    - Release resources
    - Close connections
+   
+   **Note**: The deregistration process automatically handles:
+   - Unregistering all API endpoints associated with the action
+   - Unloading action-specific modules from memory (when safe)
+   - The `on_deregister()` hook is called after cleanup, allowing for additional action-specific cleanup if needed
 
 ## Property Configuration
 

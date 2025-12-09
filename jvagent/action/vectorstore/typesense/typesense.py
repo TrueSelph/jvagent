@@ -1,0 +1,438 @@
+"""Typesense vector database integration for VectorStore.
+
+This module provides integration with Typesense for vector storage and semantic search.
+Typesense is a fast, typo-tolerant search engine that supports vector search.
+"""
+
+import logging
+from typing import Any, Dict, List, Optional
+
+from jvspatial.core.annotations import attribute
+
+from jvagent.action.vectorstore.base import VectorStore
+
+logger = logging.getLogger(__name__)
+
+# Try to import Typesense client
+try:
+    import typesense
+
+    TYPESENSE_AVAILABLE = True
+except ImportError:
+    TYPESENSE_AVAILABLE = False
+    logger.warning(
+        "Typesense client not available. "
+        "Install typesense package to use TypesenseVectorStore: pip install typesense"
+    )
+
+
+class TypesenseVectorStore(VectorStore):
+    """VectorStore implementation using Typesense.
+
+    This implementation uses Typesense for vector storage and semantic search.
+    Typesense supports vector search with embeddings and provides fast, typo-tolerant search.
+
+    Attributes:
+        host: Typesense server host
+        port: Typesense server port
+        protocol: Protocol to use (http or https)
+        api_key: Typesense API key
+        connection_timeout_seconds: Connection timeout in seconds
+        embedding_dimensions: Number of dimensions for embeddings (default: 384 for sentence-transformers)
+    """
+
+    # Configuration
+    host: str = attribute(
+        default="localhost",
+        description="Typesense server host",
+    )
+    port: int = attribute(
+        default=8108,
+        description="Typesense server port",
+    )
+    protocol: str = attribute(
+        default="http",
+        description="Protocol to use (http or https)",
+    )
+    api_key: str = attribute(
+        default="",
+        description="Typesense API key",
+    )
+    connection_timeout_seconds: int = attribute(
+        default=2,
+        description="Connection timeout in seconds",
+    )
+    embedding_dimensions: int = attribute(
+        default=384,
+        description="Number of dimensions for embeddings (default: 384 for sentence-transformers)",
+    )
+
+    # Internal state
+    _client: Optional[Any] = None
+    _collections: Dict[str, bool] = {}  # Track created collections
+
+    async def on_register(self) -> None:
+        """Initialize Typesense client connection."""
+        await super().on_register()
+
+        # Skip if already initialized
+        if self._client:
+            return
+
+        if not TYPESENSE_AVAILABLE:
+            raise RuntimeError(
+                "Typesense client not available. "
+                "Please install the typesense package: pip install typesense"
+            )
+
+        if not self.api_key:
+            raise ValueError("Typesense API key is required")
+
+        try:
+            self._client = typesense.Client(
+                {
+                    "nodes": [
+                        {
+                            "host": self.host,
+                            "port": str(self.port),
+                            "protocol": self.protocol,
+                        }
+                    ],
+                    "api_key": self.api_key,
+                    "connection_timeout_seconds": self.connection_timeout_seconds,
+                }
+            )
+            logger.info(f"TypesenseVectorStore initialized: {self.protocol}://{self.host}:{self.port}")
+        except Exception as e:
+            logger.error(f"Failed to initialize Typesense client: {e}")
+            raise RuntimeError(f"Could not initialize Typesense client: {e}")
+
+    async def _get_or_create_collection(self, collection: str) -> None:
+        """Get or create a Typesense collection.
+
+        Args:
+            collection: Collection name
+        """
+        if collection in self._collections:
+            return
+
+        # Check if collection exists
+        try:
+            self._client.collections[collection].retrieve()
+            self._collections[collection] = True
+            return
+        except Exception:
+            # Collection doesn't exist, create it
+            pass
+
+        # Create collection schema
+        schema = {
+            "name": collection,
+            "fields": [
+                {"name": "id", "type": "string"},
+                {"name": "content", "type": "string"},
+                {
+                    "name": "vector",
+                    "type": "float[]",
+                    "num_dim": self.embedding_dimensions,
+                },
+                {"name": "metadata", "type": "object", "optional": True},
+            ],
+            "default_sorting_field": "id",
+        }
+
+        try:
+            self._client.collections.create(schema)
+            self._collections[collection] = True
+            logger.debug(f"Created Typesense collection: {collection}")
+        except Exception as e:
+            logger.error(f"Failed to create collection {collection}: {e}")
+            raise
+
+    async def _generate_embedding(self, text: str) -> List[float]:
+        """Generate embedding for text using the configured embedding model.
+
+        Args:
+            text: Text to embed
+
+        Returns:
+            Embedding vector
+
+        Raises:
+            RuntimeError: If embedding model is not available
+        """
+        # Use base class method to generate embedding via EmbeddingModelAction
+        return await self._embed_text(text)
+
+    async def store(
+        self,
+        collection: str,
+        documents: List[Dict[str, Any]],
+        embeddings: Optional[List[List[float]]] = None,
+    ) -> List[str]:
+        """Store documents with optional embeddings in a collection.
+
+        Args:
+            collection: Collection name to store documents in
+            documents: List of documents to store. Each document should have:
+                - 'id': Document ID (string)
+                - 'content': Text content to embed
+                - Additional fields stored as metadata
+            embeddings: Optional pre-computed embeddings. If None, embeddings will be
+                generated (requires embedding model implementation).
+
+        Returns:
+            List of document IDs that were stored
+        """
+        # Ensure client is initialized
+        if not self._client:
+            await self.on_register()
+        
+        if not TYPESENSE_AVAILABLE or not self._client:
+            raise RuntimeError("Typesense client not available")
+
+        # Ensure collection exists
+        await self._get_or_create_collection(collection)
+
+        stored_ids = []
+        for i, doc in enumerate(documents):
+            doc_id = doc.get("id")
+            if not doc_id:
+                logger.warning(f"Document missing 'id' field, skipping: {doc}")
+                continue
+
+            content = doc.get("content", "")
+            metadata = {k: v for k, v in doc.items() if k not in ("id", "content")}
+
+            # Get or generate embedding
+            if embeddings and i < len(embeddings):
+                vector = embeddings[i]
+            else:
+                vector = await self._generate_embedding(content)
+
+            # Prepare document for Typesense
+            typesense_doc = {
+                "id": str(doc_id),
+                "content": content,
+                "vector": vector,
+            }
+            if metadata:
+                typesense_doc["metadata"] = metadata
+
+            try:
+                self._client.collections[collection].documents.upsert(typesense_doc)
+                stored_ids.append(str(doc_id))
+            except Exception as e:
+                logger.error(f"Failed to store document {doc_id}: {e}")
+
+        return stored_ids
+
+    async def search(
+        self,
+        collection: str,
+        query: str,
+        k: int = 10,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Search for similar documents using semantic similarity.
+
+        Args:
+            collection: Collection name to search in
+            query: Query string to search for
+            k: Number of similar documents to return
+            filters: Optional metadata filters (converted to Typesense filter_by format)
+
+        Returns:
+            List of similar documents, each containing:
+            - document: The document data
+            - score: Similarity score (higher is more similar)
+            - distance: Distance metric (lower is more similar)
+            - metadata: Document metadata
+        """
+        # Ensure client is initialized
+        if not self._client:
+            await self.on_register()
+        
+        if not TYPESENSE_AVAILABLE or not self._client:
+            raise RuntimeError("Typesense client not available")
+
+        # Generate query embedding
+        query_vector = await self._generate_embedding(query)
+
+        # Build filter_by string from filters
+        filter_by = None
+        if filters:
+            filter_parts = []
+            for key, value in filters.items():
+                if isinstance(value, list):
+                    filter_parts.append(f"{key}:={','.join(map(str, value))}")
+                else:
+                    filter_parts.append(f"{key}:={value}")
+            if filter_parts:
+                filter_by = " && ".join(filter_parts)
+
+        # Build search parameters using multi_search endpoint for vector queries
+        # This avoids the 4000 character limit on query strings
+        # Typesense vector query format: vector:([0.1,0.2,0.3], k:10)
+        # We'll use multi_search which accepts the vector as a list in the request body
+        search_parameters: Dict[str, Any] = {
+            "collection": collection,
+            "q": "*",
+            "vector_query": f'vector:([{",".join(map(str, query_vector))}], k:{k})',
+            "query_by": "content",
+            "per_page": k,
+        }
+
+        if filter_by:
+            search_parameters["filter_by"] = filter_by
+
+        try:
+            # Use multi_search endpoint for vector queries to avoid query string length limits
+            # The multi_search endpoint sends the request in the body as JSON, avoiding URL query string limits
+            # This is necessary because vector queries with embeddings can be very long
+            multi_search_request = {
+                "searches": [search_parameters]
+            }
+            
+            # Perform multi_search - this sends the request in the body, not the URL
+            # The vector_query string is sent as part of the JSON body, not in the URL
+            results_response = self._client.multi_search.perform(multi_search_request, {})
+            
+            # Extract results from multi_search response
+            # multi_search returns {"results": [{"hits": [...], ...}]}
+            if results_response and "results" in results_response and len(results_response["results"]) > 0:
+                results = results_response["results"][0]
+            else:
+                logger.warning("Typesense multi_search returned no results")
+                results = {"hits": []}
+
+            # Convert to standard format
+            formatted_results = []
+            for hit in results.get("hits", []):
+                doc = hit.get("document", {})
+                # Typesense vector search returns similarity scores
+                # The score is typically a distance metric (lower is better)
+                # We'll use the rank as a proxy for similarity if no explicit score
+                rank = hit.get("rank", len(formatted_results) + 1)
+                # Convert rank to similarity score (higher rank = lower similarity)
+                # Use inverse rank as similarity score
+                max_results = len(results.get("hits", []))
+                similarity_score = 1.0 - (rank - 1) / max_results if max_results > 0 else 0.0
+                
+                # If there's a vector distance in the hit, use that
+                if "vector_distance" in hit:
+                    distance = hit["vector_distance"]
+                    similarity_score = 1.0 / (1.0 + distance)  # Convert distance to similarity
+
+                formatted_results.append(
+                    {
+                        "document": {
+                            "id": doc.get("id", ""),
+                            "content": doc.get("content", ""),
+                            **doc.get("metadata", {}),
+                        },
+                        "score": similarity_score,
+                        "distance": 1.0 - similarity_score,
+                        "metadata": doc.get("metadata", {}),
+                    }
+                )
+
+            return formatted_results
+        except Exception as e:
+            logger.error(f"Error during Typesense search: {e}")
+            raise RuntimeError(f"Typesense search failed: {e}")
+
+    async def delete_document(
+        self,
+        collection: str,
+        document_ids: List[str],
+    ) -> bool:
+        """Delete documents from a collection."""
+        if not TYPESENSE_AVAILABLE or not self._client:
+            raise RuntimeError("Typesense client not available")
+
+        all_succeeded = True
+        for doc_id in document_ids:
+            try:
+                self._client.collections[collection].documents[str(doc_id)].delete()
+            except Exception as e:
+                logger.error(f"Failed to delete document {doc_id}: {e}")
+                all_succeeded = False
+
+        return all_succeeded
+
+    async def create_collection(
+        self,
+        collection: str,
+        schema: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Create a new collection.
+
+        Args:
+            collection: Collection name to create
+            schema: Optional schema definition (not used, uses default schema)
+
+        Returns:
+            True if collection was created or already exists
+        """
+        try:
+            await self._get_or_create_collection(collection)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to create collection {collection}: {e}")
+            return False
+
+    async def delete_collection(self, collection: str) -> bool:
+        """Delete a collection and all its documents.
+
+        Args:
+            collection: Collection name to delete
+
+        Returns:
+            True if collection was deleted
+        """
+        # Ensure client is initialized
+        if not self._client:
+            await self.on_register()
+        
+        if not TYPESENSE_AVAILABLE or not self._client:
+            return False
+
+        try:
+            self._client.collections[collection].delete()
+            if collection in self._collections:
+                del self._collections[collection]
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete collection {collection}: {e}")
+            return False
+
+    async def healthcheck(self) -> Dict[str, Any]:
+        """Perform health check for the vector store.
+
+        Returns:
+            Dictionary with health information
+        """
+        base_health = await super().healthcheck()
+        base_health.update(
+            {
+                "typesense_available": TYPESENSE_AVAILABLE,
+                "collections": list(self._collections.keys()),
+                "client_initialized": self._client is not None,
+                "host": self.host,
+                "port": self.port,
+                "protocol": self.protocol,
+            }
+        )
+
+        # Check Typesense health
+        if self._client:
+            try:
+                health = self._client.health.retrieve()
+                base_health["typesense_health"] = health.get("ok", False)
+            except Exception as e:
+                logger.warning(f"Failed to check Typesense health: {e}")
+                base_health["typesense_health"] = False
+
+        return base_health
+

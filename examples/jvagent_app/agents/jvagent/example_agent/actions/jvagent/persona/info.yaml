@@ -8,7 +8,7 @@ package:
   author: jvagent
   
   # Archetype: The main Action class name
-  archetype: PersonaAction
+  archetype: ExamplePersonaAction
   
   # Package version
   version: 1.0.0
@@ -26,5 +26,5 @@ package:
   
   # Package dependencies
   dependencies:
-    jvagent: ~2.1.0
+    jvagent: ~0.0.1
 
