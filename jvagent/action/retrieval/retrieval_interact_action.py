@@ -44,7 +44,7 @@ class RetrievalInteractAction(InteractAction):
         description="Entity type of VectorStore action to use (e.g., 'TypesenseVectorStore'). If empty, uses first available.",
     )
     collection: str = attribute(
-        default="default",
+        default="",
         description="Collection name to search in the vector store",
     )
     k: int = attribute(
@@ -94,8 +94,9 @@ class RetrievalInteractAction(InteractAction):
 
             # Perform search
             logger.debug(f"RetrievalInteractAction: Searching collection '{self.collection}' with query: {query[:100]}")
+            resolved_collection = await vectorstore._resolve_collection_name(self.collection)
             results = await vectorstore.search(
-                collection=self.collection,
+                collection=resolved_collection,
                 query=query,
                 k=self.k,
             )

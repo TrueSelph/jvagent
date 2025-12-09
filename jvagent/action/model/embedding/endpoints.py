@@ -68,49 +68,63 @@ async def embed_text(
     This endpoint generates a vector embedding (dense numerical representation)
     for the provided text using the specified embedding model action.
 
+
     Embeddings are useful for:
+
     - Semantic search and similarity matching
     - Clustering and classification
     - Retrieval-augmented generation (RAG)
     - Recommendation systems
 
-    Args:
-        action_id: ID of the embedding model action to use
-        text: Text to embed (cannot be empty)
 
-    Returns:
-        Dictionary containing:
+    **Args:**
 
-            - embedding: List of floats representing the vector embedding
-            - dimensions: Number of dimensions in the embedding vector
-            - metrics: Query metrics including token usage and duration
-            - model: Model identifier used
-            - provider: Provider name (openai, huggingface, openrouter, etc.)
+    - action_id: ID of the embedding model action to use
+    - text: Text to embed (cannot be empty)
 
-    Raises:
-        ResourceNotFoundError: If action not found
-        ValueError: If text is empty
 
-    Examples:
-        Basic embedding::
+    **Returns:**
 
-            POST /actions/abc123/embed
-            {
-                "text": "The quick brown fox jumps over the lazy dog"
-            }
+    Dictionary containing:
 
-        Response::
+    - **embedding**: List of floats representing the vector embedding
+    - **dimensions**: Number of dimensions in the embedding vector
+    - **metrics**: Query metrics including token usage and duration
+    - **model**: Model identifier used
+    - **provider**: Provider name (openai, huggingface, openrouter, etc.)
 
-            {
-                "embedding": [0.1, -0.2, 0.3, ...],
-                "dimensions": 1536,
-                "metrics": {
-                    "total_tokens": 9,
-                    "duration": 0.234
-                },
-                "model": "text-embedding-3-small",
-                "provider": "openai"
-            }
+
+    **Raises:**
+
+    - ResourceNotFoundError: If action not found
+    - ValueError: If text is empty
+
+
+    **Examples:**
+
+    Basic embedding:
+
+    ```json
+    POST /actions/abc123/embed
+    {
+        "text": "The quick brown fox jumps over the lazy dog"
+    }
+    ```
+
+    Response:
+
+    ```json
+    {
+        "embedding": [0.1, -0.2, 0.3, ...],
+        "dimensions": 1536,
+        "metrics": {
+            "total_tokens": 9,
+            "duration": 0.234
+        },
+        "model": "text-embedding-3-small",
+        "provider": "openai"
+    }
+    ```
     """
     # Get the embedding model action
     action = await EmbeddingModelAction.get(action_id)
@@ -201,53 +215,65 @@ async def embed_batch(
     This is more efficient than making multiple individual requests when you
     need to embed several texts.
 
-    Args:
-        action_id: ID of the embedding model action to use
-        texts: List of texts to embed (each text must be non-empty)
 
-    Returns:
-        Dictionary containing:
+    **Args:**
 
-            - embeddings: List of embedding vectors (one per input text)
-            - count: Number of embeddings generated
-            - dimensions: Number of dimensions in each embedding vector
-            - metrics: Aggregate query metrics
-            - model: Model identifier used
-            - provider: Provider name
+    - action_id: ID of the embedding model action to use
+    - texts: List of texts to embed (each text must be non-empty)
 
-    Raises:
-        ResourceNotFoundError: If action not found
-        ValueError: If texts list is empty or contains empty strings
 
-    Examples:
-        Batch embedding::
+    **Returns:**
 
-            POST /actions/abc123/embed/batch
-            {
-                "texts": [
-                    "First document text",
-                    "Second document text",
-                    "Third document text"
-                ]
-            }
+    Dictionary containing:
 
-        Response::
+    - **embeddings**: List of embedding vectors (one per input text)
+    - **count**: Number of embeddings generated
+    - **dimensions**: Number of dimensions in each embedding vector
+    - **metrics**: Aggregate query metrics
+    - **model**: Model identifier used
+    - **provider**: Provider name
 
-            {
-                "embeddings": [
-                    [0.1, -0.2, 0.3, ...],
-                    [0.2, -0.1, 0.4, ...],
-                    [0.3, -0.3, 0.2, ...]
-                ],
-                "count": 3,
-                "dimensions": 1536,
-                "metrics": {
-                    "total_tokens": 27,
-                    "duration": 0.567
-                },
-                "model": "text-embedding-3-small",
-                "provider": "openai"
-            }
+
+    **Raises:**
+
+    - ResourceNotFoundError: If action not found
+    - ValueError: If texts list is empty or contains empty strings
+
+
+    **Examples:**
+
+    Batch embedding:
+
+    ```json
+    POST /actions/abc123/embed/batch
+    {
+        "texts": [
+            "First document text",
+            "Second document text",
+            "Third document text"
+        ]
+    }
+    ```
+
+    Response:
+
+    ```json
+    {
+        "embeddings": [
+            [0.1, -0.2, 0.3, ...],
+            [0.2, -0.1, 0.4, ...],
+            [0.3, -0.3, 0.2, ...]
+        ],
+        "count": 3,
+        "dimensions": 1536,
+        "metrics": {
+            "total_tokens": 27,
+            "duration": 0.567
+        },
+        "model": "text-embedding-3-small",
+        "provider": "openai"
+    }
+    ```
     """
     # Get the embedding model action
     action = await EmbeddingModelAction.get(action_id)
@@ -362,31 +388,39 @@ async def get_embedding_model_action_metrics(action_id: str) -> Dict[str, Any]:
 
     Returns comprehensive usage statistics including:
 
+
     - Total embedding requests made through this action
     - Cumulative token usage
     - Estimated cost in USD based on model pricing
     - Total and average query duration
     - Expected embedding dimensions
 
+
     Metrics are accumulated across all queries and persist until reset.
 
-    Args:
-        action_id: ID of the embedding model action
 
-    Returns:
-        Dictionary with metrics including:
+    **Args:**
 
-            - total_requests: Number of embedding requests made
-            - total_tokens: Cumulative token usage
-            - total_cost: Estimated cost in USD
-            - total_duration: Cumulative query time in seconds
-            - average_duration: Average query time in seconds
-            - model: Model identifier
-            - provider: Provider name (openai, huggingface, openrouter, etc.)
-            - embedding_dimensions: Expected embedding dimensions
+    - action_id: ID of the embedding model action
 
-    Raises:
-        ResourceNotFoundError: If action not found
+
+    **Returns:**
+
+    Dictionary with metrics including:
+
+    - **total_requests**: Number of embedding requests made
+    - **total_tokens**: Cumulative token usage
+    - **total_cost**: Estimated cost in USD
+    - **total_duration**: Cumulative query time in seconds
+    - **average_duration**: Average query time in seconds
+    - **model**: Model identifier
+    - **provider**: Provider name (openai, huggingface, openrouter, etc.)
+    - **embedding_dimensions**: Expected embedding dimensions
+
+
+    **Raises:**
+
+    - ResourceNotFoundError: If action not found
     """
     action = await EmbeddingModelAction.get(action_id)
     if not action:

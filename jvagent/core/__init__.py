@@ -5,6 +5,7 @@ from jvagent.core.agent_loader import AgentDescriptor, AgentLoader
 from jvagent.core.agents import Agents
 from jvagent.core.app import App
 from jvagent.core.app_loader import AppDescriptor, AppLoader
+from jvagent.core import endpoints  # noqa: F401 - Import to register endpoints
 
 __all__ = [
     "App",
