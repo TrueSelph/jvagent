@@ -32,7 +32,11 @@ class InteractAction(Action, ABC):
 
     InteractAction extends Action and provides the interface for actions that
     are traversed by InteractWalker. These actions implement execute() which
-    is called during walker traversal.
+    is automatically called by the walker when the action is visited.
+
+    The execute() method is automatically invoked by InteractWalker when it visits
+    an InteractAction node. The walker performs routing checks first (if InteractRouter
+    has executed), then automatically calls execute() if the action should run.
 
     Implementations should perform evaluation checks at the start of execute()
     and return early if conditions aren't met. This allows flexible, custom
@@ -70,9 +74,13 @@ class InteractAction(Action, ABC):
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute the action's logic on the interaction.
 
-        This method is called when an InteractWalker visits this InteractAction.
+        This method is conditionally called by InteractWalker when it visits this
+        InteractAction node. The walker handles routing checks and conditional
+        execution before invoking this method.
+
         Implementations should perform evaluation checks at the start and return
-        early if conditions aren't met.
+        early if conditions aren't met. This allows flexible, custom evaluation
+        logic while keeping the API simple.
 
         Example:
             async def execute(self, visitor: "InteractWalker") -> None:
@@ -88,8 +96,10 @@ class InteractAction(Action, ABC):
             visitor: The InteractWalker visiting this action
 
         Note:
-            Access the Interaction via visitor.interaction
-            Access action properties via self (the node instance)
+            - This method is conditionally invoked by the walker - no @on_visit decorator needed
+            - Access the Interaction via visitor.interaction
+            - Access action properties via self (the node instance)
+            - The walker performs routing checks before calling execute()
         """
         pass
 
