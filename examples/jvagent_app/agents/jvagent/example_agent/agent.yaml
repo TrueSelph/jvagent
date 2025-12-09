@@ -22,7 +22,7 @@ context:
 # 1. Local actions: actions/{namespace}/{action_name}/ (takes precedence)
 # 2. Core actions: jvagent library (jvagent/action/*/) if not found locally
 # Actions are referenced using the format: namespace/action_name
-# 
+#
 # Core actions (loaded from jvagent library if no local override exists):
 # - jvagent/interact_router
 # - jvagent/openai_embedding, jvagent/openai_lm
@@ -45,52 +45,46 @@ actions:
 
       system_prompt: |
         You are an intent analysis system that interprets user utterances and routes them to appropriate InteractActions based on published anchor statements.
-      
+
         Your role is to:
-        1. Understand the user's intent from their utterance and conversation context
-        2. Generate a concise interpretation (under 50 words) that captures the intent
-        3. Match the interpretation against available anchor statements
-        4. Return the matching entity names (InteractAction identifiers) in JSON format
-      
+        1. Understand the user's intent from their utterance and conversation context and generate a concise interpretation that captures that intent
+        2. Match the interpretation against available anchor statements
+        3. Return the matching entity names (InteractAction identifiers) in JSON format
+
         Be precise and only match when there's clear alignment between the user's intent and an anchor statement.
       routing_prompt: |
-        Analyze the user's utterance and determine which InteractActions should handle it.
-      
         ## Current Utterance:
         {utterance}
-        {conversation_history}
-      
+
+        {previous_intents}
+
         ## Available Anchors:
         The following anchors represent capabilities of different InteractActions. Each entity name maps to a list of anchor statements that describe when that action should be used.
-      
+
         {anchors_json}
-      
+
         ## Task:
         1. Generate a concise interpretation (under 50 words) that summarizes the user's intent with applicable contextual references.
-           Example: "User has requested a report update bearing reference number 12345"
-      
+          Note if the user is responding to question or any ongoing events
+          This interpretation should mention if the user is requesting information, providing information or doing both.
+          Example: "User has requested an update on the report bearing reference number 12345"
+
         2. Match the interpretation against the anchor statements to identify which entity names (InteractActions) should handle this request.
-      
+
         3. Return your analysis in JSON format:
         {{
             "interpretation": "Your concise interpretation here",
             "entities": ["entity_name1", "entity_name2"],
             "confidence": 0.85
         }}
-      
-        If no anchors match, return an empty entities list:
-        {{
-            "interpretation": "Your interpretation here",
-            "entities": [],
-            "confidence": 0.0
-        }}
-      
+
         Return ONLY valid JSON, no additional text.
       # Optional: List of InteractAction entity names that must always execute
       # exceptions:
       #   - "PersonaAction"
       #   - "AnotherAction"
-  
+
+
   # OpenAI Embedding Model Action - Vector embeddings for semantic search
   # Core action from jvagent library (jvagent/action/model/embedding/openai/)
   - action: jvagent/openai_embedding
@@ -104,7 +98,7 @@ actions:
       model: text-embedding-3-small  # Default embedding model
       embedding_dimensions: 1536  # Expected dimensions (0 = auto-detect)
       timeout: 30
-  
+
   # TypesenseVectorStore Action - Vector store for semantic search
   # Core action from jvagent library (jvagent/action/vectorstore/typesense/)
   - action: jvagent/typesense_vectorstore
@@ -121,7 +115,7 @@ actions:
       # Embedding Model Configuration
       embedding_model_action_type: "OpenAIEmbeddingModelAction"  # Entity type to find dynamically
       embedder_type: model_action  # Use model action instead of sentence-transformers
-  
+
   # RetrievalInteractAction - Context retrieval from vector stores
   # Core action from jvagent library (jvagent/action/retrieval/)
   - action: jvagent/retrieval_interact_action
@@ -135,14 +129,9 @@ actions:
       # Anchors for routing - published to InteractRouter
       # The entity name (RetrievalInteractAction) is automatically used as the key
       anchors:
-        - "User asks a knowledge-based question"
         - "User requests information from knowledge base"
-        - "User needs context or knowledge retrieval"
         - "User asks a question requiring search"
         - "User wants to find information"
-        - "User queries knowledge base"
-        - "User seeks information or facts"
-        - "User asks about something that requires context retrieval"
       # Optional: Minimum similarity score threshold (0.0-1.0)
       # min_score_threshold: 0.7
       # Optional: Customize directive template (default shown for reference)
@@ -150,7 +139,7 @@ actions:
         Context retrieved from knowledge base:
         {results}
         Use this context to inform your response to the user's query.
-  
+
   # OpenAI Language Model Action - LLM integration with multimodal support
   # Core action from jvagent library (jvagent/action/model/language/openai/)
   - action: jvagent/openai_lm
@@ -166,7 +155,7 @@ actions:
       max_tokens: 2000
       top_p: 1.0
       timeout: 60
-  
+
   # Persona Action - Core interact action for agent behavioral modeling
   # Override: Custom implementation at agents/jvagent/example_agent/actions/jvagent/persona/
   # (Local override takes precedence over core jvagent/action/persona/)
@@ -197,7 +186,7 @@ actions:
       # parameters:
       #   - condition: "User asks about X"
       #     response: "Provide information about X"
-  
+
   # Example action from the 'jvagent' namespace
   # Located at: agents/jvagent/example_agent/actions/jvagent/example_action/
   - action: jvagent/example_action
@@ -207,14 +196,14 @@ actions:
       timeout: 60
       retries: 5
       api_endpoint: "https://prod.api.example.com"
-  
+
   # Add more action assignments here
   # Actions can be from different namespaces:
   # - action: custom/custom_action
   #   context:
   #     enabled: true
   #     custom_property: value
-  # 
+  #
   # - action: contrib/another_action
   #   context:
   #     enabled: true
