@@ -372,7 +372,6 @@ class AgentLoader:
         """Get all existing actions for an agent.
 
         Uses graph connections to find all Action subclasses (including distant descendants).
-        This is more reliable than Action.find() which may miss dynamically loaded subclasses.
 
         Args:
             agent: Agent instance
@@ -383,11 +382,10 @@ class AgentLoader:
         """
         # If actions_manager is provided, use graph connections (more reliable for subclasses)
         if actions_manager:
-            all_actions = await actions_manager.nodes(node=Action)
-            return [a for a in all_actions if a.agent_id == agent.id]
+            # Actions manager is unique per agent; no need to filter by agent_id again
+            return await actions_manager.nodes(node=Action)
         
         # Fallback to database query if actions_manager not available
-        # This may miss some subclasses if they're not in __subclasses__() list
         return await Action.find({"context.agent_id": agent.id})
 
     def _sync_actions_with_descriptor(
@@ -540,14 +538,11 @@ class AgentLoader:
             if success:
                 # Check if this was an update by looking for existing action
                 # Use graph connections to find all Action subclasses (including distant descendants)
-                all_actions = await actions_manager.nodes(node=Action)
-                existing_actions = [
-                    a
-                    for a in all_actions
-                    if a.agent_id == action.agent_id
-                    and a.namespace == action.namespace
-                    and a.label == action.label
-                ]
+                existing_actions = await actions_manager.nodes(
+                    node=Action,
+                    namespace=action.namespace,
+                    label=action.label,
+                )
 
                 if existing_actions and update_if_exists:
                     updated_count += 1
@@ -578,7 +573,7 @@ class AgentLoader:
     async def _dedupe_agent_actions(self, agent: Agent, actions_manager: Actions) -> None:
         """Ensure only one action node exists per (namespace, label) for the agent."""
         try:
-            connected_nodes = await actions_manager.nodes(direction="out")
+            connected_nodes = await actions_manager.nodes(direction="out", node=Action)
             action_nodes = [
                 node
                 for node in connected_nodes
@@ -613,11 +608,8 @@ class AgentLoader:
             connected_ids = {action.id for action in dedupe_map.values()}
             # Remove orphan actions that still reference the agent but are not connected
             # Use graph connections to find all Action subclasses (including distant descendants)
-            # This is more reliable than Action.find() which may miss dynamically loaded subclasses
             all_connected_actions = await actions_manager.nodes(node=Action)
-            orphan_candidates = [
-                a for a in all_connected_actions if a.agent_id == agent.id and a.id not in connected_ids
-            ]
+            orphan_candidates = [a for a in all_connected_actions if a.id not in connected_ids]
             for orphan in orphan_candidates:
                 if orphan.id in connected_ids:
                     continue
