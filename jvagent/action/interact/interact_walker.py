@@ -203,7 +203,7 @@ class InteractWalker(Walker):
 
     @on_visit(InteractAction)
     async def on_interact_action(self, here: "InteractAction") -> None:
-        """Visit an InteractAction node: execute it, then traverse sub-actions depth-first.
+        """Visit an InteractAction node: perform routing checks, then traverse sub-actions.
 
         This method is automatically called when the walker visits an InteractAction.
         It:

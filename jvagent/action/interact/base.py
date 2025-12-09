@@ -66,7 +66,6 @@ class InteractAction(Action, ABC):
         ),
     )
 
-    @on_visit(InteractWalker if InteractWalker is not None else "InteractWalker")  # type: ignore
     @abstractmethod
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute the action's logic on the interaction.
@@ -75,11 +74,7 @@ class InteractAction(Action, ABC):
         Implementations should perform evaluation checks at the start and return
         early if conditions aren't met.
 
-        Note: Child classes must also apply the @on_visit decorator since the
-        decorator on the abstract method doesn't apply to overridden implementations.
-
         Example:
-            @on_visit(InteractWalker)
             async def execute(self, visitor: "InteractWalker") -> None:
                 # Evaluation checks at the start
                 if not self._should_run(visitor):

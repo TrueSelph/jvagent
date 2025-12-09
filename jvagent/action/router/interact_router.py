@@ -70,7 +70,6 @@ class InteractRouter(InteractAction):
         )
     )
 
-    @on_visit(InteractWalker)
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute routing analysis on the interaction.
 
