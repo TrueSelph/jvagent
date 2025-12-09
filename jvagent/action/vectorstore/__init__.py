@@ -9,7 +9,7 @@ from jvagent.action.vectorstore.base import VectorStore
 
 # Conditionally export TypesenseVectorStore if available
 try:
-    from jvagent.action.vectorstore.typesense import TypesenseVectorStore
+    from jvagent.action.vectorstore.typesense.typesense import TypesenseVectorStore
 
     __all__ = ["VectorStore", "TypesenseVectorStore"]
 except ImportError:

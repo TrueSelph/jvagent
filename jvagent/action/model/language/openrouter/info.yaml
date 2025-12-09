@@ -1,24 +1,24 @@
-# OpenAI Model Action Package Descriptor
+# OpenRouter Language Model Action Package Descriptor
 
 package:
   # Action name in namespace/action_name format
-  name: jvagent/openai_lm
+  name: jvagent/openrouter_lm
   
   # Package author
   author: jvagent
   
   # Archetype: The main Action class name
-  archetype: OpenAILanguageModelAction
+  archetype: OpenRouterLanguageModelAction
   
   # Package version
   version: 1.0.0
   
   # Package metadata
   meta:
-    title: OpenAI Model Action
-    description: LLM integration for OpenAI models with sync and streaming support
+    title: OpenRouter Language Model Action
+    description: LLM integration for OpenRouter API (OpenAI-compatible) supporting multiple providers. Supports multimodal queries where supported.
     group: jvagent
-    type: model_action
+    type: language_model_action
   
   # Package configuration
   config:
@@ -30,6 +30,5 @@ package:
     jvagent: ~0.0.1
     # Pip dependencies (installed automatically before action loading)
     pip:
-      - openai>=1.0.0
       - httpx>=0.24.0
 

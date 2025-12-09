@@ -138,6 +138,20 @@ class InteractWalker(Walker):
             here: The Actions node being visited
         """
         from jvagent.action.interact.base import InteractAction
+        from jvagent.action.base import Action
+
+        # Debug: Get all actions first to see what's available
+        all_actions = await here.nodes(node=Action)
+        action_info = []
+        for a in all_actions:
+            try:
+                class_name = a.get_class_name()
+                action_info.append(f"{a.label} ({class_name}, enabled={a.enabled})")
+            except Exception as e:
+                action_info.append(f"{a.label} (error getting class name: {e})")
+        logger.debug(
+            f"InteractWalker: Found {len(all_actions)} total actions connected to Actions node: {action_info}"
+        )
 
         # Get all enabled InteractActions (forward direction from Actions node)
         # Use class type instead of string to match by isinstance() (includes subclasses like InteractRouter)
@@ -147,6 +161,14 @@ class InteractWalker(Walker):
         )
 
         if not enabled_actions:
+            # Debug: Check if there are any InteractActions at all (even disabled)
+            all_interact_actions = await here.nodes(node=InteractAction)
+            logger.warning(
+                f"InteractWalker: No enabled InteractActions found. "
+                f"Total InteractActions: {len(all_interact_actions)}, "
+                f"Enabled: {[a.label for a in all_interact_actions if a.enabled]}, "
+                f"Disabled: {[a.label for a in all_interact_actions if not a.enabled]}"
+            )
             await self.report({"info": "No enabled InteractActions found"})
             return
 
@@ -215,7 +237,7 @@ class InteractWalker(Walker):
         # If InteractRouter has executed (interpretation is set), check if this action should execute
         if self.interaction and self.interaction.interpretation:
             routed_entity_names = set(self.interaction.anchors) if self.interaction.anchors else set()
-            action_entity_name = here.__class__.__name__
+            action_entity_name = here.get_class_name()
             
             # Skip if not in routed entities (unless it's InteractRouter itself, which must execute first)
             if action_entity_name not in routed_entity_names and action_entity_name != "InteractRouter":
@@ -238,11 +260,21 @@ class InteractWalker(Walker):
             # Execute the action
             # Note: 'here' is the node (self from node's perspective), 'self' is the walker (visitor)
             await here.execute(self)
+            
+            # Log action execution to interaction's actions list (using class name for consistency)
+            # This ensures all executed actions are recorded, even if individual actions don't log themselves
+            if self.interaction:
+                action_class_name = here.get_class_name()
+                self.interaction.add_action(action_class_name)
+                # Save interaction to persist the action list
+                await self.interaction.save()
+            
             await self.report(
                 {
                     "action_executed": {
                         "action": here.label,
                         "weight": here.weight,
+                        "class": here.get_class_name(),
                     }
                 }
             )
@@ -360,7 +392,7 @@ class InteractWalker(Walker):
             True if action should be allowed, False otherwise
         """
         # Get the action's entity name (class name)
-        action_entity_name = action.__class__.__name__
+        action_entity_name = action.get_class_name()
         
         # Check if this action's entity name is in the routed anchors/exceptions
         is_allowed = action_entity_name in routed_entity_names

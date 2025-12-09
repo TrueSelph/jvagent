@@ -176,11 +176,12 @@ class Actions(Node):
     async def deregister_action(self, action_id: str) -> bool:
         """Deregister an action from this manager.
 
-        This method:
-        1. Calls the action's on_deregister() lifecycle hook
-        2. Removes connections
-        3. Deletes the action node
+        This method performs complete cleanup:
+        1. Unregisters all endpoints associated with the action
+        2. Unloads action-specific modules (if safe)
+        3. Calls the action's on_deregister() lifecycle hook
         4. Updates statistics
+        5. Deletes the action node (removes graph edges)
 
         Args:
             action_id: ID of the action to deregister
@@ -195,15 +196,35 @@ class Actions(Node):
                 if not action:
                     return False
 
-                # Call lifecycle hook
+                # Step 1: Unregister endpoints associated with this action
+                try:
+                    endpoints_unregistered = await action._unregister_endpoints()
+                    if endpoints_unregistered > 0:
+                        logger.debug(
+                            f"Unregistered {endpoints_unregistered} endpoint(s) for action {action_id}"
+                        )
+                except Exception as e:
+                    logger.warning(f"Error unregistering endpoints for action {action_id}: {e}")
+
+                # Step 2: Unload action-specific modules (if safe)
+                try:
+                    modules_unloaded = await action._unload_action_modules()
+                    if modules_unloaded > 0:
+                        logger.debug(
+                            f"Unloaded {modules_unloaded} module(s) for action {action_id}"
+                        )
+                except Exception as e:
+                    logger.warning(f"Error unloading modules for action {action_id}: {e}")
+
+                # Step 3: Call lifecycle hook (allows action-specific cleanup)
                 await action.on_deregister()
 
-                # Update statistics
+                # Step 4: Update statistics
                 self.registered_count = max(0, self.registered_count - 1)
                 if action.enabled:
                     self.enabled_count = max(0, self.enabled_count - 1)
 
-                # Delete the action (this also removes edges)
+                # Step 5: Delete the action (this also removes edges)
                 await action.delete()
                 await self.save()
 

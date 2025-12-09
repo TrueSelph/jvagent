@@ -1,4 +1,5 @@
 # Persona Action Package Descriptor
+# This file defines the action's package metadata, dependencies, and configuration
 
 package:
   # Action name in namespace/action_name format
@@ -7,8 +8,8 @@ package:
   # Package author
   author: jvagent
   
-  # Archetype: The main Action class name
-  archetype: ExamplePersonaAction
+  # Archetype: The main Action class name (same as the Action Node class)
+  archetype: PersonaAction
   
   # Package version
   version: 1.0.0
@@ -26,5 +27,8 @@ package:
   
   # Package dependencies
   dependencies:
+    # jvagent version requirement
     jvagent: ~0.0.1
+    # Other action dependencies (by namespace/action_name)
+    actions: []
 

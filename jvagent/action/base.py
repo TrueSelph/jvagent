@@ -66,9 +66,13 @@ class Action(Node):
         on_reload() - Called when action is reloaded
         post_register() - Called after all actions are registered
         on_enable() - Called when action is enabled
-        on_disable() - Called when action is disabled
-        on_deregister() - Called when action is deregistered
+        on_disable() - Called when action is disabled (action remains registered)
+        on_deregister() - Called when action is deregistered (action is removed)
         healthcheck() - Called to perform health checks
+        
+    Note: Disabling an action (on_disable) does NOT deregister it. Deregistration
+    (on_deregister) is a separate operation that removes the action from the system
+    and automatically cleans up endpoints and modules.
     """
 
     # Core Attributes
@@ -88,6 +92,17 @@ class Action(Node):
     )
     # Package metadata Information (private - loaded from info.yaml)
     _metadata: Dict[str, Any] = attribute(private=True, default_factory=dict)
+
+    def get_class_name(self) -> str:
+        """Get the class name of this action.
+
+        Returns the class name (e.g., "InteractRouter", "PersonaAction", "OpenAILanguageModelAction").
+        This is a convenience method to avoid using __class__.__name__ throughout the codebase.
+
+        Returns:
+            Class name as a string
+        """
+        return self.__class__.__name__
 
     @property
     def config(self) -> Dict[str, Any]:
@@ -157,8 +172,189 @@ class Action(Node):
 
         Override this method to perform final cleanup tasks when the action is
         removed from the system.
+        
+        Note: This method is called automatically during deregistration, which also
+        handles endpoint and module cleanup. Override only if you need additional
+        action-specific cleanup.
         """
         pass
+
+    # ============================================================================
+    # Deregistration Cleanup Helpers
+    # ============================================================================
+
+    def _discover_action_endpoints(self) -> List[Any]:
+        """Discover all endpoints registered for this action.
+        
+        Queries the endpoint registry for endpoints matching this action's path patterns.
+        Endpoints are typically registered with paths like `/actions/{action_id}/...`.
+        
+        Returns:
+            List of endpoint function callables to unregister
+        """
+        try:
+            from jvspatial.api.context import get_current_server
+            
+            server = get_current_server()
+            if not server or not hasattr(server, "_endpoint_registry"):
+                return []
+            
+            registry = server._endpoint_registry
+            
+            # Pattern: endpoints for this action typically use /actions/{action_id}/...
+            action_path_prefix = f"/actions/{self.id}/"
+            
+            # Find endpoints matching this action's ID by iterating through _function_registry
+            matching_endpoints = []
+            # Access the internal registry dict directly
+            for func, endpoint_info in registry._function_registry.items():
+                path = endpoint_info.path
+                if path.startswith(action_path_prefix):
+                    matching_endpoints.append(func)
+            
+            return matching_endpoints
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error discovering endpoints for action {self.id}: {e}")
+            return []
+
+    async def _unregister_endpoints(self) -> int:
+        """Unregister all endpoints associated with this action.
+        
+        Discovers and unregisters all endpoints that match this action's path patterns.
+        
+        Returns:
+            Number of endpoints successfully unregistered
+        """
+        try:
+            from jvspatial.api.context import get_current_server
+            
+            server = get_current_server()
+            if not server or not hasattr(server, "_endpoint_registry"):
+                return 0
+            
+            registry = server._endpoint_registry
+            
+            # Discover endpoints for this action
+            endpoints_to_unregister = self._discover_action_endpoints()
+            
+            if not endpoints_to_unregister:
+                return 0
+            
+            # Unregister each endpoint
+            unregistered_count = 0
+            for endpoint_func in endpoints_to_unregister:
+                try:
+                    if registry.unregister_function(endpoint_func):
+                        unregistered_count += 1
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Error unregistering endpoint {endpoint_func.__name__}: {e}")
+            
+            # Also try unregistering by path pattern as a fallback for any remaining endpoints
+            action_path_prefix = f"/actions/{self.id}/"
+            try:
+                # Get all function endpoints and check for any we might have missed
+                for func, endpoint_info in registry._function_registry.items():
+                    path = endpoint_info.path
+                    if path.startswith(action_path_prefix) and func not in endpoints_to_unregister:
+                        # Found an endpoint we missed, try to unregister it
+                        if registry.unregister_function(func):
+                            unregistered_count += 1
+            except Exception:
+                pass  # Fallback failed, but we already got some endpoints
+            
+            if unregistered_count > 0:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.debug(f"Unregistered {unregistered_count} endpoint(s) for action {self.id}")
+            
+            return unregistered_count
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error unregistering endpoints for action {self.id}: {e}")
+            return 0
+
+    async def _unload_action_modules(self) -> int:
+        """Unload modules that were loaded for this action.
+        
+        Safely removes modules from sys.modules if they are not:
+        - Core jvagent modules
+        - Imported by other actions
+        - Shared dependencies
+        
+        Returns:
+            Number of modules successfully unloaded
+        """
+        try:
+            import sys
+            import logging
+            
+            logger = logging.getLogger(__name__)
+            
+            # Get list of loaded modules from metadata
+            if not hasattr(self, "_metadata") or not self._metadata:
+                return 0
+            
+            loaded_modules = self._metadata.get("loaded_modules", [])
+            if not loaded_modules:
+                return 0
+            
+            # Safety checks: don't unload core modules or shared dependencies
+            core_module_prefixes = [
+                "jvagent.action.",  # Core action modules (shared)
+                "jvspatial.",  # jvspatial library (shared)
+            ]
+            
+            unloaded_count = 0
+            
+            for module_name in loaded_modules:
+                try:
+                    # Skip core modules
+                    if any(module_name.startswith(prefix) for prefix in core_module_prefixes):
+                        logger.debug(f"Skipping core module: {module_name}")
+                        continue
+                    
+                    # Skip if module not in sys.modules
+                    if module_name not in sys.modules:
+                        continue
+                    
+                    # Check if this is a local action module (jvagent.actions.*)
+                    if module_name.startswith("jvagent.actions."):
+                        # Local action modules can be safely unloaded
+                        # But check if other actions might be using it
+                        # For now, we'll be conservative and only unload if it's clearly this action's module
+                        action_module_pattern = f"jvagent.actions.{self._metadata.get('namespace', '')}.{self._metadata.get('name', '')}"
+                        if module_name.startswith(action_module_pattern):
+                            # This is this action's specific module, safe to unload
+                            del sys.modules[module_name]
+                            unloaded_count += 1
+                            logger.debug(f"Unloaded module: {module_name}")
+                        else:
+                            logger.debug(f"Skipping shared module: {module_name}")
+                    else:
+                        # Non-action modules - be very conservative
+                        logger.debug(f"Skipping non-action module: {module_name}")
+                        
+                except Exception as e:
+                    logger.warning(f"Error unloading module {module_name}: {e}")
+                    continue
+            
+            if unloaded_count > 0:
+                logger.debug(f"Unloaded {unloaded_count} module(s) for action {self.id}")
+            
+            return unloaded_count
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error unloading modules for action {self.id}: {e}")
+            return 0
 
     async def pulse(self) -> None:
         """Called periodically for maintenance operations.

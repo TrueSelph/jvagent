@@ -1,0 +1,35 @@
+# OpenAI Language Model Action Package Descriptor
+
+package:
+  # Action name in namespace/action_name format
+  name: jvagent/openai_lm
+  
+  # Package author
+  author: jvagent
+  
+  # Archetype: The main Action class name
+  archetype: OpenAILanguageModelAction
+  
+  # Package version
+  version: 1.0.0
+  
+  # Package metadata
+  meta:
+    title: OpenAI Language Model Action
+    description: LLM integration for OpenAI models with sync and streaming support. Supports multimodal queries (text + images).
+    group: jvagent
+    type: language_model_action
+  
+  # Package configuration
+  config:
+    order:
+      weight: 0
+  
+  # Package dependencies
+  dependencies:
+    jvagent: ~0.0.1
+    # Pip dependencies (installed automatically before action loading)
+    pip:
+      - openai>=1.0.0
+      - httpx>=0.24.0
+

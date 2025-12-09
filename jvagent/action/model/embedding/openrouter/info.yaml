@@ -1,0 +1,34 @@
+# OpenRouter Embedding Model Action Package Descriptor
+
+package:
+  # Action name in namespace/action_name format
+  name: jvagent/openrouter_embedding
+  
+  # Package author
+  author: jvagent
+  
+  # Archetype: The main Action class name
+  archetype: OpenRouterEmbeddingModelAction
+  
+  # Package version
+  version: 1.0.0
+  
+  # Package metadata
+  meta:
+    title: OpenRouter Embedding Model Action
+    description: Embedding model integration for OpenRouter API (OpenAI-compatible)
+    group: jvagent
+    type: embedding_model_action
+  
+  # Package configuration
+  config:
+    order:
+      weight: 0
+  
+  # Package dependencies
+  dependencies:
+    jvagent: ~0.0.1
+    # Pip dependencies (installed automatically before action loading)
+    pip:
+      - httpx>=0.24.0
+
