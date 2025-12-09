@@ -18,5 +18,9 @@ from .persona import ExamplePersonaAction
 # Import endpoints module to ensure endpoints are discovered
 from jvagent.action.persona import endpoints  # noqa: F401
 
-__all__ = ["ExamplePersonaAction"]
+# Export as PersonaAction for compatibility with agent.yaml
+# The action loader will find ExamplePersonaAction via the archetype in info.yaml
+PersonaAction = ExamplePersonaAction
+
+__all__ = ["ExamplePersonaAction", "PersonaAction"]
 

@@ -323,7 +323,7 @@ async def get_model_action_metrics(action_id: str) -> Dict[str, Any]:
         "average_duration": average_duration,
         "model": action.model,
         "provider": getattr(
-            action, "provider", action.__class__.__name__.replace("LanguageModelAction", "").lower()
+            action, "provider", action.get_class_name().replace("LanguageModelAction", "").lower()
         ),
     }
 

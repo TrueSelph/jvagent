@@ -6,7 +6,7 @@ canned responses, and glossary terms.
 """
 
 import logging
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
 from jvagent.action.base import Action
@@ -15,7 +15,7 @@ from jvspatial.core.annotations import attribute
 logger = logging.getLogger(__name__)
 
 
-class VectorStore(Action):
+class VectorStore(Action, ABC):
     """Base action for vector database operations.
 
     VectorStore provides a standard interface for storing documents with embeddings
@@ -100,12 +100,12 @@ class VectorStore(Action):
         pass
 
     @abstractmethod
-    async def delete(
+    async def delete_document(
         self,
         collection: str,
         document_ids: List[str],
     ) -> bool:
-        """Delete documents from a collection.
+        """Delete documents from a collection (VectorStore-specific).
 
         Args:
             collection: Collection name to delete from
@@ -113,10 +113,6 @@ class VectorStore(Action):
 
         Returns:
             True if all deletions succeeded, False otherwise
-
-        Raises:
-            ValueError: If collection doesn't exist
-            RuntimeError: If deletion operation fails
         """
         pass
 

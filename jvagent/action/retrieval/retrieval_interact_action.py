@@ -35,7 +35,7 @@ class RetrievalInteractAction(InteractAction):
         collection: Collection name to search in (default: "default")
         k: Number of search results to retrieve (default: 10)
         weight: Execution weight (default: -50, runs after InteractRouter but before PersonaAction)
-        directive_template: Optional template for formatting the directive (uses default if not provided)
+        directive_template: Optional template for formatting the directive with placeholder: {results}
         min_score_threshold: Optional minimum similarity score to include results
     """
 
@@ -58,7 +58,7 @@ class RetrievalInteractAction(InteractAction):
     )
     directive_template: Optional[str] = attribute(
         default=None,
-        description="Optional template for formatting the directive. Uses default structured format if not provided.",
+        description="Optional template for formatting the directive. Uses default structured format if not provided. Placeholder: {results}",
     )
     min_score_threshold: Optional[float] = attribute(
         default=None,

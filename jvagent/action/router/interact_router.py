@@ -36,6 +36,8 @@ class InteractRouter(InteractAction):
         history_limit: Number of previous interactions to include in context (default: 10)
         weight: Execution weight (default: -100 to run first)
         exceptions: List of InteractAction entity names that must always execute, regardless of routing
+        system_prompt: Optional override for the system prompt used during routing
+        routing_prompt: Optional template for the routing prompt with placeholders: {utterance}, {conversation_history}, {anchors_json}
     """
 
     model_action_type: str = attribute(
@@ -54,6 +56,18 @@ class InteractRouter(InteractAction):
     exceptions: List[str] = attribute(
         default_factory=list,
         description="List of InteractAction entity names that must always execute, regardless of routing results"
+    )
+    system_prompt: Optional[str] = attribute(
+        default=None,
+        description="Optional override for the system prompt used during routing. If not provided, uses default system prompt."
+    )
+    routing_prompt: Optional[str] = attribute(
+        default=None,
+        description=(
+            "Optional template for the routing prompt. "
+            "Placeholders: {utterance}, {conversation_history}, {anchors_json}. "
+            "If not provided, uses default routing prompt template."
+        )
     )
 
     @on_visit(InteractWalker)
@@ -122,7 +136,7 @@ class InteractRouter(InteractAction):
 
             # Log model result
             if result:
-                interaction.add_action(self.__class__.__name__)
+                interaction.add_action(self.get_class_name())
                 interaction.add_model_result(result.to_dict())
 
             # Parse response
@@ -217,7 +231,7 @@ class InteractRouter(InteractAction):
         # Collect anchors
         anchors_dict: Dict[str, List[str]] = {}
         for action in interact_actions:
-            entity_name = action.__class__.__name__
+            entity_name = action.get_class_name()
             
             # Get anchors - check both attribute and context directly
             anchors = getattr(action, 'anchors', None)
@@ -329,6 +343,15 @@ class InteractRouter(InteractAction):
         # Build anchors text
         anchors_text = json.dumps(anchors_dict, indent=2)
 
+        # Use custom routing prompt template if provided
+        if self.routing_prompt:
+            return self.routing_prompt.format(
+                utterance=utterance,
+                conversation_history=history_text,
+                anchors_json=anchors_text,
+            )
+
+        # Default routing prompt template
         prompt = f"""Analyze the user's utterance and determine which InteractActions should handle it.
 
 ## Current Utterance:
@@ -370,6 +393,11 @@ Return ONLY valid JSON, no additional text."""
         Returns:
             System prompt string
         """
+        # Use custom system prompt if provided
+        if self.system_prompt:
+            return self.system_prompt
+
+        # Default system prompt
         return """You are an intent analysis system that interprets user utterances and routes them to appropriate InteractActions based on published anchor statements.
 
 Your role is to:

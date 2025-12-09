@@ -129,7 +129,7 @@ async def embed_text(
 
     # Get provider name
     provider = getattr(
-        action, "provider", action.__class__.__name__.replace("EmbeddingModelAction", "").lower()
+        action, "provider", action.get_class_name().replace("EmbeddingModelAction", "").lower()
     )
 
     return {
@@ -282,7 +282,7 @@ async def embed_batch(
 
     # Get provider name
     provider = getattr(
-        action, "provider", action.__class__.__name__.replace("EmbeddingModelAction", "").lower()
+        action, "provider", action.get_class_name().replace("EmbeddingModelAction", "").lower()
     )
 
     # Determine dimensions from first embedding
@@ -402,7 +402,7 @@ async def get_embedding_model_action_metrics(action_id: str) -> Dict[str, Any]:
 
     # Get provider name
     provider = getattr(
-        action, "provider", action.__class__.__name__.replace("EmbeddingModelAction", "").lower()
+        action, "provider", action.get_class_name().replace("EmbeddingModelAction", "").lower()
     )
 
     return {

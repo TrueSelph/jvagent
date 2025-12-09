@@ -342,20 +342,12 @@ class TypesenseVectorStore(VectorStore):
             logger.error(f"Error during Typesense search: {e}")
             raise RuntimeError(f"Typesense search failed: {e}")
 
-    async def delete(
+    async def delete_document(
         self,
         collection: str,
         document_ids: List[str],
     ) -> bool:
-        """Delete documents from a collection.
-
-        Args:
-            collection: Collection name to delete from
-            document_ids: List of document IDs to delete
-
-        Returns:
-            True if all deletions succeeded, False otherwise
-        """
+        """Delete documents from a collection."""
         if not TYPESENSE_AVAILABLE or not self._client:
             raise RuntimeError("Typesense client not available")
 
