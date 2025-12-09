@@ -67,7 +67,6 @@ class RetrievalInteractAction(InteractAction):
         le=1.0,
     )
 
-    @on_visit(InteractWalker)
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute retrieval and add directive to interaction.
 
