@@ -42,8 +42,41 @@ class VectorStore(Action, ABC):
     )
     default_collection: str = attribute(
         default="default",
-        description="Default collection name to use if not specified",
+        description=(
+            "Default collection name to use if not specified. "
+            "If left as 'default', the agent ID will be used as the default "
+            "collection name to keep collections unique per agent when sharing "
+            "a vector store across agents."
+        ),
     )
+
+    async def _resolve_collection_name(self, collection: Optional[str] = None) -> str:
+        """Resolve the collection name, preferring explicit input, then agent-specific default.
+
+        Priority:
+        1) Explicit collection argument (if provided and non-empty)
+        2) Agent ID (guarantees uniqueness per agent when sharing a vector store)
+        3) self.default_collection when it is set and not 'default'
+        4) Fallback to literal 'default'
+        """
+        # 1) Explicit override
+        if collection:
+            return collection
+
+        # 2) Agent ID for uniqueness when sharing vector store (primary default)
+        try:
+            agent = await self.get_agent()
+            if agent and agent.id:
+                return agent.id
+        except Exception:
+            pass
+
+        # 3) Configured default if not the sentinel 'default'
+        if self.default_collection and self.default_collection != "default":
+            return self.default_collection
+
+        # 4) Final fallback
+        return "default"
 
     @abstractmethod
     async def store(
@@ -149,6 +182,84 @@ class VectorStore(Action, ABC):
         """
         # Default implementation: not supported
         # Subclasses can override if deletion is supported
+        return False
+
+    async def get_document(
+        self,
+        collection: str,
+        document_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Get a single document by ID.
+
+        Args:
+            collection: Collection name
+            document_id: Document ID
+
+        Returns:
+            Document data if found, None otherwise
+        """
+        # Default implementation: not supported
+        # Subclasses should override
+        return None
+
+    async def list_documents(
+        self,
+        collection: str,
+        page: int = 1,
+        page_size: int = 20,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """List documents in a collection with pagination.
+
+        Args:
+            collection: Collection name
+            page: Page number (1-based)
+            page_size: Number of items per page
+            filters: Optional metadata filters
+
+        Returns:
+            Dictionary with:
+            - items: List of documents
+            - pagination: Pagination info matching ObjectPager format
+        """
+        # Default implementation: not supported
+        # Subclasses should override
+        return {
+            "items": [],
+            "pagination": {
+                "total_items": 0,
+                "total_pages": 0,
+                "current_page": page,
+                "page_size": page_size,
+                "has_previous": False,
+                "has_next": False,
+                "previous_page": None,
+                "next_page": None,
+                "start_index": 0,
+                "end_index": None,
+            },
+        }
+
+    async def update_document(
+        self,
+        collection: str,
+        document_id: str,
+        content: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Update a document in the collection.
+
+        Args:
+            collection: Collection name
+            document_id: Document ID to update
+            content: Optional new content (will regenerate embedding if provided)
+            metadata: Optional new metadata
+
+        Returns:
+            True if update succeeded, False otherwise
+        """
+        # Default implementation: not supported
+        # Subclasses should override
         return False
 
     async def _get_embedding_model(self) -> Optional[Any]:

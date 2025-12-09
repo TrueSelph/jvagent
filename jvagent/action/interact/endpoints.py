@@ -79,37 +79,47 @@ async def interact_endpoint(
     """Process a user interaction through the interact subsystem.
 
     This endpoint is the common entry point for agent interactions. It:
+
+
     - Resolves or creates User/Conversation based on provided IDs
     - Spawns InteractWalker to traverse InteractActions
     - Returns the interaction result with response
 
-    Request Scenarios:
-    1. First message (no user_id, no session_id):
+
+    **Request Scenarios:**
+
+    1. **First message** (no user_id, no session_id):
        Creates User + Conversation, returns both IDs
 
-    2. Continue conversation (session_id only):
+    2. **Continue conversation** (session_id only):
        Uses existing Conversation, returns user_id from session
 
-    3. New conversation for existing user (user_id only):
+    3. **New conversation for existing user** (user_id only):
        Gets/Creates User, creates new Conversation, returns new session_id
 
-    4. Both provided (user_id + session_id):
+    4. **Both provided** (user_id + session_id):
        Validates they match, uses existing Conversation
 
-    Args:
-        agent_id: ID of the agent to interact with
-        utterance: User's input text
-        channel: Communication channel (default, whatsapp, web, etc.)
-        data: Optional dictionary payload
-        session_id: Optional session identifier to continue conversation
-        user_id: Optional user identifier
 
-    Returns:
-        Dictionary with user_id, session_id, response, interaction, and report
+    **Args:**
 
-    Raises:
-        ResourceNotFoundError: If agent not found
-        ValidationError: If utterance is empty or invalid
+    - agent_id: ID of the agent to interact with
+    - utterance: User's input text
+    - channel: Communication channel (default, whatsapp, web, etc.)
+    - data: Optional dictionary payload
+    - session_id: Optional session identifier to continue conversation
+    - user_id: Optional user identifier
+
+
+    **Returns:**
+
+    Dictionary with user_id, session_id, response, interaction, and report
+
+
+    **Raises:**
+
+    - ResourceNotFoundError: If agent not found
+    - ValidationError: If utterance is empty or invalid
     """
     # Validate agent exists
     agent = await Agent.get(agent_id)

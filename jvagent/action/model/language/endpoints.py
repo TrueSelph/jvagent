@@ -83,77 +83,93 @@ async def query_model_action(
     This endpoint handles language model queries through the model action.
     Supports both text-only and multimodal (text + images) queries:
 
+
     - Supports both synchronous and streaming responses
     - Handles text-only and multimodal (text + images) queries
     - Allows runtime model parameter overrides
 
-    Request Modes:
 
-    1. Text Query (simple string prompt):
+    **Request Modes:**
+
+    1. **Text Query** (simple string prompt):
        Provides a text prompt and receives a text response
 
-    2. Multimodal Query (array with content parts):
+    2. **Multimodal Query** (array with content parts):
        Provides text and images for vision-capable models
 
-    3. Streaming Query (stream=true):
+    3. **Streaming Query** (stream=true):
        Returns Server-Sent Events (SSE) with response chunks
 
-    Args:
-        action_id: ID of the model action to query
-        prompt: User prompt - can be:
 
-            - String: Simple text prompt
-            - List: Multimodal content with text and images
+    **Args:**
 
-        stream: Whether to stream the response (default: False)
-        system: Optional system message to guide model behavior
-        history: Optional conversation history (can include multimodal)
-        tools: Optional list of tool/function definitions for function calling
-        model: Optional model override (uses action's default model if not provided)
-        temperature: Optional temperature override (0.0-2.0)
-        max_tokens: Optional max tokens override
-        top_p: Optional top_p override (0.0-1.0)
+    - action_id: ID of the model action to query
+    - prompt: User prompt - can be:
 
-    Returns:
-        For sync: Dictionary with response, metrics, and metadata
+        - **String**: Simple text prompt
+        - **List**: Multimodal content with text and images
 
-        For stream: StreamingResponse with SSE events containing:
+    - stream: Whether to stream the response (default: False)
+    - system: Optional system message to guide model behavior
+    - history: Optional conversation history (can include multimodal)
+    - tools: Optional list of tool/function definitions for function calling
+    - model: Optional model override (uses action's default model if not provided)
+    - temperature: Optional temperature override (0.0-2.0)
+    - max_tokens: Optional max tokens override
+    - top_p: Optional top_p override (0.0-1.0)
 
-            - delta: Response text chunk
-            - metrics: Token usage (on final event)
-            - finish_reason: Completion reason (on final event)
 
-    Raises:
-        ResourceNotFoundError: If action not found
+    **Returns:**
 
-    Examples:
-        Text query::
+    For sync: Dictionary with response, metrics, and metadata
 
-            POST /actions/abc123/query
-            {
-                "prompt": "Explain quantum computing",
-                "system": "You are a physics expert",
-                "model": "gpt-4o",
-                "temperature": 0.7
-            }
+    For stream: StreamingResponse with SSE events containing:
 
-        Multimodal query::
+    - **delta**: Response text chunk
+    - **metrics**: Token usage (on final event)
+    - **finish_reason**: Completion reason (on final event)
 
-            POST /actions/abc123/query
-            {
-                "prompt": [
-                    {"type": "text", "text": "What's in this image?"},
-                    {"type": "image_url", "image_url": {"url": "https://..."}}
-                ]
-            }
 
-        Streaming query::
+    **Raises:**
 
-            POST /actions/abc123/query
-            {
-                "prompt": "Tell me a story",
-                "stream": true
-            }
+    - ResourceNotFoundError: If action not found
+
+
+    **Examples:**
+
+    Text query:
+
+    ```json
+    POST /actions/abc123/query
+    {
+        "prompt": "Explain quantum computing",
+        "system": "You are a physics expert",
+        "model": "gpt-4o",
+        "temperature": 0.7
+    }
+    ```
+
+    Multimodal query:
+
+    ```json
+    POST /actions/abc123/query
+    {
+        "prompt": [
+            {"type": "text", "text": "What's in this image?"},
+            {"type": "image_url", "image_url": {"url": "https://..."}}
+        ]
+    }
+    ```
+
+    Streaming query:
+
+    ```json
+    POST /actions/abc123/query
+    {
+        "prompt": "Tell me a story",
+        "stream": true
+    }
+    ```
     """
     # Get the model action
     action = await LanguageModelAction.get(action_id)
@@ -279,29 +295,37 @@ async def get_model_action_metrics(action_id: str) -> Dict[str, Any]:
 
     Returns comprehensive usage statistics including:
 
+
     - Total requests made through this action
     - Cumulative token usage (prompt + completion)
     - Estimated cost in USD based on model pricing
     - Total and average query duration
 
+
     Metrics are accumulated across all queries and persist until reset.
 
-    Args:
-        action_id: ID of the model action
 
-    Returns:
-        Dictionary with metrics including:
+    **Args:**
 
-            - total_requests: Number of queries made
-            - total_tokens: Cumulative token usage
-            - total_cost: Estimated cost in USD
-            - total_duration: Cumulative query time in seconds
-            - average_duration: Average query time in seconds
-            - model: Model identifier
-            - provider: Provider name (openai, openrouter, etc.)
+    - action_id: ID of the model action
 
-    Raises:
-        ResourceNotFoundError: If action not found
+
+    **Returns:**
+
+    Dictionary with metrics including:
+
+    - **total_requests**: Number of queries made
+    - **total_tokens**: Cumulative token usage
+    - **total_cost**: Estimated cost in USD
+    - **total_duration**: Cumulative query time in seconds
+    - **average_duration**: Average query time in seconds
+    - **model**: Model identifier
+    - **provider**: Provider name (openai, openrouter, etc.)
+
+
+    **Raises:**
+
+    - ResourceNotFoundError: If action not found
     """
     action = await LanguageModelAction.get(action_id)
     if not action:
@@ -353,18 +377,25 @@ async def list_model_action_templates(action_id: str) -> Dict[str, Any]:
     Templates are reusable prompt patterns that can be rendered with variables.
     They are useful for:
 
+
     - Standardizing prompt formats across queries
     - Reducing code duplication for common prompts
     - Managing prompt versioning and updates
 
-    Args:
-        action_id: ID of the model action
 
-    Returns:
-        Dictionary with list of available template names
+    **Args:**
 
-    Raises:
-        ResourceNotFoundError: If action not found
+    - action_id: ID of the model action
+
+
+    **Returns:**
+
+    Dictionary with list of available template names
+
+
+    **Raises:**
+
+    - ResourceNotFoundError: If action not found
     """
     action = await LanguageModelAction.get(action_id)
     if not action:
@@ -406,24 +437,33 @@ async def render_model_action_template(
     """Render a prompt template with provided variables.
 
     Substitutes placeholders in the template with actual values.
-    Templates use Python string formatting syntax (e.g., {variable_name}).
+    Templates use Python string formatting syntax (e.g., `{variable_name}`).
 
-    Example::
 
-        Template: "Summarize the following {content_type}: {content}"
-        Variables: {"content_type": "article", "content": "..."}
-        Result: "Summarize the following article: ..."
+    **Example:**
 
-    Args:
-        action_id: ID of the model action
-        template_name: Name of the template to render
-        variables: Dictionary mapping variable names to values
+    Template: `"Summarize the following {content_type}: {content}"`
 
-    Returns:
-        Dictionary with rendered template string
+    Variables: `{"content_type": "article", "content": "..."}`
 
-    Raises:
-        ResourceNotFoundError: If action or template not found
+    Result: `"Summarize the following article: ..."`
+
+
+    **Args:**
+
+    - action_id: ID of the model action
+    - template_name: Name of the template to render
+    - variables: Dictionary mapping variable names to values
+
+
+    **Returns:**
+
+    Dictionary with rendered template string
+
+
+    **Raises:**
+
+    - ResourceNotFoundError: If action or template not found
     """
     action = await LanguageModelAction.get(action_id)
     if not action:

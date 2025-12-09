@@ -121,7 +121,6 @@ actions:
       # Embedding Model Configuration
       embedding_model_action_type: "OpenAIEmbeddingModelAction"  # Entity type to find dynamically
       embedder_type: model_action  # Use model action instead of sentence-transformers
-      default_collection: example_agent
   
   # RetrievalInteractAction - Context retrieval from vector stores
   # Core action from jvagent library (jvagent/action/retrieval/)
@@ -131,7 +130,6 @@ actions:
       description: "Retrieves context from vector stores and adds directives for PersonaAction"
       # VectorStore Configuration
       vectorstore_action_type: "TypesenseVectorStore"  # Entity type to find dynamically
-      collection: "example_agent"  # Collection name to search in
       k: 5  # Number of search results to retrieve
       weight: -50  # Runs after InteractRouter but before PersonaAction
       # Anchors for routing - published to InteractRouter

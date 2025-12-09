@@ -53,12 +53,16 @@ async def list_parameters_endpoint(
 ) -> Dict[str, Any]:
     """List all parameters for a PersonaAction.
 
-    Args:
-        action_id: ID of the PersonaAction
-        enabled_only: If True, only return enabled parameters
 
-    Returns:
-        Dictionary with parameters list and count
+    **Args:**
+
+    - action_id: ID of the PersonaAction
+    - enabled_only: If True, only return enabled parameters
+
+
+    **Returns:**
+
+    Dictionary with parameters list and count
     """
     from jvagent.action.persona.base import PersonaAction
 
@@ -118,16 +122,20 @@ async def create_parameter_endpoint(
 ) -> Dict[str, Any]:
     """Create a new parameter for a PersonaAction.
 
-    Args:
-        action_id: ID of the PersonaAction
-        condition: When this parameter applies
-        response: Behavioral instruction for the LLM
-        action: Optional action label to trigger
-        enabled: Whether the parameter is enabled
-        metadata: Optional metadata dictionary
 
-    Returns:
-        Dictionary with created parameter ID
+    **Args:**
+
+    - action_id: ID of the PersonaAction
+    - condition: When this parameter applies
+    - response: Behavioral instruction for the LLM
+    - action: Optional action label to trigger
+    - enabled: Whether the parameter is enabled
+    - metadata: Optional metadata dictionary
+
+
+    **Returns:**
+
+    Dictionary with created parameter ID
     """
     from jvagent.action.persona.base import PersonaAction
 
@@ -215,17 +223,21 @@ async def update_parameter_endpoint(
 ) -> Dict[str, Any]:
     """Update a parameter for a PersonaAction.
 
-    Args:
-        action_id: ID of the PersonaAction
-        param_id: ID of the parameter to update
-        condition: New condition (optional)
-        response: New response (optional)
-        action: New action label (optional)
-        enabled: New enabled status (optional)
-        metadata: Metadata updates (optional)
 
-    Returns:
-        Dictionary with updated parameter
+    **Args:**
+
+    - action_id: ID of the PersonaAction
+    - param_id: ID of the parameter to update
+    - condition: New condition (optional)
+    - response: New response (optional)
+    - action: New action label (optional)
+    - enabled: New enabled status (optional)
+    - metadata: Metadata updates (optional)
+
+
+    **Returns:**
+
+    Dictionary with updated parameter
     """
     from jvagent.action.persona.base import PersonaAction
 
@@ -310,12 +322,16 @@ async def delete_parameter_endpoint(
 ) -> Dict[str, Any]:
     """Delete a parameter from a PersonaAction.
 
-    Args:
-        action_id: ID of the PersonaAction
-        param_id: ID of the parameter to delete
 
-    Returns:
-        Dictionary with success message
+    **Args:**
+
+    - action_id: ID of the PersonaAction
+    - param_id: ID of the parameter to delete
+
+
+    **Returns:**
+
+    Dictionary with success message
     """
     from jvagent.action.persona.base import PersonaAction
 
@@ -384,12 +400,16 @@ async def import_parameters_endpoint(
 ) -> Dict[str, Any]:
     """Import multiple parameters into a PersonaAction.
 
-    Args:
-        action_id: ID of the PersonaAction
-        parameters: List of parameter dictionaries
 
-    Returns:
-        Dictionary with import count
+    **Args:**
+
+    - action_id: ID of the PersonaAction
+    - parameters: List of parameter dictionaries
+
+
+    **Returns:**
+
+    Dictionary with import count
     """
     from jvagent.action.persona.base import PersonaAction
 

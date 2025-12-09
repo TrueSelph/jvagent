@@ -54,6 +54,14 @@ class TypesenseVectorStore(VectorStore):
         default="http",
         description="Protocol to use (http or https)",
     )
+    query_by_field: str = attribute(
+        default="content",
+        description="Field to use for query_by in Typesense text/hybrid searches; not used for pure vector search",
+    )
+    vector_field: str = attribute(
+        default="vector",
+        description="Name of the vector field in the collection schema (default: 'vector')",
+    )
     api_key: str = attribute(
         default="",
         description="Typesense API key",
@@ -126,11 +134,14 @@ class TypesenseVectorStore(VectorStore):
             pass
 
         # Create collection schema
+        # Note: Typesense doesn't allow 'id' as default_sorting_field
+        # String fields need to be explicitly marked as sortable
+        # enable_nested_fields is required for object type fields
         schema = {
             "name": collection,
             "fields": [
                 {"name": "id", "type": "string"},
-                {"name": "content", "type": "string"},
+                {"name": "content", "type": "string", "sort": True},
                 {
                     "name": "vector",
                     "type": "float[]",
@@ -138,7 +149,8 @@ class TypesenseVectorStore(VectorStore):
                 },
                 {"name": "metadata", "type": "object", "optional": True},
             ],
-            "default_sorting_field": "id",
+            "default_sorting_field": "content",
+            "enable_nested_fields": True,
         }
 
         try:
@@ -191,7 +203,8 @@ class TypesenseVectorStore(VectorStore):
         if not TYPESENSE_AVAILABLE or not self._client:
             raise RuntimeError("Typesense client not available")
 
-        # Ensure collection exists
+        # Resolve and ensure collection exists
+        collection = await self._resolve_collection_name(collection)
         await self._get_or_create_collection(collection)
 
         stored_ids = []
@@ -256,7 +269,8 @@ class TypesenseVectorStore(VectorStore):
         if not TYPESENSE_AVAILABLE or not self._client:
             raise RuntimeError("Typesense client not available")
 
-        # Generate query embedding
+        # Resolve collection and generate query embedding
+        collection = await self._resolve_collection_name(collection)
         query_vector = await self._generate_embedding(query)
 
         # Build filter_by string from filters
@@ -273,13 +287,12 @@ class TypesenseVectorStore(VectorStore):
 
         # Build search parameters using multi_search endpoint for vector queries
         # This avoids the 4000 character limit on query strings
-        # Typesense vector query format: vector:([0.1,0.2,0.3], k:10)
-        # We'll use multi_search which accepts the vector as a list in the request body
+        # For pure vector search, we don't use query_by (that's for text/hybrid search)
+        # Typesense vector query format: vector_field_name:([0.1,0.2,0.3], k:10)
         search_parameters: Dict[str, Any] = {
             "collection": collection,
             "q": "*",
-            "vector_query": f'vector:([{",".join(map(str, query_vector))}], k:{k})',
-            "query_by": "content",
+            "vector_query": f'{self.vector_field}:([{",".join(map(str, query_vector))}], k:{k})',
             "per_page": k,
         }
 
@@ -351,6 +364,8 @@ class TypesenseVectorStore(VectorStore):
         if not TYPESENSE_AVAILABLE or not self._client:
             raise RuntimeError("Typesense client not available")
 
+        collection = await self._resolve_collection_name(collection)
+
         all_succeeded = True
         for doc_id in document_ids:
             try:
@@ -376,6 +391,7 @@ class TypesenseVectorStore(VectorStore):
             True if collection was created or already exists
         """
         try:
+            collection = await self._resolve_collection_name(collection)
             await self._get_or_create_collection(collection)
             return True
         except Exception as e:
@@ -399,6 +415,7 @@ class TypesenseVectorStore(VectorStore):
             return False
 
         try:
+            collection = await self._resolve_collection_name(collection)
             self._client.collections[collection].delete()
             if collection in self._collections:
                 del self._collections[collection]
@@ -435,4 +452,183 @@ class TypesenseVectorStore(VectorStore):
                 base_health["typesense_health"] = False
 
         return base_health
+
+    async def get_document(
+        self,
+        collection: str,
+        document_id: str,
+        include_vector: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        """Get a single document by ID.
+
+        Args:
+            collection: Collection name
+            document_id: Document ID
+            include_vector: Whether to include the vector in the response (default: False)
+
+        Returns:
+            Document data if found, None otherwise
+        """
+        if not TYPESENSE_AVAILABLE or not self._client:
+            raise RuntimeError("Typesense client not available")
+
+        collection = await self._resolve_collection_name(collection)
+
+        try:
+            doc = self._client.collections[collection].documents[str(document_id)].retrieve()
+            result = {
+                "id": doc.get("id", document_id),
+                "content": doc.get("content", ""),
+                "metadata": doc.get("metadata", {}),
+            }
+            if include_vector:
+                result["vector"] = doc.get("vector", [])
+            return result
+        except Exception as e:
+            logger.debug(f"Document {document_id} not found in collection {collection}: {e}")
+            return None
+
+    async def list_documents(
+        self,
+        collection: str,
+        page: int = 1,
+        page_size: int = 20,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """List documents in a collection with pagination.
+
+        Args:
+            collection: Collection name
+            page: Page number (1-based)
+            page_size: Number of items per page
+            filters: Optional metadata filters
+
+        Returns:
+            Dictionary with items and pagination info matching ObjectPager format
+        """
+        if not TYPESENSE_AVAILABLE or not self._client:
+            raise RuntimeError("Typesense client not available")
+
+        collection = await self._resolve_collection_name(collection)
+
+        # Build filter_by string from filters
+        filter_by = None
+        if filters:
+            filter_parts = []
+            for key, value in filters.items():
+                if isinstance(value, list):
+                    filter_parts.append(f"metadata.{key}:={','.join(map(str, value))}")
+                else:
+                    filter_parts.append(f"metadata.{key}:={value}")
+            if filter_parts:
+                filter_by = " && ".join(filter_parts)
+
+        try:
+            # Typesense pagination: page is 1-based, per_page is the page size
+            search_params = {
+                "q": "*",
+                "per_page": page_size,
+                "page": page,
+            }
+
+            if filter_by:
+                search_params["filter_by"] = filter_by
+
+            # Use search endpoint to list all documents
+            results = self._client.collections[collection].documents.search(search_params)
+
+            # Extract documents and pagination info
+            hits = results.get("hits", [])
+            found = results.get("found", 0)
+            page_num = results.get("page", page)
+            per_page = results.get("per_page", page_size)
+
+            items = []
+            for hit in hits:
+                doc = hit.get("document", {})
+                items.append({
+                    "id": doc.get("id", ""),
+                    "content": doc.get("content", ""),
+                    "metadata": doc.get("metadata", {}),
+                })
+
+            total_pages = (found + per_page - 1) // per_page if found > 0 else 0
+            start_index = (page_num - 1) * per_page
+            end_index = min(start_index + len(items) - 1, found - 1) if found > 0 else None
+
+            return {
+                "items": items,
+                "pagination": {
+                    "total_items": found,
+                    "total_pages": total_pages,
+                    "current_page": page_num,
+                    "page_size": per_page,
+                    "has_previous": page_num > 1,
+                    "has_next": page_num < total_pages if total_pages > 0 else False,
+                    "previous_page": page_num - 1 if page_num > 1 else None,
+                    "next_page": page_num + 1 if page_num < total_pages else None,
+                    "start_index": start_index,
+                    "end_index": end_index,
+                },
+            }
+        except Exception as e:
+            logger.error(f"Error listing documents from collection {collection}: {e}")
+            raise RuntimeError(f"Failed to list documents: {e}") from e
+
+    async def update_document(
+        self,
+        collection: str,
+        document_id: str,
+        content: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Update a document in the collection.
+
+        Args:
+            collection: Collection name
+            document_id: Document ID to update
+            content: Optional new content (will regenerate embedding if provided)
+            metadata: Optional new metadata
+
+        Returns:
+            True if update succeeded, False otherwise
+        """
+        if not TYPESENSE_AVAILABLE or not self._client:
+            raise RuntimeError("Typesense client not available")
+
+        collection = await self._resolve_collection_name(collection)
+
+        try:
+            # Get existing document with vector
+            existing_doc = await self.get_document(collection, document_id, include_vector=True)
+            if not existing_doc:
+                return False
+
+            # Prepare update document
+            update_doc = {
+                "id": str(document_id),
+            }
+
+            # Update content if provided (regenerate embedding)
+            if content is not None:
+                update_doc["content"] = content
+                vector = await self._generate_embedding(content)
+                update_doc["vector"] = vector
+            else:
+                # Keep existing content and vector
+                update_doc["content"] = existing_doc.get("content", "")
+                update_doc["vector"] = existing_doc.get("vector", [])
+
+            # Update metadata
+            if metadata is not None:
+                update_doc["metadata"] = metadata
+            else:
+                update_doc["metadata"] = existing_doc.get("metadata", {})
+
+            # Upsert the updated document
+            self._client.collections[collection].documents[str(document_id)].update(update_doc)
+            return True
+        except Exception as e:
+            logger.error(f"Error updating document {document_id} in collection {collection}: {e}")
+            return False
 

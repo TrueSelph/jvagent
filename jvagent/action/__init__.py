@@ -10,5 +10,6 @@ from jvagent.action.base import Action
 from jvagent.action.action_loader import ActionLoader, ActionMetadata
 from jvagent.action.actions import Actions
 from jvagent.action import interact  # noqa: F401
+from jvagent.action import endpoints  # noqa: F401 - Import to register endpoints
 
 __all__ = ["Actions", "Action", "ActionLoader", "ActionMetadata"]
