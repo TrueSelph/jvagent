@@ -78,6 +78,9 @@ class RetrievalInteractAction(InteractAction):
             logger.warning("RetrievalInteractAction: No interaction available")
             return
 
+        # Keep track of whether we produced a directive
+        directive_added = False
+
         try:
             # Get search query (interpretation or utterance fallback)
             query = self._get_search_query(interaction)
@@ -118,6 +121,7 @@ class RetrievalInteractAction(InteractAction):
                 directive = self._format_directive(results)
                 interaction.add_directive(directive)
                 await interaction.save()
+                directive_added = True
                 logger.debug(
                     f"RetrievalInteractAction: Added directive with {len(results)} retrieved context items"
                 )
@@ -127,6 +131,21 @@ class RetrievalInteractAction(InteractAction):
         except Exception as e:
             logger.error(f"RetrievalInteractAction: Error during retrieval: {e}", exc_info=True)
             # Don't raise - allow other actions to continue
+
+        # If a directive was produced, optionally invoke PersonaAction to produce a response
+        if directive_added:
+            try:
+                persona = await self._get_persona_action()
+                if persona:
+                    # PersonaAction.respond now supports visitor (for streaming via ResponseBus)
+                    response = await persona.respond(interaction, visitor=visitor)
+                    if response and visitor.interaction:
+                        visitor.interaction.set_response(response)
+                        await visitor.interaction.save()
+                else:
+                    logger.debug("RetrievalInteractAction: PersonaAction not found; skipping auto-respond")
+            except Exception as e:
+                logger.error(f"RetrievalInteractAction: Error calling PersonaAction.respond: {e}", exc_info=True)
 
     async def _get_vectorstore_action(self) -> Optional[VectorStore]:
         """Get the VectorStore action for retrieval.
@@ -154,6 +173,27 @@ class RetrievalInteractAction(InteractAction):
                 if isinstance(action, VectorStoreBase):
                     return action
 
+        return None
+
+    async def _get_persona_action(self) -> Optional[Any]:
+        """Get the PersonaAction for responding with persona prompt.
+
+        Returns:
+            PersonaAction instance or None if not found
+        """
+        agent = await self.get_agent()
+        if not agent:
+            logger.error("RetrievalInteractAction: Agent not found")
+            return None
+
+        from jvagent.action.persona.base import PersonaAction
+
+        actions_manager = await agent.get_actions_manager()
+        if actions_manager:
+            all_actions = await actions_manager.get_actions(enabled_only=True)
+            for action in all_actions:
+                if isinstance(action, PersonaAction):
+                    return action
         return None
 
     def _get_search_query(self, interaction: "Interaction") -> Optional[str]:

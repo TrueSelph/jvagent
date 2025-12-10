@@ -125,21 +125,30 @@ class InteractRouter(InteractAction):
                 anchors_dict
             )
 
-            # Call LLM
-            result = await model_action.query(
+            # For routing, we do NOT stream; we need full text for parsing
+            streaming = False
+
+            response_text = await model_action.generate(
                 prompt=prompt,
+                stream=streaming,
                 system=self._get_system_prompt(),
                 temperature=0.3,  # Lower temperature for more consistent routing
                 max_tokens=500,
             )
 
-            # Log model result
-            if result:
-                interaction.add_action(self.get_class_name())
-                interaction.add_model_result(result.to_dict())
+            # Log model result (store as single entry with final text)
+            interaction.add_action(self.get_class_name())
+            interaction.add_model_result(
+                {
+                    "response": response_text,
+                    "model": getattr(model_action, "model", ""),
+                    "provider": getattr(model_action, "provider", ""),
+                    "is_streaming": streaming,
+                }
+            )
 
             # Parse response
-            response_text = await result.get_response() if result else ""
+            routing_data = self._parse_routing_response(response_text)
             routing_data = self._parse_routing_response(response_text)
 
             # Store on interaction

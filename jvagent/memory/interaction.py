@@ -53,6 +53,12 @@ class Interaction(Node):
     response: Optional[str] = attribute(
         default=None, description="Agent response text"
     )
+    messages: List[str] = attribute(
+        default_factory=list, description="List of ResponseMessage IDs linked to this interaction"
+    )
+    streamed: bool = attribute(
+        default=False, description="Whether this interaction used streaming"
+    )
     # Processing tracking
     actions: List[str] = attribute(
         default_factory=list, description="Actions involved in processing (in order)"
@@ -165,6 +171,15 @@ class Interaction(Node):
             content: Response content
         """
         self.response = content
+
+    def add_message(self, message_id: str) -> None:
+        """Link a ResponseMessage to this interaction.
+
+        Args:
+            message_id: ResponseMessage ID to link
+        """
+        if message_id and message_id not in self.messages:
+            self.messages.append(message_id)
 
     def get_directives(self) -> List[str]:
         """Get all directives.

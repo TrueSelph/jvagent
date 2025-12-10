@@ -1,0 +1,82 @@
+"""ResponseMessage node for representing individual response messages."""
+
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
+from jvspatial.core import Node
+from jvspatial.core.annotations import attribute
+
+
+class ResponseMessage(Node):
+    """Node representing individual response messages (adhoc or streamed chunks).
+
+    ResponseMessage nodes represent individual messages that can be:
+    - Adhoc responses (multiple responses to same utterance)
+    - Stream chunks (parts of a streamed response)
+    - Final responses (consolidated end-of-walk response)
+
+    Attributes:
+        agent_id: Agent identifier this message belongs to
+        session_id: Session identifier
+        interaction_id: Parent interaction ID
+        message_type: Type of message ("adhoc", "stream_chunk", "final")
+        content: Message content
+        channel: Target channel
+        metadata: Additional metadata
+        timestamp: When message was created
+        delivered: Whether message was delivered
+    """
+
+    agent_id: str = attribute(
+        indexed=True, default="", description="Agent identifier this message belongs to"
+    )
+    session_id: str = attribute(
+        indexed=True, default="", description="Session identifier"
+    )
+    interaction_id: str = attribute(
+        indexed=True, default="", description="Parent interaction ID"
+    )
+    message_type: str = attribute(
+        default="adhoc",
+        description='Type of message: "adhoc", "stream_chunk", or "final"',
+    )
+    content: str = attribute(default="", description="Message content")
+    channel: str = attribute(
+        default="default", description="Target communication channel"
+    )
+    metadata: Dict[str, Any] = attribute(
+        default_factory=dict, description="Additional metadata"
+    )
+    timestamp: datetime = attribute(
+        indexed=True,
+        index_direction=-1,
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="When message was created",
+    )
+    delivered: bool = attribute(
+        default=False, description="Whether message was delivered"
+    )
+
+    def mark_delivered(self) -> None:
+        """Mark the message as delivered."""
+        self.delivered = True
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert message to dictionary format.
+
+        Returns:
+            Dictionary representation of the message
+        """
+        return {
+            "id": self.id,
+            "agent_id": self.agent_id,
+            "session_id": self.session_id,
+            "interaction_id": self.interaction_id,
+            "message_type": self.message_type,
+            "content": self.content,
+            "channel": self.channel,
+            "metadata": self.metadata,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "delivered": self.delivered,
+        }
+

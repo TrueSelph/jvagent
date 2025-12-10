@@ -4,6 +4,7 @@ This module provides a simplified PersonaAction class that serves as a tool-base
 action for applying agent prompts with configurable parameters.
 """
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -93,6 +94,7 @@ class PersonaAction(Action):
     async def respond(
         self,
         interaction: Interaction,
+        visitor: Optional[Any] = None,
     ) -> str:
         """Main utility method for generating a response.
 
@@ -132,27 +134,83 @@ class PersonaAction(Action):
         # Compose the prompt
         system_prompt = self._compose_prompt(interaction)
 
+        streaming = bool(
+            visitor
+            and getattr(visitor, "stream_mode", False)
+            and getattr(visitor, "response_bus", None)
+            and getattr(visitor, "session_id", None)
+        )
+
+        # Streaming callbacks to ResponseBus (if available)
+        def on_chunk(chunk: str) -> None:
+            if not streaming:
+                return
+            try:
+                asyncio.create_task(
+                    visitor.response_bus.publish_message(  # type: ignore[attr-defined]
+                        session_id=visitor.session_id,  # type: ignore[attr-defined]
+                        content=chunk,
+                        channel=getattr(visitor, "channel", "default"),
+                        message_type="stream_chunk",
+                        interaction_id=interaction.id,
+                    )
+                )
+            except Exception as exc:
+                logger.warning("PersonaAction on_chunk callback error: %s", exc, exc_info=True)
+
+        def on_end(full_text: str) -> None:
+            if not streaming:
+                return
+            try:
+                asyncio.create_task(
+                    visitor.response_bus.publish_message(  # type: ignore[attr-defined]
+                        session_id=visitor.session_id,  # type: ignore[attr-defined]
+                        content=full_text,
+                        channel=getattr(visitor, "channel", "default"),
+                        message_type="final",
+                        interaction_id=interaction.id,
+                    )
+                )
+                interaction.set_response(full_text)
+            except Exception as exc:
+                logger.warning("PersonaAction on_end callback error: %s", exc, exc_info=True)
+
         # Make the language model call
         try:
-            result = await model_action.query(
+            response = await model_action.generate(
                 prompt=interaction.utterance,
+                stream=streaming,
                 system=system_prompt,
                 model=self.model_name,
                 temperature=self.model_temperature,
                 max_tokens=self.model_max_tokens,
+                on_stream_chunk=on_chunk if streaming else None,
+                on_stream_end=on_end if streaming else None,
             )
 
             # Log the model result
-            if result:
-                interaction.add_action(self.model_action_type)
-                interaction.add_model_result(result.to_dict())
-
-            # Get response
-            response = await result.get_response() if result else ""
+            interaction.add_action(self.model_action_type)
+            interaction.add_model_result(
+                {
+                    "response": response,
+                    "model": self.model_name,
+                    "is_streaming": streaming,
+                }
+            )
 
             # Set response on interaction
             if response:
                 interaction.set_response(response)
+
+            # If not streaming, optionally publish a single message to bus
+            if (not streaming) and visitor and getattr(visitor, "response_bus", None) and getattr(visitor, "session_id", None):
+                await visitor.response_bus.publish_message(  # type: ignore[attr-defined]
+                    session_id=visitor.session_id,  # type: ignore[attr-defined]
+                    content=response,
+                    channel=getattr(visitor, "channel", "default"),
+                    message_type="final",
+                    interaction_id=interaction.id,
+                )
 
             return response
 

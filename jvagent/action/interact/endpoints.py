@@ -4,8 +4,11 @@ This module provides the common entry point for agent interactions,
 replacing the PersonaAction interact endpoint.
 """
 
+import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
+
+from fastapi.responses import StreamingResponse
 
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
@@ -13,6 +16,7 @@ from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
 
 from jvagent.core.agent import Agent
 from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.action.response.streaming import create_sse_response, format_sse_chunk
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +79,8 @@ async def interact_endpoint(
     data: Optional[Dict[str, Any]] = None,
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    stream: bool = False,
+) -> Any:
     """Process a user interaction through the interact subsystem.
 
     This endpoint is the common entry point for agent interactions. It:
@@ -109,11 +114,13 @@ async def interact_endpoint(
     - data: Optional dictionary payload
     - session_id: Optional session identifier to continue conversation
     - user_id: Optional user identifier
+    - stream: If True, return SSE stream; if False, return consolidated response
 
 
     **Returns:**
 
-    Dictionary with user_id, session_id, response, interaction, and report
+    - If stream=True: StreamingResponse with SSE chunks
+    - If stream=False: Dictionary with user_id, session_id, response, interaction, and report
 
 
     **Raises:**
@@ -143,39 +150,55 @@ async def interact_endpoint(
         data=data or {},
         session_id=session_id,
         user_id=user_id,
+        stream_mode=stream,
     )
 
     try:
-        # Spawn walker directly on the Agent node (skips Root -> Agent traversal)
-        # The walker will then traverse to Actions -> InteractActions
-        await walker.spawn(agent)
+        if stream:
+            # Streaming mode: return SSE response
+            return create_sse_response(
+                _stream_interaction(walker, agent),
+                headers={"X-Session-ID": walker.session_id or ""},
+            )
+        else:
+            # Non-streaming mode: wait for completion and return consolidated response
+            # Spawn walker directly on the Agent node (skips Root -> Agent traversal)
+            # The walker will then traverse to Actions -> InteractActions
+            await walker.spawn(agent)
 
-        # Get report
-        report = await walker.get_report()
+            # Get report
+            report = await walker.get_report()
 
-        # Get interaction result
-        interaction = walker.interaction
-        if not interaction:
-            raise RuntimeError("Interaction was not created during traversal")
+            # Get interaction result
+            interaction = walker.interaction
+            if not interaction:
+                raise RuntimeError("Interaction was not created during traversal")
 
-        # Build response
-        result: Dict[str, Any] = {
-            "user_id": walker.user_id or "",
-            "session_id": walker.session_id or "",
-            "response": interaction.response,
-            "interaction": {
-                "id": interaction.id,
-                "utterance": interaction.utterance,
+            # Mark interaction as not streamed and close it
+            interaction.streamed = False
+            interaction.close_interaction()
+            await interaction.save()
+
+            # Build response
+            result: Dict[str, Any] = {
+                "user_id": walker.user_id or "",
+                "session_id": walker.session_id or "",
                 "response": interaction.response,
-                "actions": interaction.actions,
-                "directives": interaction.directives,
-                "parameters": interaction.parameters,
-                "model_log": interaction.model_log,
-            },
-            "report": report,
-        }
+                "interaction": {
+                    "id": interaction.id,
+                    "utterance": interaction.utterance,
+                    "response": interaction.response,
+                    "actions": interaction.actions,
+                    "directives": interaction.directives,
+                    "parameters": interaction.parameters,
+                    "model_log": interaction.model_log,
+                    "messages": interaction.messages,
+                    "streamed": interaction.streamed,
+                },
+                "report": report,
+            }
 
-        return result
+            return result
 
     except ValueError as e:
         raise ValidationError(message=str(e), details={"error": str(e)})
@@ -184,5 +207,160 @@ async def interact_endpoint(
         raise ValidationError(
             message=f"Interaction failed: {str(e)}",
             details={"error": str(e)},
+        )
+
+
+async def _stream_interaction(
+    walker: InteractWalker, agent: Agent
+) -> AsyncGenerator[str, None]:
+    """Stream interaction as SSE chunks.
+
+    Args:
+        walker: InteractWalker instance
+        agent: Agent node
+
+    Yields:
+        SSE-formatted string chunks
+    """
+    try:
+        # Start walker in background
+        walk_task = asyncio.create_task(walker.spawn(agent))
+
+        # Wait for interaction to be created
+        max_wait = 5.0  # Maximum seconds to wait for interaction
+        waited = 0.0
+        while not walker.interaction and waited < max_wait:
+            await asyncio.sleep(0.1)
+            waited += 0.1
+
+        if not walker.interaction:
+            yield format_sse_chunk(
+                {
+                    "type": "error",
+                    "message": "Interaction was not created during traversal",
+                }
+            )
+            return
+
+        interaction = walker.interaction
+        interaction.streamed = True
+        await interaction.save()
+
+        # Send initial message
+        yield format_sse_chunk(
+            {
+                "type": "start",
+                "interaction_id": interaction.id,
+                "session_id": walker.session_id or "",
+                "user_id": walker.user_id or "",
+            }
+        )
+
+        # Subscribe to response bus messages
+        if walker.response_bus and walker.session_id:
+            message_queue: list = []
+
+            async def message_callback(message: Any) -> None:
+                """Callback to receive new messages."""
+                if message.interaction_id == interaction.id:
+                    message_queue.append(message)
+
+            await walker.response_bus.subscribe(
+                walker.session_id, message_callback
+            )
+
+            # Stream messages as they arrive
+            walker_complete = False
+            while not walker_complete:
+                # Check if walker is done
+                if walk_task.done():
+                    try:
+                        await walk_task
+                        walker_complete = True
+                    except Exception as e:
+                        yield format_sse_chunk(
+                            {
+                                "type": "error",
+                                "message": f"Walker error: {str(e)}",
+                            }
+                        )
+                        break
+
+                # Send any queued messages
+                while message_queue:
+                    message = message_queue.pop(0)
+                    yield format_sse_chunk(
+                        {
+                            "type": "message",
+                            "message": message.to_dict(),
+                        }
+                    )
+
+                # Small delay to avoid busy waiting
+                await asyncio.sleep(0.1)
+
+            # Close interaction
+            interaction.close_interaction()
+            await interaction.save()
+
+            # Send final consolidated response
+            report = await walker.get_report()
+            yield format_sse_chunk(
+                {
+                    "type": "final",
+                    "interaction": {
+                        "id": interaction.id,
+                        "utterance": interaction.utterance,
+                        "response": interaction.response,
+                        "actions": interaction.actions,
+                        "directives": interaction.directives,
+                        "parameters": interaction.parameters,
+                        "model_log": interaction.model_log,
+                        "messages": interaction.messages,
+                        "streamed": interaction.streamed,
+                    },
+                    "report": report,
+                }
+            )
+
+            # Cleanup subscription
+            if walker.response_bus:
+                await walker.response_bus.unsubscribe(
+                    walker.session_id, message_callback
+                )
+        else:
+            # No response bus, just wait for walker and send final response
+            await walk_task
+
+            # Close interaction
+            interaction.close_interaction()
+            await interaction.save()
+
+            report = await walker.get_report()
+            yield format_sse_chunk(
+                {
+                    "type": "final",
+                    "interaction": {
+                        "id": interaction.id,
+                        "utterance": interaction.utterance,
+                        "response": interaction.response,
+                        "actions": interaction.actions,
+                        "directives": interaction.directives,
+                        "parameters": interaction.parameters,
+                        "model_log": interaction.model_log,
+                        "messages": interaction.messages,
+                        "streamed": interaction.streamed,
+                    },
+                    "report": report,
+                }
+            )
+
+    except Exception as e:
+        logger.error(f"Error in stream_interaction: {e}", exc_info=True)
+        yield format_sse_chunk(
+            {
+                "type": "error",
+                "message": f"Streaming error: {str(e)}",
+            }
         )
 

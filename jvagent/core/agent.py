@@ -99,4 +99,16 @@ class Agent(Node):
         """
         return await self.node(node="Memory")
 
+    async def get_response_bus(self) -> Any:
+        """Get agent-scoped ResponseBus instance.
+
+        Returns:
+            ResponseBus instance for this agent
+        """
+        if not hasattr(self, "_response_bus") or self._response_bus is None:
+            from jvagent.action.response.response_bus import ResponseBus
+
+            self._response_bus = ResponseBus(agent_id=self.id)
+        return self._response_bus
+
 
