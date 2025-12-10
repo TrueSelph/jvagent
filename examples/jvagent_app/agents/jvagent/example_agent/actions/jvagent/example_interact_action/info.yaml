@@ -1,0 +1,34 @@
+# RetrievalInteractAction Package Descriptor
+# This file defines the action's package metadata, dependencies, and configuration
+
+package:
+  # Action name in namespace/action_name format
+  name: jvagent/example_interact_action
+
+  # Package author
+  author: jvagent
+
+  # Archetype: The main Action class name (same as the Action Node class)
+  archetype: ExampleInteractAction
+
+  # Package version
+  version: 1.0.0
+
+  # Package metadata
+  meta:
+    title: ExampleInteractAction
+    description: InteractAction that retrieves context from vector stores and adds directives for PersonaAction
+    group: jvagent
+    type: interact_action
+
+  # Package configuration
+  config:
+    order:
+      weight: -50
+
+  # Package dependencies
+  dependencies:
+    # jvagent version requirement
+    jvagent: ~0.0.1
+    # Other action dependencies (by namespace/action_name)
+    actions: []

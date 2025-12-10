@@ -60,6 +60,10 @@ class InteractAction(Action, ABC):
             "traversed in graph-based arrangement without weight consideration."
         ),
     )
+    description: str = attribute(
+        default_factory=str,
+        description="Action description"
+    )
 
     # Anchors for routing (published by InteractRouter)
     anchors: List[str] = attribute(
@@ -87,7 +91,7 @@ class InteractAction(Action, ABC):
                 # Evaluation checks at the start
                 if not self._should_run(visitor):
                     return  # Early return if conditions not met
-                
+
                 # Execution logic here
                 interaction = visitor.interaction
                 # ... perform action logic ...
@@ -102,6 +106,27 @@ class InteractAction(Action, ABC):
             - The walker performs routing checks before calling execute()
         """
         pass
+
+    async def _get_persona_action(self) -> Optional[Any]:
+        """Get the PersonaAction for responding with persona prompt.
+
+        Returns:
+            PersonaAction instance or None if not found
+        """
+        agent = await self.get_agent()
+        if not agent:
+            logger.error("InteractAction: Agent not found")
+            return None
+
+        from jvagent.action.persona.base import PersonaAction
+
+        actions_manager = await agent.get_actions_manager()
+        if actions_manager:
+            all_actions = await actions_manager.get_actions(enabled_only=True)
+            for action in all_actions:
+                if isinstance(action, PersonaAction):
+                    return action
+        return None
 
     async def publish_response(
         self,
@@ -165,4 +190,3 @@ class InteractAction(Action, ABC):
             visitor.interaction.add_message(message.id)
 
         return message
-
