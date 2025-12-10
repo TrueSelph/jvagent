@@ -54,7 +54,7 @@ class Interaction(Node):
         default=None, description="Agent response text"
     )
     messages: List[str] = attribute(
-        default_factory=list, description="List of ResponseMessage IDs linked to this interaction"
+        default_factory=list, description="List of in-memory ResponseMessage IDs linked to this interaction (non-persisted references)"
     )
     streamed: bool = attribute(
         default=False, description="Whether this interaction used streaming"
@@ -173,10 +173,13 @@ class Interaction(Node):
         self.response = content
 
     def add_message(self, message_id: str) -> None:
-        """Link a ResponseMessage to this interaction.
+        """Link an in-memory ResponseMessage ID to this interaction.
+
+        Note: ResponseMessage objects are non-persisted, so these IDs are
+        only for tracking/logging purposes and cannot be queried from the database.
 
         Args:
-            message_id: ResponseMessage ID to link
+            message_id: In-memory ResponseMessage ID to link
         """
         if message_id and message_id not in self.messages:
             self.messages.append(message_id)

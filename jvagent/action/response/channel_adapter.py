@@ -82,7 +82,7 @@ class ChannelAdapter(ABC):
         a session this adapter is subscribed to.
 
         Args:
-            message: ResponseMessage node
+            message: ResponseMessage object
         """
         pass
 
@@ -93,7 +93,7 @@ class ChannelAdapter(ABC):
         """Send message to external destination.
 
         Args:
-            message: ResponseMessage to send
+            message: ResponseMessage object to send
 
         Returns:
             True if message was sent successfully, False otherwise

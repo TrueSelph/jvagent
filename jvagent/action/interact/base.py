@@ -124,7 +124,7 @@ class InteractAction(Action, ABC):
             metadata: Additional metadata
 
         Returns:
-            Created ResponseMessage node
+            Created ResponseMessage object (non-persisted)
 
         Example:
             async def execute(self, visitor: "InteractWalker") -> None:
