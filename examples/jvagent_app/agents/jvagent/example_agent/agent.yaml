@@ -80,9 +80,9 @@ actions:
 
         Return ONLY valid JSON, no additional text.
       # Optional: List of InteractAction entity names that must always execute
-      # exceptions:
-      #   - "PersonaAction"
-      #   - "AnotherAction"
+      exceptions:
+        # - "PersonaAction"
+        - "IntroInteractAction"
 
 
   # OpenAI Embedding Model Action - Vector embeddings for semantic search
@@ -98,7 +98,12 @@ actions:
       model: text-embedding-3-small  # Default embedding model
       embedding_dimensions: 1536  # Expected dimensions (0 = auto-detect)
       timeout: 30
+  - action: jvagent/intro_interact_action
+    context:
+      enabled: true
+      description: "Introductory interact action for first-time users"
 
+      # Additional configuration properties can be added here
   # TypesenseVectorStore Action - Vector store for semantic search
   # Core action from jvagent library (jvagent/action/vectorstore/typesense/)
   - action: jvagent/typesense_vectorstore
@@ -197,6 +202,17 @@ actions:
       timeout: 60
       retries: 5
       api_endpoint: "https://prod.api.example.com"
+
+  - action: jvagent/example_interact_action
+    context:
+      enabled: true
+      description: "Customized example interact action that knows about JVAgent"
+      timeout: 60
+      retries: 5
+      anchors:
+        - "User inquires about jvagent"
+        - "User requests information on how to use jvagent"
+        - "User wants to sign up for jvagent training"
 
   # Add more action assignments here
   # Actions can be from different namespaces:

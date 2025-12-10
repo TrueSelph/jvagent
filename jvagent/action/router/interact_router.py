@@ -243,6 +243,7 @@ class InteractRouter(InteractAction):
 
             # Get anchors - check both attribute and context directly
             anchors = getattr(action, 'anchors', None)
+            description = getattr(action, 'description', None)
             if anchors is None:
                 # Try to get from context if attribute not set
                 context = getattr(action, 'context', {}) if hasattr(action, 'context') else {}
@@ -257,10 +258,11 @@ class InteractRouter(InteractAction):
             )
 
             # Ensure anchors is a list and not empty
-            if anchors and isinstance(anchors, list) and len(anchors) > 0:
+            if anchors and isinstance(anchors, list) and (description or len(anchors) > 0):
                 # Automatically ascribe the entity name to the anchor statements
                 if entity_name not in anchors_dict:
                     anchors_dict[entity_name] = []
+                anchors_dict[entity_name].append(description)
                 anchors_dict[entity_name].extend(anchors)
                 logger.debug(f"InteractRouter: Added {len(anchors)} anchors for {entity_name}")
 
