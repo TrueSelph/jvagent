@@ -1,16 +1,21 @@
-"""ResponseMessage node for representing individual response messages."""
+"""ResponseMessage object for representing individual response messages (non-persisted)."""
 
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from jvspatial.core import Node
+from jvspatial.core import Object
 from jvspatial.core.annotations import attribute
 
 
-class ResponseMessage(Node):
-    """Node representing individual response messages (adhoc or streamed chunks).
+class ResponseMessage(Object):
+    """Non-persisted object representing individual response messages (adhoc or streamed chunks).
 
-    ResponseMessage nodes represent individual messages that can be:
+    ResponseMessage objects represent ephemeral messages that are:
+    - Stored only in memory within the ResponseBus session queues
+    - Never persisted to the database
+    - Cleared after session completion
+
+    Message types:
     - Adhoc responses (multiple responses to same utterance)
     - Stream chunks (parts of a streamed response)
     - Final responses (consolidated end-of-walk response)
@@ -28,13 +33,13 @@ class ResponseMessage(Node):
     """
 
     agent_id: str = attribute(
-        indexed=True, default="", description="Agent identifier this message belongs to"
+        default="", description="Agent identifier this message belongs to"
     )
     session_id: str = attribute(
-        indexed=True, default="", description="Session identifier"
+        default="", description="Session identifier"
     )
     interaction_id: str = attribute(
-        indexed=True, default="", description="Parent interaction ID"
+        default="", description="Parent interaction ID"
     )
     message_type: str = attribute(
         default="adhoc",
@@ -48,8 +53,6 @@ class ResponseMessage(Node):
         default_factory=dict, description="Additional metadata"
     )
     timestamp: datetime = attribute(
-        indexed=True,
-        index_direction=-1,
         default_factory=lambda: datetime.now(timezone.utc),
         description="When message was created",
     )

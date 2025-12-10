@@ -52,7 +52,7 @@ class WhatsAppAdapter(ChannelAdapter):
         Only handles adhoc messages (not stream chunks or final messages).
 
         Args:
-            message: ResponseMessage node
+            message: ResponseMessage object
         """
         if not self.should_handle(message):
             return
@@ -63,7 +63,6 @@ class WhatsAppAdapter(ChannelAdapter):
             success = await self.send_to_destination(message)
             if success:
                 message.mark_delivered()
-                await message.save()
             else:
                 logger.warning(
                     f"WhatsAppAdapter: Failed to send message {message.id} to WhatsApp"

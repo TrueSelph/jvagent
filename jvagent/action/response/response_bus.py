@@ -54,9 +54,9 @@ class ResponseBus:
             metadata: Additional metadata
 
         Returns:
-            Created ResponseMessage node
+            Created ResponseMessage object (non-persisted)
         """
-        message = await ResponseMessage.create(
+        message = ResponseMessage(
             agent_id=self.agent_id,
             session_id=session_id,
             interaction_id=interaction_id or "",
@@ -107,7 +107,7 @@ class ResponseBus:
             metadata: Additional metadata
 
         Returns:
-            Created ResponseMessage node
+            Created ResponseMessage object (non-persisted)
         """
         return await self.publish_message(
             session_id=session_id,
@@ -152,7 +152,7 @@ class ResponseBus:
             session_id: Session identifier
 
         Returns:
-            List of ResponseMessage nodes for the session
+            List of ResponseMessage objects for the session
         """
         return self._session_queues.get(session_id, [])
 
