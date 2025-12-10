@@ -57,6 +57,8 @@ class InteractWalker(Walker):
     session_id: Optional[str] = None
     user_id: Optional[str] = None
     interaction: Optional["Interaction"] = None
+    stream_mode: bool = False
+    response_bus: Optional[Any] = None
 
     @on_visit("Agent")
     async def on_agent(self, here: "Agent") -> None:
@@ -74,6 +76,9 @@ class InteractWalker(Walker):
                     {"error": "Agent has no Memory node"}
                 )
                 return
+
+            # Get ResponseBus instance for this agent
+            self.response_bus = await here.get_response_bus()
 
             # Resolve user and conversation via memory.get_session()
             try:

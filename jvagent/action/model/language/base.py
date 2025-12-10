@@ -6,7 +6,7 @@ and related types for text generation and multimodal interactions.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, Dict, List, Optional, Union
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Union
 
 from jvspatial.core.annotations import attribute
 
@@ -246,6 +246,64 @@ class LanguageModelAction(BaseModelAction, ABC):
     # ============================================================================
     # Programmatic Interface (Public API)
     # ============================================================================
+
+    async def generate(
+        self,
+        prompt: MessageContent,
+        stream: bool = False,
+        on_stream_chunk: Optional[Callable[[str], None]] = None,
+        on_stream_end: Optional[Callable[[str], None]] = None,
+        system: Optional[str] = None,
+        history: Optional[List[Dict[str, Any]]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        **kwargs: Any,
+    ) -> str:
+        """Generate text with optional streaming callbacks.
+
+        If stream=True and callbacks are provided, partial chunks are emitted
+        via on_stream_chunk. The full text is returned in all cases.
+        """
+        # Fast path: no streaming requested
+        if not stream or on_stream_chunk is None:
+            result = await self.query(
+                prompt,
+                stream=False,
+                system=system,
+                history=history,
+                tools=tools,
+                **kwargs,
+            )
+            full_text = await result.get_response()
+            if on_stream_end:
+                on_stream_end(full_text)
+            return full_text
+
+        # Streaming path
+        result = await self.query(
+            prompt,
+            stream=True,
+            system=system,
+            history=history,
+            tools=tools,
+            **kwargs,
+        )
+
+        chunks: List[str] = []
+        async for chunk in result.iter_stream():
+            if chunk:
+                chunks.append(chunk)
+                try:
+                    on_stream_chunk(chunk)
+                except Exception as exc:  # protect caller
+                    logger.warning("on_stream_chunk callback raised: %s", exc, exc_info=True)
+
+        full_text = "".join(chunks)
+        if on_stream_end:
+            try:
+                on_stream_end(full_text)
+            except Exception as exc:
+                logger.warning("on_stream_end callback raised: %s", exc, exc_info=True)
+        return full_text
 
     async def query(
         self,

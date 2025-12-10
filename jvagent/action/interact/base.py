@@ -6,7 +6,7 @@ defines the interface for actions that participate in the interact subsystem.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core import on_visit
 from jvspatial.core.annotations import attribute
@@ -102,4 +102,67 @@ class InteractAction(Action, ABC):
             - The walker performs routing checks before calling execute()
         """
         pass
+
+    async def publish_response(
+        self,
+        visitor: "InteractWalker",
+        content: str,
+        message_type: str = "adhoc",
+        channel: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        """Publish a response message to the response bus.
+
+        This helper method allows InteractActions to easily publish adhoc responses
+        or stream chunks to the response bus.
+
+        Args:
+            visitor: The InteractWalker visiting this action
+            content: Message content to publish
+            message_type: Type of message ("adhoc", "stream_chunk", "final")
+            channel: Target channel (defaults to visitor.channel)
+            metadata: Additional metadata
+
+        Returns:
+            Created ResponseMessage node
+
+        Example:
+            async def execute(self, visitor: "InteractWalker") -> None:
+                # Publish an adhoc response
+                await self.publish_response(
+                    visitor,
+                    "Processing your request...",
+                    message_type="adhoc"
+                )
+
+                # Continue with main logic
+                # ...
+        """
+        if not visitor.response_bus:
+            logger.warning(
+                "ResponseBus not available - cannot publish response. "
+                "Ensure InteractWalker has response_bus initialized."
+            )
+            return None
+
+        if not visitor.session_id:
+            logger.warning(
+                "Session ID not available - cannot publish response"
+            )
+            return None
+
+        message = await visitor.response_bus.publish_message(
+            session_id=visitor.session_id,
+            content=content,
+            channel=channel or visitor.channel,
+            message_type=message_type,
+            interaction_id=visitor.interaction.id if visitor.interaction else None,
+            metadata=metadata,
+        )
+
+        # Link message to interaction
+        if visitor.interaction:
+            visitor.interaction.add_message(message.id)
+
+        return message
 
