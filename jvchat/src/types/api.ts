@@ -1,0 +1,82 @@
+export interface LoginRequest {
+  email: string
+  password: string
+}
+
+export interface LoginResponse {
+  access_token: string
+  token_type: string
+  expires_in: number
+  user: {
+    id: string
+    email: string
+    name: string
+    created_at: string
+    is_active: boolean
+  }
+}
+
+export interface Agent {
+  id: string
+  namespace: string
+  name: string
+  alias?: string
+  enabled: boolean
+  description?: string
+  interaction_limit?: number
+}
+
+export interface AgentsResponse {
+  agents: Agent[]
+  total: number
+  page: number
+  per_page: number
+  total_pages: number
+  has_previous: boolean
+  has_next: boolean
+  previous_page?: number
+  next_page?: number
+}
+
+export interface InteractionRequest {
+  utterance: string
+  channel?: string
+  session_id?: string
+  user_id?: string
+  stream?: boolean
+}
+
+export interface InteractionResponse {
+  user_id: string
+  session_id: string
+  response?: string
+  interaction: {
+    id: string
+    utterance: string
+    response?: string
+    actions: string[]
+    directives: string[]
+    parameters: any[]
+    model_log: any[]
+    messages: string[]
+    streamed: boolean
+  }
+  report: any[]
+}
+
+export interface SSEChunk {
+  type: 'start' | 'message' | 'final' | 'error'
+  interaction_id?: string
+  session_id?: string
+  user_id?: string
+  message?: {
+    id: string
+    content: string
+    message_type: string
+    timestamp: string
+  }
+  interaction?: InteractionResponse['interaction']
+  report?: any[]
+  message?: string
+}
+

@@ -20,8 +20,10 @@ from jvagent.core.app_loader import AppLoader
 from jvagent.core.bootstrap_logger import BootstrapLogger
 
 # Configure logging (will be updated based on --debug flag)
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+from jvspatial.logging import configure_standard_logging
+
+configure_standard_logging(
+    level=os.getenv("JVAGENT_LOG_LEVEL", "INFO"), enable_colors=True
 )
 logger = logging.getLogger(__name__)
 
