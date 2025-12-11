@@ -127,7 +127,7 @@ class PersonaAction(Action):
             raise RuntimeError(
                 f"Model action of type '{self.model_action_type}' not found for agent"
             )
-        
+
         # Record PersonaAction in interaction
         interaction.add_action("PersonaAction")
 
@@ -136,7 +136,7 @@ class PersonaAction(Action):
 
         streaming = bool(
             visitor
-            and getattr(visitor, "stream_mode", False)
+            and getattr(visitor, "stream_mode", True)
             and getattr(visitor, "response_bus", None)
             and getattr(visitor, "session_id", None)
         )
@@ -211,7 +211,8 @@ class PersonaAction(Action):
                     message_type="final",
                     interaction_id=interaction.id,
                 )
-
+            interaction.set_to_executed(interaction.parameters,interaction.get_directives())
+            interaction.parameters = []
             return response
 
         except Exception as e:
@@ -250,7 +251,13 @@ class PersonaAction(Action):
 
         # Build parameters section from interaction parameters and configured parameters
         all_parameters = list(self.parameters)  # Start with configured parameters
-        all_parameters.extend(interaction.parameters)  # Add interaction parameters
+
+        applicable_parameters = [
+            p for p in interaction.parameters
+            if p not in interaction._executed_parameters
+        ]
+        all_parameters.extend(applicable_parameters)  # Add interaction parameters
+        interaction.set_to_executed(parameters=applicable_parameters) # Add parameters to executed list
 
         if all_parameters:
             # Format parameters for prompt
@@ -264,9 +271,14 @@ class PersonaAction(Action):
         else:
             parameters_prompt = NO_PARAMETERS_INSTRUCTION
 
-        # Build directives section from interaction directives
-        directives = interaction.get_directives()
+        # Build directives section from interaction directives if not already executed
+        applicable_directives = [
+            d for d in interaction.directives
+            if d not in interaction._executed_directives
+        ]
+        directives = applicable_directives
         if directives:
+            interaction.set_to_executed(directives=applicable_directives)  # Add directives to executed list
             directives_str = "\n".join(
                 f"{i+1}. {d}" for i, d in enumerate(directives)
             )
@@ -301,7 +313,7 @@ class PersonaAction(Action):
             condition = param.get("condition", "")
             response = param.get("response", "")
             if condition and response:
-                return f"When {condition}, {response}"
+                return f"When {condition}, {response.lower()}"
             elif condition:
                 return condition
             elif response:
