@@ -5,7 +5,7 @@ first-time users and adds an introductory directive to guide the persona respons
 """
 
 import logging
-from typing import TYPE_CHECKING, Optional, Any
+from typing import TYPE_CHECKING
 
 from jvspatial.core.annotations import attribute
 
@@ -56,6 +56,10 @@ class IntroInteractAction(InteractAction):
         default_factory=list,
         description="Routing anchors (empty - conditional execution based on user status)",
     )
+    parameters: list = attribute(
+        default=[{"condition": "The user asks a question you do not have sufficient context to answer." ,"response": "ignore the question and make no attemp to answer it. Just introduce yourself by following the directive and another action will respond to the question."}],
+        description="Optional parameters to add to the interaction for PersonaAction"
+    )
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute intro action if user is first-time.
@@ -73,7 +77,7 @@ class IntroInteractAction(InteractAction):
 
         try:
             # Check if this is a new user (first interaction)
-            if not self._is_new_user(interaction):
+            if not visitor.new_user:
                 logger.debug("IntroInteractAction: Not a first-time user, skipping intro")
                 return
 
@@ -95,10 +99,17 @@ class IntroInteractAction(InteractAction):
             else:
                 logger.debug("ExampleInteractAction: No results found, no directive added")
 
-            # If a directive was produced, optionally invoke PersonaAction to produce a response
-            if directive_added:
+            parameters_added = False
+
+            if self.parameters:
+                for param in self.parameters:
+                    interaction.add_parameter(param, self.label)
+                parameters_added = True
+
+            if directive_added and parameters_added:
                 try:
                     persona = await self._get_persona_action()
+                    print("persona action",persona)
                     if persona:
                         # PersonaAction.respond now supports visitor (for streaming via ResponseBus)
                         visitor.stream_mode = True

@@ -75,6 +75,20 @@ class Interaction(Node):
         default_factory=list, description="Applicable parameters for this interaction"
     )
 
+    _executed_parameters: List[Dict[str, Any]] = attribute(
+        private=True,
+        transient=True,
+        has_been_executed=True,
+        default=[]
+    )
+
+    _executed_directives: List[Dict[str, Any]] = attribute(
+        private=True,
+        transient=True,
+        has_been_executed=True,
+        default=[]
+    )
+
     # Model call log
     model_log: List[Dict[str, Any]] = attribute(
         default_factory=list, description="ModelActionResult data for all model calls"
@@ -138,13 +152,14 @@ class Interaction(Node):
         if action_label and action_label not in self.actions:
             self.actions.append(action_label)
 
-    def add_parameter(self, parameter: Dict[str, Any]) -> None:
+    def add_parameter(self, parameter: Dict[str, Any], action_label:str) -> None:
         """Add a parameter to the applicable parameters list.
 
         Args:
             parameter: Parameter data (id, condition, response, etc.)
         """
         if parameter:
+            parameter["action_label"] = action_label
             self.parameters.append(parameter)
 
     def add_model_result(self, model_result: Dict[str, Any]) -> None:
@@ -171,6 +186,24 @@ class Interaction(Node):
             content: Response content
         """
         self.response = content
+
+    def get_unexecuted_directives(self) -> List[str]:
+        """Get directives that have not yet been executed.
+
+        Returns:
+            List of unexecuted directive strings
+        """
+        return self.directives
+
+    def set_to_executed(self, parameters: List[Dict[str, Any]] = [], directives: List= []) -> None:
+        """Mark the interaction as having been executed.
+
+        Args:
+            parameters: Parameters applied during execution
+            directives: Directives applied during execution
+        """
+        self._executed_parameters.extend(parameters)
+        self._executed_directives.extend(directives)
 
     def add_message(self, message_id: str) -> None:
         """Link an in-memory ResponseMessage ID to this interaction.
@@ -206,14 +239,6 @@ class Interaction(Node):
         if self.completed_at and self.started_at:
             return (self.completed_at - self.started_at).total_seconds()
         return 0.0
-
-    def is_new_user(self) -> bool:
-        """Check if this is a new user interaction.
-
-        Returns:
-            True if this is the first interaction (no prior events/actions)
-        """
-        return len(self.actions) == 0 and len(self.events) == 0
 
     def to_transcript_entry(self) -> Dict[str, Any]:
         """Convert interaction to transcript entry format.
@@ -260,7 +285,7 @@ class Interaction(Node):
         next_int = await self.node(
             node=Interaction, direction="out", conversation_id=self.conversation_id
         )
-        
+
         # Verify timestamp ordering (safety check)
         if next_int and next_int.started_at >= self.started_at:
             return next_int
@@ -280,7 +305,7 @@ class Interaction(Node):
         prev_int = await self.node(
             node=Interaction, direction="in", conversation_id=self.conversation_id
         )
-        
+
         # Verify timestamp ordering (safety check)
         if prev_int and prev_int.started_at <= self.started_at:
             return prev_int

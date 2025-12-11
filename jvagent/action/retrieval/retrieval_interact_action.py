@@ -66,6 +66,10 @@ class RetrievalInteractAction(InteractAction):
         ge=0.0,
         le=1.0,
     )
+    parameters: List[Dict[str, Any]] = attribute(
+        default=[{"condition":"There is no data in the context or anywhere else in the prompt that can answer the user request","response": "Answer based on your own knowledge but mention that the information might be inaccurate or out of date and encourage them to seek external sources of information."}],
+        description="A list of conditions and response to customize behavior based on parameters."
+    )
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute retrieval and add directive to interaction.
@@ -133,7 +137,13 @@ class RetrievalInteractAction(InteractAction):
             # Don't raise - allow other actions to continue
 
         # If a directive was produced, optionally invoke PersonaAction to produce a response
-        if directive_added:
+        parameters_added = False
+
+        if self.parameters:
+            for param in self.parameters:
+                interaction.add_parameter(param, self.label)
+            parameters_added = True
+        if directive_added or parameters_added:
             try:
                 persona = await self._get_persona_action()
                 if persona:
@@ -173,27 +183,6 @@ class RetrievalInteractAction(InteractAction):
                 if isinstance(action, VectorStoreBase):
                     return action
 
-        return None
-
-    async def _get_persona_action(self) -> Optional[Any]:
-        """Get the PersonaAction for responding with persona prompt.
-
-        Returns:
-            PersonaAction instance or None if not found
-        """
-        agent = await self.get_agent()
-        if not agent:
-            logger.error("RetrievalInteractAction: Agent not found")
-            return None
-
-        from jvagent.action.persona.base import PersonaAction
-
-        actions_manager = await agent.get_actions_manager()
-        if actions_manager:
-            all_actions = await actions_manager.get_actions(enabled_only=True)
-            for action in all_actions:
-                if isinstance(action, PersonaAction):
-                    return action
         return None
 
     def _get_search_query(self, interaction: "Interaction") -> Optional[str]:
@@ -248,4 +237,3 @@ class RetrievalInteractAction(InteractAction):
         directive_parts.append("\nUse this context to inform your response to the user's query.")
 
         return "\n".join(directive_parts)
-

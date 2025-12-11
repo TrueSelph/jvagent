@@ -136,7 +136,7 @@ class Memory(Node):
         conversation = await Conversation.find_one({"context.session_id": session_id})
         if not conversation:
             return None
-        
+
         # Get user by user_id from conversation
         return await User.find_one({"context.user_id": conversation.user_id})
 
@@ -176,7 +176,7 @@ class Memory(Node):
             if not user:
                 raise RuntimeError("Failed to create user")
             conversation = await user.create_conversation(channel=channel)
-            return user, conversation, new_user_id, conversation.session_id
+            return user, conversation, new_user_id, conversation.session_id, True
 
         # Case 2: session_id only - lookup conversation
         if session_id and not user_id:
@@ -188,7 +188,7 @@ class Memory(Node):
             )
             if not user:
                 raise RuntimeError(f"User for session '{session_id}' not found")
-            return user, conversation, conversation.user_id, session_id
+            return user, conversation, conversation.user_id, session_id, False
 
         # Case 3: user_id only - get/create user, create conversation
         if user_id and not session_id:
@@ -196,7 +196,7 @@ class Memory(Node):
             if not user:
                 raise RuntimeError(f"Failed to get/create user '{user_id}'")
             conversation = await user.create_conversation(channel=channel)
-            return user, conversation, user_id, conversation.session_id
+            return user, conversation, user_id, conversation.session_id, False
 
         # Case 4: Both provided - validate and use
         if user_id and session_id:
@@ -210,7 +210,7 @@ class Memory(Node):
             user = await self.get_user(user_id, create_if_missing=False)
             if not user:
                 raise RuntimeError(f"User '{user_id}' not found")
-            return user, conversation, user_id, session_id
+            return user, conversation, user_id, session_id, False
 
         raise ValueError("Invalid user_id/session_id combination")
 
@@ -303,7 +303,7 @@ class Memory(Node):
             conversation = await Conversation.get(conversation_id)
             if not conversation:
                 return None
-            
+
             # Conversation.delete() will handle decrementing total_conversations counter
             await conversation.delete(cascade=True)
             await self.save()
@@ -311,7 +311,7 @@ class Memory(Node):
         else:
             # Purge all conversations
             conversations = await Conversation.find()
-            
+
             if not conversations:
                 return None
 

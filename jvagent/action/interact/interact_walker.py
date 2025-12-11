@@ -82,7 +82,7 @@ class InteractWalker(Walker):
 
             # Resolve user and conversation via memory.get_session()
             try:
-                user, conversation, resolved_user_id, resolved_session_id = (
+                user, conversation, resolved_user_id, resolved_session_id, new_user = (
                     await memory.get_session(
                         user_id=self.user_id,
                         session_id=self.session_id,
@@ -91,6 +91,7 @@ class InteractWalker(Walker):
                 )
                 self.user_id = resolved_user_id
                 self.session_id = resolved_session_id
+                self.new_user = new_user
 
                 # Create interaction
                 from jvagent.memory.interaction import Interaction
@@ -243,7 +244,7 @@ class InteractWalker(Walker):
         if self.interaction and self.interaction.interpretation:
             routed_entity_names = set(self.interaction.anchors) if self.interaction.anchors else set()
             action_entity_name = here.get_class_name()
-            
+
             # Skip if not in routed entities (unless it's InteractRouter itself, which must execute first)
             if action_entity_name not in routed_entity_names and action_entity_name != "InteractRouter":
                 logger.debug(
@@ -265,7 +266,7 @@ class InteractWalker(Walker):
             # Execute the action
             # Note: 'here' is the node (self from node's perspective), 'self' is the walker (visitor)
             await here.execute(self)
-            
+
             # Log action execution to interaction's actions list (using class name for consistency)
             # This ensures all executed actions are recorded, even if individual actions don't log themselves
             if self.interaction:
@@ -273,7 +274,7 @@ class InteractWalker(Walker):
                 self.interaction.add_action(action_class_name)
                 # Save interaction to persist the action list
                 await self.interaction.save()
-            
+
             await self.report(
                 {
                     "action_executed": {
@@ -347,14 +348,14 @@ class InteractWalker(Walker):
         # Even if anchors list is empty, only allow exceptions (if any)
         # Anchors list already includes both routed entities and exceptions from InteractRouter
         routed_entity_names = set(self.interaction.anchors) if self.interaction.anchors else set()
-        
+
         logger.debug(
             f"InteractWalker: Applying routing filter. "
             f"Interpretation: {self.interaction.interpretation[:100] if self.interaction.interpretation else None}, "
             f"Routed entities: {routed_entity_names}, "
             f"Total actions to filter: {len(actions)}"
         )
-        
+
         filtered: List["InteractAction"] = []
 
         for action in actions:
@@ -398,14 +399,13 @@ class InteractWalker(Walker):
         """
         # Get the action's entity name (class name)
         action_entity_name = action.get_class_name()
-        
+
         # Check if this action's entity name is in the routed anchors/exceptions
         is_allowed = action_entity_name in routed_entity_names
-        
+
         logger.debug(
             f"InteractWalker: Checking {action_entity_name} (label: {action.label}) - "
             f"Allowed: {is_allowed}, Routed entities: {routed_entity_names}"
         )
-        
-        return is_allowed
 
+        return is_allowed
