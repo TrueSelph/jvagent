@@ -1,0 +1,12 @@
+{
+  "jvagent": {
+    "url": "http://localhost:8000",
+    "timeout": 30000
+  },
+  "ui": {
+    "theme": "light",
+    "messages_per_page": 50,
+    "auto_scroll": true
+  }
+}
+

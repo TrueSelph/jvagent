@@ -60,9 +60,8 @@ class Actions(Node):
         """
         async with self._lock:
             try:
-                # SAFEGUARD: Check if action already exists to prevent duplicates
-                # Query by agent_id, namespace, and label - these uniquely identify an action
-                existing_actions = await Action.find(
+                # Check if action already exists (uniquely identified by agent_id, namespace, label)
+                existing_action = await Action.find_one(
                     {
                         "context.agent_id": action.agent_id,
                         "context.namespace": action.namespace,
@@ -70,32 +69,11 @@ class Actions(Node):
                     }
                 )
 
-                # Always keep at most one existing action when duplicates are present
-                existing_action = existing_actions[0] if existing_actions else None
-                # Remove any duplicates beyond the primary
-                for duplicate in existing_actions[1:]:
-                    try:
-                        if await self.is_connected_to(duplicate):
-                            await self.disconnect(duplicate)
-                        await duplicate.delete()
-                        self.registered_count = max(0, self.registered_count - 1)
-                        if duplicate.enabled:
-                            self.enabled_count = max(0, self.enabled_count - 1)
-                        logger.warning(
-                            "Removed duplicate action %s (agent_id=%s, namespace=%s, label=%s)",
-                            duplicate.id,
-                            duplicate.agent_id,
-                            duplicate.namespace,
-                            duplicate.label,
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Error removing duplicate action {duplicate.id}: {e}", exc_info=True
-                        )
+                is_update_mode = False
 
                 if existing_action:
                     if not update_if_exists:
-                        # Skip creating a new node and ensure connection remains intact
+                        # Action exists and we're not updating - reuse existing and return early
                         if not await self.is_connected_to(existing_action):
                             await self.connect(existing_action, direction="both")
                         logger.debug(
@@ -107,21 +85,60 @@ class Actions(Node):
                         )
                         return True
 
-                    # Update mode: delete the remaining action before creating fresh
-                    try:
-                        if await self.is_connected_to(existing_action):
-                            await self.disconnect(existing_action)
-                        await existing_action.delete()
-                        self.registered_count = max(0, self.registered_count - 1)
-                        if existing_action.enabled:
-                            self.enabled_count = max(0, self.enabled_count - 1)
-                    except Exception as e:
-                        logger.error(
-                            f"Error deleting existing action {existing_action.id}: {e}",
-                            exc_info=True,
-                        )
+                    # Update mode: clean up all existing actions (including duplicates)
+                    is_update_mode = True
+                    all_existing = await Action.find(
+                        {
+                            "context.agent_id": action.agent_id,
+                            "context.namespace": action.namespace,
+                            "context.label": action.label,
+                        }
+                    )
+                    # Delete all existing actions (we'll create fresh)
+                    for existing in all_existing:
+                        try:
+                            if await self.is_connected_to(existing):
+                                await self.disconnect(existing)
+                            await existing.delete()
+                            self.registered_count = max(0, self.registered_count - 1)
+                            if existing.enabled:
+                                self.enabled_count = max(0, self.enabled_count - 1)
+                        except Exception as e:
+                            logger.error(
+                                f"Error deleting existing action {existing.id}: {e}",
+                                exc_info=True,
+                            )
+                else:
+                    # No existing action - check for and clean up any orphaned duplicates
+                    all_duplicates = await Action.find(
+                        {
+                            "context.agent_id": action.agent_id,
+                            "context.namespace": action.namespace,
+                            "context.label": action.label,
+                        }
+                    )
+                    # Remove any duplicates (shouldn't exist, but handle gracefully)
+                    for duplicate in all_duplicates:
+                        try:
+                            if await self.is_connected_to(duplicate):
+                                await self.disconnect(duplicate)
+                            await duplicate.delete()
+                            self.registered_count = max(0, self.registered_count - 1)
+                            if duplicate.enabled:
+                                self.enabled_count = max(0, self.enabled_count - 1)
+                            logger.warning(
+                                "Removed orphaned duplicate action %s (agent_id=%s, namespace=%s, label=%s)",
+                                duplicate.id,
+                                duplicate.agent_id,
+                                duplicate.namespace,
+                                duplicate.label,
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Error removing duplicate action {duplicate.id}: {e}", exc_info=True
+                            )
 
-                # Register the action (either brand new or after update cleanup)
+                # Register the new action
                 self.registered_count += 1
                 if action.enabled:
                     self.enabled_count += 1
@@ -131,14 +148,45 @@ class Actions(Node):
                 if not await self.is_connected_to(action):
                     await self.connect(action, direction="both")
 
-                if existing_action:
+                # Post-save validation: check for race condition duplicates
+                other_existing = await Action.find_one(
+                    {
+                        "context.agent_id": action.agent_id,
+                        "context.namespace": action.namespace,
+                        "context.label": action.label,
+                    }
+                )
+
+                if other_existing and other_existing.id != action.id:
+                    # Race condition: another action was registered between our check and save
+                    logger.warning(
+                        f"Duplicate action detected after save for {action.namespace}/{action.label} "
+                        f"(agent_id={action.agent_id}). Removing duplicate {action.id}, "
+                        f"keeping existing {other_existing.id}"
+                    )
+
+                    # Clean up the duplicate we just created
+                    if await self.is_connected_to(action):
+                        await self.disconnect(action)
+                    await action.delete()
+                    self.registered_count = max(0, self.registered_count - 1)
+                    if action.enabled:
+                        self.enabled_count = max(0, self.enabled_count - 1)
+
+                    # Ensure connection to the existing action
+                    if not await self.is_connected_to(other_existing):
+                        await self.connect(other_existing, direction="both")
+
+                    await self.save()
+                    return True
+
+                # Call appropriate lifecycle hook
+                if is_update_mode:
                     await action.on_reload()
                 else:
                     await action.on_register()
 
-                # Save statistics
                 await self.save()
-
                 return True
 
             except Exception as e:
@@ -158,18 +206,34 @@ class Actions(Node):
             Dictionary mapping action labels to registration status
         """
         results = {}
+        registered_actions = []  # Track actions that were actually registered (not duplicates)
 
         for action in actions:
             success = await self.register_action(action, update_if_exists=update_if_exists)
             results[action.label] = success
-
-        # Call post_register on all successfully registered actions
-        for action in actions:
-            if results.get(action.label):
+            
+            # Only track as registered if it was successful AND we need to verify it wasn't a duplicate
+            if success:
+                # Verify the action still exists and is connected (not deleted as duplicate)
                 try:
-                    await action.post_register()
-                except Exception as e:
-                    logger.error(f"Error in post_register for {action.label}: {e}", exc_info=True)
+                    existing = await Action.find_one({
+                        "context.agent_id": action.agent_id,
+                        "context.namespace": action.namespace,
+                        "context.label": action.label,
+                    })
+                    if existing and existing.id == action.id:
+                        # This is the action we registered (not a duplicate)
+                        registered_actions.append(existing)
+                except Exception:
+                    # If we can't verify, skip post_register to be safe
+                    pass
+
+        # Call post_register only on actions that were actually registered (not duplicates)
+        for action in registered_actions:
+            try:
+                await action.post_register()
+            except Exception as e:
+                logger.error(f"Error in post_register for {action.label}: {e}", exc_info=True)
 
         return results
 
