@@ -2,7 +2,7 @@ package:
   name: jvagent/intro_interact_action
   author: jvagent
   archetype: IntroInteractAction
-  version: 1.0.0
+  version: 0.0.1
   meta:
     title: Introductory Interact Action
     description: Dispatches an introductory prompt directive to persona action if user is a first-time user.

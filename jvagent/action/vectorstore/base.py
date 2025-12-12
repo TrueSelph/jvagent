@@ -79,6 +79,65 @@ class VectorStore(Action, ABC):
         return "default"
 
     @abstractmethod
+    async def _initialize_client(self) -> None:
+        """Initialize the vector store client connection.
+        
+        This method should be implemented by subclasses to initialize their
+        specific client (e.g., Typesense, Pinecone, Weaviate). This method
+        can be called multiple times safely - it should only initialize the
+        client if it doesn't already exist. Called automatically during
+        on_register() and when client is needed for operations.
+        
+        Subclasses should implement this to:
+        - Check if client is already initialized (idempotent)
+        - Validate required configuration (API keys, endpoints, etc.)
+        - Initialize the client connection
+        - Handle any initialization errors appropriately
+        """
+        pass
+
+    async def on_register(self) -> None:
+        """Called when action is registered during installation.
+        
+        Validates configuration and initializes client. This method
+        should only be called once during action registration.
+        Client initialization is handled automatically via _initialize_client().
+        """
+        await super().on_register()
+        
+        # Initialize client automatically
+        await self._initialize_client()
+
+    @abstractmethod
+    async def _cleanup_client(self) -> None:
+        """Clean up the vector store client connection.
+        
+        This method should be implemented by subclasses to clean up their
+        specific client (e.g., Typesense, Pinecone, Weaviate). This method
+        is called automatically during on_disable() to ensure proper cleanup
+        of client connections and resources.
+        
+        Subclasses should implement this to:
+        - Close any open connections
+        - Clear client references
+        - Release any allocated resources
+        - Handle cleanup errors gracefully (log but don't raise)
+        """
+        pass
+
+    async def on_disable(self) -> None:
+        """Called when action is disabled.
+        
+        Cleans up client connection and resources. This method
+        is called when the action is disabled. Client cleanup is
+        handled automatically via _cleanup_client().
+        """
+        # Cleanup client automatically
+        await self._cleanup_client()
+        
+        await super().on_disable()
+
+    @abstractmethod
     async def store(
         self,
         collection: str,

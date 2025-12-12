@@ -12,7 +12,7 @@ package:
   archetype: InteractRouter
   
   # Package version
-  version: 1.0.0
+  version: 0.0.1
   
   # Package metadata
   meta:

@@ -370,7 +370,7 @@ In `info.yaml`:
 package:
   name: jvagent/model_openai
   archetype: OpenAILanguageModelAction
-  version: 1.0.0
+  version: 0.0.1
 ```
 
 ### Agent-Level Overrides

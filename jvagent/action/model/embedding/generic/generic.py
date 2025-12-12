@@ -52,11 +52,13 @@ class GenericEmbeddingModelAction(EmbeddingModelAction):
         description="JSON path to embedding in response (defaults based on format if empty)",
     )
 
-    # HTTP client (not persisted)
-    _http_client: Optional[httpx.AsyncClient] = attribute(private=True, default=None)
-
     async def on_register(self) -> None:
-        """Initialize HTTP client and validate configuration."""
+        """Called when action is registered during installation.
+        
+        Validates configuration. HTTP client initialization is handled
+        by the base class. This method should only be called once during
+        action registration.
+        """
         await super().on_register()
 
         # Validate API key
@@ -64,26 +66,6 @@ class GenericEmbeddingModelAction(EmbeddingModelAction):
             logger.warning(
                 f"Generic embedding action {self.label} has no API key configured"
             )
-
-        # Initialize HTTP client
-        self._http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self.timeout),
-            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
-        )
-
-        logger.debug(
-            f"Generic embedding HTTP client initialized "
-            f"(endpoint: {self.api_endpoint}, format: {self.api_format})"
-        )
-
-    async def on_disable(self) -> None:
-        """Close HTTP client connections."""
-        await super().on_disable()
-
-        if self._http_client:
-            await self._http_client.aclose()
-            self._http_client = None
-            logger.debug("Generic embedding HTTP client closed")
 
     def _get_request_path(self) -> str:
         """Get API request path based on format."""
@@ -148,8 +130,7 @@ class GenericEmbeddingModelAction(EmbeddingModelAction):
         Returns:
             Embedding vector as list of floats
         """
-        if not self._http_client:
-            await self.on_register()
+        await self._initialize_http_client()
 
         # Build request payload
         request_key = self._get_request_key()
