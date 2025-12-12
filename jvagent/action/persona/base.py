@@ -318,7 +318,7 @@ class PersonaAction(Action):
     ) -> Optional[List[Dict[str, Any]]]:
         """Get formatted conversation history for the language model.
 
-        Uses the Memory/Conversation class method which formats history
+        Uses get_interaction_history to retrieve conversation history formatted
         as role/content pairs for language models.
 
         Args:
@@ -337,12 +337,15 @@ class PersonaAction(Action):
         if not conversation:
             return None
 
-        # Get conversation history formatted for language model (default format)
-        # format_for_language_model=True is the default, so we get role/content pairs
-        history = await conversation.get_conversation_history(
+        # Get conversation history formatted for language model
+        history = await conversation.get_interaction_history(
             limit=self.history_limit,
             excluded=interaction.id,
-            format_for_language_model=True,  # Explicitly use language model format
+            utterance=True,
+            response=True,
+            interpretation=False,
+            event=False,
+            formatted=True,  # Format as role/content pairs for language models
         )
 
         return history if history else None
