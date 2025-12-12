@@ -75,19 +75,7 @@ class ExampleInteractAction(InteractAction):
 
         # If a directive was produced, optionally invoke PersonaAction to produce a response
         if directive_added:
-            try:
-                persona = await self._get_persona_action()
-                if persona:
-                    # PersonaAction.respond now supports visitor (for streaming via ResponseBus)
-                    visitor.stream_mode = True
-                    response = await persona.respond(interaction, visitor=visitor)
-                    if response and visitor.interaction:
-                        visitor.interaction.set_response(response)
-                        await visitor.interaction.save()
-                else:
-                    logger.debug("RetrievalInteractAction: PersonaAction not found; skipping auto-respond")
-            except Exception as e:
-                logger.error(f"RetrievalInteractAction: Error calling PersonaAction.respond: {e}", exc_info=True)
+            await self.respond(interaction, visitor=visitor, use_utterance=True, use_history=True)
 
     def _format_directive(self, results: List[Dict[str, Any]]) -> str:
         """Format retrieved results into a structured directive.

@@ -119,7 +119,7 @@ class InteractRouter(InteractAction):
 
             # Get conversation history (formatted as role/content pairs)
             from jvagent.memory.conversation import Conversation
-            
+
             conversation = await Conversation.get(interaction.conversation_id)
             conversation_history = []
             if conversation:
@@ -134,7 +134,7 @@ class InteractRouter(InteractAction):
                 )
 
                 logger.debug(f"InteractRouter: Conversation history: {conversation_history}")
-                
+
             # Build routing prompt (history will be passed separately to LLM)
             prompt = self._build_routing_prompt(
                 interaction.utterance,
@@ -344,6 +344,7 @@ class InteractRouter(InteractAction):
           Example: "User has requested an update on the report bearing reference number 12345"
 
         2. Match the interpretation against the anchor statements to identify which entity names (InteractActions) should handle this request.
+           If multiple entity names are identified, and one action has more specific anchors than the other, select the more specific action.
 
         3. Return your analysis in JSON format:
         {{
