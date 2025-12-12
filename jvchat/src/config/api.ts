@@ -88,9 +88,12 @@ class ApiClient {
         }
         
         if (error.response?.status === 401) {
-          // Token expired or invalid
+          // Token expired or invalid - clear token and redirect to login
           removeToken()
-          window.location.href = '/login'
+          // Use replace to avoid adding to history
+          if (window.location.pathname !== '/login') {
+            window.location.replace('/login')
+          }
         }
         return Promise.reject(error)
       }
@@ -206,11 +209,26 @@ class ApiClient {
         }
       })
       console.log('Agents API response:', response.data)
-      // Handle both wrapped (success_response) and unwrapped responses
-      if (response.data && response.data.success && response.data.data) {
-        return response.data.data as AgentsResponse
+      // Handle different response structures
+      const data = response.data
+      
+      // Case 1: { success: true, agents: [...], ... } - direct structure
+      if (data && data.success && data.agents) {
+        return data as AgentsResponse
       }
-      return response.data as AgentsResponse
+      
+      // Case 2: { success: true, data: { agents: [...], ... } } - nested structure
+      if (data && data.success && data.data && data.data.agents) {
+        return data.data as AgentsResponse
+      }
+      
+      // Case 3: { agents: [...], ... } - unwrapped structure
+      if (data && data.agents) {
+        return data as AgentsResponse
+      }
+      
+      // Fallback: return as-is
+      return data as AgentsResponse
     } catch (error: any) {
       console.error('Error in getAgents:', error)
       console.error('Response:', error.response?.data)
@@ -346,6 +364,44 @@ class ApiClient {
     if (lastError) {
       throw lastError
     }
+  }
+
+  async deleteConversation(agentId: string, sessionId: string): Promise<void> {
+    // Try multiple endpoint patterns to find the correct one
+    let lastError: any
+    const endpoints = [
+      `/api/agents/${agentId}/conversations/${sessionId}`,
+      `/agents/${agentId}/conversations/${sessionId}`,
+      `/api/agents/${agentId}/sessions/${sessionId}`,
+      `/agents/${agentId}/sessions/${sessionId}`,
+    ]
+
+    for (const baseURL of this.baseUrls) {
+      for (const endpoint of endpoints) {
+        try {
+          await this.client.delete(endpoint, { baseURL })
+          return // Success - exit early
+        } catch (err: any) {
+          lastError = err
+          // If it's a 404, try next endpoint
+          if (err.response?.status === 404) {
+            continue
+          }
+          // For other errors, throw immediately
+          throw err
+        }
+      }
+    }
+
+    // If all endpoints returned 404, that's okay - conversation might not exist on server
+    // This is not a critical error, so we don't throw
+    if (lastError?.response?.status === 404) {
+      console.warn(`Conversation ${sessionId} not found on server (may have been deleted already)`)
+      return
+    }
+
+    // For other errors, throw
+    throw lastError || new Error('Failed to delete conversation')
   }
 }
 

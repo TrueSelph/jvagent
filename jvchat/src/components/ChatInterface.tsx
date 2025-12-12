@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAgents } from '../hooks/useAgents'
 import { useStreaming } from '../hooks/useStreaming'
 import { useConversations } from '../hooks/useConversations'
+import { useAuth } from '../hooks/useAuth'
 import { MessageList } from './MessageList'
 import { MessageInput } from './MessageInput'
 import { WelcomeScreen } from './WelcomeScreen'
 import { ConversationList } from './ConversationList'
-import { addConversation, updateConversation } from '../utils/storage'
+import { addConversation, updateConversation, getMessages, deleteMessages, getConversations, saveConversations, getUserId } from '../utils/storage'
+import { apiClient } from '../config/api'
 import type { Conversation } from '../types/conversation'
 
 export function ChatInterface() {
@@ -16,9 +18,41 @@ export function ChatInterface() {
   const { agents } = useAgents()
   const agent = agents.find((a) => a.id === agentId)
   const [sessionId, setSessionId] = useState<string | undefined>()
-  const { conversations, add, update, remove } = useConversations(agentId)
-  const { messages, sendMessage, clearMessages, isStreaming, error, sessionId: streamSessionId } =
+
+  // Debug: Log agent data to help diagnose alias issue
+  useEffect(() => {
+    if (agent) {
+      console.log('Current agent data:', agent)
+      console.log('Agent alias:', agent.alias)
+      console.log('Agent name:', agent.name)
+    }
+  }, [agent])
+  const { conversations, add, update, remove, refresh } = useConversations(agentId)
+  const { messages, sendMessage, clearMessages, loadMessages, isStreaming, error, sessionId: streamSessionId } =
     useStreaming(agentId || '', sessionId)
+  const { logout } = useAuth()
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  
+  const handleMobileMenuClose = useCallback(() => {
+    setIsMobileMenuOpen(false)
+  }, [])
+
+  // Refresh conversations when agent changes or on mount
+  useEffect(() => {
+    refresh()
+  }, [agentId, refresh])
+  
+  // Also refresh after sending a message to pick up any new conversations
+  // This is handled in handleSendMessage, but we can also add a periodic refresh
+  // that's less aggressive - only when the window is focused
+  useEffect(() => {
+    const handleFocus = () => {
+      refresh()
+    }
+    
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [refresh])
 
   useEffect(() => {
     if (!agentId) {
@@ -30,56 +64,183 @@ export function ChatInterface() {
     }
   }, [agentId, agents, agent, navigate])
 
+  // Load messages when sessionId changes (from stream or selection)
+  // Use a ref to track previous streamSessionId to prevent loops
+  const prevStreamSessionIdRef = useRef<string | undefined>(streamSessionId)
+  useEffect(() => {
+    // Only update if streamSessionId actually changed
+    if (streamSessionId && 
+        streamSessionId !== prevStreamSessionIdRef.current && 
+        streamSessionId !== sessionId) {
+      prevStreamSessionIdRef.current = streamSessionId
+      setSessionId(streamSessionId)
+    } else if (streamSessionId) {
+      prevStreamSessionIdRef.current = streamSessionId
+    }
+  }, [streamSessionId, sessionId])
+
+  // Track previous sessionId to detect changes
+  const prevSessionIdRef = useRef<string | undefined>(sessionId)
+  
+  // Load messages when sessionId changes
+  useEffect(() => {
+    // Only load if sessionId actually changed
+    if (sessionId !== prevSessionIdRef.current) {
+      const newSessionId = sessionId
+      const oldSessionId = prevSessionIdRef.current
+      prevSessionIdRef.current = sessionId
+      
+      if (newSessionId) {
+        // CRITICAL: Clear messages first to prevent showing old messages from previous session
+        clearMessages()
+        
+        // Load messages for the NEW session after a brief delay
+        // This ensures clearMessages has completed and prevents cross-session contamination
+        const timer = setTimeout(() => {
+          // Double-check sessionId hasn't changed during the delay
+          // This prevents loading messages for a session that's no longer active
+          if (prevSessionIdRef.current === newSessionId) {
+            // CRITICAL: Get messages ONLY for the new session_id
+            // This ensures messages are isolated by session_id
+            const savedMessages = getMessages(newSessionId)
+            if (savedMessages && savedMessages.length > 0) {
+              // Verify we're still on the same session before loading
+              if (prevSessionIdRef.current === newSessionId) {
+                loadMessages(savedMessages)
+              }
+            }
+          }
+        }, 10)
+        
+        return () => clearTimeout(timer)
+      } else {
+        // If sessionId is undefined (new conversation), clear messages
+        // This ensures the WelcomeScreen is shown and no old messages leak through
+        clearMessages()
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]) // Only depend on sessionId - clearMessages and loadMessages are stable callbacks
+
   const handleSendMessage = async (content: string) => {
     if (!agent) return
+
+    const userId = getUserId()
+    if (!userId) {
+      console.error('Cannot send message: no user_id available. User should be logged in.')
+      return
+    }
 
     const receivedSessionId = await sendMessage(content)
 
     // Update session ID if we received one from the server
-    if (receivedSessionId && receivedSessionId !== sessionId) {
-      setSessionId(receivedSessionId)
+    // This happens when:
+    // 1. First interaction (no user_id, no session_id) → backend returns both
+    // 2. New conversation (user_id only) → backend returns new session_id
+    // 3. Continue conversation (both provided) → backend returns same session_id
+    if (receivedSessionId) {
+      // Check storage directly to see if conversation already exists
+      // This ensures we don't miss conversations that were just added
+      const allConversations = getConversations(userId)
+      const existingConv = allConversations.find(c => c.session_id === receivedSessionId && c.agent_id === agent.id)
       
-      // Create or update conversation
-      const existingConv = conversations.find(c => c.session_id === receivedSessionId)
       if (!existingConv) {
+        // New conversation - create entry with user_id
         const newConv: Conversation = {
           session_id: receivedSessionId,
           agent_id: agent.id,
-          agent_name: agent.alias || agent.name,
+          agent_name: agent.alias || agent.name || 'Agent',
           created_at: new Date().toISOString(),
           last_message: content,
           last_message_at: new Date().toISOString(),
         }
+        // add() will use the logged-in user_id from storage
         add(newConv)
+        console.log(`Created new conversation: ${receivedSessionId} for agent ${agent.id}`)
       } else {
-        update(receivedSessionId, {
+        // Existing conversation - update last message
+        if (existingConv.last_message !== content) {
+          update(receivedSessionId, {
+            last_message: content,
+            last_message_at: new Date().toISOString(),
+          })
+        }
+      }
+      
+      // Update session ID if it changed
+      if (receivedSessionId !== sessionId) {
+        setSessionId(receivedSessionId)
+      }
+    } else if (sessionId) {
+      // Same session - just update last message if changed
+      // Check storage directly to ensure we have the latest
+      const allConversations = getConversations(userId)
+      const currentConv = allConversations.find(c => c.session_id === sessionId && c.agent_id === agent.id)
+      if (currentConv && currentConv.last_message !== content) {
+        update(sessionId, {
           last_message: content,
           last_message_at: new Date().toISOString(),
         })
       }
-    } else if (sessionId) {
-      update(sessionId, {
-        last_message: content,
-        last_message_at: new Date().toISOString(),
-      })
     }
   }
 
-  const handleNewConversation = () => {
+  const handleNewConversation = useCallback(() => {
+    if (!agent) return
+    
+    console.log('Starting new conversation')
+    
+    // For new conversations, clear the session ID and messages
+    // When the first message is sent with user_id but no session_id,
+    // the backend will create a new conversation and return the session_id
+    
+    // Clear session ID to undefined - this indicates we want a new conversation
+    // The useEffect will handle clearing messages when sessionId changes
     setSessionId(undefined)
-    clearMessages()
-  }
+    
+    // Refresh conversations to ensure list is up to date
+    refresh()
+  }, [agent, refresh])
 
-  const handleSelectConversation = (selectedSessionId: string) => {
+  const handleSelectConversation = useCallback((selectedSessionId: string) => {
+    // Only switch if it's a different conversation
+    if (selectedSessionId === sessionId) {
+      return
+    }
+    
+    console.log(`Switching conversation from ${sessionId || 'none'} to ${selectedSessionId}`)
+    
+    // Set the new session ID first - the useEffect will handle clearing and loading messages
     setSessionId(selectedSessionId)
-    clearMessages()
-    // TODO: Load conversation history from API
-  }
+    
+    // Refresh conversations to ensure we have the latest data
+    refresh()
+  }, [sessionId, refresh])
 
-  const handleDeleteConversation = (sessionIdToDelete: string) => {
-    remove(sessionIdToDelete)
-    if (sessionId === sessionIdToDelete) {
-      handleNewConversation()
+  const handleDeleteConversation = async (sessionIdToDelete: string) => {
+    if (!agent) return
+
+    try {
+      // Delete conversation on server (all sessions are real, no temp sessions)
+      await apiClient.deleteConversation(agent.id, sessionIdToDelete)
+      
+      // Remove from local storage
+      remove(sessionIdToDelete)
+      deleteMessages(sessionIdToDelete)
+      
+      // If we're currently viewing the deleted conversation, reset the chat area
+      if (sessionId === sessionIdToDelete) {
+        handleNewConversation()
+      }
+    } catch (error: any) {
+      console.error('Failed to delete conversation on server:', error)
+      // Still remove from local storage even if server deletion fails
+      // This ensures UI consistency
+      remove(sessionIdToDelete)
+      deleteMessages(sessionIdToDelete)
+      if (sessionId === sessionIdToDelete) {
+        handleNewConversation()
+      }
     }
   }
 
@@ -95,28 +256,81 @@ export function ChatInterface() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
-      <div className="flex flex-1 overflow-hidden">
+    <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
         <ConversationList
           conversations={conversations}
           currentSessionId={sessionId}
           onSelectConversation={handleSelectConversation}
           onNewConversation={handleNewConversation}
           onDeleteConversation={handleDeleteConversation}
+          onLogout={logout}
+          isMobileMenuOpen={isMobileMenuOpen}
+          onMobileMenuClose={handleMobileMenuClose}
         />
 
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="bg-white border-b border-gray-200 px-6 py-4">
-            <h1 className="text-xl font-semibold text-gray-900">
-              {agent.alias || agent.name}
-            </h1>
-            {agent.description && (
-              <p className="text-sm text-gray-600 mt-1">{agent.description}</p>
-            )}
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 flex-shrink-0">
+            <div className="flex items-center gap-2 sm:gap-4">
+              {/* Mobile menu button */}
+              <button
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="md:hidden flex-shrink-0 text-gray-600 hover:text-gray-900 transition-colors p-2 rounded-lg hover:bg-gray-100 touch-manipulation"
+                aria-label="Open menu"
+                title="Open menu"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 6h16M4 12h16M4 18h16"
+                  />
+                </svg>
+              </button>
+              
+              {/* Back to agents button - desktop only */}
+              <button
+                onClick={() => navigate('/agents')}
+                className="hidden md:flex flex-shrink-0 text-gray-600 hover:text-gray-900 transition-colors p-1 rounded-lg hover:bg-gray-100"
+                aria-label="Back to agents"
+                title="Back to agents"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M10 19l-7-7m0 0l7-7m-7 7h18"
+                  />
+                </svg>
+              </button>
+              
+              <div className="flex-1 min-w-0">
+                <h1 className="text-lg sm:text-xl font-semibold text-gray-900 truncate">
+                  {agent.alias || agent.name || 'Agent'}
+                </h1>
+                {agent.description && (
+                  <p className="text-xs sm:text-sm text-gray-600 mt-1 line-clamp-1">
+                    {agent.description}
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
 
           {messages.length === 0 ? (
-            <WelcomeScreen agentName={agent.alias || agent.name} />
+            <WelcomeScreen agentName={agent.alias || agent.name || 'Agent'} />
           ) : (
             <MessageList messages={messages} />
           )}
@@ -130,7 +344,7 @@ export function ChatInterface() {
           <MessageInput
             onSend={handleSendMessage}
             disabled={isStreaming}
-            placeholder={`Message ${agent.alias || agent.name}...`}
+            placeholder={`Message ${agent.alias || agent.name || 'Agent'}...`}
           />
         </div>
       </div>

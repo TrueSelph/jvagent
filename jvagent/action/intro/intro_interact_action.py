@@ -97,7 +97,7 @@ class IntroInteractAction(InteractAction):
                     f"ExampleInteractAction: Added directive with {directive} retrieved context items"
                 )
             else:
-                logger.debug("ExampleInteractAction: No results found, no directive added")
+                logger.debug("IntroInteractAction: No results found, no directive added")
 
             parameters_added = False
 
