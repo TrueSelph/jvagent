@@ -40,9 +40,6 @@ class HuggingFaceEmbeddingModelAction(EmbeddingModelAction):
         description="HuggingFace model identifier",
     )
 
-    # HTTP client (not persisted)
-    _http_client: Optional[httpx.AsyncClient] = attribute(private=True, default=None)
-
     # Model dimension mapping (for auto-detection)
     _model_dimensions: Dict[str, int] = attribute(
         private=True,
@@ -54,7 +51,12 @@ class HuggingFaceEmbeddingModelAction(EmbeddingModelAction):
     )
 
     async def on_register(self) -> None:
-        """Initialize HTTP client and validate configuration."""
+        """Called when action is registered during installation.
+        
+        Validates configuration. HTTP client initialization is handled
+        by the base class. This method should only be called once during
+        action registration.
+        """
         await super().on_register()
 
         # Validate API key
@@ -63,30 +65,9 @@ class HuggingFaceEmbeddingModelAction(EmbeddingModelAction):
                 f"HuggingFace embedding action {self.label} has no API key configured"
             )
 
-        # Initialize HTTP client
-        self._http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self.timeout),
-            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
-        )
-
         # Auto-detect dimensions from model if not set
         if self.embedding_dimensions == 0 and self.model in self._model_dimensions:
             self.embedding_dimensions = self._model_dimensions[self.model]
-
-        logger.debug(
-            f"HuggingFace embedding HTTP client initialized "
-            f"(endpoint: {self.api_endpoint}, model: {self.model}, "
-            f"dimensions: {self.embedding_dimensions})"
-        )
-
-    async def on_disable(self) -> None:
-        """Close HTTP client connections."""
-        await super().on_disable()
-
-        if self._http_client:
-            await self._http_client.aclose()
-            self._http_client = None
-            logger.debug("HuggingFace embedding HTTP client closed")
 
     async def _embed(self, text: str) -> List[float]:
         """Generate embedding using HuggingFace Inference API.
@@ -97,8 +78,7 @@ class HuggingFaceEmbeddingModelAction(EmbeddingModelAction):
         Returns:
             Embedding vector as list of floats
         """
-        if not self._http_client:
-            await self.on_register()
+        await self._initialize_http_client()
 
         # Build request payload
         payload = {"inputs": text}

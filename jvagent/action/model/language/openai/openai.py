@@ -50,9 +50,6 @@ class OpenAILanguageModelAction(LanguageModelAction):
     )
     model: str = attribute(default="gpt-4o-mini", description="OpenAI model identifier")
 
-    # HTTP client (not persisted)
-    _http_client: Optional[httpx.AsyncClient] = attribute(private=True, default=None)
-
     # Pricing per 1M tokens (approximate, for cost estimation)
     _model_pricing: Dict[str, Dict[str, float]] = attribute(
         private=True,
@@ -68,29 +65,17 @@ class OpenAILanguageModelAction(LanguageModelAction):
     # ============================================================================
 
     async def on_register(self) -> None:
-        """Initialize HTTP client and validate configuration."""
+        """Called when action is registered during installation.
+        
+        Validates configuration. HTTP client initialization is handled
+        by the base class. This method should only be called once during
+        action registration.
+        """
         await super().on_register()
 
         # Validate API key
         if not self.api_key:
             logger.warning(f"OpenAI action {self.label} has no API key configured")
-
-        # Initialize HTTP client with connection pooling
-        self._http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self.timeout),
-            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
-        )
-
-        logger.debug(f"OpenAI HTTP client initialized (endpoint: {self.api_endpoint})")
-
-    async def on_disable(self) -> None:
-        """Close HTTP client connections."""
-        await super().on_disable()
-
-        if self._http_client:
-            await self._http_client.aclose()
-            self._http_client = None
-            logger.debug("OpenAI HTTP client closed")
 
     # ============================================================================
     # Query Implementation
@@ -103,8 +88,7 @@ class OpenAILanguageModelAction(LanguageModelAction):
         **kwargs: Any,
     ) -> ModelActionResult:
         """Execute a synchronous query to OpenAI."""
-        if not self._http_client:
-            await self.on_register()
+        await self._initialize_http_client()
 
         # Build request payload
         # Use model from kwargs if provided, otherwise use instance default
@@ -187,8 +171,7 @@ class OpenAILanguageModelAction(LanguageModelAction):
         **kwargs: Any,
     ) -> ModelActionResult:
         """Execute a streaming query to OpenAI."""
-        if not self._http_client:
-            await self.on_register()
+        await self._initialize_http_client()
 
         # Build request payload
         # Use model from kwargs if provided, otherwise use instance default

@@ -8,6 +8,7 @@ import logging
 from abc import ABC
 from typing import Dict, Optional
 
+import httpx
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
@@ -48,6 +49,9 @@ class BaseModelAction(Action, ABC):
         default=0.0, description="Cumulative query duration in seconds"
     )
 
+    # HTTP client (not persisted)
+    _http_client: Optional[httpx.AsyncClient] = attribute(private=True, default=None)
+
     def track_usage(self, usage: Dict[str, int], duration: Optional[float] = None) -> None:
         """Track token usage and update metrics.
 
@@ -69,18 +73,44 @@ class BaseModelAction(Action, ABC):
             f"{self.total_duration:.3f}s, requests: {self.total_requests})"
         )
 
+    async def _initialize_http_client(self) -> None:
+        """Initialize HTTP client with connection pooling.
+        
+        This method can be called multiple times safely - it will only initialize
+        the client if it doesn't already exist. Called automatically during
+        on_register() and when HTTP client is needed for queries.
+        """
+        if self._http_client is not None:
+            return
+
+        # Initialize HTTP client with connection pooling
+        self._http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(self.timeout),
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+        )
+
+        logger.debug(f"HTTP client initialized (endpoint: {self.api_endpoint})")
+
     async def on_register(self) -> None:
         """Called when action is registered.
 
-        Providers should override this to initialize HTTP clients and
-        validate configuration.
+        Providers should override this to validate configuration.
+        HTTP client initialization is handled automatically.
         """
         logger.info(f"Model action registered: {self.label} (model: {self.model})")
+        
+        # Initialize HTTP client automatically
+        await self._initialize_http_client()
 
     async def on_disable(self) -> None:
         """Called when action is disabled.
 
-        Providers should override this to close HTTP client connections
-        and clean up resources.
+        Providers should override this to clean up resources.
+        HTTP client cleanup is handled automatically.
         """
+        if self._http_client:
+            await self._http_client.aclose()
+            self._http_client = None
+            logger.debug("HTTP client closed")
+        
         logger.info(f"Model action disabled: {self.label}")

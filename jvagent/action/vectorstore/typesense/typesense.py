@@ -79,12 +79,14 @@ class TypesenseVectorStore(VectorStore):
     _client: Optional[Any] = None
     _collections: Dict[str, bool] = {}  # Track created collections
 
-    async def on_register(self) -> None:
-        """Initialize Typesense client connection."""
-        await super().on_register()
-
-        # Skip if already initialized
-        if self._client:
+    async def _initialize_client(self) -> None:
+        """Initialize Typesense client connection.
+        
+        This method can be called multiple times safely - it will only initialize
+        the client if it doesn't already exist. Called automatically during
+        on_register() and when client is needed for operations.
+        """
+        if self._client is not None:
             return
 
         if not TYPESENSE_AVAILABLE:
@@ -110,10 +112,31 @@ class TypesenseVectorStore(VectorStore):
                     "connection_timeout_seconds": self.connection_timeout_seconds,
                 }
             )
-            logger.info(f"TypesenseVectorStore initialized: {self.protocol}://{self.host}:{self.port}")
+            logger.debug(f"Typesense client initialized: {self.protocol}://{self.host}:{self.port}")
         except Exception as e:
             logger.error(f"Failed to initialize Typesense client: {e}")
             raise RuntimeError(f"Could not initialize Typesense client: {e}")
+
+    async def on_register(self) -> None:
+        """Called when action is registered during installation.
+        
+        Validates configuration. Client initialization is handled automatically
+        by the base class via _initialize_client(). This method should only be
+        called once during action registration.
+        """
+        await super().on_register()
+        
+        logger.info(f"TypesenseVectorStore registered: {self.protocol}://{self.host}:{self.port}")
+
+    async def _cleanup_client(self) -> None:
+        """Clean up Typesense client connection.
+        
+        Typesense client doesn't have an explicit close method,
+        so we just clear the reference.
+        """
+        if self._client:
+            self._client = None
+            logger.debug("Typesense client cleared")
 
     async def _get_or_create_collection(self, collection: str) -> None:
         """Get or create a Typesense collection.
@@ -197,8 +220,7 @@ class TypesenseVectorStore(VectorStore):
             List of document IDs that were stored
         """
         # Ensure client is initialized
-        if not self._client:
-            await self.on_register()
+        await self._initialize_client()
         
         if not TYPESENSE_AVAILABLE or not self._client:
             raise RuntimeError("Typesense client not available")
@@ -263,8 +285,7 @@ class TypesenseVectorStore(VectorStore):
             - metadata: Document metadata
         """
         # Ensure client is initialized
-        if not self._client:
-            await self.on_register()
+        await self._initialize_client()
         
         if not TYPESENSE_AVAILABLE or not self._client:
             raise RuntimeError("Typesense client not available")
@@ -408,8 +429,7 @@ class TypesenseVectorStore(VectorStore):
             True if collection was deleted
         """
         # Ensure client is initialized
-        if not self._client:
-            await self.on_register()
+        await self._initialize_client()
         
         if not TYPESENSE_AVAILABLE or not self._client:
             return False

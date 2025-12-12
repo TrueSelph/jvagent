@@ -48,11 +48,13 @@ class OpenRouterEmbeddingModelAction(EmbeddingModelAction):
         default="jvagent", description="Site name for OpenRouter (optional)"
     )
 
-    # HTTP client (not persisted)
-    _http_client: Optional[httpx.AsyncClient] = attribute(private=True, default=None)
-
     async def on_register(self) -> None:
-        """Initialize HTTP client and validate configuration."""
+        """Called when action is registered during installation.
+        
+        Validates configuration. HTTP client initialization is handled
+        by the base class. This method should only be called once during
+        action registration.
+        """
         await super().on_register()
 
         # Validate API key
@@ -60,26 +62,6 @@ class OpenRouterEmbeddingModelAction(EmbeddingModelAction):
             logger.warning(
                 f"OpenRouter embedding action {self.label} has no API key configured"
             )
-
-        # Initialize HTTP client
-        self._http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self.timeout),
-            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
-        )
-
-        logger.debug(
-            f"OpenRouter embedding HTTP client initialized "
-            f"(endpoint: {self.api_endpoint}, model: {self.model})"
-        )
-
-    async def on_disable(self) -> None:
-        """Close HTTP client connections."""
-        await super().on_disable()
-
-        if self._http_client:
-            await self._http_client.aclose()
-            self._http_client = None
-            logger.debug("OpenRouter embedding HTTP client closed")
 
     async def _embed(self, text: str) -> List[float]:
         """Generate embedding using OpenRouter API (OpenAI-compatible).
@@ -90,8 +72,7 @@ class OpenRouterEmbeddingModelAction(EmbeddingModelAction):
         Returns:
             Embedding vector as list of floats
         """
-        if not self._http_client:
-            await self.on_register()
+        await self._initialize_http_client()
 
         # Build request payload (OpenAI-compatible format)
         payload = {

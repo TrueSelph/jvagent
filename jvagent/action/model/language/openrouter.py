@@ -95,9 +95,8 @@ class OpenRouterLanguageModelAction(OpenAILanguageModelAction):
             ModelActionResult with complete response
         """
         # OpenRouter uses OpenAI-compatible API, but we need to add headers
-        # Temporarily store the http_client to modify headers
-        if not self._http_client:
-            await self.on_register()
+        # Ensure HTTP client is initialized
+        await self._initialize_http_client()
 
         # Add OpenRouter-specific headers
         original_headers = self._http_client.headers.copy()  # type: ignore[union-attr]
@@ -137,8 +136,7 @@ class OpenRouterLanguageModelAction(OpenAILanguageModelAction):
         Returns:
             ModelActionResult with streaming generator
         """
-        if not self._http_client:
-            await self.on_register()
+        await self._initialize_http_client()
 
         # Add OpenRouter-specific headers
         original_headers = self._http_client.headers.copy()  # type: ignore[union-attr]
