@@ -88,10 +88,14 @@ export function ChatInterface() {
     if (sessionId !== prevSessionIdRef.current) {
       const newSessionId = sessionId
       const oldSessionId = prevSessionIdRef.current
+      
+      console.log(`Switching conversation: ${oldSessionId || 'none'} -> ${newSessionId || 'none'}`)
+      
       prevSessionIdRef.current = sessionId
       
       if (newSessionId) {
         // CRITICAL: Clear messages first to prevent showing old messages from previous session
+        // This ensures no message duplication or cross-contamination
         clearMessages()
         
         // Load messages for the NEW session after a brief delay
@@ -101,21 +105,31 @@ export function ChatInterface() {
           // This prevents loading messages for a session that's no longer active
           if (prevSessionIdRef.current === newSessionId) {
             // CRITICAL: Get messages ONLY for the new session_id
-            // This ensures messages are isolated by session_id
+            // This ensures messages are isolated by session_id and prevents duplication
             const savedMessages = getMessages(newSessionId)
+            console.log(`Loading ${savedMessages.length} messages for session ${newSessionId}`)
+            
             if (savedMessages && savedMessages.length > 0) {
               // Verify we're still on the same session before loading
               if (prevSessionIdRef.current === newSessionId) {
+                // loadMessages will create a deep copy to prevent reference issues
                 loadMessages(savedMessages)
+              } else {
+                console.warn(`Session changed during load delay - skipping load for ${newSessionId}`)
               }
+            } else {
+              console.log(`No saved messages found for session ${newSessionId}`)
             }
+          } else {
+            console.warn(`Session changed during load delay - skipping load for ${newSessionId}`)
           }
-        }, 10)
+        }, 50) // Slightly longer delay to ensure clearMessages completes
         
         return () => clearTimeout(timer)
       } else {
         // If sessionId is undefined (new conversation), clear messages
         // This ensures the WelcomeScreen is shown and no old messages leak through
+        console.log('Starting new conversation - clearing messages')
         clearMessages()
       }
     }
