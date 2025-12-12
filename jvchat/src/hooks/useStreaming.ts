@@ -25,14 +25,19 @@ export function useStreaming(agentId: string, sessionId?: string) {
   useEffect(() => {
     if (sessionId !== sessionIdRef.current) {
       const oldSessionId = sessionIdRef.current
+      const newSessionId = sessionId
+      
+      console.log(`useStreaming: Session changing from ${oldSessionId || 'none'} to ${newSessionId || 'none'}`)
       
       // CRITICAL: Save current messages to OLD session BEFORE updating refs
-      // This ensures messages are saved to the correct session
+      // This ensures messages are saved to the correct session and prevents loss
       const currentMessages = messagesRef.current
       if (oldSessionId && currentMessages.length > 0 && !isLoadingRef.current) {
-        // Save messages to the old session ID before switching
-        // Use a deep copy to ensure we save the exact state at this moment
-        saveMessages(oldSessionId, [...currentMessages])
+        // Create a deep copy to ensure we save the exact state at this moment
+        // This prevents any reference issues or duplication
+        const messagesToSave = currentMessages.map(msg => ({ ...msg }))
+        saveMessages(oldSessionId, messagesToSave)
+        console.log(`Saved ${messagesToSave.length} messages to old session ${oldSessionId} before switching`)
       }
       
       // NOW update the session ID refs - this prevents any further saves to old session
@@ -41,11 +46,14 @@ export function useStreaming(agentId: string, sessionId?: string) {
       
       // Clear messages when switching sessions to prevent cross-contamination
       // Always clear when session changes (including when setting to undefined for new conversation)
+      // This ensures messages from different sessions don't mix
       setMessages([])
       prevMessagesRef.current = []
       
       // Update state after clearing messages
       setCurrentSessionId(sessionId)
+      
+      console.log(`useStreaming: Session updated to ${sessionId || 'none'}, messages cleared`)
     }
   }, [sessionId])
 
@@ -113,7 +121,12 @@ export function useStreaming(agentId: string, sessionId?: string) {
         // - If we have user_id but no session_id: send user_id only (new conversation)
         // - If we have both: send both (continue conversation)
         // Always send user_id if available (from login)
-        const sessionIdToSend = currentSessionId || undefined
+        // CRITICAL: Use sessionIdRef.current instead of currentSessionId state
+        // The ref is updated immediately when sessionId prop changes, ensuring we always
+        // send the correct session_id when switching conversations
+        const sessionIdToSend = sessionIdRef.current || undefined
+
+        console.log(`Sending message with session_id: ${sessionIdToSend || 'none (new conversation)'}, user_id: ${userId}`)
 
         const request: InteractionRequest = {
           utterance,
@@ -178,14 +191,18 @@ export function useStreaming(agentId: string, sessionId?: string) {
                 
                 // Update refs if this is a new session_id
                 if (receivedSessionId !== sessionIdRef.current) {
+                  console.log(`Backend returned new session_id: ${receivedSessionId} (was ${sessionIdRef.current})`)
                   // Save current messages to old session before switching
                   const currentMessages = messagesRef.current
                   const oldSessionId = sessionIdRef.current
                   if (oldSessionId && currentMessages.length > 0) {
                     // Filter out the streaming message we're about to finalize
-                    const messagesToSave = currentMessages.filter(msg => msg.id !== assistantMessageId)
+                    const messagesToSave = currentMessages
+                      .filter(msg => msg.id !== assistantMessageId)
+                      .map(msg => ({ ...msg })) // Deep copy
                     if (messagesToSave.length > 0) {
                       saveMessages(oldSessionId, messagesToSave)
+                      console.log(`Saved ${messagesToSave.length} messages to old session ${oldSessionId}`)
                     }
                   }
                   
@@ -204,11 +221,14 @@ export function useStreaming(agentId: string, sessionId?: string) {
                   msg.id === assistantMessageId ? finalMessage : msg
                 )
                 // CRITICAL: Save messages to storage using the CORRECT session ID
-                // This ensures messages are isolated by session_id
+                // This ensures messages are isolated by session_id and prevents duplication
                 if (sessionIdForSave) {
-                  saveMessages(sessionIdForSave, updated)
+                  // Create a deep copy to prevent reference issues
+                  const messagesToSave = updated.map(msg => ({ ...msg }))
+                  saveMessages(sessionIdForSave, messagesToSave)
+                  console.log(`Saved ${messagesToSave.length} messages (including final) to session ${sessionIdForSave}`)
                   // Update prev refs to match
-                  prevMessagesRef.current = [...updated]
+                  prevMessagesRef.current = messagesToSave
                   prevSessionIdRef.current = sessionIdForSave
                 }
                 return updated
@@ -268,17 +288,31 @@ export function useStreaming(agentId: string, sessionId?: string) {
   const isLoadingRef = useRef(false)
 
   const loadMessages = useCallback((loadedMessages: Message[]) => {
+    // CRITICAL: Only load messages if we're still on the same session
+    // This prevents loading messages for a session that was just switched away from
+    const activeSessionId = sessionIdRef.current
+    if (!activeSessionId) {
+      console.warn('Cannot load messages: no active session ID')
+      return
+    }
+    
+    console.log(`Loading ${loadedMessages.length} messages for session ${activeSessionId}`)
+    
     isLoadingRef.current = true
-    setMessages(loadedMessages)
+    
+    // Create a deep copy to prevent reference issues and ensure isolation
+    const messagesToLoad = loadedMessages.map(msg => ({ ...msg }))
+    
+    setMessages(messagesToLoad)
     // Update prevMessagesRef to match loaded messages
-    prevMessagesRef.current = [...loadedMessages]
-    // Update prevSessionIdRef to match current session
-    prevSessionIdRef.current = currentSessionId
+    prevMessagesRef.current = [...messagesToLoad]
+    // Update prevSessionIdRef to match current session (use ref, not state)
+    prevSessionIdRef.current = activeSessionId
     // Reset flag after a brief delay to allow state to settle
     setTimeout(() => {
       isLoadingRef.current = false
     }, 100)
-  }, [currentSessionId])
+  }, [])
   
   // Save messages whenever they change (for conversation persistence)
   // But skip if we're in the middle of loading messages
@@ -298,16 +332,22 @@ export function useStreaming(agentId: string, sessionId?: string) {
       return
     }
     
-    // CRITICAL: Don't save if session ID doesn't match the ref (session just changed)
-    // This prevents saving messages from old session to new session
-    // Always use sessionIdRef.current as the source of truth for the active session
+    // CRITICAL: Always use sessionIdRef.current as the source of truth for the active session
+    // This ensures we're always saving to the correct session, even if state hasn't updated yet
     const activeSessionId = sessionIdRef.current
-    if (currentSessionId !== activeSessionId) {
-      return
-    }
     
     // Only save if we have a valid session ID and messages
     if (activeSessionId && messages.length > 0) {
+      // CRITICAL: Double-check session ID matches before saving
+      // This ensures messages are always saved to the correct session and prevents cross-contamination
+      const sessionMatches = prevSessionIdRef.current === activeSessionId
+      
+      if (!sessionMatches) {
+        // Session changed - don't save to old session
+        console.log(`Session mismatch: prev=${prevSessionIdRef.current}, active=${activeSessionId} - skipping save`)
+        return
+      }
+      
       // Only save if messages actually changed (not just session)
       // We handle session changes separately in the sessionId effect above
       const messagesChanged = 
@@ -320,28 +360,26 @@ export function useStreaming(agentId: string, sessionId?: string) {
                  prevMsg.streaming !== currMsg.streaming
         })
       
-      // CRITICAL: Double-check session ID matches before saving
-      // This ensures messages are always saved to the correct session
-      const sessionMatches = prevSessionIdRef.current === activeSessionId
-      
-      if (messagesChanged && sessionMatches) {
+      if (messagesChanged) {
         isSavingRef.current = true
         
-        // Create a deep copy of messages to save
-        const messagesToSave = [...messages]
+        // Create a deep copy of messages to save - this prevents reference issues
+        // and ensures each session has its own isolated copy
+        const messagesToSave = messages.map(msg => ({ ...msg }))
         prevMessagesRef.current = messagesToSave
         prevSessionIdRef.current = activeSessionId
         
         // CRITICAL: Save messages to the ACTIVE session ID
-        // This ensures messages are isolated by session_id
+        // This ensures messages are isolated by session_id and prevents duplication
         saveMessages(activeSessionId, messagesToSave)
+        console.log(`Saved ${messagesToSave.length} messages to session ${activeSessionId}`)
         
         // Reset flag after save completes
         setTimeout(() => {
           isSavingRef.current = false
         }, 0)
       }
-    } else if (messages.length === 0 && activeSessionId && currentSessionId === activeSessionId) {
+    } else if (messages.length === 0 && activeSessionId) {
       // If messages are cleared but we have a session ID, update refs
       prevMessagesRef.current = []
       prevSessionIdRef.current = activeSessionId
@@ -350,7 +388,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
       prevMessagesRef.current = []
       prevSessionIdRef.current = undefined
     }
-  }, [messages, currentSessionId])
+  }, [messages])
 
   return {
     messages,
