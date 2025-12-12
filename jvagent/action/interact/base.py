@@ -107,6 +107,72 @@ class InteractAction(Action, ABC):
         """
         pass
 
+
+
+    async def respond(
+        self,
+        interaction: "Interaction",
+        visitor: Optional[Any] = None,
+        use_utterance: bool = True,
+        use_history: bool = True,
+        history_limit: int = 3,
+    ) -> Optional[str]:
+        """Helper method for InteractActions to generate a response via PersonaAction.
+
+        This is a convenience method that InteractActions can call after adding
+        directives/parameters to the interaction. It will:
+        1. Get the PersonaAction instance
+        2. Call PersonaAction.respond() with the interaction
+        3. Set the response on the interaction
+        4. Optionally stream via ResponseBus if visitor is provided
+
+        Args:
+            interaction: The Interaction object with directives/parameters added
+            visitor: Optional InteractWalker for streaming support
+            use_utterance: Whether to include the user's utterance in the prompt (default: True)
+            use_history: Whether to include conversation history in the prompt (default: True)
+
+        Returns:
+            The generated response string, or None if PersonaAction not found
+
+        Example:
+            # Standard usage with utterance and history
+            await self.respond(interaction, visitor=visitor)
+
+            # Only use directives, no utterance or history
+            await self.respond(interaction, visitor=visitor, use_utterance=False, use_history=False)
+
+            # Use utterance but no history
+            await self.respond(interaction, visitor=visitor, use_history=False)
+        """
+        try:
+            persona = await self._get_persona_action()
+            if persona:
+                # PersonaAction.respond supports visitor for streaming via ResponseBus
+                if visitor:
+                    visitor.stream_mode = True
+
+                # Call PersonaAction with use_utterance and use_history flags
+                response = await persona.respond(
+                    interaction,
+                    visitor=visitor,
+                    use_utterance=use_utterance,
+                    use_history=use_history,
+                    history_limit=history_limit,
+                )
+
+                if response and interaction:
+                    interaction.set_response(response)
+                    await interaction.save()
+
+                return response
+            else:
+                logger.debug("InteractAction.respond: PersonaAction not found; skipping auto-respond")
+                return None
+        except Exception as e:
+            logger.error(f"InteractAction.respond: Error calling PersonaAction: {e}", exc_info=True)
+            return None
+
     async def _get_persona_action(self) -> Optional[Any]:
         """Get the PersonaAction for responding with persona prompt.
 

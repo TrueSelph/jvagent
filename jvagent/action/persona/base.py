@@ -86,7 +86,7 @@ class PersonaAction(Action):
         default_factory=list, description="List of agent capabilities"
     )
     history_limit: int = attribute(
-        default=0,
+        default=3,
         description="Number of previous interactions to include as conversation history (0 = disabled)",
         ge=0
     )
@@ -100,6 +100,9 @@ class PersonaAction(Action):
         self,
         interaction: Interaction,
         visitor: Optional[Any] = None,
+        use_utterance: bool = True,
+        use_history: bool = False,
+        history_limit: int = 3,
     ) -> str:
         """Main utility method for generating a response.
 
@@ -139,10 +142,17 @@ class PersonaAction(Action):
         # Compose the prompt
         system_prompt = self._compose_prompt(interaction)
 
-        # Get conversation history if enabled
-        conversation_history: Optional[List[Dict[str, Any]]] = None
-        if self.history_limit > 0:
-            conversation_history = await self._get_conversation_history(interaction)
+        if use_history:
+            # attempt to extract history from common attributes; keep robust to different shapes
+            conversation_history: Optional[List[Dict[str, Any]]] = None
+            conversation_history = await self._get_conversation_history(interaction, history_limit)
+        else:
+            conversation_history = None
+
+        if use_utterance:
+            utterance = interaction.utterance
+        else:
+            utterance = " "
 
         streaming = bool(
             visitor
@@ -188,9 +198,9 @@ class PersonaAction(Action):
         # Make the language model call
         try:
             logger.debug(f"PersonaAction.respond: conversation_history={conversation_history}")
-            
+
             response = await model_action.generate(
-                prompt=interaction.utterance,
+                prompt=utterance,
                 stream=streaming,
                 system=system_prompt,
                 history=conversation_history,
@@ -224,8 +234,6 @@ class PersonaAction(Action):
                     message_type="final",
                     interaction_id=interaction.id,
                 )
-            interaction.set_to_executed(interaction.parameters,interaction.get_directives())
-            interaction.parameters = []
             return response
 
         except Exception as e:
@@ -314,7 +322,7 @@ class PersonaAction(Action):
         return final_prompt
 
     async def _get_conversation_history(
-        self, interaction: Interaction
+        self, interaction: Interaction, history_limit: int
     ) -> Optional[List[Dict[str, Any]]]:
         """Get formatted conversation history for the language model.
 
@@ -327,7 +335,7 @@ class PersonaAction(Action):
         Returns:
             List of message dictionaries with 'role' and 'content' keys, or None if disabled
         """
-        if self.history_limit <= 0:
+        if history_limit <= 0:
             return None
 
         from jvagent.memory.conversation import Conversation
@@ -339,7 +347,7 @@ class PersonaAction(Action):
 
         # Get conversation history formatted for language model
         history = await conversation.get_interaction_history(
-            limit=self.history_limit,
+            limit=history_limit,
             excluded=interaction.id,
             utterance=True,
             response=True,

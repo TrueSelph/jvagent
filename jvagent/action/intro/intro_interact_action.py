@@ -27,9 +27,10 @@ class IntroInteractAction(InteractAction):
     3. Only executes once per conversation (first interaction only)
 
     Attributes:
-        prompt: Introductory message template for first-time users
-        weight: Execution weight (default: -50, runs after InteractRouter but before PersonaAction)
+        directive: Introductory message template for first-time users
+        weight: Execution weight (default: -75, runs after InteractRouter but before PersonaAction)
         anchors: Routing anchors (empty list - this runs conditionally based on user status)
+        parameters: Optional parameters to add to the interaction for PersonaAction
     """
 
     directive: str = attribute(
@@ -56,10 +57,6 @@ class IntroInteractAction(InteractAction):
         default_factory=list,
         description="Routing anchors (empty - conditional execution based on user status)",
     )
-    parameters: list = attribute(
-        default=[{"condition": "The user asks a question you do not have sufficient context to answer." ,"response": "ignore the question and make no attemp to answer it. Just introduce yourself by following the directive and another action will respond to the question."}],
-        description="Optional parameters to add to the interaction for PersonaAction"
-    )
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute intro action if user is first-time.
@@ -70,24 +67,23 @@ class IntroInteractAction(InteractAction):
         Args:
             visitor: The InteractWalker visiting this action
         """
+        # Check if this is a new user (first interaction)
+        if not visitor.new_user:
+            logger.debug("IntroInteractAction: Not a first-time user, skipping intro")
+            return
+
         interaction = visitor.interaction
         if not interaction:
             logger.warning("IntroInteractAction: No interaction available")
             return
 
         try:
-            # Check if this is a new user (first interaction)
-            if not visitor.new_user:
-                logger.debug("IntroInteractAction: Not a first-time user, skipping intro")
-                return
-
-            # Validate prompt is configured
+            # Validate directive is configured
             if not self.directive:
                 logger.warning("IntroInteractAction: Directive not configured, skipping intro")
                 return
 
             # Add introductory directive to interaction
-            interaction.add_directive(self.directive)
             if self.directive:
                 directive = self.directive
                 interaction.add_directive(directive)
@@ -99,53 +95,19 @@ class IntroInteractAction(InteractAction):
             else:
                 logger.debug("IntroInteractAction: No results found, no directive added")
 
-            parameters_added = False
-
-            if self.parameters:
-                for param in self.parameters:
-                    interaction.add_parameter(param, self.label)
-                parameters_added = True
-
-            if directive_added and parameters_added:
-                try:
-                    persona = await self._get_persona_action()
-                    print("persona action",persona)
-                    if persona:
-                        # PersonaAction.respond now supports visitor (for streaming via ResponseBus)
-                        visitor.stream_mode = True
-                        response = await persona.respond(interaction, visitor=visitor)
-                        if response and visitor.interaction:
-                            visitor.interaction.set_response(response)
-                            await visitor.interaction.save()
-                    else:
-                        logger.debug("RetrievalInteractAction: PersonaAction not found; skipping auto-respond")
-                except Exception as e:
-                    logger.error(f"RetrievalInteractAction: Error calling PersonaAction.respond: {e}", exc_info=True)
-
-            logger.info("IntroInteractAction: Added introductory directive for first-time user")
+            if directive_added:
+                logger.info("IntroInteractAction: Added introductory directive for first-time user")
+                # Use the base class respond() helper method
+                await self.respond(interaction, visitor=visitor, use_utterance=False, use_history=False)
 
         except Exception as e:
             logger.error(f"IntroInteractAction: Error during execution: {e}", exc_info=True)
             # Don't raise - allow other actions to continue
 
-    def _is_new_user(self, interaction: "Interaction") -> bool:
-        """Check if this is a first-time user interaction.
-
-        Uses the Interaction's is_new_user() method which checks if
-        there are no prior actions or events.
-
-        Args:
-            interaction: The interaction to check
-
-        Returns:
-            True if first-time user, False otherwise
-        """
-        return interaction.is_new_user()
-
     async def healthcheck(self) -> bool | dict:
         """Perform health check on the action.
 
-        Validates that the prompt is configured.
+        Validates that the directive is configured.
 
         Returns:
             True if healthy, dict with error details otherwise
@@ -153,7 +115,7 @@ class IntroInteractAction(InteractAction):
         if not self.directive:
             return {
                 "status": False,
-                "message": "Prompt is not set",
+                "message": "Directive is not set",
                 "severity": "error",
             }
 
