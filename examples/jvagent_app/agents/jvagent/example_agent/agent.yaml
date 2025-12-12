@@ -42,43 +42,6 @@ actions:
       # Model Configuration (uses OpenAI model action by entity type)
       model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
       history_limit: 10  # Number of previous interactions to include in context
-
-      system_prompt: |
-        You are an intent analysis system that interprets user utterances and routes them to appropriate InteractActions based on published anchor statements.
-
-        Your role is to:
-        1. Understand the user's intent from their utterance and conversation context and generate a concise interpretation that captures that intent
-        2. Match the interpretation against available anchor statements
-        3. Return the matching entity names (InteractAction identifiers) in JSON format
-
-        Be precise and only match when there's clear alignment between the user's intent and an anchor statement.
-      routing_prompt: |
-        ## Current Utterance:
-        {utterance}
-
-        {previous_intents}
-
-        ## Available Anchors:
-        The following anchors represent capabilities of different InteractActions. Each entity name maps to a list of anchor statements that describe when that action should be used.
-
-        {anchors_json}
-
-        ## Task:
-        1. Generate a concise interpretation (under 50 words) that summarizes the user's intent with applicable contextual references.
-          Note if the user is responding to question or any ongoing events
-          This interpretation should mention if the user is requesting information, providing information or doing both.
-          Example: "User has requested an update on the report bearing reference number 12345"
-
-        2. Match the interpretation against the anchor statements to identify which entity names (InteractActions) should handle this request.
-
-        3. Return your analysis in JSON format:
-        {{
-            "interpretation": "Your concise interpretation here",
-            "entities": ["entity_name1", "entity_name2"],
-            "confidence": 0.85
-        }}
-
-        Return ONLY valid JSON, no additional text.
       # Optional: List of InteractAction entity names that must always execute
       exceptions:
         # - "PersonaAction"
