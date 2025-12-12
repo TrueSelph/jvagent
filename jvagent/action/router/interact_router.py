@@ -37,7 +37,8 @@ class InteractRouter(InteractAction):
         weight: Execution weight (default: -100 to run first)
         exceptions: List of InteractAction entity names that must always execute, regardless of routing
         system_prompt: Optional override for the system prompt used during routing
-        routing_prompt: Optional template for the routing prompt with placeholders: {utterance}, {conversation_history}, {anchors_json}
+        routing_prompt: Optional template for the routing prompt with placeholders: {utterance}, {anchors_json}
+            (Note: Conversation history is passed separately to the LLM via history parameter)
     """
 
     model_action_type: str = attribute(
@@ -65,9 +66,10 @@ class InteractRouter(InteractAction):
         default=None,
         description=(
             "Optional template for the routing prompt. "
-            "Placeholders: {utterance}, {conversation_history}, {anchors_json}. "
+            "Placeholders: {utterance}, {anchors_json}. "
+            "Note: Conversation history is passed separately to the LLM via history parameter. "
             "If not provided, uses default routing prompt template."
-        )
+        ),
     )
 
     async def execute(self, visitor: "InteractWalker") -> None:
@@ -115,13 +117,27 @@ class InteractRouter(InteractAction):
                 await interaction.save()
                 return
 
-            # Build conversation history context
-            conversation_context = await self._build_conversation_context(interaction)
+            # Get conversation history (formatted as role/content pairs)
+            from jvagent.memory.conversation import Conversation
+            
+            conversation = await Conversation.get(interaction.conversation_id)
+            conversation_history = []
+            if conversation:
+                conversation_history = await conversation.get_interaction_history(
+                    limit=self.history_limit,
+                    excluded=interaction.id,
+                    utterance=False,
+                    response=False,
+                    interpretation=True,
+                    event=True,
+                    formatted=True,
+                )
 
-            # Build routing prompt
+                logger.debug(f"InteractRouter: Conversation history: {conversation_history}")
+                
+            # Build routing prompt (history will be passed separately to LLM)
             prompt = self._build_routing_prompt(
                 interaction.utterance,
-                conversation_context,
                 anchors_dict
             )
 
@@ -132,6 +148,7 @@ class InteractRouter(InteractAction):
                 prompt=prompt,
                 stream=streaming,
                 system=self._get_system_prompt(),
+                history=conversation_history,  # Pass formatted history directly to LLM
                 temperature=0.3,  # Lower temperature for more consistent routing
                 max_tokens=500,
             )
@@ -269,103 +286,51 @@ class InteractRouter(InteractAction):
         logger.debug(f"InteractRouter: Collected anchors from {len(anchors_dict)} actions: {list(anchors_dict.keys())}")
         return anchors_dict
 
-    async def _build_conversation_context(
-        self, interaction: Any
-    ) -> List[Dict[str, Any]]:
-        """Build conversation history context from previous interactions.
-
-        Args:
-            interaction: Current interaction
-
-        Returns:
-            List of conversation history entries
-        """
-        from jvagent.memory.conversation import Conversation
-
-        # Get conversation
-        conversation = await Conversation.get(interaction.conversation_id)
-        if not conversation:
-            return []
-
-        # Get previous interactions (excluding current)
-        # Get more than needed to ensure we have enough after filtering
-        all_recent = await conversation.get_interactions(
-            limit=self.history_limit,  # Get extra to account for current interaction
-            reverse=True
-        )
-
-        # Filter out current interaction
-        history = [
-            i for i in all_recent
-            if i.id != interaction.id
-        ]
-
-        # Limit to requested number and reverse to chronological order (oldest first)
-        history = history[:self.history_limit]
-        history.reverse()
-
-        # Build context entries
-        context: List[Dict[str, Any]] = []
-        for prev_interaction in history:
-            entry: Dict[str, Any] = {
-                "utterance": prev_interaction.utterance,
-            }
-            if prev_interaction.response:
-                entry["response"] = prev_interaction.response
-            if prev_interaction.events:
-                entry["events"] = prev_interaction.events
-            if prev_interaction.interpretation:
-                entry["interpretation"] = prev_interaction.interpretation
-            context.append(entry)
-
-        return context
-
     def _build_routing_prompt(
         self,
         utterance: str,
-        conversation_context: List[Dict[str, Any]],
         anchors_dict: Dict[str, List[str]]
     ) -> str:
         """Build the LLM prompt for routing analysis.
 
+        Note: Conversation history (past interpretations and events) is passed separately
+        to the LLM via the history parameter, so it is not included in this prompt.
+
         Args:
             utterance: Current user utterance
-            conversation_context: Conversation history
             anchors_dict: Available anchors dictionary
 
         Returns:
             Formatted prompt string
         """
-        # Build conversation history text
-        history_text = ""
-        if conversation_context:
-            history_text = "\n\n## Previous Intents:\n"
-            for i, entry in enumerate(conversation_context, 1):
-                history_text += f"\n### Turn {i}:\n"
-                # history_text += f"User: {entry.get('utterance', '')}\n"
-                # if entry.get("response"):
-                #     history_text += f"Assistant: {entry.get('response')}\n"
-                # if entry.get("events"):
-                #     history_text += f"Events: {', '.join(entry.get('events', []))}\n"
-                if entry.get("interpretation"):
-                    history_text += f"Previous Intent: {entry.get('interpretation')}\n"
-
         # Build anchors text
         anchors_text = json.dumps(anchors_dict, indent=2)
 
         # Use custom routing prompt template if provided
         if self.routing_prompt:
-            return self.routing_prompt.format(
-                utterance=utterance,
-                previous_intents=history_text,
-                anchors_json=anchors_text,
-            )
+            try:
+                return self.routing_prompt.format(
+                    utterance=utterance,
+                    anchors_json=anchors_text,
+                )
+            except KeyError as e:
+                # Handle legacy placeholders that may still exist in custom templates
+                logger.warning(
+                    f"InteractRouter: Custom routing prompt contains unsupported placeholder: {e}. "
+                    f"Supported placeholders are: {{utterance}}, {{anchors_json}}. "
+                    f"Conversation history is now passed separately via history parameter."
+                )
+                # Try with all possible placeholders for backward compatibility
+                return self.routing_prompt.format(
+                    utterance=utterance,
+                    anchors_json=anchors_text,
+                    previous_intents="",  # Legacy placeholder - now empty as history is passed separately
+                    conversation_history="",  # Legacy placeholder - now empty as history is passed separately
+                )
 
         # Default routing prompt template
         prompt = f"""## Current Utterance:
         {utterance}
-
-        {history_text}
 
         ## Available Anchors:
         The following anchors represent capabilities of different InteractActions. Each entity name maps to a list of anchor statements that describe when that action should be used.

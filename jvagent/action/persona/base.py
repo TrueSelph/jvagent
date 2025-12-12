@@ -85,6 +85,11 @@ class PersonaAction(Action):
     persona_capabilities: List[str] = attribute(
         default_factory=list, description="List of agent capabilities"
     )
+    history_limit: int = attribute(
+        default=0,
+        description="Number of previous interactions to include as conversation history (0 = disabled)",
+        ge=0
+    )
 
     async def on_register(self) -> None:
         """Initialize when action is registered."""
@@ -134,6 +139,11 @@ class PersonaAction(Action):
         # Compose the prompt
         system_prompt = self._compose_prompt(interaction)
 
+        # Get conversation history if enabled
+        conversation_history: Optional[List[Dict[str, Any]]] = None
+        if self.history_limit > 0:
+            conversation_history = await self._get_conversation_history(interaction)
+
         streaming = bool(
             visitor
             and getattr(visitor, "stream_mode", True)
@@ -177,10 +187,13 @@ class PersonaAction(Action):
 
         # Make the language model call
         try:
+            logger.debug(f"PersonaAction.respond: conversation_history={conversation_history}")
+            
             response = await model_action.generate(
                 prompt=interaction.utterance,
                 stream=streaming,
                 system=system_prompt,
+                history=conversation_history,
                 model=self.model_name,
                 temperature=self.model_temperature,
                 max_tokens=self.model_max_tokens,
@@ -299,6 +312,40 @@ class PersonaAction(Action):
             final_prompt += f"\n\n{directives_prompt}"
 
         return final_prompt
+
+    async def _get_conversation_history(
+        self, interaction: Interaction
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Get formatted conversation history for the language model.
+
+        Uses the Memory/Conversation class method which formats history
+        as role/content pairs for language models.
+
+        Args:
+            interaction: Current interaction
+
+        Returns:
+            List of message dictionaries with 'role' and 'content' keys, or None if disabled
+        """
+        if self.history_limit <= 0:
+            return None
+
+        from jvagent.memory.conversation import Conversation
+
+        # Get conversation
+        conversation = await Conversation.get(interaction.conversation_id)
+        if not conversation:
+            return None
+
+        # Get conversation history formatted for language model (default format)
+        # format_for_language_model=True is the default, so we get role/content pairs
+        history = await conversation.get_conversation_history(
+            limit=self.history_limit,
+            excluded=interaction.id,
+            format_for_language_model=True,  # Explicitly use language model format
+        )
+
+        return history if history else None
 
     def _format_parameter(self, param: Dict[str, Any]) -> str:
         """Format a parameter dictionary for inclusion in the prompt.

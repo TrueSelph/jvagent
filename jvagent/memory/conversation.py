@@ -1,7 +1,7 @@
 """Conversation node for managing conversation sessions."""
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute, compound_index
@@ -339,6 +339,288 @@ class Conversation(Node):
                     transcript.append({"event": event})
 
         return transcript
+
+    def _format_interactions(
+        self,
+        interactions: List["Interaction"],
+        include_utterance: bool = True,
+        include_response: bool = True,
+        include_interpretations: bool = False,
+        include_event: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Format interactions for language model consumption.
+
+        Utility method that converts interactions into role/content pairs for language models.
+        Can be used to wrap any getter method's raw output.
+
+        Args:
+            interactions: List of Interaction nodes to format
+            include_utterance: If True, include user utterances as user messages
+            include_response: If True, include AI responses as assistant messages
+            include_interpretations: If True, include interpretations as system messages
+            include_event: If True, include events as system messages
+
+        Returns:
+            List of dictionaries with 'role' and 'content' keys formatted for language models
+        """
+        history: List[Dict[str, Any]] = []
+        
+        for interaction in interactions:
+            # Add interpretation as system message (if present and requested)
+            if include_interpretations and interaction.interpretation:
+                content_parts = [f"Interpretation: {interaction.interpretation}"]
+                if interaction.anchors:
+                    content_parts.append(f"Anchors: {', '.join(interaction.anchors)}")
+                if interaction.routing_confidence is not None:
+                    content_parts.append(f"Confidence: {interaction.routing_confidence:.2f}")
+                
+                history.append({
+                    "role": "system",
+                    "content": " | ".join(content_parts),
+                })
+            
+            # Add user utterance (if requested)
+            if include_utterance:
+                history.append({
+                    "role": "user",
+                    "content": interaction.utterance,
+                })
+            
+            # Add assistant response (if present and requested)
+            if include_response and interaction.response:
+                history.append({
+                    "role": "assistant",
+                    "content": interaction.response,
+                })
+            
+            # Add events as system messages (if present and requested)
+            if include_event and interaction.events:
+                for event in interaction.events:
+                    history.append({
+                        "role": "system",
+                        "content": f"Event: {event}",
+                    })
+        
+        return history
+
+    async def get_interaction_history(
+        self,
+        limit: int = 10,
+        excluded: Union[str, List[str], bool] = False,
+        utterance: bool = True,
+        response: bool = True,
+        interpretation: bool = False,
+        event: bool = False,
+        formatted: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """Get interaction history with configurable element inclusion and formatting.
+
+        Unified utility method for retrieving interaction history with fine-grained control
+        over which elements to include and whether to format for language models.
+
+        Args:
+            limit: Maximum number of interactions to include (most recent)
+            excluded: Interaction ID(s) to exclude from results. Can be a single string, 
+                a list of strings, or False (default) for no exclusion.
+            utterance: If True, include user utterances (default: True)
+            response: If True, include AI responses (default: True)
+            interpretation: If True, include interpretations (default: False)
+            event: If True, include events (default: False)
+            formatted: If True, format as role/content pairs for language models.
+                If False, return raw format with metadata. Default: True.
+
+        Returns:
+            If formatted=True: List of dictionaries with 'role' and 'content' keys
+            If formatted=False: List of dictionaries with selected elements and metadata
+        """
+        # Normalize excluded to a set of IDs for efficient lookup
+        excluded_ids: set = set()
+        if excluded:
+            if isinstance(excluded, str):
+                excluded_ids.add(excluded)
+            elif isinstance(excluded, list):
+                excluded_ids.update(excluded)
+        
+        # Get most recent interactions (reverse=True gives newest first)
+        interactions = await self.get_interactions(
+            limit=limit + len(excluded_ids) if excluded_ids else limit, 
+            reverse=True
+        )
+        
+        # Filter out excluded interactions if specified
+        if excluded_ids:
+            interactions = [i for i in interactions if i.id not in excluded_ids]
+        
+        # Limit to requested number and reverse to chronological order (oldest first)
+        interactions = interactions[:limit]
+        interactions.reverse()
+        
+        if formatted:
+            # Use formatter utility
+            return self._format_interactions(
+                interactions,
+                include_utterance=utterance,
+                include_response=response,
+                include_interpretations=interpretation,
+                include_event=event,
+            )
+        else:
+            # Raw format with selected elements
+            history: List[Dict[str, Any]] = []
+            for interaction in interactions:
+                # Filter: if only event requested, skip interactions without events
+                if event and not interpretation and not utterance and not response:
+                    if not interaction.events:
+                        continue
+                
+                # Filter: if only interpretation requested, skip interactions without interpretation
+                if interpretation and not event and not utterance and not response:
+                    if not interaction.interpretation:
+                        continue
+                
+                entry: Dict[str, Any] = {
+                    "interaction_id": interaction.id,
+                    "started_at": interaction.started_at.isoformat() if interaction.started_at else None,
+                }
+                
+                if utterance:
+                    entry["utterance"] = interaction.utterance
+                
+                if response and interaction.response:
+                    entry["response"] = interaction.response
+                
+                if interpretation and interaction.interpretation:
+                    entry["interpretation"] = interaction.interpretation
+                    if interaction.anchors:
+                        entry["anchors"] = interaction.anchors
+                    if interaction.routing_confidence is not None:
+                        entry["routing_confidence"] = interaction.routing_confidence
+                
+                if event and interaction.events:
+                    entry["events"] = interaction.events
+                
+                history.append(entry)
+            
+            return history
+
+    async def get_conversation_history(
+        self,
+        limit: int = 10,
+        excluded: Union[str, List[str], bool] = False,
+        format_for_language_model: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """Get formatted conversation history (utterance and response pairs).
+
+        Args:
+            limit: Maximum number of interactions to include (most recent)
+            excluded: Interaction ID(s) to exclude from results. Can be a single string, 
+                a list of strings, or False (default) for no exclusion.
+            format_for_language_model: If True, format as role/content pairs for language models.
+                If False, return raw format with 'utterance' and 'response' keys. Default: True.
+
+        Returns:
+            If format_for_language_model=True: List of dictionaries with 'role' and 'content' keys
+            If format_for_language_model=False: List of dictionaries with 'utterance' and optional 'response' keys
+        """
+        return await self.get_interaction_history(
+            limit=limit,
+            excluded=excluded,
+            utterance=True,
+            response=True,
+            interpretation=False,
+            event=False,
+            formatted=format_for_language_model,
+        )
+
+    async def get_event_history(
+        self,
+        limit: int = 10,
+        excluded: Union[str, List[str], bool] = False,
+        format_for_language_model: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """Get formatted event history from interactions.
+
+        Args:
+            limit: Maximum number of interactions to include (most recent)
+            excluded: Interaction ID(s) to exclude from results. Can be a single string, 
+                a list of strings, or False (default) for no exclusion.
+            format_for_language_model: If True, format as role/content pairs for language models.
+                If False, return raw format with metadata. Default: True.
+
+        Returns:
+            If format_for_language_model=True: List of dictionaries with 'role' and 'content' keys
+            If format_for_language_model=False: List of dictionaries with 'interaction_id', 'started_at', and 'events' keys
+        """
+        return await self.get_interaction_history(
+            limit=limit,
+            excluded=excluded,
+            utterance=False,
+            response=False,
+            interpretation=False,
+            event=True,
+            formatted=format_for_language_model,
+        )
+
+    async def get_interpretation_history(
+        self,
+        limit: int = 10,
+        excluded: Union[str, List[str], bool] = False,
+        format_for_language_model: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """Get formatted interpretation history from interactions.
+
+        Args:
+            limit: Maximum number of interactions to include (most recent)
+            excluded: Interaction ID(s) to exclude from results. Can be a single string, 
+                a list of strings, or False (default) for no exclusion.
+            format_for_language_model: If True, format as role/content pairs for language models.
+                If False, return raw format with metadata. Default: True.
+
+        Returns:
+            If format_for_language_model=True: List of dictionaries with 'role' and 'content' keys
+            If format_for_language_model=False: List of dictionaries with 'interaction_id', 'started_at', 'interpretation', 
+            'anchors', and 'routing_confidence' keys
+        """
+        return await self.get_interaction_history(
+            limit=limit,
+            excluded=excluded,
+            utterance=False,
+            response=False,
+            interpretation=True,
+            event=False,
+            formatted=format_for_language_model,
+        )
+
+    async def get_context_history(
+        self,
+        limit: int = 10,
+        excluded: Union[str, List[str], bool] = False,
+        format_for_language_model: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """Get formatted context history combining conversation, events, and interpretations.
+
+        Args:
+            limit: Maximum number of interactions to include (most recent)
+            excluded: Interaction ID(s) to exclude from results. Can be a single string, 
+                a list of strings, or False (default) for no exclusion.
+            format_for_language_model: If True, format as role/content pairs for language models.
+                Includes user utterance, AI response, events, and interpretations. Default: True.
+
+        Returns:
+            If format_for_language_model=True: List of dictionaries with 'role' and 'content' keys
+                (includes user, assistant, system messages for interpretations and events)
+            If format_for_language_model=False: List of dictionaries containing conversation, events, 
+                and interpretation data with metadata
+        """
+        return await self.get_interaction_history(
+            limit=limit,
+            excluded=excluded,
+            utterance=True,
+            response=True,
+            interpretation=True,
+            event=True,
+            formatted=format_for_language_model,
+        )
 
     async def update_context(self, updates: Dict[str, Any]) -> None:
         """Update conversation context with new values.
