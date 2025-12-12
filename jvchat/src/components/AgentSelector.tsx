@@ -74,22 +74,22 @@ export function AgentSelector() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-gray-50 py-4 sm:py-8">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+        <div className="mb-4 sm:mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
             Select an Agent
           </h1>
-          <p className="text-gray-600">
+          <p className="text-sm sm:text-base text-gray-600">
             Choose an agent to start a conversation
           </p>
         </div>
 
-        <div className="mb-6">
+        <div className="mb-4 sm:mb-6">
           <input
             type="text"
             placeholder="Search agents..."
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 touch-manipulation"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -102,30 +102,49 @@ export function AgentSelector() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             {filteredAgents.map((agent) => (
               <button
                 key={agent.id}
                 onClick={() => handleSelectAgent(agent)}
-                className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow text-left"
+                className="bg-white rounded-lg shadow p-4 sm:p-6 hover:shadow-lg transition-shadow text-left w-full touch-manipulation"
               >
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  {agent.alias || agent.name}
-                </h3>
-                {agent.description && (
-                  <p className="text-sm text-gray-600 mb-4 line-clamp-2">
-                    {agent.description}
-                  </p>
-                )}
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">{agent.name}</span>
-                  {agent.enabled ? (
-                    <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded">
+                <div className="flex items-start justify-between mb-2">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 flex-1 pr-2">
+                    {agent.alias || agent.name || 'Unnamed Agent'}
+                  </h3>
+                  {agent.enabled !== false ? (
+                    <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded flex-shrink-0">
                       Enabled
                     </span>
                   ) : (
-                    <span className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded">
+                    <span className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded flex-shrink-0">
                       Disabled
+                    </span>
+                  )}
+                </div>
+                {agent.description ? (
+                  <p className="text-sm text-gray-600 mb-3 line-clamp-2 sm:line-clamp-3">
+                    {agent.description}
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-400 mb-3 italic">
+                    No description available
+                  </p>
+                )}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs gap-1 sm:gap-0">
+                  <div className="flex flex-col">
+                    <span className="text-gray-500 truncate">ID: {agent.id.substring(0, 20)}...</span>
+                    {agent.namespace && (
+                      <span className="text-gray-400">Namespace: {agent.namespace}</span>
+                    )}
+                    {agent.name && agent.name !== (agent.alias || agent.name) && (
+                      <span className="text-gray-400 truncate">Name: {agent.name}</span>
+                    )}
+                  </div>
+                  {agent.interaction_limit !== undefined && agent.interaction_limit > 0 && (
+                    <span className="text-gray-500">
+                      Limit: {agent.interaction_limit}
                     </span>
                   )}
                 </div>

@@ -4,6 +4,7 @@ export interface Message {
   content: string
   timestamp: string
   streaming?: boolean
+  debugData?: any // Store final message JSON for debug view
 }
 
 export interface StreamingMessage {
