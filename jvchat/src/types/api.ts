@@ -64,19 +64,26 @@ export interface InteractionResponse {
   report: any[]
 }
 
+export interface ResponseMessageData {
+  id: string
+  session_id: string
+  interaction_id: string
+  message_type: string
+  content: string
+  channel: string
+  metadata: Record<string, any>
+  observability_data?: Record<string, any>
+  timestamp: string | null
+  delivered: boolean
+}
+
 export interface SSEChunk {
   type: 'start' | 'message' | 'final' | 'error'
   interaction_id?: string
   session_id?: string
   user_id?: string
-  message?: {
-    id: string
-    content: string
-    message_type: string
-    timestamp: string
-  }
+  message?: ResponseMessageData | string // ResponseMessageData when type === 'message', string when type === 'error'
   interaction?: InteractionResponse['interaction']
   report?: any[]
-  message?: string
 }
 

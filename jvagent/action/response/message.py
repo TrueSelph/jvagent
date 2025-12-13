@@ -22,7 +22,6 @@ class ResponseMessage(Object):
     - Observability events (model_call, embedding_call, action_metric)
 
     Attributes:
-        agent_id: Agent identifier this message belongs to
         session_id: Session identifier
         interaction_id: Parent interaction ID
         message_type: Type of message ("adhoc", "stream_chunk", "final")
@@ -33,9 +32,6 @@ class ResponseMessage(Object):
         delivered: Whether message was delivered
     """
 
-    agent_id: str = attribute(
-        default="", description="Agent identifier this message belongs to"
-    )
     session_id: str = attribute(
         default="", description="Session identifier"
     )
@@ -76,7 +72,6 @@ class ResponseMessage(Object):
         """
         return {
             "id": self.id,
-            "agent_id": self.agent_id,
             "session_id": self.session_id,
             "interaction_id": self.interaction_id,
             "message_type": self.message_type,

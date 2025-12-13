@@ -5,6 +5,7 @@ export interface Message {
   timestamp: string
   streaming?: boolean
   debugData?: any // Store final message JSON for debug view
+  interactionId?: string // Used to prevent cross-interaction overwrites
 }
 
 export interface StreamingMessage {
