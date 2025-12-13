@@ -95,6 +95,22 @@ class ModelActionResult:
             self.metrics.update(usage)
         if duration is not None:
             self.metrics["duration"] = duration
+        
+        # Track whether usage was estimated (for streaming)
+        self._usage_estimated: bool = False
+
+    def update_usage(self, usage: Dict[str, int], estimated: bool = True) -> None:
+        """Update usage metrics after stream completion.
+        
+        Used to update metrics for streaming results after the stream
+        has been consumed and tokens have been estimated.
+        
+        Args:
+            usage: Token usage dict with prompt_tokens, completion_tokens, total_tokens
+            estimated: Whether the usage is estimated (True) or actual (False)
+        """
+        self.metrics.update(usage)
+        self._usage_estimated = estimated
 
     async def get_response(self) -> str:
         """Get the complete response text.
@@ -259,7 +275,6 @@ class LanguageModelAction(BaseModelAction, ABC):
         system: Optional[str] = None,
         history: Optional[List[Dict[str, Any]]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
-        interaction: Optional["Interaction"] = None,
         **kwargs: Any,
     ) -> str:
         """Generate text with optional streaming callbacks.
@@ -267,9 +282,7 @@ class LanguageModelAction(BaseModelAction, ABC):
         If stream=True and callbacks are provided, partial chunks are emitted
         via on_stream_chunk. The full text is returned in all cases.
         
-        When interaction is provided, model results are automatically logged
-        to the interaction's model_log. This provides transparent tracking
-        without requiring explicit logging statements in actions.
+        Observability metrics are automatically emitted via context-based tracking.
 
         Args:
             prompt: User prompt (text or multimodal content)
@@ -279,7 +292,6 @@ class LanguageModelAction(BaseModelAction, ABC):
             system: Optional system message
             history: Optional conversation history
             tools: Optional list of tool/function definitions
-            interaction: Optional Interaction object for automatic result logging
             **kwargs: Additional parameters (temperature, max_tokens, model, etc.)
 
         Returns:
@@ -293,16 +305,11 @@ class LanguageModelAction(BaseModelAction, ABC):
                 system=system,
                 history=history,
                 tools=tools,
-                interaction=interaction,
                 **kwargs,
             )
             full_text = await result.get_response()
             if on_stream_end:
                 on_stream_end(full_text)
-            
-            # Auto-log model result if interaction provided
-            if interaction:
-                self._log_model_result(interaction, result, full_text, stream=False, **kwargs)
             
             return full_text
 
@@ -313,7 +320,6 @@ class LanguageModelAction(BaseModelAction, ABC):
             system=system,
             history=history,
             tools=tools,
-            interaction=interaction,
             **kwargs,
         )
 
@@ -327,15 +333,19 @@ class LanguageModelAction(BaseModelAction, ABC):
                     logger.warning("on_stream_chunk callback raised: %s", exc, exc_info=True)
 
         full_text = "".join(chunks)
+        
+        # Ensure response is cached in result (for observability)
+        if not result.response:
+            result.response = full_text
+        
+        # Token estimation and observability re-emission are handled by the stream wrapper
+        # in query() method, which runs after stream consumption completes
+        
         if on_stream_end:
             try:
                 on_stream_end(full_text)
             except Exception as exc:
                 logger.warning("on_stream_end callback raised: %s", exc, exc_info=True)
-        
-        # Auto-log model result if interaction provided (after streaming completes)
-        if interaction:
-            self._log_model_result(interaction, result, full_text, stream=True, **kwargs)
         
         return full_text
 
@@ -346,7 +356,6 @@ class LanguageModelAction(BaseModelAction, ABC):
         system: Optional[str] = None,
         history: Optional[List[Dict[str, Any]]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
-        interaction: Optional["Interaction"] = None,
         **kwargs: Any,
     ) -> ModelActionResult:
         """Execute a query to the language model.
@@ -359,9 +368,7 @@ class LanguageModelAction(BaseModelAction, ABC):
         LanguageModelAction implementations are designed to handle multimodal
         content including images, enabling rich visual understanding capabilities.
 
-        Note: When interaction is provided, model results are automatically
-        logged via generate(). This method does not log directly - use generate()
-        for automatic logging, or query() if you need the ModelActionResult object.
+        Observability metrics are automatically emitted via context-based tracking.
 
         Args:
             prompt: User prompt - can be:
@@ -371,7 +378,6 @@ class LanguageModelAction(BaseModelAction, ABC):
             system: Optional system message
             history: Optional conversation history (can include multimodal messages)
             tools: Optional list of tool/function definitions
-            interaction: Optional Interaction object (passed through to generate() for logging)
             **kwargs: Additional parameters (temperature, max_tokens, etc.)
 
         Returns:
@@ -422,6 +428,15 @@ class LanguageModelAction(BaseModelAction, ABC):
         # Update metrics with duration
         result.metrics["duration"] = duration
 
+        # Store result temporarily for observability (to include response in metrics)
+        self._last_result = result
+        
+        # Store messages and context for token estimation (for streaming)
+        if stream:
+            result._messages_for_estimation = messages
+            result._model_for_estimation = query_params.get("model", self.model)
+            result._provider_for_estimation = getattr(self, "provider", "")
+
         # Track usage metrics (including duration)
         # Extract usage dict from metrics for tracking
         usage_dict = {
@@ -429,67 +444,81 @@ class LanguageModelAction(BaseModelAction, ABC):
             "completion_tokens": result.metrics.get("completion_tokens", 0),
             "total_tokens": result.metrics.get("total_tokens", 0),
         }
-        if any(usage_dict.values()):  # Only track if there are actual token counts
+        
+        # For streaming results, skip initial observability emission
+        # We'll emit after token estimation completes to avoid duplicate entries
+        # For non-streaming, emit immediately
+        if not (stream and result.is_streaming):
             self.track_usage(usage_dict, duration)
+        
+        # For streaming results, schedule token estimation after stream completion
+        if stream and result.is_streaming:
+            # Create a wrapper that estimates tokens when stream is consumed
+            original_stream = result.stream
+            if original_stream:
+                async def stream_with_estimation():
+                    """Stream wrapper that estimates tokens after completion."""
+                    import time
+                    stream_start_time = time.time()
+                    chunks = []
+                    try:
+                        async for chunk in original_stream:
+                            chunks.append(chunk)
+                            yield chunk
+                    finally:
+                        # After stream completes, estimate tokens
+                        if chunks:
+                            full_response = "".join(chunks)
+                            # Store response for later use
+                            result.response = full_response
+                            
+                            # Calculate actual duration (from query start to stream completion)
+                            stream_end_time = time.time()
+                            actual_duration = stream_end_time - start_time
+                            
+                            # Estimate tokens
+                            try:
+                                from jvagent.action.model.utils.token_estimation import (
+                                    estimate_prompt_tokens,
+                                    estimate_completion_tokens,
+                                )
+                                
+                                messages = getattr(result, "_messages_for_estimation", [])
+                                model = getattr(result, "_model_for_estimation", result.model)
+                                provider = getattr(result, "_provider_for_estimation", result.provider)
+                                
+                                prompt_tokens = estimate_prompt_tokens(messages, model, provider)
+                                completion_tokens = estimate_completion_tokens(full_response, model, provider)
+                                total_tokens = prompt_tokens + completion_tokens
+                                
+                                # Update result metrics with actual duration
+                                result.metrics["duration"] = actual_duration
+                                
+                                # Update result metrics
+                                estimated_usage = {
+                                    "prompt_tokens": prompt_tokens,
+                                    "completion_tokens": completion_tokens,
+                                    "total_tokens": total_tokens,
+                                }
+                                result.update_usage(estimated_usage, estimated=True)
+                                
+                                # Emit observability with updated metrics and actual duration
+                                try:
+                                    from jvagent.action.model.context import get_interaction_id
+                                    interaction_id = get_interaction_id()
+                                    if interaction_id:
+                                        # Track usage with estimated metrics and actual duration
+                                        self.track_usage(estimated_usage, actual_duration)
+                                except Exception as e:
+                                    logger.debug(f"Failed to emit observability after stream: {e}")
+                                    
+                            except Exception as e:
+                                logger.debug(f"Failed to estimate tokens for streaming result: {e}")
+                
+                result.stream = stream_with_estimation()
 
         return result
 
-    def _log_model_result(
-        self,
-        interaction: "Interaction",
-        result: ModelActionResult,
-        response_text: str,
-        stream: bool,
-        **kwargs: Any,
-    ) -> None:
-        """Automatically log model result to interaction.
-        
-        This is called transparently when interaction is provided to generate().
-        Extracts relevant metadata from the result and logs it to the interaction's
-        model_log. Errors in logging are caught to prevent breaking model calls.
-        
-        Args:
-            interaction: The Interaction object to log to
-            result: The ModelActionResult from the query
-            response_text: The full response text
-            stream: Whether this was a streaming call
-            **kwargs: Additional parameters (may include model name override)
-        """
-        try:
-            # Extract model name (from kwargs override, result, or instance)
-            model_name = kwargs.get("model") or result.model or self.model or ""
-            
-            # Extract provider (from result or instance)
-            provider = result.provider or getattr(self, "provider", "")
-            
-            # Build model result dict
-            model_result: Dict[str, Any] = {
-                "response": response_text,
-                "model": model_name,
-                "is_streaming": stream,
-            }
-            
-            # Add provider if available
-            if provider:
-                model_result["provider"] = provider
-            
-            # Add metrics if available
-            if result.metrics:
-                model_result["metrics"] = result.metrics
-            
-            # Add finish reason if available
-            if result.finish_reason:
-                model_result["finish_reason"] = result.finish_reason
-            
-            # Add tool calls if available
-            if result.tool_calls:
-                model_result["tool_calls"] = result.tool_calls
-            
-            # Log to interaction
-            interaction.add_model_result(model_result)
-        except Exception as e:
-            # Logging failures should not break model calls
-            logger.warning(f"Failed to log model result to interaction: {e}", exc_info=True)
 
     async def query_sync(
         self,

@@ -9,7 +9,8 @@ A lightweight, extensible language model integration system for jvagent that pro
 - **Multiple Providers**: OpenAI, OpenRouter, and extensible for custom providers
 - **Sync & Streaming**: Both synchronous and streaming response modes
 - **Standardized Results**: `ModelActionResult` works seamlessly for both modes
-- **Token Tracking**: Automatic usage and cost estimation
+- **Token Tracking**: Automatic usage and cost estimation with token estimation for streaming calls
+- **Observability Integration**: Automatic metrics emission to ResponseBus for interaction tracking
 - **Template System**: Jinja2-based prompt templating
 - **Function Calling**: OpenAI-compatible tool/function calling
 - **Multimodal Support**: Text + images for visual understanding (LanguageModelAction implementations)
@@ -24,21 +25,30 @@ The `action/model` package is organized into subpackages to clearly separate con
 ```
 action/model/
 ├── base.py              # BaseModelAction (common base for all model types)
-├── language/            # Language model implementations and utilities
+├── context.py          # Context variables for interaction_id propagation
+├── utils/              # Utility modules
+│   └── token_estimation.py  # Token estimation (tiktoken + word-based fallback)
+├── language/           # Language model implementations and utilities
 │   ├── __init__.py     # Package exports
 │   ├── base.py         # LanguageModelAction base class and ModelActionResult
-│   ├── openai.py       # OpenAI implementation
-│   ├── openrouter.py   # OpenRouter implementation
+│   ├── openai/         # OpenAI implementation
+│   │   └── openai.py
+│   ├── openrouter/     # OpenRouter implementation
+│   │   └── openrouter.py
 │   ├── templates.py    # Template management (Jinja2)
 │   ├── tools.py        # Function calling support
 │   └── endpoints.py    # API endpoints for language models
 └── embedding/          # Embedding model implementations
     ├── __init__.py     # Package exports
     ├── base.py         # EmbeddingModelAction base class
-    ├── openai.py       # OpenAI embeddings implementation
-    ├── huggingface.py  # HuggingFace Inference API implementation
-    ├── openrouter.py   # OpenRouter embeddings implementation
-    └── generic.py      # Generic RESTful API implementation
+    ├── openai/         # OpenAI embeddings implementation
+    │   └── openai.py
+    ├── huggingface/    # HuggingFace Inference API implementation
+    │   └── huggingface.py
+    ├── openrouter/     # OpenRouter embeddings implementation
+    │   └── openrouter.py
+    └── generic/        # Generic RESTful API implementation
+        └── generic.py
 ```
 
 This structure provides clear separation between:
@@ -93,7 +103,10 @@ Add to your project's `requirements.txt`:
 ```
 httpx>=0.27.0
 jinja2>=3.1.0
+tiktoken>=0.5.0  # Optional: for accurate token counting (recommended)
 ```
+
+**Note**: `tiktoken` is optional but recommended for accurate token estimation in streaming mode. If not installed, the system falls back to word-based estimation.
 
 ### Configuration
 
@@ -152,10 +165,11 @@ class MyStreamingAction(Action):
             # Process chunk in real-time
             print(chunk, end="", flush=True)
         
-        # Get metrics after streaming
+        # Get metrics after streaming (tokens are estimated after stream completes)
         tokens = result.metrics.get('total_tokens', 'N/A')
         duration = result.metrics.get('duration', 'N/A')
-        print(f"\nTokens used: {tokens}, Duration: {duration}s")
+        is_estimated = getattr(result, '_usage_estimated', False)
+        print(f"\nTokens used: {tokens} ({'estimated' if is_estimated else 'actual'}), Duration: {duration}s")
 ```
 
 #### Using Templates
@@ -265,6 +279,8 @@ data: {"delta": " upon", "metrics": null, "finish_reason": null}
 data: {"delta": "", "metrics": {"prompt_tokens": 10, "completion_tokens": 200, "total_tokens": 210, "duration": 2.456}, "finish_reason": "stop", "tool_calls": []}
 data: [DONE]
 ```
+
+**Note**: For streaming queries, token counts are estimated after the stream completes using tiktoken (when available) or word-based estimation. The duration reflects the full time from query start to stream completion.
 
 ### Multimodal Query (Vision)
 
@@ -507,8 +523,14 @@ Extend `LanguageModelAction` to add custom language model providers:
 
 ```python
 from jvagent.action.model.language.base import LanguageModelAction, ModelActionResult
+from jvspatial.core.annotations import attribute
 
 class CustomModelAction(LanguageModelAction):
+    # Required: Set provider attribute
+    provider: str = attribute(
+        default="custom", description="Provider name"
+    )
+    
     async def _query(self, messages, tools=None, **kwargs):
         # Implement sync query
         response = await self.call_custom_api(messages)
@@ -516,7 +538,7 @@ class CustomModelAction(LanguageModelAction):
             response=response,
             usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             model=self.model,
-            provider="custom",
+            provider=self.provider,
             duration=0.0
         )
     
@@ -526,20 +548,42 @@ class CustomModelAction(LanguageModelAction):
             async for chunk in self.stream_custom_api(messages):
                 yield chunk
         
-        return ModelActionResult(
+        result = ModelActionResult(
             stream=stream_gen(),
-            usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            usage={},  # Empty for streaming - will be estimated after completion
             model=self.model,
-            provider="custom",
+            provider=self.provider,
             duration=0.0
         )
+        # Store messages for token estimation (handled automatically by base class)
+        result._messages_for_estimation = messages
+        return result
 ```
 
-## Cost Estimation
+**Important**: All model action classes must define a `provider` attribute. For streaming queries, token estimation is handled automatically by the base class after stream completion.
+
+## Token Estimation and Cost Tracking
+
+### Token Counting
+
+Token usage is automatically tracked for all model calls:
+
+- **Synchronous calls**: Token counts come directly from the API response
+- **Streaming calls**: Tokens are estimated after stream completion using:
+  - **tiktoken** (when available): Accurate token counting for OpenAI/OpenRouter models
+  - **Word-based fallback**: Approximate estimation (1.3x word count) when tiktoken is unavailable
+
+Token estimation handles:
+- Prompt tokens (from input messages)
+- Completion tokens (from streamed response)
+- Model-specific tokenization (GPT-4, GPT-3.5, Claude, etc.)
+- OpenRouter model format (`provider/model`)
+
+### Cost Estimation
 
 Costs are automatically tracked based on token usage:
 
-### OpenAI Pricing (per 1M tokens)
+#### OpenAI Pricing (per 1M tokens)
 
 | Model | Input | Output |
 |-------|-------|--------|
@@ -551,8 +595,24 @@ Access costs via:
 ```python
 print(f"Total cost: ${model.total_cost:.2f}")
 print(f"Total tokens: {model.total_tokens}")
-print(f"Requests: {model.total_requests}")
+print(f"Total requests: {model.total_requests}")
 ```
+
+### Observability Metrics
+
+Model calls automatically emit observability metrics to the ResponseBus when an interaction context is available. Metrics include:
+
+- **Provider**: Model provider name (openai, openrouter, etc.)
+- **Model**: Model identifier used
+- **Usage**: Token counts (prompt_tokens, completion_tokens, total_tokens)
+- **Duration**: Query duration in seconds (accurate for streaming, includes full stream time)
+- **Estimated flag**: Indicates whether token counts are estimated (true for streaming) or actual (false for sync)
+- **Response**: Complete response text (when available)
+- **Is streaming**: Whether the call was streaming
+- **Finish reason**: Completion reason (stop, length, tool_calls, etc.)
+- **Tool calls**: Function calls made (if any)
+
+Metrics are aggregated in the Interaction node's `observability_metrics` field after interaction finalization.
 
 ## Testing
 
@@ -573,9 +633,22 @@ See the example action:
 To add a new provider:
 1. Create a new file in `jvagent/action/model/`
 2. Extend `LanguageModelAction` for language model providers or `EmbeddingModelAction` for embedding providers
-3. Implement `_query()` and `_query_stream()`
-4. Add provider-specific configuration attributes
-5. Export in `__init__.py`
+3. **Required**: Define a `provider` attribute with the provider name
+4. Implement `_query()` and `_query_stream()` (for language models) or `_embed()` (for embeddings)
+5. For streaming queries, ensure `ModelActionResult` includes `provider` and stores messages for token estimation
+6. Add provider-specific configuration attributes
+7. Export in `__init__.py`
+
+Example provider attribute:
+```python
+from jvspatial.core.annotations import attribute
+
+class MyModelAction(LanguageModelAction):
+    provider: str = attribute(
+        default="myprovider", description="Provider name"
+    )
+    # ... rest of implementation
+```
 
 ## License
 

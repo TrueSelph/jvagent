@@ -8,7 +8,7 @@ The `IntroInteractAction` detects first-time users and adds an introductory dire
 
 ## Features
 
-- **First-Time Detection**: Automatically identifies first-time users using the Interaction's `is_new_user()` method
+- **First-Time Detection**: Automatically identifies first-time users using the InteractWalker's `is_new_user()` method
 - **Directive Pattern**: Adds introductory message as a directive for PersonaAction to incorporate
 - **Customizable Prompt**: Configurable introduction message via agent.yaml
 - **One-Time Execution**: Only runs on the first interaction, subsequent interactions skip it

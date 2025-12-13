@@ -50,6 +50,7 @@ class App(Node):
     # Runtime instances (private, transient)
     _file_interface: Any = attribute(private=True, default=None)
     _proxy_manager: Any = attribute(private=True, default=None)
+    _response_bus: Any = attribute(private=True, default=None)
 
     # Class-level cache and lock for singleton access
     _cached_app: ClassVar[Optional["App"]] = None
@@ -120,6 +121,24 @@ class App(Node):
         or when you want to force a fresh lookup on the next get() call.
         """
         cls._cached_app = None
+
+    # ============================================================================
+    # Response Bus Operations
+    # ============================================================================
+
+    async def get_response_bus(self) -> Any:
+        """Get or initialize the app-scoped ResponseBus instance.
+
+        Returns:
+            ResponseBus singleton instance
+        """
+        if self._response_bus:
+            return self._response_bus
+
+        from jvagent.action.response.response_bus import ResponseBus
+
+        self._response_bus = await ResponseBus.get_instance()
+        return self._response_bus
 
     # ============================================================================
     # File Storage Operations

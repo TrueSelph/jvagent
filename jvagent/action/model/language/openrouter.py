@@ -52,6 +52,9 @@ class OpenRouterLanguageModelAction(OpenAILanguageModelAction):
         default="openai/gpt-4o-mini",
         description="OpenRouter model identifier (provider/model format)",
     )
+    provider: str = attribute(
+        default="openrouter", description="Provider name"
+    )
     http_referer: str = attribute(
         default="", description="HTTP Referer header for OpenRouter (optional)"
     )
@@ -153,6 +156,14 @@ class OpenRouterLanguageModelAction(OpenAILanguageModelAction):
 
             # Update provider name
             result.provider = "openrouter"
+            
+            # Ensure messages are stored for token estimation (parent should have done this, but ensure it)
+            if not hasattr(result, "_messages_for_estimation"):
+                result._messages_for_estimation = messages
+            if not hasattr(result, "_model_for_estimation"):
+                result._model_for_estimation = kwargs.get("model", self.model)
+            if not hasattr(result, "_provider_for_estimation"):
+                result._provider_for_estimation = "openrouter"
 
             return result
         finally:

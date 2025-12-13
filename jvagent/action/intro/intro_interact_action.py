@@ -112,20 +112,6 @@ class IntroInteractAction(InteractAction):
             logger.error(f"IntroInteractAction: Error during execution: {e}", exc_info=True)
             # Don't raise - allow other actions to continue
 
-    def _is_new_user(self, interaction: "Interaction") -> bool:
-        """Check if this is a first-time user interaction.
-
-        Uses the Interaction's is_new_user() method which checks if
-        there are no prior actions or events.
-
-        Args:
-            interaction: The interaction to check
-
-        Returns:
-            True if first-time user, False otherwise
-        """
-        return interaction.is_new_user()
-
     async def healthcheck(self) -> bool | dict:
         """Perform health check on the action.
 

@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
                     "actions": ["InteractAction1", "InteractAction2"],
                     "directives": [],
                     "parameters": [],
-                    "model_log": [],
+                    "observability_metrics": [],
                 },
             ),
             "report": ResponseField(
@@ -174,8 +174,22 @@ async def interact_endpoint(
             if not interaction:
                 raise RuntimeError("Interaction was not created during traversal")
 
-            # Mark interaction as not streamed and close it
+            # Mark interaction as not streamed
             interaction.streamed = False
+            
+            # Finalize interaction (accumulate streamed data and observability)
+            if walker.response_bus:
+                await walker.response_bus.finalize_interaction(
+                    interaction_id=interaction.id,
+                    interaction=interaction,
+                    session_id=walker.session_id or "",
+                    channel=walker.channel,
+                )
+            
+            # Clear interaction_id from context
+            from jvagent.action.model.context import set_interaction_id
+            set_interaction_id(None)
+            
             interaction.close_interaction()
             await interaction.save()
 
@@ -188,10 +202,11 @@ async def interact_endpoint(
                     "id": interaction.id,
                     "utterance": interaction.utterance,
                     "response": interaction.response,
+                    "accumulated_response": interaction.accumulated_response,
                     "actions": interaction.actions,
                     "directives": interaction.directives,
                     "parameters": interaction.parameters,
-                    "model_log": interaction.model_log,
+                    "observability_metrics": interaction.observability_metrics,
                     "messages": interaction.messages,
                     "streamed": interaction.streamed,
                 },
@@ -258,46 +273,55 @@ async def _stream_interaction(
 
         # Subscribe to response bus messages
         if walker.response_bus and walker.session_id:
-            message_queue: list = []
+            # Use asyncio.Queue to avoid polling delays and improve latency
+            message_queue: asyncio.Queue[Any] = asyncio.Queue()
 
             async def message_callback(message: Any) -> None:
                 """Callback to receive new messages."""
-                if message.interaction_id == interaction.id:
-                    message_queue.append(message)
+                if message.interaction_id != interaction.id:
+                    return
+                await message_queue.put(message)
 
             await walker.response_bus.subscribe(
-                walker.session_id, message_callback
+                walker.session_id, message_callback, receive_chunks=True
             )
 
-            # Stream messages as they arrive
-            walker_complete = False
-            while not walker_complete:
-                # Check if walker is done
-                if walk_task.done():
-                    try:
-                        await walk_task
-                        walker_complete = True
-                    except Exception as e:
-                        yield format_sse_chunk(
-                            {
-                                "type": "error",
-                                "message": f"Walker error: {str(e)}",
-                            }
-                        )
+            try:
+                # Stream messages as they arrive
+                while True:
+                    # Exit once walker is done and we've drained the queue
+                    if walk_task.done() and message_queue.empty():
+                        try:
+                            await walk_task
+                        except Exception as e:
+                            yield format_sse_chunk(
+                                {"type": "error", "message": f"Walker error: {str(e)}"}
+                            )
                         break
 
-                # Send any queued messages
-                while message_queue:
-                    message = message_queue.pop(0)
-                    yield format_sse_chunk(
-                        {
-                            "type": "message",
-                            "message": message.to_dict(),
-                        }
-                    )
+                    try:
+                        message = await asyncio.wait_for(message_queue.get(), timeout=0.25)
+                        yield format_sse_chunk(
+                            {"type": "message", "message": message.to_dict()}
+                        )
+                    except asyncio.TimeoutError:
+                        continue
+            finally:
+                # Cleanup subscription
+                await walker.response_bus.unsubscribe(walker.session_id, message_callback)
 
-                # Small delay to avoid busy waiting
-                await asyncio.sleep(0.1)
+            # Finalize interaction (accumulate streamed data and observability)
+            if walker.response_bus:
+                await walker.response_bus.finalize_interaction(
+                    interaction_id=interaction.id,
+                    interaction=interaction,
+                    session_id=walker.session_id or "",
+                    channel=walker.channel,
+                )
+
+            # Clear interaction_id from context
+            from jvagent.action.model.context import set_interaction_id
+            set_interaction_id(None)
 
             # Close interaction
             interaction.close_interaction()
@@ -312,10 +336,12 @@ async def _stream_interaction(
                         "id": interaction.id,
                         "utterance": interaction.utterance,
                         "response": interaction.response,
+                        "accumulated_response": interaction.accumulated_response,
                         "actions": interaction.actions,
                         "directives": interaction.directives,
                         "parameters": interaction.parameters,
                         "model_log": interaction.model_log,
+                        "observability_metrics": interaction.observability_metrics,
                         "messages": interaction.messages,
                         "streamed": interaction.streamed,
                     },
@@ -323,14 +349,28 @@ async def _stream_interaction(
                 }
             )
 
-            # Cleanup subscription
-            if walker.response_bus:
-                await walker.response_bus.unsubscribe(
-                    walker.session_id, message_callback
-                )
+            # Note: subscription cleaned up in finally above
         else:
             # No response bus, just wait for walker and send final response
             await walk_task
+
+            # Finalize interaction (accumulate streamed data and observability)
+            # Even without response bus, we should still finalize if bus becomes available
+            from jvagent.core.app import App
+            app = await App.get()
+            if app:
+                response_bus = await app.get_response_bus()
+                if response_bus:
+                    await response_bus.finalize_interaction(
+                        interaction_id=interaction.id,
+                        interaction=interaction,
+                        session_id=walker.session_id or "",
+                        channel=walker.channel,
+                    )
+
+            # Clear interaction_id from context
+            from jvagent.action.model.context import set_interaction_id
+            set_interaction_id(None)
 
             # Close interaction
             interaction.close_interaction()
@@ -344,10 +384,12 @@ async def _stream_interaction(
                         "id": interaction.id,
                         "utterance": interaction.utterance,
                         "response": interaction.response,
+                        "accumulated_response": interaction.accumulated_response,
                         "actions": interaction.actions,
                         "directives": interaction.directives,
                         "parameters": interaction.parameters,
                         "model_log": interaction.model_log,
+                        "observability_metrics": interaction.observability_metrics,
                         "messages": interaction.messages,
                         "streamed": interaction.streamed,
                     },

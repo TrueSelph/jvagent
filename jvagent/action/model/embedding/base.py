@@ -5,7 +5,7 @@ This module provides the abstract base class for all embedding model implementat
 
 import logging
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional
 
 from jvspatial.core.annotations import attribute
 
@@ -39,6 +39,7 @@ class EmbeddingModelAction(BaseModelAction, ABC):
         """Generate embedding vector for text.
 
         Public API for embedding generation with metrics tracking.
+        Observability metrics are automatically emitted via context-based tracking.
 
         Args:
             text: Text to embed

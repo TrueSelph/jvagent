@@ -35,7 +35,8 @@ class Interaction(Node):
         directives: Directives issued by non-persona actions
         events: System events
         parameters: Applicable parameters for this interaction
-        model_log: Collection of ModelActionResult data for all model calls
+        observability_metrics: Aggregated observability events (model calls, embeddings, etc.)
+        model_log: Legacy field - no longer populated (use observability_metrics instead)
         started_at: Interaction start timestamp
         completed_at: Interaction completion timestamp
         closed: Whether the interaction is closed
@@ -53,11 +54,17 @@ class Interaction(Node):
     response: Optional[str] = attribute(
         default=None, description="Agent response text"
     )
+    accumulated_response: Optional[str] = attribute(
+        default=None, description="Complete accumulated response from streamed chunks"
+    )
     messages: List[str] = attribute(
         default_factory=list, description="List of in-memory ResponseMessage IDs linked to this interaction (non-persisted references)"
     )
     streamed: bool = attribute(
         default=False, description="Whether this interaction used streaming"
+    )
+    observability_metrics: List[Dict[str, Any]] = attribute(
+        default_factory=list, description="Aggregated observability events (model calls, embeddings, etc.)"
     )
     # Processing tracking
     actions: List[str] = attribute(
@@ -75,9 +82,9 @@ class Interaction(Node):
         default_factory=list, description="Applicable parameters for this interaction. Each entry should have 'action_label' and 'executed': bool keys"
     )
 
-    # Model call log
+    # Model call log (legacy - no longer populated, use observability_metrics instead)
     model_log: List[Dict[str, Any]] = attribute(
-        default_factory=list, description="ModelActionResult data for all model calls"
+        default_factory=list, description="Legacy field - no longer populated. Use observability_metrics instead."
     )
 
     # Routing (from InteractRouter)
@@ -167,15 +174,6 @@ class Interaction(Node):
             if "executed" not in parameter:
                 parameter["executed"] = False
             self.parameters.append(parameter)
-
-    def add_model_result(self, model_result: Dict[str, Any]) -> None:
-        """Add a model call result to the log.
-
-        Args:
-            model_result: ModelActionResult.to_dict() data
-        """
-        if model_result:
-            self.model_log.append(model_result)
 
     def has_response(self) -> bool:
         """Check if the interaction has a response.
@@ -353,7 +351,7 @@ class Interaction(Node):
             "directives": self.directives,  # Includes executed status
             "parameters": self.parameters,  # Includes executed status
             "events": self.events,  # Logs - no execution status
-            "model_log": self.model_log,
+            "observability_metrics": self.observability_metrics,
             "interpretation": self.interpretation,
             "anchors": self.anchors,
             "routing_confidence": self.routing_confidence,

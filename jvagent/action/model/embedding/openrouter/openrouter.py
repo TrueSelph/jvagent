@@ -41,6 +41,9 @@ class OpenRouterEmbeddingModelAction(EmbeddingModelAction):
         default="openai/text-embedding-3-small",
         description="OpenRouter model identifier (provider/model format)",
     )
+    provider: str = attribute(
+        default="openrouter", description="Provider name"
+    )
     http_referer: str = attribute(
         default="", description="HTTP Referer header for OpenRouter (optional)"
     )

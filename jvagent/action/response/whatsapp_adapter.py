@@ -17,14 +17,16 @@ class WhatsAppAdapter(ChannelAdapter):
     to WhatsApp via the WhatsApp API.
 
     Example usage:
-        bus = await agent.get_response_bus()
+        from jvagent.core.app import App
+        app = await App.get()
+        bus = await app.get_response_bus()
         adapter = WhatsAppAdapter(
             channel="whatsapp",
             api_url="https://api.whatsapp.com/v1/messages",
             api_key="your_api_key"
         )
         await adapter.subscribe_to_bus(bus)
-        await adapter.subscribe_to_session(session_id)
+        await adapter.subscribe_to_session(session_id, receive_chunks=False)
     """
 
     def __init__(
@@ -49,7 +51,8 @@ class WhatsAppAdapter(ChannelAdapter):
     async def handle_message(self, message: ResponseMessage) -> None:
         """Handle incoming message from response bus.
 
-        Only handles adhoc messages (not stream chunks or final messages).
+        Handles adhoc and final messages (complete streamed responses).
+        Does not handle stream chunks (receive_chunks=False by default).
 
         Args:
             message: ResponseMessage object
@@ -57,9 +60,9 @@ class WhatsAppAdapter(ChannelAdapter):
         if not self.should_handle(message):
             return
 
-        # Only send adhoc messages to WhatsApp
-        # Stream chunks and final messages are handled by SSE endpoint
-        if message.message_type == "adhoc":
+        # Send adhoc and final messages to WhatsApp
+        # Final messages contain complete streamed responses
+        if message.message_type in ("adhoc", "final"):
             success = await self.send_to_destination(message)
             if success:
                 message.mark_delivered()

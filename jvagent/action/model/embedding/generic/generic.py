@@ -41,6 +41,9 @@ class GenericEmbeddingModelAction(EmbeddingModelAction):
         default="openai",
         description="API format: 'openai', 'huggingface', or 'generic'",
     )
+    provider: str = attribute(
+        default="generic", description="Provider name"
+    )
     request_path: str = attribute(
         default="", description="API path (defaults based on format if empty)"
     )

@@ -19,6 +19,7 @@ class ResponseMessage(Object):
     - Adhoc responses (multiple responses to same utterance)
     - Stream chunks (parts of a streamed response)
     - Final responses (consolidated end-of-walk response)
+    - Observability events (model_call, embedding_call, action_metric)
 
     Attributes:
         agent_id: Agent identifier this message belongs to
@@ -52,6 +53,9 @@ class ResponseMessage(Object):
     metadata: Dict[str, Any] = attribute(
         default_factory=dict, description="Additional metadata"
     )
+    observability_data: Optional[Dict[str, Any]] = attribute(
+        default=None, description="Structured observability metrics (for observability message types)"
+    )
     timestamp: datetime = attribute(
         default_factory=lambda: datetime.now(timezone.utc),
         description="When message was created",
@@ -79,6 +83,7 @@ class ResponseMessage(Object):
             "content": self.content,
             "channel": self.channel,
             "metadata": self.metadata,
+            "observability_data": self.observability_data,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
             "delivered": self.delivered,
         }

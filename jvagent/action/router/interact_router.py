@@ -147,7 +147,6 @@ class InteractRouter(InteractAction):
                 history=interaction_history,  # Pass formatted history directly to LLM
                 temperature=0.3,  # Lower temperature for more consistent routing
                 max_tokens=500,
-                interaction=interaction,  # Auto-logs model result
             )
 
             # Parse response
