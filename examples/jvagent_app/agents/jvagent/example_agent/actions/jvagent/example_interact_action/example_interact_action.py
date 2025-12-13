@@ -64,7 +64,7 @@ class ExampleInteractAction(InteractAction):
         result = "Tell the user that they are currently interacting with an AI agent on JVAgent and can learn more about jvagent at https://jvagent.com/docs"
         if result:
             directive = result
-            interaction.add_directive(directive)
+            visitor.add_directive(directive)
             await interaction.save()
             directive_added = True
             logger.debug(
@@ -75,7 +75,7 @@ class ExampleInteractAction(InteractAction):
 
         # If a directive was produced, optionally invoke PersonaAction to produce a response
         if directive_added:
-            await self.respond(interaction, visitor=visitor, use_utterance=True, use_history=True)
+            await self.respond(visitor)
 
     def _format_directive(self, results: List[Dict[str, Any]]) -> str:
         """Format retrieved results into a structured directive.

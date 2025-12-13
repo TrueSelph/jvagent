@@ -59,6 +59,7 @@ class InteractWalker(Walker):
     interaction: Optional["Interaction"] = None
     stream_mode: bool = False
     response_bus: Optional[Any] = None
+    _current_action: Optional["InteractAction"] = None  # Track current executing action for convenience methods
 
     @on_visit("Agent")
     async def on_agent(self, here: "Agent") -> None:
@@ -263,6 +264,9 @@ class InteractWalker(Walker):
                 return
 
         try:
+            # Store current action for convenience methods
+            self._current_action = here
+            
             # Execute the action
             # Note: 'here' is the node (self from node's perspective), 'self' is the walker (visitor)
             await here.execute(self)
@@ -324,6 +328,9 @@ class InteractWalker(Walker):
                 }
             )
             # Continue to next action (don't raise, let walker continue)
+        finally:
+            # Always clear current action after execution
+            self._current_action = None
 
     async def _filter_by_routing(
         self, actions: List["InteractAction"]
@@ -409,3 +416,63 @@ class InteractWalker(Walker):
         )
 
         return is_allowed
+
+    def add_directive(self, directive: str) -> None:
+        """Add a directive to the interaction with current action label.
+
+        Convenience method that automatically uses the current executing action's
+        class name. Must be called from within an InteractAction's execute() method.
+
+        Args:
+            directive: Directive string to add
+
+        Raises:
+            RuntimeError: If called outside of action execution context or no interaction available
+        """
+        if not self.interaction:
+            raise RuntimeError("No interaction available")
+        if not self._current_action:
+            raise RuntimeError("add_directive() must be called from within InteractAction.execute()")
+
+        action_label = self._current_action.get_class_name()
+        self.interaction.add_directive(directive, action_label)
+
+    def add_event(self, event: str) -> None:
+        """Add an event to the interaction with current action label.
+
+        Convenience method that automatically uses the current executing action's
+        class name. Must be called from within an InteractAction's execute() method.
+
+        Args:
+            event: Event string to add
+
+        Raises:
+            RuntimeError: If called outside of action execution context or no interaction available
+        """
+        if not self.interaction:
+            raise RuntimeError("No interaction available")
+        if not self._current_action:
+            raise RuntimeError("add_event() must be called from within InteractAction.execute()")
+
+        action_label = self._current_action.get_class_name()
+        self.interaction.add_event(event, action_label)
+
+    def add_parameter(self, parameter: Dict[str, Any]) -> None:
+        """Add a parameter to the interaction with current action label.
+
+        Convenience method that automatically uses the current executing action's
+        class name. Must be called from within an InteractAction's execute() method.
+
+        Args:
+            parameter: Parameter data (id, condition, response, etc.)
+
+        Raises:
+            RuntimeError: If called outside of action execution context or no interaction available
+        """
+        if not self.interaction:
+            raise RuntimeError("No interaction available")
+        if not self._current_action:
+            raise RuntimeError("add_parameter() must be called from within InteractAction.execute()")
+
+        action_label = self._current_action.get_class_name()
+        self.interaction.add_parameter(parameter, action_label)

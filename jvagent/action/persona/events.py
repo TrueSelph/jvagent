@@ -494,7 +494,7 @@ class ResponseAggregator:
             return "".join(self.response_chunks)
         return ""
 
-    def populate_interaction(self, interaction: Any) -> Any:
+    def populate_interaction(self, interaction: Any, action_label: str = "PersonaAction") -> Any:
         """Populate an Interaction node with aggregated data.
 
         Note: Parameters and actions are tracked directly on Interaction
@@ -504,6 +504,7 @@ class ResponseAggregator:
 
         Args:
             interaction: Interaction node to populate
+            action_label: Class name of the action populating the interaction (default: "PersonaAction")
 
         Returns:
             The populated Interaction node
@@ -516,7 +517,7 @@ class ResponseAggregator:
 
         # Add directives from events
         for directive in self.directives:
-            interaction.add_directive(directive)
+            interaction.add_directive(directive, action_label)
 
         return interaction
 

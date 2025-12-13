@@ -123,7 +123,7 @@ class RetrievalInteractAction(InteractAction):
             # Format and add directive if results found
             if results:
                 directive = self._format_directive(results)
-                interaction.add_directive(directive)
+                visitor.add_directive(directive)
                 await interaction.save()
                 directive_added = True
                 logger.debug(
@@ -141,21 +141,11 @@ class RetrievalInteractAction(InteractAction):
 
         if self.parameters:
             for param in self.parameters:
-                interaction.add_parameter(param, self.label)
+                visitor.add_parameter(param)
             parameters_added = True
         if directive_added or parameters_added:
-            try:
-                persona = await self._get_persona_action()
-                if persona:
-                    # PersonaAction.respond now supports visitor (for streaming via ResponseBus)
-                    response = await persona.respond(interaction, visitor=visitor)
-                    if response and visitor.interaction:
-                        visitor.interaction.set_response(response)
-                        await visitor.interaction.save()
-                else:
-                    logger.debug("RetrievalInteractAction: PersonaAction not found; skipping auto-respond")
-            except Exception as e:
-                logger.error(f"RetrievalInteractAction: Error calling PersonaAction.respond: {e}", exc_info=True)
+            # Generate response via PersonaAction (handles retrieval, calling, and persistence)
+            await self.respond(visitor)
 
     async def _get_vectorstore_action(self) -> Optional[VectorStore]:
         """Get the VectorStore action for retrieval.
@@ -163,27 +153,14 @@ class RetrievalInteractAction(InteractAction):
         Returns:
             VectorStore instance or None if not found
         """
-        agent = await self.get_agent()
-        if not agent:
-            logger.error("RetrievalInteractAction: Agent not found")
-            return None
-
         # Try to get by type if specified
         if self.vectorstore_action_type:
-            vectorstore = await agent.get_action_by_type(self.vectorstore_action_type)
-            if vectorstore and isinstance(vectorstore, VectorStore):
+            vectorstore = await self.get_action(self.vectorstore_action_type)
+            if vectorstore:
                 return vectorstore
 
         # Fallback: find first available VectorStore action
-        from jvagent.action.vectorstore.base import VectorStore as VectorStoreBase
-        actions_manager = await agent.get_actions_manager()
-        if actions_manager:
-            all_actions = await actions_manager.get_actions(enabled_only=True)
-            for action in all_actions:
-                if isinstance(action, VectorStoreBase):
-                    return action
-
-        return None
+        return await self.get_action(VectorStore)
 
     def _get_search_query(self, interaction: "Interaction") -> Optional[str]:
         """Get search query from interpretation or utterance.
