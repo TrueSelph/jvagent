@@ -3,14 +3,24 @@ import type { Message } from '../types/message'
 
 interface MessageListProps {
   messages: Message[]
+  showThinking?: boolean
+  thinkingText?: string
 }
 
-export function MessageList({ messages }: MessageListProps) {
+export function MessageList({
+  messages,
+  showThinking = false,
+  thinkingText = 'Thinking...',
+}: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const prevLenRef = useRef<number>(0)
   const [debugMessage, setDebugMessage] = useState<Message | null>(null)
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    // Avoid smooth-scroll on every token append (prevents visible flicker).
+    const behavior = messages.length > prevLenRef.current ? 'smooth' : 'auto'
+    messagesEndRef.current?.scrollIntoView({ behavior })
+    prevLenRef.current = messages.length
   }, [messages])
 
   if (messages.length === 0) {
@@ -43,34 +53,69 @@ export function MessageList({ messages }: MessageListProps) {
               <div className="flex items-center justify-between mt-1 sm:mt-2 gap-2">
                 <div
                   className={`text-xs ${
-                    message.role === 'user'
-                      ? 'text-indigo-200'
-                      : 'text-gray-500'
+                    message.role === 'user' ? 'text-indigo-200' : 'text-gray-500'
                   }`}
                 >
                   {new Date(message.timestamp).toLocaleTimeString()}
                 </div>
-                {message.debugData && (
-                  <button
-                    onClick={() => setDebugMessage(message)}
-                    className={`text-xs px-2 py-1 rounded touch-manipulation ${
-                      message.role === 'user'
-                        ? 'bg-indigo-500 hover:bg-indigo-400 text-white'
-                        : 'bg-gray-300 hover:bg-gray-400 text-gray-700'
-                    }`}
-                  >
-                    Debug
-                  </button>
-                )}
+                {(() => {
+                  // Show debug button if:
+                  // 1. Message has debugData, OR
+                  // 2. Message is the last assistant message for its interactionId
+                  const shouldShowDebug = message.debugData || (
+                    message.role === 'assistant' &&
+                    message.interactionId &&
+                    (() => {
+                      const messagesForInteraction = messages.filter(
+                        m => m.role === 'assistant' && m.interactionId === message.interactionId
+                      )
+                      const lastMessageForInteraction = messagesForInteraction[messagesForInteraction.length - 1]
+                      return lastMessageForInteraction?.id === message.id
+                    })()
+                  )
+                  
+                  return shouldShowDebug ? (
+                    <button
+                      onClick={() => {
+                        // Find the message with debugData for this interaction
+                        const debugMessageForInteraction = messages.find(
+                          m => m.interactionId === message.interactionId && m.debugData
+                        )
+                        setDebugMessage(debugMessageForInteraction || message)
+                      }}
+                      className={`text-xs px-2 py-1 rounded touch-manipulation ${
+                        message.role === 'user'
+                          ? 'bg-indigo-500 hover:bg-indigo-400 text-white'
+                          : 'bg-gray-300 hover:bg-gray-400 text-gray-700'
+                      }`}
+                    >
+                      Debug
+                    </button>
+                  ) : null
+                })()}
               </div>
             </div>
           </div>
         ))}
+
+        {showThinking && (
+          <div className="flex justify-start">
+            <div className="max-w-[85%] sm:max-w-3xl rounded-lg px-3 sm:px-4 py-2 sm:py-3 bg-gray-200 text-gray-900">
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs sm:text-sm text-gray-600">
+                  {thinkingText}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
       {/* Debug Modal */}
-      {debugMessage && debugMessage.debugData && (
+      {debugMessage && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4"
           onClick={() => setDebugMessage(null)}
@@ -98,20 +143,26 @@ export function MessageList({ messages }: MessageListProps) {
                 </h4>
                 <div className="bg-gray-50 p-2 sm:p-3 rounded border border-gray-200">
                   <pre className="whitespace-pre-wrap text-xs sm:text-sm text-gray-800">
-                    {debugMessage.content}
+                    {debugMessage.debugData?.interaction?.response || debugMessage.content}
                   </pre>
                 </div>
               </div>
-              <div>
-                <h4 className="text-xs sm:text-sm font-semibold text-gray-700 mb-2">
-                  Full JSON Response (type=final):
-                </h4>
-                <div className="bg-gray-900 p-2 sm:p-4 rounded border border-gray-700 overflow-x-auto">
-                  <pre className="text-xs text-green-400">
-                    {JSON.stringify(debugMessage.debugData, null, 2)}
-                  </pre>
+              {debugMessage.debugData ? (
+                <div>
+                  <h4 className="text-xs sm:text-sm font-semibold text-gray-700 mb-2">
+                    Full JSON Response (type=final):
+                  </h4>
+                  <div className="bg-gray-900 p-2 sm:p-4 rounded border border-gray-700 overflow-x-auto">
+                    <pre className="text-xs text-green-400">
+                      {JSON.stringify(debugMessage.debugData, null, 2)}
+                    </pre>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="text-xs sm:text-sm text-gray-500 italic">
+                  Debug data not available yet. Waiting for final interaction data...
+                </div>
+              )}
             </div>
             <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 flex justify-end flex-shrink-0">
               <button
@@ -131,4 +182,3 @@ export function MessageList({ messages }: MessageListProps) {
     </>
   )
 }
-

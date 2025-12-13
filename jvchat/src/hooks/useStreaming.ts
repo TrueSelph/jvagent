@@ -87,16 +87,9 @@ export function useStreaming(agentId: string, sessionId?: string) {
         return updated
       })
 
-      // Add placeholder for assistant message
+      // Track assistant message ID for fallback (but don't create placeholder bubble)
+      // Actual message bubbles will be created when stream chunks or adhoc messages arrive
       const assistantMessageId = `assistant-${Date.now()}`
-      const assistantMessage: Message = {
-        id: assistantMessageId,
-        role: 'assistant',
-        content: '',
-        timestamp: new Date().toISOString(),
-        streaming: true,
-      }
-      setMessages((prev) => [...prev, assistantMessage])
 
       streamingMessageRef.current = ''
 
@@ -111,9 +104,10 @@ export function useStreaming(agentId: string, sessionId?: string) {
           console.error('No user_id available - user should be logged in. Chat will not work correctly.')
           setError('User not authenticated. Please log in again.')
           setIsStreaming(false)
-          setMessages((prev) =>
-            prev.filter((msg) => msg.id !== assistantMessageId)
-          )
+          setMessages((prev) => {
+            // Remove placeholder bubbles if any
+            return prev.filter((m) => m.id !== assistantMessageId || m.content !== '')
+          })
           return undefined
         }
 
@@ -152,33 +146,175 @@ export function useStreaming(agentId: string, sessionId?: string) {
               if (chunk.session_id) {
                 receivedSessionId = chunk.session_id
               }
-            } else if (chunk.type === 'message' && chunk.message) {
-              // Only process stream_chunk messages during streaming
-              if (chunk.message.message_type === 'stream_chunk') {
-                streamingMessageRef.current += chunk.message.content || ''
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === assistantMessageId
-                      ? {
-                          ...msg,
-                          content: streamingMessageRef.current,
-                          streaming: true,
+            } else if (chunk.type === 'message' && chunk.message && typeof chunk.message === 'object') {
+              // Type guard: chunk.message is ResponseMessageData (not string)
+              const msg = chunk.message
+              // Handle stream_chunk messages during streaming
+              // Group by message.id (sequence identifier) - all chunks in same sequence share same id
+              if (msg.message_type === 'stream_chunk') {
+                const messageId = msg.id || assistantMessageId // Fallback to assistantMessageId if id missing
+                setMessages((prev) => {
+                  // Remove any placeholder bubbles with assistantMessageId when first real message arrives
+                  const filtered = prev.filter((m) => m.id !== assistantMessageId || m.content !== '')
+                  
+                  // Find existing message with this id, or create new one
+                  const existingIndex = filtered.findIndex((m) => m.id === messageId)
+                  if (existingIndex >= 0) {
+                    // Update existing message - accumulate content
+                    const existing = filtered[existingIndex]
+                    const updatedContent = (existing.content || '') + (msg.content || '')
+                    return filtered.map((m, idx) =>
+                      idx === existingIndex
+                        ? {
+                            ...m,
+                            content: updatedContent,
+                            streaming: true,
+                            interactionId: m.interactionId || msg.interaction_id,
+                          }
+                        : m
+                    )
+                  } else {
+                    // Create new message bubble for this sequence
+                    const newMessage: Message = {
+                      id: messageId,
+                      role: 'assistant',
+                      content: msg.content || '',
+                      interactionId: msg.interaction_id,
+                      timestamp: msg.timestamp || new Date().toISOString(),
+                      streaming: true,
+                      // Don't add debugData to stream chunks - only last message gets it
+                    }
+                    return [...filtered, newMessage]
+                  }
+                })
+              } else if (msg.message_type === 'final') {
+                // Handle final message - use message.id to find matching sequence
+                // Final message is just a completion signal - NEVER update bubble content
+                // Message bubbles should ONLY contain their respective message_type content (stream_chunk, adhoc)
+                const messageId = msg.id || assistantMessageId // Fallback to assistantMessageId if id missing
+                
+                setMessages((prev) => {
+                  // Find existing message with this id
+                  const existingIndex = prev.findIndex((m) => m.id === messageId)
+                  let updated: Message[]
+                  
+                  if (existingIndex >= 0) {
+                    // Update existing message - ONLY stop streaming indicator, NEVER update content
+                    const existing = prev[existingIndex]
+                    const wasStreaming = existing.streaming
+                    
+                    if (wasStreaming) {
+                      // Only update streaming status, preserve existing content
+                      updated = prev.map((m, idx) => {
+                        if (idx === existingIndex) {
+                          return {
+                            ...m,
+                            streaming: false,
+                            interactionId: m.interactionId || msg.interaction_id,
+                            // Keep existing debugData if it exists, will be updated by chunk.type='final'
+                          }
                         }
-                      : msg
-                  )
-                )
+                        return m
+                      })
+                    } else {
+                      // No change needed, but ensure streaming is false
+                      updated = prev.map((m, idx) => {
+                        if (idx === existingIndex && m.streaming) {
+                          return { ...m, streaming: false }
+                        }
+                        return m
+                      })
+                    }
+                  } else {
+                    // Final message should not create a new bubble - bubbles are created by stream_chunk/adhoc messages
+                    // Just return existing messages unchanged
+                    updated = prev
+                  }
+                  
+                  // Ensure only the last message of each interaction has debugData
+                  // Group messages by interactionId and keep debugData only on the last message per interaction
+                  const interactionGroups = new Map<string, number[]>()
+                  updated.forEach((m, idx) => {
+                    if (m.role === 'assistant' && m.interactionId) {
+                      const indices = interactionGroups.get(m.interactionId) || []
+                      indices.push(idx)
+                      interactionGroups.set(m.interactionId, indices)
+                    }
+                  })
+                  
+                  // Remove debugData from all messages except the last one per interaction
+                  updated = updated.map((m, idx) => {
+                    if (m.role === 'assistant' && m.interactionId && m.debugData) {
+                      const indices = interactionGroups.get(m.interactionId) || []
+                      const lastIndexForInteraction = indices.length > 0 ? indices[indices.length - 1] : -1
+                      if (idx !== lastIndexForInteraction) {
+                        const { debugData, ...rest } = m
+                        return rest
+                      }
+                    }
+                    return m
+                  })
+                  
+                  // Save messages if we have a session ID
+                  const activeSessionId = sessionIdRef.current
+                  if (activeSessionId) {
+                    saveMessages(activeSessionId, updated)
+                  }
+                  return updated
+                })
+                // Don't set isStreaming to false here - wait for chunk.type='final' for complete payload
+              } else if (msg.message_type === 'adhoc') {
+                // Handle adhoc messages as separate message bubbles
+                // Each adhoc message gets its own unique ID
+                const adhocMessage: Message = {
+                  id: msg.id || `adhoc-${Date.now()}-${Math.random()}`,
+                  role: 'assistant',
+                  interactionId: msg.interaction_id,
+                  content: msg.content || '',
+                  timestamp: msg.timestamp || new Date().toISOString(),
+                  streaming: false,
+                  // Don't add debugData to adhoc messages - only last message gets it
+                }
+                setMessages((prev) => {
+                  // Append as new message (don't update existing messages)
+                  let updated = [...prev, adhocMessage]
+                  
+                  // Ensure only the last message of each interaction has debugData
+                  // Group messages by interactionId and keep debugData only on the last message per interaction
+                  const interactionGroups = new Map<string, number[]>()
+                  updated.forEach((m, idx) => {
+                    if (m.role === 'assistant' && m.interactionId) {
+                      const indices = interactionGroups.get(m.interactionId) || []
+                      indices.push(idx)
+                      interactionGroups.set(m.interactionId, indices)
+                    }
+                  })
+                  
+                  // Remove debugData from all messages except the last one per interaction
+                  updated = updated.map((m, idx) => {
+                    if (m.role === 'assistant' && m.interactionId && m.debugData) {
+                      const indices = interactionGroups.get(m.interactionId) || []
+                      const lastIndexForInteraction = indices.length > 0 ? indices[indices.length - 1] : -1
+                      if (idx !== lastIndexForInteraction) {
+                        const { debugData, ...rest } = m
+                        return rest
+                      }
+                    }
+                    return m
+                  })
+                  
+                  // Save adhoc message immediately if we have a session ID
+                  const activeSessionId = sessionIdRef.current
+                  if (activeSessionId) {
+                    saveMessages(activeSessionId, updated)
+                  }
+                  return updated
+                })
               }
             } else if (chunk.type === 'final') {
-              const finalContent =
-                chunk.interaction?.response || streamingMessageRef.current
-              const finalMessage: Message = {
-                id: assistantMessageId,
-                role: 'assistant',
-                content: finalContent,
-                timestamp: new Date().toISOString(),
-                streaming: false,
-                debugData: chunk, // Store full chunk for debug view
-              }
+              // Full SSE final chunk (type="final") - contains interaction and report data
+              // This is ONLY for storing debugData - DO NOT update message bubble content
+              // Message bubbles should only contain their respective message_type content (stream_chunk, adhoc)
               
               // CRITICAL: Determine the session ID to use for saving
               // Priority: receivedSessionId > sessionIdRef.current
@@ -196,9 +332,9 @@ export function useStreaming(agentId: string, sessionId?: string) {
                   const currentMessages = messagesRef.current
                   const oldSessionId = sessionIdRef.current
                   if (oldSessionId && currentMessages.length > 0) {
-                    // Filter out the streaming message we're about to finalize
+                    // Filter out any placeholder messages
                     const messagesToSave = currentMessages
-                      .filter(msg => msg.id !== assistantMessageId)
+                      .filter(msg => msg.id !== assistantMessageId || msg.content !== '')
                       .map(msg => ({ ...msg })) // Deep copy
                     if (messagesToSave.length > 0) {
                       saveMessages(oldSessionId, messagesToSave)
@@ -217,11 +353,88 @@ export function useStreaming(agentId: string, sessionId?: string) {
               }
               
               setMessages((prev) => {
-                const updated = prev.map((msg) =>
-                  msg.id === assistantMessageId ? finalMessage : msg
-                )
+                // Remove any placeholder bubbles
+                const filtered = prev.filter((m) => m.id !== assistantMessageId || m.content !== '')
+                const interactionIdForFinal =
+                  chunk.interaction?.id || interactionIdRef.current || undefined
+
+                const targetIndex = interactionIdForFinal
+                  ? filtered.findLastIndex(
+                      (m) =>
+                        m.role === 'assistant' &&
+                        m.interactionId === interactionIdForFinal
+                    )
+                  : filtered.findLastIndex((m) => m.role === 'assistant')
+
+                let updated: Message[]
+
+                if (targetIndex >= 0) {
+                  updated = filtered.map((m, idx) => {
+                    if (idx === targetIndex) {
+                      // DO NOT update content - preserve existing bubble content from stream_chunk/adhoc messages
+                      // Only update streaming status and debugData
+                      const wasStreaming = m.streaming === true
+
+                      if (wasStreaming) {
+                        return {
+                          ...m,
+                          streaming: false,
+                          // Store full SSE chunk with interaction and report
+                          debugData: chunk,
+                          interactionId: m.interactionId || interactionIdForFinal,
+                        }
+                      }
+
+                      // If not streaming, just ensure debugData is set
+                      if (!m.debugData) {
+                        return { ...m, debugData: chunk }
+                      }
+                      return m
+                    }
+
+                    // Only remove debugData if this message is not the last one for its interaction
+                    if (m.role === 'assistant' && m.debugData && m.interactionId) {
+                      // Check if this is the last message for this interaction
+                      const messagesForInteraction = filtered.filter(
+                        msg => msg.role === 'assistant' && msg.interactionId === m.interactionId
+                      )
+                      const lastMessageForInteraction = messagesForInteraction[messagesForInteraction.length - 1]
+                      if (m.id !== lastMessageForInteraction?.id) {
+                        const { debugData, ...rest } = m
+                        return rest
+                      }
+                    }
+
+                    return m
+                  })
+                } else {
+                  // No bubble for this interaction - this shouldn't happen if stream_chunks were received
+                  // But if it does, don't create a bubble with aggregated content
+                  // Just ensure debugData is preserved if we have any assistant messages
+                  updated = filtered.map((m) => {
+                    if (m.role === 'assistant' && m.debugData) {
+                      const { debugData, ...rest } = m
+                      return rest
+                    }
+                    return m
+                  })
+                  
+                  // Only create a new bubble if we have no assistant messages at all (edge case)
+                  if (updated.filter(m => m.role === 'assistant').length === 0) {
+                    const finalMessage: Message = {
+                      id: assistantMessageId,
+                      role: 'assistant',
+                      content: '', // Empty - bubbles should only contain message_type content
+                      timestamp: new Date().toISOString(),
+                      streaming: false,
+                      debugData: chunk, // Store full SSE chunk with interaction and report
+                      interactionId: interactionIdForFinal,
+                    }
+                    updated = [...updated, finalMessage]
+                  }
+                }
+
                 // CRITICAL: Save messages to storage using the CORRECT session ID
-                // This ensures messages are isolated by session_id and prevents duplication
                 if (sessionIdForSave) {
                   // Create a deep copy to prevent reference issues
                   const messagesToSave = updated.map(msg => ({ ...msg }))
@@ -237,33 +450,36 @@ export function useStreaming(agentId: string, sessionId?: string) {
             } else if (chunk.type === 'error') {
               setError(chunk.message || 'An error occurred')
               setIsStreaming(false)
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? { ...msg, streaming: false }
-                    : msg
-                )
-              )
+              setMessages((prev) => {
+                // Remove placeholder bubbles and update any streaming messages
+                return prev
+                  .filter((m) => m.id !== assistantMessageId || m.content !== '')
+                  .map((msg) =>
+                    msg.streaming ? { ...msg, streaming: false } : msg
+                  )
+              })
             }
           },
           (err: Error) => {
             setError(err.message)
             setIsStreaming(false)
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMessageId
-                  ? { ...msg, streaming: false }
-                  : msg
-              )
-            )
+            setMessages((prev) => {
+              // Remove placeholder bubbles and update any streaming messages
+              return prev
+                .filter((m) => m.id !== assistantMessageId || m.content !== '')
+                .map((msg) =>
+                  msg.streaming ? { ...msg, streaming: false } : msg
+                )
+            })
           }
         )
       } catch (err: any) {
         setError(err.message || 'Failed to send message')
         setIsStreaming(false)
-        setMessages((prev) =>
-          prev.filter((msg) => msg.id !== assistantMessageId)
-        )
+        setMessages((prev) => {
+          // Remove placeholder bubbles
+          return prev.filter((m) => m.id !== assistantMessageId || m.content !== '')
+        })
       }
       
       return receivedSessionId

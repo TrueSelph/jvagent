@@ -145,14 +145,17 @@ class Memory(Node):
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         channel: str = "default",
-    ) -> Tuple["User", "Conversation", str, str]:
+    ) -> Tuple["User", "Conversation", str, str, bool]:
         """Resolve or create User and Conversation based on provided IDs.
 
         Handles four scenarios for user/session resolution:
-        1. No user_id, no session_id → Create new User + Conversation
-        2. session_id only → Lookup existing Conversation, get associated User
-        3. user_id only → Get/Create User, create new Conversation
-        4. Both provided → Validate session belongs to user, return both
+        1. No user_id, no session_id → Create new User + Conversation (new_user=True)
+        2. session_id only → Lookup existing Conversation, get associated User (new_user=False)
+        3. user_id only → Get/Create User, create new Conversation (new_user=True if User was created)
+        4. Both provided → Validate session belongs to user, return both (new_user=False)
+
+        First-time users are determined by whether a User node is newly created,
+        regardless of whether a user_id is provided.
 
         Args:
             user_id: Optional user identifier
@@ -160,7 +163,8 @@ class Memory(Node):
             channel: Communication channel (e.g., 'default', 'whatsapp', 'email')
 
         Returns:
-            Tuple of (User, Conversation, resolved_user_id, resolved_session_id)
+            Tuple of (User, Conversation, resolved_user_id, resolved_session_id, new_user)
+            where new_user is True if a new User node was created, False otherwise
 
         Raises:
             RuntimeError: If user creation/lookup fails
@@ -191,12 +195,17 @@ class Memory(Node):
             return user, conversation, conversation.user_id, session_id, False
 
         # Case 3: user_id only - get/create user, create conversation
+        # Check if user exists to determine if it's a new user
         if user_id and not session_id:
+            # Check if user already exists before creating
+            existing_user = await self.node(node=User, user_id=user_id)
+            is_new_user = existing_user is None
+            
             user = await self.get_user(user_id, create_if_missing=True)
             if not user:
                 raise RuntimeError(f"Failed to get/create user '{user_id}'")
             conversation = await user.create_conversation(channel=channel)
-            return user, conversation, user_id, conversation.session_id, False
+            return user, conversation, user_id, conversation.session_id, is_new_user
 
         # Case 4: Both provided - validate and use
         if user_id and session_id:

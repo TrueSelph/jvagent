@@ -52,10 +52,7 @@ class Interaction(Node):
 
     # Response
     response: Optional[str] = attribute(
-        default=None, description="Agent response text"
-    )
-    accumulated_response: Optional[str] = attribute(
-        default=None, description="Complete accumulated response from streamed chunks"
+        default=None, description="Agent response text (accumulated from stream chunks and ad hoc messages)"
     )
     messages: List[str] = attribute(
         default_factory=list, description="List of in-memory ResponseMessage IDs linked to this interaction (non-persisted references)"

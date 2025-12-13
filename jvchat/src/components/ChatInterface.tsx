@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, startTransition } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAgents } from '../hooks/useAgents'
 import { useStreaming } from '../hooks/useStreaming'
@@ -158,6 +158,15 @@ export function ChatInterface() {
       const allConversations = getConversations(userId)
       const existingConv = allConversations.find(c => c.session_id === receivedSessionId && c.agent_id === agent.id)
       
+      // Update session ID synchronously if it changed (urgent - affects chat content)
+      // This must happen before any conversation list updates to prevent content flash
+      const sessionIdChanged = receivedSessionId !== sessionId
+      if (sessionIdChanged) {
+        setSessionId(receivedSessionId)
+      }
+      
+      // Use startTransition to mark conversation list updates as non-urgent
+      // This ensures chat content rendering is not blocked by sidebar updates
       if (!existingConv) {
         // New conversation - create entry with user_id
         const newConv: Conversation = {
@@ -168,22 +177,22 @@ export function ChatInterface() {
           last_message: content,
           last_message_at: new Date().toISOString(),
         }
-        // add() will use the logged-in user_id from storage
-        add(newConv)
-        console.log(`Created new conversation: ${receivedSessionId} for agent ${agent.id}`)
+        // Defer conversation list update to prevent interfering with chat content
+        startTransition(() => {
+          add(newConv)
+          console.log(`Created new conversation: ${receivedSessionId} for agent ${agent.id}`)
+        })
       } else {
         // Existing conversation - update last message
         if (existingConv.last_message !== content) {
-          update(receivedSessionId, {
-            last_message: content,
-            last_message_at: new Date().toISOString(),
+          // Defer conversation list update to prevent interfering with chat content
+          startTransition(() => {
+            update(receivedSessionId, {
+              last_message: content,
+              last_message_at: new Date().toISOString(),
+            })
           })
         }
-      }
-      
-      // Update session ID if it changed
-      if (receivedSessionId !== sessionId) {
-        setSessionId(receivedSessionId)
       }
     } else if (sessionId) {
       // Same session - just update last message if changed
@@ -191,9 +200,12 @@ export function ChatInterface() {
       const allConversations = getConversations(userId)
       const currentConv = allConversations.find(c => c.session_id === sessionId && c.agent_id === agent.id)
       if (currentConv && currentConv.last_message !== content) {
-        update(sessionId, {
-          last_message: content,
-          last_message_at: new Date().toISOString(),
+        // Use startTransition to mark update as non-urgent
+        startTransition(() => {
+          update(sessionId, {
+            last_message: content,
+            last_message_at: new Date().toISOString(),
+          })
         })
       }
     }
@@ -344,10 +356,17 @@ export function ChatInterface() {
           </div>
 
           {messages.length === 0 ? (
-            <WelcomeScreen agentName={agent.alias || agent.name || 'Agent'} />
+            <WelcomeScreen agentName={agent.alias || agent.name || "Agent"} />
           ) : (
-            <MessageList messages={messages} />
+            <MessageList
+              messages={messages}
+              showThinking={
+                isStreaming &&
+                !messages.some((m) => m.role === "assistant" && m.streaming)
+              }
+            />
           )}
+
 
           {error && (
             <div className="px-4 py-2 bg-red-50 border-t border-red-200">

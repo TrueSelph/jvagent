@@ -101,13 +101,43 @@ export function useConversations(agentId?: string) {
     
     console.log(`Adding conversation ${conversation.session_id} for user ${userId}`)
     
-    // Add to storage first (with user_id)
+    // Optimistically update the UI immediately for seamless experience
+    setConversations((prev) => {
+      // Check if conversation already exists
+      const exists = prev.some(c => c.session_id === conversation.session_id)
+      if (exists) {
+        // Update existing conversation
+        return prev.map(c => 
+          c.session_id === conversation.session_id 
+            ? { ...c, ...conversation }
+            : c
+        )
+      }
+      
+      // Add new conversation at the beginning (newest first)
+      const updated = [conversation, ...prev]
+      
+      // Filter by agent_id if provided
+      const filtered = agentId
+        ? updated.filter((c) => c.agent_id === agentId)
+        : updated
+      
+      // Sort by last_message_at or created_at (newest first)
+      const sorted = [...filtered].sort((a, b) => {
+        const aTime = a.last_message_at || a.created_at
+        const bTime = b.last_message_at || b.created_at
+        return new Date(bTime).getTime() - new Date(aTime).getTime()
+      })
+      
+      stableConversationsRef.current = sorted
+      return sorted
+    })
+    
+    // Add to storage (synchronous, so UI is already updated)
     addConversation(conversation, userId)
     
-    // Immediately refresh to pick up the new conversation
-    // The storage write is synchronous, so we can refresh right away
-    refreshConversations()
-  }, [refreshConversations])
+    // No need to refresh - we've already updated the UI optimistically
+  }, [agentId])
 
   const update = useCallback(
     (sessionId: string, updates: Partial<Conversation>) => {
@@ -123,14 +153,31 @@ export function useConversations(agentId?: string) {
         return
       }
       
-      // Update in storage first (with user_id)
+      // Optimistically update the UI immediately
+      setConversations((prev) => {
+        const updated = prev.map(c => 
+          c.session_id === sessionId 
+            ? { ...c, ...updates }
+            : c
+        )
+        
+        // Sort by last_message_at or created_at (newest first)
+        const sorted = [...updated].sort((a, b) => {
+          const aTime = a.last_message_at || a.created_at
+          const bTime = b.last_message_at || b.created_at
+          return new Date(bTime).getTime() - new Date(aTime).getTime()
+        })
+        
+        stableConversationsRef.current = sorted
+        return sorted
+      })
+      
+      // Update in storage (synchronous, so UI is already updated)
       updateConversation(sessionId, updates, userId)
       
-      // Immediately refresh to pick up the updated conversation
-      // The storage write is synchronous, so we can refresh right away
-      refreshConversations()
+      // No need to refresh - we've already updated the UI optimistically
     },
-    [refreshConversations]
+    []
   )
 
   const remove = useCallback((sessionId: string) => {
@@ -148,12 +195,18 @@ export function useConversations(agentId?: string) {
     
     console.log(`Removing conversation ${sessionId} for user ${userId}`)
     
-    // Remove conversation from storage (with user_id)
+    // Optimistically remove from UI immediately
+    setConversations((prev) => {
+      const updated = prev.filter(c => c.session_id !== sessionId)
+      stableConversationsRef.current = updated
+      return updated
+    })
+    
+    // Remove conversation from storage (synchronous, so UI is already updated)
     removeConversation(sessionId, userId)
     
-    // Refresh from storage to ensure consistency
-    refreshConversations()
-  }, [refreshConversations])
+    // No need to refresh - we've already updated the UI optimistically
+  }, [])
 
   return {
     conversations,
