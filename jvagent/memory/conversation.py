@@ -695,7 +695,7 @@ class Conversation(Node):
     async def get_statistics(self) -> Dict[str, Any]:
         """Get conversation statistics.
 
-        Aggregates metrics from model_log entries across all interactions.
+        Aggregates metrics from observability_metrics entries across all interactions.
 
         Returns:
             Dictionary with conversation statistics
@@ -705,11 +705,16 @@ class Conversation(Node):
         total_duration = 0.0
 
         for interaction in interactions:
-            # Aggregate metrics from model_log entries
-            for model_result in interaction.model_log:
-                metrics = model_result.get("metrics", {})
-                total_tokens += metrics.get("total_tokens", 0)
-                total_duration += metrics.get("duration", 0.0)
+            # Aggregate metrics from observability_metrics entries
+            if hasattr(interaction, "observability_metrics") and interaction.observability_metrics:
+                for event in interaction.observability_metrics:
+                    if event.get("event_type") in ("model_call", "embedding_call"):
+                        event_data = event.get("data", {})
+                        usage = event_data.get("usage", {})
+                        total_tokens += usage.get("total_tokens", 0)
+                        duration = event_data.get("duration", 0.0)
+                        if duration:
+                            total_duration += duration
 
         return {
             "interaction_count": self.interaction_count,

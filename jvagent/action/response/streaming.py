@@ -1,9 +1,13 @@
 """SSE streaming utilities for response bus."""
 
+import asyncio
 import json
+import logging
 from typing import Any, AsyncGenerator, Dict, Optional
 
 from fastapi.responses import StreamingResponse
+
+logger = logging.getLogger(__name__)
 
 
 def format_sse_chunk(data: Dict[str, Any]) -> str:
@@ -37,16 +41,21 @@ async def stream_messages(
     Yields:
         SSE-formatted string chunks
     """
-    # Subscribe to new messages
-    message_queue: list = []
+    # Subscribe to new messages using asyncio.Queue for real-time delivery
+    message_queue: asyncio.Queue = asyncio.Queue()
+    done = asyncio.Event()
 
     async def message_callback(message: Any) -> None:
         """Callback to receive new messages."""
         if interaction_id and message.interaction_id != interaction_id:
             return
-        message_queue.append(message)
+        try:
+            await message_queue.put(message)
+        except Exception as e:
+            logger.error(f"Error queuing message: {e}", exc_info=True)
 
-    await response_bus.subscribe(session_id, message_callback)
+    # Subscribe with receive_chunks=True to get all stream chunks
+    await response_bus.subscribe(session_id, message_callback, receive_chunks=True)
 
     try:
         # Send any existing messages first
@@ -56,18 +65,23 @@ async def stream_messages(
                 continue
             yield format_sse_chunk(message.to_dict())
 
-        # Stream new messages as they arrive
+        # Stream new messages as they arrive using queue-based waiting
         while True:
-            if message_queue:
-                message = message_queue.pop(0)
+            try:
+                # Wait for message with timeout to allow checking for done event
+                message = await asyncio.wait_for(message_queue.get(), timeout=0.1)
                 yield format_sse_chunk(message.to_dict())
-            else:
-                # Small delay to avoid busy waiting
-                import asyncio
-
-                await asyncio.sleep(0.1)
+            except asyncio.TimeoutError:
+                # Check if we should continue (allows graceful shutdown)
+                if done.is_set():
+                    break
+                continue
+            except Exception as e:
+                logger.error(f"Error streaming message: {e}", exc_info=True)
+                break
     finally:
-        # Cleanup subscription
+        # Signal done and cleanup subscription
+        done.set()
         await response_bus.unsubscribe(session_id, message_callback)
 
 

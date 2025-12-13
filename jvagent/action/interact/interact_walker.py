@@ -78,8 +78,13 @@ class InteractWalker(Walker):
                 )
                 return
 
-            # Get ResponseBus instance for this agent
-            self.response_bus = await here.get_response_bus()
+            # Get ResponseBus instance from app
+            from jvagent.core.app import App
+            app = await App.get()
+            if app:
+                self.response_bus = await app.get_response_bus()
+            else:
+                logger.warning("App node not found - ResponseBus unavailable")
 
             # Resolve user and conversation via memory.get_session()
             try:
@@ -96,10 +101,14 @@ class InteractWalker(Walker):
 
                 # Create interaction
                 from jvagent.memory.interaction import Interaction
+                from jvagent.action.model.context import set_interaction_id
 
                 self.interaction = await conversation.create_interaction(
                     utterance=self.utterance, channel=self.channel
                 )
+                
+                # Set interaction_id in context for automatic observability
+                set_interaction_id(self.interaction.id)
 
                 # Store data on interaction if provided
                 if self.data:

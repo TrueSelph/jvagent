@@ -220,7 +220,6 @@ class PersonaAction(Action):
                 max_tokens=self.model_max_tokens,
                 on_stream_chunk=on_chunk if streaming else None,
                 on_stream_end=on_end if streaming else None,
-                interaction=interaction,  # Auto-logs model result
             )
 
             # Set response on interaction

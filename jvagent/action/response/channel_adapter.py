@@ -41,11 +41,15 @@ class ChannelAdapter(ABC):
         """
         self.response_bus = response_bus
 
-    async def subscribe_to_session(self, session_id: str) -> None:
+    async def subscribe_to_session(
+        self, session_id: str, receive_chunks: bool = False
+    ) -> None:
         """Subscribe to messages for a specific session.
 
         Args:
             session_id: Session identifier
+            receive_chunks: If True, receive stream_chunk messages. If False, only receive
+                          final and adhoc messages. Default: False
         """
         if not self.response_bus:
             logger.warning(
@@ -56,7 +60,9 @@ class ChannelAdapter(ABC):
         if session_id in self._subscribed_sessions:
             return  # Already subscribed
 
-        await self.response_bus.subscribe(session_id, self.handle_message)
+        await self.response_bus.subscribe(
+            session_id, self.handle_message, receive_chunks=receive_chunks
+        )
         self._subscribed_sessions.add(session_id)
 
     async def unsubscribe_from_session(self, session_id: str) -> None:
@@ -80,6 +86,11 @@ class ChannelAdapter(ABC):
 
         This method is called when a message is published to the bus for
         a session this adapter is subscribed to.
+
+        Message types received depend on subscription preferences:
+        - If receive_chunks=True: Individual stream_chunk messages (for real-time streaming)
+        - Always: Final complete messages when stream is finalized
+        - Always: Adhoc messages
 
         Args:
             message: ResponseMessage object

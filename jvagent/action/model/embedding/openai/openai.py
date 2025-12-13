@@ -38,6 +38,9 @@ class OpenAIEmbeddingModelAction(EmbeddingModelAction):
     model: str = attribute(
         default="text-embedding-3-small", description="OpenAI embedding model identifier"
     )
+    provider: str = attribute(
+        default="openai", description="Provider name"
+    )
 
     # Model dimension mapping (for auto-detection)
     _model_dimensions: Dict[str, int] = attribute(

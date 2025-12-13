@@ -4,6 +4,7 @@ This module provides the core abstractions for model integrations:
 - BaseModelAction: Generic base class with common attributes and operations
 """
 
+import asyncio
 import logging
 from abc import ABC
 from typing import Dict, Optional
@@ -52,8 +53,14 @@ class BaseModelAction(Action, ABC):
     # HTTP client (not persisted)
     _http_client: Optional[httpx.AsyncClient] = attribute(private=True, default=None)
 
-    def track_usage(self, usage: Dict[str, int], duration: Optional[float] = None) -> None:
+    def track_usage(
+        self,
+        usage: Dict[str, int],
+        duration: Optional[float] = None,
+    ) -> None:
         """Track token usage and update metrics.
+
+        Automatically emits observability events using interaction_id from context.
 
         Args:
             usage: Usage dict with token counts
@@ -68,10 +75,141 @@ class BaseModelAction(Action, ABC):
 
         # Cost estimation can be overridden by providers
         # Base implementation doesn't estimate cost
+        duration_str = f"{duration:.3f}s" if duration is not None else "n/a"
         logger.debug(
-            f"Tracked usage: {total} tokens, {duration:.3f}s (total: {self.total_tokens} tokens, "
+            f"Tracked usage: {total} tokens, {duration_str} (total: {self.total_tokens} tokens, "
             f"{self.total_duration:.3f}s, requests: {self.total_requests})"
         )
+
+        # Always emit observability event using interaction_id from context
+        # Fire-and-forget: create task if event loop is running
+        try:
+            from jvagent.action.model.context import get_interaction_id
+            
+            interaction_id = get_interaction_id()
+            if interaction_id:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(
+                    self._emit_observability(interaction_id, usage, duration)
+                )
+        except RuntimeError:
+            # No running event loop, skip observability (will be handled elsewhere)
+            pass
+        except Exception as e:
+            logger.debug(f"Failed to emit observability: {e}")
+
+    async def _emit_observability(
+        self,
+        interaction_id: str,
+        usage: Dict[str, int],
+        duration: Optional[float],
+    ) -> None:
+        """Emit observability event to ResponseBus.
+
+        Args:
+            interaction_id: Interaction ID
+            usage: Usage dict with token counts
+            duration: Query duration in seconds
+        """
+        try:
+            from jvagent.core.app import App
+
+            app = await App.get()
+            if app:
+                response_bus = await app.get_response_bus()
+                if response_bus:
+                    # Determine event type based on class name
+                    class_name = self.__class__.__name__
+                    if "Embedding" in class_name:
+                        event_type = "embedding_call"
+                    else:
+                        event_type = "model_call"
+
+                    # Get result for provider and response data
+                    result = None
+                    if hasattr(self, "_last_result"):
+                        result = getattr(self, "_last_result", None)
+                    
+                    # Get provider from result if available, otherwise from self
+                    # Implementing classes must set provider attribute explicitly
+                    provider = "unknown"
+                    if result and hasattr(result, "provider") and result.provider:
+                        provider = result.provider
+                    elif hasattr(self, "provider") and self.provider:
+                        provider = self.provider
+                    
+                    # Check if usage is estimated (for streaming results)
+                    usage_estimated = False
+                    if result and hasattr(result, "_usage_estimated"):
+                        usage_estimated = getattr(result, "_usage_estimated", False)
+                    
+                    # Use updated metrics from result if available (for streaming that completed)
+                    if result and hasattr(result, "metrics"):
+                        result_metrics = result.metrics
+                        # Check if result has updated usage (from token estimation)
+                        if any(result_metrics.get(key, 0) > 0 for key in ["prompt_tokens", "completion_tokens", "total_tokens"]):
+                            # Use the updated metrics from result
+                            usage = {
+                                "prompt_tokens": result_metrics.get("prompt_tokens", 0),
+                                "completion_tokens": result_metrics.get("completion_tokens", 0),
+                                "total_tokens": result_metrics.get("total_tokens", 0),
+                            }
+                            usage_estimated = getattr(result, "_usage_estimated", False)
+                    
+                    # Build comprehensive observability data
+                    data = {
+                        "provider": provider,
+                        "model": getattr(self, "model", ""),
+                        "usage": usage,
+                        "duration": duration,
+                        "action_label": self.label if hasattr(self, "label") else self.__class__.__name__,
+                        "estimated": usage_estimated,  # Flag to indicate estimated vs actual metrics
+                    }
+                    
+                    # For language models, try to include response if available
+                    # This is a best-effort attempt - response may not be available at track_usage time
+                    if result:
+                        # Get response text (handle both sync and streaming results)
+                        # For streaming results, only get response if already cached (stream consumed)
+                        # to avoid interfering with the caller's stream consumption
+                        response_text = None
+                        is_streaming = getattr(result, "is_streaming", False)
+                        
+                        if hasattr(result, "response") and result.response:
+                            # Response is already available (cached or sync)
+                            response_text = result.response
+                        elif hasattr(result, "get_response") and not is_streaming:
+                            # For non-streaming, safe to call get_response()
+                            try:
+                                response_coro = result.get_response()
+                                if asyncio.iscoroutine(response_coro):
+                                    response_text = await response_coro
+                                else:
+                                    response_text = response_coro
+                            except Exception:
+                                pass
+                        elif is_streaming:
+                            # For streaming, only include response if already cached
+                            # (stream has been consumed by caller)
+                            if hasattr(result, "response") and result.response:
+                                response_text = result.response
+                        
+                        if response_text:
+                            data["response"] = response_text
+                        
+                        data["is_streaming"] = is_streaming
+                        
+                        if hasattr(result, "finish_reason") and result.finish_reason:
+                            data["finish_reason"] = result.finish_reason
+                        if hasattr(result, "tool_calls") and result.tool_calls:
+                            data["tool_calls"] = result.tool_calls
+                    await response_bus.publish_observability(
+                        interaction_id=interaction_id,
+                        event_type=event_type,
+                        data=data,
+                    )
+        except Exception as e:
+            logger.debug(f"Failed to emit observability event: {e}")
 
     async def _initialize_http_client(self) -> None:
         """Initialize HTTP client with connection pooling.

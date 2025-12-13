@@ -39,6 +39,9 @@ class HuggingFaceEmbeddingModelAction(EmbeddingModelAction):
         default="sentence-transformers/all-MiniLM-L6-v2",
         description="HuggingFace model identifier",
     )
+    provider: str = attribute(
+        default="huggingface", description="Provider name"
+    )
 
     # Model dimension mapping (for auto-detection)
     _model_dimensions: Dict[str, int] = attribute(

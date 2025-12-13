@@ -49,6 +49,9 @@ class OpenAILanguageModelAction(LanguageModelAction):
         default="https://api.openai.com/v1", description="OpenAI API endpoint URL"
     )
     model: str = attribute(default="gpt-4o-mini", description="OpenAI model identifier")
+    provider: str = attribute(
+        default="openai", description="Provider name"
+    )
 
     # Pricing per 1M tokens (approximate, for cost estimation)
     _model_pricing: Dict[str, Dict[str, float]] = attribute(
@@ -192,8 +195,8 @@ class OpenAILanguageModelAction(LanguageModelAction):
         # Create streaming generator
         async def stream_generator() -> AsyncGenerator[str, None]:
             """Generate streaming chunks from OpenAI API."""
-            usage_data = {}
             finish_reason = None
+            accumulated_chunks = []
 
             try:
                 async with self._http_client.stream(  # type: ignore[union-attr]
@@ -227,6 +230,7 @@ class OpenAILanguageModelAction(LanguageModelAction):
                                 content = delta.get("content", "")
 
                                 if content:
+                                    accumulated_chunks.append(content)
                                     yield content
 
                                 # Track finish reason
@@ -234,7 +238,7 @@ class OpenAILanguageModelAction(LanguageModelAction):
                                     finish_reason = choice["finish_reason"]
 
                                 # OpenAI doesn't provide usage in stream by default
-                                # We'll estimate based on the response
+                                # Token estimation will be handled by the stream wrapper in base.py
 
                             except json.JSONDecodeError:
                                 logger.warning(f"Failed to parse SSE data: {data_str}")
@@ -253,7 +257,7 @@ class OpenAILanguageModelAction(LanguageModelAction):
                 logger.error(f"OpenAI streaming failed: {e}", exc_info=True)
                 raise
 
-        return ModelActionResult(
+        result = ModelActionResult(
             stream=stream_generator(),
             usage={},  # Usage not available in streaming mode by default
             model=model_override,  # Use the actual model used for this query
@@ -261,6 +265,11 @@ class OpenAILanguageModelAction(LanguageModelAction):
             finish_reason=None,
             tool_calls=[],
         )
+        
+        # Store messages for token estimation (will be used by stream wrapper in base.py)
+        result._messages_for_estimation = messages
+        
+        return result
 
     # ============================================================================
     # Helper Methods
