@@ -36,7 +36,7 @@ PersonaAction (weight: 0+)
 
 - **InteractRouter**: Uses `interaction.interpretation` if available (preferred)
 - **PersonaAction**: Consumes directives via `interaction.get_directives()`
-- **VectorStore**: Uses `search()` method with collection, query, and k parameters
+- **VectorStore**: Retrieved using `await self.get_action(VectorStore)` or `await self.get_action(vectorstore_action_type)`. Uses `search()` method with collection, query, and k parameters
 
 ## Configuration
 

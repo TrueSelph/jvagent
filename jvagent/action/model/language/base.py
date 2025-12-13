@@ -6,11 +6,14 @@ and related types for text generation and multimodal interactions.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Dict, List, Optional, Union
 
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.model.base import BaseModelAction
+
+if TYPE_CHECKING:
+    from jvagent.memory.interaction import Interaction
 
 logger = logging.getLogger(__name__)
 
@@ -256,12 +259,31 @@ class LanguageModelAction(BaseModelAction, ABC):
         system: Optional[str] = None,
         history: Optional[List[Dict[str, Any]]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
+        interaction: Optional["Interaction"] = None,
         **kwargs: Any,
     ) -> str:
         """Generate text with optional streaming callbacks.
 
         If stream=True and callbacks are provided, partial chunks are emitted
         via on_stream_chunk. The full text is returned in all cases.
+        
+        When interaction is provided, model results are automatically logged
+        to the interaction's model_log. This provides transparent tracking
+        without requiring explicit logging statements in actions.
+
+        Args:
+            prompt: User prompt (text or multimodal content)
+            stream: Whether to stream the response
+            on_stream_chunk: Optional callback for each stream chunk
+            on_stream_end: Optional callback when streaming completes
+            system: Optional system message
+            history: Optional conversation history
+            tools: Optional list of tool/function definitions
+            interaction: Optional Interaction object for automatic result logging
+            **kwargs: Additional parameters (temperature, max_tokens, model, etc.)
+
+        Returns:
+            Generated text response
         """
         # Fast path: no streaming requested
         if not stream or on_stream_chunk is None:
@@ -271,11 +293,17 @@ class LanguageModelAction(BaseModelAction, ABC):
                 system=system,
                 history=history,
                 tools=tools,
+                interaction=interaction,
                 **kwargs,
             )
             full_text = await result.get_response()
             if on_stream_end:
                 on_stream_end(full_text)
+            
+            # Auto-log model result if interaction provided
+            if interaction:
+                self._log_model_result(interaction, result, full_text, stream=False, **kwargs)
+            
             return full_text
 
         # Streaming path
@@ -285,6 +313,7 @@ class LanguageModelAction(BaseModelAction, ABC):
             system=system,
             history=history,
             tools=tools,
+            interaction=interaction,
             **kwargs,
         )
 
@@ -303,6 +332,11 @@ class LanguageModelAction(BaseModelAction, ABC):
                 on_stream_end(full_text)
             except Exception as exc:
                 logger.warning("on_stream_end callback raised: %s", exc, exc_info=True)
+        
+        # Auto-log model result if interaction provided (after streaming completes)
+        if interaction:
+            self._log_model_result(interaction, result, full_text, stream=True, **kwargs)
+        
         return full_text
 
     async def query(
@@ -312,6 +346,7 @@ class LanguageModelAction(BaseModelAction, ABC):
         system: Optional[str] = None,
         history: Optional[List[Dict[str, Any]]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
+        interaction: Optional["Interaction"] = None,
         **kwargs: Any,
     ) -> ModelActionResult:
         """Execute a query to the language model.
@@ -324,6 +359,10 @@ class LanguageModelAction(BaseModelAction, ABC):
         LanguageModelAction implementations are designed to handle multimodal
         content including images, enabling rich visual understanding capabilities.
 
+        Note: When interaction is provided, model results are automatically
+        logged via generate(). This method does not log directly - use generate()
+        for automatic logging, or query() if you need the ModelActionResult object.
+
         Args:
             prompt: User prompt - can be:
                 - String: Simple text prompt
@@ -332,6 +371,7 @@ class LanguageModelAction(BaseModelAction, ABC):
             system: Optional system message
             history: Optional conversation history (can include multimodal messages)
             tools: Optional list of tool/function definitions
+            interaction: Optional Interaction object (passed through to generate() for logging)
             **kwargs: Additional parameters (temperature, max_tokens, etc.)
 
         Returns:
@@ -393,6 +433,63 @@ class LanguageModelAction(BaseModelAction, ABC):
             self.track_usage(usage_dict, duration)
 
         return result
+
+    def _log_model_result(
+        self,
+        interaction: "Interaction",
+        result: ModelActionResult,
+        response_text: str,
+        stream: bool,
+        **kwargs: Any,
+    ) -> None:
+        """Automatically log model result to interaction.
+        
+        This is called transparently when interaction is provided to generate().
+        Extracts relevant metadata from the result and logs it to the interaction's
+        model_log. Errors in logging are caught to prevent breaking model calls.
+        
+        Args:
+            interaction: The Interaction object to log to
+            result: The ModelActionResult from the query
+            response_text: The full response text
+            stream: Whether this was a streaming call
+            **kwargs: Additional parameters (may include model name override)
+        """
+        try:
+            # Extract model name (from kwargs override, result, or instance)
+            model_name = kwargs.get("model") or result.model or self.model or ""
+            
+            # Extract provider (from result or instance)
+            provider = result.provider or getattr(self, "provider", "")
+            
+            # Build model result dict
+            model_result: Dict[str, Any] = {
+                "response": response_text,
+                "model": model_name,
+                "is_streaming": stream,
+            }
+            
+            # Add provider if available
+            if provider:
+                model_result["provider"] = provider
+            
+            # Add metrics if available
+            if result.metrics:
+                model_result["metrics"] = result.metrics
+            
+            # Add finish reason if available
+            if result.finish_reason:
+                model_result["finish_reason"] = result.finish_reason
+            
+            # Add tool calls if available
+            if result.tool_calls:
+                model_result["tool_calls"] = result.tool_calls
+            
+            # Log to interaction
+            interaction.add_model_result(model_result)
+        except Exception as e:
+            # Logging failures should not break model calls
+            logger.warning(f"Failed to log model result to interaction: {e}", exc_info=True)
 
     async def query_sync(
         self,

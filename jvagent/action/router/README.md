@@ -150,6 +150,8 @@ The system prompt emphasizes precision and only matching when there's clear alig
 ## Dependencies
 
 - Requires a LanguageModelAction to be registered (e.g., OpenAILanguageModelAction)
+  - Retrieved using `await self.get_model_action()` (recommended)
+  - Define `model_action_type` attribute to specify a particular model, or omit for any available
 - Requires other InteractActions to publish anchors for routing to work
 - Uses conversation history from the Interaction chain
 

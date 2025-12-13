@@ -137,8 +137,11 @@ The action uses the standard directive pattern:
 
 ```python
 # Add directive to interaction
-interaction.add_directive(self.prompt)
+visitor.add_directive(self.prompt)
 await interaction.save()
+
+# Generate response via PersonaAction (handles retrieval, calling, and persistence)
+await self.respond(visitor)
 ```
 
 PersonaAction automatically incorporates all directives when generating responses.

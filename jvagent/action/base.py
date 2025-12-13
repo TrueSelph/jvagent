@@ -9,13 +9,15 @@ and have relationships with other components.
 """
 
 import os
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type, TypeVar, Union
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute, compound_index
 
 if TYPE_CHECKING:
-    pass  # App imported locally when needed
+    from jvagent.action.model.language.base import LanguageModelAction
+
+T = TypeVar('T', bound='Action')
 
 
 @compound_index([("context.agent_id", 1), ("context.enabled", 1)], name="agent_enabled")
@@ -65,6 +67,25 @@ class Action(Node):
         on_disable() - Called when action is disabled (action remains registered)
         on_deregister() - Called when action is deregistered (action is removed)
         healthcheck() - Called to perform health checks
+    
+    Action-to-Action Communication:
+        Actions can retrieve other actions as tools using the get_action() method:
+        
+        # Get action by class type
+        from jvagent.action.persona.base import PersonaAction
+        persona = await self.get_action(PersonaAction)
+        
+        # Get action by class name string
+        llm = await self.get_action("OpenAILanguageModelAction")
+        
+        # Get LanguageModelAction (recommended for actions that need models)
+        # Define model_action_type attribute to specify a particular model, or omit for any available
+        llm = await self.get_model_action()  # Returns None if not found
+        llm = await self.get_model_action(required=True)  # Raises error if not found
+        
+        # Get any instance of a base class (fallback)
+        from jvagent.action.vectorstore.base import VectorStore
+        vectorstore = await self.get_action(VectorStore)
         
     Note: Disabling an action (on_disable) does NOT deregister it. Deregistration
     (on_deregister) is a separate operation that removes the action from the system
@@ -434,6 +455,144 @@ class Action(Node):
             return await Agent.get(self.agent_id)
         except Exception:
             return None
+
+    async def get_action(
+        self,
+        action_class: Union[Type[T], str],
+        enabled_only: bool = True,
+    ) -> Optional[T]:
+        """Get an action by class type or class name.
+        
+        This is a convenience method for actions to retrieve other actions as tools.
+        Supports both class type and class name string lookup. When a class type is
+        provided, it will first try to find an action by entity type name, then
+        fall back to searching all actions using isinstance() check (useful for
+        finding any instance of a base class like LanguageModelAction).
+        
+        Args:
+            action_class: Either a class type (e.g., PersonaAction) or class name string
+                (e.g., "OpenAILanguageModelAction"). When a class type is provided,
+                the method will search for any instance of that class (including subclasses).
+            enabled_only: If True, only return enabled actions (default: True)
+        
+        Returns:
+            Action instance if found, None otherwise
+        
+        Examples:
+            # Get PersonaAction by class type
+            from jvagent.action.persona.base import PersonaAction
+            persona = await self.get_action(PersonaAction)
+            if persona:
+                response = await persona.respond(interaction, visitor=visitor)
+            
+            # Get action by class name string (uses agent.get_action_by_type)
+            llm = await self.get_action("OpenAILanguageModelAction")
+            
+            # Get LanguageModelAction (recommended for actions that need models)
+            # Define model_action_type attribute to specify a particular model
+            llm = await self.get_model_action()  # Returns None if not found
+            llm = await self.get_model_action(required=True)  # Raises error if not found
+            
+            # Get any VectorStore action
+            from jvagent.action.vectorstore.base import VectorStore
+            vectorstore = await self.get_action(VectorStore)
+            
+            # Include disabled actions in search
+            action = await self.get_action(MyAction, enabled_only=False)
+        """
+        agent = await self.get_agent()
+        if not agent:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"{self.get_class_name()}: Agent not found, cannot retrieve action")
+            return None
+        
+        # Handle string class name - use agent.get_action_by_type
+        if isinstance(action_class, str):
+            action = await agent.get_action_by_type(action_class)
+            if action:
+                # Check enabled status if required
+                if enabled_only and not action.enabled:
+                    return None
+                return action
+            return None
+        
+        # Handle class type - try by entity type name first (for specific classes)
+        class_name = action_class.__name__
+        action = await agent.get_action_by_type(class_name)
+        if action and isinstance(action, action_class):
+            if not enabled_only or action.enabled:
+                return action
+        
+        # Fallback: search all actions by isinstance (for base classes or when
+        # entity type lookup doesn't find a match)
+        # This is useful when you want any LanguageModelAction, not a specific one
+        actions_manager = await agent.get_actions_manager()
+        if actions_manager:
+            all_actions = await actions_manager.get_actions(enabled_only=enabled_only)
+            for action in all_actions:
+                if isinstance(action, action_class):
+                    return action
+        
+        return None
+
+    async def get_model_action(
+        self,
+        required: bool = False,
+    ) -> Optional["LanguageModelAction"]:
+        """Get a LanguageModelAction for LLM calls.
+        
+        This is a convenience method for actions that need to use language models.
+        Actions that require model usage should define a `model_action_type` attribute
+        to specify a particular model action. If not specified, this method will
+        fall back to finding any available LanguageModelAction.
+        
+        Args:
+            required: If True, raises RuntimeError when no model action is found.
+                     If False (default), returns None when not found.
+        
+        Returns:
+            LanguageModelAction instance if found, None otherwise (unless required=True)
+        
+        Raises:
+            RuntimeError: If required=True and no model action is found
+        
+        Examples:
+            # Get model action (returns None if not found)
+            model_action = await self.get_model_action()
+            if model_action:
+                response = await model_action.generate("Hello")
+            
+            # Require model action (raises error if not found)
+            model_action = await self.get_model_action(required=True)
+            response = await model_action.generate("Hello")
+        """
+        from jvagent.action.model.language.base import LanguageModelAction
+        
+        # Check if this action has a model_action_type attribute
+        model_action_type = getattr(self, "model_action_type", None)
+        
+        # Try to get by type if specified
+        if model_action_type:
+            model_action = await self.get_action(model_action_type)
+            if model_action and isinstance(model_action, LanguageModelAction):
+                return model_action
+        
+        # Fallback: find first available LanguageModelAction
+        model_action = await self.get_action(LanguageModelAction)
+        if model_action:
+            return model_action
+        
+        # Not found - raise error if required, otherwise return None
+        if required:
+            agent = await self.get_agent()
+            agent_id = agent.id if agent else "unknown"
+            model_type_str = model_action_type or "LanguageModelAction"
+            raise RuntimeError(
+                f"Model action of type '{model_type_str}' not found for agent '{agent_id}'"
+            )
+        
+        return None
 
     async def get_collection(self) -> Optional[Node]:
         """Get the collection node associated with this action.

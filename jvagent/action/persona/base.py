@@ -101,8 +101,12 @@ class PersonaAction(Action):
         interaction: Interaction,
         visitor: Optional[Any] = None,
         use_utterance: bool = True,
-        use_history: bool = False,
+        use_history: bool = True,
         history_limit: int = 3,
+        with_interpretation: bool = False,
+        with_event: bool = False,
+        with_response: bool = True,
+        max_statement_length: Optional[int] = None,
     ) -> str:
         """Main utility method for generating a response.
 
@@ -115,6 +119,14 @@ class PersonaAction(Action):
                 - utterance: User's input text
                 - directives: Injected directives from other actions
                 - parameters: Applicable parameters for this interaction
+            visitor: Optional InteractWalker for streaming support
+            use_utterance: Whether to include the user's utterance in the prompt (default: True)
+            use_history: Whether to include conversation history (default: False)
+            history_limit: Number of past interactions to include in history (default: 3)
+            with_interpretation: Include interpretations in history (default: False)
+            with_event: Include events in history (default: False)
+            with_response: Include AI responses in history (default: True)
+            max_statement_length: Truncate utterances/responses to this length (default: None, no truncation)
 
         Returns:
             Generated response string from the language model
@@ -122,19 +134,8 @@ class PersonaAction(Action):
         Raises:
             RuntimeError: If PersonaAction is not attached to an agent or model action not found
         """
-        # Get agent
-        agent = await self.get_agent()
-        if not agent:
-            raise RuntimeError("PersonaAction not attached to an agent")
-
-        # Get model action
-        from jvagent.action.model.language.base import LanguageModelAction
-
-        model_action = await agent.get_action_by_type(self.model_action_type)
-        if not model_action or not isinstance(model_action, LanguageModelAction):
-            raise RuntimeError(
-                f"Model action of type '{self.model_action_type}' not found for agent"
-            )
+        # Get model action (required=True raises error if not found)
+        model_action = await self.get_model_action(required=True)
 
         # Record PersonaAction in interaction
         interaction.add_action("PersonaAction")
@@ -143,9 +144,18 @@ class PersonaAction(Action):
         system_prompt = self._compose_prompt(interaction)
 
         if use_history:
-            # attempt to extract history from common attributes; keep robust to different shapes
+            # Get conversation history with configurable options
+            # Note: with_utterance in history is controlled by with_response (if we include responses, we include utterances)
             conversation_history: Optional[List[Dict[str, Any]]] = None
-            conversation_history = await self._get_conversation_history(interaction, history_limit)
+            conversation_history = await self._get_conversation_history(
+                interaction,
+                history_limit,
+                with_utterance=with_response,  # Include utterances when including responses (they come in pairs)
+                with_response=with_response,
+                with_interpretation=with_interpretation,
+                with_event=with_event,
+                max_statement_length=max_statement_length,
+            )
         else:
             conversation_history = None
 
@@ -154,6 +164,7 @@ class PersonaAction(Action):
         else:
             utterance = " "
 
+        
         streaming = bool(
             visitor
             and getattr(visitor, "stream_mode", True)
@@ -209,16 +220,7 @@ class PersonaAction(Action):
                 max_tokens=self.model_max_tokens,
                 on_stream_chunk=on_chunk if streaming else None,
                 on_stream_end=on_end if streaming else None,
-            )
-
-            # Log the model result
-            interaction.add_action(self.model_action_type)
-            interaction.add_model_result(
-                {
-                    "response": response,
-                    "model": self.model_name,
-                    "is_streaming": streaming,
-                }
+                interaction=interaction,  # Auto-logs model result
             )
 
             # Set response on interaction
@@ -273,12 +275,12 @@ class PersonaAction(Action):
         # Build parameters section from interaction parameters and configured parameters
         all_parameters = list(self.parameters)  # Start with configured parameters
 
-        applicable_parameters = [
-            p for p in interaction.parameters
-            if p not in interaction._executed_parameters
-        ]
+        # Get unexecuted parameters from interaction
+        applicable_parameters = interaction.get_unexecuted_parameters()
         all_parameters.extend(applicable_parameters)  # Add interaction parameters
-        interaction.set_to_executed(parameters=applicable_parameters) # Add parameters to executed list
+        # Mark parameters as executed
+        if applicable_parameters:
+            interaction.set_to_executed(parameters=applicable_parameters)
 
         if all_parameters:
             # Format parameters for prompt
@@ -293,15 +295,13 @@ class PersonaAction(Action):
             parameters_prompt = NO_PARAMETERS_INSTRUCTION
 
         # Build directives section from interaction directives if not already executed
-        applicable_directives = [
-            d for d in interaction.directives
-            if d not in interaction._executed_directives
-        ]
-        directives = applicable_directives
-        if directives:
-            interaction.set_to_executed(directives=applicable_directives)  # Add directives to executed list
+        applicable_directives = interaction.get_unexecuted_directives()
+        if applicable_directives:
+            # Mark directives as executed
+            interaction.set_to_executed(directives=applicable_directives)
+            # Extract content strings for prompt formatting
             directives_str = "\n".join(
-                f"{i+1}. {d}" for i, d in enumerate(directives)
+                f"{i+1}. {d.get('content', str(d))}" for i, d in enumerate(applicable_directives)
             )
             directives_prompt = f"{DIRECTIVES_INSTRUCTION}\n{directives_str}"
         else:
@@ -322,7 +322,14 @@ class PersonaAction(Action):
         return final_prompt
 
     async def _get_conversation_history(
-        self, interaction: Interaction, history_limit: int
+        self,
+        interaction: Interaction,
+        history_limit: int,
+        with_utterance: bool = True,
+        with_response: bool = True,
+        with_interpretation: bool = False,
+        with_event: bool = False,
+        max_statement_length: Optional[int] = None,
     ) -> Optional[List[Dict[str, Any]]]:
         """Get formatted conversation history for the language model.
 
@@ -331,6 +338,12 @@ class PersonaAction(Action):
 
         Args:
             interaction: Current interaction
+            history_limit: Number of past interactions to include
+            with_utterance: Include user utterances in history (default: True)
+            with_response: Include AI responses in history (default: True)
+            with_interpretation: Include interpretations in history (default: False)
+            with_event: Include events in history (default: False)
+            max_statement_length: Truncate utterances/responses to this length (default: None)
 
         Returns:
             List of message dictionaries with 'role' and 'content' keys, or None if disabled
@@ -345,15 +358,16 @@ class PersonaAction(Action):
         if not conversation:
             return None
 
-        # Get conversation history formatted for language model
+        # Get conversation history formatted for language model with configurable options
         history = await conversation.get_interaction_history(
             limit=history_limit,
             excluded=interaction.id,
-            utterance=True,
-            response=True,
-            interpretation=False,
-            event=False,
+            with_utterance=with_utterance,
+            with_response=with_response,
+            with_interpretation=with_interpretation,
+            with_event=with_event,
             formatted=True,  # Format as role/content pairs for language models
+            max_statement_length=max_statement_length,
         )
 
         return history if history else None
@@ -388,12 +402,9 @@ class PersonaAction(Action):
         """
         try:
             # Check if model action is available
-            agent = await self.get_agent()
-            if agent and self.model_action_type:
-                from jvagent.action.model.language.base import LanguageModelAction
-                action = await agent.get_action_by_type(self.model_action_type)
-                if not action or not isinstance(action, LanguageModelAction):
-                    return False
+            action = await self.get_model_action()
+            if not action:
+                return False
 
             return True
         except Exception as e:

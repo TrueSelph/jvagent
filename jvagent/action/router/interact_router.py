@@ -14,7 +14,6 @@ from jvspatial.core import on_visit
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
-from jvagent.action.model.language.base import LanguageModelAction
 
 if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
@@ -101,7 +100,7 @@ class InteractRouter(InteractAction):
                 logger.error("InteractRouter: Agent not found")
                 return
 
-            model_action = await self._get_model_action(agent)
+            model_action = await self.get_model_action()
             if not model_action:
                 logger.error("InteractRouter: Model action not found")
                 return
@@ -121,19 +120,18 @@ class InteractRouter(InteractAction):
             from jvagent.memory.conversation import Conversation
 
             conversation = await Conversation.get(interaction.conversation_id)
-            conversation_history = []
+            interaction_history = []
             if conversation:
-                conversation_history = await conversation.get_interaction_history(
+                interaction_history = await conversation.get_interaction_history(
                     limit=self.history_limit,
-                    excluded=interaction.id,
-                    utterance=False,
-                    response=False,
-                    interpretation=True,
-                    event=True,
+                    with_utterance=False,
+                    with_response=False,
+                    with_interpretation=True,
+                    with_event=True,
                     formatted=True,
                 )
 
-                logger.debug(f"InteractRouter: Conversation history: {conversation_history}")
+                logger.debug(f"InteractRouter: Conversation history: {interaction_history}")
 
             # Build routing prompt (history will be passed separately to LLM)
             prompt = self._build_routing_prompt(
@@ -141,40 +139,27 @@ class InteractRouter(InteractAction):
                 anchors_dict
             )
 
-            # For routing, we do NOT stream; we need full text for parsing
-            streaming = False
-
+    
             response_text = await model_action.generate(
                 prompt=prompt,
-                stream=streaming,
+                stream=False,
                 system=self._get_system_prompt(),
-                history=conversation_history,  # Pass formatted history directly to LLM
+                history=interaction_history,  # Pass formatted history directly to LLM
                 temperature=0.3,  # Lower temperature for more consistent routing
                 max_tokens=500,
-            )
-
-            # Log model result (store as single entry with final text)
-            interaction.add_action(self.get_class_name())
-            interaction.add_model_result(
-                {
-                    "response": response_text,
-                    "model": getattr(model_action, "model", ""),
-                    "provider": getattr(model_action, "provider", ""),
-                    "is_streaming": streaming,
-                }
+                interaction=interaction,  # Auto-logs model result
             )
 
             # Parse response
-            routing_data = self._parse_routing_response(response_text)
             routing_data = self._parse_routing_response(response_text)
 
             # Store on interaction
             # Always set interpretation to indicate InteractRouter has executed
             if routing_data:
                 interaction.interpretation = routing_data.get("interpretation", "")
-                # Combine routed entities with exceptions (exceptions always included)
-                routed_entities = routing_data.get("entities", [])
-                all_allowed = list(set(routed_entities + self.exceptions))
+                # Combine routed actions with exceptions (exceptions always included)
+                routed_actions = routing_data.get("actions", [])
+                all_allowed = list(set(routed_actions + self.exceptions))
                 interaction.anchors = all_allowed
                 interaction.routing_confidence = routing_data.get("confidence")
             else:
@@ -188,7 +173,7 @@ class InteractRouter(InteractAction):
 
             if routing_data:
                 logger.info(
-                    f"InteractRouter: Routed to {len(routed_entities)} entities "
+                    f"InteractRouter: Routed to {len(routed_actions)} actions "
                     f"(+ {len(self.exceptions)} exceptions, total: {len(all_allowed)}) "
                     f"(confidence: {interaction.routing_confidence})"
                 )
@@ -202,31 +187,6 @@ class InteractRouter(InteractAction):
             logger.error(f"InteractRouter: Error during routing: {e}", exc_info=True)
             # Don't raise - let other actions continue
 
-
-    async def _get_model_action(self, agent: Any) -> Optional[LanguageModelAction]:
-        """Get the model action for LLM calls.
-
-        Args:
-            agent: Agent instance
-
-        Returns:
-            LanguageModelAction instance or None
-        """
-        if self.model_action_type:
-            model_action = await agent.get_action_by_type(self.model_action_type)
-            if model_action and isinstance(model_action, LanguageModelAction):
-                return model_action
-
-        # Fallback: find first available LanguageModelAction
-        from jvagent.action.model.language.base import LanguageModelAction as LanguageModelActionBase
-        actions_manager = await agent.get_actions_manager()
-        if actions_manager:
-            all_actions = await actions_manager.get_actions(enabled_only=True)
-            for action in all_actions:
-                if isinstance(action, LanguageModelActionBase):
-                    return action
-
-        return None
 
     async def _collect_anchors(self, agent: Any) -> Dict[str, List[str]]:
         """Collect anchors from all InteractActions.
@@ -324,8 +284,6 @@ class InteractRouter(InteractAction):
                 return self.routing_prompt.format(
                     utterance=utterance,
                     anchors_json=anchors_text,
-                    previous_intents="",  # Legacy placeholder - now empty as history is passed separately
-                    conversation_history="",  # Legacy placeholder - now empty as history is passed separately
                 )
 
         # Default routing prompt template
@@ -333,7 +291,7 @@ class InteractRouter(InteractAction):
         {utterance}
 
         ## Available Anchors:
-        The following anchors represent capabilities of different InteractActions. Each entity name maps to a list of anchor statements that describe when that action should be used.
+        The following anchors represent capabilities of different InteractActions. Each action name maps to a list of anchor statements that describe when that action should be used.
 
         {anchors_text}
 
@@ -343,13 +301,13 @@ class InteractRouter(InteractAction):
           This interpretation should mention if the user is requesting information, providing information or doing both.
           Example: "User has requested an update on the report bearing reference number 12345"
 
-        2. Match the interpretation against the anchor statements to identify which entity names (InteractActions) should handle this request.
-           If multiple entity names are identified, and one action has more specific anchors than the other, select the more specific action.
+        2. Match the interpretation against the anchor statements to identify which actions (InteractActions) should handle this request.
+           If multiple actions are identified, and one action has more specific anchors than the other, select the more specific action.
 
         3. Return your analysis in JSON format:
         {{
             "interpretation": "Your concise interpretation here",
-            "entities": ["entity_name1", "entity_name2"],
+            "actions": ["action_name1", "action_name2"],
             "confidence": 0.85
         }}
 
@@ -411,13 +369,13 @@ Be precise and only match when there's clear alignment between the user's intent
                 return None
 
             interpretation = data.get("interpretation", "")
-            entities = data.get("entities", [])
+            actions = data.get("actions", [])
             confidence = data.get("confidence", 0.0)
 
             # Validate types
             if not isinstance(interpretation, str):
                 return None
-            if not isinstance(entities, list):
+            if not isinstance(actions, list):
                 return None
             if not isinstance(confidence, (int, float)):
                 return None
@@ -427,7 +385,7 @@ Be precise and only match when there's clear alignment between the user's intent
 
             return {
                 "interpretation": interpretation.strip(),
-                "entities": [str(e) for e in entities if e],  # Filter empty strings
+                "actions": [str(a) for a in actions if a],  # Filter empty strings
                 "confidence": confidence,
             }
 

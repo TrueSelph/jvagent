@@ -329,26 +329,14 @@ class VectorStore(Action, ABC):
         """
         from jvagent.action.model.embedding.base import EmbeddingModelAction
 
-        agent = await self.get_agent()
-        if not agent:
-            logger.warning("VectorStore: Agent not found, cannot retrieve embedding model")
-            return None
-
+        # Try to get by type if specified
         if self.embedding_model_action_type:
-            embedding_model = await agent.get_action_by_type(self.embedding_model_action_type)
-            if embedding_model and isinstance(embedding_model, EmbeddingModelAction):
+            embedding_model = await self.get_action(self.embedding_model_action_type)
+            if embedding_model:
                 return embedding_model
 
         # Fallback: find first available EmbeddingModelAction
-        actions_manager = await agent.get_actions_manager()
-        if actions_manager:
-            all_actions = await actions_manager.get_actions(enabled_only=True)
-            for action in all_actions:
-                if isinstance(action, EmbeddingModelAction):
-                    return action
-
-        logger.warning("VectorStore: No embedding model action found")
-        return None
+        return await self.get_action(EmbeddingModelAction)
 
     async def _embed_text(self, text: str) -> List[float]:
         """Generate embedding vector for text using the configured embedding model.

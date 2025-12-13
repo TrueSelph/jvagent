@@ -241,6 +241,9 @@ def create_server_from_config(debug: bool = False) -> Server:
         logger.debug(f"Database: {db_type} at {db_path}")
         logger.debug(f"Authentication: {'enabled' if auth_enabled else 'disabled'}")
 
+    # Determine log level based on debug flag or environment variable
+    log_level = os.getenv("JVAGENT_LOG_LEVEL", "debug" if debug else "info")
+
     # Create server with configuration
     server = Server(
         title=title,
@@ -255,6 +258,7 @@ def create_server_from_config(debug: bool = False) -> Server:
         jwt_secret=jwt_secret,
         jwt_expire_minutes=jwt_expire_minutes,
         graph_endpoint_enabled=graph_endpoint_enabled,
+        log_level=log_level,
     )
 
     return server
@@ -361,10 +365,13 @@ def main() -> None:
     debug_flag = "--debug" in args
     if debug_flag:
         args = [arg for arg in args if arg != "--debug"]
-        # Set logging to DEBUG level
-        logging.getLogger().setLevel(logging.DEBUG)
-        for handler in logging.getLogger().handlers:
+        # Set logging to DEBUG level for root and all jvagent loggers
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.DEBUG)
+        for handler in root_logger.handlers:
             handler.setLevel(logging.DEBUG)
+        # Also set DEBUG level for all jvagent loggers to ensure they inherit properly
+        logging.getLogger("jvagent").setLevel(logging.DEBUG)
 
     # Check for --update flag
     update_flag = "--update" in args or "--migrate" in args

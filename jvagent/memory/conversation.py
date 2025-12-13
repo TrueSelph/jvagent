@@ -297,56 +297,14 @@ class Conversation(Node):
 
         return interactions
 
-    async def get_transcript(
-        self,
-        limit: int = 10,
-        max_statement_length: int = 500,
-        with_events: bool = False,
-    ) -> List[Dict[str, str]]:
-        """Get conversation transcript as list of messages.
-
-        Args:
-            limit: Maximum number of interactions to include (most recent)
-            max_statement_length: Maximum length for each statement
-            with_events: Whether to include events in transcript
-
-        Returns:
-            List of message dictionaries with 'human', 'ai', or 'event' keys
-        """
-        # Get most recent interactions (reverse=True gives newest first)
-        interactions = await self.get_interactions(limit=limit, reverse=True)
-        # Reverse to get chronological order (oldest first) for transcript
-        interactions.reverse()
-        transcript: List[Dict[str, str]] = []
-
-        for interaction in interactions:
-            # Add human message
-            utterance = interaction.utterance
-            if max_statement_length and len(utterance) > max_statement_length:
-                utterance = utterance[:max_statement_length] + "..."
-            transcript.append({"human": utterance})
-
-            # Add AI response if present
-            if interaction.response:
-                response = interaction.response
-                if max_statement_length and len(response) > max_statement_length:
-                    response = response[:max_statement_length] + "..."
-                transcript.append({"ai": response})
-
-            # Add events if requested
-            if with_events and interaction.events:
-                for event in interaction.events:
-                    transcript.append({"event": event})
-
-        return transcript
-
     def _format_interactions(
         self,
         interactions: List["Interaction"],
-        include_utterance: bool = True,
-        include_response: bool = True,
-        include_interpretations: bool = False,
-        include_event: bool = False,
+        with_utterance: bool = True,
+        with_response: bool = True,
+        with_interpretation: bool = False,
+        with_event: bool = False,
+        max_statement_length: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """Format interactions for language model consumption.
 
@@ -355,50 +313,67 @@ class Conversation(Node):
 
         Args:
             interactions: List of Interaction nodes to format
-            include_utterance: If True, include user utterances as user messages
-            include_response: If True, include AI responses as assistant messages
-            include_interpretations: If True, include interpretations as system messages
-            include_event: If True, include events as system messages
+            with_utterance: If True, include user utterances as user messages
+            with_response: If True, include AI responses as assistant messages
+            with_interpretation: If True, include interpretations as system messages
+            with_event: If True, include events as system messages
+            max_statement_length: Optional maximum length for utterance and response strings.
+                If provided and content exceeds this length, it will be truncated with "..." appended.
+                Does not apply to interpretations or events. Default: None (no truncation).
 
         Returns:
             List of dictionaries with 'role' and 'content' keys formatted for language models
         """
+        def _truncate(content: str) -> str:
+            """Truncate content if max_statement_length is set."""
+            if max_statement_length and len(content) > max_statement_length:
+                return content[:max_statement_length] + "..."
+            return content
+        
         history: List[Dict[str, Any]] = []
         
         for interaction in interactions:
             # Add interpretation as system message (if present and requested)
-            if include_interpretations and interaction.interpretation:
+            # Note: interpretations are not truncated
+            if with_interpretation and interaction.interpretation:
                 content_parts = [f"Interpretation: {interaction.interpretation}"]
                 if interaction.anchors:
                     content_parts.append(f"Anchors: {', '.join(interaction.anchors)}")
                 if interaction.routing_confidence is not None:
                     content_parts.append(f"Confidence: {interaction.routing_confidence:.2f}")
                 
+                content = " | ".join(content_parts)
                 history.append({
                     "role": "system",
-                    "content": " | ".join(content_parts),
+                    "content": content,
                 })
             
-            # Add user utterance (if requested)
-            if include_utterance:
+            # Add user utterance (if requested) - truncated if max_statement_length is set
+            if with_utterance:
                 history.append({
                     "role": "user",
-                    "content": interaction.utterance,
+                    "content": _truncate(interaction.utterance),
                 })
             
-            # Add assistant response (if present and requested)
-            if include_response and interaction.response:
+            # Add assistant response (if present and requested) - truncated if max_statement_length is set
+            if with_response and interaction.response:
                 history.append({
                     "role": "assistant",
-                    "content": interaction.response,
+                    "content": _truncate(interaction.response),
                 })
             
             # Add events as system messages (if present and requested)
-            if include_event and interaction.events:
+            # Note: events are not truncated
+            if with_event and interaction.events:
                 for event in interaction.events:
+                    # Extract content from event dict structure
+                    if isinstance(event, dict):
+                        event_str = event.get("content", str(event))
+                    else:
+                        event_str = str(event)
                     history.append({
                         "role": "system",
-                        "content": f"Event: {event}",
+                        "content": f"Event: {event_str}",
                     })
         
         return history
@@ -407,11 +382,12 @@ class Conversation(Node):
         self,
         limit: int = 10,
         excluded: Union[str, List[str], bool] = False,
-        utterance: bool = True,
-        response: bool = True,
-        interpretation: bool = False,
-        event: bool = False,
+        with_utterance: bool = True,
+        with_response: bool = True,
+        with_interpretation: bool = False,
+        with_event: bool = False,
         formatted: bool = True,
+        max_statement_length: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """Get interaction history with configurable element inclusion and formatting.
 
@@ -422,12 +398,15 @@ class Conversation(Node):
             limit: Maximum number of interactions to include (most recent)
             excluded: Interaction ID(s) to exclude from results. Can be a single string, 
                 a list of strings, or False (default) for no exclusion.
-            utterance: If True, include user utterances (default: True)
-            response: If True, include AI responses (default: True)
-            interpretation: If True, include interpretations (default: False)
-            event: If True, include events (default: False)
+            with_utterance: If True, include user utterances (default: True)
+            with_response: If True, include AI responses (default: True)
+            with_interpretation: If True, include interpretations (default: False)
+            with_event: If True, include events (default: False)
             formatted: If True, format as role/content pairs for language models.
                 If False, return raw format with metadata. Default: True.
+            max_statement_length: Optional maximum length for utterance and response strings.
+                If provided and content exceeds this length, it will be truncated with "..." appended.
+                Does not apply to interpretations or events. Default: None (no truncation).
 
         Returns:
             If formatted=True: List of dictionaries with 'role' and 'content' keys
@@ -455,26 +434,34 @@ class Conversation(Node):
         interactions = interactions[:limit]
         interactions.reverse()
         
+        # Helper function for truncation
+        def _truncate(content: str) -> str:
+            """Truncate content if max_statement_length is set."""
+            if max_statement_length and len(content) > max_statement_length:
+                return content[:max_statement_length] + "..."
+            return content
+        
         if formatted:
             # Use formatter utility
             return self._format_interactions(
                 interactions,
-                include_utterance=utterance,
-                include_response=response,
-                include_interpretations=interpretation,
-                include_event=event,
+                with_utterance=with_utterance,
+                with_response=with_response,
+                with_interpretation=with_interpretation,
+                with_event=with_event,
+                max_statement_length=max_statement_length,
             )
         else:
             # Raw format with selected elements
             history: List[Dict[str, Any]] = []
             for interaction in interactions:
                 # Filter: if only event requested, skip interactions without events
-                if event and not interpretation and not utterance and not response:
+                if with_event and not with_interpretation and not with_utterance and not with_response:
                     if not interaction.events:
                         continue
                 
                 # Filter: if only interpretation requested, skip interactions without interpretation
-                if interpretation and not event and not utterance and not response:
+                if with_interpretation and not with_event and not with_utterance and not with_response:
                     if not interaction.interpretation:
                         continue
                 
@@ -483,20 +470,22 @@ class Conversation(Node):
                     "started_at": interaction.started_at.isoformat() if interaction.started_at else None,
                 }
                 
-                if utterance:
-                    entry["utterance"] = interaction.utterance
+                if with_utterance:
+                    entry["utterance"] = _truncate(interaction.utterance)
                 
-                if response and interaction.response:
-                    entry["response"] = interaction.response
+                if with_response and interaction.response:
+                    entry["response"] = _truncate(interaction.response)
                 
-                if interpretation and interaction.interpretation:
+                if with_interpretation and interaction.interpretation:
+                    # Note: interpretations are not truncated
                     entry["interpretation"] = interaction.interpretation
                     if interaction.anchors:
                         entry["anchors"] = interaction.anchors
                     if interaction.routing_confidence is not None:
                         entry["routing_confidence"] = interaction.routing_confidence
                 
-                if event and interaction.events:
+                if with_event and interaction.events:
+                    # Note: events are not truncated
                     entry["events"] = interaction.events
                 
                 history.append(entry)
@@ -507,7 +496,8 @@ class Conversation(Node):
         self,
         limit: int = 10,
         excluded: Union[str, List[str], bool] = False,
-        format_for_language_model: bool = True,
+        formatted: bool = True,
+        max_statement_length: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """Get formatted conversation history (utterance and response pairs).
 
@@ -515,28 +505,33 @@ class Conversation(Node):
             limit: Maximum number of interactions to include (most recent)
             excluded: Interaction ID(s) to exclude from results. Can be a single string, 
                 a list of strings, or False (default) for no exclusion.
-            format_for_language_model: If True, format as role/content pairs for language models.
+            formatted: If True, format as role/content pairs for language models.
                 If False, return raw format with 'utterance' and 'response' keys. Default: True.
+            max_statement_length: Optional maximum length for utterance and response strings.
+                If provided and content exceeds this length, it will be truncated with "..." appended.
+                Does not apply to interpretations or events. Default: None (no truncation).
 
         Returns:
-            If format_for_language_model=True: List of dictionaries with 'role' and 'content' keys
-            If format_for_language_model=False: List of dictionaries with 'utterance' and optional 'response' keys
+            If formatted=True: List of dictionaries with 'role' and 'content' keys
+            If formatted=False: List of dictionaries with 'utterance' and optional 'response' keys
         """
         return await self.get_interaction_history(
             limit=limit,
             excluded=excluded,
-            utterance=True,
-            response=True,
-            interpretation=False,
-            event=False,
-            formatted=format_for_language_model,
+            with_utterance=True,
+            with_response=True,
+            with_interpretation=False,
+            with_event=False,
+            formatted=formatted,
+            max_statement_length=max_statement_length,
         )
 
     async def get_event_history(
         self,
         limit: int = 10,
         excluded: Union[str, List[str], bool] = False,
-        format_for_language_model: bool = True,
+        formatted: bool = True,
+        max_statement_length: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """Get formatted event history from interactions.
 
@@ -544,28 +539,34 @@ class Conversation(Node):
             limit: Maximum number of interactions to include (most recent)
             excluded: Interaction ID(s) to exclude from results. Can be a single string, 
                 a list of strings, or False (default) for no exclusion.
-            format_for_language_model: If True, format as role/content pairs for language models.
+            formatted: If True, format as role/content pairs for language models.
                 If False, return raw format with metadata. Default: True.
+            max_statement_length: Optional maximum length for utterance and response strings.
+                If provided and content exceeds this length, it will be truncated with "..." appended.
+                Does not apply to interpretations or events. Default: None (no truncation).
+                Note: This parameter has no effect when retrieving only events.
 
         Returns:
-            If format_for_language_model=True: List of dictionaries with 'role' and 'content' keys
-            If format_for_language_model=False: List of dictionaries with 'interaction_id', 'started_at', and 'events' keys
+            If formatted=True: List of dictionaries with 'role' and 'content' keys
+            If formatted=False: List of dictionaries with 'interaction_id', 'started_at', and 'events' keys
         """
         return await self.get_interaction_history(
             limit=limit,
             excluded=excluded,
-            utterance=False,
-            response=False,
-            interpretation=False,
-            event=True,
-            formatted=format_for_language_model,
+            with_utterance=False,
+            with_response=False,
+            with_interpretation=False,
+            with_event=True,
+            formatted=formatted,
+            max_statement_length=max_statement_length,
         )
 
     async def get_interpretation_history(
         self,
         limit: int = 10,
         excluded: Union[str, List[str], bool] = False,
-        format_for_language_model: bool = True,
+        formatted: bool = True,
+        max_statement_length: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """Get formatted interpretation history from interactions.
 
@@ -573,29 +574,35 @@ class Conversation(Node):
             limit: Maximum number of interactions to include (most recent)
             excluded: Interaction ID(s) to exclude from results. Can be a single string, 
                 a list of strings, or False (default) for no exclusion.
-            format_for_language_model: If True, format as role/content pairs for language models.
+            formatted: If True, format as role/content pairs for language models.
                 If False, return raw format with metadata. Default: True.
+            max_statement_length: Optional maximum length for utterance and response strings.
+                If provided and content exceeds this length, it will be truncated with "..." appended.
+                Does not apply to interpretations or events. Default: None (no truncation).
+                Note: This parameter has no effect when retrieving only interpretations.
 
         Returns:
-            If format_for_language_model=True: List of dictionaries with 'role' and 'content' keys
-            If format_for_language_model=False: List of dictionaries with 'interaction_id', 'started_at', 'interpretation', 
+            If formatted=True: List of dictionaries with 'role' and 'content' keys
+            If formatted=False: List of dictionaries with 'interaction_id', 'started_at', 'interpretation', 
             'anchors', and 'routing_confidence' keys
         """
         return await self.get_interaction_history(
             limit=limit,
             excluded=excluded,
-            utterance=False,
-            response=False,
-            interpretation=True,
-            event=False,
-            formatted=format_for_language_model,
+            with_utterance=False,
+            with_response=False,
+            with_interpretation=True,
+            with_event=False,
+            formatted=formatted,
+            max_statement_length=max_statement_length,
         )
 
     async def get_context_history(
         self,
         limit: int = 10,
         excluded: Union[str, List[str], bool] = False,
-        format_for_language_model: bool = True,
+        formatted: bool = True,
+        max_statement_length: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """Get formatted context history combining conversation, events, and interpretations.
 
@@ -603,23 +610,27 @@ class Conversation(Node):
             limit: Maximum number of interactions to include (most recent)
             excluded: Interaction ID(s) to exclude from results. Can be a single string, 
                 a list of strings, or False (default) for no exclusion.
-            format_for_language_model: If True, format as role/content pairs for language models.
+            formatted: If True, format as role/content pairs for language models.
                 Includes user utterance, AI response, events, and interpretations. Default: True.
+            max_statement_length: Optional maximum length for utterance and response strings.
+                If provided and content exceeds this length, it will be truncated with "..." appended.
+                Does not apply to interpretations or events. Default: None (no truncation).
 
         Returns:
-            If format_for_language_model=True: List of dictionaries with 'role' and 'content' keys
+            If formatted=True: List of dictionaries with 'role' and 'content' keys
                 (includes user, assistant, system messages for interpretations and events)
-            If format_for_language_model=False: List of dictionaries containing conversation, events, 
+            If formatted=False: List of dictionaries containing conversation, events, 
                 and interpretation data with metadata
         """
         return await self.get_interaction_history(
             limit=limit,
             excluded=excluded,
-            utterance=True,
-            response=True,
-            interpretation=True,
-            event=True,
-            formatted=format_for_language_model,
+            with_utterance=True,
+            with_response=True,
+            with_interpretation=True,
+            with_event=True,
+            formatted=formatted,
+            max_statement_length=max_statement_length,
         )
 
     async def update_context(self, updates: Dict[str, Any]) -> None:
