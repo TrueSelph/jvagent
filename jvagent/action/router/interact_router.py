@@ -14,6 +14,10 @@ from jvspatial.core import on_visit
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.action.router.prompts import (
+    ROUTING_PROMPT_TEMPLATE,
+    SYSTEM_PROMPT_TEMPLATE,
+)
 
 if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
@@ -45,7 +49,7 @@ class InteractRouter(InteractAction):
         description="Type of LanguageModelAction to use for LLM calls (e.g., 'OpenAILanguageModelAction'). If empty, uses first available."
     )
     history_limit: int = attribute(
-        default=3,
+        default=5,
         description="Number of previous interactions to include in conversation history",
         ge=0
     )
@@ -58,11 +62,11 @@ class InteractRouter(InteractAction):
         description="List of InteractAction entity names that must always execute, regardless of routing results"
     )
     system_prompt: Optional[str] = attribute(
-        default=None,
+        default=SYSTEM_PROMPT_TEMPLATE,
         description="Optional override for the system prompt used during routing. If not provided, uses default system prompt."
     )
     routing_prompt: Optional[str] = attribute(
-        default=None,
+        default=ROUTING_PROMPT_TEMPLATE,
         description=(
             "Optional template for the routing prompt. "
             "Placeholders: {utterance}, {anchors_json}. "
@@ -143,7 +147,7 @@ class InteractRouter(InteractAction):
             response_text = await model_action.generate(
                 prompt=prompt,
                 stream=False,
-                system=self._get_system_prompt(),
+                system=self.system_prompt,
                 history=interaction_history,  # Pass formatted history directly to LLM
                 calling_action_name=self.get_class_name(),
                 temperature=0.1,  # Lower temperature for more consistent routing
@@ -266,62 +270,11 @@ class InteractRouter(InteractAction):
         # Build anchors text
         anchors_text = json.dumps(anchors_dict, indent=2)
 
-        # Use custom routing prompt template if provided
-        if self.routing_prompt:
-            return self.routing_prompt.format(
-                utterance=utterance,
-                anchors_json=anchors_text,
-            )
-
-        # Default routing prompt template
-        prompt = f"""## Current Utterance:
-        {utterance}
-
-        ## Available Anchors:
-        The following anchors represent capabilities of different InteractActions. Each action name maps to a list of anchor statements that describe when that action should be used.
-
-        {anchors_text}
-
-        ## Task:
-        1. Generate a concise interpretation (under 50 words) that summarizes the user's intent with applicable contextual references.
-          Note if the user is responding to question or any ongoing events
-          This interpretation should mention if the user is requesting information, providing information or doing both.
-          Example: "User has requested an update on the report bearing reference number 12345"
-
-        2. Match the interpretation against the anchor statements to identify which actions (InteractActions) should handle this request.
-           If multiple actions are identified, and one action has more specific anchors than the other, select the more specific action.
-
-        3. Return your analysis in JSON format:
-        {{
-            "interpretation": "Your concise interpretation here",
-            "actions": ["action_name1", "action_name2"],
-            "confidence": 0.85
-        }}
-
-        Return ONLY valid JSON, no additional text."""
-
-        return prompt
-
-    def _get_system_prompt(self) -> str:
-        """Get the system prompt for routing.
-
-        Returns:
-            System prompt string
-        """
-        # Use custom system prompt if provided
-        if self.system_prompt:
-            return self.system_prompt
-
-        # Default system prompt
-        return """You are an intent analysis system that interprets user utterances and routes them to appropriate InteractActions based on published anchor statements.
-
-Your role is to:
-1. Understand the user's intent from their utterance and conversation context
-2. Generate a concise interpretation (under 50 words) that captures the intent
-3. Match the interpretation against available anchor statements
-4. Return the matching entity names (InteractAction identifiers) in JSON format
-
-Be precise and only match when there's clear alignment between the user's intent and an anchor statement."""
+        # Use routing prompt template (defaults to ROUTING_PROMPT_TEMPLATE, can be overridden)
+        return self.routing_prompt.format(
+            utterance=utterance,
+            anchors_json=anchors_text,
+        )
 
     def _parse_routing_response(self, response_text: str) -> Optional[Dict[str, Any]]:
         """Parse the LLM routing response.

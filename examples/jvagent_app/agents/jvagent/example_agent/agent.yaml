@@ -80,8 +80,6 @@ actions:
       embedding_dimensions: 1536  # Must match embedding model dimensions
       # Embedding Model Configuration
       embedding_model_action_type: "OpenAIEmbeddingModelAction"  # Entity type to find dynamically
-      embedder_type: model_action  # Use model action instead of sentence-transformers
-
 
   # RetrievalInteractAction - Context retrieval from vector stores
   # Core action from jvagent library (jvagent/action/retrieval/)
@@ -143,8 +141,8 @@ actions:
         - "Provide streaming and non-streaming responses"
       # Model Configuration (uses OpenAI model action by entity type)
       model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
-      model: "gpt-4o-mini"
-      model_temperature: 0.3
+      model: "gpt-4o"
+      model_temperature: 0.2
       model_max_tokens: 4096
 
   # Example action from the 'jvagent' namespace
