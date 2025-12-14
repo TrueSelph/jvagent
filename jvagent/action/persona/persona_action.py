@@ -214,7 +214,7 @@ class PersonaAction(Action):
                 stream=streaming,
                 system=system_prompt,
                 history=conversation_history,
-                calling_action_label=self.get_class_name(),
+                calling_action_name=self.get_class_name(),
                 model=self.model,  # Explicitly pass PersonaAction's model to override LanguageModelAction's default
                 temperature=self.model_temperature,
                 max_tokens=self.model_max_tokens,

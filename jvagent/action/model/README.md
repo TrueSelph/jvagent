@@ -144,7 +144,7 @@ class MyPersonaAction(Action):
             system="You are a helpful assistant",
             response_bus=response_bus,
             interaction=interaction,
-            calling_action_label=self.get_class_name(),
+            calling_action_name=self.get_class_name(),
         )
         
         return response
@@ -168,7 +168,7 @@ class MyRouterAction(Action):
             prompt=prompt,
             stream=False,
             system="You are a routing assistant",
-            calling_action_label=self.get_class_name(),
+            calling_action_name=self.get_class_name(),
         )
         
         return response

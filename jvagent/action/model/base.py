@@ -165,18 +165,17 @@ class BaseModelAction(Action, ABC):
                     elif hasattr(self, "model") and self.model:
                         model = self.model
                     
-                    # Get calling action name from result (preferred) or instance variable (for embeddings) or context (fallback)
+                    # Get calling action name from result, fallback on context then model action
                     action_name = None
-                    if result and hasattr(result, "action_name") and result.action_name:
-                        # Language models: get from result
-                        action_name = result.action_name
+                    if result and hasattr(result, "calling_action_name") and result.calling_action_name:
+                        action_name = result.calling_action_name
+                    elif hasattr(self, "_calling_action_name") and self._calling_action_name:
+                        action_name = self._calling_action_name
                     elif hasattr(self, "_action_name") and self._action_name:
-                        # Embedding models: get from instance variable
                         action_name = self._action_name
                     else:
-                        # Fallback to context variable
                         from jvagent.action.model.context import get_calling_action_name
-                        action_name = get_calling_action_name()
+                        action_name = get_calling_action_name() or self.get_class_name()
                     
                     # Get system prompt (the actual executed prompt) and user prompt from result
                     system_prompt = None
@@ -194,11 +193,8 @@ class BaseModelAction(Action, ABC):
                         "usage": usage,
                         "duration": duration,
                         "estimated": usage_estimated,  # Flag to indicate estimated vs actual metrics
+                        "called_by": action_name,  # Always include called_by with action name
                     }
-                    
-                    # Add calling action name if available (the entity that called this model)
-                    if action_name:
-                        data["called_by"] = action_name
                     
                     # Add system prompt (the actual prompt that was executed)
                     if system_prompt:

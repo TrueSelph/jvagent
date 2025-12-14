@@ -145,7 +145,7 @@ class InteractRouter(InteractAction):
                 stream=False,
                 system=self._get_system_prompt(),
                 history=interaction_history,  # Pass formatted history directly to LLM
-                calling_action_label=self.get_class_name(),
+                calling_action_name=self.get_class_name(),
                 temperature=0.1,  # Lower temperature for more consistent routing
                 max_tokens=500,
             )
