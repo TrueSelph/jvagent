@@ -271,7 +271,9 @@ class InteractRouter(InteractAction):
         anchors_text = json.dumps(anchors_dict, indent=2)
 
         # Use routing prompt template (defaults to ROUTING_PROMPT_TEMPLATE, can be overridden)
-        return self.routing_prompt.format(
+        # Fall back to ROUTING_PROMPT_TEMPLATE if routing_prompt is None
+        prompt_template = self.routing_prompt if self.routing_prompt is not None else ROUTING_PROMPT_TEMPLATE
+        return prompt_template.format(
             utterance=utterance,
             anchors_json=anchors_text,
         )
