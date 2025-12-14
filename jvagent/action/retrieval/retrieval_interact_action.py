@@ -96,8 +96,8 @@ class RetrievalInteractAction(InteractAction):
                 return
 
             # Perform search
-            logger.debug(f"RetrievalInteractAction: Searching collection '{self.collection}' with query: {query[:100]}")
             resolved_collection = await vectorstore._resolve_collection_name(self.collection)
+            logger.debug(f"RetrievalInteractAction: Searching collection '{resolved_collection}' with query: {query[:100]}")
             results = await vectorstore.search(
                 collection=resolved_collection,
                 query=query,

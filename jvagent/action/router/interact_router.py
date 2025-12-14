@@ -45,7 +45,7 @@ class InteractRouter(InteractAction):
         description="Type of LanguageModelAction to use for LLM calls (e.g., 'OpenAILanguageModelAction'). If empty, uses first available."
     )
     history_limit: int = attribute(
-        default=10,
+        default=3,
         description="Number of previous interactions to include in conversation history",
         ge=0
     )
@@ -146,7 +146,7 @@ class InteractRouter(InteractAction):
                 system=self._get_system_prompt(),
                 history=interaction_history,  # Pass formatted history directly to LLM
                 calling_action_label=self.get_class_name(),
-                temperature=0.3,  # Lower temperature for more consistent routing
+                temperature=0.1,  # Lower temperature for more consistent routing
                 max_tokens=500,
             )
 

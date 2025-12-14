@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { Message } from '../types/message'
+import React from 'react'
 
 interface MessageListProps {
   messages: Message[]
@@ -44,11 +47,157 @@ export function MessageList({
                   : 'bg-gray-200 text-gray-900'
               }`}
             >
-              <div className="whitespace-pre-wrap break-words text-sm sm:text-base">
-                {message.content}
-                {message.streaming && (
-                  <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />
-                )}
+              <div className="break-words text-sm sm:text-base">
+                <div className="markdown-content">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      // Style code blocks
+                      code: ({ node, inline, className, children, ...props }: any) => {
+                        return !inline ? (
+                          <pre
+                            className={`overflow-x-auto rounded p-2 sm:p-3 my-2 ${
+                              message.role === 'user'
+                                ? 'bg-indigo-500/20 text-indigo-100'
+                                : 'bg-gray-800 text-gray-100'
+                            }`}
+                            {...props}
+                          >
+                            <code className={className} {...props}>
+                              {children}
+                            </code>
+                          </pre>
+                        ) : (
+                          <code
+                            className={`px-1 py-0.5 rounded ${
+                              message.role === 'user'
+                                ? 'bg-indigo-500/30 text-indigo-100'
+                                : 'bg-gray-300 text-gray-800'
+                            }`}
+                            {...props}
+                          >
+                            {children}
+                          </code>
+                        )
+                      },
+                      // Style blockquotes
+                      blockquote: ({ children, ...props }: any) => (
+                        <blockquote
+                          className={`border-l-4 pl-3 sm:pl-4 my-2 ${
+                            message.role === 'user'
+                              ? 'border-indigo-300 text-indigo-100'
+                              : 'border-gray-400 text-gray-700'
+                          }`}
+                          {...props}
+                        >
+                          {children}
+                        </blockquote>
+                      ),
+                      // Style links
+                      a: ({ children, ...props }: any) => (
+                        <a
+                          className={`underline ${
+                            message.role === 'user'
+                              ? 'text-indigo-200 hover:text-indigo-100'
+                              : 'text-indigo-600 hover:text-indigo-700'
+                          }`}
+                          {...props}
+                        >
+                          {children}
+                        </a>
+                      ),
+                      // Style lists
+                      ul: ({ children, ...props }: any) => (
+                        <ul className="list-disc pl-4 sm:pl-6 my-2" {...props}>
+                          {children}
+                        </ul>
+                      ),
+                      ol: ({ children, ...props }: any) => (
+                        <ol className="list-decimal pl-4 sm:pl-6 my-2" {...props}>
+                          {children}
+                        </ol>
+                      ),
+                      // Style headings
+                      h1: ({ children, ...props }: any) => (
+                        <h1 className="text-lg sm:text-xl font-bold my-2" {...props}>
+                          {children}
+                        </h1>
+                      ),
+                      h2: ({ children, ...props }: any) => (
+                        <h2 className="text-base sm:text-lg font-bold my-2" {...props}>
+                          {children}
+                        </h2>
+                      ),
+                      h3: ({ children, ...props }: any) => (
+                        <h3 className="text-sm sm:text-base font-semibold my-2" {...props}>
+                          {children}
+                        </h3>
+                      ),
+                      // Style paragraphs - add cursor to last paragraph when streaming
+                      p: ({ children, ...props }: any) => {
+                        // Extract text content from children for comparison
+                        const extractText = (node: any): string => {
+                          if (typeof node === 'string') return node
+                          if (typeof node === 'number') return String(node)
+                          if (React.isValidElement(node) && node.props?.children) {
+                            return extractText(node.props.children)
+                          }
+                          if (Array.isArray(node)) {
+                            return node.map(extractText).join('')
+                          }
+                          return ''
+                        }
+                        const childrenText = extractText(children)
+                        // Check if this is the last paragraph by seeing if content ends with this paragraph's text
+                        const isLastParagraph = message.streaming && 
+                          childrenText.trim() && 
+                          message.content.trim().endsWith(childrenText.trim())
+                        return (
+                          <p className="my-1 sm:my-2" {...props}>
+                            {children}
+                            {isLastParagraph && (
+                              <span className="inline-block w-0.5 sm:w-1 h-3 sm:h-4 ml-0.5 sm:ml-1 bg-current animate-pulse align-middle" />
+                            )}
+                          </p>
+                        )
+                      },
+                      // Style tables
+                      table: ({ children, ...props }: any) => (
+                        <div className="overflow-x-auto my-2">
+                          <table className="border-collapse border" {...props}>
+                            {children}
+                          </table>
+                        </div>
+                      ),
+                      th: ({ children, ...props }: any) => (
+                        <th
+                          className={`border px-2 sm:px-4 py-1 sm:py-2 ${
+                            message.role === 'user'
+                              ? 'bg-indigo-500/30 border-indigo-300'
+                              : 'bg-gray-300 border-gray-400'
+                          }`}
+                          {...props}
+                        >
+                          {children}
+                        </th>
+                      ),
+                      td: ({ children, ...props }: any) => (
+                        <td
+                          className={`border px-2 sm:px-4 py-1 sm:py-2 ${
+                            message.role === 'user'
+                              ? 'border-indigo-300'
+                              : 'border-gray-400'
+                          }`}
+                          {...props}
+                        >
+                          {children}
+                        </td>
+                      ),
+                    }}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
+                </div>
               </div>
               <div className="flex items-center justify-between mt-1 sm:mt-2 gap-2">
                 <div

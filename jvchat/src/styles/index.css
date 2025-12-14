@@ -43,22 +43,3 @@ code {
   overflow: hidden;
 }
 
-/* Touch-friendly interactions */
-.touch-manipulation {
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* Prevent text selection on buttons */
-button {
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-}
-
-/* Mobile-friendly scrolling */
-@media (max-width: 768px) {
-  * {
-    -webkit-overflow-scrolling: touch;
-  }
-}
-
