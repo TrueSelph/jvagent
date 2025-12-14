@@ -718,24 +718,41 @@ class LanguageModelAction(ModelAction):
 
 **Key Methods:**
 ```python
-async def generate(prompt: str, **kwargs) -> ModelResult
-async def generate_streaming(prompt: str, **kwargs) -> AsyncIterator[str]
+async def generate(
+    prompt: MessageContent,
+    stream: bool = False,
+    system: Optional[str] = None,
+    history: Optional[List[Dict[str, Any]]] = None,
+    tools: Optional[List[Dict[str, Any]]] = None,
+    calling_action_label: Optional[str] = None,
+    response_bus: Optional[ResponseBus] = None,
+    interaction: Optional[Interaction] = None,
+    **kwargs: Any,
+) -> str
+async def query_sync(prompt, system=None, **kwargs) -> ModelActionResult
+async def query_stream(prompt, system=None, **kwargs) -> ModelActionResult
 async def count_tokens(text: str) -> int
 async def check_rate_limits() -> bool
 ```
 
 **Example:**
 ```python
-llm = await LanguageModelAction.create(
-    label="OpenAI_GPT4",
-    model_name="gpt-4-turbo",
-    api_key=os.getenv("OPENAI_API_KEY"),
-    temperature=0.8
-)
+from jvagent.action.model import OpenAILanguageModelAction
+from jvagent.memory import Interaction
 
-result = await llm.generate("Explain quantum computing")
-print(result.content)
-print(f"Tokens used: {result.usage.total_tokens}")
+llm = await OpenAILanguageModelAction.get(action_id)
+
+# Simple query without ResponseBus
+response = await llm.generate("Explain quantum computing")
+
+# With ResponseBus publishing (for streaming)
+response = await llm.generate(
+    prompt="Explain quantum computing",
+    stream=True,
+    response_bus=response_bus,
+    interaction=interaction,
+    calling_action_label="MyAction"
+)
 ```
 
 #### 6.2 InteractAction

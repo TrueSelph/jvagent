@@ -104,7 +104,9 @@ class InteractWalker(Walker):
                 from jvagent.action.model.context import set_interaction_id
 
                 self.interaction = await conversation.create_interaction(
-                    utterance=self.utterance, channel=self.channel
+                    utterance=self.utterance,
+                    channel=self.channel,
+                    session_id=self.session_id,
                 )
                 
                 # Set interaction_id in context for automatic observability

@@ -80,7 +80,7 @@ actions:
       persona_name: "Example Assistant"
       persona_role: "A helpful AI assistant"
       model_action_type: "OpenAILanguageModelAction"
-      model_name: gpt-4o-mini
+      model: gpt-4o-mini
       model_temperature: 0.3
       model_max_tokens: 4096
   
@@ -125,6 +125,7 @@ Simplified tool-based action for applying agent prompts:
 - Prompt composition with persona attributes
 - Configurable parameters for behavioral instructions
 - Model integration via ModelAction
+- Automatic ResponseBus publishing for streaming and non-streaming responses
 - Simple `respond()` method interface
 
 **Interact Endpoint (via InteractWalker):**

@@ -74,6 +74,16 @@ class InteractAction(Action, ABC):
         ),
     )
 
+    # Parameters for behavioral guidance (prescribed parameters for this InteractAction)
+    parameters: List[Dict[str, Any]] = attribute(
+        default_factory=list,
+        description=(
+            "Standard collection of configurable parameters to apply when executing the action. "
+            "Each parameter should have 'condition' and 'response' keys. These parameters can be "
+            "prescribed to PersonaAction for behavioral guidance during response generation."
+        ),
+    )
+
     @abstractmethod
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute the action's logic on the interaction.
@@ -244,7 +254,7 @@ class InteractAction(Action, ABC):
             return None
 
         try:
-            from jvagent.action.persona.base import PersonaAction
+            from jvagent.action.persona.persona_action import PersonaAction
             persona = await self.get_action(PersonaAction)
             if not persona:
                 logger.debug("InteractAction.respond: PersonaAction not found; skipping response generation")

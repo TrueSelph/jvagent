@@ -9,6 +9,7 @@ A lightweight, extensible language model integration system for jvagent that pro
 - **Multiple Providers**: OpenAI, OpenRouter, and extensible for custom providers
 - **Sync & Streaming**: Both synchronous and streaming response modes
 - **Standardized Results**: `ModelActionResult` works seamlessly for both modes
+- **ResponseBus Integration**: Direct publishing to ResponseBus for streaming and non-streaming responses
 - **Token Tracking**: Automatic usage and cost estimation with token estimation for streaming calls
 - **Observability Integration**: Automatic metrics emission to ResponseBus for interaction tracking
 - **Template System**: Jinja2-based prompt templating
@@ -121,7 +122,61 @@ export OPENROUTER_API_KEY="sk-or-..."
 
 ### Programmatic Usage (Action-to-Action)
 
-#### Synchronous Query
+#### Using generate() with ResponseBus
+
+The `generate()` method supports direct ResponseBus publishing when `response_bus` and `interaction` are provided:
+
+```python
+from jvagent.action.model import OpenAILanguageModelAction
+from jvagent.memory import Interaction
+
+class MyPersonaAction(Action):
+    model_action_id: str = attribute(default="")
+    
+    async def respond(self, interaction: Interaction, visitor: Any):
+        model = await OpenAILanguageModelAction.get(self.model_action_id)
+        response_bus = getattr(visitor, "response_bus", None) if visitor else None
+        
+        # generate() will automatically publish to ResponseBus if provided
+        response = await model.generate(
+            prompt=interaction.utterance,
+            stream=True,
+            system="You are a helpful assistant",
+            response_bus=response_bus,
+            interaction=interaction,
+            calling_action_label=self.get_class_name(),
+        )
+        
+        return response
+```
+
+#### Using generate() without ResponseBus
+
+For actions that don't need ResponseBus publishing (e.g., internal routing actions):
+
+```python
+from jvagent.action.model import OpenAILanguageModelAction
+
+class MyRouterAction(Action):
+    model_action_id: str = attribute(default="")
+    
+    async def route(self, prompt: str):
+        model = await OpenAILanguageModelAction.get(self.model_action_id)
+        
+        # generate() without ResponseBus - just returns the response
+        response = await model.generate(
+            prompt=prompt,
+            stream=False,
+            system="You are a routing assistant",
+            calling_action_label=self.get_class_name(),
+        )
+        
+        return response
+```
+
+#### Using query_sync() and query_stream() (Lower-level API)
+
+For more control over the result object:
 
 ```python
 from jvagent.action.model import OpenAILanguageModelAction
@@ -603,10 +658,14 @@ print(f"Total requests: {model.total_requests}")
 Model calls automatically emit observability metrics to the ResponseBus when an interaction context is available. Metrics include:
 
 - **Provider**: Model provider name (openai, openrouter, etc.)
-- **Model**: Model identifier used
+- **Model**: Model identifier used (actual model from query result)
 - **Usage**: Token counts (prompt_tokens, completion_tokens, total_tokens)
 - **Duration**: Query duration in seconds (accurate for streaming, includes full stream time)
 - **Estimated flag**: Indicates whether token counts are estimated (true for streaming) or actual (false for sync)
+- **Action label**: The model action's label
+- **Calling action label**: The label of the action that initiated the model call
+- **System prompt**: The system prompt that was executed
+- **User prompt**: The user's input prompt
 - **Response**: Complete response text (when available)
 - **Is streaming**: Whether the call was streaming
 - **Finish reason**: Completion reason (stop, length, tool_calls, etc.)

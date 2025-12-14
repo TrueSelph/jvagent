@@ -64,6 +64,7 @@ class ModelActionResult:
         duration: Optional[float] = None,
         prompt: Optional[str] = None,
         system: Optional[str] = None,
+        calling_action_label: Optional[str] = None,
     ):
         """Initialize a model action result.
 
@@ -78,6 +79,7 @@ class ModelActionResult:
             duration: Query duration in seconds
             prompt: The prompt that produced the response
             system: System message used (if any)
+            calling_action_label: Label of the action that initiated this model call
         """
         self.response = response
         self.stream = stream
@@ -88,6 +90,7 @@ class ModelActionResult:
         self.is_streaming = stream is not None
         self.prompt = prompt
         self.system = system
+        self.calling_action_label = calling_action_label
 
         # Build metrics dict with usage and duration
         self.metrics: Dict[str, Any] = {}
@@ -270,56 +273,143 @@ class LanguageModelAction(BaseModelAction, ABC):
         self,
         prompt: MessageContent,
         stream: bool = False,
-        on_stream_chunk: Optional[Callable[[str], None]] = None,
-        on_stream_end: Optional[Callable[[str], None]] = None,
         system: Optional[str] = None,
         history: Optional[List[Dict[str, Any]]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
+        calling_action_label: Optional[str] = None,
+        response_bus: Optional[Any] = None,
+        interaction: Optional[Any] = None,
         **kwargs: Any,
     ) -> str:
-        """Generate text with optional streaming callbacks.
+        """Generate text with optional ResponseBus publishing.
 
-        If stream=True and callbacks are provided, partial chunks are emitted
-        via on_stream_chunk. The full text is returned in all cases.
+        If response_bus and interaction are provided, messages will be published
+        directly to the ResponseBus (streaming chunks or final message).
         
         Observability metrics are automatically emitted via context-based tracking.
 
         Args:
             prompt: User prompt (text or multimodal content)
             stream: Whether to stream the response
-            on_stream_chunk: Optional callback for each stream chunk
-            on_stream_end: Optional callback when streaming completes
             system: Optional system message
             history: Optional conversation history
             tools: Optional list of tool/function definitions
+            calling_action_label: Optional label of the action calling this method
+            response_bus: Optional ResponseBus instance for direct publishing
+            interaction: Optional Interaction node (required if response_bus provided)
             **kwargs: Additional parameters (temperature, max_tokens, model, etc.)
 
         Returns:
             Generated text response
         """
-        # Fast path: no streaming requested
-        if not stream or on_stream_chunk is None:
+        import asyncio
+        
+        # Validate: if response_bus is provided, interaction is required
+        if response_bus and not interaction:
+            raise ValueError("interaction is required when response_bus is provided")
+        
+        # If ResponseBus is provided, extract values from interaction and publish directly
+        if response_bus and interaction:
+            # Extract values from interaction node
+            session_id = getattr(interaction, "session_id", None)
+            channel = getattr(interaction, "channel", "default")
+            interaction_id = getattr(interaction, "id", None)
+            
+            if not session_id:
+                raise ValueError("interaction must have session_id when response_bus is provided")
+            
+            # Non-streaming: publish final message and return
+            if not stream:
+                result = await self.query(
+                    prompt,
+                    stream=False,
+                    system=system,
+                    history=history,
+                    tools=tools,
+                    calling_action_label=calling_action_label,
+                    **kwargs,
+                )
+                full_text = await result.get_response()
+                
+                # Publish final message to ResponseBus
+                asyncio.create_task(
+                    response_bus.publish_message(
+                        session_id=session_id,
+                        content=full_text,
+                        channel=channel,
+                        message_type="final",
+                        interaction_id=interaction_id,
+                    )
+                )
+                
+                return full_text
+            
+            # Streaming: publish chunks and final message
+            result = await self.query(
+                prompt,
+                stream=True,
+                system=system,
+                history=history,
+                tools=tools,
+                calling_action_label=calling_action_label,
+                **kwargs,
+            )
+
+            chunks: List[str] = []
+            async for chunk in result.iter_stream():
+                if chunk:
+                    chunks.append(chunk)
+                    # Publish each chunk to ResponseBus
+                    asyncio.create_task(
+                        response_bus.publish_message(
+                            session_id=session_id,
+                            content=chunk,
+                            channel=channel,
+                            message_type="stream_chunk",
+                            interaction_id=interaction_id,
+                        )
+                    )
+
+            full_text = "".join(chunks)
+            
+            # Ensure response is cached in result (for observability)
+            if not result.response:
+                result.response = full_text
+            
+            # Publish final message to ResponseBus
+            asyncio.create_task(
+                response_bus.publish_message(
+                    session_id=session_id,
+                    content=full_text,
+                    channel=channel,
+                    message_type="final",
+                    interaction_id=interaction_id,
+                )
+            )
+            
+            return full_text
+        
+        # No ResponseBus: just return the response without publishing
+        if not stream:
             result = await self.query(
                 prompt,
                 stream=False,
                 system=system,
                 history=history,
                 tools=tools,
+                calling_action_label=calling_action_label,
                 **kwargs,
             )
-            full_text = await result.get_response()
-            if on_stream_end:
-                on_stream_end(full_text)
-            
-            return full_text
-
-        # Streaming path
+            return await result.get_response()
+        
+        # Streaming without ResponseBus: collect and return
         result = await self.query(
             prompt,
             stream=True,
             system=system,
             history=history,
             tools=tools,
+            calling_action_label=calling_action_label,
             **kwargs,
         )
 
@@ -327,25 +417,12 @@ class LanguageModelAction(BaseModelAction, ABC):
         async for chunk in result.iter_stream():
             if chunk:
                 chunks.append(chunk)
-                try:
-                    on_stream_chunk(chunk)
-                except Exception as exc:  # protect caller
-                    logger.warning("on_stream_chunk callback raised: %s", exc, exc_info=True)
 
         full_text = "".join(chunks)
         
         # Ensure response is cached in result (for observability)
         if not result.response:
             result.response = full_text
-        
-        # Token estimation and observability re-emission are handled by the stream wrapper
-        # in query() method, which runs after stream consumption completes
-        
-        if on_stream_end:
-            try:
-                on_stream_end(full_text)
-            except Exception as exc:
-                logger.warning("on_stream_end callback raised: %s", exc, exc_info=True)
         
         return full_text
 
@@ -356,6 +433,7 @@ class LanguageModelAction(BaseModelAction, ABC):
         system: Optional[str] = None,
         history: Optional[List[Dict[str, Any]]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
+        calling_action_label: Optional[str] = None,
         **kwargs: Any,
     ) -> ModelActionResult:
         """Execute a query to the language model.
@@ -378,6 +456,7 @@ class LanguageModelAction(BaseModelAction, ABC):
             system: Optional system message
             history: Optional conversation history (can include multimodal messages)
             tools: Optional list of tool/function definitions
+            calling_action_label: Optional label of the action calling this method
             **kwargs: Additional parameters (temperature, max_tokens, etc.)
 
         Returns:
@@ -403,12 +482,28 @@ class LanguageModelAction(BaseModelAction, ABC):
         messages = self.format_messages(prompt, system, history)
 
         # Merge kwargs with instance defaults
+        # Explicitly check if model is in kwargs (even if None/empty) to ensure overrides work
+        # This ensures PersonaAction's model override takes precedence over LanguageModelAction's default
+        if "model" in kwargs:
+            # Model was explicitly passed (even if empty/None) - use it
+            model_param = kwargs["model"] or self.model  # Fall back to instance default if empty/None
+        else:
+            # Model not in kwargs - use instance default
+            model_param = self.model
+        
         query_params = {
-            "model": kwargs.get("model", self.model),
+            "model": model_param,
             "temperature": kwargs.get("temperature", self.temperature),
             "max_tokens": kwargs.get("max_tokens", self.max_tokens),
             "top_p": kwargs.get("top_p", self.top_p),
         }
+        
+        # Debug logging to track model selection
+        if "model" in kwargs:
+            logger.debug(
+                f"LanguageModelAction.query: Using model='{model_param}' "
+                f"(passed from caller: '{kwargs.get('model')}', instance default: '{self.model}')"
+            )
 
         # Route to appropriate implementation
         if stream:
@@ -424,6 +519,10 @@ class LanguageModelAction(BaseModelAction, ABC):
         prompt_str = prompt if isinstance(prompt, str) else str(prompt)
         result.prompt = prompt_str
         result.system = system
+        
+        # Store calling_action_label in result for observability
+        if calling_action_label:
+            result.calling_action_label = calling_action_label
 
         # Update metrics with duration
         result.metrics["duration"] = duration

@@ -29,6 +29,7 @@ class Interaction(Node):
         user_id: User ID
         utterance: User input text
         channel: Communication channel
+        session_id: Session identifier for this interaction
         response: Agent response text
         canned_response: Immediate response before full processing
         actions: Actions involved in processing (in order of execution)
@@ -49,6 +50,7 @@ class Interaction(Node):
     user_id: str = attribute(default="", description="User ID")
     utterance: str = attribute(default="", description="User input text")
     channel: str = attribute(default="default", description="Communication channel")
+    session_id: str = attribute(default="", description="Session identifier for this interaction")
 
     # Response
     response: Optional[str] = attribute(

@@ -72,7 +72,7 @@ class Action(Node):
         Actions can retrieve other actions as tools using the get_action() method:
         
         # Get action by class type
-        from jvagent.action.persona.base import PersonaAction
+        from jvagent.action.persona.persona_action import PersonaAction
         persona = await self.get_action(PersonaAction)
         
         # Get action by class name string
@@ -480,7 +480,7 @@ class Action(Node):
         
         Examples:
             # Get PersonaAction by class type
-            from jvagent.action.persona.base import PersonaAction
+            from jvagent.action.persona.persona_action import PersonaAction
             persona = await self.get_action(PersonaAction)
             if persona:
                 response = await persona.respond(interaction, visitor=visitor)

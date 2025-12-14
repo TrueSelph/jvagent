@@ -64,7 +64,7 @@ async def list_parameters_endpoint(
 
     Dictionary with parameters list and count
     """
-    from jvagent.action.persona.base import PersonaAction
+    from jvagent.action.persona.persona_action import PersonaAction
 
     action = await PersonaAction.get(action_id)
     if not action:
@@ -137,7 +137,7 @@ async def create_parameter_endpoint(
 
     Dictionary with created parameter ID
     """
-    from jvagent.action.persona.base import PersonaAction
+    from jvagent.action.persona.persona_action import PersonaAction
 
     action_node = await PersonaAction.get(action_id)
     if not action_node:
@@ -239,7 +239,7 @@ async def update_parameter_endpoint(
 
     Dictionary with updated parameter
     """
-    from jvagent.action.persona.base import PersonaAction
+    from jvagent.action.persona.persona_action import PersonaAction
 
     action_node = await PersonaAction.get(action_id)
     if not action_node:
@@ -333,7 +333,7 @@ async def delete_parameter_endpoint(
 
     Dictionary with success message
     """
-    from jvagent.action.persona.base import PersonaAction
+    from jvagent.action.persona.persona_action import PersonaAction
 
     action_node = await PersonaAction.get(action_id)
     if not action_node:
@@ -411,7 +411,7 @@ async def import_parameters_endpoint(
 
     Dictionary with import count
     """
-    from jvagent.action.persona.base import PersonaAction
+    from jvagent.action.persona.persona_action import PersonaAction
 
     action_node = await PersonaAction.get(action_id)
     if not action_node:
