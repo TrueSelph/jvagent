@@ -187,16 +187,14 @@ class InteractAction(Action, ABC):
             metadata=metadata,
         )
 
-        # Link message to interaction
-        if visitor.interaction:
-            visitor.interaction.add_message(message.id)
-
         return message
 
     async def respond(
         self,
         visitor: "InteractWalker",
-        *,
+        directives: Optional[List[str]] = None,
+        parameters: Optional[List[Dict[str, Any]]] = None,
+        *, 
         # Defaults match PersonaAction.respond() defaults
         use_utterance: bool = True,
         use_history: bool = True,
@@ -204,7 +202,7 @@ class InteractAction(Action, ABC):
         with_interpretation: bool = False,
         with_event: bool = False,
         with_response: bool = True,
-        max_statement_length: Optional[int] = None,
+        max_statement_length: Optional[int] = None
     ) -> Optional[str]:
         """Generate a response via PersonaAction with configurable history.
 
@@ -221,6 +219,12 @@ class InteractAction(Action, ABC):
             with_event: Include events in history (default: False)
             with_response: Include AI responses in history (default: True)
             max_statement_length: Truncate utterances/responses to this length (default: None)
+            directives: Optional list of directive strings to add to the interaction before
+                generating the response. Each directive will be added with the current action's
+                class name. If provided, these are added in addition to any existing directives.
+            parameters: Optional list of parameter dictionaries to add to the interaction before
+                generating the response. Each parameter should have 'condition' and 'response' keys.
+                If provided, these are added in addition to any existing parameters.
 
         Returns:
             Generated response string, or None if PersonaAction not found or error occurred
@@ -247,6 +251,16 @@ class InteractAction(Action, ABC):
                 use_history=True,
                 max_statement_length=500
             )
+            
+            # With directives and parameters (simplified API)
+            response = await self.respond(
+                visitor,
+                directives=["Use the provided context to answer the question"],
+                parameters=[{
+                    "condition": "No relevant context found",
+                    "response": "Inform the user that no relevant information was found"
+                }]
+            )
         """
         interaction = visitor.interaction
         if not interaction:
@@ -254,6 +268,14 @@ class InteractAction(Action, ABC):
             return None
 
         try:
+            # Add directives if provided (using bulk method for efficiency)
+            if directives:
+                await visitor.add_directives(directives)
+
+            # Add parameters if provided (using bulk method for efficiency)
+            if parameters:
+                await visitor.add_parameters(parameters)
+
             from jvagent.action.persona.persona_action import PersonaAction
             persona = await self.get_action(PersonaAction)
             if not persona:

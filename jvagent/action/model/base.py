@@ -165,18 +165,18 @@ class BaseModelAction(Action, ABC):
                     elif hasattr(self, "model") and self.model:
                         model = self.model
                     
-                    # Get calling action label from result (preferred) or instance variable (for embeddings) or context (fallback)
-                    calling_action_label = None
-                    if result and hasattr(result, "calling_action_label") and result.calling_action_label:
+                    # Get calling action name from result (preferred) or instance variable (for embeddings) or context (fallback)
+                    action_name = None
+                    if result and hasattr(result, "action_name") and result.action_name:
                         # Language models: get from result
-                        calling_action_label = result.calling_action_label
-                    elif hasattr(self, "_calling_action_label") and self._calling_action_label:
+                        action_name = result.action_name
+                    elif hasattr(self, "_action_name") and self._action_name:
                         # Embedding models: get from instance variable
-                        calling_action_label = self._calling_action_label
+                        action_name = self._action_name
                     else:
-                        # Fallback to context variable for backward compatibility
-                        from jvagent.action.model.context import get_calling_action_label
-                        calling_action_label = get_calling_action_label()
+                        # Fallback to context variable
+                        from jvagent.action.model.context import get_calling_action_name
+                        action_name = get_calling_action_name()
                     
                     # Get system prompt (the actual executed prompt) and user prompt from result
                     system_prompt = None
@@ -193,13 +193,12 @@ class BaseModelAction(Action, ABC):
                         "model": model,
                         "usage": usage,
                         "duration": duration,
-                        "action_label": self.label if hasattr(self, "label") else self.__class__.__name__,
                         "estimated": usage_estimated,  # Flag to indicate estimated vs actual metrics
                     }
                     
-                    # Add calling action label if available (the entity that called this model)
-                    if calling_action_label:
-                        data["calling_action_label"] = calling_action_label
+                    # Add calling action name if available (the entity that called this model)
+                    if action_name:
+                        data["called_by"] = action_name
                     
                     # Add system prompt (the actual prompt that was executed)
                     if system_prompt:

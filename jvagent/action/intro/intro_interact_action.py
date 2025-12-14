@@ -74,20 +74,18 @@ class IntroInteractAction(InteractAction):
                 logger.warning("IntroInteractAction: Directive not configured, skipping intro")
                 return
 
-            # Add introductory directive to interaction
+            # Generate response via PersonaAction with directive
             if self.directive:
-                directive = self.directive
-                visitor.add_directive(directive)
-                await interaction.save()
-                directive_added = True
+                await self.respond(
+                    visitor,
+                    directives=[self.directive],
+                    parameters=self.parameters if self.parameters else None
+                )
                 logger.debug(
-                    f"ExampleInteractAction: Added directive with {directive} retrieved context items"
+                    f"IntroInteractAction: Generated response with directive: {self.directive[:50]} ... and parameters: {self.parameters}"
                 )
             else:
-                logger.debug("IntroInteractAction: No results found, no directive added")
-
-            # Generate response via PersonaAction (handles retrieval, calling, and persistence)
-            await self.respond(visitor)
+                logger.debug("IntroInteractAction: No directive configured, skipping response")
 
             logger.info("IntroInteractAction: Added introductory directive for first-time user")
 

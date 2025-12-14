@@ -82,9 +82,6 @@ class RetrievalInteractAction(InteractAction):
             logger.warning("RetrievalInteractAction: No interaction available")
             return
 
-        # Keep track of whether we produced a directive
-        directive_added = False
-
         try:
             # Get search query (interpretation or utterance fallback)
             query = self._get_search_query(interaction)
@@ -120,32 +117,28 @@ class RetrievalInteractAction(InteractAction):
                     )
                 results = filtered_results
 
-            # Format and add directive if results found
+            # Format directive if results found
+            directive = None
             if results:
                 directive = self._format_directive(results)
-                visitor.add_directive(directive)
-                await interaction.save()
-                directive_added = True
                 logger.debug(
-                    f"RetrievalInteractAction: Added directive with {len(results)} retrieved context items"
+                    f"RetrievalInteractAction: Prepared directive with {len(results)} retrieved context items"
                 )
             else:
-                logger.debug("RetrievalInteractAction: No results found, no directive added")
+                logger.debug("RetrievalInteractAction: No results found, no directive prepared")
+
+            # Generate response via PersonaAction with directives and parameters
+            # Only call respond if we have a directive or parameters to add
+            if directive or self.parameters:
+                await self.respond(
+                    visitor,
+                    directives=[directive] if directive else None,
+                    parameters=self.parameters if self.parameters else None,
+                )
 
         except Exception as e:
             logger.error(f"RetrievalInteractAction: Error during retrieval: {e}", exc_info=True)
             # Don't raise - allow other actions to continue
-
-        # If a directive was produced, optionally invoke PersonaAction to produce a response
-        parameters_added = False
-
-        if self.parameters:
-            for param in self.parameters:
-                visitor.add_parameter(param)
-            parameters_added = True
-        if directive_added or parameters_added:
-            # Generate response via PersonaAction (handles retrieval, calling, and persistence)
-            await self.respond(visitor)
 
     async def _get_vectorstore_action(self) -> Optional[VectorStore]:
         """Get the VectorStore action for retrieval.

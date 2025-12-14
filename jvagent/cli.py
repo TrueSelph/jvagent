@@ -715,25 +715,6 @@ async def list_agents() -> None:
         print()
 
 
-async def install_agents(app_root: str = None) -> None:
-    """Install agents from app.yaml.
-
-    Note: This function is deprecated. Agents are automatically installed when running
-    jvagent or bootstrap. Use 'jvagent bootstrap' or 'jvagent' to install agents.
-
-    Args:
-        app_root: Path to the app root directory. If None, uses current working directory.
-    """
-    print(
-        "Note: Agents are installed automatically from app.yaml when you run 'jvagent' or 'jvagent bootstrap'."
-    )
-    print("      There is no separate install command. Add agents to app.yaml and run jvagent.")
-    print("\nTo install agents:")
-    print("  1. Add agents to app.yaml")
-    print("  2. Run: jvagent <app_root>")
-    print("     Or:  jvagent <app_root> bootstrap")
-
-
 async def uninstall_agent(namespace: str, agent_name: str, app_root: str = None) -> None:
     """Uninstall an agent.
 

@@ -8,9 +8,17 @@ A modular, pluggable agentive platform built on jvspatial that provides a produc
 - [Quick Start](#quick-start)
 - [Running jvagent in an App Directory](#running-jvagent-in-an-app-directory)
 - [Core Concepts](#core-concepts)
+  - [Actions](#actions)
+  - [InteractActions](#interactactions)
+  - [Agents](#agents)
+  - [Memory System](#memory-system)
+  - [Namespaces](#namespaces)
 - [Directory Structure](#directory-structure)
 - [Configuration Files](#configuration-files)
 - [Creating Actions](#creating-actions)
+  - [InteractActions](#interactactions-1)
+  - [Using Core Actions](#using-core-actions)
+  - [Creating Custom Actions](#creating-custom-actions)
 - [Action Lifecycle](#action-lifecycle)
 - [Property Configuration](#property-configuration)
 - [Namespace System](#namespace-system)
@@ -346,6 +354,23 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
 - Can be enabled/disabled dynamically
 - Support type-safe property configuration
 
+### InteractActions
+
+**InteractActions** are specialized actions that participate in the interact subsystem. They:
+- Extend the `InteractAction` base class
+- Are automatically traversed by `InteractWalker` during agent interactions
+- Support a simplified API for adding directives and parameters
+- Can generate responses via PersonaAction using the `respond()` method
+- Support bulk operations for efficient interaction management
+
+**Key Features:**
+- **Simplified API**: Pass directives and parameters directly to `respond()` method
+- **Bulk Operations**: Use `add_directives()` and `add_parameters()` for efficient batch operations
+- **Automatic Persistence**: Interactions are automatically saved after adding directives/parameters
+- **Routing Support**: Can be routed via InteractRouter based on anchor statements
+
+See the [InteractAction API Guide](jvagent/action/interact/API_GUIDE.md) for complete documentation.
+
 ### Agents
 
 **Agents** are the primary execution units in jvagent. They:
@@ -595,6 +620,35 @@ package:
 
 ## Creating Actions
 
+### InteractActions
+
+InteractActions are actions that participate in the interact subsystem. They provide a simplified API for generating responses:
+
+```python
+from jvagent.action.interact.base import InteractAction
+from jvagent.action.interact.interact_walker import InteractWalker
+
+class MyInteractAction(InteractAction):
+    async def execute(self, visitor: InteractWalker) -> None:
+        # Simplified API: Pass directives and parameters directly
+        await self.respond(
+            visitor,
+            directives=["Use the provided context to answer"],
+            parameters=[{
+                "condition": "No relevant context found",
+                "response": "Inform the user that no relevant information was found"
+            }]
+        )
+```
+
+**Key Benefits:**
+- Single method call to add directives/parameters and generate response
+- Automatic persistence (interaction saved automatically)
+- Bulk operations for efficiency
+- Type-safe API with proper validation
+
+See the [InteractAction API Guide](jvagent/action/interact/API_GUIDE.md) for complete documentation and examples.
+
 ### Using Core Actions
 
 jvagent provides many core actions that can be used directly. Simply reference them in your `agent.yaml`:
@@ -614,11 +668,18 @@ actions:
 ```
 
 **Available Core Actions:**
-- **Interact Actions**: `jvagent/interact_router`, `jvagent/retrieval_interact_action`
+- **Interact Actions**: `jvagent/interact_router`, `jvagent/retrieval_interact_action`, `jvagent/intro_interact_action`
 - **Language Models**: `jvagent/openai_lm`, `jvagent/openrouter_lm`
 - **Embedding Models**: `jvagent/openai_embedding`, `jvagent/openrouter_embedding`, `jvagent/huggingface_embedding`, `jvagent/generic_embedding`
 - **Vector Stores**: `jvagent/typesense_vectorstore`
 - **Other**: `jvagent/persona` (can be overridden locally)
+
+**Core Action Documentation:**
+- [InteractAction API Guide](jvagent/action/interact/API_GUIDE.md) - Complete guide to InteractAction API including `respond()` method
+- [InteractRouter](jvagent/action/router/README.md) - Intent-based routing for InteractActions
+- [RetrievalInteractAction](jvagent/action/retrieval/README.md) - Vector store retrieval with simplified API
+- [IntroInteractAction](jvagent/action/intro/README.md) - First-time user welcome messages
+- [Model Actions](jvagent/action/model/README.md) - Language and embedding model integrations
 
 The action loader automatically discovers core actions from the jvagent library if they're not found locally.
 

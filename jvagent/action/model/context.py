@@ -8,9 +8,9 @@ current_interaction_id: contextvars.ContextVar[Optional[str]] = contextvars.Cont
     "current_interaction_id", default=None
 )
 
-# Context variable to track the calling action label for observability
-current_calling_action_label: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    "current_calling_action_label", default=None
+# Context variable to track the calling action name for observability
+current_action_name: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "current_action_name", default=None
 )
 
 
@@ -32,20 +32,20 @@ def set_interaction_id(interaction_id: Optional[str]) -> None:
     current_interaction_id.set(interaction_id)
 
 
-def get_calling_action_label() -> Optional[str]:
-    """Get the current calling action label from context.
+def get_calling_action_name() -> Optional[str]:
+    """Get the current calling action name from context.
 
     Returns:
-        Calling action label if set in context, None otherwise
+        Calling action name (camelCase class name) if set in context, None otherwise
     """
-    return current_calling_action_label.get()
+    return current_action_name.get()
 
 
-def set_calling_action_label(action_label: Optional[str]) -> None:
-    """Set the current calling action label in context.
+def set_calling_action_name(action_name: Optional[str]) -> None:
+    """Set the current calling action name in context.
 
     Args:
-        action_label: Action label to set (e.g., "PersonaAction", "ExampleInteractAction")
+        action_name: Action name (camelCase class name) to set (e.g., "PersonaAction", "ExampleInteractAction")
     """
-    current_calling_action_label.set(action_label)
+    current_action_name.set(action_name)
 

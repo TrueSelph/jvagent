@@ -192,7 +192,7 @@ Focus on being clear, concise, and helpful in addressing the user's request.
 
 # Directive group template for formatting directives with their action's parameters
 DIRECTIVE_GROUP_TEMPLATE = """
-#### MANDATORY DIRECTIVE from {action_label}:
+#### MANDATORY DIRECTIVE from {action_name}:
 **YOU MUST FULFILL THIS DIRECTIVE EXACTLY AS STATED:**
 
 {directive_content}
@@ -204,7 +204,7 @@ DIRECTIVE_GROUP_TEMPLATE = """
 
 # Action-specific parameters section template
 ACTION_PARAMETERS_SECTION_TEMPLATE = """
-**Parameters from {action_label} (evaluate conditions before applying):**
+**Parameters from {action_name} (evaluate conditions before applying):**
 {parameters_list}
 
 Note: These parameters guide the directive above and take precedence. Also follow PersonaAction parameters (if provided).
@@ -212,7 +212,7 @@ Note: These parameters guide the directive above and take precedence. Also follo
 
 # Standalone parameters section (when no directives exist)
 STANDALONE_PARAMETERS_SECTION_TEMPLATE = """
-#### Parameters from {action_label}:
+#### Parameters from {action_name}:
 {parameters_list}
 """
 

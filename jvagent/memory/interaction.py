@@ -37,7 +37,6 @@ class Interaction(Node):
         events: System events
         parameters: Applicable parameters for this interaction
         observability_metrics: Aggregated observability events (model calls, embeddings, etc.)
-        model_log: Legacy field - no longer populated (use observability_metrics instead)
         started_at: Interaction start timestamp
         completed_at: Interaction completion timestamp
         closed: Whether the interaction is closed
@@ -56,36 +55,7 @@ class Interaction(Node):
     response: Optional[str] = attribute(
         default=None, description="Agent response text (accumulated from stream chunks and ad hoc messages)"
     )
-    messages: List[str] = attribute(
-        default_factory=list, description="List of in-memory ResponseMessage IDs linked to this interaction (non-persisted references)"
-    )
-    streamed: bool = attribute(
-        default=False, description="Whether this interaction used streaming"
-    )
-    observability_metrics: List[Dict[str, Any]] = attribute(
-        default_factory=list, description="Aggregated observability events (model calls, embeddings, etc.)"
-    )
-    # Processing tracking
-    actions: List[str] = attribute(
-        default_factory=list, description="Actions involved in processing (in order)"
-    )
-    directives: List[Dict[str, Any]] = attribute(
-        default_factory=list, description="Directives issued by non-persona actions. Each entry has structure: {'action_label': str, 'content': str, 'executed': bool}"
-    )
-    events: List[Dict[str, Any]] = attribute(
-        default_factory=list, description="System events (logs). Each entry has structure: {'action_label': str, 'content': str}"
-    )
-
-    # Parameter tracking
-    parameters: List[Dict[str, Any]] = attribute(
-        default_factory=list, description="Applicable parameters for this interaction. Each entry should have 'action_label' and 'executed': bool keys"
-    )
-
-    # Model call log (legacy - no longer populated, use observability_metrics instead)
-    model_log: List[Dict[str, Any]] = attribute(
-        default_factory=list, description="Legacy field - no longer populated. Use observability_metrics instead."
-    )
-
+    
     # Routing (from InteractRouter)
     interpretation: Optional[str] = attribute(
         default=None,
@@ -98,6 +68,30 @@ class Interaction(Node):
     routing_confidence: Optional[float] = attribute(
         default=None,
         description="Confidence score for routing match (0.0-1.0)"
+    )
+
+    # Processing tracking
+    actions: List[str] = attribute(
+        default_factory=list, description="Actions involved in processing (in order)"
+    )
+    directives: List[Dict[str, Any]] = attribute(
+        default_factory=list, description="Directives issued by non-persona actions. Each entry has structure: {'action_name': str, 'content': str, 'executed': bool}"
+    )
+    events: List[Dict[str, Any]] = attribute(
+        default_factory=list, description="System events (logs). Each entry has structure: {'action_name': str, 'content': str}"
+    )
+
+    # Parameter tracking
+    parameters: List[Dict[str, Any]] = attribute(
+        default_factory=list, description="Applicable parameters for this interaction. Each entry should have 'action_name' and 'executed': bool keys"
+    )
+    
+    # Streaming and observability
+    streamed: bool = attribute(
+        default=False, description="Whether this interaction used streaming"
+    )
+    observability_metrics: List[Dict[str, Any]] = attribute(
+        default_factory=list, description="Aggregated observability events (model calls, embeddings, etc.)"
     )
 
     # Timestamps
@@ -113,7 +107,7 @@ class Interaction(Node):
         default=False, description="Whether the interaction is closed"
     )
 
-    def add_directive(self, directive: str, action_label: str) -> None:
+    def add_directive(self, directive: str, action_name: str) -> None:
         """Add a directive to the interaction.
 
         Directives are instructions issued by non-persona actions.
@@ -121,19 +115,19 @@ class Interaction(Node):
 
         Args:
             directive: Directive string to add
-            action_label: Class name of the action that added this directive
+            action_name: Class name (camelCase) of the action that added this directive
         """
-        if directive and action_label:
+        if directive and action_name:
             entry = {
-                "action_label": action_label,
+                "action_name": action_name,
                 "content": directive,
                 "executed": False
             }
-            # Prevent duplicates based on content and action_label
+            # Prevent duplicates based on content and action_name
             if entry not in self.directives:
                 self.directives.append(entry)
 
-    def add_event(self, event: str, action_label: str) -> None:
+    def add_event(self, event: str, action_name: str) -> None:
         """Add an event to the interaction.
 
         Events are logs and do not require execution tracking -
@@ -141,34 +135,34 @@ class Interaction(Node):
 
         Args:
             event: Event string to add
-            action_label: Class name of the action that added this event
+            action_name: Class name (camelCase) of the action that added this event
         """
-        if event and action_label:
-            entry = {"action_label": action_label, "content": event}
+        if event and action_name:
+            entry = {"action_name": action_name, "content": event}
             self.events.append(entry)  # Events can have duplicates (logs)
 
-    def add_action(self, action_label: str) -> None:
+    def add_action(self, action_name: str) -> None:
         """Add an action to the processing record.
 
         Actions are recorded in order of execution.
 
         Args:
-            action_label: Label of the action to add
+            action_name: Class name (camelCase) of the action to add
         """
-        if action_label and action_label not in self.actions:
-            self.actions.append(action_label)
+        if action_name and action_name not in self.actions:
+            self.actions.append(action_name)
 
-    def add_parameter(self, parameter: Dict[str, Any], action_label: str) -> None:
+    def add_parameter(self, parameter: Dict[str, Any], action_name: str) -> None:
         """Add a parameter to the applicable parameters list.
 
         New parameters are added with executed=False by default.
 
         Args:
             parameter: Parameter data (id, condition, response, etc.)
-            action_label: Class name of the action that added this parameter
+            action_name: Class name (camelCase) of the action that added this parameter
         """
         if parameter:
-            parameter["action_label"] = action_label
+            parameter["action_name"] = action_name
             # Ensure executed key is set to False if not already present
             if "executed" not in parameter:
                 parameter["executed"] = False
@@ -194,7 +188,7 @@ class Interaction(Node):
         """Get directives that have not yet been executed.
 
         Returns:
-            List of unexecuted directive entries (dicts with action_label, content, executed=False)
+            List of unexecuted directive entries (dicts with action_name, content, executed=False)
         """
         return [d for d in self.directives if not d.get("executed", False)]
 
@@ -202,7 +196,7 @@ class Interaction(Node):
         """Get directives that have been executed.
 
         Returns:
-            List of executed directive entries (dicts with action_label, content, executed=True)
+            List of executed directive entries (dicts with action_name, content, executed=True)
         """
         return [d for d in self.directives if d.get("executed", False)]
 
@@ -222,44 +216,44 @@ class Interaction(Node):
         """
         return [p for p in self.parameters if p.get("executed", False)]
 
-    def get_directives_by_action(self, action_label: str) -> List[Dict[str, Any]]:
+    def get_directives_by_action(self, action_name: str) -> List[Dict[str, Any]]:
         """Get directives added by a specific action.
 
         Args:
-            action_label: Class name of the action to filter by
+            action_name: Class name (camelCase) of the action to filter by
 
         Returns:
             List of directive entries from the specified action
         """
-        return [d for d in self.directives if d.get("action_label") == action_label]
+        return [d for d in self.directives if d.get("action_name") == action_name]
 
-    def get_parameters_by_action(self, action_label: str) -> List[Dict[str, Any]]:
+    def get_parameters_by_action(self, action_name: str) -> List[Dict[str, Any]]:
         """Get parameters added by a specific action.
 
         Args:
-            action_label: Class name of the action to filter by
+            action_name: Class name (camelCase) of the action to filter by
 
         Returns:
             List of parameter entries from the specified action
         """
-        return [p for p in self.parameters if p.get("action_label") == action_label]
+        return [p for p in self.parameters if p.get("action_name") == action_name]
 
-    def get_events_by_action(self, action_label: str) -> List[Dict[str, Any]]:
+    def get_events_by_action(self, action_name: str) -> List[Dict[str, Any]]:
         """Get events added by a specific action.
 
         Args:
-            action_label: Class name of the action to filter by
+            action_name: Class name (camelCase) of the action to filter by
 
         Returns:
             List of event entries from the specified action
         """
-        return [e for e in self.events if e.get("action_label") == action_label]
+        return [e for e in self.events if e.get("action_name") == action_name]
 
     def set_to_executed(self, parameters: List[Dict[str, Any]] = [], directives: List[Dict[str, Any]] = []) -> None:
         """Mark directives and parameters as executed.
 
         Finds matching entries in self.directives and self.parameters by comparing
-        action_label and content, then sets executed=True on matching entries in-place.
+        action_name and content, then sets executed=True on matching entries in-place.
 
         Args:
             parameters: Parameter entries to mark as executed
@@ -267,20 +261,20 @@ class Interaction(Node):
         """
         # Mark matching directives as executed
         for directive_entry in directives:
-            action_label = directive_entry.get("action_label")
+            action_name = directive_entry.get("action_name")
             content = directive_entry.get("content")
-            if action_label and content:
+            if action_name and content:
                 for d in self.directives:
-                    if d.get("action_label") == action_label and d.get("content") == content:
+                    if d.get("action_name") == action_name and d.get("content") == content:
                         d["executed"] = True
 
         # Mark matching parameters as executed
         for parameter_entry in parameters:
-            action_label = parameter_entry.get("action_label")
-            # Match by action_label and a unique identifier if available (e.g., "id" or "condition")
-            # If no unique identifier, match by action_label and all other keys
+            action_name = parameter_entry.get("action_name")
+            # Match by action_name and a unique identifier if available (e.g., "id" or "condition")
+            # If no unique identifier, match by action_name and all other keys
             for p in self.parameters:
-                if p.get("action_label") == action_label:
+                if p.get("action_name") == action_name:
                     # Try to match by id if available
                     if "id" in parameter_entry and "id" in p:
                         if p.get("id") == parameter_entry.get("id"):
@@ -293,23 +287,11 @@ class Interaction(Node):
                         if p_copy == param_copy:
                             p["executed"] = True
 
-    def add_message(self, message_id: str) -> None:
-        """Link an in-memory ResponseMessage ID to this interaction.
-
-        Note: ResponseMessage objects are non-persisted, so these IDs are
-        only for tracking/logging purposes and cannot be queried from the database.
-
-        Args:
-            message_id: In-memory ResponseMessage ID to link
-        """
-        if message_id and message_id not in self.messages:
-            self.messages.append(message_id)
-
     def get_directives(self) -> List[Dict[str, Any]]:
         """Get all directives.
 
         Returns:
-            List of directive entries (dicts with action_label, content, executed)
+            List of directive entries (dicts with action_name, content, executed)
         """
         return self.directives
 
@@ -343,6 +325,7 @@ class Interaction(Node):
             "id": self.id,
             "conversation_id": self.conversation_id,
             "user_id": self.user_id,
+            "session_id": self.session_id,
             "utterance": self.utterance,
             "channel": self.channel,
             "response": self.response,

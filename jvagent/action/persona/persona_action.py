@@ -231,7 +231,7 @@ class PersonaAction(Action):
     def _compose_prompt(self, interaction: Interaction) -> str:
         """Compose the system prompt from the main prompt and interaction context.
 
-        Groups directives by action_label and associates each directive with parameters
+        Groups directives by action_name and associates each directive with parameters
         from the same action. Extracts only essential fields to minimize token usage.
 
         Args:
@@ -270,7 +270,7 @@ class PersonaAction(Action):
         persona_parameters = list(self.parameters)  # PersonaAction's own parameters
         interaction_parameters = [
             p for p in applicable_parameters
-            if p.get("action_label") != "PersonaAction"
+            if p.get("action_name") != "PersonaAction"
         ]  # Parameters from other actions
 
         # Build PersonaAction parameters section (if any)
@@ -288,21 +288,21 @@ class PersonaAction(Action):
                 f"Note: These PersonaAction parameters apply to ALL directives (if any directives are provided)."
             )
 
-        # Group directives by action_label
+        # Group directives by action_name
         directives_by_action: Dict[str, List[Dict[str, Any]]] = {}
         for directive in applicable_directives:
-            action_label = directive.get("action_label", "Unknown")
-            if action_label not in directives_by_action:
-                directives_by_action[action_label] = []
-            directives_by_action[action_label].append(directive)
+            action_name = directive.get("action_name", "Unknown")
+            if action_name not in directives_by_action:
+                directives_by_action[action_name] = []
+            directives_by_action[action_name].append(directive)
 
-        # Group interaction parameters by action_label
+        # Group interaction parameters by action_name
         parameters_by_action: Dict[str, List[Dict[str, Any]]] = {}
         for param in interaction_parameters:
-            action_label = param.get("action_label", "Unknown")
-            if action_label not in parameters_by_action:
-                parameters_by_action[action_label] = []
-            parameters_by_action[action_label].append(param)
+            action_name = param.get("action_name", "Unknown")
+            if action_name not in parameters_by_action:
+                parameters_by_action[action_name] = []
+            parameters_by_action[action_name].append(param)
 
         # Build directive groups section (if directives exist)
         directives_section = ""
@@ -310,7 +310,7 @@ class PersonaAction(Action):
         
         if applicable_directives:
             directive_groups = []
-            for action_label, directives in directives_by_action.items():
+            for action_name, directives in directives_by_action.items():
                 # Extract only content field from directives (essential field only)
                 directive_contents = [
                     d.get("content", str(d)) for d in directives
@@ -320,7 +320,7 @@ class PersonaAction(Action):
                 )
 
                 # Get parameters from the same action
-                action_params = parameters_by_action.get(action_label, [])
+                action_params = parameters_by_action.get(action_name, [])
                 action_params_section = ""
                 if action_params:
                     # Extract only condition and response fields (essential fields only)
@@ -329,13 +329,13 @@ class PersonaAction(Action):
                         for i, p in enumerate(action_params)
                     )
                     action_params_section = ACTION_PARAMETERS_SECTION_TEMPLATE.format(
-                        action_label=action_label,
+                        action_name=action_name,
                         parameters_list=params_list,
                     )
 
                 # Format directive group
                 directive_group = DIRECTIVE_GROUP_TEMPLATE.format(
-                    action_label=action_label,
+                    action_name=action_name,
                     directive_content=directive_text,
                     action_parameters_section=action_params_section,
                 )
@@ -351,21 +351,21 @@ class PersonaAction(Action):
         # Build standalone parameters section (parameters from actions without directives)
         standalone_params_section = ""
         actions_with_only_params = {
-            action_label: params
-            for action_label, params in parameters_by_action.items()
-            if action_label not in actions_with_directives
+            action_name: params
+            for action_name, params in parameters_by_action.items()
+            if action_name not in actions_with_directives
         }
         
         if actions_with_only_params:
             standalone_groups = []
-            for action_label, params in actions_with_only_params.items():
+            for action_name, params in actions_with_only_params.items():
                 # Extract only condition and response fields (essential fields only)
                 params_list = "\n".join(
                     f"{i+1}. {self._format_parameter(p)}"
                     for i, p in enumerate(params)
                 )
                 standalone_group = STANDALONE_PARAMETERS_SECTION_TEMPLATE.format(
-                    action_label=action_label,
+                    action_name=action_name,
                     parameters_list=params_list,
                 )
                 standalone_groups.append(standalone_group)

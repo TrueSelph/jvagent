@@ -428,14 +428,15 @@ class InteractWalker(Walker):
 
         return is_allowed
 
-    def add_directive(self, directive: str) -> None:
-        """Add a directive to the interaction with current action label.
+    async def add_directives(self, directives: List[str]) -> None:
+        """Add multiple directives to the interaction with current action name.
 
-        Convenience method that automatically uses the current executing action's
+        Bulk convenience method that automatically uses the current executing action's
         class name. Must be called from within an InteractAction's execute() method.
+        The interaction is automatically saved once after adding all directives.
 
         Args:
-            directive: Directive string to add
+            directives: List of directive strings to add
 
         Raises:
             RuntimeError: If called outside of action execution context or no interaction available
@@ -443,16 +444,39 @@ class InteractWalker(Walker):
         if not self.interaction:
             raise RuntimeError("No interaction available")
         if not self._current_action:
-            raise RuntimeError("add_directive() must be called from within InteractAction.execute()")
+            raise RuntimeError("add_directives() must be called from within InteractAction.execute()")
 
-        action_label = self._current_action.get_class_name()
-        self.interaction.add_directive(directive, action_label)
+        if not directives:
+            return
 
-    def add_event(self, event: str) -> None:
-        """Add an event to the interaction with current action label.
+        action_name = self._current_action.get_class_name()
+        for directive in directives:
+            if directive:  # Skip empty directives
+                self.interaction.add_directive(directive, action_name)
+        
+        await self.interaction.save()
+
+    async def add_directive(self, directive: str) -> None:
+        """Add a directive to the interaction with current action name.
 
         Convenience method that automatically uses the current executing action's
         class name. Must be called from within an InteractAction's execute() method.
+        The interaction is automatically saved after adding the directive.
+
+        Args:
+            directive: Directive string to add
+
+        Raises:
+            RuntimeError: If called outside of action execution context or no interaction available
+        """
+        await self.add_directives([directive])
+
+    async def add_event(self, event: str) -> None:
+        """Add an event to the interaction with current action name.
+
+        Convenience method that automatically uses the current executing action's
+        class name. Must be called from within an InteractAction's execute() method.
+        The interaction is automatically saved after adding the event.
 
         Args:
             event: Event string to add
@@ -465,17 +489,19 @@ class InteractWalker(Walker):
         if not self._current_action:
             raise RuntimeError("add_event() must be called from within InteractAction.execute()")
 
-        action_label = self._current_action.get_class_name()
-        self.interaction.add_event(event, action_label)
+        action_name = self._current_action.get_class_name()
+        self.interaction.add_event(event, action_name)
+        await self.interaction.save()
 
-    def add_parameter(self, parameter: Dict[str, Any]) -> None:
-        """Add a parameter to the interaction with current action label.
+    async def add_parameters(self, parameters: List[Dict[str, Any]]) -> None:
+        """Add multiple parameters to the interaction with current action name.
 
-        Convenience method that automatically uses the current executing action's
+        Bulk convenience method that automatically uses the current executing action's
         class name. Must be called from within an InteractAction's execute() method.
+        The interaction is automatically saved once after adding all parameters.
 
         Args:
-            parameter: Parameter data (id, condition, response, etc.)
+            parameters: List of parameter dictionaries to add (each should have 'condition' and 'response' keys)
 
         Raises:
             RuntimeError: If called outside of action execution context or no interaction available
@@ -483,7 +509,31 @@ class InteractWalker(Walker):
         if not self.interaction:
             raise RuntimeError("No interaction available")
         if not self._current_action:
-            raise RuntimeError("add_parameter() must be called from within InteractAction.execute()")
+            raise RuntimeError("add_parameters() must be called from within InteractAction.execute()")
 
-        action_label = self._current_action.get_class_name()
-        self.interaction.add_parameter(parameter, action_label)
+        if not parameters:
+            return
+
+        action_name = self._current_action.get_class_name()
+        for parameter in parameters:
+            if parameter and isinstance(parameter, dict):
+                self.interaction.add_parameter(parameter, action_name)
+            elif parameter:
+                logger.warning(f"add_parameters: Skipping invalid parameter type: {type(parameter)}, value: {parameter}")
+        
+        await self.interaction.save()
+
+    async def add_parameter(self, parameter: Dict[str, Any]) -> None:
+        """Add a parameter to the interaction with current action name.
+
+        Convenience method that automatically uses the current executing action's
+        class name. Must be called from within an InteractAction's execute() method.
+        The interaction is automatically saved after adding the parameter.
+
+        Args:
+            parameter: Parameter data (id, condition, response, etc.)
+
+        Raises:
+            RuntimeError: If called outside of action execution context or no interaction available
+        """
+        await self.add_parameters([parameter])
