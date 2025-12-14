@@ -64,7 +64,7 @@ class ModelActionResult:
         duration: Optional[float] = None,
         prompt: Optional[str] = None,
         system: Optional[str] = None,
-        calling_action_label: Optional[str] = None,
+        calling_action_name: Optional[str] = None,
     ):
         """Initialize a model action result.
 
@@ -79,7 +79,7 @@ class ModelActionResult:
             duration: Query duration in seconds
             prompt: The prompt that produced the response
             system: System message used (if any)
-            calling_action_label: Label of the action that initiated this model call
+            calling_action_name: Name of the action that initiated this model call
         """
         self.response = response
         self.stream = stream
@@ -90,7 +90,7 @@ class ModelActionResult:
         self.is_streaming = stream is not None
         self.prompt = prompt
         self.system = system
-        self.calling_action_label = calling_action_label
+        self.calling_action_name = calling_action_name
 
         # Build metrics dict with usage and duration
         self.metrics: Dict[str, Any] = {}
@@ -276,7 +276,7 @@ class LanguageModelAction(BaseModelAction, ABC):
         system: Optional[str] = None,
         history: Optional[List[Dict[str, Any]]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
-        calling_action_label: Optional[str] = None,
+        calling_action_name: Optional[str] = None,
         response_bus: Optional[Any] = None,
         interaction: Optional[Any] = None,
         **kwargs: Any,
@@ -294,7 +294,7 @@ class LanguageModelAction(BaseModelAction, ABC):
             system: Optional system message
             history: Optional conversation history
             tools: Optional list of tool/function definitions
-            calling_action_label: Optional label of the action calling this method
+            calling_action_name: Optional name of the action calling this method
             response_bus: Optional ResponseBus instance for direct publishing
             interaction: Optional Interaction node (required if response_bus provided)
             **kwargs: Additional parameters (temperature, max_tokens, model, etc.)
@@ -326,7 +326,7 @@ class LanguageModelAction(BaseModelAction, ABC):
                     system=system,
                     history=history,
                     tools=tools,
-                    calling_action_label=calling_action_label,
+                    calling_action_name=calling_action_name,
                     **kwargs,
                 )
                 full_text = await result.get_response()
@@ -351,7 +351,7 @@ class LanguageModelAction(BaseModelAction, ABC):
                 system=system,
                 history=history,
                 tools=tools,
-                calling_action_label=calling_action_label,
+                calling_action_name=calling_action_name,
                 **kwargs,
             )
 
@@ -397,7 +397,7 @@ class LanguageModelAction(BaseModelAction, ABC):
                 system=system,
                 history=history,
                 tools=tools,
-                calling_action_label=calling_action_label,
+                calling_action_name=calling_action_name,
                 **kwargs,
             )
             return await result.get_response()
@@ -409,7 +409,7 @@ class LanguageModelAction(BaseModelAction, ABC):
             system=system,
             history=history,
             tools=tools,
-            calling_action_label=calling_action_label,
+            calling_action_name=calling_action_name,
             **kwargs,
         )
 
@@ -433,7 +433,7 @@ class LanguageModelAction(BaseModelAction, ABC):
         system: Optional[str] = None,
         history: Optional[List[Dict[str, Any]]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
-        calling_action_label: Optional[str] = None,
+        calling_action_name: Optional[str] = None,
         **kwargs: Any,
     ) -> ModelActionResult:
         """Execute a query to the language model.
@@ -456,7 +456,7 @@ class LanguageModelAction(BaseModelAction, ABC):
             system: Optional system message
             history: Optional conversation history (can include multimodal messages)
             tools: Optional list of tool/function definitions
-            calling_action_label: Optional label of the action calling this method
+            calling_action_name: Optional name of the action calling this method
             **kwargs: Additional parameters (temperature, max_tokens, etc.)
 
         Returns:
@@ -520,9 +520,9 @@ class LanguageModelAction(BaseModelAction, ABC):
         result.prompt = prompt_str
         result.system = system
         
-        # Store calling_action_label in result for observability
-        if calling_action_label:
-            result.calling_action_label = calling_action_label
+        # Store calling_action_name in result for observability
+        if calling_action_name:
+            result.calling_action_name = calling_action_name
 
         # Update metrics with duration
         result.metrics["duration"] = duration

@@ -352,7 +352,7 @@ class VectorStore(Action, ABC):
             )
 
         try:
-            vector = await embedding_model.embed(text, calling_action_label=self.get_class_name())
+            vector = await embedding_model.embed(text, calling_action_name=self.get_class_name())
             return vector
         except Exception as e:
             logger.error(f"VectorStore: Failed to generate embedding: {e}", exc_info=True)
