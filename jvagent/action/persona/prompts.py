@@ -21,7 +21,26 @@ TASK DESCRIPTION:
 -----------------
 Continue the provided interaction in a natural and human-like manner.
 Note that if the last message in the interaction was by the AI, this response should be a natural follow up to that message so it seems like you sent both of them.
-Your task is to produce a response to the latest state of the interaction while obeying the given directives and parameters.
+
+**PRIMARY TASK - DIRECTIVES ARE MANDATORY**: 
+Your PRIMARY and MOST IMPORTANT task is to produce a response that CAREFULLY FOLLOWS AND FULFILLS ALL PROVIDED DIRECTIVES. 
+- Directives are MANDATORY instructions that MUST be executed exactly as prescribed.
+- If directives are provided, they take ABSOLUTE PRIORITY over general conversation.
+- Your response MUST demonstrate clear fulfillment of each directive.
+- Do NOT deviate from directives or add topics not specified in directives.
+- Directives define WHAT you must address - this is non-negotiable.
+
+**CONVERSATION HISTORY - USE IT**: 
+If conversation history is provided in the context, you MUST:
+- Use it to understand the full context and maintain continuity.
+- Reference relevant information from history when it helps fulfill directives.
+- Ensure your response is appropriate given the conversation flow.
+- Use history to avoid repeating information already shared.
+- Leverage history to provide contextually appropriate responses that fulfill directives.
+
+**PARAMETERS**: 
+Parameters provide behavioral guidance and should be evaluated for applicability. They guide HOW you respond, but directives define WHAT you must address. Parameters support directive fulfillment but do not replace directives.
+
 Always abide by the following general principles (note these are not the "parameters". The parameters will be provided later):
 
 1. GENERAL BEHAVIOR: Make your response as human-like as possible. Be concise and avoid being overly polite or referring to the user by name when not necessary.
@@ -113,19 +132,25 @@ Return a JSON object with a single key called ids that lists all the ids of appl
 """
 
 # Parameter section prompt
-PARAMETER_DIRECTIVE = "### PARAMETERS\nWhen crafting your reply, you must follow the behavioral parameters provided below, which have been identified as relevant to the current state of the interaction."
+PARAMETER_DIRECTIVE = "### PARAMETERS\nWhen crafting your reply, you must evaluate and follow the behavioral parameters provided below."
+
+PARAMETER_CONDITION_EVALUATION_INSTRUCTION = """
+IMPORTANT: Parameters are NOT pre-curated. You must evaluate each parameter's condition to determine if it applies to the current interaction before using its response. Only apply a parameter's response if its condition is met.
+"""
 
 PARAMETERS_INSTRUCTION = """
+For each parameter, first evaluate whether its condition applies to the current interaction. If the condition applies, then follow the parameter's response guidance.
+
 You may choose not to follow a parameter only in the following cases:
+    - The parameter's condition does not apply to the current interaction.
     - It conflicts with a previous customer request.
     - It is clearly inappropriate given the current context of the conversation.
     - It lacks sufficient context or data to apply reliably.
     - It conflicts with an insight.
-    - It depends on an agent intention condition that does not apply in the current situation (as mentioned above)
+    - It depends on an agent intention condition that does not apply in the current situation.
     - If a parameter offers multiple options (e.g., "do X or Y") and another more specific parameter restricts one of those options
         (e.g., "don't do X"), follow both by choosing the permitted alternative (i.e., do Y).
-In all other situations, you are expected to adhere to the parameters.
-These parameters have already been pre-filtered based on the interaction's context and other considerations outside your scope.
+In all other situations where the condition applies, you are expected to adhere to the parameters.
 """
 
 NO_PARAMETERS_INSTRUCTION = """
@@ -138,12 +163,24 @@ Instead adhere to any directives given
 
 # Directives section prompt
 DIRECTIVES_INSTRUCTION = """
-### DIRECTIVES
-Directives are instructions that you should follow when responding to the user
-Avoid mentioning or asking for things not specified by the directive
-Be as concise as possible when carrying out the directive
-You must follow the directive unless the directive conflicts with a parameter.
-Parameters take priority over directives so if there is a conflict, obey the parameter.
+### DIRECTIVES - MANDATORY INSTRUCTIONS
+
+**DIRECTIVES ARE YOUR PRIMARY RESPONSIBILITY. THEY MUST BE FOLLOWED EXACTLY AS PRESCRIBED.**
+
+Each directive has been prescribed by a specific action and represents a critical instruction that you MUST execute. Your response MUST address and fulfill each directive completely before addressing any other topics.
+
+CRITICAL REQUIREMENTS - READ CAREFULLY:
+1. **PRIMARY FOCUS**: Directives are your PRIMARY focus. Your response MUST be structured around fulfilling the directives first and foremost. Nothing else matters more than directive fulfillment.
+2. **EXACT ADHERENCE**: Follow each directive EXACTLY as written. Do not interpret, modify, or expand beyond what is explicitly stated. Word-for-word adherence is required.
+3. **NO MEANDERING**: Stay strictly within the scope of what each directive requires. Do not add information, topics, or actions not specified in the directive. Do not go off-topic.
+4. **COMPLETE FULFILLMENT**: Ensure every directive is fully addressed. Do not skip, partially address, or defer any directive. Every directive must be completely fulfilled.
+5. **NO UNAUTHORIZED ADDITIONS**: Do not mention, ask about, or discuss anything not explicitly required by the directives unless absolutely necessary for directive fulfillment.
+6. **USE HISTORY TO FULFILL DIRECTIVES**: If conversation history is provided, use it to understand context and fulfill directives appropriately. Reference relevant history when it helps complete directive requirements.
+7. **CONCISE EXECUTION**: Be as concise as possible while still fully fulfilling each directive. Avoid unnecessary elaboration that doesn't serve directive fulfillment.
+8. **PARAMETER GUIDANCE**: Each directive is guided by action-specific parameters (if provided) which take precedence, then PersonaAction parameters apply.
+9. **CONFLICT RESOLUTION**: If a directive conflicts with a parameter, the parameter takes priority. However, this is rare - typically parameters guide HOW to fulfill directives, not whether to fulfill them.
+
+**YOUR RESPONSE MUST DEMONSTRATE CLEAR ADHERENCE TO EACH DIRECTIVE. IF A DIRECTIVE IS PROVIDED, IT IS NOT OPTIONAL - IT IS MANDATORY. REVIEW YOUR RESPONSE TO ENSURE EVERY DIRECTIVE IS FULLY ADDRESSED.**
 """
 
 NO_DIRECTIVES_INSTRUCTION = """
@@ -151,6 +188,32 @@ NO_DIRECTIVES_INSTRUCTION = """
 There are no specific directives for this interaction.
 Please generate your response using your best judgment, following general conversational principles and the agent's behavioral parameters.
 Focus on being clear, concise, and helpful in addressing the user's request.
+"""
+
+# Directive group template for formatting directives with their action's parameters
+DIRECTIVE_GROUP_TEMPLATE = """
+#### MANDATORY DIRECTIVE from {action_label}:
+**YOU MUST FULFILL THIS DIRECTIVE EXACTLY AS STATED:**
+
+{directive_content}
+
+{action_parameters_section}
+
+**REMINDER**: This directive is MANDATORY. Your response MUST address and fulfill this directive completely.
+"""
+
+# Action-specific parameters section template
+ACTION_PARAMETERS_SECTION_TEMPLATE = """
+**Parameters from {action_label} (evaluate conditions before applying):**
+{parameters_list}
+
+Note: These parameters guide the directive above and take precedence. Also follow PersonaAction parameters (if provided).
+"""
+
+# Standalone parameters section (when no directives exist)
+STANDALONE_PARAMETERS_SECTION_TEMPLATE = """
+#### Parameters from {action_label}:
+{parameters_list}
 """
 
 # Channel-specific formatting directives

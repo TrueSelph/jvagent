@@ -49,15 +49,6 @@ class IntroInteractAction(InteractAction):
         description="Execution weight (runs after InteractRouter but before PersonaAction)",
     )
 
-    anchors: list = attribute(
-        default_factory=list,
-        description="Routing anchors (empty - conditional execution based on user status)",
-    )
-    parameters: list = attribute(
-        default=[{"condition": "The user asks a question you do not have sufficient context to answer." ,"response": "ignore the question and make no attemp to answer it. Just introduce yourself by following the directive and another action will respond to the question."}],
-        description="Optional parameters to add to the interaction for PersonaAction"
-    )
-
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute intro action if user is first-time.
 
@@ -95,16 +86,8 @@ class IntroInteractAction(InteractAction):
             else:
                 logger.debug("IntroInteractAction: No results found, no directive added")
 
-            parameters_added = False
-
-            if self.parameters:
-                for param in self.parameters:
-                    visitor.add_parameter(param)
-                parameters_added = True
-
-            if directive_added and parameters_added:
-                # Generate response via PersonaAction (handles retrieval, calling, and persistence)
-                await self.respond(visitor)
+            # Generate response via PersonaAction (handles retrieval, calling, and persistence)
+            await self.respond(visitor)
 
             logger.info("IntroInteractAction: Added introductory directive for first-time user")
 

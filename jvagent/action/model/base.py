@@ -156,15 +156,58 @@ class BaseModelAction(Action, ABC):
                             }
                             usage_estimated = getattr(result, "_usage_estimated", False)
                     
+                    # Get model from result if available (actual model used), otherwise fall back to self.model
+                    # This ensures we report the actual model used (e.g., from PersonaAction override)
+                    # rather than the LanguageModelAction's default model
+                    model = ""
+                    if result and hasattr(result, "model") and result.model:
+                        model = result.model
+                    elif hasattr(self, "model") and self.model:
+                        model = self.model
+                    
+                    # Get calling action label from result (preferred) or instance variable (for embeddings) or context (fallback)
+                    calling_action_label = None
+                    if result and hasattr(result, "calling_action_label") and result.calling_action_label:
+                        # Language models: get from result
+                        calling_action_label = result.calling_action_label
+                    elif hasattr(self, "_calling_action_label") and self._calling_action_label:
+                        # Embedding models: get from instance variable
+                        calling_action_label = self._calling_action_label
+                    else:
+                        # Fallback to context variable for backward compatibility
+                        from jvagent.action.model.context import get_calling_action_label
+                        calling_action_label = get_calling_action_label()
+                    
+                    # Get system prompt (the actual executed prompt) and user prompt from result
+                    system_prompt = None
+                    user_prompt = None
+                    if result:
+                        if hasattr(result, "system") and result.system:
+                            system_prompt = result.system
+                        if hasattr(result, "prompt") and result.prompt:
+                            user_prompt = result.prompt
+                    
                     # Build comprehensive observability data
                     data = {
                         "provider": provider,
-                        "model": getattr(self, "model", ""),
+                        "model": model,
                         "usage": usage,
                         "duration": duration,
                         "action_label": self.label if hasattr(self, "label") else self.__class__.__name__,
                         "estimated": usage_estimated,  # Flag to indicate estimated vs actual metrics
                     }
+                    
+                    # Add calling action label if available (the entity that called this model)
+                    if calling_action_label:
+                        data["calling_action_label"] = calling_action_label
+                    
+                    # Add system prompt (the actual prompt that was executed)
+                    if system_prompt:
+                        data["system_prompt"] = system_prompt
+                    
+                    # Add user prompt (the user's input)
+                    if user_prompt:
+                        data["user_prompt"] = user_prompt
                     
                     # For language models, try to include response if available
                     # This is a best-effort attempt - response may not be available at track_usage time

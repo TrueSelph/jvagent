@@ -35,7 +35,7 @@ class EmbeddingModelAction(BaseModelAction, ABC):
         default=0, description="Expected embedding dimensions (0 = auto-detect)", ge=0
     )
 
-    async def embed(self, text: str) -> List[float]:
+    async def embed(self, text: str, calling_action_label: Optional[str] = None) -> List[float]:
         """Generate embedding vector for text.
 
         Public API for embedding generation with metrics tracking.
@@ -43,6 +43,7 @@ class EmbeddingModelAction(BaseModelAction, ABC):
 
         Args:
             text: Text to embed
+            calling_action_label: Optional label of the action calling this method
 
         Returns:
             Embedding vector as list of floats
@@ -55,6 +56,9 @@ class EmbeddingModelAction(BaseModelAction, ABC):
 
         if not text or not text.strip():
             raise ValueError("Text cannot be empty")
+
+        # Store calling_action_label for observability
+        self._calling_action_label = calling_action_label
 
         # Start timing
         start_time = time.time()

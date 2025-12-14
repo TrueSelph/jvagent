@@ -13,12 +13,16 @@ from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
 from jvagent.action.persona.prompts import (
+    ACTION_PARAMETERS_SECTION_TEMPLATE,
     AGENT_PROMPT_TEMPLATE,
+    DIRECTIVE_GROUP_TEMPLATE,
     DIRECTIVES_INSTRUCTION,
     NO_DIRECTIVES_INSTRUCTION,
     NO_PARAMETERS_INSTRUCTION,
+    PARAMETER_CONDITION_EVALUATION_INSTRUCTION,
     PARAMETER_DIRECTIVE,
     PARAMETERS_INSTRUCTION,
+    STANDALONE_PARAMETERS_SECTION_TEMPLATE,
 )
 from jvagent.memory import Interaction
 
@@ -36,7 +40,7 @@ class PersonaAction(Action):
         prompt: Main agent prompt template (default property)
         parameters: Standard collection of configurable parameters to apply when executing the prompt
         model_action_type: Entity type of the LanguageModelAction (e.g., "OpenAILanguageModelAction")
-        model_name: Default model name
+        model: Default model name
         model_temperature: Temperature for LLM generation
         model_max_tokens: Max tokens for LLM generation
         persona_name: Agent display name (for prompt formatting)
@@ -44,32 +48,6 @@ class PersonaAction(Action):
         persona_description: Detailed agent description (for prompt formatting)
         persona_capabilities: List of agent capabilities (for prompt formatting)
     """
-
-    # Main prompt (default property)
-    prompt: str = attribute(
-        default="", description="Main agent prompt template"
-    )
-
-    # Standard collection of configurable parameters
-    parameters: List[Dict[str, Any]] = attribute(
-        default_factory=list,
-        description="Standard collection of configurable parameters to apply when executing the prompt",
-    )
-
-    # Model Configuration
-    model_action_type: str = attribute(
-        default="OpenAILanguageModelAction",
-        description="Entity type of the LanguageModelAction to use (e.g., OpenAILanguageModelAction)",
-    )
-    model_name: str = attribute(
-        default="gpt-4o", description="Default model name"
-    )
-    model_temperature: float = attribute(
-        default=0.3, description="Temperature for LLM generation"
-    )
-    model_max_tokens: int = attribute(
-        default=4096, description="Max tokens for LLM generation"
-    )
 
     # Persona attributes (for prompt formatting if using default template)
     persona_name: str = attribute(
@@ -85,10 +63,31 @@ class PersonaAction(Action):
     persona_capabilities: List[str] = attribute(
         default_factory=list, description="List of agent capabilities"
     )
-    history_limit: int = attribute(
-        default=3,
-        description="Number of previous interactions to include as conversation history (0 = disabled)",
-        ge=0
+
+    # Model Configuration
+    model_action_type: str = attribute(
+        default="OpenAILanguageModelAction",
+        description="Entity type of the LanguageModelAction to use (e.g., OpenAILanguageModelAction)",
+    )
+    model: str = attribute(
+        default="gpt-4o", description="Default model name"
+    )
+    model_temperature: float = attribute(
+        default=0.3, description="Temperature for LLM generation"
+    )
+    model_max_tokens: int = attribute(
+        default=4096, description="Max tokens for LLM generation"
+    )
+
+    # Main prompt (default property)
+    prompt: str = attribute(
+        default="", description="Main agent prompt template"
+    )
+
+    # Standard collection of configurable parameters
+    parameters: List[Dict[str, Any]] = attribute(
+        default_factory=list,
+        description="Standard collection of configurable parameters to apply when executing the prompt",
     )
 
     async def on_register(self) -> None:
@@ -121,7 +120,7 @@ class PersonaAction(Action):
                 - parameters: Applicable parameters for this interaction
             visitor: Optional InteractWalker for streaming support
             use_utterance: Whether to include the user's utterance in the prompt (default: True)
-            use_history: Whether to include conversation history (default: False)
+            use_history: Whether to include conversation history (default: True)
             history_limit: Number of past interactions to include in history (default: 3)
             with_interpretation: Include interpretations in history (default: False)
             with_event: Include events in history (default: False)
@@ -140,13 +139,35 @@ class PersonaAction(Action):
         # Record PersonaAction in interaction
         interaction.add_action("PersonaAction")
 
+        # Validate that there are directives and/or parameters to proceed
+        # Get unexecuted directives and parameters from interaction
+        applicable_directives = interaction.get_unexecuted_directives()
+        applicable_parameters = interaction.get_unexecuted_parameters()
+        
+        # Check PersonaAction's own parameters
+        persona_parameters = list(self.parameters) if self.parameters else []
+        
+        # Check if we have any directives or parameters to work with
+        has_directives = bool(applicable_directives)
+        has_interaction_parameters = bool(applicable_parameters)
+        has_persona_parameters = bool(persona_parameters)
+        
+        if not (has_directives or has_interaction_parameters or has_persona_parameters):
+            error_msg = (
+                "PersonaAction.respond: Cannot proceed - no directives or parameters found. "
+                "At least one of the following must be present: "
+                "unexecuted directives from other actions, unexecuted parameters from other actions, "
+                "or PersonaAction's own parameters."
+            )
+            logger.warning(error_msg)
+            raise ValueError(error_msg)
+
         # Compose the prompt
         system_prompt = self._compose_prompt(interaction)
 
         if use_history:
             # Get conversation history with configurable options
             # Note: with_utterance in history is controlled by with_response (if we include responses, we include utterances)
-            conversation_history: Optional[List[Dict[str, Any]]] = None
             conversation_history = await self._get_conversation_history(
                 interaction,
                 history_limit,
@@ -164,7 +185,6 @@ class PersonaAction(Action):
         else:
             utterance = " "
 
-        
         streaming = bool(
             visitor
             and getattr(visitor, "stream_mode", True)
@@ -172,69 +192,36 @@ class PersonaAction(Action):
             and getattr(visitor, "session_id", None)
         )
 
-        # Streaming callbacks to ResponseBus (if available)
-        def on_chunk(chunk: str) -> None:
-            if not streaming:
-                return
-            try:
-                asyncio.create_task(
-                    visitor.response_bus.publish_message(  # type: ignore[attr-defined]
-                        session_id=visitor.session_id,  # type: ignore[attr-defined]
-                        content=chunk,
-                        channel=getattr(visitor, "channel", "default"),
-                        message_type="stream_chunk",
-                        interaction_id=interaction.id,
-                    )
-                )
-            except Exception as exc:
-                logger.warning("PersonaAction on_chunk callback error: %s", exc, exc_info=True)
+        # Get ResponseBus from visitor
+        response_bus = None
+        if visitor:
+            response_bus = getattr(visitor, "response_bus", None)
 
-        def on_end(full_text: str) -> None:
-            if not streaming:
-                return
-            try:
-                asyncio.create_task(
-                    visitor.response_bus.publish_message(  # type: ignore[attr-defined]
-                        session_id=visitor.session_id,  # type: ignore[attr-defined]
-                        content=full_text,
-                        channel=getattr(visitor, "channel", "default"),
-                        message_type="final",
-                        interaction_id=interaction.id,
-                    )
-                )
-                interaction.set_response(full_text)
-            except Exception as exc:
-                logger.warning("PersonaAction on_end callback error: %s", exc, exc_info=True)
-
-        # Make the language model call
+        # Make the language model call using generate() directly
+        # This will automatically handle streaming or non-streaming via ResponseBus if provided
         try:
             logger.debug(f"PersonaAction.respond: conversation_history={conversation_history}")
+
+            # Always pass model explicitly to ensure PersonaAction's override takes precedence
+            # Log the model being used for debugging
+            logger.debug(
+                f"PersonaAction.respond: Using model='{self.model}' "
+                f"(model_action.model='{getattr(model_action, 'model', 'N/A')}')"
+            )
 
             response = await model_action.generate(
                 prompt=utterance,
                 stream=streaming,
                 system=system_prompt,
                 history=conversation_history,
-                model=self.model_name,
+                calling_action_label=self.get_class_name(),
+                model=self.model,  # Explicitly pass PersonaAction's model to override LanguageModelAction's default
                 temperature=self.model_temperature,
                 max_tokens=self.model_max_tokens,
-                on_stream_chunk=on_chunk if streaming else None,
-                on_stream_end=on_end if streaming else None,
+                response_bus=response_bus,  # Direct ResponseBus publishing
+                interaction=interaction,  # Interaction node (required if response_bus provided, contains session_id, channel, id)
             )
 
-            # Set response on interaction
-            if response:
-                interaction.set_response(response)
-
-            # If not streaming, optionally publish a single message to bus
-            if (not streaming) and visitor and getattr(visitor, "response_bus", None) and getattr(visitor, "session_id", None):
-                await visitor.response_bus.publish_message(  # type: ignore[attr-defined]
-                    session_id=visitor.session_id,  # type: ignore[attr-defined]
-                    content=response,
-                    channel=getattr(visitor, "channel", "default"),
-                    message_type="final",
-                    interaction_id=interaction.id,
-                )
             return response
 
         except Exception as e:
@@ -243,6 +230,9 @@ class PersonaAction(Action):
 
     def _compose_prompt(self, interaction: Interaction) -> str:
         """Compose the system prompt from the main prompt and interaction context.
+
+        Groups directives by action_label and associates each directive with parameters
+        from the same action. Extracts only essential fields to minimize token usage.
 
         Args:
             interaction: The active interaction object
@@ -260,9 +250,9 @@ class PersonaAction(Action):
             time_str = now.strftime("%I:%M %p")
 
             base_prompt = AGENT_PROMPT_TEMPLATE.format(
-            agent_name=self.persona_name,
-            agent_role=self.persona_role,
-            agent_description=self.persona_description,
+                agent_name=self.persona_name,
+                agent_role=self.persona_role,
+                agent_description=self.persona_description,
                 agent_capabilities="\n-".join(self.persona_capabilities) if self.persona_capabilities else "",
                 user=interaction.user_id or "user",
                 date=date_str,
@@ -271,52 +261,152 @@ class PersonaAction(Action):
                 directives="",  # Will be added below
             )
 
-        # Build parameters section from interaction parameters and configured parameters
-        all_parameters = list(self.parameters)  # Start with configured parameters
-
-        # Get unexecuted parameters from interaction
-        applicable_parameters = interaction.get_unexecuted_parameters()
-        all_parameters.extend(applicable_parameters)  # Add interaction parameters
-        # Mark parameters as executed
-        if applicable_parameters:
-            interaction.set_to_executed(parameters=applicable_parameters)
-
-        if all_parameters:
-            # Format parameters for prompt
-            params_str = "\n".join(
-                f"{i+1}. {self._format_parameter(p)}"
-                for i, p in enumerate(all_parameters)
-            )
-            parameters_prompt = (
-                f"{PARAMETER_DIRECTIVE}\n{params_str}\n{PARAMETERS_INSTRUCTION}"
-            )
-        else:
-            parameters_prompt = NO_PARAMETERS_INSTRUCTION
-
-        # Build directives section from interaction directives if not already executed
+        # Get unexecuted directives and parameters from interaction
         applicable_directives = interaction.get_unexecuted_directives()
-        if applicable_directives:
-            # Mark directives as executed
-            interaction.set_to_executed(directives=applicable_directives)
-            # Extract content strings for prompt formatting
-            directives_str = "\n".join(
-                f"{i+1}. {d.get('content', str(d))}" for i, d in enumerate(applicable_directives)
+        applicable_parameters = interaction.get_unexecuted_parameters()
+
+        # Separate PersonaAction's own parameters from interaction parameters
+        # PersonaAction parameters are in self.parameters (not in interaction.parameters)
+        persona_parameters = list(self.parameters)  # PersonaAction's own parameters
+        interaction_parameters = [
+            p for p in applicable_parameters
+            if p.get("action_label") != "PersonaAction"
+        ]  # Parameters from other actions
+
+        # Build PersonaAction parameters section (if any)
+        persona_params_section = ""
+        if persona_parameters:
+            persona_params_str = "\n".join(
+                f"{i+1}. {self._format_parameter(p)}"
+                for i, p in enumerate(persona_parameters)
             )
-            directives_prompt = f"{DIRECTIVES_INSTRUCTION}\n{directives_str}"
+            persona_params_section = (
+                f"{PARAMETER_DIRECTIVE}\n"
+                f"{PARAMETER_CONDITION_EVALUATION_INSTRUCTION}\n"
+                f"{persona_params_str}\n"
+                f"{PARAMETERS_INSTRUCTION}\n"
+                f"Note: These PersonaAction parameters apply to ALL directives (if any directives are provided)."
+            )
+
+        # Group directives by action_label
+        directives_by_action: Dict[str, List[Dict[str, Any]]] = {}
+        for directive in applicable_directives:
+            action_label = directive.get("action_label", "Unknown")
+            if action_label not in directives_by_action:
+                directives_by_action[action_label] = []
+            directives_by_action[action_label].append(directive)
+
+        # Group interaction parameters by action_label
+        parameters_by_action: Dict[str, List[Dict[str, Any]]] = {}
+        for param in interaction_parameters:
+            action_label = param.get("action_label", "Unknown")
+            if action_label not in parameters_by_action:
+                parameters_by_action[action_label] = []
+            parameters_by_action[action_label].append(param)
+
+        # Build directive groups section (if directives exist)
+        directives_section = ""
+        actions_with_directives = set(directives_by_action.keys())
+        
+        if applicable_directives:
+            directive_groups = []
+            for action_label, directives in directives_by_action.items():
+                # Extract only content field from directives (essential field only)
+                directive_contents = [
+                    d.get("content", str(d)) for d in directives
+                ]
+                directive_text = "\n".join(
+                    f"{i+1}. {content}" for i, content in enumerate(directive_contents)
+                )
+
+                # Get parameters from the same action
+                action_params = parameters_by_action.get(action_label, [])
+                action_params_section = ""
+                if action_params:
+                    # Extract only condition and response fields (essential fields only)
+                    params_list = "\n".join(
+                        f"{i+1}. {self._format_parameter(p)}"
+                        for i, p in enumerate(action_params)
+                    )
+                    action_params_section = ACTION_PARAMETERS_SECTION_TEMPLATE.format(
+                        action_label=action_label,
+                        parameters_list=params_list,
+                    )
+
+                # Format directive group
+                directive_group = DIRECTIVE_GROUP_TEMPLATE.format(
+                    action_label=action_label,
+                    directive_content=directive_text,
+                    action_parameters_section=action_params_section,
+                )
+                directive_groups.append(directive_group)
+
+            directives_section = (
+                f"{DIRECTIVES_INSTRUCTION}\n"
+                f"{''.join(directive_groups)}"
+            )
         else:
-            directives_prompt = NO_DIRECTIVES_INSTRUCTION
+            directives_section = NO_DIRECTIVES_INSTRUCTION
+
+        # Build standalone parameters section (parameters from actions without directives)
+        standalone_params_section = ""
+        actions_with_only_params = {
+            action_label: params
+            for action_label, params in parameters_by_action.items()
+            if action_label not in actions_with_directives
+        }
+        
+        if actions_with_only_params:
+            standalone_groups = []
+            for action_label, params in actions_with_only_params.items():
+                # Extract only condition and response fields (essential fields only)
+                params_list = "\n".join(
+                    f"{i+1}. {self._format_parameter(p)}"
+                    for i, p in enumerate(params)
+                )
+                standalone_group = STANDALONE_PARAMETERS_SECTION_TEMPLATE.format(
+                    action_label=action_label,
+                    parameters_list=params_list,
+                )
+                standalone_groups.append(standalone_group)
+
+            standalone_params_section = (
+                f"{PARAMETER_DIRECTIVE}\n"
+                f"{PARAMETER_CONDITION_EVALUATION_INSTRUCTION}\n"
+                f"{''.join(standalone_groups)}\n"
+                f"{PARAMETERS_INSTRUCTION}\n"
+                f"Note: Also follow PersonaAction parameters above (if provided)."
+            )
+
+        # Build final parameters section
+        # Combine PersonaAction parameters and standalone parameters
+        if persona_params_section and standalone_params_section:
+            parameters_section = f"{persona_params_section}\n\n{standalone_params_section}"
+        elif persona_params_section:
+            parameters_section = persona_params_section
+        elif standalone_params_section:
+            parameters_section = standalone_params_section
+        else:
+            parameters_section = NO_PARAMETERS_INSTRUCTION
+
+        # Mark interaction parameters and directives as executed (but NOT PersonaAction's own parameters)
+        if interaction_parameters:
+            interaction.set_to_executed(parameters=interaction_parameters)
+        if applicable_directives:
+            interaction.set_to_executed(directives=applicable_directives)
 
         # Compose final prompt
         final_prompt = base_prompt
         if "{parameters}" in base_prompt:
-            final_prompt = final_prompt.replace("{parameters}", parameters_prompt)
+            final_prompt = final_prompt.replace("{parameters}", parameters_section)
         else:
-            final_prompt += f"\n\n{parameters_prompt}"
+            if parameters_section != NO_PARAMETERS_INSTRUCTION:
+                final_prompt += f"\n\n{parameters_section}"
 
         if "{directives}" in base_prompt:
-            final_prompt = final_prompt.replace("{directives}", directives_prompt)
+            final_prompt = final_prompt.replace("{directives}", directives_section)
         else:
-            final_prompt += f"\n\n{directives_prompt}"
+            final_prompt += f"\n\n{directives_section}"
 
         return final_prompt
 

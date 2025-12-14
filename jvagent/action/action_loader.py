@@ -421,11 +421,16 @@ class ActionLoader:
             action_dir = info_file.parent
 
             # Determine module file name (look for Python files in the directory)
+            # Prefer base.py if it exists (common pattern), otherwise use first non-__init__.py file
             module_file = None
-            for py_file in action_dir.glob("*.py"):
-                if py_file.name != "__init__.py":
-                    module_file = py_file.stem
-                    break
+            base_file = action_dir / "base.py"
+            if base_file.exists():
+                module_file = "base"
+            else:
+                for py_file in action_dir.glob("*.py"):
+                    if py_file.name != "__init__.py":
+                        module_file = py_file.stem
+                        break
 
             # If no Python file found, use directory name as fallback
             if not module_file:
@@ -519,7 +524,15 @@ class ActionLoader:
         metadata.is_core_action = True
         # Convert relative path (with slashes) to module path (with dots)
         category_module = relative_path.replace("/", ".")
-        metadata.core_module_path = f"jvagent.action.{category_module}.{module_file}"
+        # If __init__.py exists, use package import (package exports the class)
+        # Otherwise, use specific module file import
+        init_file = action_dir / "__init__.py"
+        if init_file.exists():
+            # Use package import path (e.g., jvagent.action.persona)
+            metadata.core_module_path = f"jvagent.action.{category_module}"
+        else:
+            # Use specific module file import (e.g., jvagent.action.persona.persona_action)
+            metadata.core_module_path = f"jvagent.action.{category_module}.{module_file}"
         metadata.core_class_name = class_name
 
         logger.debug(f"Discovered core action: {namespace}/{action_name} from {action_dir}")
@@ -1029,6 +1042,30 @@ class ActionLoader:
                 for key, value in property_overrides.items():
                     # Only override public properties (not private, not metadata)
                     if not key.startswith("_") and key not in ["id", "agent_id", "namespace"]:
+                        # Validate that the property exists on the action class or any inherited base class
+                        # Check both:
+                        # 1. hasattr() - for regular class attributes and descriptors
+                        # 2. model_fields - for Pydantic fields (including @attribute decorated properties)
+                        property_exists = False
+                        
+                        # Check hasattr first (covers descriptors, @property, regular attributes)
+                        if hasattr(action_class, key):
+                            property_exists = True
+                        else:
+                            # Check model_fields for Pydantic fields (including @attribute decorated)
+                            # This is necessary because @attribute returns Field() which is stored in model_fields
+                            for cls in action_class.__mro__:
+                                if hasattr(cls, "model_fields") and key in cls.model_fields:
+                                    property_exists = True
+                                    break
+                        
+                        if not property_exists:
+                            logger.warning(
+                                f"Property '{key}' from agent.yaml context does not exist on "
+                                f"{action_class.__name__} or any of its inherited base classes. "
+                                f"Skipping override."
+                            )
+                            continue
                         action_data[key] = value
 
             # Create action instance with metadata

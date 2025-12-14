@@ -244,12 +244,14 @@ class Conversation(Node):
         self,
         utterance: str,
         channel: Optional[str] = None,
+        session_id: str = "",
     ) -> "Interaction":
         """Create a new Interaction and connect it to this Conversation.
 
         Args:
             utterance: User's input text
             channel: Optional channel override (defaults to conversation's channel)
+            session_id: Session identifier for this interaction
 
         Returns:
             Newly created and connected Interaction node
@@ -261,6 +263,7 @@ class Conversation(Node):
             user_id=self.user_id,
             utterance=utterance,
             channel=channel or self.channel,
+            session_id=session_id,
         )
         return await self.add_interaction(interaction)
 
