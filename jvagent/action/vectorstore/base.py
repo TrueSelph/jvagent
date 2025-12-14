@@ -26,16 +26,11 @@ class VectorStore(Action, ABC):
     backend implementations (e.g., Typesense, Pinecone, Weaviate).
 
     Attributes:
-        embedder_type: Type of embedder to use for generating embeddings (deprecated, use embedding_model_action_type)
         embedding_model_action_type: Entity type of EmbeddingModelAction to use (e.g., "OpenAIEmbeddingModelAction")
         default_collection: Default collection name to use if not specified
     """
 
     # Configuration
-    embedder_type: str = attribute(
-        default="sentence-transformers",
-        description="Type of embedder to use (deprecated, use embedding_model_action_type)",
-    )
     embedding_model_action_type: str = attribute(
         default="",
         description="Entity type of EmbeddingModelAction to use (e.g., 'OpenAIEmbeddingModelAction'). If empty, uses first available.",
@@ -372,7 +367,7 @@ class VectorStore(Action, ABC):
             - collections: List of available collections
             - embedder: Information about the embedder
         """
-        embedder_info = {"type": self.embedder_type}
+        embedder_info = {}
         if self.embedding_model_action_type:
             embedder_info["model_action_type"] = self.embedding_model_action_type
 

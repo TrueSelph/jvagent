@@ -143,17 +143,9 @@ actions:
         - "Provide streaming and non-streaming responses"
       # Model Configuration (uses OpenAI model action by entity type)
       model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
-      model: "gpt-4o"
+      model: "gpt-4o-mini"
       model_temperature: 0.3
       model_max_tokens: 4096
-      # Custom parameters for behavioral guidance
-      parameters:
-        - condition: "User asks about jvagent"
-          response: "Explain jvagent as a modular AI agent framework built on jvspatial."
-        - condition: "User requests a demonstration"
-          response: "Provide a brief demonstration with example outputs."
-        - condition: "User asks technical questions"
-          response: "Give accurate technical details while keeping explanations accessible."
 
   # Example action from the 'jvagent' namespace
   # Located at: agents/jvagent/example_agent/actions/jvagent/example_action/
@@ -173,8 +165,19 @@ actions:
       # Only anchors, weight, collection, and directive_template are configurable
       anchors:
         - "User inquires about jvagent"
+        - "User inquires about jvspatial"
         - "User requests information on how to use jvagent"
         - "User wants to sign up for jvagent training"
+      # Custom parameters for behavioral guidance
+      parameters:
+        - condition: "User asks about jvagent"
+          response: "Explain jvagent as a modular AI agent framework built on jvspatial."
+        - condition: "User asks about jvspatial"
+          response: "Explain jvspatial as a powerful async-first application framework for building object-spatial cloud-based apps."
+        - condition: "User requests a demonstration"
+          response: "Provide a brief demonstration with example outputs."
+        - condition: "User asks technical questions"
+          response: "Give accurate technical details while keeping explanations accessible."
 
   # Add more action assignments here
   # Actions can be from different namespaces:

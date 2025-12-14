@@ -63,19 +63,17 @@ class ExampleInteractAction(InteractAction):
 
         result = "Tell the user that they are currently interacting with an AI agent on JVAgent and can learn more about jvagent at https://jvagent.com/docs"
         if result:
-            directive = result
-            visitor.add_directive(directive)
-            await interaction.save()
-            directive_added = True
+            # Generate response via PersonaAction with directive
+            await self.respond(
+                visitor,
+                directives=[result],
+                parameters=self.parameters if self.parameters else None
+            )
             logger.debug(
-                f"ExampleInteractAction: Added directive with {result} retrieved context items"
+                f"ExampleInteractAction: Generated response with directives and parameters"
             )
         else:
-            logger.debug("ExampleInteractAction: No results found, no directive added")
-
-        # If a directive was produced, optionally invoke PersonaAction to produce a response
-        if directive_added:
-            await self.respond(visitor)
+            logger.debug("ExampleInteractAction: No result, skipping response")
 
     def _format_directive(self, results: List[Dict[str, Any]]) -> str:
         """Format retrieved results into a structured directive.

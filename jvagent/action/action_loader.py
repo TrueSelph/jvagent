@@ -281,7 +281,7 @@ class ActionLoader:
                 logger.warning(f"Error loading package from {init_file}: {e}")
                 # Fall through to try module file
 
-        # Fall back to loading module file directly (backward compatible)
+        # Fall back to loading module file directly
         if not module_file.exists():
             return None
 
@@ -767,7 +767,7 @@ class ActionLoader:
         - Core actions: Uses jvagent.action.* import paths
         - Local actions: Uses jvagent.actions.* import paths (filesystem-based)
         - A package with __init__.py (preferred, allows endpoint discovery)
-        - A single module file (backward compatible)
+        - A single module file
 
         Args:
             metadata: Action metadata containing module and class information

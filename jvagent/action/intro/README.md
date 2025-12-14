@@ -133,18 +133,23 @@ context:
 
 ### Directive Pattern
 
-The action uses the standard directive pattern:
+The action uses the simplified API to pass directives and parameters directly to `respond()`:
 
 ```python
-# Add directive to interaction
-visitor.add_directive(self.prompt)
-await interaction.save()
-
-# Generate response via PersonaAction (handles retrieval, calling, and persistence)
-await self.respond(visitor)
+# Generate response via PersonaAction with directive and parameters (simplified API)
+await self.respond(
+    visitor,
+    directives=[self.directive],
+    parameters=self.parameters if self.parameters else None
+)
 ```
 
-PersonaAction automatically incorporates all directives when generating responses.
+**Key Benefits:**
+- **Simplified API**: Pass directives and parameters directly to `respond()` instead of adding them separately
+- **Automatic Saving**: The interaction is automatically saved after adding directives/parameters
+- **Bulk Operations**: Multiple directives and parameters are added efficiently with a single save operation
+
+PersonaAction automatically incorporates all directives and parameters when generating responses.
 
 ### First-Time User Detection
 
@@ -179,8 +184,10 @@ This Python implementation replicates the functionality of the original `intro_i
 
 | Feature | Jac Version | Python Version |
 |---------|-------------|----------------|
-| First-time detection | `visitor.interaction_node.is_new_user()` | `interaction.is_new_user()` |
-| Directive | `visitor.interaction_node.add_directive()` | `interaction.add_directive()` |
+| First-time detection | `visitor.interaction_node.is_new_user()` | `visitor.new_user` or `interaction.is_new_user()` |
+| Directive | `visitor.interaction_node.add_directive()` | `await self.respond(visitor, directives=[...])` |
+| Parameters | N/A | `await self.respond(visitor, parameters=[...])` |
+| Bulk operations | N/A | `await visitor.add_directives([...])` or `await visitor.add_parameters([...])` |
 | Health check | ✅ | ✅ |
 | Configurable prompt | ✅ | ✅ |
 | Execution control | `touch()` method | Conditional in `execute()` |

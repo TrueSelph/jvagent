@@ -268,23 +268,10 @@ class InteractRouter(InteractAction):
 
         # Use custom routing prompt template if provided
         if self.routing_prompt:
-            try:
-                return self.routing_prompt.format(
-                    utterance=utterance,
-                    anchors_json=anchors_text,
-                )
-            except KeyError as e:
-                # Handle legacy placeholders that may still exist in custom templates
-                logger.warning(
-                    f"InteractRouter: Custom routing prompt contains unsupported placeholder: {e}. "
-                    f"Supported placeholders are: {{utterance}}, {{anchors_json}}. "
-                    f"Conversation history is now passed separately via history parameter."
-                )
-                # Try with all possible placeholders for backward compatibility
-                return self.routing_prompt.format(
-                    utterance=utterance,
-                    anchors_json=anchors_text,
-                )
+            return self.routing_prompt.format(
+                utterance=utterance,
+                anchors_json=anchors_text,
+            )
 
         # Default routing prompt template
         prompt = f"""## Current Utterance:

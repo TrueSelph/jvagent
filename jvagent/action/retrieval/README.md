@@ -70,7 +70,27 @@ actions:
 1. **Register a VectorStore action** (e.g., TypesenseVectorStore)
 2. **Register RetrievalInteractAction** with appropriate configuration
 3. **Ensure InteractRouter runs first** (weight: -100) to generate interpretations
-4. **PersonaAction will automatically consume** the generated directive
+4. **PersonaAction will automatically consume** the generated directive and parameters
+
+### Simplified API
+
+RetrievalInteractAction uses the simplified `respond()` API to pass directives and parameters:
+
+```python
+# Generate response via PersonaAction with directives and parameters
+if directive or self.parameters:
+    await self.respond(
+        visitor,
+        directives=[directive] if directive else None,
+        parameters=self.parameters if self.parameters else None,
+    )
+```
+
+**Benefits:**
+- **Single Method Call**: Add directives and parameters in one call
+- **Automatic Persistence**: Interaction is automatically saved
+- **Bulk Operations**: Multiple items are added efficiently with a single save
+- **Clean Code**: No need for separate `add_directive()` and `add_parameter()` calls
 
 ### Query Selection
 
@@ -153,11 +173,65 @@ actions:
         Use these FAQ entries to answer the user's question accurately.
 ```
 
+## API Reference
+
+### respond() Method
+
+The `respond()` method (inherited from `InteractAction`) supports passing directives and parameters:
+
+```python
+async def respond(
+    self,
+    visitor: "InteractWalker",
+    *,
+    use_utterance: bool = True,
+    use_history: bool = True,
+    history_limit: int = 3,
+    with_interpretation: bool = False,
+    with_event: bool = False,
+    with_response: bool = True,
+    max_statement_length: Optional[int] = None,
+    directives: Optional[List[str]] = None,  # New: Pass directives directly
+    parameters: Optional[List[Dict[str, Any]]] = None,  # New: Pass parameters directly
+) -> Optional[str]
+```
+
+**Parameters:**
+- `directives`: Optional list of directive strings to add before generating response
+- `parameters`: Optional list of parameter dictionaries (with 'condition' and 'response' keys)
+
+**Example:**
+```python
+await self.respond(
+    visitor,
+    directives=["Use the provided context to answer"],
+    parameters=[{
+        "condition": "No relevant context found",
+        "response": "Inform the user that no relevant information was found"
+    }]
+)
+```
+
+### Bulk Methods
+
+For adding multiple items efficiently:
+
+```python
+# Add multiple directives (single save operation)
+await visitor.add_directives(["Directive 1", "Directive 2"])
+
+# Add multiple parameters (single save operation)
+await visitor.add_parameters([
+    {"condition": "...", "response": "..."},
+    {"condition": "...", "response": "..."}
+])
+```
+
 ## Dependencies
 
 - **VectorStore Action**: Requires a VectorStore action to be registered (e.g., TypesenseVectorStore)
 - **InteractRouter** (optional): If InteractRouter runs first, RetrievalInteractAction will use the interpretation. Otherwise, it falls back to the utterance.
-- **PersonaAction**: Consumes the generated directive when composing prompts
+- **PersonaAction**: Consumes the generated directive and parameters when composing prompts
 
 ## Error Handling
 

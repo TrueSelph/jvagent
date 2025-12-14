@@ -157,7 +157,7 @@ POST /api/agents/{agent_id}/interact
     "actions": ["PersonaAction", "OpenAILanguageModelAction"],
     "directives": [],
     "parameters": [],
-    "model_log": [...]
+    "observability_metrics": [...]
   },
   "report": [...]
 }
