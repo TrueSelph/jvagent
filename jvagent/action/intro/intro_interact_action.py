@@ -34,7 +34,7 @@ class IntroInteractAction(InteractAction):
 
     directive: str = attribute(
         default=(
-            "In a natural and brief manner introduce yourself by name and explain your role, then efer the first-time user to read your AI policy at https://platform.trueselph.com/policy before continuing."
+            "In a natural and brief manner introduce yourself by name and explain your role, then refer the first-time user to read your AI policy at https://platform.trueselph.com/policy. No closing statement is needed."
         ),
         description="Introductory message for first-time users",
     )
@@ -79,13 +79,10 @@ class IntroInteractAction(InteractAction):
                 await self.respond(
                     visitor,
                     directives=[self.directive],
-                    parameters=self.parameters if self.parameters else None
+                    parameters=self.parameters if self.parameters else None,
+                    use_history=False,
+                    use_utterance=False
                 )
-                logger.debug(
-                    f"IntroInteractAction: Generated response with directive: {self.directive[:50]} ... and parameters: {self.parameters}"
-                )
-            else:
-                logger.debug("IntroInteractAction: No directive configured, skipping response")
 
             logger.info("IntroInteractAction: Added introductory directive for first-time user")
 

@@ -286,6 +286,8 @@ class InteractAction(Action, ABC):
             visitor.stream_mode = True
 
             # Call PersonaAction with all history configuration parameters
+            # PersonaAction.respond() sets interaction.response immediately after getting the response
+            # (including waiting for streaming to complete) to ensure subsequent ad-hoc calls can see it in history
             response = await persona.respond(
                 interaction,
                 visitor=visitor,
@@ -298,9 +300,6 @@ class InteractAction(Action, ABC):
                 max_statement_length=max_statement_length,
             )
 
-            if response and interaction:
-                interaction.set_response(response)
-                await interaction.save()
 
             return response
         except Exception as e:
