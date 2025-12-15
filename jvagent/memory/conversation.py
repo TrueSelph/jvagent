@@ -339,12 +339,7 @@ class Conversation(Node):
             # Add interpretation as system message (if present and requested)
             # Note: interpretations are not truncated
             if with_interpretation and interaction.interpretation:
-                content_parts = [f"Interpretation: {interaction.interpretation}"]
-                if interaction.anchors:
-                    content_parts.append(f"Anchors: {', '.join(interaction.anchors)}")
-                if interaction.routing_confidence is not None:
-                    content_parts.append(f"Confidence: {interaction.routing_confidence:.2f}")
-                
+                content_parts = [interaction.interpretation]
                 content = " | ".join(content_parts)
                 history.append({
                     "role": "system",
@@ -484,8 +479,6 @@ class Conversation(Node):
                     entry["interpretation"] = interaction.interpretation
                     if interaction.anchors:
                         entry["anchors"] = interaction.anchors
-                    if interaction.routing_confidence is not None:
-                        entry["routing_confidence"] = interaction.routing_confidence
                 
                 if with_event and interaction.events:
                     # Note: events are not truncated
@@ -587,7 +580,7 @@ class Conversation(Node):
         Returns:
             If formatted=True: List of dictionaries with 'role' and 'content' keys
             If formatted=False: List of dictionaries with 'interaction_id', 'started_at', 'interpretation', 
-            'anchors', and 'routing_confidence' keys
+            and 'anchors' keys
         """
         return await self.get_interaction_history(
             limit=limit,

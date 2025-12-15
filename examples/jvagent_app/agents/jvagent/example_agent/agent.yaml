@@ -104,6 +104,7 @@ actions:
         Context retrieved from knowledge base:
         {results}
         Use this context to inform your response to the user's query.
+      collection: "n.Agent.478ee040eb98491c8426c975"
 
   # OpenAI Language Model Action - LLM integration with multimodal support
   # Core action from jvagent library (jvagent/action/model/language/openai/)
@@ -116,9 +117,8 @@ actions:
       api_endpoint: "https://api.openai.com/v1"
       # Model Configuration
       model: gpt-4o-mini  # Default model for queries
-      temperature: 0.3
-      max_tokens: 2000
-      top_p: 1.0
+      temperature: 0.2
+      max_tokens: 4096
       timeout: 60
 
   # Persona Action - Core interact action for agent behavioral modeling
@@ -141,9 +141,9 @@ actions:
         - "Provide streaming and non-streaming responses"
       # Model Configuration (uses OpenAI model action by entity type)
       model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
-      model: "gpt-4o"
-      model_temperature: 0.2
-      model_max_tokens: 4096
+      model: "gpt-4.1"
+      model_temperature: 0.1
+      model_max_tokens: 8192
 
   # Example action from the 'jvagent' namespace
   # Located at: agents/jvagent/example_agent/actions/jvagent/example_action/

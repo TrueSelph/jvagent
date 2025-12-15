@@ -120,9 +120,9 @@ class PersonaAction(Action):
         self,
         interaction: Interaction,
         visitor: Optional[Any] = None,
-        use_utterance: bool = True,
         use_history: bool = True,
-        history_limit: int = 3,
+        history_limit: int = 4,
+        with_utterance: bool = True,
         with_interpretation: bool = False,
         with_event: bool = False,
         with_response: bool = True,
@@ -140,9 +140,9 @@ class PersonaAction(Action):
                 - directives: Injected directives from other actions
                 - parameters: Applicable parameters for this interaction
             visitor: Optional InteractWalker for streaming support
-            use_utterance: Whether to include the user's utterance in the prompt (default: True)
             use_history: Whether to include conversation history (default: True)
             history_limit: Number of past interactions to include in history (default: 3)
+            with_utterance: Whether to include the user's utterance in the prompt (default: True)
             with_interpretation: Include interpretations in history (default: False)
             with_event: Include events in history (default: False)
             with_response: Include AI responses in history (default: True)
@@ -202,12 +202,14 @@ class PersonaAction(Action):
                 with_event=with_event,
                 max_statement_length=max_statement_length,
             )
-
-        if use_utterance:
-            utterance = interaction.utterance
-        else:
-            utterance = " "
-
+            
+            # for reply coherence
+            if with_interpretation and not with_response and interaction.response:
+                conversation_history.append({
+                    "role": "assistant",
+                    "content": interaction.response,
+                })
+                
         streaming = bool(
             visitor
             and getattr(visitor, "stream_mode", True)
@@ -218,10 +220,13 @@ class PersonaAction(Action):
         # Get ResponseBus from visitor
         response_bus = getattr(visitor, "response_bus", None) if visitor else None
 
+        # Determine prompt based on with_utterance flag
+        prompt = interaction.utterance if with_utterance else ""
+
         # Make the language model call
         try:
             response = await model_action.generate(
-                prompt=utterance,
+                prompt=prompt,
                 stream=streaming,
                 system=system_prompt,
                 history=conversation_history,
@@ -269,10 +274,7 @@ class PersonaAction(Action):
         - Directives (conditionally included)
         - Parameters (conditionally included)
         - General Principles (always included)
-        - Response Quality (conditionally included)
         - Channel Formatting (conditionally included)
-        - Repetition Avoidance (conditionally included)
-        - Final Reminder (conditionally included)
 
         Args:
             interaction: The active interaction object
@@ -282,13 +284,6 @@ class PersonaAction(Action):
         Returns:
             Composed system prompt string
         """
-        # Use custom prompt if provided (legacy support)
-        # Check if prompt uses legacy format (has {directives} and {parameters} instead of {directives_section} etc.)
-        # If it's a legacy format, use legacy method; otherwise use consolidated approach with self.system_prompt
-        if self.system_prompt and "{directives}" in self.system_prompt and "{parameters}" in self.system_prompt:
-            # Legacy format detected - use legacy method
-            return self._compose_prompt_legacy(interaction)
-
         # Prepare date/time context
         now = datetime.now()
         date_str = now.strftime("%A, %d %B, %Y")
@@ -384,44 +379,17 @@ class PersonaAction(Action):
         else:
             parameters_section = ""
 
-        # Build response quality section (embedded in system_prompt)
-        response_quality_section = f"""### RESPONSE QUALITY REQUIREMENTS
-
-Before finalizing, verify:
-1. ✓ All directives addressed (and ONLY directives - no extra content)
-2. ✓ Applicable parameters followed
-3. ✓ No repetition
-4. ✓ Appropriate tone and format for {interaction.channel or "default"}
-5. ✓ Concise yet complete (target: appropriate length)"""
-
         # Build channel formatting section
         channel_formatting_section = ""
         channel_directive = get_channel_directive(interaction.channel or "default")
         if channel_directive:
             channel_formatting_section = f"### CHANNEL FORMATTING\n{channel_directive}"
 
-        # Build repetition avoidance section
-        repetition_avoidance_section = ""
-        if interaction.response:
-            repetition_avoidance_section = """### AVOID REPETITION
-
-You have already responded in this interaction. If the directives have been addressed, you may skip responding or provide a brief acknowledgment. Only respond if there are NEW unexecuted directives that require a response."""
-
-        # Build final reminder section
-        final_reminder_section = ""
-        if applicable_directives and not interaction.response:
-            final_reminder_section = """### FINAL CHECK
-
-Address ONLY the directives and parameters above. Ensure all directives are fully addressed, guided by the parameters."""
-
         # Format all conditional sections
         directives_section = format_conditional_section(directives_section, bool(directives_section))
         parameters_section = format_conditional_section(parameters_section, bool(parameters_section))
-        response_quality_section = format_conditional_section(response_quality_section, bool(response_quality_section))
         channel_formatting_section = format_conditional_section(channel_formatting_section, bool(channel_formatting_section))
-        repetition_avoidance_section = format_conditional_section(repetition_avoidance_section, bool(repetition_avoidance_section))
-        final_reminder_section = format_conditional_section(final_reminder_section, bool(final_reminder_section))
-
+        
         # Build and return the final prompt using self.system_prompt (which defaults to SYSTEM_PROMPT_TEMPLATE
         # but can be overridden by agent-specific configurations)
         # Fall back to SYSTEM_PROMPT_TEMPLATE if self.system_prompt is empty (shouldn't happen with default)
@@ -436,70 +404,8 @@ Address ONLY the directives and parameters above. Ensure all directives are full
             time=time_str,
             directives_section=directives_section,
             parameters_section=parameters_section,
-            response_quality_section=response_quality_section,
             channel_formatting_section=channel_formatting_section,
-            repetition_avoidance_section=repetition_avoidance_section,
-            final_reminder_section=final_reminder_section,
         )
-
-    def _compose_prompt_legacy(self, interaction: Interaction) -> str:
-        """Legacy prompt composition for custom prompts (backward compatibility).
-
-        Args:
-            interaction: The active interaction object
-
-        Returns:
-            Composed system prompt string
-        """
-        # Use the custom prompt template
-        now = datetime.now()
-        date_str = now.strftime("%A, %d %B, %Y")
-        time_str = now.strftime("%I:%M %p")
-
-        base_prompt = self.system_prompt.format(
-            agent_name=self.persona_name,
-            agent_role=self.persona_role,
-            agent_description=self.persona_description,
-            agent_capabilities="\n-".join(self.persona_capabilities) if self.persona_capabilities else "",
-            user=interaction.user_id or "user",
-            date=date_str,
-            time=time_str,
-            parameters="",  # Will be added below
-            directives="",  # Will be added below
-        )
-
-        # Get directives and parameters
-        applicable_directives = interaction.get_unexecuted_directives()
-        applicable_parameters = interaction.get_unexecuted_parameters()
-
-        persona_parameters = list(self.parameters)
-        interaction_parameters = [
-            p for p in applicable_parameters
-            if p.get("action_name") != "PersonaAction"
-        ]
-
-        # Build sections
-        directives_section = NO_DIRECTIVES_SUB_PROMPT
-        if applicable_directives:
-            directive_texts = [d.get("content", "") for d in applicable_directives]
-            directives_section = "\n".join(f"{i+1}. {text}" for i, text in enumerate(directive_texts))
-
-        parameters_section = ""
-        if persona_parameters or interaction_parameters:
-            all_params = persona_parameters + interaction_parameters
-            params_text = "\n".join(
-                f"{i+1}. {format_parameter(p)}" for i, p in enumerate(all_params)
-            )
-            parameters_section = params_text
-
-        # Replace placeholders
-        final_prompt = base_prompt
-        if "{parameters}" in base_prompt:
-            final_prompt = final_prompt.replace("{parameters}", parameters_section)
-        if "{directives}" in base_prompt:
-            final_prompt = final_prompt.replace("{directives}", directives_section)
-
-        return final_prompt
 
     async def _get_conversation_history(
         self,

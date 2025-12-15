@@ -116,7 +116,6 @@ class InteractRouter(InteractAction):
                 # Store empty routing result
                 interaction.interpretation = f"User said: {interaction.utterance[:50]}"
                 interaction.anchors = []
-                interaction.routing_confidence = 0.0
                 await interaction.save()
                 return
 
@@ -165,23 +164,26 @@ class InteractRouter(InteractAction):
                 routed_actions = routing_data.get("actions", [])
                 all_allowed = list(set(routed_actions + self.exceptions))
                 interaction.anchors = all_allowed
-                interaction.routing_confidence = routing_data.get("confidence")
+                
+                # Create event entry for successful routing
+                if all_allowed:
+                    anchors_str = ", ".join(all_allowed)
+                    event_message = f"System routed to: {anchors_str}"
+                    await visitor.add_event(event_message)
+                
+                await interaction.save()
+                
+                logger.info(
+                    f"InteractRouter: Routed to {len(routed_actions)} actions "
+                    f"(+ {len(self.exceptions)} exceptions, total: {len(all_allowed)})"
+                )
             else:
                 # Even if parsing fails, set interpretation to indicate router executed
                 # This ensures the walker knows routing was attempted
                 interaction.interpretation = f"User said: {interaction.utterance[:50]}"
                 interaction.anchors = self.exceptions.copy()  # Only exceptions if no routing data
-                interaction.routing_confidence = 0.0
-
-            await interaction.save()
-
-            if routing_data:
-                logger.info(
-                    f"InteractRouter: Routed to {len(routed_actions)} actions "
-                    f"(+ {len(self.exceptions)} exceptions, total: {len(all_allowed)}) "
-                    f"(confidence: {interaction.routing_confidence})"
-                )
-            else:
+                await interaction.save()
+                
                 logger.warning(
                     f"InteractRouter: Failed to parse routing response, "
                     f"only exceptions will execute: {self.exceptions}"
@@ -312,23 +314,16 @@ class InteractRouter(InteractAction):
 
             interpretation = data.get("interpretation", "")
             actions = data.get("actions", [])
-            confidence = data.get("confidence", 0.0)
 
             # Validate types
             if not isinstance(interpretation, str):
                 return None
             if not isinstance(actions, list):
                 return None
-            if not isinstance(confidence, (int, float)):
-                return None
-
-            # Clamp confidence to 0.0-1.0
-            confidence = max(0.0, min(1.0, float(confidence)))
 
             return {
                 "interpretation": interpretation.strip(),
                 "actions": [str(a) for a in actions if a],  # Filter empty strings
-                "confidence": confidence,
             }
 
         except json.JSONDecodeError as e:

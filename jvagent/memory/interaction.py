@@ -65,10 +65,6 @@ class Interaction(Node):
         default_factory=list,
         description="Matched entity names from anchor matching"
     )
-    routing_confidence: Optional[float] = attribute(
-        default=None,
-        description="Confidence score for routing match (0.0-1.0)"
-    )
 
     # Processing tracking
     actions: List[str] = attribute(
@@ -336,7 +332,6 @@ class Interaction(Node):
             "observability_metrics": self.observability_metrics,
             "interpretation": self.interpretation,
             "anchors": self.anchors,
-            "routing_confidence": self.routing_confidence,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "closed": self.closed,
