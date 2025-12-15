@@ -43,8 +43,7 @@ The following anchors represent capabilities of different InteractActions. Each 
 3. Return your analysis in JSON format:
 {{
     "interpretation": "Your concise interpretation here",
-    "actions": ["action_name1", "action_name2"],
-    "confidence": 0.85
+    "actions": ["action_name1", "action_name2"]
 }}
 
 Return ONLY valid JSON, no additional text."""

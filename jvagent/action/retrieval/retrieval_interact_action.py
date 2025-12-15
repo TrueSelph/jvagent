@@ -134,6 +134,8 @@ class RetrievalInteractAction(InteractAction):
                     visitor,
                     directives=[directive] if directive else None,
                     parameters=self.parameters if self.parameters else None,
+                    with_response=False,
+                    with_interpretation=True
                 )
 
         except Exception as e:

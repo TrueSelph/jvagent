@@ -34,7 +34,7 @@ class IntroInteractAction(InteractAction):
 
     directive: str = attribute(
         default=(
-            "In a natural and brief manner introduce yourself by name and explain your role, then refer the first-time user to read your AI policy at https://platform.trueselph.com/policy. No closing statement is needed."
+            "Introduce yourself by name and explain your role, then refer the first-time user to read your AI policy at https://platform.trueselph.com/policy. Do not say anything else."
         ),
         description="Introductory message for first-time users",
     )
@@ -81,7 +81,7 @@ class IntroInteractAction(InteractAction):
                     directives=[self.directive],
                     parameters=self.parameters if self.parameters else None,
                     use_history=False,
-                    use_utterance=False
+                    with_utterance=False
                 )
 
             logger.info("IntroInteractAction: Added introductory directive for first-time user")

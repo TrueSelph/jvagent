@@ -196,9 +196,9 @@ class InteractAction(Action, ABC):
         parameters: Optional[List[Dict[str, Any]]] = None,
         *, 
         # Defaults match PersonaAction.respond() defaults
-        use_utterance: bool = True,
         use_history: bool = True,
         history_limit: int = 3,
+        with_utterance: bool = True,
         with_interpretation: bool = False,
         with_event: bool = False,
         with_response: bool = True,
@@ -212,9 +212,9 @@ class InteractAction(Action, ABC):
 
         Args:
             visitor: The InteractWalker (required, provides interaction and response_bus)
-            use_utterance: Include user utterance in prompt (default: True)
-            use_history: Include conversation history (default: False)
+            use_history: Include conversation history (default: True)
             history_limit: Number of past interactions to include (default: 3)
+            with_utterance: Include user utterance in prompt (default: True)
             with_interpretation: Include interpretations in history (default: False)
             with_event: Include events in history (default: False)
             with_response: Include AI responses in history (default: True)
@@ -291,9 +291,9 @@ class InteractAction(Action, ABC):
             response = await persona.respond(
                 interaction,
                 visitor=visitor,
-                use_utterance=use_utterance,
                 use_history=use_history,
                 history_limit=history_limit,
+                with_utterance=with_utterance,
                 with_interpretation=with_interpretation,
                 with_event=with_event,
                 with_response=with_response,
