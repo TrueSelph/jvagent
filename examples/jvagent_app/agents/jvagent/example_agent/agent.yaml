@@ -45,6 +45,7 @@ actions:
       # Optional: List of InteractAction entity names that must always execute
       exceptions:
         - "IntroInteractAction"
+        - "ConverseInteractAction"
 
   # OpenAI Embedding Model Action - Vector embeddings for semantic search
   # Core action from jvagent library (jvagent/action/model/embedding/openai/)
@@ -176,6 +177,26 @@ actions:
           response: "Provide a brief demonstration with example outputs."
         - condition: "User asks technical questions"
           response: "Give accurate technical details while keeping explanations accessible."
+
+  - action: jvagent/converse_interact_action
+    context:
+      enabled: true
+      description: "Fallback action for smalltalk and casual conversation"
+      weight: 100  # Runs last as a safety net
+      directive: |
+        Offer a simple, friendly response to smalltalk and casual conversation. 
+        NEVER attempt to answer knowledge-based questions without having certainty 
+        about the context. If the conversation does not warrant a reply or you 
+        lack sufficient information, politely opt out rather than guessing.
+      parameters:
+        - condition: "User asks a knowledge-based or factual question"
+          response: "Politely decline to answer, explaining that you don't have sufficient context or certainty to provide an accurate answer. Suggest they check official sources or provide more specific context."
+        - condition: "User engages in smalltalk, greetings, or casual conversation"
+          response: "Respond naturally and conversationally, keeping it brief and friendly."
+        - condition: "The conversation does not warrant a substantive reply"
+          response: "Politely acknowledge the message but indicate that no specific response is needed, or ask how you can help."
+        - condition: "User asks about something outside your knowledge or role"
+          response: "Politely explain that this falls outside your area of knowledge or role, and suggest alternative ways they might find the information they need."
 
   # Add more action assignments here
   # Actions can be from different namespaces:

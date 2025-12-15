@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from jvagent.action.model.base import logger
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute, compound_index
 
@@ -137,16 +138,28 @@ class Interaction(Node):
             entry = {"action_name": action_name, "content": event}
             self.events.append(entry)  # Events can have duplicates (logs)
 
-    def add_action(self, action_name: str) -> None:
-        """Add an action to the processing record.
+    def record_action_execution(self, action_name: str) -> None:
+        """Record an action execution in the processing log.
 
         Actions are recorded in order of execution.
 
         Args:
-            action_name: Class name (camelCase) of the action to add
+            action_name: Class name (camelCase) of the action to record
         """
         if action_name and action_name not in self.actions:
             self.actions.append(action_name)
+
+    def unrecord_action_execution(self, action_name: str) -> None:
+        """Remove an action execution from the processing log.
+
+        This safely removes the first matching action name if present.
+
+        Args:
+            action_name: Class name (camelCase) of the action to unrecord
+        """
+        if action_name in self.actions:
+            self.actions.remove(action_name)
+            logger.warning(f"Interaction.unrecord_action_execution: Unrecorded action {action_name}")
 
     def add_parameter(self, parameter: Dict[str, Any], action_name: str) -> None:
         """Add a parameter to the applicable parameters list.
