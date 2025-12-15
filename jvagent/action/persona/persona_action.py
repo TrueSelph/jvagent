@@ -157,8 +157,8 @@ class PersonaAction(Action):
         # Get model action (required=True raises error if not found)
         model_action = await self.get_model_action(required=True)
 
-        # Record PersonaAction in interaction
-        interaction.add_action("PersonaAction")
+        # Record PersonaAction execution in interaction
+        interaction.record_action_execution("PersonaAction")
 
         # Get unexecuted directives and parameters
         applicable_directives = interaction.get_unexecuted_directives()

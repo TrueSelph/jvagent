@@ -31,6 +31,7 @@ class InteractWalker(Walker):
     - Traverses from Agent -> Actions -> InteractActions
     - Executes top-level InteractActions in weight order (from Actions node)
     - Traverses sub-actions in graph-based arrangement (weight not considered)
+    - Provides helper methods to record and remove executed actions on the active interaction
 
     Usage:
         The walker should be spawned directly on the Agent node:
@@ -60,6 +61,82 @@ class InteractWalker(Walker):
     stream_mode: bool = False
     response_bus: Optional[Any] = None
     _current_action: Optional["InteractAction"] = None  # Track current executing action for convenience methods
+    _skip_current_action_record: bool = False  # Allow actions to opt-out of being recorded as executed
+
+    async def record_action_execution(self, action_name: Optional[str] = None) -> Optional[str]:
+        """Record an executed action on the active interaction.
+
+        If called from within an InteractAction execution and no action_name is
+        provided, the current action's class name is inferred automatically.
+
+        Args:
+            action_name: Optional explicit action class name to record.
+
+        Returns:
+            The action name recorded, or None if no interaction or action was available.
+        """
+        if not self.interaction:
+            return None
+
+        name = action_name
+        if not name and self._current_action:
+            try:
+                name = self._current_action.get_class_name()
+            except Exception:
+                name = None
+
+        if not name:
+            return None
+
+        self.interaction.record_action_execution(name)
+        await self.interaction.save()
+        return name
+
+    async def unrecord_action_execution(self, action_name: Optional[str] = None) -> Optional[str]:
+        """Remove or prevent recording of a previously/currently executed action.
+
+        If called from within an InteractAction execution and no action_name is
+        provided, the current action's class name is inferred automatically.
+
+        Behavior:
+        - If the action has already been recorded on the interaction, it is removed.
+        - If the action has not yet been recorded for the current execution, it
+          marks the current action so it will NOT be recorded after execute().
+
+        Args:
+            action_name: Optional explicit action class name to remove.
+
+        Returns:
+            The action name removed or skipped, or None if no interaction or action was available.
+        """
+        if not self.interaction:
+            return None
+
+        name = action_name
+        if not name and self._current_action:
+            try:
+                name = self._current_action.get_class_name()
+            except Exception:
+                name = None
+
+        if not name:
+            return None
+
+        # If this refers to the currently executing action, mark it so it won't be recorded
+        if self._current_action:
+            try:
+                current_name = self._current_action.get_class_name()
+            except Exception:
+                current_name = None
+            if current_name and current_name == name:
+                self._skip_current_action_record = True
+
+        # If it was already recorded, remove it from the interaction history
+        if name in self.interaction.actions:
+            self.interaction.unrecord_action_execution(name)
+            await self.interaction.save()
+
+        return name
 
     @on_visit("Agent")
     async def on_agent(self, here: "Agent") -> None:
@@ -275,20 +352,18 @@ class InteractWalker(Walker):
                 return
 
         try:
-            # Store current action for convenience methods
+            # Store current action for convenience methods and reset skip flag
             self._current_action = here
-            
+            self._skip_current_action_record = False
+
             # Execute the action
             # Note: 'here' is the node (self from node's perspective), 'self' is the walker (visitor)
             await here.execute(self)
 
             # Log action execution to interaction's actions list (using class name for consistency)
             # This ensures all executed actions are recorded, even if individual actions don't log themselves
-            if self.interaction:
-                action_class_name = here.get_class_name()
-                self.interaction.add_action(action_class_name)
-                # Save interaction to persist the action list
-                await self.interaction.save()
+            if self.interaction and not self._skip_current_action_record:
+                await self.record_action_execution()
 
             await self.report(
                 {
@@ -340,8 +415,9 @@ class InteractWalker(Walker):
             )
             # Continue to next action (don't raise, let walker continue)
         finally:
-            # Always clear current action after execution
+            # Always clear current action and skip flag after execution
             self._current_action = None
+            self._skip_current_action_record = False
 
     async def _filter_by_routing(
         self, actions: List["InteractAction"]

@@ -61,17 +61,20 @@ class IntroInteractAction(InteractAction):
         interaction = visitor.interaction
         if not interaction:
             logger.warning("IntroInteractAction: No interaction available")
+            await visitor.unrecord_action_execution()
             return
 
         try:
             # Check if this is a new user (first interaction)
             if not visitor.new_user:
                 logger.debug("IntroInteractAction: Not a first-time user, skipping intro")
+                await visitor.unrecord_action_execution()
                 return
 
             # Validate prompt is configured
             if not self.directive:
                 logger.warning("IntroInteractAction: Directive not configured, skipping intro")
+                await visitor.unrecord_action_execution()
                 return
 
             # Generate response via PersonaAction with directive
@@ -88,6 +91,7 @@ class IntroInteractAction(InteractAction):
 
         except Exception as e:
             logger.error(f"IntroInteractAction: Error during execution: {e}", exc_info=True)
+            await visitor.unrecord_action_execution()
             # Don't raise - allow other actions to continue
 
     async def healthcheck(self) -> bool | dict:
