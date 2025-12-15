@@ -13,24 +13,23 @@ The `IntroInteractAction` detects first-time users and adds an introductory dire
 - **Customizable Prompt**: Configurable introduction message via agent.yaml
 - **One-Time Execution**: Only runs on the first interaction, subsequent interactions skip it
 - **Health Check**: Validates configuration on startup
+ - **Routing Exception**: Marked with `always_execute=True` so InteractRouter always allows it to execute (it is treated as a routing exception).
 
 ## Installation
 
 ### 1. Add to agent.yaml
 
-Add the IntroInteractAction to your agent's configuration:
+Add the IntroInteractAction to your agent's configuration (core action form):
 
 ```yaml
 actions:
-  - package_name: actions.jvagent.intro_interact_action.IntroInteractAction
-    label: intro_interact_action
+  - action: jvagent/intro_interact_action
     context:
       enabled: true
-      weight: -50  # Runs before PersonaAction
-      prompt: |
-        In a natural and brief manner:
-        a. Introduce yourself by name and explain your role
-        b. Refer the first-time user to read your AI policy at https://platform.trueselph.com/policy before continuing. It contains our privacy policy.
+      description: "Introductory interact action for first-time users"
+      # Weight is defined in the action (default: -75)
+      # The action is marked always_execute=True so InteractRouter treats it
+      # as a routing exception and always allows it to run when applicable.
 ```
 
 ### 2. Restart jvagent
@@ -44,11 +43,12 @@ jvagent run
 
 ### Attributes
 
-| Attribute | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `prompt` | str | Default intro message | Introductory message for first-time users |
-| `weight` | int | -50 | Execution order (lower = earlier) |
-| `anchors` | list | [] | Routing anchors (empty for conditional execution) |
+| Attribute        | Type | Default | Description |
+|------------------|------|---------|-------------|
+| `directive`      | str  | Default intro message | Introductory message for first-time users |
+| `weight`         | int  | -75     | Execution order (lower = earlier) |
+| `anchors`        | list | []      | Routing anchors (empty for conditional execution) |
+| `always_execute` | bool | True    | If true, InteractRouter always allows this action to execute (routing exception) |
 
 ### Execution Order
 

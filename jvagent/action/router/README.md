@@ -66,6 +66,7 @@ After InteractRouter stores routing information, other InteractActions can:
 - `model_action_type`: Type of LanguageModelAction to use (e.g., "OpenAILanguageModelAction"). If empty, uses first available LanguageModelAction.
 - `history_limit`: Number of previous interactions to include in conversation history (default: 10)
 - `weight`: Execution weight (default: -100 to run first)
+- `exceptions`: Optional list of InteractAction entity names (class names) that must always execute, regardless of routing. Most routing‑exception use cases can also be handled via the `always_execute` flag on InteractAction (see below).
 
 ### Example Configuration
 
@@ -76,6 +77,9 @@ actions:
       enabled: true
       model_action_type: "OpenAILanguageModelAction"
       history_limit: 15
+      # Optional static exceptions (dynamic ones come from always_execute=True)
+      # exceptions:
+      #   - "SomeInteractAction"
 ```
 
 ## Usage
@@ -131,6 +135,52 @@ async def execute(self, visitor):
     # Process with confidence awareness
     if interaction.routing_confidence and interaction.routing_confidence < 0.5:
         logger.warning("Low routing confidence, may need fallback")
+
+## Routing Exceptions
+
+In addition to LLM‑based routing, InteractRouter supports **routing exceptions**:
+actions that must always be allowed to execute, regardless of whether the LLM
+selected them.
+
+There are two complementary mechanisms:
+
+1. **Static exceptions via configuration**
+   ```yaml
+   - action: jvagent/interact_router
+     context:
+       exceptions:
+         - "SomeInteractAction"
+   ```
+   These class names are always included in `interaction.anchors`.
+
+2. **Dynamic exceptions via `always_execute` flag on InteractAction**
+   ```python
+   from jvagent.action.interact.base import InteractAction
+   from jvspatial.core.annotations import attribute
+
+   class MyInteractAction(InteractAction):
+       always_execute: bool = attribute(
+           default=True,
+           description="Always execute regardless of routing.",
+       )
+   ```
+
+   At runtime, InteractRouter:
+   - Collects all enabled `InteractAction` instances.
+   - Builds a list of dynamic exceptions from those with `always_execute=True`.
+   - Merges that list with static `exceptions` from context.
+   - Stores the combined set in `interaction.anchors`.
+
+Because `InteractWalker` uses `interaction.anchors` to decide which actions to
+skip, any action with `always_execute=True` is treated as a routing exception
+and will not be skipped, even if the router did not explicitly route to it.
+
+Examples:
+
+- `IntroInteractAction` is marked `always_execute=True` so first‑time user
+  intros can always run when applicable.
+- `ConverseInteractAction` is marked `always_execute=True` so it can act as a
+  last‑resort smalltalk fallback when no other action has produced a response.
 ```
 
 ## Prompt Engineering

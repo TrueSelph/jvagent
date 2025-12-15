@@ -115,7 +115,23 @@ class InteractRouter(InteractAction):
                 logger.warning("InteractRouter: No anchors available for routing")
                 # Store empty routing result
                 interaction.interpretation = f"User said: {interaction.utterance[:50]}"
-                interaction.anchors = []
+                # Even with no anchors, always include configured and dynamic exceptions
+                from jvagent.action.interact.base import InteractAction
+
+                actions_manager = await agent.get_actions_manager()
+                dynamic_exceptions: List[str] = []
+                if actions_manager:
+                    all_interact_actions = await actions_manager.get_actions(
+                        enabled_only=True, entity=InteractAction
+                    )
+                    dynamic_exceptions = [
+                        a.get_class_name()
+                        for a in all_interact_actions
+                        if getattr(a, "always_execute", False)
+                    ]
+
+                combined_exceptions = list(set(self.exceptions + dynamic_exceptions))
+                interaction.anchors = combined_exceptions
                 await interaction.save()
                 return
 
@@ -162,7 +178,23 @@ class InteractRouter(InteractAction):
                 interaction.interpretation = routing_data.get("interpretation", "")
                 # Combine routed actions with exceptions (exceptions always included)
                 routed_actions = routing_data.get("actions", [])
-                all_allowed = list(set(routed_actions + self.exceptions))
+                # Compute dynamic exceptions from InteractActions that always_execute
+                from jvagent.action.interact.base import InteractAction
+
+                actions_manager = await agent.get_actions_manager()
+                dynamic_exceptions: List[str] = []
+                if actions_manager:
+                    all_interact_actions = await actions_manager.get_actions(
+                        enabled_only=True, entity=InteractAction
+                    )
+                    dynamic_exceptions = [
+                        a.get_class_name()
+                        for a in all_interact_actions
+                        if getattr(a, "always_execute", False)
+                    ]
+
+                combined_exceptions = list(set(self.exceptions + dynamic_exceptions))
+                all_allowed = list(set(routed_actions + combined_exceptions))
                 interaction.anchors = all_allowed
                 
                 # Create event entry for successful routing
@@ -172,21 +204,37 @@ class InteractRouter(InteractAction):
                     await visitor.add_event(event_message)
                 
                 await interaction.save()
-                
+
                 logger.info(
                     f"InteractRouter: Routed to {len(routed_actions)} actions "
-                    f"(+ {len(self.exceptions)} exceptions, total: {len(all_allowed)})"
+                    f"(+ {len(combined_exceptions)} exceptions, total: {len(all_allowed)})"
                 )
             else:
                 # Even if parsing fails, set interpretation to indicate router executed
                 # This ensures the walker knows routing was attempted
                 interaction.interpretation = f"User said: {interaction.utterance[:50]}"
-                interaction.anchors = self.exceptions.copy()  # Only exceptions if no routing data
+                # Compute dynamic exceptions even if parsing fails
+                from jvagent.action.interact.base import InteractAction
+
+                actions_manager = await agent.get_actions_manager()
+                dynamic_exceptions: List[str] = []
+                if actions_manager:
+                    all_interact_actions = await actions_manager.get_actions(
+                        enabled_only=True, entity=InteractAction
+                    )
+                    dynamic_exceptions = [
+                        a.get_class_name()
+                        for a in all_interact_actions
+                        if getattr(a, "always_execute", False)
+                    ]
+
+                combined_exceptions = list(set(self.exceptions + dynamic_exceptions))
+                interaction.anchors = combined_exceptions  # Only exceptions if no routing data
                 await interaction.save()
                 
                 logger.warning(
                     f"InteractRouter: Failed to parse routing response, "
-                    f"only exceptions will execute: {self.exceptions}"
+                    f"only exceptions will execute: {combined_exceptions}"
                 )
 
         except Exception as e:
