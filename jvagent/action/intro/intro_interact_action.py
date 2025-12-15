@@ -49,6 +49,11 @@ class IntroInteractAction(InteractAction):
         description="Execution weight (runs after InteractRouter but before PersonaAction)",
     )
 
+    always_execute: bool = attribute(
+        default=True,
+        description="Always execute regardless of routing (first-time user intro handler).",
+    )
+
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute intro action if user is first-time.
 

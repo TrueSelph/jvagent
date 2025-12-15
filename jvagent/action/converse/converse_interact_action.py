@@ -59,6 +59,11 @@ class ConverseInteractAction(InteractAction):
         description="Execution weight (runs after other InteractActions as a fallback)",
     )
 
+    always_execute: bool = attribute(
+        default=True,
+        description="Always execute as a last-resort smalltalk fallback regardless of routing.",
+    )
+
     # Default behavioral parameters to enforce / offset the directive
     parameters: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [

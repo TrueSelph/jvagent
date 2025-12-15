@@ -65,6 +65,17 @@ class InteractAction(Action, ABC):
         description="Action description"
     )
 
+    # Routing behavior hint: if True, this InteractAction should always be
+    # allowed to execute regardless of routing results. InteractRouter will
+    # treat such actions as dynamic routing exceptions.
+    always_execute: bool = attribute(
+        default=False,
+        description=(
+            "If True, this InteractAction must always be allowed to execute "
+            "regardless of routing results (treated as a routing exception)."
+        ),
+    )
+
     # Anchors for routing (published by InteractRouter)
     anchors: List[str] = attribute(
         default_factory=list,

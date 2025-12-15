@@ -242,3 +242,28 @@ await self.respond(visitor, parameters=[self.parameters])  # ❌ Creates nested 
 - [InteractWalker](../interact/interact_walker.py)
 - [IntroInteractAction README](../intro/README.md)
 - [RetrievalInteractAction README](../retrieval/README.md)
+
+## Routing Hints and Exceptions
+
+InteractActions participate in routing via **anchors** and an optional
+**always_execute** flag:
+
+- `anchors: List[str]`  
+  Describe when the action should be used. `InteractRouter` collects these and
+  uses them in its LLM prompt.
+
+- `always_execute: bool`  
+  If `True`, the action is treated as a **routing exception** and is always
+  allowed to execute, even if it is not explicitly selected by routing.  
+  `InteractRouter` will automatically include the class name of such actions in
+  `interaction.anchors`, so `InteractWalker` will not skip them.
+
+Examples:
+
+- `IntroInteractAction` sets `always_execute=True` to ensure first‑time user
+  handling can run regardless of routing.
+- `ConverseInteractAction` sets `always_execute=True` so it can act as a
+  last‑resort smalltalk fallback when no other action has produced a response.
+
+See the [InteractRouter README](../router/README.md) for details on how
+dynamic routing exceptions are computed.
