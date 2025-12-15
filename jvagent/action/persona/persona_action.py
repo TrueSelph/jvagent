@@ -12,6 +12,7 @@ from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
 from jvagent.action.persona.prompts import (
+    CONTINUATION_GUIDANCE_PROMPT,
     DIRECTIVES_SUB_PROMPT,
     NO_DIRECTIVES_SUB_PROMPT,
     PARAMETERS_SUB_PROMPT,
@@ -169,7 +170,7 @@ class PersonaAction(Action):
             p for p in applicable_parameters
             if p.get("action_name") != "PersonaAction"
         ]
-        
+
         # Check for existing response to avoid repetition (multi-call awareness)
         if interaction.response:
             if not applicable_directives and not applicable_parameters and not persona_parameters:
@@ -196,20 +197,20 @@ class PersonaAction(Action):
             conversation_history = await self._get_conversation_history(
                 interaction,
                 history_limit,
-                with_utterance=with_response,
+                with_utterance=with_utterance,
                 with_response=with_response,
                 with_interpretation=with_interpretation,
                 with_event=with_event,
                 max_statement_length=max_statement_length,
             )
-            
+
             # for reply coherence
             if with_interpretation and not with_response and interaction.response:
                 conversation_history.append({
                     "role": "assistant",
                     "content": interaction.response,
                 })
-                
+
         streaming = bool(
             visitor
             and getattr(visitor, "stream_mode", True)
@@ -220,8 +221,13 @@ class PersonaAction(Action):
         # Get ResponseBus from visitor
         response_bus = getattr(visitor, "response_bus", None) if visitor else None
 
-        # Determine prompt based on with_utterance flag
-        prompt = interaction.utterance if with_utterance else ""
+        # Determine prompt based on with_utterance flag and multi-call awareness
+        # If interaction has a response, the utterance is already in history (added by _get_conversation_history)
+        # So we pass empty prompt to avoid duplication at the end
+        if with_utterance and with_response and interaction.response:
+            prompt = ""  # Don't duplicate utterance - it's already in history
+        else:
+            prompt = interaction.utterance if with_utterance else ""
 
         # Make the language model call
         try:
@@ -289,6 +295,14 @@ class PersonaAction(Action):
         date_str = now.strftime("%A, %d %B, %Y")
         time_str = now.strftime("%I:%M %p")
 
+        # Detect continuation mode (multi-call scenario)
+        is_continuation = bool(interaction.response)
+
+        # Build continuation guidance if in multi-call mode
+        continuation_guidance = ""
+        if is_continuation:
+            continuation_guidance = CONTINUATION_GUIDANCE_PROMPT
+
         # Prepare agent capabilities
         capabilities_str = (
             "\n".join(f"- {cap}" for cap in self.persona_capabilities)
@@ -352,17 +366,17 @@ class PersonaAction(Action):
             for action_name, params in parameters_by_action.items()
             if action_name not in actions_with_directives
         }
-        
+
         # Always build parameters section - persona_parameters are always loaded by default
         params_content_parts = []
-        
+
         # Always include PersonaAction parameters if they exist (they should always exist with defaults)
         if persona_parameters:
             persona_params_list = "\n".join(
                 format_parameter(p, index=i+1) for i, p in enumerate(persona_parameters)
             )
             params_content_parts.append(f"**PersonaAction Parameters (apply to ALL directives):**\n{persona_params_list}")
-        
+
         # Include parameters from other actions that don't have directives
         if actions_with_only_params:
             for action_name, params in actions_with_only_params.items():
@@ -370,7 +384,7 @@ class PersonaAction(Action):
                     format_parameter(p, index=i+1) for i, p in enumerate(params)
                 )
                 params_content_parts.append(f"#### Parameters from {action_name}:\n{params_list}")
-        
+
         # Always show parameters section (should always have content with defaults)
         if params_content_parts:
             parameters_section = PARAMETERS_SUB_PROMPT.format(
@@ -389,7 +403,8 @@ class PersonaAction(Action):
         directives_section = format_conditional_section(directives_section, bool(directives_section))
         parameters_section = format_conditional_section(parameters_section, bool(parameters_section))
         channel_formatting_section = format_conditional_section(channel_formatting_section, bool(channel_formatting_section))
-        
+        continuation_guidance = format_conditional_section(continuation_guidance, bool(continuation_guidance))
+
         # Build and return the final prompt using self.system_prompt (which defaults to SYSTEM_PROMPT_TEMPLATE
         # but can be overridden by agent-specific configurations)
         # Fall back to SYSTEM_PROMPT_TEMPLATE if self.system_prompt is empty (shouldn't happen with default)
@@ -405,6 +420,7 @@ class PersonaAction(Action):
             directives_section=directives_section,
             parameters_section=parameters_section,
             channel_formatting_section=channel_formatting_section,
+            continuation_guidance=continuation_guidance,
         )
 
     async def _get_conversation_history(
@@ -444,7 +460,7 @@ class PersonaAction(Action):
         # Get conversation
         conversation = await Conversation.get(interaction.conversation_id)
         if not conversation:
-            return None
+            return []
 
         # Get conversation history from previous interactions (excluding current)
         history = await conversation.get_interaction_history(
@@ -464,14 +480,27 @@ class PersonaAction(Action):
                 return content[:max_statement_length] + "..."
             return content
 
-        # Include current interaction's existing response in history if present (multi-call awareness)
-        if with_response and interaction.response:
+        # Include current interaction's utterance and response in history if present (multi-call awareness)
+        # Important: Add utterance BEFORE response to maintain chronological order
+        if with_utterance and with_response and interaction.response:
+            # Add current utterance first
+            history.append({
+                "role": "user",
+                "content": _truncate(interaction.utterance),
+            })
+            # Then add current response
+            history.append({
+                "role": "assistant",
+                "content": _truncate(interaction.response),
+            })
+        elif with_response and interaction.response:
+            # Only add response if utterance not requested
             history.append({
                 "role": "assistant",
                 "content": _truncate(interaction.response),
             })
 
-        return history if history else None
+        return history if history else []
 
     async def healthcheck(self) -> bool:
         """Check if the PersonaAction is healthy.
