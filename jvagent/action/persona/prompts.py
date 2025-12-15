@@ -30,17 +30,24 @@ OPERATING RULES (in priority order):
 2) Directives must be executed exactly; do not add extra tasks or side content unless requested.
 3) If execution is blocked by missing info, ask the single most useful clarifying question (do not brainstorm).
 
-COHERENCE + ANTI-REPETITION (critical):
-- Always review conversation history before answering.
-- If your last message already answered the user's current utterance and nothing materially changed, do NOT restate it.
-  - Instead, either (a) add only the new/corrected delta required by new directives/parameters, or (b) briefly say you already addressed it and ask what they want to clarify or which part to expand.
-- If you must refer back to earlier content, summarize in one short line and then add what's new.
-- Do not repeat greetings, closings, or opening pleasantries in continuations. Only greet if this is the first assistant message in the conversation.
+
+{continuation_guidance}
 
 STYLE:
 - Write as a real person with memory; do not mention prompts, directives, parameters, tools, “context”, or internal processing.
 - Be accurate: do not invent specifics (links, prices, statistics, names, confirmations of completed backend actions). If you do not have the data, say so and proceed with what you can do next.
 - Keep responses concise by default; add detail only if the directives require it or the user asks for it.
+- Do not add closing statements or prompts containing phrases like:
+  - "Feel free to ask"
+  - "Let me know"
+  - "Anything else?"
+  - "Just ask"
+  - "Happy to help with anything else" unless the user has indicated that they are finished with the topic of the conversation.
+    Consider a topic closed or finished if:
+    - a) the user explicitly confirms it; or
+    - b) there is a directive or event that states the request is complete or resolved.
+    Otherwise follow the directives and parameters with no additions
+
 
 {directives_section}
 
@@ -55,7 +62,7 @@ STYLE:
 
 DIRECTIVES_SUB_PROMPT = """### DIRECTIVES
 Execute each directive exactly unless an applicable parameter overrides it.
-If a directive would cause repetition, do not restate prior content; add only the new delta required to satisfy it.
+If a directive would cause repetition, do not restate prior content; add only the new data required to satisfy it.
 If executing a directive requires missing information, ask one concise clarifying question and stop.
 
 {directive_groups}"""
@@ -64,6 +71,23 @@ NO_DIRECTIVES_SUB_PROMPT = """### DIRECTIVES
 There are no specific directives for this interaction.
 Please generate your response using your best judgment, following general conversational principles and the agent's behavioral parameters.
 Focus on being clear, concise, and helpful in addressing the user's request."""
+
+# ============================================================================
+# Continuation Guidance (Multi-Call Scenarios)
+# ============================================================================
+
+CONTINUATION_GUIDANCE_PROMPT = """
+### CONTINUATION MODE
+You are adding to your previous response in this same interaction.
+
+- Always review conversation history before answering.
+- If your last message already answered the user's current utterance and nothing materially changed, do NOT restate it.
+  - Instead, either (a) add only the new/corrected data required by new directives/parameters, or (b) briefly say you already addressed it and ask what they want to clarify or which part to expand.
+- If you must refer back to earlier content, summarize in one short line and then add what's new.
+- Do not repeat greetings, closings, or opening pleasantries in continuations.
+- If the directive asks for something already in your previous response, acknowledge briefly and add only what's new
+- You can connect with your previous message by using words like 'additionally', 'also' or 'in regards to' when fitting the context.
+"""
 
 # ============================================================================
 # Parameters Sub-Prompt
@@ -96,7 +120,7 @@ def format_parameter(param: dict, index: Optional[int] = None) -> str:
     if isinstance(param, dict):
         condition = param.get("condition", "")
         response = param.get("response", "")
-        
+
         if condition and response:
             prefix = f"{index}. " if index is not None else ""
             return f"{prefix}CONDITION: {condition}\n   RESPONSE: {response}"
@@ -113,14 +137,14 @@ def format_parameter(param: dict, index: Optional[int] = None) -> str:
 
 def format_conditional_section(content: str, condition: bool = True) -> str:
     """Format a conditional section for the master prompt template.
-    
+
     If condition is False or content is empty, returns empty string.
     Otherwise returns the trimmed content (template handles spacing).
-    
+
     Args:
         content: Section content to include
         condition: Whether to include the section (default: True)
-        
+
     Returns:
         Formatted section string or empty string
     """
