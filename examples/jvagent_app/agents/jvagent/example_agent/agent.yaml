@@ -90,7 +90,7 @@ actions:
       # VectorStore Configuration
       vectorstore_action_type: "TypesenseVectorStore"  # Entity type to find dynamically
       k: 5  # Number of search results to retrieve
-      weight: -50  # Runs after InteractRouter but before PersonaAction
+      weight: -75  # Runs after InteractRouter but before other Interact Actions
       # Anchors for routing - published to InteractRouter
       # The entity name (RetrievalInteractAction) is automatically used as the key
       anchors:
@@ -104,7 +104,7 @@ actions:
         Context retrieved from knowledge base:
         {results}
         Use this context to inform your response to the user's query.
-      collection: "n.Agent.478ee040eb98491c8426c975"
+
 
   # OpenAI Language Model Action - LLM integration with multimodal support
   # Core action from jvagent library (jvagent/action/model/language/openai/)
@@ -183,9 +183,9 @@ actions:
       description: "Fallback action for smalltalk and casual conversation"
       weight: 100  # Runs last as a safety net
       directive: |
-        Offer a simple, friendly response to smalltalk and casual conversation. 
-        NEVER attempt to answer knowledge-based questions without having certainty 
-        about the context. If the conversation does not warrant a reply or you 
+        Offer a simple, friendly response to smalltalk and casual conversation.
+        NEVER attempt to answer knowledge-based questions without having certainty
+        about the context. If the conversation does not warrant a reply or you
         lack sufficient information, politely opt out rather than guessing.
       parameters:
         - condition: "User asks a knowledge-based or factual question"
