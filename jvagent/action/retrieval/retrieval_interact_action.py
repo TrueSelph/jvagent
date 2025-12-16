@@ -53,8 +53,8 @@ class RetrievalInteractAction(InteractAction):
         ge=1,
     )
     weight: int = attribute(
-        default=-50,
-        description="Execution weight (runs after InteractRouter but before PersonaAction)",
+        default=-75,
+        description="Execution weight (runs after InteractRouter but before other Interact Actions)",
     )
     directive_template: Optional[str] = attribute(
         default=None,
@@ -129,14 +129,18 @@ class RetrievalInteractAction(InteractAction):
 
             # Generate response via PersonaAction with directives and parameters
             # Only call respond if we have a directive or parameters to add
-            if directive or self.parameters:
-                await self.respond(
-                    visitor,
-                    directives=[directive] if directive else None,
-                    parameters=self.parameters if self.parameters else None,
-                    with_response=False,
-                    with_interpretation=True
-                )
+
+            # if directive or self.parameters:
+            #     await self.respond(
+            #         visitor,
+            #         directives=[directive] if directive else None,
+            #         parameters=self.parameters if self.parameters else None
+            #     )
+
+            if directive:
+                await visitor.add_directive(directive)
+            if self.parameters:
+                await visitor.add_parameters(self.parameters)
 
         except Exception as e:
             logger.error(f"RetrievalInteractAction: Error during retrieval: {e}", exc_info=True)
