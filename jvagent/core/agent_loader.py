@@ -270,7 +270,7 @@ class AgentLoader:
                 # This is important because the working directory or paths might have changed
                 self.action_loader._core_action_path = None
                 self.action_loader._core_action_cache = None
-                
+
                 await self._install_actions(
                     agent, descriptor, actions_manager, update_if_exists=update_if_exists
                 )
@@ -384,7 +384,7 @@ class AgentLoader:
         if actions_manager:
             # Actions manager is unique per agent; no need to filter by agent_id again
             return await actions_manager.nodes(node=Action)
-        
+
         # Fallback to database query if actions_manager not available
         return await Action.find({"context.agent_id": agent.id})
 
@@ -454,13 +454,13 @@ class AgentLoader:
         if update_if_exists:
             # Get expected actions from agent.yaml
             expected_actions = self._get_expected_actions_from_descriptor(descriptor)
-            
+
             # Get existing actions using graph connections (finds all Action subclasses)
             existing_actions = await self._get_existing_actions_for_agent(agent, actions_manager)
-            
+
             # Compare and categorize
             sync_result = self._sync_actions_with_descriptor(expected_actions, existing_actions)
-            
+
             # Remove actions not in agent.yaml
             for action_to_remove in sync_result["to_remove"]:
                 try:
@@ -475,12 +475,9 @@ class AgentLoader:
                         exc_info=True,
                     )
 
-        # If update mode, reload modules for actions that will be updated
-        # This ensures fresh code is loaded when actions are recreated
-        if update_if_exists:
+            # If update mode, reload modules for actions that will be updated
+            # This ensures fresh code is loaded when actions are recreated
             # Get existing actions using graph connections (finds all Action subclasses)
-            existing_actions = await self._get_existing_actions_for_agent(agent, actions_manager)
-            expected_actions = self._get_expected_actions_from_descriptor(descriptor)
             existing_map = {
                 (action.namespace, action.label): action for action in existing_actions
             }
@@ -494,7 +491,7 @@ class AgentLoader:
                         metadata_dict = existing_action._metadata
                         is_core = metadata_dict.get("is_core_action", False)
                         core_module_path = metadata_dict.get("core_module_path")
-                        
+
                         if is_core and core_module_path:
                             # For core actions, use importlib.reload()
                             if core_module_path in sys.modules:
@@ -513,6 +510,7 @@ class AgentLoader:
         # Load actions using ActionLoader
         # This discovers actions from filesystem and applies configuration from agent.yaml
         # If modules were unloaded above, fresh imports will occur here
+        expected_actions = self._get_expected_actions_from_descriptor(descriptor)
         actions = self.action_loader.load_actions_for_agent(
             descriptor.namespace, descriptor.name, agent.id, descriptor.actions
         )
@@ -522,7 +520,11 @@ class AgentLoader:
             return
 
         # Register or update actions with the manager
-        results = await actions_manager.register_actions(actions, update_if_exists=update_if_exists)
+        actions_to_register = []
+        for action in actions:
+            if (action.namespace, action.label) in expected_actions:
+                actions_to_register.append(action)
+        results = await actions_manager.register_actions(actions_to_register, update_if_exists=update_if_exists)
 
         # Report results
         registered_count = 0
