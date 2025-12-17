@@ -155,27 +155,41 @@ actions:
       retries: 5
       api_endpoint: "https://prod.api.example.com"
 
-  - action: jvagent/example_interact_action
+  # - action: jvagent/example_interact_action
+  #   context:
+  #     enabled: true
+  #     description: "Customized example interact action that knows about JVAgent"
+  #     # Note: timeout and retries are not attributes of ExampleInteractAction
+  #     # Only anchors, weight, collection, and directive_template are configurable
+  #     anchors:
+  #       - "User inquires about jvagent"
+  #       - "User inquires about jvspatial"
+  #       - "User requests information on how to use jvagent"
+  #     # Custom parameters for behavioral guidance
+  #     parameters:
+  #       - condition: "User asks about jvagent"
+  #         response: "Explain jvagent as a modular AI agent framework built on jvspatial."
+  #       - condition: "User asks about jvspatial"
+  #         response: "Explain jvspatial as a powerful async-first application framework for building object-spatial cloud-based apps."
+  #       - condition: "User requests a demonstration"
+  #         response: "Provide a brief demonstration with example outputs."
+  #       - condition: "User asks technical questions"
+  #         response: "Give accurate technical details while keeping explanations accessible."
+
+  - action: jvagent/multiturn_interact_action
     context:
       enabled: true
-      description: "Customized example interact action that knows about JVAgent"
-      # Note: timeout and retries are not attributes of ExampleInteractAction
-      # Only anchors, weight, collection, and directive_template are configurable
+      description: "Multiturn interaction action for handling complex conversations"
+      weight: -50
       anchors:
-        - "User inquires about jvagent"
-        - "User inquires about jvspatial"
-        - "User requests information on how to use jvagent"
         - "User wants to sign up for jvagent training"
-      # Custom parameters for behavioral guidance
-      parameters:
-        - condition: "User asks about jvagent"
-          response: "Explain jvagent as a modular AI agent framework built on jvspatial."
-        - condition: "User asks about jvspatial"
-          response: "Explain jvspatial as a powerful async-first application framework for building object-spatial cloud-based apps."
-        - condition: "User requests a demonstration"
-          response: "Provide a brief demonstration with example outputs."
-        - condition: "User asks technical questions"
-          response: "Give accurate technical details while keeping explanations accessible."
+    # actions:
+    #   - action: jvagent/example_interact_action
+    #     context:
+    #       enabled: true
+    #       description: "Example interact action for handling complex conversations"
+    #       weight: -50
+
 
   - action: jvagent/converse_interact_action
     context:

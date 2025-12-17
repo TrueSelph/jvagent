@@ -121,7 +121,7 @@ class InteractRouter(InteractAction):
                 actions_manager = await agent.get_actions_manager()
                 dynamic_exceptions: List[str] = []
                 if actions_manager:
-                    all_interact_actions = await actions_manager.get_actions(
+                    all_interact_actions = await actions_manager.get_all_actions(
                         enabled_only=True, entity=InteractAction
                     )
                     dynamic_exceptions = [
@@ -158,7 +158,7 @@ class InteractRouter(InteractAction):
                 anchors_dict
             )
 
-    
+
             response_text = await model_action.generate(
                 prompt=prompt,
                 stream=False,
@@ -184,7 +184,7 @@ class InteractRouter(InteractAction):
                 actions_manager = await agent.get_actions_manager()
                 dynamic_exceptions: List[str] = []
                 if actions_manager:
-                    all_interact_actions = await actions_manager.get_actions(
+                    all_interact_actions = await actions_manager.get_all_actions(
                         enabled_only=True, entity=InteractAction
                     )
                     dynamic_exceptions = [
@@ -196,13 +196,13 @@ class InteractRouter(InteractAction):
                 combined_exceptions = list(set(self.exceptions + dynamic_exceptions))
                 all_allowed = list(set(routed_actions + combined_exceptions))
                 interaction.anchors = all_allowed
-                
+
                 # Create event entry for successful routing
                 if all_allowed:
                     anchors_str = ", ".join(all_allowed)
                     event_message = f"System routed to: {anchors_str}"
                     await visitor.add_event(event_message)
-                
+
                 await interaction.save()
 
                 logger.info(
@@ -219,7 +219,7 @@ class InteractRouter(InteractAction):
                 actions_manager = await agent.get_actions_manager()
                 dynamic_exceptions: List[str] = []
                 if actions_manager:
-                    all_interact_actions = await actions_manager.get_actions(
+                    all_interact_actions = await actions_manager.get_all_actions(
                         enabled_only=True, entity=InteractAction
                     )
                     dynamic_exceptions = [
@@ -231,7 +231,7 @@ class InteractRouter(InteractAction):
                 combined_exceptions = list(set(self.exceptions + dynamic_exceptions))
                 interaction.anchors = combined_exceptions  # Only exceptions if no routing data
                 await interaction.save()
-                
+
                 logger.warning(
                     f"InteractRouter: Failed to parse routing response, "
                     f"only exceptions will execute: {combined_exceptions}"
