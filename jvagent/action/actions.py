@@ -14,17 +14,17 @@ logger = logging.getLogger(__name__)
 
 class Actions(Node):
     """Central node for managing agent actions.
-    
+
     The Actions node manages the registration and discovery of actions for an agent.
     It maintains statistics and provides helper queries, but delegates all lifecycle
     operations (enable, disable, reload) to the Action class itself.
-    
+
     Attributes:
         registered_count: Number of registered actions
         enabled_count: Number of enabled actions
         _lock: Async lock for thread-safe operations (private, not persisted)
     """
-    
+
     # Statistics
     registered_count: int = attribute(default=0, description="Number of registered actions")
     enabled_count: int = attribute(default=0, description="Number of enabled actions")
@@ -211,7 +211,7 @@ class Actions(Node):
         for action in actions:
             success = await self.register_action(action, update_if_exists=update_if_exists)
             results[action.label] = success
-            
+
             # Only track as registered if it was successful AND we need to verify it wasn't a duplicate
             if success:
                 # Verify the action still exists and is connected (not deleted as duplicate)
@@ -333,6 +333,44 @@ class Actions(Node):
         except Exception as e:
             logger.error(f"Error getting actions: {e}", exc_info=True)
             return []
+
+    async def get_all_actions(self, enabled_only: bool = False, entity: Optional[Union[Type[Action], str]] = None) -> List[Any]:
+        """Get all actions for this agent, including actions attached to actions (subactions).
+
+        This recursively traverses the action graph to find all actions.
+
+        Args:
+            enabled_only: If True, only return enabled actions
+
+        Returns:
+            Flat list of all Action instances found in the hierarchy
+        """
+        # Get top-level actions
+        top_level_actions = await self.get_actions(enabled_only=enabled_only, entity=entity)
+
+        all_actions = []
+        processed_ids = set()
+
+        # Stack for recursion (bfs/dfs)
+        stack = list(top_level_actions)
+
+        while stack:
+            current_action_node = stack.pop(0)
+
+            if current_action_node.id in processed_ids:
+                continue
+
+            processed_ids.add(current_action_node.id)
+            all_actions.append(current_action_node)
+
+            # Get subactions for this action
+            subactions = await current_action_node.nodes(node=entity)
+            if not subactions:
+                continue
+
+            # Add to stack
+            stack.extend(subactions)
+        return all_actions
 
     async def get_action_by_label(self, label: str) -> Optional[Action]:
         """Get an action by its label using entity-centric queries.
