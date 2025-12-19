@@ -1,10 +1,10 @@
-# Example Action
+# Interview Action
 
 This is a boilerplate action demonstrating the structure and implementation of a custom action in jvagent.
 
 ## Overview
 
-The MultiturnInteractAction demonstrates:
+The Interview Action demonstrates:
 - Basic action structure extending `Action`
 - Lifecycle hooks (on_register, on_enable, on_disable, etc.)
 - Configuration access
@@ -14,13 +14,19 @@ The MultiturnInteractAction demonstrates:
 ## Structure
 
 ```
-multiturn_interact_action/
+interview/
 ├── __init__.py         # Package initialization (imports action class and endpoints)
-├── multiturn_interact_action.py   # Main action implementation (Interact Action class)
-├── endpoints.py        # API endpoints for this action
+├── interview_interact_action.py   # Main action implementation (Action class)
 ├── info.yaml          # Action metadata
 ├── requirements.txt   # Python dependencies
 └── README.md         # This file
+|──gather_info_interact_action/
+   |──__init__.py
+   |──data_node.py
+   |──gather_info_interact_action.py
+   |──gather_info_walker.py
+   |──info.yaml
+   |──README.md
 ```
 
 ### File Organization
@@ -36,8 +42,8 @@ multiturn_interact_action/
 Configuration is defined in `info.yaml`:
 
 ```yaml
-id: example_action
-name: Example Action
+id: interview
+name: Interview Action
 version: 1.0.0
 enabled: true
 config:
@@ -57,7 +63,7 @@ Once installed, this action can be:
 To customize this action:
 
 1. Update `info.yaml` with your action metadata
-2. Modify `example_action.py` to implement your logic
+2. Modify `interview_interact_action.py` to implement your logic
 3. Add API endpoints in `endpoints.py` (see "API Endpoints" section below)
 4. Add dependencies to `requirements.txt`
 5. Update this README with your action's documentation
@@ -75,18 +81,18 @@ All HTTP endpoints for this action are defined in `endpoints.py`. This follows t
 
 1. **`__init__.py`** imports the action class and endpoints:
    ```python
-   from .example_action import ExampleAction
+   from .interview_interact_action import InterviewInteractAction
    from . import endpoints  # noqa: F401
    ```
 
 2. **`endpoints.py`** defines all HTTP endpoints:
    ```python
    from jvspatial.api import endpoint
-   from .example_action import ExampleAction
+   from .interview_interact_action import InterviewInteractAction
 
    @endpoint("/actions/{action_id}/my_endpoint", methods=["POST"], auth=True)
    async def my_endpoint(action_id: str):
-       action = await ExampleAction.get(action_id)
+       action = await InterviewInteractAction.get(action_id)
        # ... endpoint logic
    ```
 

@@ -56,7 +56,7 @@ class Interaction(Node):
     response: Optional[str] = attribute(
         default=None, description="Agent response text (accumulated from stream chunks and ad hoc messages)"
     )
-    
+
     # Routing (from InteractRouter)
     interpretation: Optional[str] = attribute(
         default=None,
@@ -82,7 +82,7 @@ class Interaction(Node):
     parameters: List[Dict[str, Any]] = attribute(
         default_factory=list, description="Applicable parameters for this interaction. Each entry should have 'action_name' and 'executed': bool keys"
     )
-    
+
     # Streaming and observability
     streamed: bool = attribute(
         default=False, description="Whether this interaction used streaming"
@@ -382,6 +382,19 @@ class Interaction(Node):
             if conversation:
                 # Get Agent from Conversation using its get_agent() method
                 return await conversation.get_agent()
+        return None
+
+    async def get_conversation(self) -> Optional["Conversation"]:
+        """Get the Conversation node this Interaction belongs to.
+
+        Returns:
+            Conversation instance if found, None otherwise
+        """
+        from jvagent.memory.conversation import Conversation
+
+        # Get Conversation node using conversation_id
+        if self.conversation_id:
+            return await Conversation.get(self.conversation_id)
         return None
 
     async def get_next_interaction(self) -> Optional["Interaction"]:

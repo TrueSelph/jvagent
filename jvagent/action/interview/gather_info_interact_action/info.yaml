@@ -3,21 +3,21 @@
 
 package:
   # Action name in namespace/action_name format
-  name: jvagent/multiturn_interact_action
+  name: jvagent/gather_info_interact_action
 
   # Package author
   author: jvagent
 
   # Archetype: The main Action class name (same as the Action Node class)
-  archetype: MultiturnInteractAction
+  archetype: GatherInfoInteractAction
 
   # Package version
   version: 1.0.0
 
   # Package metadata
   meta:
-    title: MultiturnInteractAction
-    description: MultiturnInteractAction that goes through a series of questions to get the user's information
+    title: GatherInfoInteractAction
+    description: GatherInfoInteractAction that goes through a series of questions to get the user's information
     group: jvagent
     type: interact_action
 

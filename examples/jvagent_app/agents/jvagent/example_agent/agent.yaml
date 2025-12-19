@@ -139,6 +139,7 @@ actions:
         - "Demonstrate action delegation"
         - "Process user interactions with behavioral parameters"
         - "Provide streaming and non-streaming responses"
+        - "can sign the user up for jvagent training"
       # Model Configuration (uses OpenAI model action by entity type)
       model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
       model: "gpt-4.1"
@@ -176,13 +177,14 @@ actions:
   #       - condition: "User asks technical questions"
   #         response: "Give accurate technical details while keeping explanations accessible."
 
-  - action: jvagent/multiturn_interact_action
+  - action: jvagent/interview_interact_action
     context:
       enabled: true
       description: "Multiturn interaction action for handling complex conversations"
       weight: -50
       anchors:
         - "User wants to sign up for jvagent training"
+        - "User is in the process of signing up for jvagent training"
     # actions:
     #   - action: jvagent/example_interact_action
     #     context:

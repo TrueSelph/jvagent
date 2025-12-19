@@ -78,11 +78,11 @@ Focus on being clear, concise, and helpful in addressing the user's request."""
 
 CONTINUATION_GUIDANCE_PROMPT = """
 ### CONTINUATION MODE
-You are adding to your previous response in this same interaction.
+You are adding to your previous response in this same interaction The user's last message is blank.
 
-- Always review conversation history before answering the last message sent by the user. Note the last user content will be blank and you should not refer to it.
-- If your last message already answered the user's current utterance and nothing materially changed, do NOT restate it.
-  - Instead, either (a) add only the new/corrected data required by new directives/parameters, or (b) briefly say you already addressed it and ask what they want to clarify or which part to expand.
+- Always review conversation history before answering the last message sent by the user. Note that the user has not yet responded to your last message.
+- If your last message already answered the user's last utterance and nothing materially changed, do NOT restate it.
+  - Instead, either (a) add only the new/corrected data or additional questions required by new directives/parameters, or (b) briefly say you already addressed it and ask what they want to clarify or which part to expand.
 - If you must refer back to earlier content, summarize in one short line and then add what's new.
 - Do not repeat greetings, closings, or opening pleasantries in continuations.
 - If the directive asks for something already in your previous response, acknowledge briefly and add only what's new
