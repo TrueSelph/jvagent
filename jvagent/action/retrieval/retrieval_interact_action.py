@@ -14,6 +14,7 @@ from jvspatial.core import on_visit
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.vectorstore.base import VectorStore
+from jvagent.action.retrieval.prompts import DIRECTIVE_TEMPLATE
 
 if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
@@ -35,7 +36,7 @@ class RetrievalInteractAction(InteractAction):
         collection: Collection name to search in (default: "default")
         k: Number of search results to retrieve (default: 10)
         weight: Execution weight (default: -50, runs after InteractRouter but before PersonaAction)
-        directive_template: Optional template for formatting the directive with placeholder: {results}
+        directive: Template for formatting the directive with placeholder: {results}
         min_score_threshold: Optional minimum similarity score to include results
     """
 
@@ -56,9 +57,9 @@ class RetrievalInteractAction(InteractAction):
         default=-75,
         description="Execution weight (runs after InteractRouter but before other Interact Actions)",
     )
-    directive_template: Optional[str] = attribute(
-        default=None,
-        description="Optional template for formatting the directive. Uses default structured format if not provided. Placeholder: {results}",
+    directive: str = attribute(
+        default=DIRECTIVE_TEMPLATE,
+        description="Template for formatting the directive. Placeholder: {results}",
     )
     min_score_threshold: Optional[float] = attribute(
         default=None,
@@ -202,14 +203,5 @@ class RetrievalInteractAction(InteractAction):
 
         results_str = "\n".join(results_parts)
 
-        if self.directive_template:
-            # Use custom template if provided
-            # Template should use {results} placeholder
-            return self.directive_template.format(results=results_str)
-
-        # Default structured format
-        directive_parts = ["Context retrieved from knowledge base:\n"]
-        directive_parts.append(results_str)
-        directive_parts.append("\nUse this context to inform your response to the user's query.")
-
-        return "\n".join(directive_parts)
+        # Use the directive template to format results
+        return self.directive.format(results=results_str)

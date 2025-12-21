@@ -343,7 +343,7 @@ class Conversation(Node):
                 content = " | ".join(content_parts)
                 history.append({
                     "role": "system",
-                    "content": content,
+                    "content": f"[Interpretation] {content}",
                 })
             
             # Add user utterance (if requested) - truncated if max_statement_length is set
@@ -371,7 +371,7 @@ class Conversation(Node):
                         event_str = str(event)
                     history.append({
                         "role": "system",
-                        "content": f"Event: {event_str}",
+                        "content": f"[Event] {event_str}",
                     })
         
         return history

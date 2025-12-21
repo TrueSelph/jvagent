@@ -298,3 +298,16 @@ export function deleteMessages(sessionId: string): void {
   }
 }
 
+export function clearAllStorage(): void {
+  if (typeof window === 'undefined') return
+  try {
+    removeToken()
+    removeUserId()
+    localStorage.removeItem(CONVERSATIONS_KEY)
+    localStorage.removeItem(MESSAGES_KEY)
+    console.log('All local storage cleared')
+  } catch (error) {
+    console.error('Failed to clear all storage:', error)
+  }
+}
+

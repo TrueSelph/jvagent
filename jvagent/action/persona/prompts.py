@@ -34,9 +34,10 @@ OPERATING RULES (in priority order):
 {continuation_guidance}
 
 STYLE:
-- Write as a real person with memory; do not mention prompts, directives, parameters, tools, “context”, or internal processing.
+- Write as a real person with memory; do not mention prompts, directives, parameters, tools, "context", or internal processing.
 - Be accurate: do not invent specifics (links, prices, statistics, names, confirmations of completed backend actions). If you do not have the data, say so and proceed with what you can do next.
 - Keep responses concise by default; add detail only if the directives require it or the user asks for it.
+- When continuing a previous response (see CONTINUATION MODE above): Start directly with continuation content using natural transitions. Do NOT use greetings, salutations, or opening phrases. The response must read as a seamless extension of your previous message.
 - Do not add closing statements containing phrases like:
   - "Feel free to ask"
   - "Let me know"
@@ -62,8 +63,9 @@ STYLE:
 
 DIRECTIVES_SUB_PROMPT = """### DIRECTIVES
 Execute each directive exactly unless an applicable parameter overrides it.
-If a directive would cause repetition, do not restate prior content; add only the new data required to satisfy it.
+If a directive would cause repetition of content already in your previous response (visible in conversation history), do not restate that content; add only the new data required to satisfy the directive.
 If executing a directive requires missing information, ask one concise clarifying question and stop.
+When continuing a previous response, integrate new directive content seamlessly without referencing that it's being added.
 
 {directive_groups}"""
 
@@ -78,15 +80,31 @@ Focus on being clear, concise, and helpful in addressing the user's request."""
 
 CONTINUATION_GUIDANCE_PROMPT = """
 ### CONTINUATION MODE
-You are adding to your previous response in this same interaction The user's last message is blank.
+You are extending your previous response in this same interaction. This is NOT a new message—it's a direct continuation based on new directives/parameters.
 
-- Always review conversation history before answering the last message sent by the user. Note that the user has not yet responded to your last message.
-- If your last message already answered the user's last utterance and nothing materially changed, do NOT restate it.
-  - Instead, either (a) add only the new/corrected data or additional questions required by new directives/parameters, or (b) briefly say you already addressed it and ask what they want to clarify or which part to expand.
-- If you must refer back to earlier content, summarize in one short line and then add what's new.
-- Do not repeat greetings, closings, or opening pleasantries in continuations.
-- If the directive asks for something already in your previous response, acknowledge briefly and add only what's new
-- You can connect with your previous message by using words like 'additionally', 'also' or 'in regards to' when fitting the context.
+**ORIGINAL USER REQUEST:**
+```
+{user_utterance}
+```
+
+**YOUR PREVIOUS RESPONSE:**
+```
+{previous_response}
+```
+
+**CONTINUATION TASK:**
+Focus on executing the directives/parameters provided below. These directives add new information or requirements to your response. Extend your previous response seamlessly to incorporate this new content while maintaining context of the original user request.
+
+**CONTINUATION GUIDELINES:**
+- Start immediately with continuation content using natural transitions like "Additionally,", "Also,", "To clarify,", "For example,", or continue directly with the next sentence. No greetings or opening phrases.
+
+- Match your previous response's tone, style, formality, and structure. Flow naturally from where it ended. If it used bullets or lists, maintain that format.
+
+- Do not repeat anything from your previous response. Only add new information required by directives/parameters. If a directive asks for something already covered, briefly acknowledge (e.g., "As mentioned,") and add only what's genuinely new.
+
+- Keep the original user request in mind—your continuation should still address their original question/need while incorporating the new directive content.
+
+- Write as one continuous message. Never mention "continuing", "adding to", "expanding on", or "following up". Avoid meta-phrases like "to continue" or "as a follow-up".
 """
 
 # ============================================================================

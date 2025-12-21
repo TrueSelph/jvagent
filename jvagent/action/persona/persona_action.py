@@ -158,9 +158,6 @@ class PersonaAction(Action):
         # Get model action (required=True raises error if not found)
         model_action = await self.get_model_action(required=True)
 
-        # Record PersonaAction execution in interaction
-        interaction.record_action_execution("PersonaAction")
-
         # Get unexecuted directives and parameters
         applicable_directives = interaction.get_unexecuted_directives()
         applicable_parameters = interaction.get_unexecuted_parameters()
@@ -260,6 +257,11 @@ class PersonaAction(Action):
                     interaction.set_response(response)
                 await interaction.save()
 
+            # Record PersonaAction execution AFTER response is generated and saved
+            # This ensures PersonaAction appears after the InteractAction that called it
+            # in the actions list, preserving the call order
+            interaction.record_action_execution("PersonaAction")
+
             return response
 
         except Exception as e:
@@ -301,7 +303,21 @@ class PersonaAction(Action):
         # Build continuation guidance if in multi-call mode
         continuation_guidance = ""
         if is_continuation:
-            continuation_guidance = CONTINUATION_GUIDANCE_PROMPT
+            # Format continuation guidance with the existing response text and user utterance for reference
+            previous_response = interaction.response or ""
+            # Truncate if too long to avoid token bloat (keep last 2000 chars for context)
+            if len(previous_response) > 2000:
+                previous_response = "..." + previous_response[-2000:]
+            
+            # Include user utterance for context (truncate if too long)
+            user_utterance = interaction.utterance or ""
+            if len(user_utterance) > 500:
+                user_utterance = user_utterance[:500] + "..."
+            
+            continuation_guidance = CONTINUATION_GUIDANCE_PROMPT.format(
+                previous_response=previous_response,
+                user_utterance=user_utterance or "(No user utterance)"
+            )
 
         # Prepare agent capabilities
         capabilities_str = (

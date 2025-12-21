@@ -45,7 +45,7 @@ class IntroInteractAction(InteractAction):
     )
 
     weight: int = attribute(
-        default=-75,
+        default=-90,
         description="Execution weight (runs after InteractRouter but before PersonaAction)",
     )
 
