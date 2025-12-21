@@ -32,9 +32,13 @@ class ConverseInteractAction(InteractAction):
 
     ConverseInteractAction:
     1. Runs last (high weight) as a safety net
-    2. Only executes when no response has been generated yet
+    2. Executes when no response has been generated yet, OR when there are
+       unexecuted directives (even if a response exists)
     3. Adds a conservative directive and parameters for PersonaAction
        to handle smalltalk while avoiding unsafe knowledge answers
+
+    This ensures that directives furnished by other actions without responses
+    are properly executed and result in a generated response.
     """
 
     directive: str = attribute(
@@ -106,11 +110,14 @@ class ConverseInteractAction(InteractAction):
     )
 
     async def execute(self, visitor: "InteractWalker") -> None:
-        """Execute fallback logic only when no response exists.
+        """Execute fallback logic when no response exists or unexecuted directives are present.
 
-        This action should only add guidance when the interaction has no
-        response at all. If any response already exists, it opts out and
-        unrecords its execution from the action log.
+        This action executes when:
+        1. No response has been generated yet (fallback behavior), OR
+        2. There are unexecuted directives (even if a response exists)
+
+        Other actions may furnish directives without generating responses, so this
+        action ensures those directives are executed and a response is generated.
         """
         interaction: Interaction | None = visitor.interaction
         if not interaction:
@@ -119,14 +126,25 @@ class ConverseInteractAction(InteractAction):
             return
 
         try:
-            # If any response already exists, do not run as a fallback
-            if interaction.has_response():
+            # Check for unexecuted directives
+            unexecuted_directives = interaction.get_unexecuted_directives()
+            has_unexecuted_directives = len(unexecuted_directives) > 0
+
+            # If response exists and no unexecuted directives, skip
+            if interaction.has_response() and not has_unexecuted_directives:
                 logger.debug(
-                    "ConverseInteractAction: Interaction already has response; "
-                    "skipping fallback"
+                    "ConverseInteractAction: Interaction already has response and "
+                    "no unexecuted directives; skipping fallback"
                 )
                 await visitor.unrecord_action_execution()
                 return
+
+            # If response exists but there are unexecuted directives, proceed to execute them
+            if interaction.has_response() and has_unexecuted_directives:
+                logger.debug(
+                    f"ConverseInteractAction: Response exists but {len(unexecuted_directives)} "
+                    "unexecuted directive(s) found; executing directives and generating response"
+                )
 
             # Validate directive is configured
             if not self.directive:

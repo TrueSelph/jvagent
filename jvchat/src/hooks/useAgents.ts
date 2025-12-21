@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiClient } from '../config/api'
+import { useAuth } from './useAuth'
+import { clearAllStorage } from '../utils/storage'
 import type { Agent } from '../types/agent'
 
 export function useAgents(enabled?: boolean) {
+  const { logout } = useAuth()
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -33,16 +36,14 @@ export function useAgents(enabled?: boolean) {
       setAgents(transformedAgents)
     } catch (err: any) {
       console.error('Error fetching agents:', err)
-      const errorMessage = 
-        err.response?.data?.detail || 
-        err.response?.data?.message || 
-        err.message || 
-        'Failed to load agents'
-      setError(errorMessage)
+      // Clear all local storage and invalidate session
+      clearAllStorage()
+      // logout() will also navigate to login screen
+      logout()
     } finally {
       setLoading(false)
     }
-  }, [enabled])
+  }, [enabled, logout])
 
   useEffect(() => {
     fetchAgents()

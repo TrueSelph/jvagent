@@ -6,13 +6,17 @@ generated a response.
 ## Overview
 
 `ConverseInteractAction` is an `InteractAction` that runs late (high positive
-weight) as a safety net. It only triggers when the current `Interaction` has no
-response, and it provides conservative guidance to PersonaAction for handling
-smalltalk while avoiding unsafe knowledge answers.
+weight) as a safety net. It triggers when the current `Interaction` has no
+response, or when there are unexecuted directives (even if a response exists).
+It provides conservative guidance to PersonaAction for handling smalltalk while
+avoiding unsafe knowledge answers.
 
 ## Features
 
-- **Fallback Execution**: Only runs when no response has been generated yet.
+- **Fallback Execution**: Runs when no response has been generated yet, OR when
+  there are unexecuted directives that need to be executed (even if a response
+  already exists). This ensures directives furnished by other actions without
+  responses are properly executed.
 - **Smalltalk Handling**: Provides a directive for simple, friendly replies to
   smalltalk and casual conversation.
 - **Conservative Knowledge Behavior**: Instructs PersonaAction to *never* answer
@@ -56,8 +60,9 @@ actions:
 ## Execution Semantics
 
 - **Weight and Ordering**  
-  The default weight is `100`, so it runs after other InteractActions. It only
-  proceeds if `interaction.has_response()` is `False`.
+  The default weight is `100`, so it runs after other InteractActions. It
+  proceeds if `interaction.has_response()` is `False` OR if there are unexecuted
+  directives present.
 
 - **Routing Exception**  
   The action defines:
@@ -75,8 +80,10 @@ actions:
   In `execute()`:
   - If there is no `Interaction`, it calls `visitor.unrecord_action_execution()`
     and returns.
-  - If `interaction.has_response()` is true, it unrecords itself and returns.
-  - Otherwise, it calls:
+  - If `interaction.has_response()` is true AND there are no unexecuted directives,
+    it unrecords itself and returns.
+  - If there are unexecuted directives (even if a response exists), or if no
+    response exists, it proceeds to execute:
     ```python
     await self.respond(
         visitor,
@@ -84,6 +91,8 @@ actions:
         parameters=self.parameters if self.parameters else None,
     )
     ```
+  This ensures that directives furnished by other actions without generating
+  responses are properly executed and result in a generated response.
 
 ## When to Use
 

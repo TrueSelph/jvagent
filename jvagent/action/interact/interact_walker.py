@@ -356,14 +356,15 @@ class InteractWalker(Walker):
             self._current_action = here
             self._skip_current_action_record = False
 
+            # Record action execution BEFORE execution to ensure it appears before
+            # any actions it calls (like PersonaAction). This preserves the call order
+            # in the actions list - the calling action appears before the called action.
+            if self.interaction and not self._skip_current_action_record:
+                await self.record_action_execution()
+
             # Execute the action
             # Note: 'here' is the node (self from node's perspective), 'self' is the walker (visitor)
             await here.execute(self)
-
-            # Log action execution to interaction's actions list (using class name for consistency)
-            # This ensures all executed actions are recorded, even if individual actions don't log themselves
-            if self.interaction and not self._skip_current_action_record:
-                await self.record_action_execution()
 
             await self.report(
                 {

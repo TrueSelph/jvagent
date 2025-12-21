@@ -141,25 +141,34 @@ class Interaction(Node):
     def record_action_execution(self, action_name: str) -> None:
         """Record an action execution in the processing log.
 
-        Actions are recorded in order of execution.
+        Actions are recorded in order of execution. The same action can be
+        recorded multiple times if it executes multiple times, preserving
+        the execution sequence.
 
         Args:
             action_name: Class name (camelCase) of the action to record
         """
-        if action_name and action_name not in self.actions:
+        if action_name:
             self.actions.append(action_name)
 
     def unrecord_action_execution(self, action_name: str) -> None:
         """Remove an action execution from the processing log.
 
-        This safely removes the first matching action name if present.
+        Removes the last occurrence of the action name to preserve execution
+        order for other actions. This is used when an action needs to opt out
+        of being recorded (e.g., if it determines it shouldn't have executed).
 
         Args:
             action_name: Class name (camelCase) of the action to unrecord
         """
-        if action_name in self.actions:
-            self.actions.remove(action_name)
-            logger.warning(f"Interaction.unrecord_action_execution: Unrecorded action {action_name}")
+        if action_name and action_name in self.actions:
+            # Remove the last occurrence to preserve ordering of other actions
+            # Reverse iterate to find and remove the last occurrence
+            for i in range(len(self.actions) - 1, -1, -1):
+                if self.actions[i] == action_name:
+                    self.actions.pop(i)
+                    logger.warning(f"Interaction.unrecord_action_execution: Unrecorded action {action_name}")
+                    break
 
     def add_parameter(self, parameter: Dict[str, Any], action_name: str) -> None:
         """Add a parameter to the applicable parameters list.

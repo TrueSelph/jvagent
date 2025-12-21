@@ -104,7 +104,7 @@ actions:
         Context retrieved from knowledge base:
         {results}
         Use this context to inform your response to the user's query.
-
+      collection: "n.Agent.478ee040eb98491c8426c975"
 
   # OpenAI Language Model Action - LLM integration with multimodal support
   # Core action from jvagent library (jvagent/action/model/language/openai/)
