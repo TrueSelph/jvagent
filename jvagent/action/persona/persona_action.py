@@ -187,7 +187,7 @@ class PersonaAction(Action):
             )
 
         # Compose the prompt (pass directives to avoid duplicate retrieval)
-        system_prompt = self._compose_prompt(interaction, applicable_directives, applicable_parameters)
+        system_prompt = await self._compose_prompt(interaction, applicable_directives, applicable_parameters)
 
         conversation_history = None
         if use_history:
@@ -268,7 +268,7 @@ class PersonaAction(Action):
             logger.error(f"Error in PersonaAction.respond: {e}", exc_info=True)
             raise
 
-    def _compose_prompt(
+    async def _compose_prompt(
         self,
         interaction: Interaction,
         applicable_directives: List[Dict[str, Any]],
@@ -303,19 +303,26 @@ class PersonaAction(Action):
         # Build continuation guidance if in multi-call mode
         continuation_guidance = ""
         if is_continuation:
-            # Format continuation guidance with the existing response text and user utterance for reference
-            previous_response = interaction.response or ""
-            # Truncate if too long to avoid token bloat (keep last 2000 chars for context)
-            if len(previous_response) > 2000:
-                previous_response = "..." + previous_response[-2000:]
+            from jvagent.memory.conversation import Conversation
             
-            # Include user utterance for context (truncate if too long)
-            user_utterance = interaction.utterance or ""
-            if len(user_utterance) > 500:
-                user_utterance = user_utterance[:500] + "..."
+            # For continuation, use sensible defaults (truncate_statement will use agent's max_statement_length if available)
+            # Previous response: keep last 2000 chars for context
+            previous_response = await Conversation.truncate_statement(
+                interaction.response or "",
+                max_length=2000,  # Override: keep last 2000 chars for continuation context
+                keep_last=True,
+                interaction=interaction
+            )
+            
+            # User utterance: use 500 chars default (truncate_statement will use agent's max_statement_length if available)
+            user_utterance = await Conversation.truncate_statement(
+                interaction.utterance or "",
+                max_length=500,  # Override: 500 chars for utterance in continuation
+                interaction=interaction
+            )
             
             continuation_guidance = CONTINUATION_GUIDANCE_PROMPT.format(
-                previous_response=previous_response,
+                previous_response=previous_response or "(No previous response)",
                 user_utterance=user_utterance or "(No user utterance)"
             )
 

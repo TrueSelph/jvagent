@@ -64,6 +64,7 @@ class ModelActionResult:
         duration: Optional[float] = None,
         prompt: Optional[str] = None,
         system: Optional[str] = None,
+        history: Optional[List[Dict[str, Any]]] = None,
         calling_action_name: Optional[str] = None,
     ):
         """Initialize a model action result.
@@ -79,6 +80,7 @@ class ModelActionResult:
             duration: Query duration in seconds
             prompt: The prompt that produced the response
             system: System message used (if any)
+            history: Conversation history used (if any)
             calling_action_name: Name of the action that initiated this model call
         """
         self.response = response
@@ -90,6 +92,7 @@ class ModelActionResult:
         self.is_streaming = stream is not None
         self.prompt = prompt
         self.system = system
+        self.history = history
         self.calling_action_name = calling_action_name
 
         # Build metrics dict with usage and duration
@@ -162,6 +165,7 @@ class ModelActionResult:
         return {
             "prompt": self.prompt,
             "system": self.system,
+            "history": self.history,
             "response": self.response,
             "metrics": self.metrics,
             "model": self.model,
@@ -514,11 +518,12 @@ class LanguageModelAction(BaseModelAction, ABC):
         # Calculate duration
         duration = time.time() - start_time
 
-        # Store the prompt and system in the result for logging
+        # Store the prompt, system, and history in the result for logging/observability
         # Convert prompt to string if it's a list (multimodal content)
         prompt_str = prompt if isinstance(prompt, str) else str(prompt)
         result.prompt = prompt_str
         result.system = system
+        result.history = history
         
         # Store calling_action_name in result for observability
         if calling_action_name:

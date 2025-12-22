@@ -177,14 +177,17 @@ class BaseModelAction(Action, ABC):
                         from jvagent.action.model.context import get_calling_action_name
                         action_name = get_calling_action_name() or self.get_class_name()
                     
-                    # Get system prompt (the actual executed prompt) and user prompt from result
+                    # Get system prompt, user prompt, and history from result
                     system_prompt = None
                     user_prompt = None
+                    history = None
                     if result:
                         if hasattr(result, "system") and result.system:
                             system_prompt = result.system
                         if hasattr(result, "prompt") and result.prompt:
                             user_prompt = result.prompt
+                        if hasattr(result, "history") and result.history:
+                            history = result.history
                     
                     # Build comprehensive observability data
                     data = {
@@ -203,6 +206,10 @@ class BaseModelAction(Action, ABC):
                     # Add user prompt (the user's input)
                     if user_prompt:
                         data["user_prompt"] = user_prompt
+                    
+                    # Add history (conversation history) for observability
+                    if history:
+                        data["history"] = history
                     
                     # For language models, try to include response if available
                     # This is a best-effort attempt - response may not be available at track_usage time

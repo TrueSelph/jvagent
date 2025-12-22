@@ -300,7 +300,45 @@ class Conversation(Node):
 
         return interactions
 
-    def _format_interactions(
+    @staticmethod
+    async def truncate_statement(
+        content: str,
+        max_length: Optional[int] = None,
+        keep_last: bool = False,
+        interaction: Optional["Interaction"] = None,
+    ) -> str:
+        """Truncate a statement (utterance or response) if it exceeds max_length.
+
+        Reusable helper method for truncating statements consistently across the codebase.
+        If max_length is None and interaction is provided, attempts to retrieve the agent's
+        max_statement_length setting. Used by Conversation methods and accessible via Interaction
+        for truncation operations.
+
+        Args:
+            content: The content string to truncate
+            max_length: Optional maximum length. If None and interaction is provided, will attempt
+                to use agent's max_statement_length. None = no truncation.
+            keep_last: If True, keep the last N characters (prepend "..."). If False,
+                keep the first N characters (append "..."). Default: False.
+            interaction: Optional Interaction instance. If provided and max_length is None,
+                will attempt to get agent's max_statement_length from the interaction's agent.
+
+        Returns:
+            Truncated content string (with "..." prepended/appended if truncated) or original content
+        """
+        # If max_length not provided, try to get from agent via interaction
+        if max_length is None and interaction:
+            agent = await interaction.get_agent()
+            if agent and hasattr(agent, "max_statement_length"):
+                max_length = agent.max_statement_length
+
+        if max_length and len(content) > max_length:
+            if keep_last:
+                return "..." + content[-max_length:]
+            return content[:max_length] + "..."
+        return content
+
+    async def _format_interactions(
         self,
         interactions: List["Interaction"],
         with_utterance: bool = True,
@@ -323,16 +361,11 @@ class Conversation(Node):
             max_statement_length: Optional maximum length for utterance and response strings.
                 If provided and content exceeds this length, it will be truncated with "..." appended.
                 Does not apply to interpretations or events. Default: None (no truncation).
+                If None, will attempt to use agent's max_statement_length from each interaction.
 
         Returns:
             List of dictionaries with 'role' and 'content' keys formatted for language models
         """
-        def _truncate(content: str) -> str:
-            """Truncate content if max_statement_length is set."""
-            if max_statement_length and len(content) > max_statement_length:
-                return content[:max_statement_length] + "..."
-            return content
-        
         history: List[Dict[str, Any]] = []
         
         for interaction in interactions:
@@ -343,21 +376,31 @@ class Conversation(Node):
                 content = " | ".join(content_parts)
                 history.append({
                     "role": "system",
-                    "content": f"[Interpretation] {content}",
+                    "content": f"[INTERPRETATION] {content}",
                 })
             
             # Add user utterance (if requested) - truncated if max_statement_length is set
             if with_utterance:
+                truncated_utterance = await Conversation.truncate_statement(
+                    interaction.utterance,
+                    max_statement_length,
+                    interaction=interaction
+                )
                 history.append({
                     "role": "user",
-                    "content": _truncate(interaction.utterance),
+                    "content": truncated_utterance,
                 })
             
             # Add assistant response (if present and requested) - truncated if max_statement_length is set
             if with_response and interaction.response:
+                truncated_response = await Conversation.truncate_statement(
+                    interaction.response,
+                    max_statement_length,
+                    interaction=interaction
+                )
                 history.append({
                     "role": "assistant",
-                    "content": _truncate(interaction.response),
+                    "content": truncated_response,
                 })
             
             # Add events as system messages (if present and requested)
@@ -371,7 +414,7 @@ class Conversation(Node):
                         event_str = str(event)
                     history.append({
                         "role": "system",
-                        "content": f"[Event] {event_str}",
+                        "content": f"[EVENT] {event_str}",
                     })
         
         return history
@@ -432,16 +475,9 @@ class Conversation(Node):
         interactions = interactions[:limit]
         interactions.reverse()
         
-        # Helper function for truncation
-        def _truncate(content: str) -> str:
-            """Truncate content if max_statement_length is set."""
-            if max_statement_length and len(content) > max_statement_length:
-                return content[:max_statement_length] + "..."
-            return content
-        
         if formatted:
             # Use formatter utility
-            return self._format_interactions(
+            return await self._format_interactions(
                 interactions,
                 with_utterance=with_utterance,
                 with_response=with_response,
@@ -469,10 +505,18 @@ class Conversation(Node):
                 }
                 
                 if with_utterance:
-                    entry["utterance"] = _truncate(interaction.utterance)
+                    entry["utterance"] = await Conversation.truncate_statement(
+                        interaction.utterance,
+                        max_statement_length,
+                        interaction=interaction
+                    )
                 
                 if with_response and interaction.response:
-                    entry["response"] = _truncate(interaction.response)
+                    entry["response"] = await Conversation.truncate_statement(
+                        interaction.response,
+                        max_statement_length,
+                        interaction=interaction
+                    )
                 
                 if with_interpretation and interaction.interpretation:
                     # Note: interpretations are not truncated

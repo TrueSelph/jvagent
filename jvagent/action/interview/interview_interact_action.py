@@ -81,7 +81,7 @@ class InterviewInteractAction(InteractAction):
         gather_info_interact_action = await GatherInfoInteractAction.create(agent_id=self.agent_id, state_index=self.state_index)
         await self.connect(gather_info_interact_action, direction="both")
         await gather_info_interact_action.on_register()
-        print("\033[92mInterviewInteractAction: Registered gather info interact action\n",interview_interact_action.always_execute)
+        logger.info(f"InterviewInteractAction: Registered gather info interact action (always_execute={getattr(gather_info_interact_action, 'always_execute', False)})")
 
     async def on_reload(self) -> None:
         """Register the action with the action registry."""
