@@ -533,7 +533,8 @@ class AgentLoader:
         removed_count = len(sync_result.get("to_remove", [])) if update_if_exists else 0
 
         # Check which actions were updates vs new registrations
-        for action in actions:
+        # Only check actions that were actually attempted to register (not all discovered actions)
+        for action in actions_to_register:
             action_label = action.label
             success = results.get(action_label, False)
 

@@ -29,6 +29,10 @@ class Agent(Node):
         default=0,
         description="Default interaction limit for conversations (0 = disabled, no pruning). Can be overridden per conversation."
     )
+    max_statement_length: Optional[int] = attribute(
+        default=None,
+        description="Default maximum length for truncating utterances and responses in conversation history. Can be overridden when calling methods that accept max_statement_length parameter. None = no truncation."
+    )
 
     # =========================================================================
     # Graph Navigation Helpers
