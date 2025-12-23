@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, List, Optional, Any
+from typing import TYPE_CHECKING, List, Optional, Any, Dict
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
@@ -33,6 +33,12 @@ class User(Node):
     """
 
     user_id: str = attribute(indexed=True, index_unique=True, default="", description="Unique user identifier")
+    name: Optional[str] = attribute(default=None, description="User's preferred name (raw input)")
+    display_name: Optional[str] = attribute(default=None, description="Formatted display name for addressing the user")
+    user_model: Dict[str, Any] = attribute(
+        default_factory=dict,
+        description="Compressed collection of facts and preferences about the user",
+    )
     created_at: datetime = attribute(
         default_factory=lambda: datetime.now(timezone.utc), description="Timestamp of user creation"
     )
@@ -155,3 +161,50 @@ class User(Node):
         """Update last_seen timestamp to current time."""
         self.last_seen = datetime.now(timezone.utc)
         await self.save()
+
+    def get_name(self) -> Optional[str]:
+        """Return the raw name provided by the user."""
+        return self.name
+
+    async def set_name(self, name: str, display_name: Optional[str] = None) -> None:
+        """Set the user's name and optionally a formatted display name."""
+        self.name = name
+        # If display_name is explicitly passed, use it; otherwise default to name
+        self.display_name = display_name if display_name is not None else name
+        await self.save()
+
+    async def set_display_name(self, display_name: str) -> None:
+        """Set the display name independently of the raw name."""
+        self.display_name = display_name
+        await self.save()
+
+    def get_display_name(self) -> str:
+        """Get a formatted name for addressing the user."""
+        if self.display_name:
+            return self.display_name
+        if self.name:
+            return self.name
+        return "user"
+
+    async def update_user_model(
+        self,
+        facts: Optional[List[str]] = None,
+        preferences: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Update the stored user model facts/preferences and timestamp."""
+        if not self.user_model:
+            self.user_model = {"facts": [], "preferences": {}, "last_updated": None}
+
+        if facts:
+            self.user_model["facts"].extend(facts)
+        if preferences:
+            self.user_model["preferences"].update(preferences)
+
+        self.user_model["last_updated"] = datetime.now(timezone.utc)
+        await self.save()
+
+    def get_user_model(self) -> Dict[str, Any]:
+        """Return the current user model with sensible defaults."""
+        if not self.user_model:
+            return {"facts": [], "preferences": {}, "last_updated": None}
+        return self.user_model

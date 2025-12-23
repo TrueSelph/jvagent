@@ -268,6 +268,16 @@ class PersonaAction(Action):
             logger.error(f"Error in PersonaAction.respond: {e}", exc_info=True)
             raise
 
+    async def _get_user_display_name(self, interaction: Interaction) -> str:
+        """Resolve a friendly user name for prompt personalization."""
+        try:
+            user = await interaction.get_user()
+            if user:
+                return user.get_display_name()
+        except Exception as e:
+            logger.debug(f"PersonaAction: failed to resolve user display name: {e}")
+        return "user"
+
     async def _compose_prompt(
         self,
         interaction: Interaction,
@@ -437,7 +447,7 @@ class PersonaAction(Action):
             agent_role=self.persona_role,
             agent_description=self.persona_description,
             agent_capabilities=capabilities_str,
-            user=interaction.user_id or "user",
+            user=await self._get_user_display_name(interaction),
             date=date_str,
             time=time_str,
             directives_section=directives_section,
