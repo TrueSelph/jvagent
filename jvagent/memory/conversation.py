@@ -436,7 +436,9 @@ class Conversation(Node):
         over which elements to include and whether to format for language models.
 
         Args:
-            limit: Maximum number of interactions to include (most recent)
+            limit: Maximum number of interactions to include (most recent). The limit is 
+                applied to the number of interactions fetched, then with_xxx flags control 
+                which fields are included in the output for each interaction.
             excluded: Interaction ID(s) to exclude from results. Can be a single string, 
                 a list of strings, or False (default) for no exclusion.
             with_utterance: If True, include user utterances (default: True)
@@ -452,6 +454,11 @@ class Conversation(Node):
         Returns:
             If formatted=True: List of dictionaries with 'role' and 'content' keys
             If formatted=False: List of dictionaries with selected elements and metadata
+            
+        Note:
+            The with_xxx flags control field inclusion, not interaction filtering. 
+            All interactions within the limit are included in results; interactions 
+            without requested fields will have those fields omitted from the entry.
         """
         # Normalize excluded to a set of IDs for efficient lookup
         excluded_ids: set = set()
@@ -489,16 +496,6 @@ class Conversation(Node):
             # Raw format with selected elements
             history: List[Dict[str, Any]] = []
             for interaction in interactions:
-                # Filter: if only event requested, skip interactions without events
-                if with_event and not with_interpretation and not with_utterance and not with_response:
-                    if not interaction.events:
-                        continue
-                
-                # Filter: if only interpretation requested, skip interactions without interpretation
-                if with_interpretation and not with_event and not with_utterance and not with_response:
-                    if not interaction.interpretation:
-                        continue
-                
                 entry: Dict[str, Any] = {
                     "interaction_id": interaction.id,
                     "started_at": interaction.started_at.isoformat() if interaction.started_at else None,
