@@ -1,11 +1,15 @@
 """Interaction node for representing single exchanges within a conversation."""
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from jvagent.action.model.base import logger
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute, compound_index
+
+if TYPE_CHECKING:
+    from jvagent.memory.user import User
+    from jvagent.memory.conversation import Conversation
 
 
 @compound_index([("context.conversation_id", 1), ("context.started_at", -1)], name="conv_timestamp")
@@ -392,6 +396,26 @@ class Interaction(Node):
                 # Get Agent from Conversation using its get_agent() method
                 return await conversation.get_agent()
         return None
+
+    async def get_user(self) -> Optional["User"]:
+        """Get the User node this Interaction belongs to.
+
+        Traverses: Interaction -> Conversation -> User.
+
+        Returns:
+            User instance if found, None otherwise
+        """
+        from jvagent.memory.conversation import Conversation
+        from jvagent.memory.user import User
+
+        if not self.conversation_id:
+            return None
+
+        conversation = await Conversation.get(self.conversation_id)
+        if not conversation:
+            return None
+
+        return await conversation.node(direction="in", node=User)
 
     async def get_conversation(self) -> Optional["Conversation"]:
         """Get the Conversation node this Interaction belongs to.
