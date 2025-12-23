@@ -49,7 +49,7 @@ class InteractRouter(InteractAction):
         description="Type of LanguageModelAction to use for LLM calls (e.g., 'OpenAILanguageModelAction'). If empty, uses first available."
     )
     history_limit: int = attribute(
-        default=5,
+        default=3,
         description="Number of previous interactions to include in conversation history",
         ge=0
     )
@@ -199,8 +199,16 @@ class InteractRouter(InteractAction):
 
                 # Create event entry for successful routing
                 if all_allowed:
-                    anchors_str = ", ".join(all_allowed)
-                    event_message = f"System routed to: {anchors_str}"
+                    if routed_actions and combined_exceptions:
+                        routes_str = ", ".join(routed_actions)
+                        exceptions_str = ", ".join(combined_exceptions)
+                        event_message = f"Routed to {routes_str}, with exceptions {exceptions_str}"
+                    elif combined_exceptions:
+                        exceptions_str = ", ".join(combined_exceptions)
+                        event_message = f"Routed to exceptions {exceptions_str}"
+                    else:
+                        routes_str = ", ".join(routed_actions)
+                        event_message = f"Routed to {routes_str}"
                     await visitor.add_event(event_message)
 
                 await interaction.save()
@@ -271,6 +279,15 @@ class InteractRouter(InteractAction):
         anchors_dict: Dict[str, List[str]] = {}
         for action in interact_actions:
             entity_name = action.get_class_name()
+
+            # Skip actions that always execute or are in exceptions - no need to route to them
+            if getattr(action, "always_execute", False) or entity_name in self.exceptions:
+                logger.debug(
+                    f"InteractRouter: Skipping {entity_name} from routing prompt "
+                    f"(always_execute={getattr(action, 'always_execute', False)}, "
+                    f"in exceptions={entity_name in self.exceptions})"
+                )
+                continue
 
             # Get anchors - check both attribute and context directly
             anchors = getattr(action, 'anchors', None)
