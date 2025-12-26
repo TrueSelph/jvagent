@@ -11,8 +11,9 @@ A modular, pluggable agentive platform built on jvspatial that provides a produc
   - [Actions](#actions)
   - [InteractActions](#interactactions)
   - [Agents](#agents)
-  - [Memory System](#memory-system)
-  - [Namespaces](#namespaces)
+- [Memory System](#memory-system)
+- [Namespaces](#namespaces)
+- [Logging System](#logging-system)
 - [Directory Structure](#directory-structure)
 - [Configuration Files](#configuration-files)
 - [Creating Actions](#creating-actions)
@@ -411,6 +412,20 @@ See the [InteractAction API Guide](jvagent/action/interact/README.md) for comple
 - Same action name can exist in different namespaces
 - Actions are referenced using `namespace/action_name` format
 
+### Logging System
+
+jvagent includes a comprehensive logging system that maintains complete interaction logs in a separate database. This enables audit trails, compliance, and debugging without impacting main database performance.
+
+**Key Features:**
+- Separate logging database connection
+- Complete interaction data capture
+- Query logs by agent, user, conversation, or time range
+- Archive logs to external storage (JSON/CSV)
+- Configurable retention policies
+- Non-blocking async logging
+
+See the [Logging System Documentation](docs/logging.md) for complete details on configuration, API endpoints, and usage.
+
 ## Directory Structure
 
 ```
@@ -497,7 +512,7 @@ config:
   
   database:
     type: json
-    path: ./jvdb
+    path: ./jvagent_db
   
   file_storage:
     provider: local
@@ -680,6 +695,9 @@ actions:
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md) - Vector store retrieval with simplified API
 - [IntroInteractAction](jvagent/action/intro/README.md) - First-time user welcome messages
 - [Model Actions](jvagent/action/model/README.md) - Language and embedding model integrations
+
+**System Documentation:**
+- [Logging System](docs/logging.md) - Comprehensive interaction logging with separate database, archiving, and retention policies
 
 The action loader automatically discovers core actions from the jvagent library if they're not found locally.
 
@@ -1089,7 +1107,7 @@ Key environment variables (see `.env.example` for full list):
 
 **Database Configuration:**
 - `JVSPATIAL_DB_TYPE` - Database type: `json` or `mongodb` (default: `json`)
-- `JVSPATIAL_DB_PATH` - Database path (default: `./jvdb`)
+- `JVSPATIAL_DB_PATH` - Database path (default: `./jvagent_db`)
 
 **Authentication:**
 - `JVAGENT_AUTH_ENABLED` - Enable authentication (default: `true`)

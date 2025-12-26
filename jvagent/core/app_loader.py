@@ -64,6 +64,8 @@ class AppDescriptor:
         self.file_storage_provider = context.get("file_storage_provider", "local")
         self.file_storage_root_dir = context.get("file_storage_root_dir", ".files")
         self.file_storage_enabled = context.get("file_storage_enabled", True)
+        self.logging_enabled = context.get("logging_enabled", True)
+        self.log_retention_days = context.get("log_retention_days", 60)
 
         # Additional properties from context (excluding reserved fields)
         self.properties = {
@@ -76,6 +78,8 @@ class AppDescriptor:
                 "file_storage_provider",
                 "file_storage_root_dir",
                 "file_storage_enabled",
+                "logging_enabled",
+                "log_retention_days",
             ]
         }
 
@@ -236,6 +240,8 @@ class AppLoader:
                     app.file_storage_provider = descriptor.file_storage_provider
                     app.file_storage_root_dir = descriptor.file_storage_root_dir
                     app.file_storage_enabled = descriptor.file_storage_enabled
+                    app.logging_enabled = descriptor.logging_enabled
+                    app.log_retention_days = descriptor.log_retention_days
 
                     # Apply additional context properties
                     self._apply_app_properties(app, descriptor.properties)
@@ -255,6 +261,8 @@ class AppLoader:
                 "file_storage_provider": descriptor.file_storage_provider,
                 "file_storage_root_dir": descriptor.file_storage_root_dir,
                 "file_storage_enabled": descriptor.file_storage_enabled,
+                "logging_enabled": descriptor.logging_enabled,
+                "log_retention_days": descriptor.log_retention_days,
             }
 
             # Apply additional context properties
