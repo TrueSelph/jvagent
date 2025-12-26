@@ -369,7 +369,7 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
 - **Automatic Persistence**: Interactions are automatically saved after adding directives/parameters
 - **Routing Support**: Can be routed via InteractRouter based on anchor statements
 
-See the [InteractAction API Guide](jvagent/action/interact/API_GUIDE.md) for complete documentation.
+See the [InteractAction API Guide](jvagent/action/interact/README.md) for complete documentation.
 
 ### Agents
 
@@ -675,7 +675,7 @@ actions:
 - **Other**: `jvagent/persona` (can be overridden locally)
 
 **Core Action Documentation:**
-- [InteractAction API Guide](jvagent/action/interact/API_GUIDE.md) - Complete guide to InteractAction API including `respond()` method
+- [InteractAction API Guide](jvagent/action/interact/README.md) - Complete guide to InteractAction API including `respond()` method
 - [InteractRouter](jvagent/action/router/README.md) - Intent-based routing for InteractActions
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md) - Vector store retrieval with simplified API
 - [IntroInteractAction](jvagent/action/intro/README.md) - First-time user welcome messages

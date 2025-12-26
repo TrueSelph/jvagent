@@ -16,7 +16,6 @@ from jvspatial.core.annotations import attribute
 
 
 from .data_node import DataNode
-# from .gather_info_walker import GatherInfoWalker
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +106,7 @@ class GatherInfoInteractAction(InteractAction):
                 await self.connect(node)
             else:
                 await nodes[-2].connect(node)
-            logger.debug("GatherInfoInteractAction: Connected nodes, ", nodes)
+            logger.debug(f"GatherInfoInteractAction: Connected nodes: {nodes}")
 
     async def on_reload(self) -> None:
         """Called when action is reloaded."""
@@ -175,7 +174,7 @@ class GatherInfoInteractAction(InteractAction):
 
         if directive:
             directives = [directive]
-            # TODO: get the parent action name and descriptionand use it in events and the key for conversation data
+            # TODO: Get the parent action name and description and use it in events and the key for conversation data
             await visitor.add_event(f"gathering information for signing up for jvagent")
             # Generate response via PersonaAction with directive
             await self.respond(
@@ -244,8 +243,6 @@ class GatherInfoInteractAction(InteractAction):
                 model=self.model,
                 temperature=self.model_temperature,
                 max_tokens=self.model_max_tokens,
-                # response_bus=response_bus,
-                # interaction=visitor.interaction,
                 response_format={"type": "json_object"} if json_only else None,
             )
         except Exception as e:
