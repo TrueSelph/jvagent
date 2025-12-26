@@ -286,6 +286,7 @@ class Conversation(Node):
             current = await self.get_last_interaction()
             while current:
                 interactions.append(current)
+                # Strictly enforce limit: break immediately when limit is reached
                 if limit > 0 and len(interactions) >= limit:
                     break
                 current = await current.get_previous_interaction()
@@ -294,9 +295,14 @@ class Conversation(Node):
             current = await self.get_first_interaction()
             while current:
                 interactions.append(current)
+                # Strictly enforce limit: break immediately when limit is reached
                 if limit > 0 and len(interactions) >= limit:
                     break
                 current = await current.get_next_interaction()
+
+        # Defensive check: ensure we never exceed limit when limit > 0
+        if limit > 0 and len(interactions) > limit:
+            interactions = interactions[:limit]
 
         return interactions
 
@@ -468,9 +474,13 @@ class Conversation(Node):
             elif isinstance(excluded, list):
                 excluded_ids.update(excluded)
         
+        # Fetch enough interactions to account for exclusions, ensuring we get exactly 'limit' non-excluded ones
+        # If we need to exclude some, fetch extra to compensate
+        fetch_limit = limit + len(excluded_ids) if excluded_ids else limit
+        
         # Get most recent interactions (reverse=True gives newest first)
         interactions = await self.get_interactions(
-            limit=limit + len(excluded_ids) if excluded_ids else limit, 
+            limit=fetch_limit if fetch_limit > 0 else 0, 
             reverse=True
         )
         
@@ -478,8 +488,11 @@ class Conversation(Node):
         if excluded_ids:
             interactions = [i for i in interactions if i.id not in excluded_ids]
         
-        # Limit to requested number and reverse to chronological order (oldest first)
+        # Strictly limit to requested number (defensive: ensure we never exceed limit)
+        # This handles cases where get_interactions might return more than requested
         interactions = interactions[:limit]
+        
+        # Reverse to chronological order (oldest first)
         interactions.reverse()
         
         if formatted:

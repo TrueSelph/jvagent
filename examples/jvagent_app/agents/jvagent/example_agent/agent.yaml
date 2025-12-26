@@ -41,7 +41,7 @@ actions:
       description: "Intent-based routing action that analyzes utterances and routes to appropriate InteractActions"
       # Model Configuration (uses OpenAI model action by entity type)
       model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
-      history_limit: 10  # Number of previous interactions to include in context
+      history_limit: 3  # Number of previous interactions to include in context
       # Optional: List of InteractAction entity names that must always execute.
       # When using the InteractAction.always_execute flag, exceptions can be
       # managed declaratively in code instead of being listed here.
@@ -100,7 +100,7 @@ actions:
       # Optional: Minimum similarity score threshold (0.0-1.0)
       # min_score_threshold: 0.7
       # Optional: Customize directive template (default shown for reference)
-      directive_template: |
+      directive: |
         Context retrieved from knowledge base:
         {results}
         Use this context to inform your response to the user's query.

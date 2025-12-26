@@ -18,6 +18,7 @@ from jvagent.action.router.prompts import (
     ROUTING_PROMPT_TEMPLATE,
     SYSTEM_PROMPT_TEMPLATE,
 )
+from jvagent.memory.conversation import Conversation
 
 if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
@@ -116,33 +117,20 @@ class InteractRouter(InteractAction):
                 # Store empty routing result
                 interaction.interpretation = f"User said: {interaction.utterance[:50]}"
                 # Even with no anchors, always include configured and dynamic exceptions
-                from jvagent.action.interact.base import InteractAction
-
-                actions_manager = await agent.get_actions_manager()
-                dynamic_exceptions: List[str] = []
-                if actions_manager:
-                    all_interact_actions = await actions_manager.get_all_actions(
-                        enabled_only=True, entity=InteractAction
-                    )
-                    dynamic_exceptions = [
-                        a.get_class_name()
-                        for a in all_interact_actions
-                        if getattr(a, "always_execute", False)
-                    ]
-
+                dynamic_exceptions = await self._get_dynamic_exceptions(agent)
                 combined_exceptions = list(set(self.exceptions + dynamic_exceptions))
                 interaction.anchors = combined_exceptions
                 await interaction.save()
                 return
 
             # Get conversation history (formatted as role/content pairs)
-            from jvagent.memory.conversation import Conversation
 
             conversation = await Conversation.get(interaction.conversation_id)
             interaction_history = []
             if conversation:
                 interaction_history = await conversation.get_interaction_history(
-                    limit=self.history_limit,
+                    limit=self.history_limit,  # Respects the configured/default history_limit
+                    excluded=interaction.id,  # Exclude current interaction
                     with_utterance=False,
                     with_response=False,
                     with_interpretation=True,
@@ -150,14 +138,11 @@ class InteractRouter(InteractAction):
                     formatted=True,
                 )
 
-                logger.debug(f"InteractRouter: Conversation history: {interaction_history}")
-
             # Build routing prompt (history will be passed separately to LLM)
             prompt = self._build_routing_prompt(
                 interaction.utterance,
                 anchors_dict
             )
-
 
             response_text = await model_action.generate(
                 prompt=prompt,
@@ -179,20 +164,7 @@ class InteractRouter(InteractAction):
                 # Combine routed actions with exceptions (exceptions always included)
                 routed_actions = routing_data.get("actions", [])
                 # Compute dynamic exceptions from InteractActions that always_execute
-                from jvagent.action.interact.base import InteractAction
-
-                actions_manager = await agent.get_actions_manager()
-                dynamic_exceptions: List[str] = []
-                if actions_manager:
-                    all_interact_actions = await actions_manager.get_all_actions(
-                        enabled_only=True, entity=InteractAction
-                    )
-                    dynamic_exceptions = [
-                        a.get_class_name()
-                        for a in all_interact_actions
-                        if getattr(a, "always_execute", False)
-                    ]
-
+                dynamic_exceptions = await self._get_dynamic_exceptions(agent)
                 combined_exceptions = list(set(self.exceptions + dynamic_exceptions))
                 all_allowed = list(set(routed_actions + combined_exceptions))
                 interaction.anchors = all_allowed
@@ -222,20 +194,7 @@ class InteractRouter(InteractAction):
                 # This ensures the walker knows routing was attempted
                 interaction.interpretation = f"User said: {interaction.utterance[:50]}"
                 # Compute dynamic exceptions even if parsing fails
-                from jvagent.action.interact.base import InteractAction
-
-                actions_manager = await agent.get_actions_manager()
-                dynamic_exceptions: List[str] = []
-                if actions_manager:
-                    all_interact_actions = await actions_manager.get_all_actions(
-                        enabled_only=True, entity=InteractAction
-                    )
-                    dynamic_exceptions = [
-                        a.get_class_name()
-                        for a in all_interact_actions
-                        if getattr(a, "always_execute", False)
-                    ]
-
+                dynamic_exceptions = await self._get_dynamic_exceptions(agent)
                 combined_exceptions = list(set(self.exceptions + dynamic_exceptions))
                 interaction.anchors = combined_exceptions  # Only exceptions if no routing data
                 await interaction.save()
@@ -249,6 +208,27 @@ class InteractRouter(InteractAction):
             logger.error(f"InteractRouter: Error during routing: {e}", exc_info=True)
             # Don't raise - let other actions continue
 
+    async def _get_dynamic_exceptions(self, agent: Any) -> List[str]:
+        """Get list of InteractAction entity names that have always_execute=True.
+
+        Args:
+            agent: Agent instance
+
+        Returns:
+            List of entity names that should always execute
+        """
+        actions_manager = await agent.get_actions_manager()
+        if not actions_manager:
+            return []
+
+        all_interact_actions = await actions_manager.get_all_actions(
+            enabled_only=True, entity=InteractAction
+        )
+        return [
+            a.get_class_name()
+            for a in all_interact_actions
+            if getattr(a, "always_execute", False)
+        ]
 
     async def _collect_anchors(self, agent: Any) -> Dict[str, List[str]]:
         """Collect anchors from all InteractActions.
