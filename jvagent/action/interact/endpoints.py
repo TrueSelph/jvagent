@@ -16,6 +16,7 @@ from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
 
 from jvagent.core.agent import Agent
 from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.action.interact.response_builder import build_interact_response
 from jvagent.action.response.streaming import create_sse_response, format_sse_chunk
 
 logger = logging.getLogger(__name__)
@@ -40,16 +41,22 @@ logger = logging.getLogger(__name__)
             ),
             "response": ResponseField(
                 field_type=Optional[str],  # type: ignore[arg-type]
-                description="Agent response (if set by InteractAction)",
+                description="Agent response (always returned)",
                 example="Hello! How can I help you today?",
             ),
             "interaction": ResponseField(
                 field_type=Dict[str, Any],
-                description="Interaction details",
+                description=(
+                    "Interaction details. In production mode (JVAGENT_ENVIRONMENT=production), "
+                    "only includes: id, utterance, response. In development mode, includes: "
+                    "id, utterance, response, actions, directives, parameters, events, "
+                    "observability_metrics, streamed."
+                ),
                 example={
                     "id": "int_123",
                     "utterance": "Hello",
                     "response": "Hi there!",
+                    # Development mode only:
                     "actions": ["InteractAction1", "InteractAction2"],
                     "directives": [],
                     "parameters": [],
@@ -58,8 +65,11 @@ logger = logging.getLogger(__name__)
                 },
             ),
             "report": ResponseField(
-                field_type=List[Dict[str, Any]],
-                description="Walker traversal report",
+                field_type=Optional[List[Dict[str, Any]]],  # type: ignore[arg-type]
+                description=(
+                    "Walker traversal report (development mode only). "
+                    "Excluded when JVAGENT_ENVIRONMENT=production."
+                ),
                 example=[
                     {
                         "interaction_created": {
@@ -69,6 +79,7 @@ logger = logging.getLogger(__name__)
                         }
                     }
                 ],
+                default=None,
             ),
         }
     ),
@@ -194,24 +205,13 @@ async def interact_endpoint(
             interaction.close_interaction()
             await interaction.save()
 
-            # Build response
-            result: Dict[str, Any] = {
-                "user_id": walker.user_id or "",
-                "session_id": walker.session_id or "",
-                "response": interaction.response,
-                "interaction": {
-                    "id": interaction.id,
-                    "utterance": interaction.utterance,
-                    "response": interaction.response,
-                    "actions": interaction.actions,
-                    "directives": interaction.directives,
-                    "parameters": interaction.parameters,
-                    "events": interaction.events,
-                    "observability_metrics": interaction.observability_metrics,
-                    "streamed": interaction.streamed,
-                },
-                "report": report,
-            }
+            # Build response with environment-based filtering
+            result = build_interact_response(
+                user_id=walker.user_id or "",
+                session_id=walker.session_id or "",
+                interaction=interaction,
+                report=report,
+            )
 
             return result
 
@@ -327,23 +327,18 @@ async def _stream_interaction(
             interaction.close_interaction()
             await interaction.save()
 
-            # Send final consolidated response
+            # Send final consolidated response (filtered for production)
             report = await walker.get_report()
+            final_response = build_interact_response(
+                user_id=walker.user_id or "",
+                session_id=walker.session_id or "",
+                interaction=interaction,
+                report=report,
+            )
             yield format_sse_chunk(
                 {
                     "type": "final",
-                    "interaction": {
-                        "id": interaction.id,
-                        "utterance": interaction.utterance,
-                        "response": interaction.response,
-                        "actions": interaction.actions,
-                        "directives": interaction.directives,
-                        "parameters": interaction.parameters,
-                        "events": interaction.events,
-                        "observability_metrics": interaction.observability_metrics,
-                        "streamed": interaction.streamed,
-                    },
-                    "report": report,
+                    **final_response,  # Spread the filtered response
                 }
             )
 
@@ -375,21 +370,16 @@ async def _stream_interaction(
             await interaction.save()
 
             report = await walker.get_report()
+            final_response = build_interact_response(
+                user_id=walker.user_id or "",
+                session_id=walker.session_id or "",
+                interaction=interaction,
+                report=report,
+            )
             yield format_sse_chunk(
                 {
                     "type": "final",
-                    "interaction": {
-                        "id": interaction.id,
-                        "utterance": interaction.utterance,
-                        "response": interaction.response,
-                        "actions": interaction.actions,
-                        "directives": interaction.directives,
-                        "parameters": interaction.parameters,
-                        "events": interaction.events,
-                        "observability_metrics": interaction.observability_metrics,
-                        "streamed": interaction.streamed,
-                    },
-                    "report": report,
+                    **final_response,  # Spread the filtered response
                 }
             )
 

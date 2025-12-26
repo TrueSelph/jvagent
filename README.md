@@ -1082,6 +1082,10 @@ Key environment variables (see `.env.example` for full list):
 - `JVAGENT_PORT` - Server port (default: `8000`)
 - `JVAGENT_TITLE` - API title
 - `JVAGENT_VERSION` - Application version
+- `JVAGENT_ENVIRONMENT` - Environment mode: `development` or `production` (default: `development`)
+  - In `production` mode: API responses exclude observability metrics, walker reports, and debugging data
+  - In `development` mode: API responses include full debugging and observability information
+  - Case-insensitive
 
 **Database Configuration:**
 - `JVSPATIAL_DB_TYPE` - Database type: `json` or `mongodb` (default: `json`)

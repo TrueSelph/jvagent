@@ -73,8 +73,11 @@ export interface ResponseMessageData {
   channel: string
   metadata: Record<string, any>
   observability_data?: Record<string, any>
-  timestamp: string | null
-  delivered: boolean
+  // timestamp is omitted for stream_chunk messages (not useful - chunks arrive in order,
+  // timestamp only needed once when creating message bubble, client can timestamp on receipt)
+  timestamp?: string | null
+  // delivered is omitted from stream payloads - only meaningful for channel adapters
+  // tracking external API delivery, not for direct SSE streaming
 }
 
 export interface SSEChunk {
