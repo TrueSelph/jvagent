@@ -30,6 +30,13 @@ logger = logging.getLogger(__name__)
 # Suppress noisy asyncio selector logs
 logging.getLogger("asyncio").setLevel(logging.WARNING)
 
+from jvagent.utils.env import (
+    EnvironmentMode,
+    get_environment_mode,
+    is_development_mode,
+    is_production_mode,
+)
+
 
 def load_app_env(app_root: str = None) -> None:
     """Load .env file from the app root directory.

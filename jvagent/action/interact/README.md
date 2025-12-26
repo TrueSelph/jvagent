@@ -9,6 +9,100 @@ InteractAction provides a simplified API for:
 - Generating responses via PersonaAction
 - Managing interaction state efficiently
 
+## Interact Endpoint Response Format
+
+The `/agents/{agent_id}/interact` endpoint response format varies based on the `JVAGENT_ENVIRONMENT` setting:
+
+### Production Mode (`JVAGENT_ENVIRONMENT=production`)
+
+**Minimal payload** - excludes debugging and observability data:
+
+```json
+{
+  "user_id": "usr_abc123",
+  "session_id": "sess_xyz789",
+  "response": "Hello! How can I help you today?",
+  "interaction": {
+    "id": "int_123",
+    "utterance": "Hello",
+    "response": "Hello! How can I help you today?"
+  }
+}
+```
+
+**Excluded fields:**
+- `report` - Walker traversal report
+- `interaction.actions` - Executed actions list
+- `interaction.directives` - Directives issued
+- `interaction.parameters` - Parameters applied
+- `interaction.events` - System events
+- `interaction.observability_metrics` - Model calls, token counts, etc.
+- `interaction.streamed` - Streaming flag
+
+### Development Mode (`JVAGENT_ENVIRONMENT=development`, default)
+
+**Full payload** - includes all debugging and observability data:
+
+```json
+{
+  "user_id": "usr_abc123",
+  "session_id": "sess_xyz789",
+  "response": "Hello! How can I help you today?",
+  "interaction": {
+    "id": "int_123",
+    "utterance": "Hello",
+    "response": "Hello! How can I help you today?",
+    "actions": ["InteractRouter", "ConverseInteractAction"],
+    "directives": [],
+    "parameters": [],
+    "events": [],
+    "observability_metrics": [
+      {
+        "event_type": "model_call",
+        "data": {
+          "model": "gpt-4",
+          "tokens": 150,
+          "duration_ms": 234
+        }
+      }
+    ],
+    "streamed": false
+  },
+  "report": [
+    {
+      "interaction_created": {
+        "interaction_id": "int_123",
+        "user_id": "usr_abc123",
+        "session_id": "sess_xyz789"
+      }
+    }
+  ]
+}
+```
+
+### Streaming Responses
+
+For streaming responses (`stream=true`), stream chunk messages also respect the environment mode:
+
+- **Observability data**: Never included in stream chunks (keeps payloads lightweight)
+- **Timestamp**: Omitted for `stream_chunk` messages (not useful - chunks arrive in order)
+- **Delivered status**: Omitted (only meaningful for channel adapters, not SSE streaming)
+- **Final chunk**: Uses the same filtering as non-streaming responses based on `JVAGENT_ENVIRONMENT`
+
+### Configuration
+
+Set the environment variable in your `.env` file or deployment configuration:
+
+```bash
+# Development (default) - includes all debug data
+JVAGENT_ENVIRONMENT=development
+
+# Production - minimal payload only
+JVAGENT_ENVIRONMENT=production
+```
+
+**Note:** The environment variable is case-insensitive. Defaults to `development` if not set.
+
 ## respond() Method
 
 The `respond()` method is the primary way to generate responses via PersonaAction. It supports passing directives and parameters directly, eliminating the need for separate method calls.

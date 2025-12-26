@@ -66,11 +66,17 @@ class ResponseMessage(Object):
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert message to dictionary format.
+        
+        Observability data, delivered status, and timestamp are conditionally omitted:
+        - observability_data: Never included (keeps payloads lightweight)
+        - delivered: Only meaningful for channel adapters, not SSE streaming
+        - timestamp: Omitted for stream_chunk messages (not useful - chunks arrive in order,
+          timestamp only needed once when creating message bubble, client can timestamp on receipt)
 
         Returns:
             Dictionary representation of the message
         """
-        return {
+        result: Dict[str, Any] = {
             "id": self.id,
             "session_id": self.session_id,
             "interaction_id": self.interaction_id,
@@ -78,8 +84,13 @@ class ResponseMessage(Object):
             "content": self.content,
             "channel": self.channel,
             "metadata": self.metadata,
-            "observability_data": self.observability_data,
-            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
-            "delivered": self.delivered,
         }
+        
+        # Only include timestamp for non-stream-chunk messages
+        # Stream chunks arrive in order, timestamp is only used once (first chunk),
+        # and client can timestamp on receipt for better UX
+        if self.message_type != "stream_chunk":
+            result["timestamp"] = self.timestamp.isoformat() if self.timestamp else None
+        
+        return result
 
