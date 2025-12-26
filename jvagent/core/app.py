@@ -47,6 +47,14 @@ class App(Node):
         default=True, description="Whether file storage is enabled"
     )
 
+    # Logging configuration
+    logging_enabled: bool = attribute(
+        default=True, description="Whether logging is enabled for this app"
+    )
+    log_retention_days: int = attribute(
+        default=60, description="Log retention window in days (default: 60)"
+    )
+
     # Runtime instances (private, transient)
     _file_interface: Any = attribute(private=True, default=None)
     _proxy_manager: Any = attribute(private=True, default=None)

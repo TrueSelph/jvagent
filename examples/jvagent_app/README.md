@@ -333,7 +333,7 @@ The `.env` file contains runtime-specific configuration that overrides `app.yaml
 - `JVAGENT_HOST`, `JVAGENT_PORT`: Server host and port
 - `JVAGENT_ENVIRONMENT`: Environment mode (`development` or `production`, default: `development`)
   - Set to `production` in production deployments to exclude observability metrics and debugging data from API responses
-- `JVSPATIAL_DB_PATH`: Database path (production will use its own path)
+- `JVSPATIAL_DB_PATH`: Database path (default: `./jvagent_db`, production will use its own path)
 - `JVSPATIAL_FILE_INTERFACE`: File storage provider (local, s3)
 - `JVSPATIAL_FILES_ROOT_PATH`: Root path for file storage (production will use its own path)
 - `JVSPATIAL_JWT_SECRET`: JWT secret key (MUST be set in production)

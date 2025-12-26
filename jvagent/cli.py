@@ -231,7 +231,16 @@ def create_server_from_config(debug: bool = False) -> Server:
 
     # Database configuration
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
-    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvdb")
+    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
+    # Ensure db_path is never None or empty (jvspatial falls back to "./jvdb" if None)
+    if not db_path or db_path.strip() == "":
+        db_path = "./jvagent_db"
+    
+    # Set JVSPATIAL_JSONDB_PATH unconditionally to ensure DatabaseManager uses the correct path
+    # (DatabaseManager uses JVSPATIAL_JSONDB_PATH, not JVSPATIAL_DB_PATH)
+    # This must be set before any database initialization occurs
+    if db_type == "json":
+        os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
 
     # Graph endpoint configuration
     graph_endpoint_enabled = os.getenv("JVSPATIAL_GRAPH_ENDPOINT_ENABLED", "false").lower() == "true"
@@ -267,6 +276,16 @@ def create_server_from_config(debug: bool = False) -> Server:
         graph_endpoint_enabled=graph_endpoint_enabled,
         log_level=log_level,
     )
+
+    # Initialize logging database and conditionally load endpoints
+    from jvagent.logging.config import initialize_logging_database, get_logging_config
+    
+    # Only import endpoints if logging is enabled (they will check app-level config at runtime)
+    logging_config = get_logging_config()
+    if logging_config.get("enabled", True):
+        from jvagent.logging import endpoints  # noqa: F401 - Import to register endpoints
+    
+    initialize_logging_database()
 
     return server
 
@@ -368,6 +387,17 @@ def main() -> None:
     # Load .env file from app root directory
     load_app_env(app_root=app_root)
 
+    # Set database path environment variables BEFORE any database initialization
+    # This must happen before any database operations to prevent jvspatial from using defaults
+    db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
+    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
+    if not db_path or db_path.strip() == "":
+        db_path = "./jvagent_db"
+    # Set JVSPATIAL_JSONDB_PATH unconditionally to ensure DatabaseManager uses correct path
+    # (DatabaseManager uses JVSPATIAL_JSONDB_PATH, not JVSPATIAL_DB_PATH)
+    if db_type == "json":
+        os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
+
     # Check for --debug flag
     debug_flag = "--debug" in args
     if debug_flag:
@@ -439,7 +469,7 @@ Environment Variables:
     JVAGENT_ADMIN_PASSWORD     Admin user password (required)
     JVAGENT_HOST              Server host (default: 127.0.0.1)
     JVAGENT_PORT              Server port (default: 8000)
-    JVSPATIAL_DB_PATH         Database path (default: ./jvdb)
+    JVSPATIAL_DB_PATH         Database path (default: ./jvagent_db)
     JVSPATIAL_FILES_ROOT_PATH File storage path (default: .files)
 
 Examples:
@@ -464,6 +494,16 @@ def run_server(update_if_exists: bool = False, debug: bool = False, app_root: st
 
     if app_root is None:
         app_root = os.getcwd()
+
+    # Set database path environment variables BEFORE any database initialization
+    # This must happen before creating the server to prevent jvspatial from using defaults
+    db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
+    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
+    if not db_path or db_path.strip() == "":
+        db_path = "./jvagent_db"
+    # Set JVSPATIAL_JSONDB_PATH unconditionally to ensure DatabaseManager uses correct path
+    if db_type == "json":
+        os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
 
     bootstrap_log = BootstrapLogger("Startup")
     bootstrap_log.start("jvagent application")
@@ -493,6 +533,13 @@ def run_server(update_if_exists: bool = False, debug: bool = False, app_root: st
 
 
 async def show_status(app_root: str = None) -> None:
+    # Set database path environment variables BEFORE any database initialization
+    db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
+    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
+    if not db_path or db_path.strip() == "":
+        db_path = "./jvagent_db"
+    if db_type == "json":
+        os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
     """Show application status.
 
     Args:
@@ -505,7 +552,15 @@ async def show_status(app_root: str = None) -> None:
 
     # Initialize database context
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
-    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvdb")
+    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
+    # Ensure db_path is never None or empty
+    if not db_path or db_path.strip() == "":
+        db_path = "./jvagent_db"
+    
+    # Set JVSPATIAL_JSONDB_PATH unconditionally to ensure DatabaseManager uses the correct path
+    # This must be set before any database initialization occurs
+    if db_type == "json":
+        os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
 
     # Import and initialize context
     from jvspatial.db import set_current_db_path, set_current_db_type
@@ -566,7 +621,15 @@ async def bootstrap_only(update_if_exists: bool = False, app_root: str = None) -
 
     # Initialize database context
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
-    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvdb")
+    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
+    # Ensure db_path is never None or empty
+    if not db_path or db_path.strip() == "":
+        db_path = "./jvagent_db"
+    
+    # Set JVSPATIAL_JSONDB_PATH unconditionally to ensure DatabaseManager uses the correct path
+    # This must be set before any database initialization occurs
+    if db_type == "json":
+        os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
 
     # Import and initialize context
     from jvspatial.db import set_current_db_path, set_current_db_type
@@ -611,7 +674,7 @@ def handle_agent_command(args: List[str], app_root: str = None) -> None:
 
     # Initialize database context
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
-    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvdb")
+    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
 
     from jvspatial.db import set_current_db_path, set_current_db_type
 
@@ -663,7 +726,7 @@ def handle_action_command(args: List[str], app_root: str = None) -> None:
 
     # Initialize database context
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
-    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvdb")
+    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
 
     from jvspatial.db import set_current_db_path, set_current_db_type
 

@@ -205,6 +205,19 @@ async def interact_endpoint(
             interaction.close_interaction()
             await interaction.save()
 
+            # Log interaction asynchronously (non-blocking)
+            try:
+                from jvagent.logging.service import get_logging_service
+                from jvagent.core.app import App
+                app = await App.get()
+                if app:
+                    asyncio.create_task(
+                        get_logging_service().log_interaction(interaction, app.id, agent_id)
+                    )
+            except Exception as e:
+                # Log error but don't fail the request
+                logger.warning(f"Failed to schedule interaction logging: {e}")
+
             # Build response with environment-based filtering
             result = build_interact_response(
                 user_id=walker.user_id or "",
@@ -327,6 +340,21 @@ async def _stream_interaction(
             interaction.close_interaction()
             await interaction.save()
 
+            # Log interaction asynchronously (non-blocking)
+            try:
+                from jvagent.logging.service import get_logging_service
+                from jvagent.core.app import App
+                app = await App.get()
+                if app:
+                    # Get agent_id from walker or agent
+                    agent_id_for_logging = walker.agent_id if hasattr(walker, 'agent_id') else agent.id
+                    asyncio.create_task(
+                        get_logging_service().log_interaction(interaction, app.id, agent_id_for_logging)
+                    )
+            except Exception as e:
+                # Log error but don't fail the request
+                logger.warning(f"Failed to schedule interaction logging: {e}")
+
             # Send final consolidated response (filtered for production)
             report = await walker.get_report()
             final_response = build_interact_response(
@@ -368,6 +396,20 @@ async def _stream_interaction(
             # Close interaction
             interaction.close_interaction()
             await interaction.save()
+
+            # Log interaction asynchronously (non-blocking)
+            try:
+                from jvagent.logging.service import get_logging_service
+                app = await App.get()
+                if app:
+                    # Get agent_id from walker
+                    agent_id_from_walker = walker.agent_id if hasattr(walker, 'agent_id') else None
+                    asyncio.create_task(
+                        get_logging_service().log_interaction(interaction, app.id, agent_id_from_walker)
+                    )
+            except Exception as e:
+                # Log error but don't fail the request
+                logger.warning(f"Failed to schedule interaction logging: {e}")
 
             report = await walker.get_report()
             final_response = build_interact_response(

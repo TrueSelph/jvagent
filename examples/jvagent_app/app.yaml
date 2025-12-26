@@ -45,7 +45,7 @@ config:
   # Database configuration (defaults - production will override)
   database:
     type: json
-    path: ./jvdb
+    path: ./jvagent_db
   
   # File storage configuration (defaults - production will override)
   file_storage:
