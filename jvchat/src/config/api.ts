@@ -241,22 +241,60 @@ class ApiClient {
     agentId: string,
     request: InteractionRequest
   ): Promise<InteractionResponse> {
+    // Interact endpoint is anonymous - create a request without auth headers
     // Try /api/agents/{id}/interact first, fallback to /agents/{id}/interact, with baseURL fallbacks
     const response = await this._withFallback(async (baseURL) => {
       try {
-        return await this.client.post<any>(
-          `/api/agents/${agentId}/interact`,
-          request,
-          { baseURL }
-        )
-      } catch (err: any) {
-        if (err.response?.status === 404) {
-          return await this.client.post<any>(
-            `/agents/${agentId}/interact`,
-            request,
-            { baseURL }
-          )
+        // Use fetch directly to avoid axios interceptor adding auth headers
+        const url = `${baseURL}/api/agents/${agentId}/interact`
+        const fetchResponse = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(request),
+        })
+        
+        if (!fetchResponse.ok) {
+          if (fetchResponse.status === 404) {
+            // Try without /api prefix
+            const fallbackUrl = `${baseURL}/agents/${agentId}/interact`
+            const fallbackResponse = await fetch(fallbackUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(request),
+            })
+            
+            if (!fallbackResponse.ok) {
+              const errorText = await fallbackResponse.text()
+              let errorMessage = `HTTP error! status: ${fallbackResponse.status}`
+              try {
+                const errorJson = JSON.parse(errorText)
+                errorMessage = errorJson.detail || errorJson.message || errorMessage
+              } catch {
+                errorMessage = errorText || errorMessage
+              }
+              throw new Error(errorMessage)
+            }
+            
+            return { data: await fallbackResponse.json() }
+          }
+          
+          const errorText = await fetchResponse.text()
+          let errorMessage = `HTTP error! status: ${fetchResponse.status}`
+          try {
+            const errorJson = JSON.parse(errorText)
+            errorMessage = errorJson.detail || errorJson.message || errorMessage
+          } catch {
+            errorMessage = errorText || errorMessage
+          }
+          throw new Error(errorMessage)
         }
+        
+        return { data: await fetchResponse.json() }
+      } catch (err: any) {
         throw err
       }
     })
@@ -273,7 +311,7 @@ class ApiClient {
     onChunk: (chunk: any) => void,
     onError?: (error: Error) => void
   ): Promise<void> {
-    const token = getToken()
+    // Interact endpoint is anonymous - do not send auth headers
     // Try baseURL fallbacks and /api / non-/api paths
     const bases = this.baseUrls
     let lastError: any
@@ -286,7 +324,7 @@ class ApiClient {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              // No Authorization header - endpoint is anonymous
             },
             body: JSON.stringify({ ...request, stream: true }),
           })

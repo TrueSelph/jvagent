@@ -8,24 +8,81 @@ import asyncio
 import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
+from fastapi import Request
 from fastapi.responses import StreamingResponse
 
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
+from jvspatial.api.exceptions import RateLimitError, ResourceNotFoundError, ValidationError
 
 from jvagent.core.agent import Agent
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.interact.response_builder import build_interact_response
+from jvagent.action.interact.rate_limiter import (
+    extract_client_ip,
+    get_rate_limiter,
+    initialize_rate_limiter,
+)
 from jvagent.action.response.streaming import create_sse_response, format_sse_chunk
 
 logger = logging.getLogger(__name__)
+
+# Module-level flag to track if rate limiter has been initialized from config
+_rate_limiter_initialized = False
+
+
+def _initialize_rate_limiter_from_config() -> None:
+    """Initialize rate limiter from app.yaml config (called once at module load)."""
+    global _rate_limiter_initialized
+    if _rate_limiter_initialized:
+        return
+
+    try:
+        from jvagent.core.app_loader import AppLoader
+        import os
+
+        # Try to find app.yaml in current directory or parent directories
+        app_path = os.getcwd()
+        loader = AppLoader(app_path)
+        descriptor = loader.load_app_descriptor()
+
+        if descriptor and descriptor.config:
+            interact_config = descriptor.config.get("interact", {})
+            rate_limit = interact_config.get("rate_limit_per_minute", 60)
+            max_length = interact_config.get("max_utterance_length", 2000)
+
+            # Handle None/null values
+            if max_length == "None" or max_length is None:
+                max_length = None
+
+            initialize_rate_limiter(
+                rate_limit_per_minute=rate_limit,
+                max_utterance_length=max_length,
+            )
+            logger.info(
+                f"Initialized rate limiter: {rate_limit} req/min, "
+                f"max_utterance_length={max_length or 'unlimited'}"
+            )
+        else:
+            # Use defaults
+            initialize_rate_limiter()
+            logger.debug("Using default rate limiter configuration")
+    except Exception as e:
+        # If config loading fails, use defaults
+        logger.debug(f"Could not load rate limiter config, using defaults: {e}")
+        initialize_rate_limiter()
+
+    _rate_limiter_initialized = True
+
+
+# Initialize on module import
+_initialize_rate_limiter_from_config()
 
 
 @endpoint(
     "/agents/{agent_id}/interact",
     methods=["POST"],
-    auth=True,
+    auth=False,
     tags=["Interact"],
     response=success_response(
         data={
@@ -85,6 +142,7 @@ logger = logging.getLogger(__name__)
     ),
 )
 async def interact_endpoint(
+    request: Request,
     agent_id: str,
     utterance: str,
     channel: str = "default",
@@ -139,7 +197,42 @@ async def interact_endpoint(
 
     - ResourceNotFoundError: If agent not found
     - ValidationError: If utterance is empty or invalid
+    - RateLimitError: If rate limit exceeded
     """
+    # Get rate limiter instance (initialized at module load)
+    rate_limiter = get_rate_limiter()
+
+    # Extract client IP
+    client_ip = extract_client_ip(request)
+    if not client_ip:
+        logger.warning("Could not extract client IP for rate limiting")
+        client_ip = "unknown"
+
+    # Check rate limit
+    if not rate_limiter.check_rate_limit(client_ip, agent_id):
+        raise RateLimitError(
+            message=f"Rate limit exceeded: {rate_limiter.rate_limit_per_minute} requests per minute",
+            details={
+                "rate_limit": rate_limiter.rate_limit_per_minute,
+                "ip": client_ip,
+                "agent_id": agent_id,
+            },
+        )
+
+    # Validate utterance length
+    is_valid, error_message = rate_limiter.validate_utterance_length(utterance)
+    if not is_valid:
+        raise ValidationError(
+            message=error_message or "utterance exceeds maximum length",
+            details={
+                "utterance_length": len(utterance),
+                "max_length": rate_limiter.max_utterance_length,
+            },
+        )
+
+    # Record the request for rate limiting
+    rate_limiter.record_request(client_ip, agent_id)
+
     # Validate agent exists
     agent = await Agent.get(agent_id)
     if not agent:

@@ -63,6 +63,11 @@ config:
     username: admin
     email: admin@jvagent.example
     # Password should be set via JVAGENT_ADMIN_PASSWORD environment variable
+  
+  # Interact endpoint configuration
+  interact:
+    rate_limit_per_minute: 60  # per IP+agent_id combination
+    max_utterance_length: 2000  # maximum characters for utterance input (set to null to disable)
 
 # Agents
 # List of agents (automatically installed when you run jvagent or bootstrap)

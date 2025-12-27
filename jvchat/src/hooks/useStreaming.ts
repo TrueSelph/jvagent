@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { apiClient } from '../config/api'
-import { saveMessages, getUserId, setUserId, getMessages, deleteMessages } from '../utils/storage'
+import { saveMessages, getUserId } from '../utils/storage'
 import type { InteractionRequest, SSEChunk } from '../types/api'
 import type { Message } from '../types/message'
 
@@ -98,11 +98,12 @@ export function useStreaming(agentId: string, sessionId?: string) {
       try {
         // Get user_id from storage (set from login response)
         // This is the logged-in user's account ID, not a system-generated ID
+        // NOTE: The interact endpoint is anonymous (no bearer token required), but user_id is still required in the request body
         const userId = getUserId()
 
         if (!userId) {
-          console.error('No user_id available - user should be logged in. Chat will not work correctly.')
-          setError('User not authenticated. Please log in again.')
+          console.error('No user_id available - user_id is required for the interact endpoint (even though it is anonymous).')
+          setError('User ID is required. Please log in to continue.')
           setIsStreaming(false)
           setMessages((prev) => {
             // Remove placeholder bubbles if any
@@ -114,7 +115,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
         // Align with jvagent's session management:
         // - If we have user_id but no session_id: send user_id only (new conversation)
         // - If we have both: send both (continue conversation)
-        // Always send user_id if available (from login)
+        // Always send user_id (required even for anonymous endpoint)
         // CRITICAL: Use sessionIdRef.current instead of currentSessionId state
         // The ref is updated immediately when sessionId prop changes, ensuring we always
         // send the correct session_id when switching conversations
@@ -126,7 +127,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
           utterance,
           channel: 'web',
           session_id: sessionIdToSend,
-          user_id: userId || undefined, // Always include user_id if available (from login)
+          user_id: userId, // Required - endpoint is anonymous (no auth token) but user_id is still required
           stream: true,
         }
 
@@ -358,13 +359,24 @@ export function useStreaming(agentId: string, sessionId?: string) {
                 const interactionIdForFinal =
                   chunk.interaction?.id || interactionIdRef.current || undefined
 
+                // Find last matching message (findLastIndex polyfill for older TypeScript targets)
+                const findLastIndex = (arr: Message[], predicate: (m: Message) => boolean): number => {
+                  for (let i = arr.length - 1; i >= 0; i--) {
+                    if (predicate(arr[i])) {
+                      return i
+                    }
+                  }
+                  return -1
+                }
+                
                 const targetIndex = interactionIdForFinal
-                  ? filtered.findLastIndex(
-                      (m) =>
+                  ? findLastIndex(
+                      filtered,
+                      (m: Message) =>
                         m.role === 'assistant' &&
                         m.interactionId === interactionIdForFinal
                     )
-                  : filtered.findLastIndex((m) => m.role === 'assistant')
+                  : findLastIndex(filtered, (m: Message) => m.role === 'assistant')
 
                 let updated: Message[]
 
@@ -448,7 +460,8 @@ export function useStreaming(agentId: string, sessionId?: string) {
               })
               setIsStreaming(false)
             } else if (chunk.type === 'error') {
-              setError(chunk.message || 'An error occurred')
+              const errorMessage = typeof chunk.message === 'string' ? chunk.message : 'An error occurred'
+              setError(errorMessage)
               setIsStreaming(false)
               setMessages((prev) => {
                 // Remove placeholder bubbles and update any streaming messages
