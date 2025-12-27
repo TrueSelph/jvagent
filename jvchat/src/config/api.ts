@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from 'axios'
 import { getJvagentUrl, getJvagentTimeout, getConfigAsync } from './config'
-import { getToken, removeToken } from '../utils/storage'
+import { getToken, removeToken, getUserId } from '../utils/storage'
 import type {
   LoginRequest,
   LoginResponse,
@@ -404,42 +404,30 @@ class ApiClient {
     }
   }
 
-  async deleteConversation(agentId: string, sessionId: string): Promise<void> {
-    // Try multiple endpoint patterns to find the correct one
-    let lastError: any
-    const endpoints = [
-      `/api/agents/${agentId}/conversations/${sessionId}`,
-      `/agents/${agentId}/conversations/${sessionId}`,
-      `/api/agents/${agentId}/sessions/${sessionId}`,
-      `/agents/${agentId}/sessions/${sessionId}`,
-    ]
+  async deleteConversation(agentId: string, userId: string, sessionId: string): Promise<void> {
+    // Get user_id from localStorage if not provided
+    const finalUserId = userId || getUserId()
+    if (!finalUserId) {
+      throw new Error('User ID is required to delete conversation')
+    }
 
-    for (const baseURL of this.baseUrls) {
-      for (const endpoint of endpoints) {
-        try {
-          await this.client.delete(endpoint, { baseURL })
-          return // Success - exit early
-        } catch (err: any) {
-          lastError = err
-          // If it's a 404, try next endpoint
-          if (err.response?.status === 404) {
-            continue
-          }
-          // For other errors, throw immediately
-          throw err
-        }
+    // Use the correct endpoint with user_id as a path parameter
+    // Path structure: /api/agents/{agent_id}/conversations/{user_id}/{session_id}
+    const endpoint = `/api/agents/${agentId}/conversations/${encodeURIComponent(finalUserId)}/${encodeURIComponent(sessionId)}`
+
+    try {
+      await this._withFallback(async (baseURL) => {
+        await this.client.delete(endpoint, { baseURL })
+      })
+    } catch (error: any) {
+      // Handle 404 as non-critical (conversation might not exist on server)
+      if (error.response?.status === 404) {
+        console.warn(`Conversation ${sessionId} not found on server (may have been deleted already)`)
+        return
       }
+      // Re-throw other errors
+      throw error
     }
-
-    // If all endpoints returned 404, that's okay - conversation might not exist on server
-    // This is not a critical error, so we don't throw
-    if (lastError?.response?.status === 404) {
-      console.warn(`Conversation ${sessionId} not found on server (may have been deleted already)`)
-      return
-    }
-
-    // For other errors, throw
-    throw lastError || new Error('Failed to delete conversation')
   }
 }
 

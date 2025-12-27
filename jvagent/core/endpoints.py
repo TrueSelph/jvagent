@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.api.exceptions import ResourceNotFoundError
+from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
 from jvspatial.core.pager import ObjectPager
 
 from jvagent.core.agent import Agent
@@ -414,4 +414,91 @@ async def list_agents(
         "previous_page": pagination_info["previous_page"],
         "next_page": pagination_info["next_page"],
     }
+
+
+@endpoint(
+    "/agents/{agent_id}/conversations/{user_id}/{session_id}",
+    methods=["DELETE"],
+    auth=True,
+    tags=["Agent"],
+    response=success_response(
+        data={
+            "message": ResponseField(
+                field_type=str,
+                description="Success message",
+                example="Conversation deleted successfully",
+            ),
+        }
+    ),
+)
+async def delete_conversation(
+    agent_id: str,
+    user_id: str,
+    session_id: str,
+) -> Dict[str, Any]:
+    """Delete a conversation and all its related interactions via cascade delete.
+
+    This endpoint deletes a conversation identified by session_id and validates
+    that it belongs to the specified user_id before deletion. The deletion
+    automatically cascades to remove all related Interaction nodes.
+
+    **Cascade Delete Behavior:**
+    - Deletes the Conversation node
+    - Automatically deletes all connected Interaction nodes
+    - Updates Memory's total_conversations counter
+
+    **Args:**
+    - agent_id: ID of the agent that owns the conversation
+    - user_id: User identifier (required for ownership validation)
+    - session_id: Session identifier for the conversation to delete
+
+    **Returns:**
+    Dictionary with success message
+
+    **Raises:**
+    - ResourceNotFoundError: If agent or conversation not found
+    - ValidationError: If conversation doesn't belong to the specified user_id
+    """
+    # Get the agent
+    agent = await Agent.get(agent_id)
+    if not agent:
+        raise ResourceNotFoundError(
+            message=f"Agent with ID '{agent_id}' not found", details={"agent_id": agent_id}
+        )
+
+    # Get Memory node from agent
+    memory = await agent.get_memory()
+    if not memory:
+        raise ResourceNotFoundError(
+            message=f"Memory node not found for agent '{agent_id}'",
+            details={"agent_id": agent_id},
+        )
+
+    # Find conversation by session_id
+    conversation = await memory.get_conversation_by_session(session_id)
+    if not conversation:
+        raise ResourceNotFoundError(
+            message=f"Conversation with session_id '{session_id}' not found",
+            details={"session_id": session_id, "agent_id": agent_id},
+        )
+
+    # Validate that the conversation belongs to the specified user_id
+    if conversation.user_id != user_id:
+        raise ValidationError(
+            message=f"Conversation with session_id '{session_id}' does not belong to user '{user_id}'",
+            details={
+                "session_id": session_id,
+                "user_id": user_id,
+                "conversation_user_id": conversation.user_id,
+            },
+        )
+
+    # Delete the conversation with cascade=True
+    # This will automatically:
+    # - Delete all connected Interaction nodes
+    # - Update Memory's total_conversations counter (via Conversation.delete override)
+    # - Remove all edges
+    await conversation.delete(cascade=True)
+
+    return {"message": "Conversation deleted successfully"}
 

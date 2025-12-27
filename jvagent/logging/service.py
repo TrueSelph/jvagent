@@ -107,8 +107,6 @@ class LoggingService:
                 logger.warning("Logging database not available, skipping log entry")
                 return
 
-            logger.debug(f"Logging database retrieved: {type(log_db).__name__}")
-
             # Export interaction data
             interaction_data = await interaction.export()
             logger.debug(f"Exported interaction data for {interaction.id}")
@@ -428,8 +426,6 @@ class LoggingService:
             if not log_db:
                 logger.warning("Logging database not available, skipping error log entry")
                 return
-
-            logger.debug(f"Logging database retrieved: {type(log_db).__name__}")
 
             # Create log entry
             log_entry = ErrorLog(
