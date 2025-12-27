@@ -4,7 +4,7 @@ from jvagent.logging.config import get_logging_config, initialize_logging_databa
 from jvagent.logging.service import LoggingService, get_logging_service
 from jvagent.logging.archive import ArchiveService, get_archive_service
 from jvagent.logging.retention import RetentionTask, get_retention_task
-from jvagent.logging.models import InteractionLog
+from jvagent.logging.models import InteractionLog, ErrorLog
 
 # Conditionally import endpoints only if logging is enabled globally
 # App-level checks are performed at runtime in each endpoint
@@ -23,5 +23,6 @@ __all__ = [
     "RetentionTask",
     "get_retention_task",
     "InteractionLog",
+    "ErrorLog",
 ]
 

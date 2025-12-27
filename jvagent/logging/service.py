@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 from jvspatial.db import get_database_manager
 from jvspatial.core.context import GraphContext
 
-from jvagent.logging.models import InteractionLog
+from jvagent.logging.models import InteractionLog, ErrorLog
 from jvagent.core.app import App
 from jvagent.memory.interaction import Interaction
 
@@ -356,6 +356,313 @@ class LoggingService:
             logger.error(f"Failed to purge logs: {e}", exc_info=True)
             return {"deleted": 0, "error": str(e)}
 
+    async def log_error(
+        self,
+        error_data: Dict[str, Any],
+        app_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        status_code: Optional[int] = None,
+        error_code: Optional[str] = None,
+        path: Optional[str] = None,
+        method: Optional[str] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        interaction_id: Optional[str] = None,
+    ) -> None:
+        """Log an error asynchronously.
+
+        This method is non-blocking and should be called when an error occurs.
+        It extracts app_id and agent_id if not provided, and stores comprehensive
+        error information for debugging and traceability.
+
+        Args:
+            error_data: Dictionary containing error-specific information:
+                - message: Error message (required)
+                - details: Additional error details (optional)
+                - traceback: Traceback string (optional, for 5xx errors)
+            app_id: Optional application node ID. If not provided, will be retrieved from App.get().
+            agent_id: Optional agent node ID. If not provided, will be extracted from path or context.
+            status_code: HTTP status code (extracted from error_data if not provided)
+            error_code: Machine-readable error code (extracted from error_data if not provided)
+            path: Request path (extracted from error_data if not provided)
+            method: HTTP method (extracted from error_data if not provided)
+            user_id: User ID (extracted from error_data if not provided)
+            session_id: Session ID (extracted from error_data if not provided)
+            interaction_id: Interaction ID (extracted from error_data if not provided)
+        """
+        try:
+            # Extract fields from parameters or error_data (for backward compatibility)
+            status_code = status_code or error_data.get("status_code", 500)
+            error_code = error_code or error_data.get("error_code", "internal_error")
+            path = path or error_data.get("path", "")
+            method = method or error_data.get("method", "")
+            user_id = user_id or error_data.get("user_id") or ""
+            session_id = session_id or error_data.get("session_id") or ""
+            interaction_id = interaction_id or error_data.get("interaction_id") or ""
+            
+            logger.debug(f"Attempting to log error {error_code} (status {status_code}) at {path}")
+            
+            # Get app_id if not provided
+            resolved_app_id = app_id
+            if not resolved_app_id:
+                try:
+                    app = await App.get()
+                    if app:
+                        resolved_app_id = app.id
+                        logger.debug(f"Retrieved app_id {resolved_app_id} from App.get()")
+                except Exception as e:
+                    logger.warning(f"Failed to get app_id: {e}")
+            
+            if not resolved_app_id:
+                logger.debug("No app_id available, skipping error log entry")
+                return
+            
+            # Check if logging is enabled
+            is_enabled = await self._is_logging_enabled(resolved_app_id)
+            if not is_enabled:
+                logger.debug(f"Logging is disabled for app {resolved_app_id}, skipping error log entry")
+                return
+
+            # Get logging database
+            log_db = self._get_log_database()
+            if not log_db:
+                logger.warning("Logging database not available, skipping error log entry")
+                return
+
+            logger.debug(f"Logging database retrieved: {type(log_db).__name__}")
+
+            # Create log entry
+            log_entry = ErrorLog(
+                app_id=resolved_app_id,
+                agent_id=agent_id or "",
+                user_id=user_id,
+                session_id=session_id,
+                interaction_id=interaction_id,
+                status_code=status_code,
+                error_code=error_code,
+                path=path,
+                method=method,
+                logged_at=datetime.now(timezone.utc),
+                error_data=error_data,
+            )
+            logger.debug(f"Created error log entry with ID {log_entry.id}")
+
+            # Save to logging database using separate context
+            log_context = GraphContext(database=log_db)
+            # Ensure indexes are created before saving
+            await log_context.ensure_indexes(ErrorLog)
+            logger.debug("Ensured indexes for ErrorLog")
+            
+            # Set context on the log entry so it uses the logging database
+            await log_entry.set_context(log_context)
+            await log_entry.save()
+            logger.info(f"Successfully logged error {error_code} (status {status_code}) to logging database")
+
+        except Exception as e:
+            # Log error but don't fail - logging should never break the main flow
+            logger.error(f"Failed to log error: {e}", exc_info=True)
+
+    async def get_error_logs(
+        self,
+        app_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        error_code: Optional[str] = None,
+        status_code: Optional[int] = None,
+        user_id: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> Dict[str, Any]:
+        """Query error logs with filters and pagination.
+
+        Args:
+            app_id: Optional application node ID filter
+            agent_id: Optional agent node ID filter
+            error_code: Optional error code filter
+            status_code: Optional status code filter
+            user_id: Optional user ID filter
+            start_time: Optional start time filter
+            end_time: Optional end time filter
+            page: Page number (1-indexed)
+            page_size: Items per page
+
+        Returns:
+            Dictionary with error logs and pagination metadata
+        """
+        log_db = self._get_log_database()
+        if not log_db:
+            return {"errors": [], "pagination": {"page": page, "page_size": page_size, "total": 0}}
+
+        try:
+            # Build query - require entity type
+            query: Dict[str, Any] = {
+                "entity": "ErrorLog",
+            }
+
+            if app_id:
+                query["context.app_id"] = app_id
+            if agent_id:
+                query["context.agent_id"] = agent_id
+            if error_code:
+                query["context.error_code"] = error_code
+            if status_code:
+                query["context.status_code"] = status_code
+            if user_id:
+                query["context.user_id"] = user_id
+            # Handle datetime filters
+            if start_time or end_time:
+                logged_at_filter: Dict[str, Any] = {}
+                if start_time:
+                    logged_at_filter["$gte"] = start_time.isoformat()
+                if end_time:
+                    logged_at_filter["$lte"] = end_time.isoformat()
+                query["context.logged_at"] = logged_at_filter
+
+            # Query logs
+            log_context = GraphContext(database=log_db)
+            all_logs = await log_context.database.find("object", query)
+
+            # Convert to ErrorLog objects and sort by logged_at descending
+            log_entries: List[ErrorLog] = []
+            for log_data in all_logs:
+                try:
+                    context_data = log_data.get("context", {}).copy()
+                    log_id = log_data.get("id", "")
+                    
+                    # Parse logged_at if it's a string
+                    if "logged_at" in context_data and isinstance(context_data["logged_at"], str):
+                        try:
+                            context_data["logged_at"] = datetime.fromisoformat(
+                                context_data["logged_at"].replace("Z", "+00:00")
+                            )
+                        except (ValueError, AttributeError):
+                            logger.warning(f"Failed to parse logged_at: {context_data.get('logged_at')}")
+                            context_data["logged_at"] = datetime.now(timezone.utc)
+                    
+                    # Create ErrorLog with id passed during initialization
+                    log_entry = ErrorLog(id=log_id, **context_data)
+                    log_entries.append(log_entry)
+                except Exception as e:
+                    logger.warning(f"Failed to parse error log entry {log_data.get('id', 'unknown')}: {e}")
+                    continue
+
+            # Sort by logged_at descending (most recent first)
+            log_entries.sort(key=lambda x: x.logged_at, reverse=True)
+
+            # Paginate
+            total_errors = len(log_entries)
+            start_idx = (page - 1) * page_size
+            end_idx = start_idx + page_size
+            paginated_errors = log_entries[start_idx:end_idx]
+
+            # Format response
+            result_errors = []
+            for log in paginated_errors:
+                result_errors.append({
+                    "log_id": log.id,
+                    "status_code": log.status_code,
+                    "error_code": log.error_code,
+                    "message": log.error_data.get("message", ""),
+                    "path": log.path,
+                    "method": log.method,
+                    "app_id": log.app_id,
+                    "agent_id": log.agent_id,
+                    "user_id": log.user_id,
+                    "session_id": log.session_id,
+                    "interaction_id": log.interaction_id,
+                    "logged_at": log.logged_at.isoformat(),
+                    "error_data": log.error_data,
+                })
+
+            return {
+                "errors": result_errors,
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "total": total_errors,
+                    "total_pages": (total_errors + page_size - 1) // page_size,
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get error logs: {e}", exc_info=True)
+            return {"errors": [], "pagination": {"page": page, "page_size": page_size, "total": 0}}
+
+    async def purge_error_logs(
+        self,
+        app_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        error_code: Optional[str] = None,
+        status_code: Optional[int] = None,
+        user_id: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """Purge error logs matching criteria.
+
+        Args:
+            app_id: Optional application node ID filter
+            agent_id: Optional agent node ID filter
+            error_code: Optional error code filter
+            status_code: Optional status code filter
+            user_id: Optional user ID filter
+            start_time: Optional start time filter
+            end_time: Optional end time filter
+
+        Returns:
+            Dictionary with purge statistics
+        """
+        log_db = self._get_log_database()
+        if not log_db:
+            return {"deleted": 0, "error": "Logging database not available"}
+
+        try:
+            # Build query - require entity type
+            query: Dict[str, Any] = {
+                "entity": "ErrorLog",
+            }
+
+            if app_id:
+                query["context.app_id"] = app_id
+            if agent_id:
+                query["context.agent_id"] = agent_id
+            if error_code:
+                query["context.error_code"] = error_code
+            if status_code:
+                query["context.status_code"] = status_code
+            if user_id:
+                query["context.user_id"] = user_id
+            # Handle datetime filters
+            if start_time or end_time:
+                logged_at_filter: Dict[str, Any] = {}
+                if start_time:
+                    logged_at_filter["$gte"] = start_time.isoformat()
+                if end_time:
+                    logged_at_filter["$lte"] = end_time.isoformat()
+                query["context.logged_at"] = logged_at_filter
+
+            # Find matching logs
+            log_context = GraphContext(database=log_db)
+            matching_logs = await log_context.database.find("object", query)
+
+            # Delete each log
+            deleted_count = 0
+            for log_data in matching_logs:
+                try:
+                    log_id = log_data.get("id")
+                    if log_id:
+                        await log_context.database.delete("object", log_id)
+                        deleted_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to delete error log {log_data.get('id')}: {e}")
+
+            return {"deleted": deleted_count}
+
+        except Exception as e:
+            logger.error(f"Failed to purge error logs: {e}", exc_info=True)
+            return {"deleted": 0, "error": str(e)}
+
     async def apply_retention_policy(self, agent_id: str) -> Dict[str, Any]:
         """Apply retention policy for an agent.
 
@@ -375,8 +682,17 @@ class LoggingService:
             # Calculate cutoff time
             cutoff_time = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
-            # Purge logs older than cutoff
-            return await self.purge_logs(agent_id=agent_id, end_time=cutoff_time)
+            # Purge interaction logs older than cutoff
+            interaction_result = await self.purge_logs(agent_id=agent_id, end_time=cutoff_time)
+            
+            # Purge error logs older than cutoff
+            error_result = await self.purge_error_logs(agent_id=agent_id, end_time=cutoff_time)
+
+            return {
+                "interaction_logs_deleted": interaction_result.get("deleted", 0),
+                "error_logs_deleted": error_result.get("deleted", 0),
+                "total_deleted": interaction_result.get("deleted", 0) + error_result.get("deleted", 0),
+            }
 
         except Exception as e:
             logger.error(f"Failed to apply retention policy: {e}", exc_info=True)

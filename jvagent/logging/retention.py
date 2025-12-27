@@ -52,13 +52,18 @@ class RetentionTask:
             # Apply retention for each agent
             for agent in agents:
                 result = await self.logging_service.apply_retention_policy(agent.id)
-                deleted = result.get("deleted", 0)
+                # Handle both old format (deleted) and new format (total_deleted)
+                deleted = result.get("total_deleted", result.get("deleted", 0))
+                interaction_deleted = result.get("interaction_logs_deleted", 0)
+                error_deleted = result.get("error_logs_deleted", 0)
                 total_deleted += deleted
 
                 results.append({
                     "agent_id": agent.id,
                     "agent_name": agent.name,
                     "deleted": deleted,
+                    "interaction_logs_deleted": interaction_deleted,
+                    "error_logs_deleted": error_deleted,
                 })
 
             return {

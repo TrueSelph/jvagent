@@ -223,6 +223,184 @@ class ArchiveService:
         # For now, raise NotImplementedError
         raise NotImplementedError("S3 storage not yet implemented")
 
+    async def archive_error_logs(
+        self,
+        app_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        error_code: Optional[str] = None,
+        status_code: Optional[int] = None,
+        user_id: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        export_format: str = "json",
+        storage_location: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Archive error logs by exporting them and deleting from database.
+
+        Args:
+            app_id: Optional application node ID filter
+            agent_id: Optional agent node ID filter
+            error_code: Optional error code filter
+            status_code: Optional HTTP status code filter
+            user_id: Optional user ID filter
+            start_time: Optional start time filter
+            end_time: Optional end time filter
+            export_format: Export format ("json" or "csv")
+            storage_location: Optional storage location (file path or S3 path).
+                            If not provided, uses default location.
+
+        Returns:
+            Dictionary with archive metadata
+        """
+        try:
+            # Get error logs to archive
+            logs_result = await self.logging_service.get_error_logs(
+                app_id=app_id,
+                agent_id=agent_id,
+                error_code=error_code,
+                status_code=status_code,
+                user_id=user_id,
+                start_time=start_time,
+                end_time=end_time,
+                page=1,
+                page_size=10000,  # Get all matching logs
+            )
+
+            errors = logs_result.get("errors", [])
+            if not errors:
+                return {
+                    "archived": False,
+                    "record_count": 0,
+                    "message": "No error logs found matching criteria",
+                }
+
+            # Export error logs
+            if export_format == "json":
+                export_data = await self._export_error_json(errors)
+            elif export_format == "csv":
+                export_data = await self._export_error_csv(errors)
+            else:
+                raise ValueError(f"Unsupported export format: {export_format}")
+
+            # Determine storage location
+            if not storage_location:
+                # Use default location
+                from jvagent.logging.config import get_logging_config
+                config = get_logging_config()
+                archive_path = config.get("archive_default_path", "./logs_archive")
+                identifier = agent_id or app_id or "all"
+                storage_location = f"{archive_path}/error_logs_{identifier}_{datetime.now().isoformat().replace(':', '-')}.{export_format}"
+
+            # Save to storage
+            if storage_location.startswith("s3://"):
+                file_path = await self._save_to_s3(export_data, storage_location, export_format)
+            else:
+                file_path = await self._save_to_local(export_data, storage_location, export_format)
+
+            # Delete archived error logs from database
+            purge_result = await self.logging_service.purge_error_logs(
+                app_id=app_id,
+                agent_id=agent_id,
+                error_code=error_code,
+                status_code=status_code,
+                user_id=user_id,
+                start_time=start_time,
+                end_time=end_time,
+            )
+
+            return {
+                "archived": True,
+                "record_count": len(errors),
+                "file_path": file_path,
+                "export_format": export_format,
+                "timestamp": datetime.now().isoformat(),
+                "filters": {
+                    "app_id": app_id,
+                    "agent_id": agent_id,
+                    "error_code": error_code,
+                    "status_code": status_code,
+                    "user_id": user_id,
+                    "start_time": start_time.isoformat() if start_time else None,
+                    "end_time": end_time.isoformat() if end_time else None,
+                },
+                "deleted_count": purge_result.get("deleted", 0),
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to archive error logs: {e}", exc_info=True)
+            return {
+                "archived": False,
+                "error": str(e),
+            }
+
+    async def _export_error_json(self, errors: List[Dict[str, Any]]) -> str:
+        """Export error logs to JSON format.
+
+        Args:
+            errors: List of error log dictionaries
+
+        Returns:
+            JSON string
+        """
+        export_data = {
+            "exported_at": datetime.now().isoformat(),
+            "format_version": "1.0",
+            "type": "error_logs",
+            "errors": errors,
+        }
+        return json.dumps(export_data, indent=2, default=str)
+
+    async def _export_error_csv(self, errors: List[Dict[str, Any]]) -> str:
+        """Export error logs to CSV format.
+
+        Args:
+            errors: List of error log dictionaries
+
+        Returns:
+            CSV string
+        """
+        import csv
+        from io import StringIO
+
+        output = StringIO()
+        writer = csv.writer(output)
+
+        # Write header
+        writer.writerow([
+            "log_id",
+            "logged_at",
+            "status_code",
+            "error_code",
+            "message",
+            "path",
+            "method",
+            "app_id",
+            "agent_id",
+            "user_id",
+            "session_id",
+            "interaction_id",
+        ])
+
+        # Write rows
+        for error in errors:
+            error_data = error.get("error_data", {})
+            writer.writerow([
+                error.get("log_id", ""),
+                error.get("logged_at", ""),
+                error.get("status_code", ""),
+                error.get("error_code", ""),
+                error.get("message", ""),
+                error.get("path", ""),
+                error.get("method", ""),
+                error.get("app_id", ""),
+                error.get("agent_id", ""),
+                error.get("user_id", ""),
+                error.get("session_id", ""),
+                error.get("interaction_id", ""),
+            ])
+
+        return output.getvalue()
+
 
 # Singleton instance
 _archive_service: Optional[ArchiveService] = None
