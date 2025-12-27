@@ -246,9 +246,23 @@ export function ChatInterface() {
   const handleDeleteConversation = async (sessionIdToDelete: string) => {
     if (!agent) return
 
+    // Get user_id from storage
+    const userId = getUserId()
+    if (!userId) {
+      console.error('Cannot delete conversation: user_id not found')
+      // Still remove from local storage for UI consistency
+      remove(sessionIdToDelete)
+      deleteMessages(sessionIdToDelete)
+      if (sessionId === sessionIdToDelete) {
+        handleNewConversation()
+      }
+      return
+    }
+
     try {
       // Delete conversation on server (all sessions are real, no temp sessions)
-      await apiClient.deleteConversation(agent.id, sessionIdToDelete)
+      // Parameters: agentId, userId, sessionId
+      await apiClient.deleteConversation(agent.id, userId, sessionIdToDelete)
       
       // Remove from local storage
       remove(sessionIdToDelete)
