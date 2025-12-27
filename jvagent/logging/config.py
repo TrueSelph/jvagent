@@ -77,6 +77,18 @@ def get_logging_config() -> Dict[str, Any]:
         os.getenv("JVAGENT_LOG_RETENTION_DEFAULT_DAYS", "60")
     )
 
+    # Text normalization setting (from jvspatial, applies to all database persistence)
+    # This is included in config for reference, but the actual setting is controlled
+    # by JVSPATIAL_TEXT_NORMALIZATION_ENABLED environment variable
+    try:
+        from jvspatial.utils.normalization import is_text_normalization_enabled
+        config["text_normalization_enabled"] = is_text_normalization_enabled()
+    except ImportError:
+        # Fallback if jvspatial is not available
+        config["text_normalization_enabled"] = (
+            os.getenv("JVSPATIAL_TEXT_NORMALIZATION_ENABLED", "true").lower() == "true"
+        )
+
     return config
 
 
