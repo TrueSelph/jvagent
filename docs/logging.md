@@ -438,3 +438,192 @@ Each log entry contains:
 
 The `interaction_data` field contains the complete exported structure from the interaction, including all metadata, making it suitable for full audit trails and debugging.
 
+## Error Logging
+
+The logging system also captures API errors for debugging and traceability. Error logs are stored in the same logging database as interaction logs, following the same patterns and retention policies.
+
+### Error Log Structure
+
+Each error log entry contains:
+
+- `app_id`: Application node ID (indexed)
+- `agent_id`: Agent node ID (indexed, if available)
+- `user_id`: User ID (indexed, if available)
+- `session_id`: Session identifier (if available)
+- `interaction_id`: Interaction ID (if error occurred during interaction)
+- `status_code`: HTTP status code (indexed)
+- `error_code`: Machine-readable error code (indexed)
+- `path`: Request path (indexed)
+- `method`: HTTP method
+- `request_id`: Request identifier
+- `logged_at`: Timestamp when the error was logged (indexed)
+- `error_data`: Complete error payload structure
+
+The `error_data` field contains the full error context:
+
+```json
+{
+  "status_code": 401,
+  "error_code": "unauthorized",
+  "message": "Invalid email or password",
+  "timestamp": "2025-12-26T23:55:37.527388",
+  "path": "/auth/login",
+  "method": "POST",
+  "request_id": "req_123",
+  "details": {...},
+  "user_id": "usr_123",
+  "session_id": "sess_456",
+  "interaction_id": "int_789",
+  "traceback": "..."  // For 5xx errors only
+}
+```
+
+### Error Logging Flow
+
+Errors are automatically captured by the API error handler:
+
+```
+Error occurs → APIErrorHandler.handle_exception() → Extract app_id/agent_id
+→ Build error payload → LoggingService.log_error() → Write to log DB
+```
+
+The error handler extracts:
+- `app_id` from `App.get()` singleton
+- `agent_id` from request path (e.g., `/agents/{agent_id}/...`)
+- `user_id`, `session_id`, `interaction_id` from request state if available
+
+### Querying Error Logs
+
+#### Get Error Logs by Agent
+
+```http
+GET /logs/agents/{agent_id}/errors?error_code=unauthorized&status_code=401&page=1&page_size=50
+```
+
+**Query Parameters:**
+- `error_code`: Optional error code filter
+- `status_code`: Optional HTTP status code filter
+- `user_id`: Optional user ID filter
+- `start_time`: Optional start time filter (ISO datetime string)
+- `end_time`: Optional end time filter (ISO datetime string)
+- `page`: Page number (default: 1)
+- `page_size`: Items per page (default: 50)
+
+**Response:**
+```json
+{
+  "errors": [
+    {
+      "log_id": "log_abc123",
+      "status_code": 401,
+      "error_code": "unauthorized",
+      "message": "Invalid email or password",
+      "path": "/auth/login",
+      "method": "POST",
+      "app_id": "app_xyz",
+      "agent_id": "agent_123",
+      "user_id": "usr_456",
+      "session_id": "sess_789",
+      "interaction_id": "",
+      "request_id": "req_abc",
+      "logged_at": "2025-12-26T23:55:37.527388",
+      "error_data": {...}
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "page_size": 50,
+    "total": 1,
+    "total_pages": 1
+  }
+}
+```
+
+#### Get Error Logs by Application
+
+```http
+GET /logs/applications/{app_id}/errors?status_code=500&page=1&page_size=50
+```
+
+**Query Parameters:**
+- `error_code`: Optional error code filter
+- `status_code`: Optional HTTP status code filter
+- `agent_id`: Optional agent ID filter
+- `user_id`: Optional user ID filter
+- `start_time`: Optional start time filter (ISO datetime string)
+- `end_time`: Optional end time filter (ISO datetime string)
+- `page`: Page number (default: 1)
+- `page_size`: Items per page (default: 50)
+
+### Purging Error Logs
+
+#### Purge Error Logs by Agent
+
+```http
+POST /logs/agents/{agent_id}/errors/purge?confirm=true&status_code=500&start_time=2025-01-01T00:00:00Z
+```
+
+**Query Parameters:**
+- `confirm`: **Required** - Must be `true` to proceed (safety flag)
+- `error_code`: Optional error code filter
+- `status_code`: Optional HTTP status code filter
+- `user_id`: Optional user ID filter
+- `start_time`: Optional start time filter (ISO datetime string)
+- `end_time`: Optional end time filter (ISO datetime string)
+
+**Response:**
+```json
+{
+  "deleted": 42
+}
+```
+
+### Error Log Indexes
+
+Error logs are indexed for efficient querying:
+
+- `app_id + logged_at` - Query errors by app and time range
+- `app_id + error_code + logged_at` - Query specific error types by app
+- `agent_id + logged_at` - Query errors by agent and time range
+- `status_code + logged_at` - Query errors by HTTP status code
+- `app_id + user_id + logged_at` - Query errors by app and user
+
+### Retention and Archiving
+
+Error logs follow the same retention policy as interaction logs:
+
+- Retention period is configured at the application level (`log_retention_days`)
+- The retention task automatically purges expired error logs
+- Error logs can be archived using `ArchiveService.archive_error_logs()`
+
+**Example: Archive Error Logs**
+
+```python
+from jvagent.logging.archive import get_archive_service
+from datetime import datetime, timedelta
+
+archive_service = get_archive_service()
+result = await archive_service.archive_error_logs(
+    app_id="app_123",
+    status_code=500,
+    start_time=datetime.now() - timedelta(days=30),
+    export_format="json"
+)
+```
+
+### Error Log Use Cases
+
+1. **Debugging Production Issues**: Query error logs by status code, error code, or path to identify patterns
+2. **User Support**: Look up errors by user_id to understand what went wrong for a specific user
+3. **Monitoring**: Track error rates by agent, app, or error type over time
+4. **Compliance**: Archive error logs for audit trails and compliance requirements
+5. **Performance Analysis**: Identify frequently failing endpoints or error patterns
+
+### Best Practices
+
+1. **Monitor Error Rates**: Regularly query error logs to identify trends and issues
+2. **Archive Old Logs**: Archive error logs before purging to maintain historical records
+3. **Filter by Severity**: Use `status_code` filters to focus on critical errors (5xx)
+4. **Correlate with Interactions**: Use `interaction_id` to correlate errors with specific interactions
+5. **Retention Configuration**: Set appropriate retention periods based on compliance and storage requirements
+

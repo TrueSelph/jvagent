@@ -436,3 +436,329 @@ async def set_retention(app_id: str, retention_days: int) -> Dict[str, Any]:
         "message": "Retention configuration updated successfully",
     }
 
+
+@endpoint(
+    "/logs/agents/{agent_id}/errors",
+    methods=["GET"],
+    auth=True,
+    tags=["Logging"],
+    response=success_response(
+        data={
+            "errors": ResponseField(
+                field_type=list,
+                description="Error logs (reverse chronological)",
+            ),
+            "pagination": ResponseField(
+                field_type=Dict[str, Any],
+                description="Pagination metadata",
+            ),
+        }
+    ),
+)
+async def get_error_logs_by_agent(
+    agent_id: str,
+    error_code: Optional[str] = None,
+    status_code: Optional[int] = None,
+    user_id: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> Dict[str, Any]:
+    """Get error logs for an agent with filtering and pagination.
+
+    Retrieves error logs for a specific agent, returned in reverse chronological order
+    (most recent first).
+
+    Args:
+        agent_id: Agent node ID (required)
+        error_code: Optional error code filter
+        status_code: Optional HTTP status code filter
+        user_id: Optional user ID filter
+        start_time: Optional start time filter (ISO datetime string, e.g., "2025-01-01T00:00:00Z")
+        end_time: Optional end time filter (ISO datetime string, e.g., "2025-01-31T23:59:59Z")
+        page: Page number (default: 1)
+        page_size: Items per page (default: 50, max recommended: 100)
+
+    Returns:
+        Dictionary containing:
+        - errors: List of error log entries
+        - pagination: Pagination metadata (page, page_size, total, total_pages)
+    """
+    # Check if logging is enabled (global and app-level)
+    from jvagent.logging.config import get_logging_config
+    config = get_logging_config()
+    if not config.get("enabled", True):
+        raise ResourceNotFoundError(
+            message="Logging is disabled",
+            details={"reason": "Global logging is disabled"},
+        )
+    
+    # Check app-level logging setting
+    app = await App.get()
+    if app and not app.logging_enabled:
+        raise ResourceNotFoundError(
+            message="Logging is disabled for this application",
+            details={"reason": "App-level logging is disabled", "app_id": app.id},
+        )
+    
+    # Validate agent exists
+    from jvagent.core.agent import Agent
+    agent = await Agent.get(agent_id)
+    if not agent:
+        raise ResourceNotFoundError(
+            message=f"Agent with ID '{agent_id}' not found",
+            details={"agent_id": agent_id},
+        )
+
+    # Parse datetime strings
+    start_dt = None
+    end_dt = None
+    if start_time:
+        try:
+            start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+        except ValueError:
+            raise ValidationError(
+                message=f"Invalid start_time format: {start_time}",
+                details={"start_time": start_time},
+            )
+    if end_time:
+        try:
+            end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+        except ValueError:
+            raise ValidationError(
+                message=f"Invalid end_time format: {end_time}",
+                details={"end_time": end_time},
+            )
+
+    # Get error logs
+    logging_service = get_logging_service()
+    result = await logging_service.get_error_logs(
+        agent_id=agent_id,
+        error_code=error_code,
+        status_code=status_code,
+        user_id=user_id,
+        start_time=start_dt,
+        end_time=end_dt,
+        page=page,
+        page_size=page_size,
+    )
+
+    return result
+
+
+@endpoint(
+    "/logs/applications/{app_id}/errors",
+    methods=["GET"],
+    auth=True,
+    tags=["Logging"],
+    response=success_response(
+        data={
+            "errors": ResponseField(
+                field_type=list,
+                description="Error logs (reverse chronological)",
+            ),
+            "pagination": ResponseField(
+                field_type=Dict[str, Any],
+                description="Pagination metadata",
+            ),
+        }
+    ),
+)
+async def get_error_logs_by_app(
+    app_id: str,
+    error_code: Optional[str] = None,
+    status_code: Optional[int] = None,
+    agent_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> Dict[str, Any]:
+    """Get error logs for an application with filtering and pagination.
+
+    Retrieves error logs for a specific application, returned in reverse chronological order
+    (most recent first).
+
+    Args:
+        app_id: Application node ID (required)
+        error_code: Optional error code filter
+        status_code: Optional HTTP status code filter
+        agent_id: Optional agent ID filter
+        user_id: Optional user ID filter
+        start_time: Optional start time filter (ISO datetime string, e.g., "2025-01-01T00:00:00Z")
+        end_time: Optional end time filter (ISO datetime string, e.g., "2025-01-31T23:59:59Z")
+        page: Page number (default: 1)
+        page_size: Items per page (default: 50, max recommended: 100)
+
+    Returns:
+        Dictionary containing:
+        - errors: List of error log entries
+        - pagination: Pagination metadata (page, page_size, total, total_pages)
+    """
+    # Check if logging is enabled (global and app-level)
+    from jvagent.logging.config import get_logging_config
+    config = get_logging_config()
+    if not config.get("enabled", True):
+        raise ResourceNotFoundError(
+            message="Logging is disabled",
+            details={"reason": "Global logging is disabled"},
+        )
+    
+    # Check app-level logging setting
+    app = await App.get()
+    if not app or app.id != app_id:
+        raise ResourceNotFoundError(
+            message=f"Application with ID '{app_id}' not found",
+            details={"app_id": app_id},
+        )
+    
+    if not app.logging_enabled:
+        raise ResourceNotFoundError(
+            message="Logging is disabled for this application",
+            details={"reason": "App-level logging is disabled", "app_id": app_id},
+        )
+
+    # Parse datetime strings
+    start_dt = None
+    end_dt = None
+    if start_time:
+        try:
+            start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+        except ValueError:
+            raise ValidationError(
+                message=f"Invalid start_time format: {start_time}",
+                details={"start_time": start_time},
+            )
+    if end_time:
+        try:
+            end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+        except ValueError:
+            raise ValidationError(
+                message=f"Invalid end_time format: {end_time}",
+                details={"end_time": end_time},
+            )
+
+    # Get error logs
+    logging_service = get_logging_service()
+    result = await logging_service.get_error_logs(
+        app_id=app_id,
+        agent_id=agent_id,
+        error_code=error_code,
+        status_code=status_code,
+        user_id=user_id,
+        start_time=start_dt,
+        end_time=end_dt,
+        page=page,
+        page_size=page_size,
+    )
+
+    return result
+
+
+@endpoint(
+    "/logs/applications/{app_id}/errors/purge",
+    methods=["POST"],
+    auth=True,
+    tags=["Logging"],
+    response=success_response(
+        data={
+            "deleted": ResponseField(field_type=int, description="Number of records deleted"),
+        }
+    ),
+)
+async def purge_error_logs_by_app(
+    app_id: str,
+    error_code: Optional[str] = None,
+    status_code: Optional[int] = None,
+    agent_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    confirm: bool = False,
+) -> Dict[str, Any]:
+    """Purge error logs matching criteria for an application.
+
+    Permanently deletes error logs from the database matching the specified criteria.
+    This operation cannot be undone. Use with caution.
+
+    Args:
+        app_id: Application node ID (required)
+        error_code: Optional error code filter
+        status_code: Optional HTTP status code filter
+        agent_id: Optional agent ID filter
+        user_id: Optional user ID filter
+        start_time: Optional start time filter (ISO datetime string, e.g., "2025-01-01T00:00:00Z")
+        end_time: Optional end time filter (ISO datetime string, e.g., "2025-01-31T23:59:59Z")
+        confirm: Safety flag - must be set to True to proceed with deletion.
+            This prevents accidental data loss.
+
+    Returns:
+        Dictionary containing:
+        - deleted: Number of records deleted
+        - error: Error message if deletion failed (optional)
+    """
+    # Check if logging is enabled (global and app-level)
+    from jvagent.logging.config import get_logging_config
+    config = get_logging_config()
+    if not config.get("enabled", True):
+        raise ResourceNotFoundError(
+            message="Logging is disabled",
+            details={"reason": "Global logging is disabled"},
+        )
+    
+    # Check app-level logging setting
+    app = await App.get()
+    if not app or app.id != app_id:
+        raise ResourceNotFoundError(
+            message=f"Application with ID '{app_id}' not found",
+            details={"app_id": app_id},
+        )
+    
+    if not app.logging_enabled:
+        raise ResourceNotFoundError(
+            message="Logging is disabled for this application",
+            details={"reason": "App-level logging is disabled", "app_id": app_id},
+        )
+    
+    if not confirm:
+        raise ValidationError(
+            message="confirm parameter must be True to proceed with purge",
+            details={"confirm": confirm},
+        )
+
+    # Parse datetime strings
+    start_dt = None
+    end_dt = None
+    if start_time:
+        try:
+            start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+        except ValueError:
+            raise ValidationError(
+                message=f"Invalid start_time format: {start_time}",
+                details={"start_time": start_time},
+            )
+    if end_time:
+        try:
+            end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+        except ValueError:
+            raise ValidationError(
+                message=f"Invalid end_time format: {end_time}",
+                details={"end_time": end_time},
+            )
+
+    # Purge error logs
+    logging_service = get_logging_service()
+    result = await logging_service.purge_error_logs(
+        app_id=app_id,
+        agent_id=agent_id,
+        error_code=error_code,
+        status_code=status_code,
+        user_id=user_id,
+        start_time=start_dt,
+        end_time=end_dt,
+    )
+
+    return result
+
