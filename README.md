@@ -518,6 +518,11 @@ config:
     provider: local
     root_dir: ./.files
     enabled: true
+  
+  # Interact endpoint configuration
+  interact:
+    rate_limit_per_minute: 60  # per IP+agent_id combination
+    max_utterance_length: 2000  # maximum characters for utterance input (set to null to disable)
 
 # Agents (list of namespace/agent_name strings)
 # Agents listed here are automatically installed when you run jvagent or bootstrap
@@ -582,6 +587,104 @@ actions:
 - `context`: Object containing all overridable agent properties (alias, description, enabled, interaction_limit, etc.)
 - `actions`: List of action assignments, each with `action: namespace/action_name` and `context:` for overridable properties
 - `interaction_limit`: Default interaction limit for all conversations created by this agent (0 = disabled, no pruning)
+
+### Interact Endpoint Configuration
+
+The interact endpoint (`/agents/{agent_id}/interact`) supports anonymous access and includes rate limiting and input validation to prevent abuse. Configure these settings in the `config.interact` section of `app.yaml`:
+
+```yaml
+config:
+  # Interact endpoint configuration
+  interact:
+    # Rate limiting: Maximum requests per minute per IP+agent_id combination
+    # Default: 60 requests per minute
+    # This prevents abuse by limiting how many requests a single IP can make to a specific agent
+    rate_limit_per_minute: 60
+    
+    # Input validation: Maximum character length for the 'utterance' parameter
+    # Default: 2000 characters (typical chat message length)
+    # Set to null to disable length validation
+    max_utterance_length: 2000
+```
+
+**Configuration Options:**
+
+- **`rate_limit_per_minute`** (integer, default: 60)
+  - Maximum number of requests allowed per minute for each unique IP address + agent_id combination
+  - Rate limiting uses a sliding window algorithm
+  - Each IP address has its own limit per agent (different IPs don't share limits)
+  - When exceeded, returns `429 Too Many Requests` error
+  - **Example**: If set to 60, a single IP can make 60 requests per minute to agent A, and another 60 requests per minute to agent B
+
+- **`max_utterance_length`** (integer or null, default: 2000)
+  - Maximum number of characters allowed in the `utterance` input parameter
+  - Prevents abuse by limiting input size
+  - Default of 2000 characters aligns with typical chat message limits (Discord: 2000, Slack: 4000)
+  - Set to `null` to disable length validation (not recommended for production)
+  - When exceeded, returns `400 Bad Request` with validation error
+
+**Example Configurations:**
+
+```yaml
+# Conservative settings (strict rate limiting)
+config:
+  interact:
+    rate_limit_per_minute: 30
+    max_utterance_length: 1000
+
+# Default settings (balanced)
+config:
+  interact:
+    rate_limit_per_minute: 60
+    max_utterance_length: 2000
+
+# Permissive settings (higher limits)
+config:
+  interact:
+    rate_limit_per_minute: 120
+    max_utterance_length: 4000
+
+# Disable utterance length validation (not recommended)
+config:
+  interact:
+    rate_limit_per_minute: 60
+    max_utterance_length: null
+```
+
+**Security Considerations:**
+
+- The interact endpoint is **anonymous-only** (no authentication required)
+- Rate limiting is essential to prevent abuse and DoS attacks
+- Utterance length validation prevents resource exhaustion from extremely long inputs
+- Both validations are applied before processing the request
+- Rate limits are tracked per IP address, properly handling proxy headers (X-Forwarded-For, X-Real-IP, CF-Connecting-IP)
+
+**Error Responses:**
+
+- **429 Too Many Requests**: Returned when rate limit is exceeded
+  ```json
+  {
+    "error_code": "rate_limit_exceeded",
+    "message": "Rate limit exceeded: 60 requests per minute",
+    "details": {
+      "rate_limit": 60,
+      "ip": "192.168.1.1",
+      "agent_id": "agent_abc123"
+    }
+  }
+  ```
+
+- **400 Bad Request**: Returned when utterance exceeds maximum length
+  ```json
+  {
+    "error_code": "validation_error",
+    "message": "utterance exceeds maximum length of 2000 characters (current: 2500 characters)",
+    "details": {
+      "utterance_length": 2500,
+      "max_length": 2000
+    }
+  }
+  ```
 
 ### info.yaml
 

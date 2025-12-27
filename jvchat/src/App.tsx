@@ -24,11 +24,7 @@ function App() {
         />
         <Route
           path="/chat/:agentId"
-          element={
-            <PrivateRoute>
-              <ChatInterface />
-            </PrivateRoute>
-          }
+          element={<ChatInterface />}
         />
         <Route path="/" element={<Navigate to="/agents" replace />} />
         <Route path="*" element={
