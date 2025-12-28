@@ -43,11 +43,8 @@ class ConverseInteractAction(InteractAction):
 
     directive: str = attribute(
         default=(
-            "Offer a simple, friendly response to smalltalk and casual "
-            "conversation. NEVER attempt to answer knowledge-based questions "
-            "without having certainty about the context. If the conversation "
-            "does not warrant a reply or you lack sufficient information, "
-            "politely opt out rather than guessing."
+            "Only handle smalltalk and casual conversation; decline all knowledge-based, "
+            "capability-based, and factual questions by explaining you are only for smalltalk."
         ),
         description="Fallback directive for smalltalk and conservative replies",
     )
@@ -71,41 +68,53 @@ class ConverseInteractAction(InteractAction):
     # Default behavioral parameters to enforce / offset the directive
     parameters: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
+            # PRIORITY: Knowledge/capability questions - evaluate these first
             {
-                "condition": "User asks a knowledge-based or factual question",
+                "condition": "User asks a knowledge-based question (what, how, why, when, where, who questions about facts, information, or concepts)",
                 "response": (
-                    "Politely decline to answer, explaining that you don't have "
-                    "sufficient context or certainty to provide an accurate "
-                    "answer. Suggest they check official sources or provide "
-                    "more specific context."
+                    "Politely decline and explain that you don't have the information or ability "
+                    "to respond at the moment."
                 ),
             },
             {
+                "condition": "User asks a capability-based question (can you, do you know, are you able to, tell me about, explain, define)",
+                "response": (
+                    "Politely decline and explain that you don't have the information or ability "
+                    "to respond at the moment."
+                ),
+            },
+            {
+                "condition": "User asks a factual question or requests specific information",
+                "response": (
+                    "Politely decline and explain that you don't have the information or ability "
+                    "to respond at the moment."
+                ),
+            },
+            {
+                "condition": "User asks about technical details, processes, or how things work",
+                "response": (
+                    "Politely decline and explain that you don't have the information or ability "
+                    "to respond at the moment."
+                ),
+            },
+            # Then handle appropriate smalltalk scenarios
+            {
                 "condition": "User engages in smalltalk, greetings, or casual conversation",
                 "response": (
-                    "Respond naturally and conversationally, keeping it brief "
-                    "and friendly."
+                    "Respond naturally and conversationally, keeping it brief and friendly."
                 ),
             },
             {
                 "condition": "The conversation does not warrant a substantive reply",
                 "response": (
-                    "Politely acknowledge the message but indicate that no "
-                    "specific response is needed, or ask how you can help."
-                ),
-            },
-            {
-                "condition": "User asks about something outside your knowledge or role",
-                "response": (
-                    "Politely explain that this falls outside your area of "
-                    "knowledge or role, and suggest alternative ways they "
-                    "might find the information they need."
+                    "Politely acknowledge the message but indicate that no specific response is needed, "
+                    "or ask how you can help with casual conversation."
                 ),
             },
         ],
         description=(
-            "Default behavioral parameters for smalltalk fallback. These are "
-            "forwarded to PersonaAction to enforce conservative behavior."
+            "Default behavioral parameters for smalltalk fallback. Knowledge question parameters "
+            "are ordered first to ensure they are evaluated before smalltalk parameters."
         ),
     )
 
@@ -114,10 +123,11 @@ class ConverseInteractAction(InteractAction):
 
         This action executes when:
         1. No response has been generated yet (fallback behavior), OR
-        2. There are unexecuted directives (even if a response exists)
+        2. There are unexecuted directives/parameters (even if a response exists)
 
-        Other actions may furnish directives without generating responses, so this
-        action ensures those directives are executed and a response is generated.
+        If unexecuted directives/parameters exist from other actions, this action defers
+        to them by calling respond() without adding its own directives/parameters.
+        Otherwise, it proceeds with its own refined directive and parameters.
         """
         interaction: Interaction | None = visitor.interaction
         if not interaction:
@@ -126,35 +136,44 @@ class ConverseInteractAction(InteractAction):
             return
 
         try:
-            # Check for unexecuted directives
+            # Check for existing unexecuted directives/parameters
             unexecuted_directives = interaction.get_unexecuted_directives()
-            has_unexecuted_directives = len(unexecuted_directives) > 0
+            unexecuted_parameters = interaction.get_unexecuted_parameters()
+            has_unexecuted = len(unexecuted_directives) > 0 or len(unexecuted_parameters) > 0
 
-            # If response exists and no unexecuted directives, skip
-            if interaction.has_response() and not has_unexecuted_directives:
+            # If unexecuted directives/parameters exist, defer to them
+            if has_unexecuted:
+                logger.debug(
+                    f"ConverseInteractAction: Found {len(unexecuted_directives)} unexecuted directive(s) "
+                    f"and {len(unexecuted_parameters)} unexecuted parameter(s); "
+                    "deferring to them without adding own directives/parameters"
+                )
+                # Call respond() without adding our own directives/parameters
+                # This allows PersonaAction to execute the existing unexecuted items
+                await self.respond(visitor)
+                logger.info(
+                    "ConverseInteractAction: Executed existing unexecuted directives/parameters"
+                )
+                return
+
+            # No unexecuted items - check if we should proceed
+            # If response already exists and no unexecuted items, skip
+            if interaction.has_response():
                 logger.debug(
                     "ConverseInteractAction: Interaction already has response and "
-                    "no unexecuted directives; skipping fallback"
+                    "no unexecuted items; skipping"
                 )
                 await visitor.unrecord_action_execution()
                 return
 
-            # If response exists but there are unexecuted directives, proceed to execute them
-            if interaction.has_response() and has_unexecuted_directives:
-                logger.debug(
-                    f"ConverseInteractAction: Response exists but {len(unexecuted_directives)} "
-                    "unexecuted directive(s) found; executing directives and generating response"
-                )
-
-            # Validate directive is configured
+            # No response exists - proceed with our refined directive and parameters
+            # The refined directive and parameters will ensure PersonaAction does not
+            # attempt to respond to knowledge/capability questions
             if not self.directive:
-                logger.warning(
-                    "ConverseInteractAction: Directive not configured, skipping"
-                )
+                logger.warning("ConverseInteractAction: Directive not configured, skipping")
                 await visitor.unrecord_action_execution()
                 return
 
-            # Generate response via PersonaAction with directive and parameters
             await self.respond(
                 visitor,
                 directives=[self.directive],
@@ -162,8 +181,7 @@ class ConverseInteractAction(InteractAction):
             )
 
             logger.info(
-                "ConverseInteractAction: Applied fallback smalltalk directive "
-                "and parameters"
+                "ConverseInteractAction: Applied fallback smalltalk directive and parameters"
             )
 
         except Exception as e:

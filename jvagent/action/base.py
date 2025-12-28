@@ -8,7 +8,9 @@ Actions follow jvspatial's Node pattern since they are part of the agent graph
 and have relationships with other components.
 """
 
+import logging
 import os
+import traceback
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type, TypeVar, Union
 
 from jvspatial.core import Node
@@ -16,6 +18,8 @@ from jvspatial.core.annotations import attribute, compound_index
 
 if TYPE_CHECKING:
     from jvagent.action.model.language.base import LanguageModelAction
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar('T', bound='Action')
 
@@ -146,6 +150,11 @@ class Action(Node):
 
         Override this method to perform initialization tasks when the action
         is first registered. This is called before the action is enabled.
+        
+        Note: Errors in this method are automatically logged by the base system
+        when called through enable() or the Actions manager. If you override this
+        method, you can add additional error handling, but basic error logging
+        is already provided.
         """
         pass
 
@@ -154,6 +163,10 @@ class Action(Node):
 
         Override this method to handle reloading of action code, dependencies,
         or configuration. This is useful for hot-reloading actions during runtime.
+        
+        Note: Errors in this method are automatically logged by the base system
+        when called through reload(). If you override this method, you can add
+        additional error handling, but basic error logging is already provided.
         """
         pass
 
@@ -163,6 +176,10 @@ class Action(Node):
         Override this method to perform tasks that require all actions to be
         registered first, such as resolving dependencies or setting up cross-action
         communication.
+        
+        Note: Errors in this method are automatically logged by the base system
+        when called through the Actions manager. If you override this method, you
+        can add additional error handling, but basic error logging is already provided.
         """
         pass
 
@@ -172,6 +189,10 @@ class Action(Node):
         Override this method to perform tasks when the action transitions from
         disabled to enabled state, such as initializing connections or starting
         background tasks.
+        
+        Note: Errors in this method are automatically logged by the base system
+        when called through enable(). If you override this method, you can add
+        additional error handling, but basic error logging is already provided.
         """
         pass
 
@@ -181,6 +202,10 @@ class Action(Node):
         Override this method to perform cleanup tasks when the action transitions
         from enabled to disabled state, such as closing connections or stopping
         background tasks.
+        
+        Note: Errors in this method are automatically logged by the base system
+        when called through disable(). If you override this method, you can add
+        additional error handling, but basic error logging is already provided.
         """
         pass
 
@@ -193,6 +218,10 @@ class Action(Node):
         Note: This method is called automatically during deregistration, which also
         handles endpoint and module cleanup. Override only if you need additional
         action-specific cleanup.
+        
+        Errors in this method are automatically logged by the base system when
+        called through the Actions manager. If you override this method, you
+        can add additional error handling, but basic error logging is already provided.
         """
         pass
 
@@ -403,30 +432,84 @@ class Action(Node):
 
         Calls the on_enable() lifecycle hook and updates the enabled state.
         This is the primary method for enabling an action.
+        
+        Errors from on_enable() are automatically logged to the database by the base system.
         """
         if not self.enabled:
-            await self.on_enable()
-            self.enabled = True
-            await self.save()
+            try:
+                await self.on_enable()
+                self.enabled = True
+                await self.save()
+            except Exception as e:
+                # Log to console (database logging handled automatically by DBLogHandler)
+                logger.error(
+                    f"Error enabling {self.get_class_name()}: {e}",
+                    exc_info=True,
+                    details={
+                        "agent_id": self.agent_id,
+                        "action_class": self.get_class_name(),
+                        "action_id": self.id,
+                        "action_label": self.label,
+                        "context": "on_enable",
+                        "error_code": "action_enable_error",
+                    }
+                )
+                raise
 
     async def disable(self) -> None:
         """Disable this action.
 
         Calls the on_disable() lifecycle hook and updates the enabled state.
         This is the primary method for disabling an action.
+        
+        Errors from on_disable() are automatically logged to the database by the base system.
         """
         if self.enabled:
-            await self.on_disable()
-            self.enabled = False
-            await self.save()
+            try:
+                await self.on_disable()
+                self.enabled = False
+                await self.save()
+            except Exception as e:
+                # Log to console (database logging handled automatically by DBLogHandler)
+                logger.error(
+                    f"Error disabling {self.get_class_name()}: {e}",
+                    exc_info=True,
+                    details={
+                        "agent_id": self.agent_id,
+                        "action_class": self.get_class_name(),
+                        "action_id": self.id,
+                        "action_label": self.label,
+                        "context": "on_disable",
+                        "error_code": "action_disable_error",
+                    }
+                )
+                raise
 
     async def reload(self) -> None:
         """Reload this action.
 
         Calls the on_reload() lifecycle hook. Useful for hot-reloading
         action code or configuration.
+        
+        Errors from on_reload() are automatically logged to the database by the base system.
         """
-        await self.on_reload()
+        try:
+            await self.on_reload()
+        except Exception as e:
+            # Log to console (database logging handled automatically by DBLogHandler)
+            logger.error(
+                f"Error reloading {self.get_class_name()}: {e}",
+                exc_info=True,
+                details={
+                    "agent_id": self.agent_id,
+                    "action_class": self.get_class_name(),
+                    "action_id": self.id,
+                    "action_label": self.label,
+                    "context": "on_reload",
+                    "error_code": "action_reload_error",
+                }
+            )
+            raise
 
     async def post_update(self) -> None:
         """Called after update operations.

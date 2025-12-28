@@ -404,10 +404,28 @@ class InteractWalker(Walker):
                 await self.add_next(enabled_sub_actions)
 
         except Exception as e:
+            # Log to console (database logging handled automatically by DBLogHandler)
+            agent_id = here.agent_id if hasattr(here, 'agent_id') else None
+            interaction_id = self.interaction.id if self.interaction else None
+            session_id = self.session_id
+            user_id = self.user_id
+            
             logger.error(
                 f"Error processing InteractAction {here.label}: {e}",
                 exc_info=True,
+                details={
+                    "agent_id": agent_id,
+                    "interaction_id": interaction_id,
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "action_class": here.get_class_name() if hasattr(here, 'get_class_name') else here.__class__.__name__,
+                    "action_id": here.id,
+                    "action_label": here.label,
+                    "context": "execute",
+                    "error_code": "interact_action_execute_error",
+                }
             )
+            
             await self.report(
                 {
                     "error": f"Failed to process {here.label}",

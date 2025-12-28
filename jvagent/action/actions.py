@@ -180,11 +180,28 @@ class Actions(Node):
                     await self.save()
                     return True
 
-                # Call appropriate lifecycle hook
-                if is_update_mode:
-                    await action.on_reload()
-                else:
-                    await action.on_register()
+                # Call appropriate lifecycle hook with error handling
+                try:
+                    if is_update_mode:
+                        await action.on_reload()
+                    else:
+                        await action.on_register()
+                except Exception as e:
+                    # Log to console (database logging handled automatically by DBLogHandler)
+                    context_name = "on_reload" if is_update_mode else "on_register"
+                    logger.error(
+                        f"Error in lifecycle hook for action {action.label}: {e}",
+                        exc_info=True,
+                        details={
+                            "agent_id": action.agent_id,
+                            "action_class": action.get_class_name(),
+                            "action_id": action.id,
+                            "action_label": action.label,
+                            "context": context_name,
+                            "error_code": f"action_{context_name}_error",
+                        }
+                    )
+                    raise  # Re-raise to be caught by outer handler
 
                 await self.save()
                 return True
@@ -233,7 +250,19 @@ class Actions(Node):
             try:
                 await action.post_register()
             except Exception as e:
-                logger.error(f"Error in post_register for {action.label}: {e}", exc_info=True)
+                # Log to console (database logging handled automatically by DBLogHandler)
+                logger.error(
+                    f"Error in post_register for {action.label}: {e}",
+                    exc_info=True,
+                    details={
+                        "agent_id": action.agent_id,
+                        "action_class": action.get_class_name(),
+                        "action_id": action.id,
+                        "action_label": action.label,
+                        "context": "post_register",
+                        "error_code": "action_post_register_error",
+                    }
+                )
 
         return results
 
@@ -281,7 +310,23 @@ class Actions(Node):
                     logger.warning(f"Error unloading modules for action {action_id}: {e}")
 
                 # Step 3: Call lifecycle hook (allows action-specific cleanup)
-                await action.on_deregister()
+                try:
+                    await action.on_deregister()
+                except Exception as e:
+                    # Log to console (database logging handled automatically by DBLogHandler)
+                    logger.error(
+                        f"Error in on_deregister for action {action_id}: {e}",
+                        exc_info=True,
+                        details={
+                            "agent_id": action.agent_id,
+                            "action_class": action.get_class_name(),
+                            "action_id": action.id,
+                            "action_label": action.label,
+                            "context": "on_deregister",
+                            "error_code": "action_deregister_error",
+                        }
+                    )
+                    # Continue with deregistration even if hook fails
 
                 # Step 4: Update statistics
                 self.registered_count = max(0, self.registered_count - 1)

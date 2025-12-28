@@ -12,6 +12,7 @@ The logging system:
 - **Provides REST endpoints** - Query, archive, and purge logs via API
 - **Configurable retention** - Automatic cleanup of old logs based on configurable retention windows
 - **Non-blocking** - Logging happens asynchronously after interactions complete
+- **Automatic error logging** - All ERROR/CRITICAL level logs are automatically persisted to the database via `DBLogHandler`
 
 ## Architecture
 
@@ -26,12 +27,20 @@ graph TB
     subgraph "Logging Database"
         LogDB[(Log DB)]
         LogDB -->|Stores| LogEntries[Log Entries]
+        LogDB -->|Stores| ErrorLogs[Error Logs]
     end
     
     subgraph "Logging Service"
         LogService[LoggingService]
         LogService -->|Async Write| LogDB
         LogService -->|Read| LogDB
+    end
+    
+    subgraph "Automatic Logging"
+        Logger[Python Logger]
+        DBHandler[DBLogHandler]
+        Logger -->|Intercepts| DBHandler
+        DBHandler -->|Async Write| LogService
     end
     
     subgraph "API Endpoints"
@@ -48,6 +57,7 @@ graph TB
     
     Interactions -->|On Complete| LogService
     App -->|Config| RetentionTask
+    Logger -->|All ERROR/CRITICAL| DBHandler
 ```
 
 ## Configuration
@@ -62,6 +72,12 @@ The logging system can be configured via environment variables:
 - `JVAGENT_LOG_DB_URI` - MongoDB URI (if different from prime database)
 - `JVAGENT_LOG_DB_NAME` - MongoDB database name (defaults to `jvagent_logs`)
 - `JVAGENT_LOG_RETENTION_DEFAULT_DAYS` - Default retention period in days (defaults to 60)
+- `JVAGENT_LOG_DB_LEVEL` - Minimum log level to persist to database (defaults to `ERROR`)
+  - Valid values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
+  - **Note**: ERROR and CRITICAL are always logged to database regardless of this setting
+  - Setting to `WARNING` will log WARNING, ERROR, and CRITICAL
+  - Setting to `INFO` will log INFO, WARNING, ERROR, and CRITICAL
+  - Setting to `DEBUG` will log all levels
 
 ### app.yaml Configuration
 
@@ -438,9 +454,105 @@ Each log entry contains:
 
 The `interaction_data` field contains the complete exported structure from the interaction, including all metadata, making it suitable for full audit trails and debugging.
 
+## Automatic Database Logging
+
+The jvagent logging system includes `DBLogHandler`, a custom Python logging handler that automatically intercepts all log records and persists them to the database. This eliminates the need for explicit database logging calls throughout the codebase.
+
+### How It Works
+
+`DBLogHandler` is automatically installed when the logging database is initialized (if logging is enabled). It:
+
+1. **Intercepts all log records** from the Python logging system
+2. **Filters by log level** based on `JVAGENT_LOG_DB_LEVEL` configuration:
+   - **ERROR and CRITICAL** are always logged to database (if logging enabled)
+   - **WARNING, INFO, DEBUG** are logged only if they meet the configured threshold
+3. **Extracts context automatically** from:
+   - Log record `details` parameter (explicit context)
+   - Call stack inspection (finds Action/InteractWalker instances)
+   - Context variables (`current_interaction_id`, `current_action_name`)
+   - Log record metadata (module, function, line number)
+4. **Logs asynchronously** to avoid blocking the main application flow
+5. **Fails silently** - never raises exceptions to avoid breaking application execution
+
+### Log Level Configuration
+
+The `JVAGENT_LOG_DB_LEVEL` environment variable controls which log levels are persisted to the database:
+
+- **`ERROR` (default)**: Only ERROR and CRITICAL logs are persisted
+- **`WARNING`**: WARNING, ERROR, and CRITICAL logs are persisted
+- **`INFO`**: INFO, WARNING, ERROR, and CRITICAL logs are persisted
+- **`DEBUG`**: All log levels are persisted
+
+**Important**: ERROR and CRITICAL level logs are always persisted to the database (if logging is enabled), regardless of the `JVAGENT_LOG_DB_LEVEL` setting. This ensures critical errors are never missed.
+
+### Providing Explicit Context
+
+While `DBLogHandler` automatically infers context from the call stack and context variables, you can provide explicit context using the `details` parameter in logging calls:
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Log with explicit context
+logger.error(
+    "Something went wrong",
+    exc_info=True,
+    details={
+        "agent_id": agent.id,
+        "interaction_id": interaction.id,
+        "session_id": session_id,
+        "user_id": user_id,
+        "action_class": "MyAction",
+        "action_id": action.id,
+        "action_label": action.label,
+        "context": "on_enable",
+        "error_code": "custom_error_code",
+        "status_code": 500,
+    }
+)
+```
+
+The `details` parameter takes precedence over automatically inferred context, allowing you to override or supplement the inferred values.
+
+### Context Inference Priority
+
+Context is extracted in the following priority order:
+
+1. **`record.details` dict** - Explicit context provided via `details` parameter
+2. **Call stack inspection** - Finds Action and InteractWalker instances in the call stack
+3. **Context variables** - `current_interaction_id`, `current_action_name`
+4. **Log record metadata** - Module, function, line number
+
+### Automatic Context Fields
+
+The handler automatically extracts the following fields when available:
+
+- `agent_id`: From Action.agent_id or InteractWalker.agent_id
+- `interaction_id`: From context variable, InteractWalker.interaction.id, or details
+- `session_id`: From InteractWalker.session_id or details
+- `user_id`: From InteractWalker.user_id or details
+- `action_class`: From Action instance in stack or details
+- `action_id`: From Action.id in stack or details
+- `action_label`: From Action.label in stack or details
+- `context`: From function name (on_enable, execute, etc.) or details
+- `error_code`: From details or default based on log level
+- `status_code`: From details or default based on log level (500 for ERROR/CRITICAL, 200 for others)
+- `log_level`: The actual log level (ERROR, WARNING, INFO, DEBUG, CRITICAL)
+
+### Disabling Automatic Logging
+
+Automatic database logging respects the existing logging configuration:
+
+- **Global disable**: Set `JVAGENT_LOGGING_ENABLED=false` to prevent handler installation
+- **App-level disable**: Set `app.logging_enabled=false` to skip database logging for specific apps (handler still installed but skips logging)
+- **Graceful degradation**: When disabled, logs still go to console/file handlers, only database logging is skipped
+
 ## Error Logging
 
 The logging system also captures API errors for debugging and traceability. Error logs are stored in the same logging database as interaction logs, following the same patterns and retention policies.
+
+**Note**: With `DBLogHandler` installed, all ERROR and CRITICAL level logs are automatically persisted to the database. The explicit error logging described below is primarily for API-level errors, while application-level errors are handled automatically by `DBLogHandler`.
 
 ### Error Log Structure
 

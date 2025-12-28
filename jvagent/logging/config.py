@@ -89,6 +89,16 @@ def get_logging_config() -> Dict[str, Any]:
             os.getenv("JVSPATIAL_TEXT_NORMALIZATION_ENABLED", "true").lower() == "true"
         )
 
+    # Log level for database logging (minimum level to persist to database)
+    # ERROR/CRITICAL are always logged regardless of this setting
+    import logging
+    log_db_level_str = os.getenv("JVAGENT_LOG_DB_LEVEL", "ERROR").upper()
+    valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+    if log_db_level_str not in valid_levels:
+        log_db_level_str = "ERROR"
+    config["log_db_level"] = getattr(logging, log_db_level_str, logging.ERROR)
+    config["log_db_level_str"] = log_db_level_str  # Keep string version for reference
+
     return config
 
 
@@ -148,8 +158,35 @@ def initialize_logging_database(config: Optional[Dict[str, Any]] = None) -> bool
         # Register as "logs" database
         manager.register_database("logs", log_db)
         
-        # Log success
+        # Install DBLogHandler if not already installed
         import logging
+        root_logger = logging.getLogger()
+        
+        # Check if handler already exists
+        from jvagent.logging.handler import DBLogHandler as DBLogHandlerClass
+        handler_exists = any(
+            isinstance(h, DBLogHandlerClass)
+            for h in root_logger.handlers
+        )
+        
+        if not handler_exists:
+            from jvagent.logging.handler import DBLogHandler
+            
+            # Get log_db_level from config (default: ERROR)
+            log_db_level = config.get("log_db_level", logging.ERROR)
+            
+            # Create and install handler
+            db_handler = DBLogHandler(log_db_level=log_db_level)
+            root_logger.addHandler(db_handler)
+            
+            logger = logging.getLogger(__name__)
+            log_level_str = config.get("log_db_level_str", "ERROR")
+            logger.info(
+                f"DBLogHandler installed: log_db_level={log_level_str} "
+                f"(ERROR/CRITICAL always logged, {log_level_str} and above logged to database)"
+            )
+        
+        # Log success
         logger = logging.getLogger(__name__)
         logger.info(f"Logging database initialized: type={db_type}, path={config.get('db_path', 'N/A')}")
         
