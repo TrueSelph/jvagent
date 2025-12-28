@@ -198,20 +198,20 @@ actions:
       enabled: true
       description: "Fallback action for smalltalk and casual conversation"
       weight: 100  # Runs last as a safety net
-      directive: |
-        Offer a simple, friendly response to smalltalk and casual conversation.
-        NEVER attempt to answer knowledge-based questions without having certainty
-        about the context. If the conversation does not warrant a reply or you
-        lack sufficient information, politely opt out rather than guessing.
-      parameters:
-        - condition: "User asks a knowledge-based or factual question"
-          response: "Politely decline to answer, explaining that you don't have sufficient context or certainty to provide an accurate answer. Suggest they check official sources or provide more specific context."
-        - condition: "User engages in smalltalk, greetings, or casual conversation"
-          response: "Respond naturally and conversationally, keeping it brief and friendly."
-        - condition: "The conversation does not warrant a substantive reply"
-          response: "Politely acknowledge the message but indicate that no specific response is needed, or ask how you can help."
-        - condition: "User asks about something outside your knowledge or role"
-          response: "Politely explain that this falls outside your area of knowledge or role, and suggest alternative ways they might find the information they need."
+      # directive: |
+      #   Offer a simple, friendly response to smalltalk and casual conversation ONLY.
+      #   NEVER attempt to answer knowledge-based or capability based questions without having applicable directives or certainty
+      #   about the context. If the conversation does not warrant a reply or you
+      #   lack sufficient information, politely opt out rather than guessing.
+      # parameters:
+      #   - condition: "User asks a knowledge-based, capability based, or factual question"
+      #     response: "Politely decline to answer, explaining that you don't have sufficient information or certainty to provide an accurate answer. Suggest they check official sources or provide more specific context."
+      #   - condition: "User engages in smalltalk, greetings, or casual conversation"
+      #     response: "Respond naturally and conversationally, keeping it brief and friendly."
+      #   - condition: "The conversation does not warrant a substantive reply"
+      #     response: "Politely acknowledge the message but indicate that no specific response is needed, or ask how you can help."
+      #   - condition: "User asks about something outside your knowledge or role"
+      #     response: "Politely explain that this falls outside your area of knowledge or role, and suggest alternative ways they might find the information they need."
 
   # Add more action assignments here
   # Actions can be from different namespaces:
