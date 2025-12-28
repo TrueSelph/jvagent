@@ -129,7 +129,6 @@ actions:
       description: "Persona action with LLM-driven behavioral parameters"
       # Persona Identity
       persona_name: "Example Assistant"
-      persona_role: "A helpful AI assistant for demonstrations"
       persona_description: |
         You are a friendly and knowledgeable assistant that helps users
         understand how the jvagent framework works. You provide clear,

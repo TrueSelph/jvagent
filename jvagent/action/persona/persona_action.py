@@ -41,7 +41,6 @@ class PersonaAction(Action):
         model_temperature: Temperature for LLM generation
         model_max_tokens: Max tokens for LLM generation
         persona_name: Agent display name (for prompt formatting)
-        persona_role: Agent role description (for prompt formatting)
         persona_description: Detailed agent description (for prompt formatting)
         persona_capabilities: List of agent capabilities (for prompt formatting)
     """
@@ -49,9 +48,6 @@ class PersonaAction(Action):
     # Persona attributes (for prompt formatting if using default template)
     persona_name: str = attribute(
         default="Agent", description="Agent display name"
-    )
-    persona_role: str = attribute(
-        default="An AI Assistant", description="Agent role description"
     )
     persona_description: str = attribute(
         default="You are friendly and helpful",
@@ -158,19 +154,23 @@ class PersonaAction(Action):
         # Get model action (required=True raises error if not found)
         model_action = await self.get_model_action(required=True)
 
-        # Get unexecuted directives and parameters
+        # Add all persona parameters to the interaction (like interact actions do)
+        # This allows accurate recording of persona-level parameters applied to each response
+        # Duplicate prevention is handled by interaction.add_parameters()
+        persona_action_name = self.get_class_name()
+        persona_parameters_to_add = list(self.parameters) if self.parameters is not None else []
+        
+        if persona_parameters_to_add:
+            interaction.add_parameters(persona_parameters_to_add, persona_action_name)
+            await interaction.save()
+
+        # Get unexecuted directives and parameters (now includes persona parameters)
         applicable_directives = interaction.get_unexecuted_directives()
         applicable_parameters = interaction.get_unexecuted_parameters()
-        # Ensure parameters are always loaded (default_factory ensures they're initialized)
-        persona_parameters = list(self.parameters) if self.parameters is not None else []
-        interaction_parameters = [
-            p for p in applicable_parameters
-            if p.get("action_name") != "PersonaAction"
-        ]
 
         # Check for existing response to avoid repetition (multi-call awareness)
         if interaction.response:
-            if not applicable_directives and not applicable_parameters and not persona_parameters:
+            if not applicable_directives and not applicable_parameters:
                 logger.debug(
                     f"PersonaAction.respond: Skipping - interaction already has response "
                     f"({len(interaction.response)} chars) and no new directives/parameters."
@@ -178,7 +178,8 @@ class PersonaAction(Action):
                 return interaction.response
 
         # Validate that there are directives and/or parameters to proceed
-        if not (applicable_directives or applicable_parameters or persona_parameters):
+        # applicable_parameters now includes persona parameters from the interaction
+        if not (applicable_directives or applicable_parameters):
             raise ValueError(
                 "PersonaAction.respond: Cannot proceed - no directives or parameters found. "
                 "At least one of the following must be present: "
@@ -186,7 +187,7 @@ class PersonaAction(Action):
                 "or PersonaAction's own parameters."
             )
 
-        # Compose the prompt (pass directives to avoid duplicate retrieval)
+        # Compose the prompt (pass directives and all applicable parameters including persona parameters)
         system_prompt = await self._compose_prompt(interaction, applicable_directives, applicable_parameters)
 
         conversation_history = None
@@ -245,8 +246,8 @@ class PersonaAction(Action):
             if response and response.strip():
                 if applicable_directives:
                     interaction.set_to_executed(directives=applicable_directives)
-                if interaction_parameters:
-                    interaction.set_to_executed(parameters=interaction_parameters)
+                if applicable_parameters:
+                    interaction.set_to_executed(parameters=applicable_parameters)
 
             # Set interaction.response immediately after getting the complete response
             if response:
@@ -343,85 +344,30 @@ class PersonaAction(Action):
             else "None specified"
         )
 
-        # Group directives and parameters by action
-        # Ensure parameters are always loaded (default_factory ensures they're initialized)
-        persona_parameters = list(self.parameters) if self.parameters is not None else []
-        interaction_parameters = [
-            p for p in applicable_parameters
-            if p.get("action_name") != "PersonaAction"
-        ]
-
-        directives_by_action: Dict[str, List[Dict[str, Any]]] = {}
-        for directive in applicable_directives:
-            action_name = directive.get("action_name", "Unknown")
-            if action_name not in directives_by_action:
-                directives_by_action[action_name] = []
-            directives_by_action[action_name].append(directive)
-
-        parameters_by_action: Dict[str, List[Dict[str, Any]]] = {}
-        for param in interaction_parameters:
-            action_name = param.get("action_name", "Unknown")
-            if action_name not in parameters_by_action:
-                parameters_by_action[action_name] = []
-            parameters_by_action[action_name].append(param)
-
-        # Build directives section using directives_sub_prompt
+        # Build directives section - consolidate all directives into a single numbered list
         directives_section = ""
         if applicable_directives:
-            # Build directive groups
-            directive_groups = []
-            for action_name, directives in directives_by_action.items():
-                directive_contents = [d.get("content", str(d)) for d in directives]
-                directive_text = "\n".join(f"{i+1}. {content}" for i, content in enumerate(directive_contents))
-
-                # Get action-specific parameters
-                action_params = parameters_by_action.get(action_name, [])
-                action_params_section = ""
-                if action_params:
-                    params_list = "\n".join(
-                        format_parameter(p, index=i+1) for i, p in enumerate(action_params)
-                    )
-                    action_params_section = f"**Parameters from {action_name} (evaluate conditions before applying):**\n{params_list}\n\nNote: These parameters guide the directive above and take precedence. Also follow PersonaAction parameters (if provided)."
-
-                directive_group = f"#### Directive from {action_name}:\n\n{directive_text}\n\n{action_params_section}" if action_params_section else f"#### Directive from {action_name}:\n\n{directive_text}"
-                directive_groups.append(directive_group)
-
+            # Create a single numbered list of all directives (no action tagging)
+            directive_list = "\n".join(
+                f"{i+1}. {d.get('content', str(d))}" 
+                for i, d in enumerate(applicable_directives)
+            )
             directives_section = DIRECTIVES_SUB_PROMPT.format(
-                directive_groups="\n\n".join(directive_groups),
+                directive_list=directive_list
             )
         else:
             directives_section = NO_DIRECTIVES_SUB_PROMPT
 
-        # Build parameters section using parameters_sub_prompt
-        actions_with_directives = set(directives_by_action.keys())
-        actions_with_only_params = {
-            action_name: params
-            for action_name, params in parameters_by_action.items()
-            if action_name not in actions_with_directives
-        }
-
-        # Always build parameters section - persona_parameters are always loaded by default
-        params_content_parts = []
-
-        # Always include PersonaAction parameters if they exist (they should always exist with defaults)
-        if persona_parameters:
-            persona_params_list = "\n".join(
-                format_parameter(p, index=i+1) for i, p in enumerate(persona_parameters)
+        # Build parameters section - consolidate all parameters into a single numbered list
+        parameters_section = ""
+        if applicable_parameters:
+            # Create a single numbered list of all parameters (no action tagging)
+            parameter_list = "\n".join(
+                format_parameter(p, index=i+1) 
+                for i, p in enumerate(applicable_parameters)
             )
-            params_content_parts.append(f"**PersonaAction Parameters (apply to ALL directives):**\n{persona_params_list}")
-
-        # Include parameters from other actions that don't have directives
-        if actions_with_only_params:
-            for action_name, params in actions_with_only_params.items():
-                params_list = "\n".join(
-                    format_parameter(p, index=i+1) for i, p in enumerate(params)
-                )
-                params_content_parts.append(f"#### Parameters from {action_name}:\n{params_list}")
-
-        # Always show parameters section (should always have content with defaults)
-        if params_content_parts:
             parameters_section = PARAMETERS_SUB_PROMPT.format(
-                parameters_content="\n\n".join(params_content_parts)
+                parameter_list=parameter_list
             )
         else:
             parameters_section = ""
@@ -444,7 +390,6 @@ class PersonaAction(Action):
         prompt_template = self.system_prompt if self.system_prompt else SYSTEM_PROMPT_TEMPLATE
         return prompt_template.format(
             agent_name=self.persona_name,
-            agent_role=self.persona_role,
             agent_description=self.persona_description,
             agent_capabilities=capabilities_str,
             user=await self._get_user_display_name(interaction),

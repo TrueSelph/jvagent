@@ -78,7 +78,6 @@ actions:
     context:
       enabled: true
       persona_name: "Example Assistant"
-      persona_role: "A helpful AI assistant"
       model_action_type: "OpenAILanguageModelAction"
       model: gpt-4o-mini
       model_temperature: 0.3
