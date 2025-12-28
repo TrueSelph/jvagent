@@ -113,20 +113,24 @@ class Interaction(Node):
 
         Directives are instructions issued by non-persona actions.
         New directives are added with executed=False by default.
+        Prevents duplicates: no identical directives from the same action are added twice.
 
         Args:
             directive: Directive string to add
             action_name: Class name (camelCase) of the action that added this directive
         """
         if directive and action_name:
+            # Check for duplicates: same action_name and same content
+            for existing in self.directives:
+                if existing.get("action_name") == action_name and existing.get("content") == directive:
+                    return  # Duplicate found, skip adding
+            
             entry = {
                 "action_name": action_name,
                 "content": directive,
                 "executed": False
             }
-            # Prevent duplicates based on content and action_name
-            if entry not in self.directives:
-                self.directives.append(entry)
+            self.directives.append(entry)
 
     def add_event(self, event: str, action_name: str) -> None:
         """Add an event to the interaction.
@@ -178,17 +182,68 @@ class Interaction(Node):
         """Add a parameter to the applicable parameters list.
 
         New parameters are added with executed=False by default.
+        Prevents duplicates: no identical parameters from the same action are added twice.
+        Parameters are considered identical if they have the same action_name and
+        the same values for all keys (excluding 'executed' and 'action_name' which are set automatically).
 
         Args:
             parameter: Parameter data (id, condition, response, etc.)
             action_name: Class name (camelCase) of the action that added this parameter
         """
-        if parameter:
-            parameter["action_name"] = action_name
-            # Ensure executed key is set to False if not already present
-            if "executed" not in parameter:
-                parameter["executed"] = False
-            self.parameters.append(parameter)
+        if not parameter:
+            return
+        
+        # Check for duplicates: same action_name and same parameter content
+        # Compare all keys except 'executed' and 'action_name' (which are set automatically)
+        param_copy = {k: v for k, v in parameter.items() if k not in ("executed", "action_name")}
+        
+        for existing in self.parameters:
+            if existing.get("action_name") == action_name:
+                # Compare parameter content (excluding executed and action_name)
+                existing_copy = {k: v for k, v in existing.items() if k not in ("executed", "action_name")}
+                if existing_copy == param_copy:
+                    return  # Duplicate found, skip adding
+        
+        # Not a duplicate, add it
+        parameter["action_name"] = action_name
+        # Ensure executed key is set to False if not already present
+        if "executed" not in parameter:
+            parameter["executed"] = False
+        self.parameters.append(parameter)
+
+    def add_parameters(self, parameters: List[Dict[str, Any]], action_name: str) -> None:
+        """Add multiple parameters to the interaction.
+
+        Bulk convenience method that adds multiple parameters with the same action_name.
+        Prevents duplicates: no identical parameters from the same action are added twice.
+
+        Args:
+            parameters: List of parameter dictionaries to add
+            action_name: Class name (camelCase) of the action that added these parameters
+        """
+        if not parameters:
+            return
+        
+        for parameter in parameters:
+            if parameter and isinstance(parameter, dict):
+                self.add_parameter(parameter, action_name)
+
+    def add_directives(self, directives: List[str], action_name: str) -> None:
+        """Add multiple directives to the interaction.
+
+        Bulk convenience method that adds multiple directives with the same action_name.
+        Prevents duplicates: no identical directives from the same action are added twice.
+
+        Args:
+            directives: List of directive strings to add
+            action_name: Class name (camelCase) of the action that added these directives
+        """
+        if not directives:
+            return
+        
+        for directive in directives:
+            if directive:  # Skip empty directives
+                self.add_directive(directive, action_name)
 
     def has_response(self) -> bool:
         """Check if the interaction has a response.

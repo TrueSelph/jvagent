@@ -545,11 +545,11 @@ class InteractWalker(Walker):
             return
 
         action_name = self._current_action.get_class_name()
-        for directive in directives:
-            if directive:  # Skip empty directives
-                self.interaction.add_directive(directive, action_name)
-        
-        await self.interaction.save()
+        # Filter out empty directives before calling bulk method
+        valid_directives = [d for d in directives if d]
+        if valid_directives:
+            self.interaction.add_directives(valid_directives, action_name)
+            await self.interaction.save()
 
     async def add_directive(self, directive: str) -> None:
         """Add a directive to the interaction with current action name.
@@ -610,13 +610,17 @@ class InteractWalker(Walker):
             return
 
         action_name = self._current_action.get_class_name()
+        # Filter and validate parameters before calling bulk method
+        valid_parameters = []
         for parameter in parameters:
             if parameter and isinstance(parameter, dict):
-                self.interaction.add_parameter(parameter, action_name)
+                valid_parameters.append(parameter)
             elif parameter:
                 logger.warning(f"add_parameters: Skipping invalid parameter type: {type(parameter)}, value: {parameter}")
         
-        await self.interaction.save()
+        if valid_parameters:
+            self.interaction.add_parameters(valid_parameters, action_name)
+            await self.interaction.save()
 
     async def add_parameter(self, parameter: Dict[str, Any]) -> None:
         """Add a parameter to the interaction with current action name.

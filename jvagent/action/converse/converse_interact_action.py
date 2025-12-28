@@ -43,8 +43,9 @@ class ConverseInteractAction(InteractAction):
 
     directive: str = attribute(
         default=(
-            "Only handle smalltalk and casual conversation; decline all knowledge-based, "
-            "capability-based, and factual questions by explaining you are only for smalltalk."
+            "Only handle smalltalk and casual conversation; politely decline all knowledge-based, "
+            "capability-based, and factual engagements by stating that you don't have the "
+            "information or ability to respond at the moment."
         ),
         description="Fallback directive for smalltalk and conservative replies",
     )
@@ -77,7 +78,7 @@ class ConverseInteractAction(InteractAction):
                 ),
             },
             {
-                "condition": "User asks a capability-based question (can you, do you know, are you able to, tell me about, explain, define)",
+                "condition": "User invokes a capability-based response (can you, do you know, are you able to, tell me about, explain, define)",
                 "response": (
                     "Politely decline and explain that you don't have the information or ability "
                     "to respond at the moment."
