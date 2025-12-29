@@ -8,6 +8,7 @@ import { MessageList } from './MessageList'
 import { MessageInput } from './MessageInput'
 import { WelcomeScreen } from './WelcomeScreen'
 import { ConversationList } from './ConversationList'
+import { GraphViewer } from './GraphViewer'
 import { addConversation, updateConversation, getMessages, deleteMessages, getConversations, saveConversations, getUserId } from '../utils/storage'
 import { apiClient } from '../config/api'
 import type { Conversation } from '../types/conversation'
@@ -32,9 +33,18 @@ export function ChatInterface() {
     useStreaming(agentId || '', sessionId)
   const { logout } = useAuth()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isGraphViewerOpen, setIsGraphViewerOpen] = useState(false)
   
   const handleMobileMenuClose = useCallback(() => {
     setIsMobileMenuOpen(false)
+  }, [])
+
+  const handleToggleGraphViewer = useCallback(() => {
+    setIsGraphViewerOpen((prev) => !prev)
+  }, [])
+
+  const handleCloseGraphViewer = useCallback(() => {
+    setIsGraphViewerOpen(false)
   }, [])
 
   // Refresh conversations when agent changes or on mount
@@ -366,6 +376,28 @@ export function ChatInterface() {
                   </p>
                 )}
               </div>
+
+              {/* Graph viewer button */}
+              <button
+                onClick={handleToggleGraphViewer}
+                className="flex-shrink-0 text-gray-600 hover:text-gray-900 transition-colors p-2 rounded-lg hover:bg-gray-100"
+                aria-label="View app graph"
+                title="View app graph"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"
+                  />
+                </svg>
+              </button>
             </div>
           </div>
 
@@ -394,6 +426,11 @@ export function ChatInterface() {
             placeholder={`Message ${agent.alias || agent.name || 'Agent'}...`}
           />
         </div>
+
+        {/* Graph Viewer Modal Dialog */}
+        {isGraphViewerOpen && (
+          <GraphViewer onClose={handleCloseGraphViewer} isEmbedded={true} />
+        )}
       </div>
     </div>
   )

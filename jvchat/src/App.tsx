@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Login } from './components/Login'
 import { AgentSelector } from './components/AgentSelector'
 import { ChatInterface } from './components/ChatInterface'
+import { GraphViewer } from './components/GraphViewer'
 import { getToken } from './utils/storage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -25,6 +26,14 @@ function App() {
         <Route
           path="/chat/:agentId"
           element={<ChatInterface />}
+        />
+        <Route
+          path="/graph"
+          element={
+            <PrivateRoute>
+              <GraphViewer />
+            </PrivateRoute>
+          }
         />
         <Route path="/" element={<Navigate to="/agents" replace />} />
         <Route path="*" element={

@@ -429,6 +429,50 @@ class ApiClient {
       throw error
     }
   }
+
+  async getGraph(format: string = 'mermaid', includeAttributes: boolean = true): Promise<string> {
+    // Endpoint returns plain text (mermaid diagram syntax)
+    // Try /api/graph first, fallback to /graph, with baseURL fallbacks
+    try {
+      const params = {
+        format,
+        include_attributes: includeAttributes,
+      }
+
+      const response = await this._withFallback(async (baseURL) => {
+        try {
+          // Use responseType: 'text' to get plain text response
+          return await this.client.get('/api/graph', {
+            params,
+            baseURL,
+            responseType: 'text',
+          })
+        } catch (err: any) {
+          if (err.response?.status === 404) {
+            // Try without /api prefix
+            return await this.client.get('/graph', {
+              params,
+              baseURL,
+              responseType: 'text',
+            })
+          }
+          throw err
+        }
+      })
+
+      // Response data is already a string when responseType is 'text'
+      return response.data as string
+    } catch (error: any) {
+      console.error('Error fetching graph:', error)
+      const errorMessage =
+        error.response?.data ||
+        error.message ||
+        'Failed to fetch graph data'
+      throw new Error(
+        typeof errorMessage === 'string' ? errorMessage : 'Failed to fetch graph data'
+      )
+    }
+  }
 }
 
 export const apiClient = new ApiClient()
