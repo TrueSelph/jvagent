@@ -9,6 +9,37 @@ InteractAction provides a simplified API for:
 - Generating responses via PersonaAction
 - Managing interaction state efficiently
 
+## Architecture
+
+### Modular Pipeline Design
+
+InteractActions serve as **modular points of execution** that may exist in a prescribed chain of interact actions. The InteractWalker traverses and executes this modular pipeline of interact actions.
+
+### Walker Traversal
+
+The InteractWalker is designed to traverse and execute the modular pipeline of interact actions. Core actions like InteractRouter, when employed, provide additional logic which alters or curates the walker's walk path or traversal, allowing specific actions to be executed based on the nature of the input.
+
+### Top-Level Action Routing
+
+While interact actions may have branches of other interact actions, **top-level interact actions** (that is, the actions directly connected to the Actions branch node) **must employ logic to further route the interact walker to its children** (since this may always be done conditionally) instead of having it done automatically.
+
+This means that if your top-level InteractAction has child InteractActions connected to it, you must explicitly route the walker to those children within your `execute()` method:
+
+```python
+class MyTopLevelAction(InteractAction):
+    async def execute(self, visitor: InteractWalker) -> None:
+        # Perform action logic
+        # ...
+        
+        # Explicitly route to child actions conditionally
+        if some_condition:
+            child_action = await self.node(node="ChildInteractAction")
+            if child_action:
+                await visitor.visit(child_action)
+```
+
+**Important:** The walker will NOT automatically traverse child InteractActions from top-level actions. This design allows for conditional routing based on the action's internal logic and state.
+
 ## Interact Endpoint Response Format
 
 The `/agents/{agent_id}/interact` endpoint response format varies based on the `JVAGENT_ENVIRONMENT` setting:

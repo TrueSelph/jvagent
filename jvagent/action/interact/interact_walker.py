@@ -30,8 +30,19 @@ class InteractWalker(Walker):
     - Creates Interaction node
     - Traverses from Agent -> Actions -> InteractActions
     - Executes top-level InteractActions in weight order (from Actions node)
-    - Traverses sub-actions in graph-based arrangement (weight not considered)
     - Provides helper methods to record and remove executed actions on the active interaction
+
+    Architecture:
+        InteractActions serve as modular points of execution that may exist in a
+        prescribed chain of interact actions. The InteractWalker traverses and executes
+        this modular pipeline of interact actions. Core actions like InteractRouter, when
+        employed, provide additional logic which alters or curates the walker's walk path
+        or traversal, allowing specific actions to be executed based on the nature of the input.
+
+        While interact actions may have branches of other interact actions, the top-level
+        interact actions (that is, the actions directly connected to the Actions branch node)
+        must employ logic to further route the interact walker to its children (since this
+        may always be done conditionally) instead of having it done automatically.
 
     Usage:
         The walker should be spawned directly on the Agent node:
@@ -44,10 +55,6 @@ class InteractWalker(Walker):
         launching from the Actions node. This is because top-level InteractActions
         are connected in a flat arrangement and there may be multiple top-level
         actions that need ordering.
-
-        Sub-actions (InteractActions connected to other InteractActions) are
-        traversed in graph-based arrangement without weight consideration, as
-        one InteractAction should lead to another based on the graph structure.
     """
 
     # Walker state
@@ -223,11 +230,16 @@ class InteractWalker(Walker):
     async def on_actions(self, here: Any) -> None:
         """Visit Actions node and queue top-level InteractActions for traversal.
 
-        Gets all connected InteractActions, filters to enabled ones, applies routing
-        filter if InteractRouter has executed, sorts by weight (weight is only considered
-        at this top tier), and queues them for traversal. The @on_visit("InteractAction")
-        handler will process each action with depth-first traversal of sub-actions
-        (without weight consideration).
+        Gets all connected InteractActions, filters to enabled ones, sorts by weight
+        (weight is only considered at this top tier), and queues them for traversal.
+        The InteractRouter (if present) will curate the walk path after it executes.
+
+        Note:
+            Top-level InteractActions (those directly connected to the Actions node)
+            must explicitly route the walker to their children within their execute()
+            method. The walker does not automatically traverse child InteractActions
+            from top-level actions - this allows for conditional routing based on
+            the action's internal logic and state.
 
         Args:
             here: The Actions node being visited
@@ -267,51 +279,29 @@ class InteractWalker(Walker):
             await self.report({"info": "No enabled InteractActions found"})
             return
 
-        # Apply routing filter if InteractRouter has executed
-        # Check if InteractRouter has run by checking if interpretation exists
-        # InteractRouter always sets interpretation when it runs (even if empty anchors)
-        if self.interaction and self.interaction.interpretation:
-            logger.debug(
-                f"InteractWalker: InteractRouter has executed. "
-                f"Interpretation: {self.interaction.interpretation[:100]}, "
-                f"Anchors: {self.interaction.anchors}"
-            )
-            enabled_actions = await self._filter_by_routing(enabled_actions)
-        else:
-            logger.debug("InteractWalker: InteractRouter has not executed yet, allowing all actions")
-
         # Sort by weight (negative first, then ascending)
         # Actions with same weight maintain descriptor order (stable sort)
-        sorted_actions = sorted(enabled_actions, key=lambda a: a.weight)
+        ordered_actions = sorted(enabled_actions, key=lambda a: a.weight)
 
         await self.report(
             {
                 "interact_actions_found": {
-                    "count": len(sorted_actions),
-                    "actions": [a.label for a in sorted_actions],
+                    "count": len(ordered_actions),
+                    "actions": [a.label for a in ordered_actions],
                 }
             }
         )
 
         # Queue actions for traversal (walker will process them via @on_visit)
-        await self.visit(sorted_actions)
+        await self.visit(ordered_actions)
 
     @on_visit(InteractAction)
     async def on_interact_action(self, here: "InteractAction") -> None:
-        """Visit an InteractAction node: perform routing checks, then traverse sub-actions.
+        """Visit an InteractAction node and execute it.
 
         This method is automatically called when the walker visits an InteractAction.
-        It:
-        1. Checks if action should execute based on routing (if InteractRouter has run)
-        2. Executes the action's execute() method
-        3. Finds connected InteractActions (sub-actions) in graph-based arrangement
-        4. Queues them for depth-first traversal (weight is NOT considered for sub-actions)
-        5. The walker continues naturally to process queued actions
-
-        Note:
-            Sub-actions are traversed in graph-based arrangement without weight
-            consideration. Weight is only applied at the top tier when launching
-            from the Actions node.
+        It executes the action's execute() method. The walker continues naturally to
+        process the next action in the queue.
 
         Args:
             here: The InteractAction node being visited
@@ -327,29 +317,6 @@ class InteractWalker(Walker):
                 }
             )
             return
-
-        # Check routing if InteractRouter has executed
-        # If InteractRouter has executed (interpretation is set), check if this action should execute
-        if self.interaction and self.interaction.interpretation:
-            routed_entity_names = set(self.interaction.anchors) if self.interaction.anchors else set()
-            action_entity_name = here.get_class_name()
-
-            # Skip if not in routed entities (unless it's InteractRouter itself, which must execute first)
-            if action_entity_name not in routed_entity_names and action_entity_name != "InteractRouter":
-                logger.debug(
-                    f"InteractWalker: Skipping {action_entity_name} (label: {here.label}) - "
-                    f"not in routed entities: {routed_entity_names}"
-                )
-                await self.report(
-                    {
-                        "action_skipped": {
-                            "action": here.label,
-                            "weight": here.weight,
-                            "reason": f"not routed (routed entities: {list(routed_entity_names)})",
-                        }
-                    }
-                )
-                return
 
         try:
             # Store current action for convenience methods and reset skip flag
@@ -375,33 +342,6 @@ class InteractWalker(Walker):
                     }
                 }
             )
-
-            # Find connected enabled InteractActions (sub-actions) for depth-first traversal
-            # Using forward direction from the current InteractAction
-            # Use class type instead of string to match by isinstance() (includes subclasses like InteractRouter)
-            # Filter by enabled=True directly in the query using kwargs
-            # Note: Routing filtering is NOT applied to sub-actions, only to top-level actions
-            enabled_sub_actions: List["InteractAction"] = await here.nodes(
-                node=InteractAction, enabled=True
-            )
-
-            if enabled_sub_actions:
-                # Sub-actions are traversed in graph-based arrangement (no weight sorting)
-                # Weight is only considered at the top tier from Actions node
-                await self.report(
-                    {
-                        "sub_actions_found": {
-                            "parent": here.label,
-                            "count": len(enabled_sub_actions),
-                            "actions": [a.label for a in enabled_sub_actions],
-                        }
-                    }
-                )
-
-                # Queue sub-actions at the front for depth-first traversal
-                # This ensures sub-actions are processed before sibling actions
-                # Traversal follows graph structure, not weight ordering
-                await self.add_next(enabled_sub_actions)
 
         except Exception as e:
             # Log to console (database logging handled automatically by DBLogHandler)
@@ -438,90 +378,84 @@ class InteractWalker(Walker):
             self._current_action = None
             self._skip_current_action_record = False
 
-    async def _filter_by_routing(
-        self, actions: List["InteractAction"]
-    ) -> List["InteractAction"]:
-        """Filter InteractActions based on routing results from InteractRouter.
-
-        If InteractRouter has executed (indicated by interpretation being set), only
-        actions whose class/entity names are in the interaction.anchors list (plus
-        exceptions from InteractRouter) will be allowed. The order of actions is preserved
-        (filtering only, no reordering).
-
+    async def curate_walk_path(self, actions: List["InteractAction"]) -> List["InteractAction"]:
+        """Curate the walker's current walk path to only include specified actions.
+        
+        This method filters the current queue to only include the provided actions,
+        maintaining the order of the provided list. Actions not in the provided list
+        are removed from the queue.
+        
         Args:
-            actions: List of InteractActions to filter
-
+            actions: List of InteractActions to keep in the walk path
+            
         Returns:
-            Filtered list of InteractActions that match routing (anchors + exceptions)
+            List of actions that were successfully curated (found in queue)
         """
-        if not self.interaction:
-            return actions
-
-        # If InteractRouter has executed (interpretation is set), apply strict filtering
-        # Even if anchors list is empty, only allow exceptions (if any)
-        # Anchors list already includes both routed entities and exceptions from InteractRouter
-        routed_entity_names = set(self.interaction.anchors) if self.interaction.anchors else set()
-
-        logger.debug(
-            f"InteractWalker: Applying routing filter. "
-            f"Interpretation: {self.interaction.interpretation[:100] if self.interaction.interpretation else None}, "
-            f"Routed entities: {routed_entity_names}, "
-            f"Total actions to filter: {len(actions)}"
-        )
-
-        filtered: List["InteractAction"] = []
-
+        # Get current queue
+        current_queue = await self.get_queue()
+        
+        # Filter to only InteractActions and create a set for fast lookup
+        interact_actions_in_queue = [
+            item for item in current_queue 
+            if isinstance(item, InteractAction)
+        ]
+        actions_set = {a.id for a in actions}
+        
+        # Find which provided actions are in the queue
+        actions_to_keep = [
+            item for item in interact_actions_in_queue 
+            if item.id in actions_set
+        ]
+        
+        # Remove all InteractActions from queue
+        if interact_actions_in_queue:
+            await self.dequeue(interact_actions_in_queue)
+        
+        # Re-add only the curated actions in the order provided
+        # Maintain relative order: if action A comes before B in provided list,
+        # and both are in queue, A should come before B in curated queue
+        curated_order = []
         for action in actions:
-            # Check if this action should be allowed
-            if self._should_allow_action(action, routed_entity_names):
-                filtered.append(action)
+            # Find matching action in queue (by ID)
+            for queued_action in actions_to_keep:
+                if queued_action.id == action.id:
+                    curated_order.append(queued_action)
+                    break
+        
+        # Add curated actions back to queue
+        if curated_order:
+            await self.prepend(curated_order)
+        
+        return curated_order
 
-        logger.info(
-            f"InteractWalker: Routing filter applied. "
-            f"Original: {len(actions)}, Filtered: {len(filtered)}, "
-            f"Routed entities: {list(routed_entity_names)}"
-        )
-
-        if len(filtered) < len(actions):
-            await self.report(
-                {
-                    "routing_filter_applied": {
-                        "original_count": len(actions),
-                        "filtered_count": len(filtered),
-                        "routed_entities": list(routed_entity_names),
-                    }
-                }
-            )
-
-        return filtered
-
-    def _should_allow_action(
-        self, action: "InteractAction", routed_entity_names: set
-    ) -> bool:
-        """Check if an action should be allowed based on routing.
-
-        When InteractRouter has executed, an action is allowed only if:
-        1. Its class/entity name is in the routed entity names (anchors + exceptions)
-
+    async def set_walk_path(self, actions: List["InteractAction"]) -> List["InteractAction"]:
+        """Replace the walker's current walk path with the provided actions.
+        
+        This method clears all InteractActions from the queue and replaces them
+        with the provided actions in the specified order.
+        
         Args:
-            action: The InteractAction to check
-            routed_entity_names: Set of entity names that were routed to (anchors + exceptions)
-
+            actions: List of InteractActions to set as the new walk path
+            
         Returns:
-            True if action should be allowed, False otherwise
+            List of actions that were added to the queue
         """
-        # Get the action's entity name (class name)
-        action_entity_name = action.get_class_name()
-
-        # Check if this action's entity name is in the routed anchors/exceptions
-        is_allowed = action_entity_name in routed_entity_names
-
-        logger.debug(
-            f"InteractWalker: Checking {action_entity_name} (label: {action.label}) - "
-            f"Allowed: {is_allowed}, Routed entities: {routed_entity_names}"
-        )
-
-        return is_allowed
+        # Get current queue
+        current_queue = await self.get_queue()
+        
+        # Remove all InteractActions from queue
+        interact_actions_in_queue = [
+            item for item in current_queue 
+            if isinstance(item, InteractAction)
+        ]
+        if interact_actions_in_queue:
+            await self.dequeue(interact_actions_in_queue)
+        
+        # Add new actions to queue in the order provided
+        if actions:
+            await self.prepend(actions)
+        
+        return actions
 
     async def add_directives(self, directives: List[str]) -> None:
         """Add multiple directives to the interaction with current action name.

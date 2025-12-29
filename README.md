@@ -740,7 +740,16 @@ package:
 
 ### InteractActions
 
-InteractActions are actions that participate in the interact subsystem. They provide a simplified API for generating responses:
+InteractActions are actions that participate in the interact subsystem. They serve as **modular points of execution** that may exist in a prescribed chain of interact actions. The InteractWalker traverses and executes this modular pipeline.
+
+**Architecture:**
+- InteractActions are modular execution points in a chain
+- The InteractWalker traverses and executes the modular pipeline
+- Core actions like InteractRouter can alter/curate the walker's path based on input
+- InteractActions may have branches of other InteractActions
+- **Top-level InteractActions** (directly connected to the Actions branch node) **must explicitly route the walker to their children** conditionally - the walker does not automatically traverse child actions from top-level actions
+
+**Basic Usage:**
 
 ```python
 from jvagent.action.interact.base import InteractAction
@@ -759,13 +768,29 @@ class MyInteractAction(InteractAction):
         )
 ```
 
+**Top-Level Action with Children:**
+
+```python
+class MyTopLevelAction(InteractAction):
+    async def execute(self, visitor: InteractWalker) -> None:
+        # Perform action logic
+        # ...
+        
+        # Explicitly route to child actions conditionally
+        if some_condition:
+            child_action = await self.node(node="ChildInteractAction")
+            if child_action:
+                await visitor.visit(child_action)
+```
+
 **Key Benefits:**
 - Single method call to add directives/parameters and generate response
 - Automatic persistence (interaction saved automatically)
 - Bulk operations for efficiency
 - Type-safe API with proper validation
+- Modular pipeline design with explicit routing control
 
-See the [InteractAction API Guide](jvagent/action/interact/API_GUIDE.md) for complete documentation and examples.
+See the [InteractAction API Guide](jvagent/action/interact/README.md) for complete documentation and examples.
 
 ### Using Core Actions
 

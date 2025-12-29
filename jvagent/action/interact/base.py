@@ -31,8 +31,8 @@ class InteractAction(Action, ABC):
     """Base class for actions that participate in the interact subsystem.
 
     InteractAction extends Action and provides the interface for actions that
-    are traversed by InteractWalker. These actions implement execute() which
-    is automatically called by the walker when the action is visited.
+    are traversed by InteractWalker. These actions serve as modular points of
+    execution that may exist in a prescribed chain of interact actions.
 
     The execute() method is automatically invoked by InteractWalker when it visits
     an InteractAction node. The walker performs routing checks first (if InteractRouter
@@ -41,6 +41,14 @@ class InteractAction(Action, ABC):
     Implementations should perform evaluation checks at the start of execute()
     and return early if conditions aren't met. This allows flexible, custom
     evaluation logic while keeping the API simple.
+
+    Top-Level Action Routing:
+        Top-level InteractActions (those directly connected to the Actions branch node)
+        must employ logic to further route the InteractWalker to their children
+        conditionally. The walker does not automatically traverse child InteractActions
+        from top-level actions - this must be done explicitly within the action's execute()
+        method using visitor.visit() or similar walker methods. This design allows for
+        conditional routing based on the action's internal logic and state.
 
     Attributes:
         weight: Execution precedence for top-tier InteractActions only (lower = earlier,
@@ -107,6 +115,12 @@ class InteractAction(Action, ABC):
         early if conditions aren't met. This allows flexible, custom evaluation
         logic while keeping the API simple.
 
+        Top-Level Action Routing:
+            If this is a top-level InteractAction (directly connected to the Actions
+            branch node) and it has child InteractActions, you MUST explicitly route
+            the walker to those children within this method. The walker does not
+            automatically traverse child actions from top-level actions.
+
         Example:
             async def execute(self, visitor: "InteractWalker") -> None:
                 # Evaluation checks at the start
@@ -117,6 +131,12 @@ class InteractAction(Action, ABC):
                 interaction = visitor.interaction
                 # ... perform action logic ...
 
+                # If this is a top-level action with children, route explicitly
+                if self._should_route_to_children(visitor):
+                    child_action = await self.node(node="ChildInteractAction")
+                    if child_action:
+                        await visitor.visit(child_action)
+
         Args:
             visitor: The InteractWalker visiting this action
 
@@ -125,6 +145,7 @@ class InteractAction(Action, ABC):
             - Access the Interaction via visitor.interaction
             - Access action properties via self (the node instance)
             - The walker performs routing checks before calling execute()
+            - Top-level actions must explicitly route to children using visitor.visit()
         """
         pass
 
