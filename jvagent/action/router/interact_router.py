@@ -121,6 +121,30 @@ class InteractRouter(InteractAction):
                 combined_exceptions = list(set(self.exceptions + dynamic_exceptions))
                 interaction.anchors = combined_exceptions
                 await interaction.save()
+
+                # Update walker's walk path with exception actions only
+                actions_manager = await agent.get_actions_manager()
+                if actions_manager:
+                    all_enabled_actions = await actions_manager.get_actions(
+                        enabled_only=True, entity=InteractAction
+                    )
+                    
+                    # Filter to only exception actions (by entity name)
+                    exception_entity_names = set(combined_exceptions)
+                    exception_actions = [
+                        action for action in all_enabled_actions
+                        if action.get_class_name() in exception_entity_names
+                    ]
+                    
+                    # Sort by weight to maintain execution order
+                    exception_actions = sorted(exception_actions, key=lambda a: a.weight)
+                    
+                    # Update walker's walk path
+                    curated = await visitor.curate_walk_path(exception_actions)
+                    
+                    logger.info(
+                        f"InteractRouter: Updated walk path with {len(curated)} exception actions (no anchors available)"
+                    )
                 return
 
             # Get conversation history (formatted as role/content pairs)
@@ -189,6 +213,31 @@ class InteractRouter(InteractAction):
                     f"InteractRouter: Routed to {len(routed_actions)} actions "
                     f"(+ {len(combined_exceptions)} exceptions, total: {len(all_allowed)})"
                 )
+
+                # Update walker's walk path with routed actions
+                # Get all enabled InteractActions from Actions node
+                actions_manager = await agent.get_actions_manager()
+                if actions_manager:
+                    all_enabled_actions = await actions_manager.get_actions(
+                        enabled_only=True, entity=InteractAction
+                    )
+                    
+                    # Filter to only routed actions (by entity name)
+                    routed_entity_names = set(all_allowed)
+                    routed_actions = [
+                        action for action in all_enabled_actions
+                        if action.get_class_name() in routed_entity_names
+                    ]
+                    
+                    # Sort by weight to maintain execution order
+                    routed_actions = sorted(routed_actions, key=lambda a: a.weight)
+                    
+                    # Update walker's walk path
+                    curated = await visitor.curate_walk_path(routed_actions)
+                    
+                    logger.info(
+                        f"InteractRouter: Updated walk path with {len(curated)} actions"
+                    )
             else:
                 # Even if parsing fails, set interpretation to indicate router executed
                 # This ensures the walker knows routing was attempted
@@ -203,6 +252,30 @@ class InteractRouter(InteractAction):
                     f"InteractRouter: Failed to parse routing response, "
                     f"only exceptions will execute: {combined_exceptions}"
                 )
+
+                # Update walker's walk path with exception actions only
+                actions_manager = await agent.get_actions_manager()
+                if actions_manager:
+                    all_enabled_actions = await actions_manager.get_actions(
+                        enabled_only=True, entity=InteractAction
+                    )
+                    
+                    # Filter to only exception actions (by entity name)
+                    exception_entity_names = set(combined_exceptions)
+                    exception_actions = [
+                        action for action in all_enabled_actions
+                        if action.get_class_name() in exception_entity_names
+                    ]
+                    
+                    # Sort by weight to maintain execution order
+                    exception_actions = sorted(exception_actions, key=lambda a: a.weight)
+                    
+                    # Update walker's walk path
+                    curated = await visitor.curate_walk_path(exception_actions)
+                    
+                    logger.info(
+                        f"InteractRouter: Updated walk path with {len(curated)} exception actions"
+                    )
 
         except Exception as e:
             logger.error(f"InteractRouter: Error during routing: {e}", exc_info=True)
