@@ -44,13 +44,16 @@ class CompletedStateInteractAction(InteractAction):
 
     async def on_register(self) -> None:
         """Called when action is registered."""
-        logger.debug("CompletedStateInteractAction registered")
+        pass
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute completion logic."""
         # Load session from visitor (set by parent interview action)
         session = getattr(visitor, 'interview_session', None)
-        if not session or session.state != InterviewState.COMPLETED:
+        if not session:
+            return
+        
+        if session.state != InterviewState.COMPLETED:
             return
         
         # Check for decorator-registered completion handler
@@ -62,20 +65,25 @@ class CompletedStateInteractAction(InteractAction):
         
         if completion_handler:
             # Call decorator-registered handler
+            # Handler is responsible for sending response and cleanup if needed
+            # Pass self (the action instance) so handler can call self.respond()
             try:
-                await completion_handler(session, visitor)
+                await completion_handler(session, visitor, self)
             except Exception as e:
                 logger.error(f"Error in completion handler for {session.interview_type}: {e}", exc_info=True)
+                # Fallback to default message if handler fails
+                message = await self.get_completion_message(session)
+                await self.respond(visitor, directives=[message])
         else:
             # Fallback to default behavior
             await self.on_complete(session, visitor)
+            
+            # Standard completion message
+            message = await self.get_completion_message(session)
+            await self.respond(visitor, directives=[message])
         
-        # Standard completion message
-        message = await self.get_completion_message(session)
-        await self.respond(visitor, directives=[message])
-        
-        # Cleanup if requested
-        if await self.should_cleanup_session(session):
+        # Cleanup if requested (only if handler didn't already clean up)
+        if await self.should_cleanup_session(session) and session.state == InterviewState.COMPLETED:
             await session.cleanup()
     
     async def on_complete(self, session: InterviewSession, visitor: "InteractWalker") -> None:

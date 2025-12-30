@@ -19,7 +19,7 @@ from jvspatial.core.annotations import attribute
 from .core.interview_session import InterviewSession
 from .core.question_node import QuestionNode
 from .core.validation import InterviewState
-from .states.active_state import ActiveStateInteractAction
+from .states.interview_state import InterviewStateInteractAction
 from .states.review_state import ReviewStateInteractAction
 from .states.completed_state import CompletedStateInteractAction
 from .states.cancelled_state import CancelledStateInteractAction
@@ -100,25 +100,28 @@ def on_interview_complete(interview_type: str):
         interview_type: Class name of the InterviewInteractAction (e.g., 'SignupInterviewInteractAction')
         
     Handler Signature:
-        The handler must accept two parameters:
+        The handler must accept three parameters:
         - session: InterviewSession - The completed interview session with all collected responses
         - visitor: InteractWalker - The walker for accessing context and responding
+        - action: InteractAction - The action instance (use action.respond() to send responses)
         
     Example:
         @on_interview_complete('SignupInterviewInteractAction')
         async def handle_signup_completion(
             session: InterviewSession,
-            visitor: InteractWalker
+            visitor: InteractWalker,
+            action: InteractAction
         ) -> None:
             # Process collected data
             user_name = session.responses.get('user_name')
             user_email = session.responses.get('user_email')
+            # Send response using action.respond()
+            await action.respond(visitor, directives=["Thank you for signing up!"])
             # Trigger downstream actions, send notifications, etc.
     """
     def decorator(func: Callable) -> Callable:
         # Register the handler in the module-level registry
         _completion_handlers[interview_type] = func
-        logger.debug(f"Registered completion handler for interview type '{interview_type}'")
         return func
     return decorator
 
@@ -163,10 +166,8 @@ class InterviewInteractAction(InteractAction, ABC):
                 
                 if handler_type == "input_handler":
                     cls._input_handlers[question_name] = attr
-                    logger.debug(f"{cls.__name__}: Registered input_handler '{attr_name}' for question '{question_name}'")
                 elif handler_type == "input_validator":
                     cls._input_validators[question_name] = attr
-                    logger.debug(f"{cls.__name__}: Registered input_validator '{attr_name}' for question '{question_name}'")
     
     @staticmethod
     def get_completion_handler(interview_type: str) -> Optional[Callable]:
@@ -242,48 +243,46 @@ class InterviewInteractAction(InteractAction, ABC):
         
         Note: Errors are automatically logged by the base Action class.
         """
-        logger.info(f"{self.get_class_name()} on_register")
         
         # Validate question_index is defined
         if not self.question_index:
             logger.warning(f"{self.get_class_name()}: question_index is empty. Define questions in subclass or agent.yaml")
         
         # Create state actions
-        active_action = await ActiveStateInteractAction.create(agent_id=self.agent_id)
+        interview_action = await InterviewStateInteractAction.create(agent_id=self.agent_id)
         review_action = await ReviewStateInteractAction.create(agent_id=self.agent_id)
         completed_action = await CompletedStateInteractAction.create(agent_id=self.agent_id)
         cancelled_action = await CancelledStateInteractAction.create(agent_id=self.agent_id)
         
         # Connect state actions according to state diagram flow:
         # InterviewInteractAction → ACTIVE (entry point)
-        await self.connect(active_action)
+        await self.connect(interview_action)
         
         # ACTIVE → REVIEW (when questions complete)
-        await active_action.connect(review_action)
+        await interview_action.connect(review_action)
         
         # ACTIVE → CANCELLED (when user cancels)
-        await active_action.connect(cancelled_action)
+        await interview_action.connect(cancelled_action)
         
         # REVIEW → COMPLETED (when user confirms)
         await review_action.connect(completed_action)
         
         # REVIEW → ACTIVE (when user edits - bidirectional for flexibility)
-        await review_action.connect(active_action, direction="both")
+        await review_action.connect(interview_action, direction="both")
         
         # REVIEW → CANCELLED (when user cancels)
         await review_action.connect(cancelled_action)
         
         # Build QuestionNode chain
-        await self._build_question_nodes(active_action)
+        await self._build_question_nodes(interview_action)
 
     async def on_reload(self) -> None:
         """Reload the action - rebuild question nodes if question_index changed."""
-        logger.info(f"{self.get_class_name()} on_reload")
         
         # Get current question node labels to detect changes
-        active_action = await self.node(node="ActiveStateInteractAction")
-        if active_action:
-            existing_nodes = await active_action.nodes(direction="out", node=QuestionNode)
+        interview_action = await self.node(node="InterviewStateInteractAction")
+        if interview_action:
+            existing_nodes = await interview_action.nodes(direction="out", node=QuestionNode)
             existing_labels = {n.label for n in existing_nodes}
             
             # Get expected labels from question_index
@@ -291,20 +290,26 @@ class InterviewInteractAction(InteractAction, ABC):
             
             # If labels changed, rebuild question nodes
             if existing_labels != expected_labels:
-                logger.info(f"{self.get_class_name()}: question_index changed, rebuilding question nodes")
                 # Disconnect and delete old question nodes
                 for node in existing_nodes:
-                    await active_action.disconnect(node)
+                    await interview_action.disconnect(node)
                     await node.delete()
                 # Rebuild
-                await self._build_question_nodes(active_action)
+                await self._build_question_nodes(interview_action)
         else:
             # If no active action, do full registration
             await self.on_register()
     
-    async def _build_question_nodes(self, active_action: "ActiveStateInteractAction") -> None:
-        """Build QuestionNode chain from question_index."""
-        question_nodes = []
+    async def _build_question_nodes(self, interview_action: "InterviewStateInteractAction") -> None:
+        """Build QuestionNode tree from question_index with conditional branches.
+        
+        Creates QuestionNodes and connects them based on branches configuration.
+        Supports both linear (no branches) and tree-based (with branches) arrangements.
+        """
+        from .core.question_edge import QuestionEdge
+        
+        # Create all question nodes first
+        question_node_map = {}
         for question_config in self.question_index:
             question_name = question_config.get("name", "")
             if not question_name:
@@ -315,14 +320,52 @@ class InterviewInteractAction(InteractAction, ABC):
                 state=question_config,
                 label=question_name,
             )
-            question_nodes.append(question_node)
-            await active_action.connect(question_node)
-            
-            # Chain question nodes together
-            if len(question_nodes) > 1:
-                await question_nodes[-2].connect(question_node)
+            question_node_map[question_name] = question_node
+            await interview_action.connect(question_node)
         
-        logger.info(f"{self.get_class_name()}: Built {len(question_nodes)} question nodes")
+        # Now create edges based on branches
+        for question_config in self.question_index:
+            question_name = question_config.get("name", "")
+            if not question_name:
+                continue
+            
+            source_node = question_node_map.get(question_name)
+            if not source_node:
+                continue
+            
+            branches = question_config.get("branches", [])
+            default_next = question_config.get("default_next")
+            
+            # Create edges for branches
+            if branches:
+                for branch in branches:
+                    condition = branch.get("condition", {})
+                    target_name = branch.get("target")
+                    if target_name and target_name in question_node_map:
+                        target_node = question_node_map[target_name]
+                        # Create edge with condition
+                        await source_node.connect(
+                            target_node,
+                            edge=QuestionEdge,
+                            condition=condition
+                        )
+            elif default_next:
+                # Create edge for default_next
+                if default_next in question_node_map:
+                    target_node = question_node_map[default_next]
+                    await source_node.connect(target_node, edge=QuestionEdge)
+            else:
+                # Linear flow - connect to next question in list
+                current_idx = next(
+                    (i for i, q in enumerate(self.question_index) if q.get("name") == question_name),
+                    -1
+                )
+                if current_idx >= 0 and current_idx + 1 < len(self.question_index):
+                    next_question_name = self.question_index[current_idx + 1].get("name")
+                    if next_question_name and next_question_name in question_node_map:
+                        target_node = question_node_map[next_question_name]
+                        await source_node.connect(target_node, edge=QuestionEdge)
+        
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute interview action - load or create session for this interview type.
@@ -373,14 +416,39 @@ class InterviewInteractAction(InteractAction, ABC):
             
             # Attach to conversation (primary and only attachment)
             await conversation.connect(session)
-            
-            logger.debug(f"{interview_type}: Created new session {session.id}")
         
         # Store session on visitor for state actions to access
         visitor.interview_session = session
         
-        # Get connected state actions and add them to walk path
-        # They will self-check session.state and execute accordingly
-        state_actions = await self.nodes(node=InteractAction)
-        if state_actions:
-            await visitor.add_next(state_actions)
+        # Route to the appropriate state action based on session state (state machine pattern)
+        # Only add the state action that matches the current session state
+        state_action = None
+        
+        if session.state == InterviewState.ACTIVE:
+            state_action = await self.node(node=InterviewStateInteractAction)
+        elif session.state == InterviewState.REVIEW:
+            # Find ReviewStateInteractAction via InterviewStateInteractAction (it's connected there)
+            interview_action = await self.node(node=InterviewStateInteractAction)
+            if interview_action:
+                state_action = await interview_action.node(node=ReviewStateInteractAction)
+        elif session.state == InterviewState.COMPLETED:
+            # Find CompletedStateInteractAction via ReviewStateInteractAction
+            interview_action = await self.node(node=InterviewStateInteractAction)
+            if interview_action:
+                review_action = await interview_action.node(node=ReviewStateInteractAction)
+                if review_action:
+                    state_action = await review_action.node(node=CompletedStateInteractAction)
+        elif session.state == InterviewState.CANCELLED:
+            # Find CancelledStateInteractAction (connected to both InterviewStateInteractAction and ReviewStateInteractAction)
+            interview_action = await self.node(node=InterviewStateInteractAction)
+            if interview_action:
+                state_action = await interview_action.node(node=CancelledStateInteractAction)
+                if not state_action:
+                    review_action = await interview_action.node(node=ReviewStateInteractAction)
+                    if review_action:
+                        state_action = await review_action.node(node=CancelledStateInteractAction)
+        
+        if state_action:
+            await visitor.add_next([state_action])
+        else:
+            logger.warning(f"{self.get_class_name()}: No state action found for session state {session.state}")

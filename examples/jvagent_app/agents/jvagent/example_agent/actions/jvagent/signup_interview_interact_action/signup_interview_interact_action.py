@@ -13,6 +13,7 @@ from jvagent.action.interview.core.interview_session import InterviewSession
 from jvagent.action.interview.core.validation import ValidationStatus
 from jvagent.memory import Interaction
 from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.action.interact.base import InteractAction
 from jvspatial.core.annotations import attribute
 
 
@@ -166,7 +167,7 @@ def validate_email(value: str, session: InterviewSession) -> Tuple[ValidationSta
 
 
 @input_handler('available_times')
-def check_training_availability(
+async def check_training_availability(
     raw_input: str, 
     session: InterviewSession,
     interaction: Interaction
@@ -219,9 +220,8 @@ def check_training_availability(
     # If matches found, return the matched time(s)
     if matched_times:
         # Store matched times in session context for later use
-        if not hasattr(session, 'context'):
-            session.context = {}
         session.context['matched_training_times'] = matched_times
+        await session.save()
         return f"Available: {', '.join(matched_times)}"
     
     # If no match, return original input but note available times
@@ -232,7 +232,8 @@ def check_training_availability(
 @on_interview_complete('SignupInterviewInteractAction')
 async def handle_signup_completion(
     session: InterviewSession,
-    visitor: InteractWalker
+    visitor: InteractWalker,
+    action: InteractAction
 ) -> None:
     """Handle completion of signup interview.
     
@@ -242,11 +243,13 @@ async def handle_signup_completion(
     Args:
         session: The completed interview session with all collected responses
         visitor: The walker for accessing context and responding
+        action: The InteractAction instance (use action.respond() to send responses)
     """
     # Extract collected data
     user_name = session.responses.get('user_name', '')
     user_email = session.responses.get('user_email', '')
     available_times = session.responses.get('available_times', '')
+    matched_times = session.context.get('matched_training_times', [])
     
     # Log completion (in production, you might send notifications, create records, etc.)
     import logging
@@ -254,6 +257,21 @@ async def handle_signup_completion(
     logger.info(
         f"Signup interview completed: {user_name} ({user_email}) - Available: {available_times}"
     )
+    
+    # Send completion message
+    completion_message = (
+        f"Thank you, {user_name}! Your signup for jvagent training is complete. "
+        f"We will contact you at {user_email}. "
+    )
+    if matched_times:
+        completion_message += f"Your preferred times were: {', '.join(matched_times)}."
+    else:
+        completion_message += f"Your availability: {available_times}."
+    
+    await action.respond(visitor, directives=[completion_message])
+    
+    # Clean up the session after processing
+    await session.cleanup()
     
     # Example: You could trigger downstream actions here
     # For example, create a user record, send a confirmation email, etc.

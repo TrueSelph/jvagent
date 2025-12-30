@@ -15,13 +15,15 @@ from .interview_interact_action import (
 from .core import (
     InterviewSession,
     QuestionNode,
+    QuestionWalker,
+    QuestionEdge,
     InterviewState,
     ValidationStatus,
 )
 
 # Import state actions
 from .states import (
-    ActiveStateInteractAction,
+    InterviewStateInteractAction,
     ReviewStateInteractAction,
     CompletedStateInteractAction,
     CancelledStateInteractAction,
@@ -38,9 +40,11 @@ __all__ = [
     "on_interview_complete",
     "InterviewSession",
     "QuestionNode",
+    "QuestionWalker",
+    "QuestionEdge",
     "InterviewState",
     "ValidationStatus",
-    "ActiveStateInteractAction",
+    "InterviewStateInteractAction",
     "ReviewStateInteractAction",
     "CompletedStateInteractAction",
     "CancelledStateInteractAction",
