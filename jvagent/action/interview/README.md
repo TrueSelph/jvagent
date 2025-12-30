@@ -61,7 +61,7 @@ The abstract base class that coordinates all state actions and question nodes. *
 
 #### 2. State Actions
 Each state has its own `InteractAction` class that self-checks `session.state`:
-- **ActiveStateInteractAction**: Handles question-answering phase
+- **InterviewStateInteractAction**: Handles question-answering phase
 - **ReviewStateInteractAction**: Manages confirmation and editing
 - **CompletedStateInteractAction**: Finalizes interview (extensible with hooks)
 - **CancelledStateInteractAction**: Handles cancellation
@@ -88,8 +88,22 @@ Represents individual interview questions with:
 - Custom input handlers (`process_input()`)
 - Custom validators
 - Required vs optional flags
+- Condition matching for tree traversal
 
-#### 5. InteractWalker
+#### 5. QuestionWalker
+Specialized walker that traverses QuestionNodes in a tree-based arrangement:
+- Finds next unanswered question based on conditional branches
+- Processes input via QuestionNode handlers
+- Validates responses via QuestionNode validators
+- Returns directives for the next question
+- Respects conditional branching based on previous answers
+
+#### 6. QuestionEdge
+Specialized edge connecting QuestionNodes with optional condition metadata:
+- Stores condition information for conditional traversal
+- Condition format: `{"question": "question_name", "equals": "value"}`
+
+#### 7. InteractWalker
 Standard walker used throughout. State actions receive session via `visitor.interview_session`.
 
 ## File Structure
@@ -104,10 +118,12 @@ interview/
 │   ├── __init__.py
 │   ├── interview_session.py       # InterviewSession Node
 │   ├── question_node.py            # QuestionNode
+│   ├── question_walker.py          # QuestionWalker for tree traversal
+│   ├── question_edge.py            # QuestionEdge with conditions
 │   └── validation.py               # Validation enums
 ├── states/
 │   ├── __init__.py
-│   ├── active_state.py             # ActiveStateInteractAction
+│   ├── interview_state.py           # InterviewStateInteractAction
 │   ├── review_state.py             # ReviewStateInteractAction
 │   ├── completed_state.py          # CompletedStateInteractAction
 │   └── cancelled_state.py          # CancelledStateInteractAction
@@ -216,6 +232,130 @@ actions:
   - **input_validator**: String reference to function that validates responses (or use `@input_validator` decorator)
   - **ambiguous_patterns**: Patterns that trigger VALID_WITH_FLAG
 - **required**: Whether the question is required (default: False)
+- **branches**: Optional list of conditional branches (see Tree-Based Questions below)
+- **default_next**: Optional fallback question name if no branch conditions match
+
+### Tree-Based Questions with Conditional Branching
+
+The interview system supports tree-based question arrangements where the next question can be determined conditionally based on previous answers. This enables dynamic interview flows that adapt to user responses.
+
+#### Branch Configuration
+
+Each question can define `branches` with conditions that determine which question to ask next:
+
+```python
+question_index = [
+    {
+        "name": "user_type",
+        "question": "Are you a premium or standard user?",
+        "constraints": {
+            "description": "User account type",
+            "type": "string"
+        },
+        "required": True,
+        "branches": [
+            {
+                "condition": {"question": "user_type", "equals": "premium"},
+                "target": "premium_features"
+            },
+            {
+                "condition": {"question": "user_type", "equals": "standard"},
+                "target": "standard_setup"
+            }
+        ],
+        "default_next": "contact_info"  # If no condition matches
+    },
+    {
+        "name": "premium_features",
+        "question": "Which premium features interest you?",
+        "branches": [
+            {
+                "condition": {"question": "premium_features", "equals": "advanced"},
+                "target": "advanced_config"
+            }
+        ],
+        "default_next": "contact_info"
+    },
+    {
+        "name": "standard_setup",
+        "question": "Standard setup question",
+        "default_next": "contact_info"
+    },
+    {
+        "name": "contact_info",
+        "question": "What's your contact information?"
+    }
+]
+```
+
+#### Branch Condition Format
+
+Each branch condition uses simple equality matching:
+
+```python
+{
+    "condition": {
+        "question": "question_name",  # Name of the question to check
+        "equals": "expected_value"     # Value to match (must be exact match)
+    },
+    "target": "next_question_name"    # Question name to traverse to if condition matches
+}
+```
+
+#### How It Works
+
+1. **QuestionWalker** traverses the question tree starting from the first unanswered question
+2. When a question has `branches`, it evaluates each condition against `session.responses`
+3. If a condition matches, traversal continues to the `target` question
+4. If no condition matches, `default_next` is used (if provided)
+5. If no `default_next` and no branches, linear flow continues to next question in list
+
+#### Linear Questions (No Branches)
+
+Questions without `branches` work as before - they follow linear order or use `default_next`:
+
+```python
+question_index = [
+    {
+        "name": "question1",
+        "question": "First question"
+        # No branches - will go to next question in list or default_next if specified
+    },
+    {
+        "name": "question2",
+        "question": "Second question"
+    }
+]
+```
+
+#### Example: User Onboarding Flow
+
+```python
+question_index = [
+    {
+        "name": "account_type",
+        "question": "What type of account do you want? (personal/business)",
+        "branches": [
+            {"condition": {"question": "account_type", "equals": "business"}, "target": "business_details"},
+            {"condition": {"question": "account_type", "equals": "personal"}, "target": "personal_details"}
+        ]
+    },
+    {
+        "name": "business_details",
+        "question": "What's your company name?",
+        "default_next": "contact_info"
+    },
+    {
+        "name": "personal_details",
+        "question": "What's your full name?",
+        "default_next": "contact_info"
+    },
+    {
+        "name": "contact_info",
+        "question": "What's your email address?"
+    }
+]
+```
 
 ### Custom Input Handlers
 
@@ -330,7 +470,6 @@ question_index = [
 ]
 ```
 
-**Note**: For backward compatibility, `validator` is still supported but `input_validator` is preferred.
 
 **String Reference Formats:**
 - Full module path: `"package.module.function_name"` (recommended for reliability)
@@ -733,12 +872,12 @@ class OnboardingInterviewAction(InterviewInteractAction):
     
     async def on_register(self) -> None:
         """Override to use custom completed state."""
-        from jvagent.action.interview.states.active_state import ActiveStateInteractAction
+        from jvagent.action.interview.states.interview_state import InterviewStateInteractAction
         from jvagent.action.interview.states.review_state import ReviewStateInteractAction
         from jvagent.action.interview.states.cancelled_state import CancelledStateInteractAction
         
         # Create state actions (use custom completed state)
-        active_action = await ActiveStateInteractAction.create(agent_id=self.agent_id)
+        interview_action = await InterviewStateInteractAction.create(agent_id=self.agent_id)
         review_action = await ReviewStateInteractAction.create(agent_id=self.agent_id)
         completed_action = await CustomOnboardingCompletedState.create(agent_id=self.agent_id)
         cancelled_action = await CancelledStateInteractAction.create(agent_id=self.agent_id)

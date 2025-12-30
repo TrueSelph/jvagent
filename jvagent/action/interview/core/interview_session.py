@@ -55,10 +55,16 @@ class InterviewSession(Node):
         description="Validation status per question (VALID/VALID_WITH_FLAG/INVALID)"
     )
     
-    # Active question tracking
+    # Context storage for arbitrary data (user-specific state)
+    context: Dict[str, Any] = attribute(
+        default_factory=dict,
+        description="Arbitrary context data for storing intermediate processing results, flags, or other state"
+    )
+    
+    # Active question tracking (user-specific state)
     active_question_key: Optional[str] = attribute(
         default=None,
-        description="Currently active question key (for revisions)"
+        description="Currently active question key - tracks position in interview tree. Updated by QuestionWalker as questions are asked/answered. Used for resuming from last position and handling revisions."
     )
     
     # Timestamps
@@ -137,6 +143,7 @@ class InterviewSession(Node):
         self.state = InterviewState.ACTIVE
         self.responses = {}
         self.validation_results = {}
+        self.context = {}
         self.active_question_key = None
         self.completed_at = None
         await self.save()
@@ -150,6 +157,57 @@ class InterviewSession(Node):
         This removes the session from the graph entirely.
         """
         await self.delete()
+    
+    def get_question_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        """Get question configuration by name.
+        
+        Args:
+            name: Question name
+            
+        Returns:
+            Question configuration dict if found, None otherwise
+        """
+        return next(
+            (q for q in self.question_index if q.get("name") == name),
+            None
+        )
+    
+    def get_next_questions(self, current_question: str) -> List[str]:
+        """Get possible next questions based on branches.
+        
+        Args:
+            current_question: Name of current question
+            
+        Returns:
+            List of possible next question names
+        """
+        question_config = self.get_question_by_name(current_question)
+        if not question_config:
+            return []
+        
+        next_questions = []
+        branches = question_config.get("branches", [])
+        
+        # Check branches for matching conditions
+        for branch in branches:
+            condition = branch.get("condition", {})
+            question_name = condition.get("question")
+            expected_value = condition.get("equals")
+            
+            if question_name and expected_value is not None:
+                actual_value = self.responses.get(question_name)
+                if actual_value == expected_value:
+                    target = branch.get("target")
+                    if target:
+                        next_questions.append(target)
+        
+        # If no branch matched, check default_next
+        if not next_questions:
+            default_next = question_config.get("default_next")
+            if default_next:
+                next_questions.append(default_next)
+        
+        return next_questions
     
     def extract_data(self) -> Dict[str, Any]:
         """Extract collected data for external processing.

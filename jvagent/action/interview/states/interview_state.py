@@ -1,4 +1,4 @@
-"""ActiveStateInteractAction for active question-answering phase."""
+"""InterviewStateInteractAction for active question-answering phase."""
 
 import logging
 import json
@@ -11,6 +11,7 @@ from jvspatial.core.annotations import attribute
 
 from ..core.interview_session import InterviewSession
 from ..core.question_node import QuestionNode
+from ..core.question_walker import QuestionWalker
 from ..core.validation import InterviewState, ValidationStatus
 
 if TYPE_CHECKING:
@@ -19,8 +20,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class ActiveStateInteractAction(InteractAction):
-    """Active state action - handles question asking and response validation.
+class InterviewStateInteractAction(InteractAction):
+    """Interview state action - handles question asking and response validation.
     
     This action:
     - Extracts responses via LLM
@@ -32,7 +33,7 @@ class ActiveStateInteractAction(InteractAction):
     - Transitions to REVIEW when questions complete
     """
     
-    description: str = "Active state action for question-answering phase"
+    description: str = "Interview state action for question-answering phase"
     
     weight: int = attribute(
         default=-40,
@@ -108,10 +109,10 @@ class ActiveStateInteractAction(InteractAction):
 
     async def on_register(self) -> None:
         """Called when action is registered."""
-        logger.debug("ActiveStateInteractAction registered")
+        pass
 
     async def execute(self, visitor: "InteractWalker") -> None:
-        """Execute active state action.
+        """Execute interview state action.
         
         Args:
             visitor: The InteractWalker visiting this action
@@ -119,7 +120,7 @@ class ActiveStateInteractAction(InteractAction):
         try:
             interaction = visitor.interaction
             if not interaction:
-                logger.warning("ActiveStateInteractAction: No interaction available")
+                logger.warning("InterviewStateInteractAction: No interaction available")
                 return
             
             # Get session from visitor (set by parent interview action)
@@ -131,7 +132,6 @@ class ActiveStateInteractAction(InteractAction):
             
             # Only execute if session is in ACTIVE state
             if session.state != InterviewState.ACTIVE:
-                logger.debug(f"ActiveStateInteractAction: Session is in {session.state} state, skipping")
                 return
         
             # Check for cancellation first
@@ -142,7 +142,7 @@ class ActiveStateInteractAction(InteractAction):
                     await session.save()
                     await self.respond_with_directive(visitor, "Interview cancelled. Let me know if you'd like to start over.")
                 except Exception as e:
-                    logger.error(f"ActiveStateInteractAction: Failed to handle cancellation: {e}", exc_info=True)
+                    logger.error(f"InterviewStateInteractAction: Failed to handle cancellation: {e}", exc_info=True)
                 return
             
             # Check for revision intent
@@ -152,19 +152,31 @@ class ActiveStateInteractAction(InteractAction):
                     await self.handle_revision(revision_field, visitor, session, interaction)
                     return
             except Exception as e:
-                logger.error(f"ActiveStateInteractAction: Failed to detect/handle revision: {e}", exc_info=True)
+                logger.error(f"InterviewStateInteractAction: Failed to detect/handle revision: {e}", exc_info=True)
                 # Continue with normal flow
+            
+            # Create QuestionWalker for tree-based question traversal
+            question_walker = QuestionWalker()
+            question_walker.interview_session = session
+            question_walker.interaction = interaction
             
             # Get current unanswered questions
             unanswered = session.get_unanswered_questions()
             if not unanswered:
                 # All questions answered, transition to REVIEW
                 try:
+                    # Clear active question when all questions answered
+                    session.active_question_key = None
                     session.transition_to(InterviewState.REVIEW)
                     await session.save()
-                    logger.debug("ActiveStateInteractAction: All questions answered, transitioning to REVIEW")
+                    
+                    # Add ReviewStateInteractAction to walk path to show summary
+                    from .review_state import ReviewStateInteractAction
+                    review_action = await self.node(node=ReviewStateInteractAction)
+                    if review_action:
+                        await visitor.add_next([review_action])
                 except Exception as e:
-                    logger.error(f"ActiveStateInteractAction: Failed to transition to REVIEW: {e}", exc_info=True)
+                    logger.error(f"InterviewStateInteractAction: Failed to transition to REVIEW: {e}", exc_info=True)
                 return
             
             # We have some responses, so this is a continuation - try to extract answers
@@ -178,46 +190,54 @@ class ActiveStateInteractAction(InteractAction):
                 if isinstance(response, str):
                     response = self.extract_json(response)
             except Exception as e:
-                logger.error(f"ActiveStateInteractAction: Failed to extract responses via LLM: {e}", exc_info=True)
+                logger.error(f"InterviewStateInteractAction: Failed to extract responses via LLM: {e}", exc_info=True)
                 # Continue to get directive for next question
                 response = None
             
             if not response:
-                # No extraction, get directive for next question
+                # No extraction, get directive for next question using QuestionWalker
                 try:
-                    directive = await self.get_directive(interaction, session)
+                    directive = await question_walker.get_directive(session, interview_action=self)
                     if directive:
                         await self.respond_with_directive(visitor, directive)
                 except Exception as e:
-                    logger.error(f"ActiveStateInteractAction: Failed to get directive: {e}", exc_info=True)
+                    logger.error(f"InterviewStateInteractAction: Failed to get directive: {e}", exc_info=True)
                 return
             
-            # Validate and store responses
+            # Validate and store responses using QuestionWalker
             try:
-                await self.process_responses(response, session, visitor, interaction)
+                await self.process_responses_with_walker(response, session, visitor, interaction, question_walker)
             except Exception as e:
-                logger.error(f"ActiveStateInteractAction: Failed to process responses: {e}", exc_info=True)
+                logger.error(f"InterviewStateInteractAction: Failed to process responses: {e}", exc_info=True)
                 return
             
             # Check if all required questions are answered
             if session.has_all_required_answers():
                 try:
+                    # Clear active question when transitioning to review
+                    session.active_question_key = None
                     session.transition_to(InterviewState.REVIEW)
                     await session.save()
-                    logger.debug("ActiveStateInteractAction: All required questions answered, transitioning to REVIEW")
+                    
+                    # Add ReviewStateInteractAction to walk path to show summary
+                    from .review_state import ReviewStateInteractAction
+                    review_action = await self.node(node=ReviewStateInteractAction)
+                    if review_action:
+                        await visitor.add_next([review_action])
                 except Exception as e:
-                    logger.error(f"ActiveStateInteractAction: Failed to transition to REVIEW: {e}", exc_info=True)
+                    logger.error(f"InterviewStateInteractAction: Failed to transition to REVIEW: {e}", exc_info=True)
             else:
-                # Get directive for next question
+                # Get directive for next question using QuestionWalker
+                # QuestionWalker will update session.active_question_key
                 try:
-                    directive = await self.get_directive(interaction, session)
+                    directive = await question_walker.get_directive(session, interview_action=self)
                     if directive:
                         await self.respond_with_directive(visitor, directive)
                 except Exception as e:
-                    logger.error(f"ActiveStateInteractAction: Failed to get directive: {e}", exc_info=True)
+                    logger.error(f"InterviewStateInteractAction: Failed to get directive: {e}", exc_info=True)
         
         except Exception as e:
-            logger.error(f"ActiveStateInteractAction: Unexpected error in execute(): {e}", exc_info=True)
+            logger.error(f"InterviewStateInteractAction: Unexpected error in execute(): {e}", exc_info=True)
             raise  # Re-raise to let InteractWalker handle it
 
     async def detect_revision_intent(
@@ -292,7 +312,7 @@ class ActiveStateInteractAction(InteractAction):
         )
         
         if not question_config:
-            logger.warning(f"ActiveStateInteractAction: Field {field} not found in question_index")
+            logger.warning(f"InterviewStateInteractAction: Field {field} not found in question_index")
             return
         
         # Extract new value
@@ -308,7 +328,7 @@ class ActiveStateInteractAction(InteractAction):
             question_node = await self._get_question_node(field, session)
             if question_node:
                 if isinstance(new_value, str):
-                    new_value = await question_node.process_input(new_value, session)
+                    new_value = await question_node.process_input(new_value, session, interaction)
                 
                 # Then validate
                 validation_status, feedback = await question_node.validate_response(new_value, session)
@@ -330,47 +350,53 @@ class ActiveStateInteractAction(InteractAction):
                     directive = feedback or f"Please provide a valid value for {field}."
                     await self.respond_with_directive(visitor, directive)
 
-    async def process_responses(
+    async def process_responses_with_walker(
         self,
         responses: Dict[str, Any],
         session: InterviewSession,
         visitor: "InteractWalker",
-        interaction: Interaction
+        interaction: Interaction,
+        question_walker: QuestionWalker
     ) -> None:
-        """Process and validate extracted responses.
+        """Process and validate extracted responses using QuestionWalker.
         
         Args:
             responses: Extracted responses dictionary
             session: Interview session
             visitor: InteractWalker
             interaction: Current interaction
+            question_walker: QuestionWalker instance
         """
         for field, value in responses.items():
             # Find question node for validation
             question_node = await self._get_question_node(field, session)
             if not question_node:
-                logger.warning(f"ActiveStateInteractAction: Question node not found for {field}")
+                logger.warning(f"InterviewStateInteractAction: Question node not found for {field}")
                 continue
             
-            # Process input first (handles custom transformations)
-            if isinstance(value, str):
-                value = await question_node.process_input(value, session, interaction)
-            
-            # Then validate
-            validation_status, feedback = await question_node.validate_response(value, session)
+            # Use QuestionWalker to process and validate
+            validation_status, feedback = await question_walker.process_and_validate(
+                value,
+                question_node,
+                session,
+                interaction
+            )
             session.set_validation_status(field, validation_status)
             
             if validation_status == ValidationStatus.VALID:
                 # Store immediately and continue
                 session.set_response(field, value)
+                # Clear active_question_key so traversal finds next unanswered question
+                session.active_question_key = None
                 await session.save()
-                logger.debug(f"ActiveStateInteractAction: Stored VALID response for {field}")
+                logger.debug(f"InterviewStateInteractAction: Stored VALID response for {field}")
             
             elif validation_status == ValidationStatus.VALID_WITH_FLAG:
                 # Store but ask for clarification
                 session.set_response(field, value)
+                # Clear active_question_key so traversal finds next unanswered question
+                session.active_question_key = None
                 await session.save()
-                logger.debug(f"ActiveStateInteractAction: Stored VALID_WITH_FLAG response for {field}")
                 
                 # Ask clarifying question
                 if feedback:
@@ -378,9 +404,31 @@ class ActiveStateInteractAction(InteractAction):
             
             else:  # INVALID
                 # Don't store, ask for correction
-                logger.debug(f"ActiveStateInteractAction: INVALID response for {field}")
+                # Keep active_question_key pointing to this field so we can re-ask
+                session.active_question_key = field
+                await session.save()
                 error_msg = feedback or f"Please provide a valid value for {field}."
                 await self.respond_with_directive(visitor, error_msg)
+    
+    async def process_responses(
+        self,
+        responses: Dict[str, Any],
+        session: InterviewSession,
+        visitor: "InteractWalker",
+        interaction: Interaction
+    ) -> None:
+        """Process and validate extracted responses (legacy method, uses QuestionWalker internally).
+        
+        Args:
+            responses: Extracted responses dictionary
+            session: Interview session
+            visitor: InteractWalker
+            interaction: Current interaction
+        """
+        question_walker = QuestionWalker()
+        question_walker.interview_session = session
+        question_walker.interaction = interaction
+        await self.process_responses_with_walker(responses, session, visitor, interaction, question_walker)
 
     async def _get_question_node(
         self, 
@@ -407,7 +455,7 @@ class ActiveStateInteractAction(InteractAction):
         
         # Question nodes should be created during on_register in InterviewInteractAction
         # For now, create on-demand if not found
-        # Try to find via edge connection from ActiveStateInteractAction
+        # Try to find via edge connection from InterviewStateInteractAction
         question_nodes = await self.nodes(direction="out", node=QuestionNode)
         question_node = next(
             (n for n in question_nodes if n.label == field),
@@ -461,7 +509,7 @@ class ActiveStateInteractAction(InteractAction):
         interaction: Interaction, 
         session: InterviewSession
     ) -> str:
-        """Get directive from walking through QuestionNodes to find unanswered questions.
+        """Get directive using QuestionWalker to traverse question tree.
         
         Args:
             interaction: Current interaction
@@ -470,32 +518,12 @@ class ActiveStateInteractAction(InteractAction):
         Returns:
             Directive string or empty string
         """
-        # Find first unanswered question
-        unanswered = session.get_unanswered_questions()
-        if not unanswered:
-            return ""
+        question_walker = QuestionWalker()
+        question_walker.interview_session = session
+        question_walker.interaction = interaction
         
-        # Get first unanswered question name
-        first_unanswered = unanswered[0]
-        
-        # Find corresponding question node
-        question_nodes = await self.nodes(direction="out", node=QuestionNode)
-        question_node = next(
-            (n for n in question_nodes if n.label == first_unanswered),
-            None
-        )
-        
-        if question_node:
-            # Create a simple walker-like object to pass to execute
-            class SimpleWalker:
-                def __init__(self, session):
-                    self.interview_session = session
-            
-            walker = SimpleWalker(session)
-            directive = await question_node.execute(walker)
-            return directive if directive else ""
-        
-        return ""
+        directive = await question_walker.get_directive(session, interview_action=self)
+        return directive if directive else ""
 
     async def respond_with_directive(
         self,
@@ -535,7 +563,7 @@ class ActiveStateInteractAction(InteractAction):
                     return json.loads(json_match.group())
                 except json.JSONDecodeError:
                     pass
-            logger.warning("ActiveStateInteractAction: Failed to extract JSON from response")
+            logger.warning("InterviewStateInteractAction: Failed to extract JSON from response")
             return {}
 
     async def call_llm(
@@ -583,7 +611,7 @@ class ActiveStateInteractAction(InteractAction):
                 response_format={"type": "json_object"} if json_only else None,
             )
         except Exception as e:
-            logger.error(f"ActiveStateInteractAction: Failed to extract entities: {e}", exc_info=True)
+            logger.error(f"InterviewStateInteractAction: Failed to extract entities: {e}", exc_info=True)
             raise
         
         return response

@@ -60,7 +60,6 @@ class QuestionNode(Node):
 
     async def on_register(self) -> None:
         """Register the node."""
-        logger.debug(f"QuestionNode registered with state: {self.state}")
     
     def _resolve_callable(self, callable_ref: Any) -> Optional[Any]:
         """Resolve a callable reference (function or string) to a callable object.
@@ -98,7 +97,6 @@ class QuestionNode(Node):
                 if result is not None:
                     return result
             except Exception as e:
-                logger.debug(f"QuestionNode: Resolution strategy failed for '{callable_ref}': {e}")
                 continue
         
         logger.warning(f"QuestionNode: Failed to resolve callable '{callable_ref}' using any strategy")
@@ -190,7 +188,12 @@ class QuestionNode(Node):
         if handler and callable(handler):
             try:
                 # Handler must accept (raw_input, session, interaction)
-                processed = handler(raw_input, session, interaction)
+                # Handler can be sync or async - check and await if needed
+                import inspect
+                if inspect.iscoroutinefunction(handler):
+                    processed = await handler(raw_input, session, interaction)
+                else:
+                    processed = handler(raw_input, session, interaction)
                 return processed
             except Exception as e:
                 logger.warning(f"Input handler raised exception: {e}")
@@ -231,10 +234,36 @@ class QuestionNode(Node):
                             return cls
                 except Exception:
                     continue
-        except Exception as e:
-            logger.debug(f"QuestionNode: Failed to get action class from session: {e}")
+        except Exception:
+            pass
         
         return None
+    
+    def condition_matches(
+        self,
+        condition: Dict[str, Any],
+        session: "InterviewSession"
+    ) -> bool:
+        """Check if an edge condition matches the current session state.
+        
+        Args:
+            condition: Condition dict with 'question' and 'equals' keys
+            session: Interview session
+            
+        Returns:
+            True if condition matches, False otherwise
+        """
+        if not condition:
+            return False
+        
+        question_name = condition.get("question")
+        expected_value = condition.get("equals")
+        
+        if not question_name or expected_value is None:
+            return False
+        
+        actual_value = session.responses.get(question_name)
+        return actual_value == expected_value
 
     async def execute(self, walker: Any) -> Optional[str]:
         """Execute question node to check if info is needed and return directive.
@@ -248,7 +277,6 @@ class QuestionNode(Node):
         logger.debug(f"QuestionNode executed for {self.label}")
 
         if not self.state.get("name", ""):
-            logger.debug("No name in state")
             return None
 
         # Check if this question has been answered
@@ -256,7 +284,6 @@ class QuestionNode(Node):
         session = getattr(walker, 'interview_session', None)
         
         if session and question_key in session.get_answered_questions():
-            logger.debug(f"QuestionNode: {self.label} already answered")
             return None
 
         constraints = self.state.get("constraints", {})
@@ -276,7 +303,6 @@ class QuestionNode(Node):
         if directive:
             return directive
         else:
-            logger.debug("QuestionNode got no directive, something went wrong")
             return None
 
     async def validate_response(
@@ -346,9 +372,9 @@ class QuestionNode(Node):
             if action_class:
                 validator = action_class.get_input_validator(question_name)
         
-        # Fallback to question_index string reference (support both 'validator' and 'input_validator' for backward compat)
+        # Fallback to question_index string reference
         if not validator:
-            validator_ref = constraints.get("input_validator") or constraints.get("validator")
+            validator_ref = constraints.get("input_validator")
             if validator_ref:
                 validator = self._resolve_callable(validator_ref)
         

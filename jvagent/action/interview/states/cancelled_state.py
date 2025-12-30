@@ -38,7 +38,7 @@ class CancelledStateInteractAction(InteractAction):
 
     async def on_register(self) -> None:
         """Called when action is registered."""
-        logger.debug("CancelledStateInteractAction registered")
+        pass
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute cancelled state action - handle cancellation.
@@ -60,13 +60,10 @@ class CancelledStateInteractAction(InteractAction):
         
         # Only execute if session is in CANCELLED state
         if session.state != InterviewState.CANCELLED:
-            logger.debug(f"CancelledStateInteractAction: Session is in {session.state} state, skipping")
             return
         
         # Save state (already CANCELLED)
         await session.save()
-        
-        logger.debug(f"CancelledStateInteractAction: Cancelled session {session.id}")
         
         # Optional: Clean up or log cancellation
         # Session remains in database for audit purposes
