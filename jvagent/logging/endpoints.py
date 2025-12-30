@@ -349,7 +349,7 @@ async def purge_logs_by_agent(
 
 
 @endpoint(
-    "/logs/applications/{app_id}/retention",
+    "/logs/retention",
     methods=["GET"],
     auth=True,
     tags=["Logging"],
@@ -359,33 +359,40 @@ async def purge_logs_by_agent(
         }
     ),
 )
-async def get_retention(app_id: str) -> Dict[str, Any]:
-    """Get retention configuration for an application.
+async def get_retention(app_id: Optional[str] = None) -> Dict[str, Any]:
+    """Get retention configuration.
 
-    Retrieves the current log retention policy for the specified application.
-    The retention period determines how long logs are kept before automatic
-    cleanup via the retention task.
+    Retrieves the current log retention policy. The retention period determines
+    how long logs are kept before automatic cleanup via the retention task.
+    Since jvagent has its own app and log databases, app_id is optional.
 
     Args:
-        app_id: Application node ID (required)
+        app_id: Optional application node ID. If not provided, uses current app.
 
     Returns:
         Dictionary containing:
         - retention_days: Number of days logs are retained (0 means indefinite)
     """
-    # Validate app exists
+    # Get current app (app_id is optional)
     app = await App.get()
-    if not app or app.id != app_id:
+    if not app:
+        raise ResourceNotFoundError(
+            message="Application not found",
+            details={"reason": "No application available"},
+        )
+    
+    # If app_id provided, validate it matches
+    if app_id and app.id != app_id:
         raise ResourceNotFoundError(
             message=f"Application with ID '{app_id}' not found",
-            details={"app_id": app_id},
+            details={"app_id": app_id, "current_app_id": app.id},
         )
 
     return {"retention_days": app.log_retention_days}
 
 
 @endpoint(
-    "/logs/applications/{app_id}/retention",
+    "/logs/retention",
     methods=["PUT"],
     auth=True,
     tags=["Logging"],
@@ -396,15 +403,15 @@ async def get_retention(app_id: str) -> Dict[str, Any]:
         }
     ),
 )
-async def set_retention(app_id: str, retention_days: int) -> Dict[str, Any]:
-    """Set retention configuration for an application.
+async def set_retention(app_id: Optional[str] = None, retention_days: int = 1) -> Dict[str, Any]:
+    """Set retention configuration.
 
-    Updates the log retention policy for the specified application.
-    The retention task will automatically purge logs older than the
-    specified number of days.
+    Updates the log retention policy. The retention task will automatically
+    purge logs older than the specified number of days.
+    Since jvagent has its own app and log databases, app_id is optional.
 
     Args:
-        app_id: Application node ID (required)
+        app_id: Optional application node ID. If not provided, uses current app.
         retention_days: Retention period in days (minimum: 1).
             Set to 0 for indefinite retention (not recommended for production).
 
@@ -419,12 +426,19 @@ async def set_retention(app_id: str, retention_days: int) -> Dict[str, Any]:
             details={"retention_days": retention_days},
         )
 
-    # Validate app exists
+    # Get current app (app_id is optional)
     app = await App.get()
-    if not app or app.id != app_id:
+    if not app:
+        raise ResourceNotFoundError(
+            message="Application not found",
+            details={"reason": "No application available"},
+        )
+    
+    # If app_id provided, validate it matches
+    if app_id and app.id != app_id:
         raise ResourceNotFoundError(
             message=f"Application with ID '{app_id}' not found",
-            details={"app_id": app_id},
+            details={"app_id": app_id, "current_app_id": app.id},
         )
 
     # Update retention
@@ -548,7 +562,7 @@ async def get_error_logs_by_agent(
 
 
 @endpoint(
-    "/logs/applications/{app_id}/errors",
+    "/logs/errors",
     methods=["GET"],
     auth=True,
     tags=["Logging"],
@@ -565,8 +579,8 @@ async def get_error_logs_by_agent(
         }
     ),
 )
-async def get_error_logs_by_app(
-    app_id: str,
+async def get_error_logs(
+    app_id: Optional[str] = None,
     error_code: Optional[str] = None,
     status_code: Optional[int] = None,
     agent_id: Optional[str] = None,
@@ -576,13 +590,13 @@ async def get_error_logs_by_app(
     page: int = 1,
     page_size: int = 50,
 ) -> Dict[str, Any]:
-    """Get error logs for an application with filtering and pagination.
+    """Get error logs with filtering and pagination.
 
-    Retrieves error logs for a specific application, returned in reverse chronological order
-    (most recent first).
+    Retrieves error logs, returned in reverse chronological order (most recent first).
+    Since jvagent has its own app and log databases, app_id is optional.
 
     Args:
-        app_id: Application node ID (required)
+        app_id: Optional application node ID filter
         error_code: Optional error code filter
         status_code: Optional HTTP status code filter
         agent_id: Optional agent ID filter
@@ -606,18 +620,12 @@ async def get_error_logs_by_app(
             details={"reason": "Global logging is disabled"},
         )
     
-    # Check app-level logging setting
+    # Check app-level logging setting if app is available
     app = await App.get()
-    if not app or app.id != app_id:
-        raise ResourceNotFoundError(
-            message=f"Application with ID '{app_id}' not found",
-            details={"app_id": app_id},
-        )
-    
-    if not app.logging_enabled:
+    if app and not app.logging_enabled:
         raise ResourceNotFoundError(
             message="Logging is disabled for this application",
-            details={"reason": "App-level logging is disabled", "app_id": app_id},
+            details={"reason": "App-level logging is disabled", "app_id": app.id if app else None},
         )
 
     # Parse datetime strings
@@ -658,7 +666,7 @@ async def get_error_logs_by_app(
 
 
 @endpoint(
-    "/logs/applications/{app_id}/errors/purge",
+    "/logs/errors/purge",
     methods=["POST"],
     auth=True,
     tags=["Logging"],
@@ -668,8 +676,8 @@ async def get_error_logs_by_app(
         }
     ),
 )
-async def purge_error_logs_by_app(
-    app_id: str,
+async def purge_error_logs(
+    app_id: Optional[str] = None,
     error_code: Optional[str] = None,
     status_code: Optional[int] = None,
     agent_id: Optional[str] = None,
@@ -678,13 +686,14 @@ async def purge_error_logs_by_app(
     end_time: Optional[str] = None,
     confirm: bool = False,
 ) -> Dict[str, Any]:
-    """Purge error logs matching criteria for an application.
+    """Purge error logs matching criteria.
 
     Permanently deletes error logs from the database matching the specified criteria.
     This operation cannot be undone. Use with caution.
+    Since jvagent has its own app and log databases, app_id is optional.
 
     Args:
-        app_id: Application node ID (required)
+        app_id: Optional application node ID filter
         error_code: Optional error code filter
         status_code: Optional HTTP status code filter
         agent_id: Optional agent ID filter
@@ -699,29 +708,6 @@ async def purge_error_logs_by_app(
         - deleted: Number of records deleted
         - error: Error message if deletion failed (optional)
     """
-    # Check if logging is enabled (global and app-level)
-    from jvagent.logging.config import get_logging_config
-    config = get_logging_config()
-    if not config.get("enabled", True):
-        raise ResourceNotFoundError(
-            message="Logging is disabled",
-            details={"reason": "Global logging is disabled"},
-        )
-    
-    # Check app-level logging setting
-    app = await App.get()
-    if not app or app.id != app_id:
-        raise ResourceNotFoundError(
-            message=f"Application with ID '{app_id}' not found",
-            details={"app_id": app_id},
-        )
-    
-    if not app.logging_enabled:
-        raise ResourceNotFoundError(
-            message="Logging is disabled for this application",
-            details={"reason": "App-level logging is disabled", "app_id": app_id},
-        )
-    
     if not confirm:
         raise ValidationError(
             message="confirm parameter must be True to proceed with purge",

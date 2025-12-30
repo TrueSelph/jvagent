@@ -155,8 +155,15 @@ def initialize_logging_database(config: Optional[Dict[str, Any]] = None) -> bool
                 base_path=config.get("db_path", "./jvagent_logs"),
             )
 
-        # Register as "logs" database
-        manager.register_database("logs", log_db)
+        # Register as "logs" database (idempotent - check if already registered)
+        try:
+            # Check if already registered by trying to get it
+            existing_log_db = manager.get_database("logs")
+            # If we get here, it's already registered, use existing one
+            log_db = existing_log_db
+        except (ValueError, KeyError):
+            # Not registered yet, register it
+            manager.register_database("logs", log_db)
         
         # Install DBLogHandler if not already installed
         import logging
@@ -185,6 +192,21 @@ def initialize_logging_database(config: Optional[Dict[str, Any]] = None) -> bool
                 f"DBLogHandler installed: log_db_level={log_level_str} "
                 f"(ERROR/CRITICAL always logged, {log_level_str} and above logged to database)"
             )
+            
+        else:
+            # Handler exists, but verify it's still there (in case it was removed)
+            handler_still_exists = any(
+                isinstance(h, DBLogHandlerClass)
+                for h in root_logger.handlers
+            )
+            if not handler_still_exists:
+                # Handler was removed, re-install it
+                from jvagent.logging.handler import DBLogHandler
+                log_db_level = config.get("log_db_level", logging.ERROR)
+                db_handler = DBLogHandler(log_db_level=log_db_level)
+                root_logger.addHandler(db_handler)
+                logger = logging.getLogger(__name__)
+                logger.warning("DBLogHandler was removed and has been re-installed")
         
         # Log success
         logger = logging.getLogger(__name__)

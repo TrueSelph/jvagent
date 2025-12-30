@@ -44,11 +44,11 @@ class LoggingService:
                 return None
         return self._log_db
 
-    async def _is_logging_enabled(self, app_id: str) -> bool:
+    async def _is_logging_enabled(self, app_id: Optional[str] = None) -> bool:
         """Check if logging is enabled for the application.
 
         Args:
-            app_id: Application node ID
+            app_id: Optional application node ID. If None, checks global config only.
 
         Returns:
             True if logging is enabled, False otherwise
@@ -61,7 +61,12 @@ class LoggingService:
                 logger.debug("Logging disabled in global config")
                 return False
 
-            # Check app-level setting
+            # If no app_id provided, assume logging is enabled (jvagent has its own log database)
+            if not app_id:
+                logger.debug("No app_id provided, defaulting to logging enabled")
+                return True
+
+            # Check app-level setting if app_id is provided
             app = await App.get()
             if app:
                 # Verify app ID matches (should always match, but check anyway)
@@ -80,7 +85,7 @@ class LoggingService:
             return True  # Default to enabled on error
 
     async def log_interaction(
-        self, interaction: Interaction, app_id: str, agent_id: Optional[str] = None
+        self, interaction: Interaction, app_id: Optional[str] = None, agent_id: Optional[str] = None
     ) -> None:
         """Log a completed interaction asynchronously.
 
@@ -89,16 +94,16 @@ class LoggingService:
 
         Args:
             interaction: Completed interaction instance
-            app_id: Application node ID
+            app_id: Optional application node ID. If not provided, uses empty string (jvagent has its own log database).
             agent_id: Optional agent node ID. If not provided, will be retrieved from interaction.
         """
         try:
-            logger.debug(f"Attempting to log interaction {interaction.id} for app {app_id}")
+            logger.debug(f"Attempting to log interaction {interaction.id} for app {app_id or 'default'}")
             
-            # Check if logging is enabled
+            # Check if logging is enabled (app_id is optional)
             is_enabled = await self._is_logging_enabled(app_id)
             if not is_enabled:
-                logger.debug(f"Logging is disabled for app {app_id}, skipping log entry")
+                logger.debug(f"Logging is disabled, skipping log entry")
                 return
 
             # Get logging database
@@ -122,9 +127,9 @@ class LoggingService:
                 except Exception as e:
                     logger.warning(f"Failed to get agent from interaction: {e}")
 
-            # Create log entry
+            # Create log entry (app_id defaults to empty string if not provided)
             log_entry = InteractionLog(
-                app_id=app_id,
+                app_id=app_id or "",
                 agent_id=resolved_agent_id or "",
                 interaction_id=interaction.id,
                 conversation_id=interaction.conversation_id,
@@ -409,16 +414,19 @@ class LoggingService:
                         resolved_app_id = app.id
                         logger.debug(f"Retrieved app_id {resolved_app_id} from App.get()")
                 except Exception as e:
-                    logger.warning(f"Failed to get app_id: {e}")
+                    logger.warning(f"Failed to get app_id from App.get(): {e}", exc_info=True)
+                    # Try one more time with more context
+                    try:
+                        import traceback
+                        logger.debug(f"App.get() failure traceback: {traceback.format_exc()}")
+                    except Exception:
+                        pass
             
-            if not resolved_app_id:
-                logger.debug("No app_id available, skipping error log entry")
-                return
-            
-            # Check if logging is enabled
+            # app_id is optional - if not available, use empty string (jvagent has its own log database)
+            # Check if logging is enabled (app_id is optional)
             is_enabled = await self._is_logging_enabled(resolved_app_id)
             if not is_enabled:
-                logger.debug(f"Logging is disabled for app {resolved_app_id}, skipping error log entry")
+                logger.debug(f"Logging is disabled, skipping error log entry")
                 return
 
             # Get logging database
@@ -427,9 +435,9 @@ class LoggingService:
                 logger.warning("Logging database not available, skipping error log entry")
                 return
 
-            # Create log entry
+            # Create log entry (app_id defaults to empty string if not provided)
             log_entry = ErrorLog(
-                app_id=resolved_app_id,
+                app_id=resolved_app_id or "",
                 agent_id=agent_id or "",
                 user_id=user_id,
                 session_id=session_id,

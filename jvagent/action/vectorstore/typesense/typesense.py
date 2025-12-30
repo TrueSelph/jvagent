@@ -114,7 +114,7 @@ class TypesenseVectorStore(VectorStore):
             )
             logger.debug(f"Typesense client initialized: {self.protocol}://{self.host}:{self.port}")
         except Exception as e:
-            logger.error(f"Failed to initialize Typesense client: {e}")
+            logger.error(f"Failed to initialize Typesense client: {e}", exc_info=True)
             raise RuntimeError(f"Could not initialize Typesense client: {e}")
 
     async def on_register(self) -> None:
@@ -181,7 +181,7 @@ class TypesenseVectorStore(VectorStore):
             self._collections[collection] = True
             logger.debug(f"Created Typesense collection: {collection}")
         except Exception as e:
-            logger.error(f"Failed to create collection {collection}: {e}")
+            logger.error(f"Failed to create collection {collection}: {e}", exc_info=True)
             raise
 
     async def _generate_embedding(self, text: str) -> List[float]:
@@ -258,7 +258,7 @@ class TypesenseVectorStore(VectorStore):
                 self._client.collections[collection].documents.upsert(typesense_doc)
                 stored_ids.append(str(doc_id))
             except Exception as e:
-                logger.error(f"Failed to store document {doc_id}: {e}")
+                logger.error(f"Failed to store document {doc_id}: {e}", exc_info=True)
 
         return stored_ids
 
@@ -373,7 +373,7 @@ class TypesenseVectorStore(VectorStore):
 
             return formatted_results
         except Exception as e:
-            logger.error(f"Error during Typesense search: {e}")
+            logger.error(f"Error during Typesense search: {e}", exc_info=True)
             raise RuntimeError(f"Typesense search failed: {e}")
 
     async def delete_document(
@@ -392,7 +392,7 @@ class TypesenseVectorStore(VectorStore):
             try:
                 self._client.collections[collection].documents[str(doc_id)].delete()
             except Exception as e:
-                logger.error(f"Failed to delete document {doc_id}: {e}")
+                logger.error(f"Failed to delete document {doc_id}: {e}", exc_info=True)
                 all_succeeded = False
 
         return all_succeeded
@@ -416,7 +416,7 @@ class TypesenseVectorStore(VectorStore):
             await self._get_or_create_collection(collection)
             return True
         except Exception as e:
-            logger.error(f"Failed to create collection {collection}: {e}")
+            logger.error(f"Failed to create collection {collection}: {e}", exc_info=True)
             return False
 
     async def delete_collection(self, collection: str) -> bool:
@@ -441,7 +441,7 @@ class TypesenseVectorStore(VectorStore):
                 del self._collections[collection]
             return True
         except Exception as e:
-            logger.error(f"Failed to delete collection {collection}: {e}")
+            logger.error(f"Failed to delete collection {collection}: {e}", exc_info=True)
             return False
 
     async def healthcheck(self) -> Dict[str, Any]:
@@ -592,7 +592,7 @@ class TypesenseVectorStore(VectorStore):
                 },
             }
         except Exception as e:
-            logger.error(f"Error listing documents from collection {collection}: {e}")
+            logger.error(f"Error listing documents from collection {collection}: {e}", exc_info=True)
             raise RuntimeError(f"Failed to list documents: {e}") from e
 
     async def update_document(
@@ -649,6 +649,6 @@ class TypesenseVectorStore(VectorStore):
             self._client.collections[collection].documents[str(document_id)].update(update_doc)
             return True
         except Exception as e:
-            logger.error(f"Error updating document {document_id} in collection {collection}: {e}")
+            logger.error(f"Error updating document {document_id} in collection {collection}: {e}", exc_info=True)
             return False
 

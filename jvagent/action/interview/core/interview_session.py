@@ -13,6 +13,7 @@ class InterviewSession(Node):
     """Persistent interview session state node.
     
     Stores the current state of an interview session, including:
+    - Interview type (class name) for filtering
     - Current state machine state
     - Question schema/index
     - Collected responses
@@ -20,8 +21,15 @@ class InterviewSession(Node):
     - Active question tracking
     - Timestamps
     
-    Connected to Conversation via edge for persistence.
+    Connected to Conversation via edge for per-user persistence.
+    No edges to InterviewInteractAction (actions can be destroyed/rebuilt).
     """
+    
+    # Interview type identification
+    interview_type: str = attribute(
+        default="",
+        description="Class name of the InterviewInteractAction (e.g., 'RegistrationInterviewAction')"
+    )
     
     # State management
     state: InterviewState = attribute(
@@ -120,4 +128,40 @@ class InterviewSession(Node):
         self.state = new_state
         if new_state == InterviewState.COMPLETED and not self.completed_at:
             self.completed_at = datetime.now()
+    
+    async def reset(self) -> None:
+        """Reset session to initial state, clearing all responses.
+        
+        Keeps interview_type and conversation_id intact.
+        """
+        self.state = InterviewState.ACTIVE
+        self.responses = {}
+        self.validation_results = {}
+        self.active_question_key = None
+        self.completed_at = None
+        await self.save()
+    
+    async def cleanup(self) -> None:
+        """Cleanup session data and edges.
+        
+        Call this when session data is no longer needed (typically after
+        data has been processed and stored elsewhere).
+        
+        This removes the session from the graph entirely.
+        """
+        await self.delete()
+    
+    def extract_data(self) -> Dict[str, Any]:
+        """Extract collected data for external processing.
+        
+        Returns:
+            Dictionary of question responses ready for processing
+        """
+        return {
+            "interview_type": self.interview_type,
+            "responses": self.responses.copy(),
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+            "validation_results": self.validation_results.copy(),
+        }
 

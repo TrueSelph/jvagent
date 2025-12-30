@@ -221,7 +221,7 @@ async def query_model_action(
                 yield "data: [DONE]\n\n"
 
             except Exception as e:
-                logger.error(f"Streaming error: {e}")
+                logger.error(f"Streaming error: {e}", exc_info=True)
                 error_event = {
                     "error": str(e),
                 }

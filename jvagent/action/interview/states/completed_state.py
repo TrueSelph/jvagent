@@ -7,7 +7,6 @@ from jvagent.action.interact.base import InteractAction
 from jvspatial.core.annotations import attribute
 
 from ..core.interview_session import InterviewSession
-from ..core.interview_walker import InterviewWalker as InterviewWalkerType
 from ..core.validation import InterviewState
 
 if TYPE_CHECKING:
@@ -17,13 +16,18 @@ logger = logging.getLogger(__name__)
 
 
 class CompletedStateInteractAction(InteractAction):
-    """Completed state action - finalizes interview session.
+    """Completed state action - handles post-completion.
     
     This action:
     - Finalizes session (state=COMPLETED, timestamp)
     - Optionally triggers downstream actions
     - Persists final responses
     - Cleans up session state
+    
+    Extensibility:
+    - Override on_complete() to process collected data
+    - Override get_completion_message() to customize response
+    - Override should_cleanup_session() to control cleanup behavior
     """
     
     description: str = "Completed state action for interview finalization"
@@ -43,53 +47,46 @@ class CompletedStateInteractAction(InteractAction):
         logger.debug("CompletedStateInteractAction registered")
 
     async def execute(self, visitor: "InteractWalker") -> None:
-        """Execute completed state action - finalize interview.
-        
-        Args:
-            visitor: The InteractWalker visiting this action
-        """
-        interaction = visitor.interaction
-        if not interaction:
-            logger.warning("CompletedStateInteractAction: No interaction available")
+        """Execute completion logic."""
+        # Load session from visitor (set by parent interview action)
+        session = getattr(visitor, 'interview_session', None)
+        if not session or session.state != InterviewState.COMPLETED:
             return
         
-        # Get session - try from InterviewWalker first, otherwise load it
-        session = None
-        if isinstance(visitor, InterviewWalkerType):
-            session = visitor.interview_session
+        # Check for decorator-registered completion handler
+        from ..interview_interact_action import InterviewInteractAction
         
-        if not session:
-            # Load session from conversation
-            conversation = await interaction.get_conversation()
-            if not conversation:
-                logger.warning("CompletedStateInteractAction: No conversation available")
-                return
-            
-            from ..core.interview_session import InterviewSession
-            sessions = await conversation.nodes(direction="out", node=InterviewSession)
-            if not sessions:
-                sessions = await InterviewSession.find({
-                    "context.conversation_id": conversation.id
-                })
-            
-            if sessions:
-                session = sessions[0]  # Get most recent
+        completion_handler = None
+        if session.interview_type:
+            completion_handler = InterviewInteractAction.get_completion_handler(session.interview_type)
         
-        if not session:
-            logger.warning("CompletedStateInteractAction: No session available")
-            return
+        if completion_handler:
+            # Call decorator-registered handler
+            try:
+                await completion_handler(session, visitor)
+            except Exception as e:
+                logger.error(f"Error in completion handler for {session.interview_type}: {e}", exc_info=True)
+        else:
+            # Fallback to default behavior
+            await self.on_complete(session, visitor)
         
-        # Only execute if session is in COMPLETED state
-        if session.state != InterviewState.COMPLETED:
-            logger.debug(f"CompletedStateInteractAction: Session is in {session.state} state, skipping")
-            return
+        # Standard completion message
+        message = await self.get_completion_message(session)
+        await self.respond(visitor, directives=[message])
         
-        # Save final state (already COMPLETED)
-        await session.save()
-        
-        logger.debug(f"CompletedStateInteractAction: Finalized session {session.id}")
-        
-        # Optionally trigger downstream actions or persist to conversation
-        # For now, responses are already stored in session.responses
-        # They can be accessed via the session node
+        # Cleanup if requested
+        if await self.should_cleanup_session(session):
+            await session.cleanup()
+    
+    async def on_complete(self, session: InterviewSession, visitor: "InteractWalker") -> None:
+        """Hook for custom completion logic. Override in subclasses or use @on_interview_complete decorator."""
+        pass
+    
+    async def get_completion_message(self, session: InterviewSession) -> str:
+        """Get completion message. Override to customize."""
+        return "Thank you! Your information has been recorded."
+    
+    async def should_cleanup_session(self, session: InterviewSession) -> bool:
+        """Determine if session should be cleaned up. Override to customize."""
+        return True  # Default: cleanup after completion
 

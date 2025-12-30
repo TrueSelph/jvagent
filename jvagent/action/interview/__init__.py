@@ -3,13 +3,17 @@
 This package provides the InterviewInteractAction class and its state machine components.
 """
 
-# Import the action class so it can be imported from the package
-from .interview_interact_action import InterviewInteractAction
+# Import the action class and decorators so they can be imported from the package
+from .interview_interact_action import (
+    InterviewInteractAction,
+    input_handler,
+    input_validator,
+    on_interview_complete,
+)
 
 # Import core components
 from .core import (
     InterviewSession,
-    InterviewWalker,
     QuestionNode,
     InterviewState,
     ValidationStatus,
@@ -29,8 +33,10 @@ from .states import (
 
 __all__ = [
     "InterviewInteractAction",
+    "input_handler",
+    "input_validator",
+    "on_interview_complete",
     "InterviewSession",
-    "InterviewWalker",
     "QuestionNode",
     "InterviewState",
     "ValidationStatus",

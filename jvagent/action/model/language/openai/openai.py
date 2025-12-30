@@ -158,10 +158,10 @@ class OpenAILanguageModelAction(LanguageModelAction):
             # This prevents duplicate logging and ensures consistent error formatting
             raise
         except httpx.TimeoutException as e:
-            logger.error(f"OpenAI API timeout: {e}")
+            logger.error(f"OpenAI API timeout: {e}", exc_info=True)
             raise
         except httpx.RequestError as e:
-            logger.error(f"OpenAI API request failed: {e}")
+            logger.error(f"OpenAI API request failed: {e}", exc_info=True)
             raise
         except Exception as e:
             logger.error(f"OpenAI query failed: {e}", exc_info=True)
@@ -248,10 +248,10 @@ class OpenAILanguageModelAction(LanguageModelAction):
                 # Re-raise immediately - let the error handler log and format the response
                 raise
             except httpx.TimeoutException as e:
-                logger.error(f"OpenAI streaming timeout: {e}")
+                logger.error(f"OpenAI streaming timeout: {e}", exc_info=True)
                 raise
             except httpx.RequestError as e:
-                logger.error(f"OpenAI streaming request failed: {e}")
+                logger.error(f"OpenAI streaming request failed: {e}", exc_info=True)
                 raise
             except Exception as e:
                 logger.error(f"OpenAI streaming failed: {e}", exc_info=True)
