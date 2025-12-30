@@ -38,8 +38,8 @@ class DBLogHandler(logging.Handler):
             log_db_level: Minimum log level to persist to database (default: ERROR).
                 ERROR/CRITICAL are always logged regardless of this setting.
         """
-        # Set handler level to WARNING to catch all levels we might want to log
-        super().__init__(level=logging.WARNING)
+        # Set handler level to DEBUG to catch all levels (we filter in emit())
+        super().__init__(level=logging.DEBUG)
         self._log_db_level = log_db_level
         self._logging_service = None
     
@@ -72,14 +72,62 @@ class DBLogHandler(logging.Handler):
             if self._logging_service is None:
                 self._logging_service = get_logging_service()
             
-            # Extract exception information
+            # Extract exception information - be thorough in capturing exception details
             exc_info = record.exc_info
             traceback_str = None
+            
+            # Priority 1: Use exc_info from record if available (set when exc_info=True is passed)
             if exc_info:
                 exc_type, exc_value, exc_traceback = exc_info
                 traceback_str = "".join(
                     traceback.format_exception(exc_type, exc_value, exc_traceback)
                 )
+            else:
+                # Priority 2: Try to get exception info from sys.exc_info() if available
+                # This captures exceptions that were caught but not explicitly logged with exc_info=True
+                try:
+                    import sys
+                    exc_type, exc_value, exc_traceback = sys.exc_info()
+                    if exc_type is not None and exc_value is not None:
+                        traceback_str = "".join(
+                            traceback.format_exception(exc_type, exc_value, exc_traceback)
+                        )
+                except Exception:
+                    # If sys.exc_info() fails, continue without traceback
+                    pass
+            
+            # Priority 3: If still no traceback but we have an exception in the message/details,
+            # try to extract exception information from the record
+            if not traceback_str and record.levelno >= logging.ERROR:
+                # Check if there's exception information in record details
+                details = getattr(record, "details", None)
+                if details and isinstance(details, dict):
+                    # Check for exception object in details
+                    for key, value in details.items():
+                        if isinstance(value, Exception):
+                            try:
+                                traceback_str = "".join(
+                                    traceback.format_exception(
+                                        type(value), value, value.__traceback__
+                                    )
+                                )
+                                break
+                            except Exception:
+                                pass
+                
+                # If still no traceback, try to get from record.__dict__
+                if not traceback_str:
+                    for key, value in record.__dict__.items():
+                        if isinstance(value, Exception):
+                            try:
+                                traceback_str = "".join(
+                                    traceback.format_exception(
+                                        type(value), value, value.__traceback__
+                                    )
+                                )
+                                break
+                            except Exception:
+                                pass
             
             # Extract context from multiple sources
             context = self._extract_context(record)
@@ -121,7 +169,8 @@ class DBLogHandler(logging.Handler):
                 except Exception:
                     pass
             
-            # Check app-level logging config if we have app_id
+            # Check app-level logging config if we have app_id (app_id is optional)
+            # If no app_id, the check will be done in async context
             if app_id:
                 try:
                     loop = asyncio.get_event_loop()
@@ -216,29 +265,46 @@ class DBLogHandler(logging.Handler):
                                 except Exception:
                                     pass
                             
-                            # Check app-level config
-                            if app_id:
-                                is_enabled = await self._logging_service._is_logging_enabled(app_id)
-                                if not is_enabled:
-                                    return  # Skip if disabled
+                            # Check app-level config (app_id is optional - jvagent has its own log database)
+                            is_enabled = await self._logging_service._is_logging_enabled(app_id)
+                            if not is_enabled:
+                                return  # Skip if disabled
                             
-                            # Log to database
-                            if app_id:
-                                await self._logging_service.log_error(
-                                    error_data=error_data,
-                                    app_id=app_id,
-                                    agent_id=agent_id or None,
-                                    status_code=status_code,
-                                    error_code=error_code,
-                                    interaction_id=interaction_id or None,
-                                    session_id=session_id or None,
-                                    user_id=user_id or None,
-                                )
+                            # Always attempt to log - app_id is optional
+                            # LoggingService will use empty string if app_id is None
+                            await self._logging_service.log_error(
+                                error_data=error_data,
+                                app_id=app_id,  # May be None, will default to empty string
+                                agent_id=agent_id or None,
+                                status_code=status_code,
+                                error_code=error_code,
+                                interaction_id=interaction_id or None,
+                                session_id=session_id or None,
+                                user_id=user_id or None,
+                            )
                         except Exception:
-                            # Fail silently
+                            # Fail silently to avoid breaking main flow
                             pass
                     
-                    asyncio.create_task(_log_to_db())
+                    # Create task with error callback to catch task failures
+                    task = asyncio.create_task(_log_to_db())
+                    
+                    # Add done callback to catch and log task errors
+                    def task_done_callback(task):
+                        try:
+                            exc = task.exception()
+                            if exc:
+                                # Log task failure to stderr for debugging
+                                import sys
+                                print(
+                                    f"DBLogHandler: Async task failed to log error: {exc}",
+                                    file=sys.stderr
+                                )
+                        except Exception:
+                            # Ignore errors in callback
+                            pass
+                    
+                    task.add_done_callback(task_done_callback)
                 else:
                     # No event loop running, run synchronously
                     async def _log_to_db_sync():
@@ -264,32 +330,38 @@ class DBLogHandler(logging.Handler):
                                 except Exception:
                                     pass
                             
-                            # Check app-level config
-                            if app_id:
-                                is_enabled = await self._logging_service._is_logging_enabled(app_id)
-                                if not is_enabled:
-                                    return  # Skip if disabled
+                            # Check app-level config (app_id is optional - jvagent has its own log database)
+                            is_enabled = await self._logging_service._is_logging_enabled(app_id)
+                            if not is_enabled:
+                                return  # Skip if disabled
                             
-                            # Log to database
-                            if app_id:
-                                await self._logging_service.log_error(
-                                    error_data=error_data,
-                                    app_id=app_id,
-                                    agent_id=agent_id or None,
-                                    status_code=status_code,
-                                    error_code=error_code,
-                                    interaction_id=interaction_id or None,
-                                    session_id=session_id or None,
-                                    user_id=user_id or None,
-                                )
+                            # Always attempt to log - app_id is optional
+                            # LoggingService will use empty string if app_id is None
+                            await self._logging_service.log_error(
+                                error_data=error_data,
+                                app_id=app_id,  # May be None, will default to empty string
+                                agent_id=agent_id or None,
+                                status_code=status_code,
+                                error_code=error_code,
+                                interaction_id=interaction_id or None,
+                                session_id=session_id or None,
+                                user_id=user_id or None,
+                            )
                         except Exception:
-                            # Fail silently
+                            # Fail silently to avoid breaking main flow
                             pass
                     
-                    asyncio.run(_log_to_db_sync())
+                    try:
+                        asyncio.run(_log_to_db_sync())
+                    except Exception:
+                        # Fail silently to avoid breaking main flow
+                        pass
             except RuntimeError:
                 # No event loop available, skip database logging
                 # This can happen in some edge cases, fail silently
+                pass
+            except Exception:
+                # Log handler errors silently - logging should never break the main flow
                 pass
                 
         except Exception:

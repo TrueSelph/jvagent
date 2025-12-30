@@ -5,7 +5,6 @@ from enum import Enum
 
 class InterviewState(str, Enum):
     """Interview session state machine states."""
-    IDLE = "idle"
     ACTIVE = "active"
     REVIEW = "review"
     COMPLETED = "completed"

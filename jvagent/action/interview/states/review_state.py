@@ -7,7 +7,6 @@ from jvagent.action.interact.base import InteractAction
 from jvspatial.core.annotations import attribute
 
 from ..core.interview_session import InterviewSession
-from ..core.interview_walker import InterviewWalker as InterviewWalkerType
 from ..core.validation import InterviewState
 
 if TYPE_CHECKING:
@@ -66,36 +65,11 @@ class ReviewStateInteractAction(InteractAction):
                 logger.warning("ReviewStateInteractAction: No interaction available")
                 return
             
-            # Get session - try from InterviewWalker first, otherwise load it
-            session = None
-            if isinstance(visitor, InterviewWalkerType):
-                session = visitor.interview_session
+            # Get session from visitor (set by parent interview action)
+            session = getattr(visitor, 'interview_session', None)
             
             if not session:
-                try:
-                    # Load session from conversation
-                    conversation = await interaction.get_conversation()
-                    if not conversation:
-                        logger.warning("ReviewStateInteractAction: No conversation available")
-                        return
-                    
-                    from ..core.interview_session import InterviewSession
-                    sessions = await conversation.nodes(direction="out", node=InterviewSession)
-                    if not sessions:
-                        sessions = await InterviewSession.find({
-                            "context.conversation_id": conversation.id
-                        })
-                    
-                    if sessions:
-                        active_sessions = [s for s in sessions if s.state != InterviewState.COMPLETED and s.state != InterviewState.CANCELLED]
-                        if active_sessions:
-                            session = active_sessions[0]
-                except Exception as e:
-                    logger.error(f"ReviewStateInteractAction: Failed to load session: {e}", exc_info=True)
-                    return
-            
-            if not session:
-                logger.warning("ReviewStateInteractAction: No session available")
+                logger.warning(f"{self.get_class_name()}: No session available on visitor")
                 return
             
             # Only execute if session is in REVIEW state

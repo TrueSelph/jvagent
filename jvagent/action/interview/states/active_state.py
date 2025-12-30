@@ -10,7 +10,6 @@ from jvagent.memory import Interaction
 from jvspatial.core.annotations import attribute
 
 from ..core.interview_session import InterviewSession
-from ..core.interview_walker import InterviewWalker as InterviewWalkerType
 from ..core.question_node import QuestionNode
 from ..core.validation import InterviewState, ValidationStatus
 
@@ -123,37 +122,11 @@ class ActiveStateInteractAction(InteractAction):
                 logger.warning("ActiveStateInteractAction: No interaction available")
                 return
             
-            # Get session - try from InterviewWalker first, otherwise load it
-            session = None
-            if isinstance(visitor, InterviewWalkerType):
-                session = visitor.interview_session
+            # Get session from visitor (set by parent interview action)
+            session = getattr(visitor, 'interview_session', None)
             
             if not session:
-                try:
-                    # Load session from conversation
-                    conversation = await interaction.get_conversation()
-                    if not conversation:
-                        logger.warning("ActiveStateInteractAction: No conversation available")
-                        return
-                    
-                    from ..core.interview_session import InterviewSession
-                    sessions = await conversation.nodes(direction="out", node=InterviewSession)
-                    if not sessions:
-                        sessions = await InterviewSession.find({
-                            "context.conversation_id": conversation.id
-                        })
-                    
-                    if sessions:
-                        from ..core.validation import InterviewState
-                        active_sessions = [s for s in sessions if s.state != InterviewState.COMPLETED and s.state != InterviewState.CANCELLED]
-                        if active_sessions:
-                            session = active_sessions[0]
-                except Exception as e:
-                    logger.error(f"ActiveStateInteractAction: Failed to load session: {e}", exc_info=True)
-                    return
-            
-            if not session:
-                logger.warning("ActiveStateInteractAction: No session available")
+                logger.warning(f"{self.get_class_name()}: No session available on visitor")
                 return
             
             # Only execute if session is in ACTIVE state
@@ -300,7 +273,7 @@ class ActiveStateInteractAction(InteractAction):
     async def handle_revision(
         self,
         field: str,
-        visitor: InterviewWalkerType,
+        visitor: "InteractWalker",
         session: InterviewSession,
         interaction: Interaction
     ) -> None:
@@ -331,9 +304,13 @@ class ActiveStateInteractAction(InteractAction):
         if response and field in response:
             new_value = response[field]
             
-            # Validate new value
+            # Process input first (handles custom transformations)
             question_node = await self._get_question_node(field, session)
             if question_node:
+                if isinstance(new_value, str):
+                    new_value = await question_node.process_input(new_value, session)
+                
+                # Then validate
                 validation_status, feedback = await question_node.validate_response(new_value, session)
                 
                 if validation_status == ValidationStatus.VALID:
@@ -357,7 +334,7 @@ class ActiveStateInteractAction(InteractAction):
         self,
         responses: Dict[str, Any],
         session: InterviewSession,
-        visitor: InterviewWalkerType,
+        visitor: "InteractWalker",
         interaction: Interaction
     ) -> None:
         """Process and validate extracted responses.
@@ -375,7 +352,11 @@ class ActiveStateInteractAction(InteractAction):
                 logger.warning(f"ActiveStateInteractAction: Question node not found for {field}")
                 continue
             
-            # Validate response
+            # Process input first (handles custom transformations)
+            if isinstance(value, str):
+                value = await question_node.process_input(value, session, interaction)
+            
+            # Then validate
             validation_status, feedback = await question_node.validate_response(value, session)
             session.set_validation_status(field, validation_status)
             
@@ -489,17 +470,32 @@ class ActiveStateInteractAction(InteractAction):
         Returns:
             Directive string or empty string
         """
-        from ..core.interview_walker import InterviewWalker
+        # Find first unanswered question
+        unanswered = session.get_unanswered_questions()
+        if not unanswered:
+            return ""
         
-        conversation = await interaction.get_conversation()
-        walker = InterviewWalker(
-            conversation=conversation,
-            interview_session=session,
+        # Get first unanswered question name
+        first_unanswered = unanswered[0]
+        
+        # Find corresponding question node
+        question_nodes = await self.nodes(direction="out", node=QuestionNode)
+        question_node = next(
+            (n for n in question_nodes if n.label == first_unanswered),
+            None
         )
         
-        await walker.spawn(self)
+        if question_node:
+            # Create a simple walker-like object to pass to execute
+            class SimpleWalker:
+                def __init__(self, session):
+                    self.interview_session = session
+            
+            walker = SimpleWalker(session)
+            directive = await question_node.execute(walker)
+            return directive if directive else ""
         
-        return walker.directive if walker.directive else ""
+        return ""
 
     async def respond_with_directive(
         self,

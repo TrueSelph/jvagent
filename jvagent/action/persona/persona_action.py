@@ -494,5 +494,5 @@ class PersonaAction(Action):
 
             return True
         except Exception as e:
-            logger.error(f"Healthcheck failed: {e}")
+            logger.error(f"Healthcheck failed: {e}", exc_info=True)
             return False

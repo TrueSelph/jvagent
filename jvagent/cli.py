@@ -481,6 +481,34 @@ Examples:
     )
 
 
+class StartupLogCounter(logging.Handler):
+    """Logging handler that counts warnings and errors during startup."""
+    
+    def __init__(self):
+        super().__init__(level=logging.WARNING)  # Only capture WARNING and above
+        self.warning_count = 0
+        self.error_count = 0
+        self.critical_count = 0
+    
+    def emit(self, record: logging.LogRecord) -> None:
+        """Count log records by level."""
+        if record.levelno >= logging.CRITICAL:
+            self.critical_count += 1
+        elif record.levelno >= logging.ERROR:
+            self.error_count += 1
+        elif record.levelno >= logging.WARNING:
+            self.warning_count += 1
+    
+    def get_summary(self) -> dict:
+        """Get summary of logged warnings and errors."""
+        return {
+            "warnings": self.warning_count,
+            "errors": self.error_count,
+            "critical": self.critical_count,
+            "total": self.warning_count + self.error_count + self.critical_count,
+        }
+
+
 def run_server(update_if_exists: bool = False, debug: bool = False, app_root: str = None) -> None:
     """Start the jvagent server.
 
@@ -505,31 +533,109 @@ def run_server(update_if_exists: bool = False, debug: bool = False, app_root: st
     if db_type == "json":
         os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
 
+    # Install log counter to track warnings and errors during startup
+    log_counter = StartupLogCounter()
+    root_logger = logging.getLogger()
+    root_logger.addHandler(log_counter)
+
     bootstrap_log = BootstrapLogger("Startup")
     bootstrap_log.start("jvagent application")
 
-    # Create server from configuration
-    server = create_server_from_config(debug=debug)
+    try:
+        # Create server from configuration
+        server = create_server_from_config(debug=debug)
 
-    # Perform bootstrap tasks before server starts
-    admin_exists = asyncio.run(
-        pre_startup_bootstrap(server, update_if_exists=update_if_exists, app_root=app_root)
-    )
-
-    # If admin user exists, disable the register endpoint
-    if admin_exists:
-        disable_register_endpoint(server)
-        if debug:
-            bootstrap_log.info("Admin user configured - registration disabled")
-    else:
-        bootstrap_log.warning(
-            "Admin user not found - registration enabled. "
-            "Set JVAGENT_ADMIN_PASSWORD in .env to create admin user."
+        # Perform bootstrap tasks before server starts
+        admin_exists = asyncio.run(
+            pre_startup_bootstrap(server, update_if_exists=update_if_exists, app_root=app_root)
         )
 
-    # Start the server
-    bootstrap_log.complete("Ready")
-    server.run()
+        # If admin user exists, disable the register endpoint
+        if admin_exists:
+            disable_register_endpoint(server)
+            if debug:
+                bootstrap_log.info("Admin user configured - registration disabled")
+        else:
+            bootstrap_log.warning(
+                "Admin user not found - registration enabled. "
+                "Set JVAGENT_ADMIN_PASSWORD in .env to create admin user."
+            )
+
+        # Register startup event to display summary after server has started
+        # This ensures the summary appears after all uvicorn logs
+        async def show_startup_summary():
+            """Display startup summary after server has started."""
+            import asyncio
+            # Small delay to ensure uvicorn logs appear first
+            await asyncio.sleep(0.5)
+            
+            summary = log_counter.get_summary()
+            if summary["total"] > 0:
+                summary_parts = []
+                if summary["critical"] > 0:
+                    summary_parts.append(f"❌ {summary['critical']} critical")
+                if summary["errors"] > 0:
+                    summary_parts.append(f"❌ {summary['errors']} error{'s' if summary['errors'] != 1 else ''}")
+                if summary["warnings"] > 0:
+                    summary_parts.append(f"⚠️  {summary['warnings']} warning{'s' if summary['warnings'] != 1 else ''}")
+                
+                summary_msg = " | ".join(summary_parts)
+                logger.warning(f"⚠️  Startup Summary: {summary_msg}")
+            else:
+                logger.info("✓ Startup Summary: No warnings or errors")
+            
+            # Remove the log counter handler after displaying summary
+            root_logger.removeHandler(log_counter)
+        
+        # Register startup hook to ensure DBLogHandler is installed after server.run() calls configure_standard_logging()
+        async def ensure_db_log_handler():
+            """Ensure DBLogHandler is installed after server configuration."""
+            import logging
+            from jvagent.logging.handler import DBLogHandler as DBLogHandlerClass
+            
+            root_logger = logging.getLogger()
+            handler_exists = any(
+                isinstance(h, DBLogHandlerClass)
+                for h in root_logger.handlers
+            )
+            
+            if not handler_exists:
+                # Handler was removed, re-install it
+                from jvagent.logging.config import get_logging_config, initialize_logging_database
+                # Re-initialize to ensure DBLogHandler is installed (database registration is idempotent)
+                initialize_logging_database()
+        
+        server.lifecycle_manager.add_startup_hook(ensure_db_log_handler)
+        
+        # Register the startup hook using lifecycle manager directly (synchronous call)
+        server.lifecycle_manager.add_startup_hook(show_startup_summary)
+
+        # Start the server
+        bootstrap_log.complete("Ready")
+        server.run()
+    except Exception:
+        # If server fails to start, display summary and remove handler
+        summary = log_counter.get_summary()
+        if summary["total"] > 0:
+            summary_parts = []
+            if summary["critical"] > 0:
+                summary_parts.append(f"❌ {summary['critical']} critical")
+            if summary["errors"] > 0:
+                summary_parts.append(f"❌ {summary['errors']} error{'s' if summary['errors'] != 1 else ''}")
+            if summary["warnings"] > 0:
+                summary_parts.append(f"⚠️  {summary['warnings']} warning{'s' if summary['warnings'] != 1 else ''}")
+            
+            summary_msg = " | ".join(summary_parts)
+            logger.warning(f"⚠️  Startup Summary: {summary_msg}")
+        root_logger.removeHandler(log_counter)
+        raise
+    finally:
+        # Ensure handler is removed even if startup hook didn't run
+        # (safe to call even if handler was already removed)
+        try:
+            root_logger.removeHandler(log_counter)
+        except (ValueError, AttributeError):
+            pass  # Handler already removed or doesn't exist
 
 
 async def show_status(app_root: str = None) -> None:
@@ -637,13 +743,38 @@ async def bootstrap_only(update_if_exists: bool = False, app_root: str = None) -
     set_current_db_type(db_type)
     set_current_db_path(db_path)
 
-    await bootstrap_application_graph(update_if_exists=update_if_exists, app_root=app_root)
-    await ensure_admin_user()
+    # Install log counter to track warnings and errors during bootstrap
+    log_counter = StartupLogCounter()
+    root_logger = logging.getLogger()
+    root_logger.addHandler(log_counter)
 
-    if update_if_exists:
-        print("Bootstrap complete! (Updated existing agents and actions)")
-    else:
-        print("Bootstrap complete! (Used existing agents and actions)")
+    try:
+        await bootstrap_application_graph(update_if_exists=update_if_exists, app_root=app_root)
+        await ensure_admin_user()
+
+        # Display bootstrap summary
+        summary = log_counter.get_summary()
+        if summary["total"] > 0:
+            summary_parts = []
+            if summary["critical"] > 0:
+                summary_parts.append(f"❌ {summary['critical']} critical")
+            if summary["errors"] > 0:
+                summary_parts.append(f"❌ {summary['errors']} error{'s' if summary['errors'] != 1 else ''}")
+            if summary["warnings"] > 0:
+                summary_parts.append(f"⚠️  {summary['warnings']} warning{'s' if summary['warnings'] != 1 else ''}")
+            
+            summary_msg = " | ".join(summary_parts)
+            logger.warning(f"⚠️  Bootstrap Summary: {summary_msg}")
+        else:
+            logger.info("✓ Bootstrap Summary: No warnings or errors")
+
+        if update_if_exists:
+            print("Bootstrap complete! (Updated existing agents and actions)")
+        else:
+            print("Bootstrap complete! (Used existing agents and actions)")
+    finally:
+        # Remove the log counter handler
+        root_logger.removeHandler(log_counter)
 
 
 def handle_agent_command(args: List[str], app_root: str = None) -> None:

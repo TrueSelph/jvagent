@@ -176,14 +176,33 @@ actions:
   #       - condition: "User asks technical questions"
   #         response: "Give accurate technical details while keeping explanations accessible."
 
-  - action: jvagent/interview_interact_action
+  # Signup Interview Interact Action - Training signup interview flow
+  # Local action from: agents/jvagent/example_agent/actions/jvagent/signup_interview_interact_action/
+  - action: jvagent/signup_interview_interact_action
     context:
       enabled: true
-      description: "Multiturn interaction action for handling complex conversations"
-      weight: -50
+      description: "Training signup interview flow for user registration and training scheduling"
+      weight: -50  # Runs after InteractRouter but before PersonaAction
+      # Anchors for InteractRouter routing - REQUIRED when using InteractRouter
+      # Must cover both initial entry and intermediate states (when answering questions)
       anchors:
+        # Initial entry anchors - when user wants to start training signup
         - "User wants to sign up for jvagent training"
-        - "User is in the process of signing up for jvagent training"
+        - "User requests training signup"
+        - "User asks to register for training"
+        - "User wants to enroll in jvagent training"
+        - "User needs to sign up for training"
+        - "User wants to join jvagent training"
+        - "User requests to register for jvagent training"
+        # Intermediate state anchors - when user is answering training signup questions
+        - "User is providing training signup information"
+        - "User is answering training signup questions"
+        - "User is completing training registration form"
+        - "User responds to training signup prompt"
+        - "User is filling out training signup"
+        - "User is providing information for jvagent training"
+        - "User is answering questions for training enrollment"
+        - "User is providing availability for training"
     # actions:
     #   - action: jvagent/example_interact_action
     #     context:
