@@ -23,7 +23,9 @@ from jvagent.core.bootstrap_logger import BootstrapLogger
 from jvspatial.logging import configure_standard_logging
 
 configure_standard_logging(
-    level=os.getenv("JVAGENT_LOG_LEVEL", "INFO"), enable_colors=True
+    level=os.getenv("JVAGENT_LOG_LEVEL", "INFO"),
+    enable_colors=True,
+    preserve_handler_class_names=["DBLogHandler", "StartupLogCounter"],
 )
 logger = logging.getLogger(__name__)
 

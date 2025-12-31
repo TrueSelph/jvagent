@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
-    {name = "jvagent Team"},
+    {name = "TrueSelph Inc.", email = "adminh@trueselph.com"},
 ]
 keywords = ["agent", "ai", "llm", "agentive", "jvspatial", "graph"]
 classifiers = [
@@ -28,7 +28,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "jvspatial>=0.0.1",
+    "jvspatial>=0.0.2",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.0",
     "httpx>=0.27.0",
