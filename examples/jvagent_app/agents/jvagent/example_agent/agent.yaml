@@ -186,23 +186,26 @@ actions:
       # Anchors for InteractRouter routing - REQUIRED when using InteractRouter
       # Must cover both initial entry and intermediate states (when answering questions)
       anchors:
-        # Initial entry anchors - when user wants to start training signup
-        - "User wants to sign up for jvagent training"
-        - "User requests training signup"
-        - "User asks to register for training"
-        - "User wants to enroll in jvagent training"
-        - "User needs to sign up for training"
-        - "User wants to join jvagent training"
-        - "User requests to register for jvagent training"
-        # Intermediate state anchors - when user is answering training signup questions
-        - "User is providing training signup information"
-        - "User is answering training signup questions"
-        - "User is completing training registration form"
-        - "User responds to training signup prompt"
-        - "User is filling out training signup"
-        - "User is providing information for jvagent training"
-        - "User is answering questions for training enrollment"
-        - "User is providing availability for training"
+        # Initial entry - starting training signup
+        - "User wants to sign up or register for jvagent training"
+        - "User wants to enroll or join jvagent training"
+        # Intermediate state - answering questions
+        - "User is providing or answering training signup questions"
+        - "User is completing training registration or providing availability"
+        # Revision/edit - changing previously provided information
+        - "User wants to change, update, or correct their name, email, or availability"
+        - "User is revising, editing, or updating training signup information"
+      # Model Configuration (for unified classification and extraction)
+      # These settings are used by the parent InterviewInteractAction for all LLM calls
+      # The unified classification detects intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE)
+      # and extracts field values in a single LLM call
+      model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
+      model: "gpt-4o"  # Model for unified classification and extraction
+      model_temperature: 0.1  # Temperature for LLM generation
+      model_max_tokens: 4096  # Max tokens for LLM generation
+      use_history: true  # Use conversation history for LLM generation
+      max_statement_length: 100  # Max length of statement to include in history
+      history_limit: 3  # Max number of statements to include in history
     # actions:
     #   - action: jvagent/example_interact_action
     #     context:

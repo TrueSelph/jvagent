@@ -20,11 +20,24 @@ from jvspatial.core.annotations import attribute
 class SignupInterviewInteractAction(InterviewInteractAction):
     """Signup interview for user registration and training availability.
     
-    This replaces the hardcoded questions from the original InterviewInteractAction
-    with a concrete implementation. Sessions are identified by 
+    This is a concrete implementation of InterviewInteractAction that defines
+    a specific interview flow. Sessions are identified by 
     interview_type='SignupInterviewInteractAction' and attached to Conversation nodes.
     
     The question_index can be overridden in agent.yaml to customize questions.
+    
+    Architecture:
+        The interview system uses a unified classification and extraction approach
+        that detects user intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE)
+        and extracts field values in a single LLM call. All state management and
+        directive generation is handled within the main InterviewInteractAction.
+    
+    Model Configuration:
+        Model settings (model_action_type, model, model_temperature, model_max_tokens,
+        use_history, max_statement_length, history_limit) are inherited from
+        InterviewInteractAction and can be configured in agent.yaml. These settings
+        control the unified classification/extraction LLM call and all directive
+        generation prompts.
     """
     
     description: str = "User signup interview flow for registration and training scheduling"
@@ -33,23 +46,15 @@ class SignupInterviewInteractAction(InterviewInteractAction):
     # Must cover both initial entry and intermediate states (when answering questions)
     anchors: List[str] = attribute(
         default_factory=lambda: [
-            # Initial entry anchors - when user wants to start training signup
-            "User wants to sign up for jvagent training",
-            "User requests training signup",
-            "User asks to register for training",
-            "User wants to enroll in jvagent training",
-            "User needs to sign up for training",
-            "User wants to join jvagent training",
-            "User requests to register for jvagent training",
-            # Intermediate state anchors - when user is answering training signup questions
-            "User is providing training signup information",
-            "User is answering training signup questions",
-            "User is completing training registration form",
-            "User responds to training signup prompt",
-            "User is filling out training signup",
-            "User is providing information for jvagent training",
-            "User is answering questions for training enrollment",
-            "User is providing availability for training",
+            # Initial entry - starting training signup
+            "User wants to sign up or register for jvagent training",
+            "User wants to enroll or join jvagent training",
+            # Intermediate state - answering questions
+            "User is providing or answering training signup questions",
+            "User is completing training registration or providing availability",
+            # Revision/edit - changing previously provided information
+            "User wants to change, update, or correct their name, email, or availability",
+            "User is revising, editing, or updating training signup information",
         ],
         description="Anchor statements for InteractRouter routing"
     )
@@ -132,6 +137,55 @@ def validate_full_name(value: str, session: InterviewSession) -> Tuple[Validatio
     return ValidationStatus.VALID, None
 
 
+@input_validator('available_times')
+def validate_available_times(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    """Validate that available times match one of the available training slots.
+    
+    The input handler should have autocorrected the value to the full format.
+    This validator checks if it matches one of the available times.
+    
+    Args:
+        value: The availability string to validate (should be autocorrected by input handler)
+        session: Interview session (for context)
+        
+    Returns:
+        Tuple of (ValidationStatus, optional error message)
+    """
+    if not value or not isinstance(value, str):
+        return ValidationStatus.INVALID, "Please provide your available training times"
+    
+    value = value.strip()
+    
+    # Available training times (must match exactly after input handler processing)
+    AVAILABLE_TRAINING_TIMES = [
+        "Monday 9:00 AM - 11:00 AM",
+        "Monday 2:00 PM - 4:00 PM",
+        "Wednesday 9:00 AM - 11:00 AM",
+        "Wednesday 2:00 PM - 4:00 PM",
+        "Friday 10:00 AM - 12:00 PM",
+        "Saturday 9:00 AM - 12:00 PM",
+    ]
+    
+    # Check if value matches any available time (case-insensitive, flexible spacing)
+    normalized_value = re.sub(r'\s+', ' ', value.lower())
+    for available_time in AVAILABLE_TRAINING_TIMES:
+        normalized_available = re.sub(r'\s+', ' ', available_time.lower())
+        if normalized_value == normalized_available:
+            # Store the matched time in context for later use
+            session.context['matched_training_times'] = [available_time]
+            return ValidationStatus.VALID, None
+    
+    # Check if input handler stored matched times in context
+    matched_times = session.context.get('matched_training_times', [])
+    if matched_times:
+        # Input handler found a match, use it
+        return ValidationStatus.VALID, None
+    
+    # No match found - value is invalid
+    available_list = ', '.join(AVAILABLE_TRAINING_TIMES)
+    return ValidationStatus.INVALID, f"Please select from the available training times: {available_list}"
+
+
 @input_validator('user_email')
 def validate_email(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate email address format and common domains.
@@ -172,10 +226,10 @@ async def check_training_availability(
     session: InterviewSession,
     interaction: Interaction
 ) -> str:
-    """Process and validate training time availability against hardcoded available times.
+    """Process and autocorrect training time availability against hardcoded available times.
     
-    This handler checks if the user's requested time matches any available training slots.
-    It normalizes the input and provides feedback if no match is found.
+    This handler autocorrects partial inputs (e.g., "Monday at 9" -> "Monday 9:00 AM - 11:00 AM")
+    or returns the original input if no match can be determined.
     
     Args:
         raw_input: Raw user input about availability
@@ -183,7 +237,7 @@ async def check_training_availability(
         interaction: Interaction node (can access interaction.user_id, interaction.utterance, etc.)
         
     Returns:
-        Processed availability string with validation feedback
+        Autocorrected availability string (full format) or original input if no match
     """
 
     # Hardcoded available training times
@@ -204,29 +258,96 @@ async def check_training_availability(
     # Normalize user input for comparison (case-insensitive, remove extra spaces)
     normalized_input = re.sub(r'\s+', ' ', user_input.lower())
     
-    # Check if user input matches any available time (fuzzy matching)
+    # First, check if input is already in correct format (idempotent check)
+    # This handles cases where process_input is called multiple times
+    for available_time in AVAILABLE_TRAINING_TIMES:
+        normalized_available = re.sub(r'\s+', ' ', available_time.lower())
+        if normalized_input == normalized_available:
+            # Already in correct format
+            session.context['matched_training_times'] = [available_time]
+            await session.save()
+            return available_time  # Return exact format
+    
+    # Also check if input starts with "Available:" (from previous processing)
+    # This shouldn't happen, but handle it gracefully
+    if user_input.startswith("Available:"):
+        # Extract the time from "Available: Monday 9:00 AM - 11:00 AM"
+        time_part = user_input.replace("Available:", "").strip()
+        for available_time in AVAILABLE_TRAINING_TIMES:
+            if time_part.lower() == available_time.lower():
+                session.context['matched_training_times'] = [available_time]
+                await session.save()
+                return available_time
+    
+    # Try to autocorrect partial inputs
     matched_times = []
     for available_time in AVAILABLE_TRAINING_TIMES:
         normalized_available = re.sub(r'\s+', ' ', available_time.lower())
         
-        # Check for exact match or if user input contains key parts of available time
-        if normalized_input == normalized_available:
+        # Extract day and times from available time
+        day_match = False
+        matched_day = None
+        for day in ['monday', 'wednesday', 'friday', 'saturday']:
+            if day in normalized_available:
+                if day in normalized_input:
+                    day_match = True
+                    matched_day = day
+                    break
+        
+        if not day_match:
+            continue
+        
+        # Extract time information from available time
+        # Format: "monday 9:00 am - 11:00 am"
+        time_match = re.search(r'(\d+):(\d+)\s*(am|pm)\s*-\s*(\d+):(\d+)\s*(am|pm)', normalized_available)
+        if not time_match:
+            continue
+        
+        start_hour = int(time_match.group(1))
+        start_min = int(time_match.group(2))
+        start_period = time_match.group(3)
+        end_hour = int(time_match.group(4))
+        end_min = int(time_match.group(5))
+        end_period = time_match.group(6)
+        
+        # Try to match user input against this time slot
+        # User might say: "9", "9 am", "9:00", "9:00 am", "9-11", "9 am - 11 am", "at 9", "monday at 9", etc.
+        
+        # Check if user input mentions the start hour (flexible matching)
+        # Look for the hour number in the input - be flexible with patterns
+        hour_patterns = [
+            rf'\b{start_hour}\b',  # Just the hour "9" (word boundary) - matches "9" in "monday at 9"
+            rf'at\s+{start_hour}\b',  # "at 9" or "monday at 9"
+            rf'{start_hour}\s*(am|pm)\b',  # "9 am" or "9 pm"
+            rf'{start_hour}:00',  # "9:00"
+            rf'{start_hour}:00\s*(am|pm)',  # "9:00 am"
+        ]
+        
+        start_time_mentioned = any(re.search(pattern, normalized_input, re.IGNORECASE) for pattern in hour_patterns)
+        
+        # Also check for time ranges like "9-11", "9 to 11", "9-11 am"
+        range_patterns = [
+            rf'{start_hour}\s*-\s*{end_hour}',  # "9-11"
+            rf'{start_hour}\s+to\s+{end_hour}',  # "9 to 11"
+            rf'{start_hour}\s*-\s*{end_hour}\s*(am|pm)',  # "9-11 am"
+        ]
+        has_range = any(re.search(pattern, normalized_input, re.IGNORECASE) for pattern in range_patterns)
+        
+        # If user mentions the day and start time (or range), autocorrect to full format
+        # This handles cases like "Monday at 9" -> "Monday 9:00 AM - 11:00 AM"
+        if start_time_mentioned or has_range:
             matched_times.append(available_time)
-        elif any(day in normalized_input for day in ['monday', 'wednesday', 'friday', 'saturday']):
-            # If user mentions a day, check if time matches
-            if any(time_part in normalized_input for time_part in normalized_available.split()):
-                matched_times.append(available_time)
     
-    # If matches found, return the matched time(s)
+    # If we found a match, autocorrect to the full format
     if matched_times:
-        # Store matched times in session context for later use
-        session.context['matched_training_times'] = matched_times
+        # If multiple matches, prefer the first one (most specific)
+        matched_time = matched_times[0]
+        session.context['matched_training_times'] = [matched_time]
         await session.save()
-        return f"Available: {', '.join(matched_times)}"
+        return matched_time  # Return autocorrected full format
     
-    # If no match, return original input but note available times
-    available_list = ', '.join(AVAILABLE_TRAINING_TIMES)
-    return f"{user_input} (Note: Available training times are: {available_list})"
+    # No match found - return original input (validator will catch it)
+    return user_input
 
 
 @on_interview_complete('SignupInterviewInteractAction')
