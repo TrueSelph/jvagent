@@ -33,14 +33,17 @@ from .prompts import (
     UPDATE_PROMPT_FOR_VALUE_TEMPLATE,
     REVIEW_SUMMARY_HEADER_TEMPLATE,
     REVIEW_SUMMARY_ITEM_TEMPLATE,
-    REVIEW_CONFIRMATION_HEADER_TEMPLATE,
-    REVIEW_CONFIRMATION_INSTRUCTIONS_TEMPLATE,
-    REVIEW_CONFIRMATION_PROMPT_TEMPLATE,
+    REVIEW_CONFIRMATION_TEMPLATE,
+    REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS,
+    REVIEW_CONFIRMATION_DEFAULT_PROMPT,
     REVIEW_UNCLEAR_EDIT_DIRECTIVE_TEMPLATE,
     REVIEW_UNCLEAR_GENERAL_DIRECTIVE_TEMPLATE,
     COMPLETION_MESSAGE_TEMPLATE,
     CANCELLATION_MESSAGE_TEMPLATE,
     ACTIVE_EVENT_MESSAGE_TEMPLATE,
+    REVIEW_EVENT_MESSAGE_TEMPLATE,
+    COMPLETION_EVENT_MESSAGE_TEMPLATE,
+    CANCELLATION_EVENT_MESSAGE_TEMPLATE,
     QUESTION_DIRECTIVE_TEMPLATE,
     INTERVIEW_PROMPT_TEMPLATE,
 )
@@ -262,20 +265,22 @@ class InterviewInteractAction(InteractAction, ABC):
         description="Template for each summary item. Use {display_name} and {value} placeholders. Defaults to REVIEW_SUMMARY_ITEM_TEMPLATE from prompts.py",
     )
     
-    # Confirmation directive templates (for REVIEW state)
-    confirmation_header_template: str = attribute(
-        default=REVIEW_CONFIRMATION_HEADER_TEMPLATE,
-        description="Template for the confirmation header. Use {summary} placeholder. Defaults to REVIEW_CONFIRMATION_HEADER_TEMPLATE from prompts.py",
+    # Confirmation directive template (for REVIEW state)
+    # Consolidated template with placeholders: {summary}, {instructions}, {prompt}
+    confirmation_template: str = attribute(
+        default=REVIEW_CONFIRMATION_TEMPLATE,
+        description="Consolidated template for review confirmation. Use {summary}, {instructions}, and {prompt} placeholders. Defaults to REVIEW_CONFIRMATION_TEMPLATE from prompts.py",
     )
     
-    confirmation_instructions_template: str = attribute(
-        default=REVIEW_CONFIRMATION_INSTRUCTIONS_TEMPLATE,
-        description="Template for confirmation instructions. Defaults to REVIEW_CONFIRMATION_INSTRUCTIONS_TEMPLATE from prompts.py",
+    # Default values for consolidated template placeholders (can be customized)
+    confirmation_instructions: str = attribute(
+        default=REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS,
+        description="Default instructions text for review confirmation. Used in {instructions} placeholder. Defaults to REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS from prompts.py",
     )
     
-    confirmation_prompt_template: str = attribute(
-        default=REVIEW_CONFIRMATION_PROMPT_TEMPLATE,
-        description="Template for the final confirmation prompt. Defaults to REVIEW_CONFIRMATION_PROMPT_TEMPLATE from prompts.py",
+    confirmation_prompt: str = attribute(
+        default=REVIEW_CONFIRMATION_DEFAULT_PROMPT,
+        description="Default prompt text for review confirmation. Used in {prompt} placeholder. Defaults to REVIEW_CONFIRMATION_DEFAULT_PROMPT from prompts.py",
     )
     
     # Unclear response directive templates (for REVIEW state)
@@ -319,6 +324,24 @@ class InterviewInteractAction(InteractAction, ABC):
         description="Event message template for active interview state. Use {class_name} placeholder. Defaults to ACTIVE_EVENT_MESSAGE_TEMPLATE from prompts.py",
     )
     
+    # Review event message template (for REVIEW state)
+    review_event_message_template: str = attribute(
+        default=REVIEW_EVENT_MESSAGE_TEMPLATE,
+        description="Event message template for review interview state. Use {class_name} placeholder. Defaults to REVIEW_EVENT_MESSAGE_TEMPLATE from prompts.py",
+    )
+    
+    # Completion event message template (for COMPLETED state)
+    completion_event_message_template: str = attribute(
+        default=COMPLETION_EVENT_MESSAGE_TEMPLATE,
+        description="Event message template for completed interview state. Documents that the interview process has been completed. Use {class_name} placeholder. Defaults to COMPLETION_EVENT_MESSAGE_TEMPLATE from prompts.py",
+    )
+    
+    # Cancellation event message template (for CANCELLED state)
+    cancellation_event_message_template: str = attribute(
+        default=CANCELLATION_EVENT_MESSAGE_TEMPLATE,
+        description="Event message template for cancelled interview state. Documents that the interview process has been cancelled. Use {class_name} placeholder. Defaults to CANCELLATION_EVENT_MESSAGE_TEMPLATE from prompts.py",
+    )
+    
     # Question directive template (for ACTIVE state - question prompting)
     question_directive_template: str = attribute(
         default=QUESTION_DIRECTIVE_TEMPLATE,
@@ -334,13 +357,10 @@ class InterviewInteractAction(InteractAction, ABC):
     ) -> None:
         """Generate and send directive based on session state and classification result.
         
-        Routes to appropriate state handler based on session.state:
-        - ACTIVE: Question flow
-        - REVIEW: Summary and confirmation
-        - COMPLETED: Completion handler
-        - CANCELLED: Cancellation message
-        
-        Also handles state transitions based on classification results (e.g., CANCELLATION intent).
+        Flow:
+        1. Handle high-priority intents (CANCELLATION, CONFIRMATION) that cause state transitions
+        2. Route to state-specific handlers based on current session state
+        3. Handle cascading state transitions (e.g., ACTIVE -> REVIEW -> COMPLETED in same turn)
         
         Args:
             session: Interview session
@@ -348,36 +368,56 @@ class InterviewInteractAction(InteractAction, ABC):
             visitor: InteractWalker
             interaction: Current interaction
         """
-        # Handle CANCELLATION intent - transition state if not already cancelled
+        # ========================================================================
+        # STEP 1: Handle high-priority intents that cause immediate state transitions
+        # ========================================================================
+        
+        # CANCELLATION: Highest priority - can occur in any state
         if classification_result.intent == "CANCELLATION" and session.state != InterviewState.CANCELLED:
             try:
                 session.transition_to(InterviewState.CANCELLED)
                 await session.save()
+                # Fall through to state-based routing (CANCELLED branch will handle it)
             except Exception as e:
                 logger.error(f"{self.get_class_name()}: Failed to transition to CANCELLED: {e}", exc_info=True)
         
-        # Handle state-based directive generation
-        # Note: States may transition during processing, so check state after each handler
+        # CONFIRMATION: Only valid in REVIEW state - transition to COMPLETED immediately
+        if classification_result.intent == "CONFIRMATION" and session.state == InterviewState.REVIEW:
+            try:
+                session.transition_to(InterviewState.COMPLETED)
+                await session.save()
+                await self._generate_completed_directive(session, visitor)
+                return  # Exit early - completion handled in same turn
+            except Exception as e:
+                logger.error(f"{self.get_class_name()}: Failed to transition to COMPLETED: {e}", exc_info=True)
+        
+        # ========================================================================
+        # STEP 2: Route to state-specific handlers
+        # ========================================================================
+        
         if session.state == InterviewState.ACTIVE:
             await self._generate_active_directive(session, classification_result, visitor, interaction)
-            # Check if state transitioned to REVIEW after processing responses
-            # This ensures review directive is generated in the same interaction
+            # Handle cascading transition: ACTIVE -> REVIEW (when all questions answered)
             if session.state == InterviewState.REVIEW:
                 await self._generate_review_directive(session, classification_result, visitor)
-                # Check if state transitioned to COMPLETED after confirmation
-                # This ensures completion directive is generated in the same interaction
+                # Handle cascading transition: REVIEW -> COMPLETED (if CONFIRMATION was missed)
+                # Note: This should not occur as CONFIRMATION is handled above, but kept as safeguard
                 if session.state == InterviewState.COMPLETED:
                     await self._generate_completed_directive(session, visitor)
+        
         elif session.state == InterviewState.REVIEW:
+            # Handle REVIEW state (UPDATE intent, unclear responses, first-time summary display)
+            # Note: CONFIRMATION intent is handled above and returns early
             await self._generate_review_directive(session, classification_result, visitor)
-            # Check if state transitioned to COMPLETED after confirmation
-            # This ensures completion directive is generated in the same interaction
-            if session.state == InterviewState.COMPLETED:
-                await self._generate_completed_directive(session, visitor)
+        
         elif session.state == InterviewState.COMPLETED:
+            # Handle already-completed state (e.g., from previous interaction)
             await self._generate_completed_directive(session, visitor)
+        
         elif session.state == InterviewState.CANCELLED:
+            # Handle cancelled state (cleanup and message)
             await self._generate_cancelled_directive(session, visitor)
+        
         else:
             logger.warning(f"{self.get_class_name()}: Unknown session state: {session.state}")
     
@@ -491,7 +531,7 @@ class InterviewInteractAction(InteractAction, ABC):
                 if updated_field:
                     field_display = updated_field.replace("_", " ").title()
                     new_value = session.get_response(updated_field)
-                    confirmation = f"Updated {field_display} to {new_value}. "
+                    confirmation = f"Tell the user: Updated {field_display} to {new_value}. "
                     directive = confirmation + directive
                 await self._respond_with_directive(visitor, directive, self.active_event_message_template.format(class_name=self.get_class_name()))
     
@@ -504,31 +544,25 @@ class InterviewInteractAction(InteractAction, ABC):
         """Generate directive for REVIEW state (summary and confirmation).
         
         Logic flow:
-        - First entry: build and show summary
-        - Confirmation detected: transition to COMPLETED, trigger completion handler
-        - Update detected: handle update, show updated summary
-        - Unclear response: prompt for clarification
+        - Show summary for user to review
+        - Handle UPDATE intent: process update and show updated summary
+        - Handle CONFIRMATION intent: transition to COMPLETED (handled at top level)
+        - Handle unclear responses: prompt for clarification
         
         Args:
             session: Interview session
             classification_result: Classification result
             visitor: InteractWalker
         """
-        # Check if this is the first time entering review (show summary)
-        summary_shown = session.context.get('review_summary_shown', False)
-        
-        if not summary_shown:
-            directive = self._build_confirmation_directive(session)
-            await self._respond_with_directive(visitor, directive, "reviewing interview responses")
-            session.context['review_summary_shown'] = True
-            await session.save()
-            return
-        
-        # Handle confirmation
+        # Note: CONFIRMATION intent is handled at the top level of _generate_directive
+        # to ensure state transition and completion happen in the same turn
+        # This check remains as a safeguard but should not be reached if CONFIRMATION was detected
         if classification_result.intent == "CONFIRMATION":
+            # This should have been handled above, but if we reach here, handle it
+            logger.warning(f"{self.get_class_name()}: CONFIRMATION intent reached _generate_review_directive, should have been handled earlier")
             session.transition_to(InterviewState.COMPLETED)
             await session.save()
-            # State will be checked in _generate_directive to generate completion directive
+            await self._generate_completed_directive(session, visitor)
             return
         
         # Handle update
@@ -538,7 +572,7 @@ class InterviewInteractAction(InteractAction, ABC):
                 answered_fields = session.get_answered_questions()
                 field_list = ", ".join([f.replace("_", " ") for f in answered_fields])
                 directive = self.unclear_edit_directive_template.format(field_list=field_list)
-                await self._respond_with_directive(visitor, directive, "reviewing interview responses")
+                await self._respond_with_directive(visitor, directive, self.review_event_message_template.format(class_name=self.get_class_name()))
                 return
             
             # Handle the update inline (reusing QuestionNode processing/validation)
@@ -551,15 +585,20 @@ class InterviewInteractAction(InteractAction, ABC):
             )
             
             if update_completed:
-                # Show updated summary
-                session.context.pop('review_summary_shown', None)
-                await session.save()
-                # Will show summary on next call
+                # Show updated summary immediately in same turn
+                directive = self._build_confirmation_directive(session)
+                await self._respond_with_directive(visitor, directive, self.review_event_message_template.format(class_name=self.get_class_name()))
             return
         
-        # Unclear response
-        directive = self.unclear_general_directive_template
-        await self._respond_with_directive(visitor, directive, "reviewing interview responses")
+        # Handle unclear response (NONE intent or other)
+        if classification_result.intent == "NONE" or not classification_result.intent:
+            directive = self.unclear_general_directive_template
+            await self._respond_with_directive(visitor, directive, self.review_event_message_template.format(class_name=self.get_class_name()))
+            return
+        
+        # Default: Show summary for review (first entry to REVIEW state)
+        directive = self._build_confirmation_directive(session)
+        await self._respond_with_directive(visitor, directive, self.review_event_message_template.format(class_name=self.get_class_name()))
     
     async def _generate_completed_directive(
         self,
@@ -581,21 +620,30 @@ class InterviewInteractAction(InteractAction, ABC):
         if completion_handler:
             try:
                 await completion_handler(session, visitor, self)
+                # Completion handler is responsible for sending its own message if needed
             except Exception as e:
                 logger.error(f"{self.get_class_name()}: Completion handler failed: {e}", exc_info=True)
-                # Send generic completion message
+                # Send generic completion message on error
                 await self._respond_with_directive(
                     visitor,
                     self.completion_message_template,
-                    "completing interview"
+                    self.completion_event_message_template.format(class_name=self.get_class_name())
                 )
         else:
             # No completion handler registered, send generic message
             await self._respond_with_directive(
                 visitor,
                 self.completion_message_template,
-                "completing interview"
+                self.completion_event_message_template.format(class_name=self.get_class_name())
             )
+        
+        # Clean up and remove the session (always, regardless of handler success/failure)
+        try:
+            await session.cleanup()
+            # Clear session reference from visitor
+            visitor.interview_session = None
+        except Exception as e:
+            logger.error(f"{self.get_class_name()}: Failed to cleanup completed session: {e}", exc_info=True)
     
     async def _generate_cancelled_directive(
         self,
@@ -614,7 +662,7 @@ class InterviewInteractAction(InteractAction, ABC):
         await self._respond_with_directive(
             visitor,
             self.cancellation_message_template,
-            "cancelling interview"
+            self.cancellation_event_message_template.format(class_name=self.get_class_name())
         )
         
         # Clean up and remove the session
@@ -699,12 +747,18 @@ class InterviewInteractAction(InteractAction, ABC):
             await session.save()
             
             if feedback:
-                await self._respond_with_directive(visitor, feedback, self.active_event_message_template.format(class_name=self.get_class_name()))
+                # Ensure proper prefix if not already present
+                feedback_msg = feedback
+                if not feedback_msg.startswith("Tell the user:") and not feedback_msg.startswith("Ask:"):
+                    feedback_msg = f"Ask: {feedback_msg}"
+                await self._respond_with_directive(visitor, feedback_msg, self.active_event_message_template.format(class_name=self.get_class_name()))
             return True  # Update stored, clarification requested
             
         else:  # INVALID
             # Don't store, ask for correction
-            error_msg = feedback or f"Please provide a valid value for {field}."
+            error_msg = feedback or f"Tell the user: Please provide a valid value for {field}."
+            if not error_msg.startswith("Tell the user:") and not error_msg.startswith("Ask:"):
+                error_msg = f"Tell the user: {error_msg}"
             await self._respond_with_directive(visitor, error_msg, self.active_event_message_template.format(class_name=self.get_class_name()))
             return False  # Update failed, waiting for valid value
     
@@ -776,7 +830,9 @@ class InterviewInteractAction(InteractAction, ABC):
                 
                 # Ask clarifying question
                 if feedback:
-                    await self._respond_with_directive(visitor, feedback, self.active_event_message_template.format(class_name=self.get_class_name()))
+                    # Use feedback message as-is without prepending
+                    feedback_msg = feedback
+                    await self._respond_with_directive(visitor, feedback_msg, self.active_event_message_template.format(class_name=self.get_class_name()))
             
             else:  # INVALID
                 # CRITICAL: Do NOT store invalid values, especially if there's a custom validator
@@ -786,11 +842,11 @@ class InterviewInteractAction(InteractAction, ABC):
                 
                 # Generate directive with validation feedback
                 if has_custom_validator and feedback:
-                    # Use validator's feedback message
+                    # Use validator's feedback message as-is without prepending
                     error_msg = feedback
                 else:
                     # Fallback to generic message
-                    error_msg = feedback or f"Please provide a valid value for {field}."
+                    error_msg = feedback or f"Tell the user: Please provide a valid value for {field}."
                 
                 await self._respond_with_directive(visitor, error_msg, self.active_event_message_template.format(class_name=self.get_class_name()))
                 break  # Stop processing further responses, focus on correcting this field
@@ -863,7 +919,7 @@ class InterviewInteractAction(InteractAction, ABC):
         return "\n".join(lines)
     
     def _build_confirmation_directive(self, session: InterviewSession) -> str:
-        """Build the complete confirmation directive from configured templates.
+        """Build the complete confirmation directive from consolidated template.
         
         Args:
             session: Interview session
@@ -873,14 +929,12 @@ class InterviewInteractAction(InteractAction, ABC):
         """
         summary = self._format_summary(session)
         
-        # Build directive from parts
-        parts = [
-            self.confirmation_header_template.format(summary=summary),
-            self.confirmation_instructions_template,
-            self.confirmation_prompt_template,
-        ]
-        
-        return "\n".join(parts)
+        # Use consolidated template with all subparts as placeholders
+        return self.confirmation_template.format(
+            summary=summary,
+            instructions=self.confirmation_instructions,
+            prompt=self.confirmation_prompt,
+        )
     
     async def _respond_with_directive(
         self,

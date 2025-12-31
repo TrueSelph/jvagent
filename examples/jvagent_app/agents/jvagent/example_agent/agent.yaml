@@ -141,7 +141,7 @@ actions:
         - "can sign the user up for jvagent training"
       # Model Configuration (uses OpenAI model action by entity type)
       model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
-      model: "gpt-4o"
+      model: "gpt-4o-mini"
       model_temperature: 0.1
       model_max_tokens: 8192
 

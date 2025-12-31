@@ -111,28 +111,28 @@ def validate_full_name(value: str, session: InterviewSession) -> Tuple[Validatio
         Tuple of (ValidationStatus, optional error message)
     """
     if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Please provide your full name"
+        return ValidationStatus.INVALID, "Ask: Please provide your full name"
     
     # Remove extra whitespace
     name = value.strip()
     
     # Check minimum length
     if len(name) < 3:
-        return ValidationStatus.INVALID, "Please provide your complete full name"
+        return ValidationStatus.INVALID, "Ask: Please provide your complete full name"
     
     # Split by spaces and check for at least two parts (first and last name)
     name_parts = name.split()
     if len(name_parts) < 2:
-        return ValidationStatus.INVALID, "Please provide both your first and last name"
+        return ValidationStatus.INVALID, "Ask: Please provide both your first and last name"
     
     # Check that each part has at least 2 characters
     for part in name_parts:
         if len(part) < 2:
-            return ValidationStatus.INVALID, "Each name part should be at least 2 characters long"
+            return ValidationStatus.INVALID, "Tell the user: Each name part should be at least 2 characters long"
     
     # Check for valid characters (letters, hyphens, apostrophes)
     if not re.match(r'^[a-zA-Z\s\-\']+$', name):
-        return ValidationStatus.INVALID, "Name should only contain letters, spaces, hyphens, and apostrophes"
+        return ValidationStatus.INVALID, "Tell the user: Name should only contain letters, spaces, hyphens, and apostrophes"
     
     return ValidationStatus.VALID, None
 
@@ -153,7 +153,7 @@ def validate_available_times(value: str, session: InterviewSession) -> Tuple[Val
         If corrected value is provided, it will be saved instead of the original value
     """
     if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Please provide your available training times", None
+        return ValidationStatus.INVALID, "Ask: Please provide your available training times", None
     
     value = value.strip()
     
@@ -240,24 +240,24 @@ def validate_email(value: str, session: InterviewSession) -> Tuple[ValidationSta
         Tuple of (ValidationStatus, optional error message)
     """
     if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Please provide a valid email address"
+        return ValidationStatus.INVALID, "Ask: Please provide a valid email address"
     
     email = value.strip().lower()
     
     # Basic email format validation
     email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     if not re.match(email_pattern, email):
-        return ValidationStatus.INVALID, "Please provide a valid email address format (e.g., name@example.com)"
+        return ValidationStatus.INVALID, "Tell the user: Please provide a valid email address format (e.g., name@example.com)"
     
     # Check for common invalid domains
     invalid_domains = ['example.com', 'test.com', 'invalid.com']
     domain = email.split('@')[1] if '@' in email else ''
     if domain in invalid_domains:
-        return ValidationStatus.INVALID, "Please provide a real email address, not a test domain"
+        return ValidationStatus.INVALID, "Tell the user: Please provide a real email address, not a test domain"
     
     # Check for common email providers or valid domain structure
     if len(domain.split('.')) < 2:
-        return ValidationStatus.INVALID, "Email domain appears to be invalid"
+        return ValidationStatus.INVALID, "Tell the user: Email domain appears to be invalid"
     
     return ValidationStatus.VALID, None
 
@@ -423,7 +423,7 @@ async def handle_signup_completion(
     
     # Send completion message
     completion_message = (
-        f"Thank you, {user_name}! Your signup for jvagent training is complete. "
+        f"Tell the user: Thank you, {user_name}! Your signup for jvagent training is complete. "
         f"We will contact you at {user_email}. "
     )
     if matched_times:

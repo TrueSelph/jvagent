@@ -5,39 +5,55 @@ action system for consistency and maintainability.
 """
 
 # Review state directive templates
-REVIEW_SUMMARY_HEADER_TEMPLATE = "Here's what I have:\n"
+REVIEW_SUMMARY_HEADER_TEMPLATE = "Tell the user: Here's what I have:\n"
 
 REVIEW_SUMMARY_ITEM_TEMPLATE = "{display_name}: {value}"
 
-REVIEW_CONFIRMATION_HEADER_TEMPLATE = """Present the following collected information to the user for review and confirmation.
+# Consolidated review confirmation template with all subparts
+# Placeholders: {summary}, {instructions}, {prompt}
+# Default values for instructions and prompt are provided below
+REVIEW_CONFIRMATION_TEMPLATE = """Present the following collected information for review and confirmation.
 
 {summary}
 
-Instruct the user to:"""
+Tell the user: You can:
+{instructions}
 
-REVIEW_CONFIRMATION_INSTRUCTIONS_TEMPLATE = """- Confirm if all information is correct by saying "yes", "correct", "looks good", or similar
-- Request changes to any specific field if needed (e.g., "change my email to...", "update my name")
-- Say "cancel" if they wish to abandon the process"""
+{prompt}"""
 
-REVIEW_CONFIRMATION_PROMPT_TEMPLATE = """Ask: "Does everything look correct?" or similar phrasing to prompt their response."""
+# Default values for consolidated template placeholders
+REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS = """Tell the user:
+- Say "yes" or "correct" to confirm, or specify which field to change
+- Say "cancel" to abandon the process"""
 
-REVIEW_UNCLEAR_EDIT_DIRECTIVE_TEMPLATE = """Which field would you like to change? Available fields: {field_list}"""
+REVIEW_CONFIRMATION_DEFAULT_PROMPT = """Ask: "Does everything look correct?" or similar phrasing to prompt their response."""
 
-REVIEW_UNCLEAR_GENERAL_DIRECTIVE_TEMPLATE = """I didn't understand. Please say 'yes' to confirm, 'no' to edit, or specify which field you'd like to change."""
+REVIEW_UNCLEAR_EDIT_DIRECTIVE_TEMPLATE = """Ask: Which field would you like to change? Available fields: {field_list}"""
+
+REVIEW_UNCLEAR_GENERAL_DIRECTIVE_TEMPLATE = """Tell the user: I didn't understand. Ask: Please say 'yes' to confirm, 'no' to edit, or specify which field you'd like to change."""
 
 # Update prompt template (for prompting user for new value when updating)
-UPDATE_PROMPT_FOR_VALUE_TEMPLATE = """The current value for {field_display} is: {current_value}
+UPDATE_PROMPT_FOR_VALUE_TEMPLATE = """Tell the user: The current value for {field_display} is: {current_value}
 
-What would you like to change it to?"""
+Ask: What would you like to change it to?"""
 
 # Completion message template (for COMPLETED state)
-COMPLETION_MESSAGE_TEMPLATE = "Thank you! Your responses have been recorded."
+COMPLETION_MESSAGE_TEMPLATE = "Tell the user: Thank you! Your responses have been recorded."
 
 # Cancellation message template (for CANCELLED state)
-CANCELLATION_MESSAGE_TEMPLATE = "I've cancelled the interview. Let me know if you'd like to start over."
+CANCELLATION_MESSAGE_TEMPLATE = "Tell the user: I've cancelled the interview. Ask: Let me know if you'd like to start over."
 
 # Active event message template (for ACTIVE state)
-ACTIVE_EVENT_MESSAGE_TEMPLATE = "actively interviewing user as part of {class_name}"
+ACTIVE_EVENT_MESSAGE_TEMPLATE = "Ongoing Activity: interviewing user as part of {class_name}"
+
+# Review event message template (for REVIEW state)
+REVIEW_EVENT_MESSAGE_TEMPLATE = "Ongoing Activity: reviewing interview responses as part of {class_name}"
+
+# Completion event message template (for COMPLETED state)
+COMPLETION_EVENT_MESSAGE_TEMPLATE = "interview process completed as part of {class_name}"
+
+# Cancellation event message template (for CANCELLED state)
+CANCELLATION_EVENT_MESSAGE_TEMPLATE = "interview process cancelled as part of {class_name}"
 
 # Question directive template (for ACTIVE state - question prompting)
 # Consolidated template that handles description, question, and optional instructions

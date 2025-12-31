@@ -101,8 +101,8 @@ class PersonaAction(Action):
                 "response": "Apologize and tell the user that you are experiencing some technical difficulties and ask them to cancel what they were doing then direct them to a human agent"
             },
             {
-                "condition": "You are likely to claim you have submitted a report, contacted someone, confirm something or completed any backend action that requires actual system integration",
-                "response": "Never claim you have submitted reports, contacted people, or completed backend actions unless explicitly instructed by a directive. Instead, explain what actions need to be taken."
+                "condition": "The conversation has diverged from the ongoing activity in the event history",
+                "response": "Remind the user to return to complete the ongoing activity"
             }
         ],
         description="Standard collection of configurable parameters to apply when executing the prompt",
@@ -121,7 +121,7 @@ class PersonaAction(Action):
         history_limit: int = 4,
         with_utterance: bool = True,
         with_interpretation: bool = False,
-        with_event: bool = False,
+        with_event: bool = True,
         with_response: bool = True,
         max_statement_length: Optional[int] = None,
     ) -> str:
@@ -141,7 +141,7 @@ class PersonaAction(Action):
             history_limit: Number of past interactions to include in history (default: 3)
             with_utterance: Whether to include the user's utterance in the prompt (default: True)
             with_interpretation: Include interpretations in history (default: False)
-            with_event: Include events in history (default: False)
+            with_event: Include events in history (default: True)
             with_response: Include AI responses in history (default: True)
             max_statement_length: Truncate utterances/responses to this length (default: None, no truncation)
 
