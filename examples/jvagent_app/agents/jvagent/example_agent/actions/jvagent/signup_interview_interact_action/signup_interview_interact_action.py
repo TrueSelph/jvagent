@@ -138,25 +138,26 @@ def validate_full_name(value: str, session: InterviewSession) -> Tuple[Validatio
 
 
 @input_validator('available_times')
-def validate_available_times(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+def validate_available_times(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str], Optional[str]]:
     """Validate that available times match one of the available training slots.
     
-    The input handler should have autocorrected the value to the full format.
-    This validator checks if it matches one of the available times.
+    Autocorrects close matches using fuzzy matching. If a value mostly matches
+    an available option, it returns the corrected value for saving.
     
     Args:
-        value: The availability string to validate (should be autocorrected by input handler)
+        value: The availability string to validate
         session: Interview session (for context)
         
     Returns:
-        Tuple of (ValidationStatus, optional error message)
+        Tuple of (ValidationStatus, optional error message, optional corrected value)
+        If corrected value is provided, it will be saved instead of the original value
     """
     if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Please provide your available training times"
+        return ValidationStatus.INVALID, "Please provide your available training times", None
     
     value = value.strip()
     
-    # Available training times (must match exactly after input handler processing)
+    # Available training times
     AVAILABLE_TRAINING_TIMES = [
         "Monday 9:00 AM - 11:00 AM",
         "Monday 2:00 PM - 4:00 PM",
@@ -166,24 +167,65 @@ def validate_available_times(value: str, session: InterviewSession) -> Tuple[Val
         "Saturday 9:00 AM - 12:00 PM",
     ]
     
-    # Check if value matches any available time (case-insensitive, flexible spacing)
+    # Normalize input for comparison
     normalized_value = re.sub(r'\s+', ' ', value.lower())
+    
+    # First, check for exact match (case-insensitive, flexible spacing)
     for available_time in AVAILABLE_TRAINING_TIMES:
         normalized_available = re.sub(r'\s+', ' ', available_time.lower())
         if normalized_value == normalized_available:
-            # Store the matched time in context for later use
-            session.context['matched_training_times'] = [available_time]
-            return ValidationStatus.VALID, None
+            return ValidationStatus.VALID, None, available_time
     
     # Check if input handler stored matched times in context
     matched_times = session.context.get('matched_training_times', [])
     if matched_times:
-        # Input handler found a match, use it
-        return ValidationStatus.VALID, None
+        return ValidationStatus.VALID, None, matched_times[0]
+    
+    # Try fuzzy matching for autocorrection
+    # Calculate similarity scores based on key components (day, time)
+    best_match = None
+    best_score = 0.0
+    threshold = 0.6  # 60% similarity threshold for autocorrection
+    
+    # Extract day and time components from input
+    value_words = set(normalized_value.split())
+    
+    for available_time in AVAILABLE_TRAINING_TIMES:
+        normalized_available = re.sub(r'\s+', ' ', available_time.lower())
+        available_words = set(normalized_available.split())
+        
+        # Calculate word overlap (key components: day, time indicators)
+        common_words = value_words & available_words
+        # Prioritize important words (days, time indicators)
+        important_words = {'monday', 'wednesday', 'friday', 'saturday', 'am', 'pm', '9:00', '10:00', '11:00', '12:00', '2:00', '4:00'}
+        important_matches = len([w for w in common_words if w in important_words])
+        
+        # Calculate scores
+        word_overlap = len(common_words) / max(len(value_words), len(available_words), 1)
+        important_score = important_matches / max(len([w for w in value_words if w in important_words]), 1)
+        
+        # Check for substring matches (e.g., "monday 9" matches "monday 9:00 am")
+        substring_match = 0.0
+        if normalized_value in normalized_available or normalized_available in normalized_value:
+            substring_match = 0.8
+        
+        # Combined score: prioritize important word matches and substring matches
+        combined_score = max(
+            (word_overlap * 0.3) + (important_score * 0.7),  # Word-based scoring
+            substring_match  # Substring-based scoring
+        )
+        
+        if combined_score > best_score:
+            best_score = combined_score
+            best_match = available_time
+    
+    # If we found a good match, autocorrect
+    if best_match and best_score >= threshold:
+        return ValidationStatus.VALID, None, best_match
     
     # No match found - value is invalid
     available_list = ', '.join(AVAILABLE_TRAINING_TIMES)
-    return ValidationStatus.INVALID, f"Please select from the available training times: {available_list}"
+    return ValidationStatus.INVALID, f"Tell the user that their choice is not available and advise them to select from the available training times: {available_list}", None
 
 
 @input_validator('user_email')

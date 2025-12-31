@@ -1,10 +1,10 @@
 # Interview Action
 
-A reusable, extensible state-machine-based interview system for gathering structured information from users through multi-turn conversations with validation, revision, and confirmation flows.
+A reusable, extensible interview system for gathering structured information from users through multi-turn conversations with validation, revision, and confirmation flows.
 
 ## Overview
 
-The Interview Action provides a reusable way to collect responses from users in a coordinated, multi-turn conversation. It implements a state machine that manages the interview lifecycle from initialization through completion or cancellation.
+The Interview Action provides a reusable way to collect responses from users in a coordinated, multi-turn conversation. It manages the interview lifecycle from initialization through completion or cancellation using a unified orchestrator pattern.
 
 **Key Design**: `InterviewInteractAction` is an abstract base class that developers extend to create multiple interview flows (e.g., registration, onboarding) within the same agent. Each interview maintains its own per-user session attached to Conversation nodes with type identification.
 
@@ -15,7 +15,8 @@ The Interview Action provides a reusable way to collect responses from users in 
 - **Per-User Session Isolation**: Sessions attached to Conversation nodes for user separation
 - **Type-Based Session Management**: Sessions identified by `interview_type` field (survives action rebuilds)
 - **Unified Classification System**: Single LLM call detects intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE) and extracts field values
-- **State Machine Architecture**: Four distinct states (ACTIVE, REVIEW, COMPLETED, CANCELLED) with clear transitions
+- **Unified Orchestrator**: All state logic and directive generation handled within the main InterviewInteractAction class
+- **Logical State Management**: Four distinct states (ACTIVE, REVIEW, COMPLETED, CANCELLED) with clear transitions
 - **Same-Interaction State Transitions**: State transitions happen within the same interaction when appropriate
 - **Three-Tier Validation**: VALID, VALID_WITH_FLAG, and INVALID response validation
 - **Custom Handlers & Validators**: Process input and validate responses with custom logic
@@ -113,7 +114,7 @@ Specialized edge connecting QuestionNodes with optional condition metadata:
 - Condition format: `{"question": "question_name", "equals": "value"}`
 
 #### 6. InteractWalker
-Standard walker used throughout. State actions receive session via `visitor.interview_session`.
+Standard walker used throughout. The interview action receives session via conversation queries.
 
 ## File Structure
 
@@ -486,7 +487,11 @@ question_index = [
 
 Validators can return:
 - `(ValidationStatus, message)`: Status and feedback message
+- `(ValidationStatus, message, corrected_value)`: Status, feedback message, and autocorrected value
 - `bool`: True for VALID, False for INVALID
+
+**Autocorrection Support:**
+Validators can return a corrected value as the third element of the tuple. If provided, the system will store the corrected value instead of the original input. This is useful for fuzzy matching scenarios (e.g., correcting "next tuesday" to a specific date, or matching "morning" to "9:00 AM").
 
 ## Unified Classification System
 
@@ -515,10 +520,8 @@ The `ClassificationResult` dataclass contains:
 - `intent`: Detected intent type
 - `confidence`: Confidence score (0.0-1.0)
 - `extracted_data`: Extracted field values (for SUBMISSION intent)
-- `update_field`: Field to update (for UPDATE intent)
-- `update_value`: New value (for UPDATE intent)
-- `needs_value_prompt`: Whether to prompt for new value
-- `needs_field_clarification`: Whether field needs clarification
+- `field`: Field name (for UPDATE intent, null if unclear)
+- `value`: Field value (for UPDATE intent, null if not provided)
 
 ### State Transitions
 

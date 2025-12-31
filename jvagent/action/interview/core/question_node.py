@@ -23,30 +23,18 @@ class QuestionNode(Node):
     """Node representing an individual interview question.
     
     Each QuestionNode represents a single question in the interview flow with:
-    - Question text and constraints
+    - Question text and constraints (stored in state)
     - Three-tier validation (VALID, VALID_WITH_FLAG, INVALID)
     - Required vs optional flags
     - Validation rules embedded in constraints
-    - Template for generating question prompts
+    - Input handlers and validators coordination
+    
+    Note: Directive templates are managed by InterviewInteractAction and retrieved
+    dynamically via the session's interview_type. QuestionNode focuses on question
+    specifics, handlers, and validators only.
     """
     
     description: str = "Interview question node for gathering user information"
-    
-    directive_template: Optional[str] = attribute(
-        default="""
-    Tailor your response to get the information needed based on the following description:
-    {description}
-    Avoid asking for other information not related to this description unless specified elsewhere.  {question}
-
-    {instructions}
-    """,
-        description="Optional template for formatting the directive. Uses default structured format if not provided.",
-    )
-    
-    instructions_template: Optional[str] = attribute(
-        default="Take note of the following additional instructions while responding to the user but avoid mentioning them unless it is needed:\n {instructions}",
-        description="Optional instructions for the directive.",
-    )
     
     state: Dict[str, Any] = attribute(
         default={},
@@ -214,6 +202,8 @@ class QuestionNode(Node):
         if not hasattr(session, 'interview_type') or not session.interview_type:
             return None
         
+        interview_type = session.interview_type
+        
         try:
             # Import the action module and get the class
             # The interview_type is the class name (e.g., "SignupInterviewInteractAction")
@@ -226,17 +216,17 @@ class QuestionNode(Node):
                 if module is None:
                     continue
                 try:
-                    if hasattr(module, session.interview_type):
-                        cls = getattr(module, session.interview_type)
+                    if hasattr(module, interview_type):
+                        cls = getattr(module, interview_type)
                         # Check if it's a subclass of InterviewInteractAction
                         from jvagent.action.interview.interview_interact_action import InterviewInteractAction
                         if inspect.isclass(cls) and issubclass(cls, InterviewInteractAction):
                             return cls
                 except Exception:
                     continue
-        except Exception:
+        except Exception as e:
+            logger.error(f"Exception while searching for action class '{interview_type}': {e}", exc_info=True)
             pass
-        
         return None
     
     def condition_matches(
@@ -291,30 +281,37 @@ class QuestionNode(Node):
         description = constraints.get("description", "")
         instructions = constraints.get("instructions", "")
 
-        if instructions:
-            instructions = self.instructions_template.format(instructions=instructions)
+        # Get template from walker (supplied by InterviewInteractAction)
+        directive_template = getattr(walker, 'question_directive_template', None)
+        
+        # Return None if template not provided
+        if not directive_template:
+            return None
 
-        directive = self.directive_template.format(
-            description=description,
-            instructions=instructions,
+        # Format instructions - only include if present
+        formatted_instructions = ""
+        if instructions:
+            formatted_instructions = f"\n\nNote: {instructions}"
+
+        # Format directive with optional instructions
+        directive = directive_template.format(
             question=question,
+            description=description,
+            instructions=formatted_instructions,
         )
         
-        if directive:
-            return directive
-        else:
-            return None
+        return directive if directive else None
 
     async def validate_response(
         self, 
         value: Any, 
         session: "InterviewSession"
-    ) -> Tuple[ValidationStatus, Optional[str]]:
+    ) -> Tuple[ValidationStatus, Optional[str], Optional[Any]]:
         """Validate a response value against this question's constraints.
         
         Enhanced to call process_input() first if value is a string.
         
-        Returns (validation_status, feedback_message)
+        Returns (validation_status, feedback_message, corrected_value)
         
         Status can be:
         - VALID: Response meets all constraints, store and continue
@@ -326,7 +323,8 @@ class QuestionNode(Node):
             session: The interview session for context
             
         Returns:
-            Tuple of (ValidationStatus, optional feedback message)
+            Tuple of (ValidationStatus, optional feedback message, optional corrected value)
+            If corrected_value is provided, it should be used instead of the original value
         """
         # Process input first if it's a string (raw input)
         # Note: process_input should be idempotent
@@ -340,35 +338,36 @@ class QuestionNode(Node):
         # Check if value is empty/None
         if value is None or (isinstance(value, str) and not value.strip()):
             if self.state.get("required", False):
-                return ValidationStatus.INVALID, "This field is required."
-            return ValidationStatus.VALID, None  # Optional field can be empty
+                return ValidationStatus.INVALID, "This field is required.", None
+            return ValidationStatus.VALID, None, None  # Optional field can be empty
         
         # Type validation
         expected_type = constraints.get("type", "string")
         if expected_type == "string" and not isinstance(value, str):
-            return ValidationStatus.INVALID, f"Expected a string value, got {type(value).__name__}"
+            return ValidationStatus.INVALID, f"Expected a string value, got {type(value).__name__}", None
         elif expected_type == "number" or expected_type == "integer":
             try:
                 float(value) if expected_type == "number" else int(value)
             except (ValueError, TypeError):
-                return ValidationStatus.INVALID, f"Expected a {expected_type} value"
+                return ValidationStatus.INVALID, f"Expected a {expected_type} value", None
         
         # Pattern/regex validation
         pattern = constraints.get("pattern")
         if pattern and isinstance(value, str):
             if not re.match(pattern, value):
-                return ValidationStatus.INVALID, constraints.get("pattern_error", "Value doesn't match required format")
+                return ValidationStatus.INVALID, constraints.get("pattern_error", "Value doesn't match required format"), None
         
         # Email validation
         if constraints.get("format") == "email" and isinstance(value, str):
             email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
             if not re.match(email_pattern, value):
-                return ValidationStatus.INVALID, "Please provide a valid email address"
+                return ValidationStatus.INVALID, "Please provide a valid email address", None
         
         # Custom validation function (if provided)
         # First, try to get validator from decorator registry (if action class is available)
         validator = None
         question_name = self.state.get("name", "")
+        
         if question_name and session:
             action_class = self._get_action_class_from_session(session)
             if action_class:
@@ -384,13 +383,26 @@ class QuestionNode(Node):
             try:
                 result = validator(value, session)
                 if isinstance(result, tuple):
-                    status, message = result
-                    return ValidationStatus(status) if isinstance(status, str) else status, message
+                    # Handle different tuple lengths
+                    if len(result) == 2:
+                        # (status, message) - no correction
+                        status, message = result
+                        final_status = ValidationStatus(status) if isinstance(status, str) else status
+                        return final_status, message, None
+                    elif len(result) == 3:
+                        # (status, message, corrected_value) - with correction
+                        status, message, corrected_value = result
+                        final_status = ValidationStatus(status) if isinstance(status, str) else status
+                        return final_status, message, corrected_value
+                    else:
+                        logger.warning(f"Validator '{validator.__name__}' returned unexpected tuple length: {len(result)}")
+                        return ValidationStatus.INVALID, "Invalid validator return format", None
                 elif isinstance(result, bool):
-                    return ValidationStatus.VALID if result else ValidationStatus.INVALID, None
+                    final_status = ValidationStatus.VALID if result else ValidationStatus.INVALID
+                    return final_status, None, None
             except Exception as e:
-                logger.warning(f"Validator function raised exception: {e}")
-                return ValidationStatus.INVALID, f"Validation error: {str(e)}"
+                logger.error(f"Validator function '{validator.__name__}' raised exception: {e}", exc_info=True)
+                return ValidationStatus.INVALID, f"Validation error: {str(e)}", None
         
         # Check for ambiguous values that might need clarification
         # This is a heuristic - can be customized per question
@@ -400,14 +412,14 @@ class QuestionNode(Node):
             for pattern in ambiguous_patterns:
                 if pattern in value_lower:
                     feedback = constraints.get("ambiguous_feedback", "I'd like to clarify this.")
-                    return ValidationStatus.VALID_WITH_FLAG, feedback
+                    return ValidationStatus.VALID_WITH_FLAG, feedback, None
         
         # Check for common ambiguous time expressions
         if constraints.get("type") == "datetime" or "time" in question_key.lower() or "date" in question_key.lower():
             time_ambiguous = ["next", "this", "tomorrow", "today", "soon", "later"]
             if isinstance(value, str) and any(ambiguous in value.lower() for ambiguous in time_ambiguous):
-                return ValidationStatus.VALID_WITH_FLAG, "Got it. Let me clarify the specific time."
+                return ValidationStatus.VALID_WITH_FLAG, "Got it. Let me clarify the specific time.", None
         
         # All checks passed
-        return ValidationStatus.VALID, None
+        return ValidationStatus.VALID, None, None
 

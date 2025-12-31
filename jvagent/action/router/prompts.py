@@ -42,10 +42,10 @@ Instructions:
    - Example format: "User requests status update for ticket #789, mentions deadline"
 
 2. Match interpretation to actions by comparing intent with each action's anchor statements:
-   - An action matches if its anchors describe handling this type of request
+   - An action matches if its anchors align with the interpretation and describe handling this type of request
    - Prefer actions with more specific/detailed anchor matches
    - Include all actions that reasonably match (it's ok to route to multiple actions)
-   - Consider conversation history - is this continuing a prior topic or answering a previous question?
+   - Consider conversation history and events - is this continuing a prior topic or answering a previous question?
 
 3. Return ONLY this JSON structure:
 {{
