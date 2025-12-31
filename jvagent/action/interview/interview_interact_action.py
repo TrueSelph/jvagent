@@ -225,7 +225,7 @@ class InterviewInteractAction(InteractAction, ABC):
     )
     
     model: str = attribute(
-        default="gpt-4o", 
+        default="gpt-4o-mini", 
         description="Default model name"
     )
     
