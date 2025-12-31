@@ -40,6 +40,8 @@ from .prompts import (
     REVIEW_UNCLEAR_GENERAL_DIRECTIVE_TEMPLATE,
     COMPLETION_MESSAGE_TEMPLATE,
     CANCELLATION_MESSAGE_TEMPLATE,
+    ACTIVE_EVENT_MESSAGE_TEMPLATE,
+    QUESTION_DIRECTIVE_TEMPLATE,
     INTERVIEW_PROMPT_TEMPLATE,
 )
 
@@ -53,6 +55,13 @@ logger = logging.getLogger(__name__)
 # This is populated when @on_interview_complete decorated functions are defined
 _completion_handlers: Dict[str, Callable] = {}
 
+# Module-level registry for input validators and handlers
+# Keyed by (interview_type, question_name) -> function
+# This is populated when @input_validator or @input_handler decorated functions are defined
+# Format: {(interview_type, question_name): function}
+_input_validator_registry: Dict[Tuple[str, str], Callable] = {}
+_input_handler_registry: Dict[Tuple[str, str], Callable] = {}
+
 
 @dataclass
 class ClassificationResult:
@@ -63,13 +72,11 @@ class ClassificationResult:
     intent: str  # "CANCELLATION", "CONFIRMATION", "UPDATE", "SUBMISSION", "NONE"
     confidence: float = 1.0  # Confidence score for the classification
     
-    # For UPDATE intent
-    update_field: Optional[str] = None  # Target field for "UPDATE" intent
-    update_value: Optional[Any] = None  # New value for "UPDATE" intent
-    needs_value_prompt: bool = False  # True if update needs value prompt
-    needs_field_clarification: bool = False  # True if update needs field clarification
+    # Unified field/value structure (used for both UPDATE and SUBMISSION)
+    field: Optional[str] = None  # Field name (for UPDATE intent) or null
+    value: Optional[Any] = None  # Field value (for UPDATE intent) or null
     
-    # For SUBMISSION intent - extracted field values
+    # For SUBMISSION intent - extracted field values (multiple fields)
     extracted_data: Optional[Dict[str, Any]] = None  # Extracted responses for "SUBMISSION" intent
 
 
@@ -98,7 +105,7 @@ class InterviewInteractAction(InteractAction, ABC):
         Use @on_interview_complete('InterviewType') to register completion handlers.
     """
     
-    description: str = "Root orchestrator for interview state machine system"
+    description: str = "Unified orchestrator for interview system"
     
     # Class-level registries for decorator-registered handlers and validators
     # These are populated when the class is defined via decorators
@@ -109,11 +116,21 @@ class InterviewInteractAction(InteractAction, ABC):
         """Initialize subclass and collect decorator-registered handlers/validators."""
         super().__init_subclass__(**kwargs)
         
-        # Collect handlers and validators from class methods/attributes
+        # Initialize class-level registries
         cls._input_handlers = {}
         cls._input_validators = {}
         
-        # Scan class attributes for decorated functions
+        # Load validators/handlers from module-level registry for this class
+        class_name = cls.__name__
+        for (interview_type, question_name), func in _input_validator_registry.items():
+            if interview_type == class_name:
+                cls._input_validators[question_name] = func
+        
+        for (interview_type, question_name), func in _input_handler_registry.items():
+            if interview_type == class_name:
+                cls._input_handlers[question_name] = func
+        
+        # Also scan class attributes for decorated functions (class methods)
         for attr_name in dir(cls):
             attr = getattr(cls, attr_name, None)
             if callable(attr) and hasattr(attr, '_interview_question_name'):
@@ -153,13 +170,25 @@ class InterviewInteractAction(InteractAction, ABC):
     def get_input_validator(cls, question_name: str) -> Optional[Callable]:
         """Get input validator for a question by name (from decorator registry).
         
+        Checks both class-level registry and module-level registry.
+        
         Args:
             question_name: Name of the question
             
         Returns:
             Input validator function if found, None otherwise
         """
-        return cls._input_validators.get(question_name)
+        # First check class-level registry
+        validator = cls._input_validators.get(question_name)
+        
+        # If not found, check module-level registry (in case it was registered after class definition)
+        if not validator:
+            validator = _input_validator_registry.get((cls.__name__, question_name))
+            if validator:
+                # Cache it in class registry for future lookups
+                cls._input_validators[question_name] = validator
+        
+        return validator
     
     weight: int = attribute(
         default=-40,
@@ -283,6 +312,18 @@ class InterviewInteractAction(InteractAction, ABC):
         default=CANCELLATION_MESSAGE_TEMPLATE,
         description="Message template shown when interview is cancelled. Defaults to CANCELLATION_MESSAGE_TEMPLATE from prompts.py",
     )
+    
+    # Active event message template (for ACTIVE state)
+    active_event_message_template: str = attribute(
+        default=ACTIVE_EVENT_MESSAGE_TEMPLATE,
+        description="Event message template for active interview state. Use {class_name} placeholder. Defaults to ACTIVE_EVENT_MESSAGE_TEMPLATE from prompts.py",
+    )
+    
+    # Question directive template (for ACTIVE state - question prompting)
+    question_directive_template: str = attribute(
+        default=QUESTION_DIRECTIVE_TEMPLATE,
+        description="Consolidated template for formatting question directives. Uses {question}, {description}, and {instructions} placeholders. Instructions are optional and only included if provided. Defaults to QUESTION_DIRECTIVE_TEMPLATE from prompts.py",
+    )
 
     async def _generate_directive(
         self,
@@ -366,12 +407,13 @@ class InterviewInteractAction(InteractAction, ABC):
         
         # Handle update intent
         if classification_result.intent == "UPDATE":
-            if classification_result.needs_field_clarification:
+            # Check if field needs clarification
+            if not classification_result.field:
                 # Ask which field to update
                 answered_fields = session.get_answered_questions()
                 field_list = ", ".join([f.replace("_", " ") for f in answered_fields])
                 directive = self.unclear_edit_directive_template.format(field_list=field_list)
-                await self._respond_with_directive(visitor, directive, "gathering information for interview")
+                await self._respond_with_directive(visitor, directive, self.active_event_message_template.format(class_name=self.get_class_name()))
                 return
             
             # Handle the update inline (reusing QuestionNode processing/validation)
@@ -386,7 +428,7 @@ class InterviewInteractAction(InteractAction, ABC):
                 # Waiting for value or clarification
                 return
             
-            updated_field = classification_result.update_field
+            updated_field = classification_result.field
             
             # Check if all questions answered after update
             if session.has_all_required_answers():
@@ -402,6 +444,7 @@ class InterviewInteractAction(InteractAction, ABC):
             question_walker = QuestionWalker()
             question_walker.interview_session = session
             question_walker.interaction = interaction
+            question_walker.question_directive_template = self.question_directive_template
             
             await self._process_responses_to_questions(
                 classification_result.extracted_data,
@@ -427,6 +470,7 @@ class InterviewInteractAction(InteractAction, ABC):
         question_walker = QuestionWalker()
         question_walker.interview_session = session
         question_walker.interaction = interaction
+        question_walker.question_directive_template = self.question_directive_template
         
         unanswered = session.get_unanswered_questions()
         if not unanswered:
@@ -449,7 +493,7 @@ class InterviewInteractAction(InteractAction, ABC):
                     new_value = session.get_response(updated_field)
                     confirmation = f"Updated {field_display} to {new_value}. "
                     directive = confirmation + directive
-                await self._respond_with_directive(visitor, directive, "gathering information for interview")
+                await self._respond_with_directive(visitor, directive, self.active_event_message_template.format(class_name=self.get_class_name()))
     
     async def _generate_review_directive(
         self,
@@ -489,7 +533,7 @@ class InterviewInteractAction(InteractAction, ABC):
         
         # Handle update
         if classification_result.intent == "UPDATE":
-            if classification_result.needs_field_clarification:
+            if not classification_result.field:
                 # Ask which field to update
                 answered_fields = session.get_answered_questions()
                 field_list = ", ".join([f.replace("_", " ") for f in answered_fields])
@@ -601,7 +645,7 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
             True if update completed, False if prompting for value or validation failed
         """
-        field = classification_result.update_field
+        field = classification_result.field
         if not field:
             logger.warning(f"{self.get_class_name()}: Update field is None")
             return False
@@ -612,8 +656,8 @@ class InterviewInteractAction(InteractAction, ABC):
             logger.warning(f"{self.get_class_name()}: Question node not found for {field}")
             return False
         
-        # If new_value is missing, prompt for it
-        if classification_result.needs_value_prompt or classification_result.update_value is None:
+        # If value is missing, prompt for it
+        if classification_result.value is None:
             current_value = session.get_response(field)
             field_display = field.replace("_", " ").title()
             
@@ -622,18 +666,22 @@ class InterviewInteractAction(InteractAction, ABC):
                 current_value=current_value
             )
             
-            await self._respond_with_directive(visitor, directive, "gathering information for interview")
+            await self._respond_with_directive(visitor, directive, self.active_event_message_template.format(class_name=self.get_class_name()))
             return False  # Update not completed, waiting for value
         
         # Process and validate the new value (same flow as SUBMISSION)
-        new_value = classification_result.update_value
+        new_value = classification_result.value
         
         # Process input first (handles custom transformations like autocorrection)
         if isinstance(new_value, str):
             new_value = await question_node.process_input(new_value, session, interaction)
         
         # Validate the processed value
-        validation_status, feedback = await question_node.validate_response(new_value, session)
+        validation_status, feedback, corrected_value = await question_node.validate_response(new_value, session)
+        
+        # Use corrected value if validator provided one
+        if corrected_value is not None:
+            new_value = corrected_value
         session.set_validation_status(field, validation_status)
         
         if validation_status == ValidationStatus.VALID:
@@ -651,13 +699,13 @@ class InterviewInteractAction(InteractAction, ABC):
             await session.save()
             
             if feedback:
-                await self._respond_with_directive(visitor, feedback, "gathering information for interview")
+                await self._respond_with_directive(visitor, feedback, self.active_event_message_template.format(class_name=self.get_class_name()))
             return True  # Update stored, clarification requested
             
         else:  # INVALID
             # Don't store, ask for correction
             error_msg = feedback or f"Please provide a valid value for {field}."
-            await self._respond_with_directive(visitor, error_msg, "gathering information for interview")
+            await self._respond_with_directive(visitor, error_msg, self.active_event_message_template.format(class_name=self.get_class_name()))
             return False  # Update failed, waiting for valid value
     
     async def _process_responses_to_questions(
@@ -669,6 +717,9 @@ class InterviewInteractAction(InteractAction, ABC):
         question_walker: QuestionWalker
     ) -> None:
         """Process and validate extracted responses using QuestionWalker.
+        
+        Only stores responses if they pass validation. Invalid responses trigger
+        a directive with feedback instead of being stored.
         
         Args:
             responses: Extracted responses dictionary
@@ -685,7 +736,8 @@ class InterviewInteractAction(InteractAction, ABC):
                 continue
             
             # Use QuestionWalker to process and validate
-            validation_status, feedback = await question_walker.process_and_validate(
+            # Returns (final_value, validation_status, feedback) where final_value may be autocorrected
+            final_value, validation_status, feedback = await question_walker.process_and_validate(
                 value,
                 question_node,
                 session,
@@ -693,32 +745,55 @@ class InterviewInteractAction(InteractAction, ABC):
             )
             session.set_validation_status(field, validation_status)
             
+            # Check if there's a custom validator registered for this field
+            has_custom_validator = False
+            question_name = question_node.state.get("name", "")
+            if question_name and session:
+                action_class = question_node._get_action_class_from_session(session)
+                if action_class:
+                    validator = action_class.get_input_validator(question_name)
+                    if validator:
+                        has_custom_validator = True
+            
+            # Also check for string reference validator
+            constraints = question_node.state.get("constraints", {})
+            if not has_custom_validator and constraints.get("input_validator"):
+                has_custom_validator = True
+            
             if validation_status == ValidationStatus.VALID:
-                # Store immediately and continue
-                session.set_response(field, value)
+                # Store final value (may be autocorrected) - only if valid
+                session.set_response(field, final_value)
                 # Clear active_question_key so traversal finds next unanswered question
                 session.active_question_key = None
                 await session.save()
-                logger.debug(f"{self.get_class_name()}: Stored VALID response for {field}")
             
             elif validation_status == ValidationStatus.VALID_WITH_FLAG:
-                # Store but ask for clarification
-                session.set_response(field, value)
+                # Store final value (may be autocorrected) but ask for clarification
+                session.set_response(field, final_value)
                 # Clear active_question_key so traversal finds next unanswered question
                 session.active_question_key = None
                 await session.save()
                 
                 # Ask clarifying question
                 if feedback:
-                    await self._respond_with_directive(visitor, feedback, "gathering information for interview")
+                    await self._respond_with_directive(visitor, feedback, self.active_event_message_template.format(class_name=self.get_class_name()))
             
             else:  # INVALID
-                # Don't store, ask for correction
+                # CRITICAL: Do NOT store invalid values, especially if there's a custom validator
                 # Keep active_question_key pointing to this field so we can re-ask
                 session.active_question_key = field
                 await session.save()
-                error_msg = feedback or f"Please provide a valid value for {field}."
-                await self._respond_with_directive(visitor, error_msg, "gathering information for interview")
+                
+                # Generate directive with validation feedback
+                if has_custom_validator and feedback:
+                    # Use validator's feedback message
+                    error_msg = feedback
+                else:
+                    # Fallback to generic message
+                    error_msg = feedback or f"Please provide a valid value for {field}."
+                
+                await self._respond_with_directive(visitor, error_msg, self.active_event_message_template.format(class_name=self.get_class_name()))
+                break  # Stop processing further responses, focus on correcting this field
     
     async def _get_question_node(
         self, 
@@ -975,21 +1050,15 @@ class InterviewInteractAction(InteractAction, ABC):
             # Build ClassificationResult
             classification_result = ClassificationResult(
                 intent=intent,
-                confidence=confidence
+                confidence=confidence,
+                field=result.get("field"),
+                value=result.get("value")
             )
             
-            # Handle UPDATE intent
-            if intent == "UPDATE":
-                classification_result.update_field = result.get("update_field")
-                classification_result.update_value = result.get("update_value")
-                classification_result.needs_value_prompt = result.get("needs_value_prompt", False)
-                classification_result.needs_field_clarification = result.get("needs_field_clarification", False)
-            
             # Handle SUBMISSION intent - extract field values
-            elif intent == "SUBMISSION":
+            if intent == "SUBMISSION":
                 # Extract field values (exclude intent-related keys)
-                intent_keys = {"intent", "confidence", "update_field", "update_value", 
-                              "needs_value_prompt", "needs_field_clarification"}
+                intent_keys = {"intent", "confidence", "field", "value"}
                 extracted_data = {k: v for k, v in result.items() if k not in intent_keys}
                 
                 # Filter out empty/None/whitespace-only values
@@ -1286,6 +1355,10 @@ def input_handler(question_name: str):
     
     Input handlers process raw user input before validation (e.g., normalize time expressions).
     
+    The decorator registers the handler in a module-level registry.
+    The interview_type is determined from the module where the handler is defined
+    by looking for InterviewInteractAction subclasses in that module.
+    
     Args:
         question_name: Name of the question (must match 'name' field in question_index)
         
@@ -1310,6 +1383,28 @@ def input_handler(question_name: str):
         # Store the question name on the function for later lookup
         func._interview_question_name = question_name  # type: ignore
         func._interview_handler_type = "input_handler"  # type: ignore
+        
+        # Try to determine the interview_type from the module where this function is defined
+        try:
+            import inspect
+            module = inspect.getmodule(func)
+            if module:
+                # Look for InterviewInteractAction subclasses in the module
+                for name, obj in vars(module).items():
+                    if (inspect.isclass(obj) and 
+                        issubclass(obj, InterviewInteractAction) and 
+                        obj is not InterviewInteractAction):
+                        interview_type = obj.__name__
+                        # Register in module-level registry
+                        _input_handler_registry[(interview_type, question_name)] = func
+                        break
+                else:
+                    logger.warning(f"Could not determine interview_type for handler '{func.__name__}' - it will be registered when the class is defined")
+            else:
+                logger.warning(f"Could not get module for handler '{func.__name__}'")
+        except Exception as e:
+            logger.warning(f"Error registering handler '{func.__name__}': {e}")
+        
         return func
     return decorator
 
@@ -1318,6 +1413,10 @@ def input_validator(question_name: str):
     """Decorator to register a validator for a specific question.
     
     Validators validate responses with custom logic.
+    
+    The decorator registers the validator in a module-level registry.
+    The interview_type is determined from the module where the validator is defined
+    by looking for InterviewInteractAction subclasses in that module.
     
     Args:
         question_name: Name of the question (must match 'name' field in question_index)
@@ -1332,6 +1431,28 @@ def input_validator(question_name: str):
         # Store the question name on the function for later lookup
         func._interview_question_name = question_name  # type: ignore
         func._interview_handler_type = "input_validator"  # type: ignore
+        
+        # Try to determine the interview_type from the module where this function is defined
+        try:
+            import inspect
+            module = inspect.getmodule(func)
+            if module:
+                # Look for InterviewInteractAction subclasses in the module
+                for name, obj in vars(module).items():
+                    if (inspect.isclass(obj) and 
+                        issubclass(obj, InterviewInteractAction) and 
+                        obj is not InterviewInteractAction):
+                        interview_type = obj.__name__
+                        # Register in module-level registry
+                        _input_validator_registry[(interview_type, question_name)] = func
+                        break
+                else:
+                    logger.warning(f"Could not determine interview_type for validator '{func.__name__}' - it will be registered when the class is defined")
+            else:
+                logger.warning(f"Could not get module for validator '{func.__name__}'")
+        except Exception as e:
+            logger.warning(f"Error registering validator '{func.__name__}': {e}")
+        
         return func
     return decorator
 

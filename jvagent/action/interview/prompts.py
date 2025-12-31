@@ -36,6 +36,20 @@ COMPLETION_MESSAGE_TEMPLATE = "Thank you! Your responses have been recorded."
 # Cancellation message template (for CANCELLED state)
 CANCELLATION_MESSAGE_TEMPLATE = "I've cancelled the interview. Let me know if you'd like to start over."
 
+# Active event message template (for ACTIVE state)
+ACTIVE_EVENT_MESSAGE_TEMPLATE = "actively interviewing user as part of {class_name}"
+
+# Question directive template (for ACTIVE state - question prompting)
+# Consolidated template that handles description, question, and optional instructions
+# Instructions placeholder will be empty string if no instructions provided
+QUESTION_DIRECTIVE_TEMPLATE = """Tailor your response to get the information needed based on the following description:
+{description}
+As a guide, you may paraphrase the following but be sure to avoid asking for other information not related to this description unless specified elsewhere:
+{question}
+
+{instructions}
+"""
+
 # Interview Prompt Template
 # This prompt combines intent detection (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION) 
 # with response extraction in a single LLM call for efficiency and consistency.
@@ -70,20 +84,18 @@ INTENT TYPES (check in priority order):
 5. NONE - No clear intent
 
 EXTRACTION RULES:
-- Only extract values if intent is SUBMISSION
+- For SUBMISSION: Include all extracted field-value pairs as separate keys (e.g., "user_name": "John", "user_email": "john@example.com")
+- For UPDATE: Use "field" and "value" keys (field is null if unclear, value is null if not provided)
 - Only include fields with EXPLICITLY stated or clearly implied values
 - Do NOT invent or guess values
-- For UPDATE: identify field from answered_fields, extract new_value if provided
 
 Return ONLY valid JSON (no markdown):
 {{
   "intent": "CANCELLATION" | "CONFIRMATION" | "UPDATE" | "SUBMISSION" | "NONE",
   "confidence": 0.0-1.0,
-  "update_field": "field_name" | null,
-  "update_value": "new_value" | null,
-  "needs_value_prompt": true | false,
-  "needs_field_clarification": true | false,
-  // For SUBMISSION: include extracted field values only
+  "field": "field_name" | null,
+  "value": "extracted_value | new_value" | null,
+  // For SUBMISSION: include additional field-value pairs here
 }}
 
 EXAMPLES:
@@ -91,8 +103,10 @@ EXAMPLES:
 "Nevermind, forget it" → {{"intent": "CANCELLATION", "confidence": 1.0}}
 "I don't want to continue" → {{"intent": "CANCELLATION", "confidence": 1.0}}
 "Stop asking me that" → {{"intent": "SUBMISSION"}} (skip question, not cancellation)
-"Change my email to john@example.com" → {{"intent": "UPDATE", "update_field": "user_email", "update_value": "john@example.com"}}
-"Actually, my email is wrong" → {{"intent": "UPDATE", "update_field": null, "needs_field_clarification": true}}
+"Change my email to john@example.com" → {{"intent": "UPDATE", "field": "user_email", "value": "john@example.com"}}
+"Actually, my email is wrong" → {{"intent": "UPDATE", "field": null, "value": null}}
+"My email is john@example.com" → {{"intent": "UPDATE", "field": "user_email", "value": null}}
 "Yes, that looks correct" → {{"intent": "CONFIRMATION", "confidence": 0.95}}
-"My name is John Doe" → {{"intent": "SUBMISSION", "user_name": "John Doe"}}"""
+"My name is John Doe" → {{"intent": "SUBMISSION", "user_name": "John Doe"}}
+"My name is John and email is john@example.com" → {{"intent": "SUBMISSION", "user_name": "John", "user_email": "john@example.com"}}"""
 

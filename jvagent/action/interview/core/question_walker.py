@@ -40,6 +40,7 @@ class QuestionWalker(Walker):
     interview_session: Optional[InterviewSession] = None
     interaction: Optional[Interaction] = None
     current_question: Optional[QuestionNode] = None
+    question_directive_template: Optional[str] = None
     
     async def find_next_question(
         self, 
@@ -271,7 +272,7 @@ class QuestionWalker(Walker):
         question_node: QuestionNode,
         session: InterviewSession,
         interaction: Interaction
-    ) -> Tuple[ValidationStatus, Optional[str]]:
+    ) -> Tuple[Any, ValidationStatus, Optional[str]]:
         """Process input and validate response.
         
         Args:
@@ -281,15 +282,19 @@ class QuestionWalker(Walker):
             interaction: Current interaction
             
         Returns:
-            Tuple of (ValidationStatus, optional feedback message)
+            Tuple of (processed_value, ValidationStatus, optional feedback message)
         """
         # Process input first (handles custom transformations)
         processed_value = await question_node.process_input(value, session, interaction)
         
-        # Then validate
-        validation_status, feedback = await question_node.validate_response(processed_value, session)
+        # Then validate (note: validate_response may call process_input again internally,
+        # but process_input should be idempotent)
+        validation_status, feedback, corrected_value = await question_node.validate_response(processed_value, session)
         
-        return validation_status, feedback
+        # Use corrected value if validator provided one, otherwise use processed value
+        final_value = corrected_value if corrected_value is not None else processed_value
+        
+        return final_value, validation_status, feedback
     
     async def get_directive(
         self,
