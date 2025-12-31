@@ -232,7 +232,7 @@ class InteractAction(Action, ABC):
         history_limit: int = 3,
         with_utterance: bool = True,
         with_interpretation: bool = False,
-        with_event: bool = False,
+        with_event: bool = True,
         with_response: bool = True,
         max_statement_length: Optional[int] = None
     ) -> Optional[str]:
@@ -248,7 +248,7 @@ class InteractAction(Action, ABC):
             history_limit: Number of past interactions to include (default: 3)
             with_utterance: Include user utterance in prompt (default: True)
             with_interpretation: Include interpretations in history (default: False)
-            with_event: Include events in history (default: False)
+            with_event: Include events in history (default: True)
             with_response: Include AI responses in history (default: True)
             max_statement_length: Truncate utterances/responses to this length (default: None)
             directives: Optional list of directive strings to add to the interaction before

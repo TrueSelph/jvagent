@@ -194,18 +194,18 @@ class InteractRouter(InteractAction):
                 interaction.anchors = all_allowed
 
                 # Create event entry for successful routing
-                if all_allowed:
-                    if routed_actions and combined_exceptions:
-                        routes_str = ", ".join(routed_actions)
-                        exceptions_str = ", ".join(combined_exceptions)
-                        event_message = f"Routed to {routes_str}, with exceptions {exceptions_str}"
-                    elif combined_exceptions:
-                        exceptions_str = ", ".join(combined_exceptions)
-                        event_message = f"Routed to exceptions {exceptions_str}"
-                    else:
-                        routes_str = ", ".join(routed_actions)
-                        event_message = f"Routed to {routes_str}"
-                    await visitor.add_event(event_message)
+                # if all_allowed:
+                #     if routed_actions and combined_exceptions:
+                #         routes_str = ", ".join(routed_actions)
+                #         exceptions_str = ", ".join(combined_exceptions)
+                #         event_message = f"Routed to {routes_str}, with exceptions {exceptions_str}"
+                #     elif combined_exceptions:
+                #         exceptions_str = ", ".join(combined_exceptions)
+                #         event_message = f"Routed to exceptions {exceptions_str}"
+                #     else:
+                #         routes_str = ", ".join(routed_actions)
+                #         event_message = f"Routed to {routes_str}"
+                #     await visitor.add_event(event_message)
 
                 await interaction.save()
 
