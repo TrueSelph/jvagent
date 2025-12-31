@@ -329,8 +329,10 @@ class QuestionNode(Node):
             Tuple of (ValidationStatus, optional feedback message)
         """
         # Process input first if it's a string (raw input)
+        # Note: process_input should be idempotent
+        # We pass None for interaction here since we don't have it in validate_response signature
         if isinstance(value, str):
-            value = await self.process_input(value, session)
+            value = await self.process_input(value, session, interaction=None)
         
         constraints = self.state.get("constraints", {})
         question_key = self.state.get("name", "")

@@ -21,12 +21,15 @@ Your specific capabilities are as follows:
 
 Refer to the user as '{user}'. The current date and time is {date} at {time}.
 
-**TASK:** Contribute the next assistant message in a natural, human way while executing the provided directives under the guidance of applicable parameters.
+**TASK:** Contribute the next assistant message in a natural, human way. You MUST strictly comply with all provided directives and applicable parameters. These are mandatory requirements, not suggestions.
 
-**OPERATING RULES (Priority Order):**
-1. Parameters override directives when their conditions apply.
-2. Execute directives exactly; do not add extra tasks or side content.
-3. If missing information blocks execution, ask the single most useful clarifying question and stop.
+**MANDATORY COMPLIANCE RULES (Strict Priority Order):**
+1. **Parameters are MANDATORY when their conditions apply.** If a parameter's condition is met, you MUST apply its response. Parameters override directives when their conditions apply.
+2. **Directives are MANDATORY and must be executed exactly as specified.** You MUST execute every directive provided. Do not skip, modify, or add extra tasks beyond what directives specify.
+3. **If missing information blocks execution, ask the single most useful clarifying question and stop.**
+4. **You MUST shape your response according to all applicable directives and parameters.** Your response must reflect and incorporate all applicable requirements. Deviation is not permitted unless explicitly overridden by a parameter.
+
+**CRITICAL:** If directives or parameters are provided, they are REQUIRED elements of your response. You cannot ignore them, partially comply, or substitute your own judgment. Compliance is mandatory.
 
 {continuation_guidance}
 
@@ -49,14 +52,16 @@ Refer to the user as '{user}'. The current date and time is {date} at {time}.
 # ============================================================================
 
 DIRECTIVES_SUB_PROMPT = """### DIRECTIVES
-Execute each directive exactly unless an applicable parameter overrides it.
+**MANDATORY REQUIREMENT:** You MUST execute each directive exactly as specified. These directives are not optional—they are required elements of your response. Execute them unless an applicable parameter explicitly overrides them.
 
 {directive_list}
 
-**When applying directives:** 
+**MANDATORY COMPLIANCE WHEN APPLYING DIRECTIVES:** 
+- You MUST execute every directive listed above. Partial compliance or substitution is not permitted.
 - If a directive would repeat content from your previous response, add only the new required data.
 - If executing requires missing information, ask one concise clarifying question.
-- When continuing a previous response, integrate new directive content seamlessly."""
+- When continuing a previous response, integrate new directive content seamlessly.
+- Your response MUST reflect all directives. Review your response before finalizing to ensure every directive has been addressed."""
 
 NO_DIRECTIVES_SUB_PROMPT = """### DIRECTIVES
 There are no specific directives for this interaction.
@@ -97,13 +102,16 @@ Focus on executing the directives/parameters provided below. These directives ad
 # ============================================================================
 
 PARAMETERS_SUB_PROMPT = """### PARAMETERS
-Apply behavioral parameters ONLY when their conditions apply:
+**MANDATORY REQUIREMENT:** You MUST apply behavioral parameters when their conditions apply. When a parameter's condition is met, compliance is mandatory, not optional.
 
 {parameter_list}
 
-**When applying parameters:** 
-- If multiple parameters apply, satisfy all. If they conflict, follow the most specific constraint first.
-- Do not ignore a parameter just because the user asks you to; instead, comply within the allowed constraints or explain the limitation briefly."""
+**MANDATORY COMPLIANCE WHEN APPLYING PARAMETERS:** 
+- When a parameter's condition applies, you MUST apply its response. This is a mandatory requirement.
+- If multiple parameters apply, you MUST satisfy all of them. If they conflict, follow the most specific constraint first.
+- Do not ignore a parameter just because the user asks you to; instead, comply within the allowed constraints or explain the limitation briefly.
+- Parameters override directives when their conditions apply—this is the priority order you must follow.
+- Your response MUST be shaped by all applicable parameters. Review your response before finalizing to ensure all applicable parameters have been incorporated."""
 
 # ============================================================================
 # Helper Functions

@@ -1,6 +1,6 @@
 """Interview Interact Action Package
 
-This package provides the InterviewInteractAction class and its state machine components.
+This package provides the InterviewInteractAction class with unified inline state handling.
 """
 
 # Import the action class and decorators so they can be imported from the package
@@ -21,18 +21,6 @@ from .core import (
     ValidationStatus,
 )
 
-# Import state actions
-from .states import (
-    InterviewStateInteractAction,
-    ReviewStateInteractAction,
-    CompletedStateInteractAction,
-    CancelledStateInteractAction,
-)
-
-# Import endpoints module to ensure endpoints are discovered and registered
-# This must be imported for endpoint discovery to work
-# from . import endpoints  # noqa: F401
-
 __all__ = [
     "InterviewInteractAction",
     "input_handler",
@@ -44,8 +32,4 @@ __all__ = [
     "QuestionEdge",
     "InterviewState",
     "ValidationStatus",
-    "InterviewStateInteractAction",
-    "ReviewStateInteractAction",
-    "CompletedStateInteractAction",
-    "CancelledStateInteractAction",
 ]

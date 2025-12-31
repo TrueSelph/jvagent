@@ -14,12 +14,14 @@ The Interview Action provides a reusable way to collect responses from users in 
 - **Multiple Interviews Per Agent**: Run registration, onboarding, and other interviews simultaneously
 - **Per-User Session Isolation**: Sessions attached to Conversation nodes for user separation
 - **Type-Based Session Management**: Sessions identified by `interview_type` field (survives action rebuilds)
+- **Unified Classification System**: Single LLM call detects intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE) and extracts field values
 - **State Machine Architecture**: Four distinct states (ACTIVE, REVIEW, COMPLETED, CANCELLED) with clear transitions
+- **Same-Interaction State Transitions**: State transitions happen within the same interaction when appropriate
 - **Three-Tier Validation**: VALID, VALID_WITH_FLAG, and INVALID response validation
 - **Custom Handlers & Validators**: Process input and validate responses with custom logic
-- **Extensible State Actions**: Override state actions for custom completion handling
+- **Completion Handlers**: Register completion handlers via `@on_interview_complete` decorator
 - **Question Node Rebuilding**: Automatically rebuilds question nodes when `question_index` changes
-- **agent.yaml Overrides**: Override `question_index` in agent configuration
+- **agent.yaml Overrides**: Override `question_index` and prompt templates in agent configuration
 
 ## State Machine
 
@@ -40,33 +42,40 @@ stateDiagram-v2
 
 ### State Descriptions
 
-- **InterviewInteractAction**: Entry point - initializes sessions and routes to state actions
-- **ACTIVE**: Actively asking questions and collecting responses
-- **REVIEW**: Presenting summary for user confirmation
-- **COMPLETED**: Interview successfully completed (with optional data processing)
-- **CANCELLED**: Interview cancelled by user
+- **InterviewInteractAction**: Entry point - manages sessions and orchestrates the interview flow
+- **ACTIVE**: Actively asking questions and collecting responses. Transitions to REVIEW when all questions are answered.
+- **REVIEW**: Presenting summary for user confirmation. Transitions to COMPLETED on confirmation or back to ACTIVE on updates.
+- **COMPLETED**: Interview successfully completed (with optional data processing via completion handlers)
+- **CANCELLED**: Interview cancelled by user. Session is cleaned up and removed.
 
 ## Architecture
 
 ### Core Components
 
 #### 1. InterviewInteractAction (Abstract Base Class)
-The abstract base class that coordinates all state actions and question nodes. **Must be extended** to create concrete interview implementations.
+The abstract base class that orchestrates the complete interview flow. **Must be extended** to create concrete interview implementations.
 
 **Key Methods:**
-- `on_register()`: Creates state actions and builds question node chain
+- `on_register()`: Builds question node chain from `question_index`
 - `on_reload()`: Rebuilds question nodes if `question_index` changed
-- `execute()`: Loads/creates session and routes to state actions
+- `execute()`: Loads/creates session, classifies intent, and generates directives
+- `_classify_and_extract()`: Unified classification and extraction using single LLM call
+- `_generate_directive()`: Routes to state-specific directive generation
+- `_generate_active_directive()`: Handles ACTIVE state (question flow, updates)
+- `_generate_review_directive()`: Handles REVIEW state (summary, confirmation, edits)
+- `_generate_completed_directive()`: Handles COMPLETED state (calls completion handlers)
+- `_generate_cancelled_directive()`: Handles CANCELLED state (cleanup)
 - `_build_question_nodes()`: Builds QuestionNode chain from `question_index`
 
-#### 2. State Actions
-Each state has its own `InteractAction` class that self-checks `session.state`:
-- **InterviewStateInteractAction**: Handles question-answering phase
-- **ReviewStateInteractAction**: Manages confirmation and editing
-- **CompletedStateInteractAction**: Finalizes interview (extensible with hooks)
-- **CancelledStateInteractAction**: Handles cancellation
+**Unified Classification:**
+The system uses a single unified prompt (`INTERVIEW_PROMPT_TEMPLATE`) that:
+- Accepts both utterance and interpretation (when available)
+- Detects intent: CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, or NONE
+- Extracts field values for SUBMISSION intent
+- Identifies update fields and values for UPDATE intent
+- All in a single LLM call for efficiency and consistency
 
-#### 3. InterviewSession Node
+#### 2. InterviewSession Node
 Persistent node that stores:
 - `interview_type`: Class name of the interview action (for filtering)
 - Current state
@@ -81,7 +90,7 @@ Persistent node that stores:
 - `cleanup()`: Delete session from graph
 - `extract_data()`: Extract collected data for processing
 
-#### 4. QuestionNode
+#### 3. QuestionNode
 Represents individual interview questions with:
 - Question text and constraints
 - Three-tier validation logic
@@ -90,7 +99,7 @@ Represents individual interview questions with:
 - Required vs optional flags
 - Condition matching for tree traversal
 
-#### 5. QuestionWalker
+#### 4. QuestionWalker
 Specialized walker that traverses QuestionNodes in a tree-based arrangement:
 - Finds next unanswered question based on conditional branches
 - Processes input via QuestionNode handlers
@@ -98,12 +107,12 @@ Specialized walker that traverses QuestionNodes in a tree-based arrangement:
 - Returns directives for the next question
 - Respects conditional branching based on previous answers
 
-#### 6. QuestionEdge
+#### 5. QuestionEdge
 Specialized edge connecting QuestionNodes with optional condition metadata:
 - Stores condition information for conditional traversal
 - Condition format: `{"question": "question_name", "equals": "value"}`
 
-#### 7. InteractWalker
+#### 6. InteractWalker
 Standard walker used throughout. State actions receive session via `visitor.interview_session`.
 
 ## File Structure
@@ -111,22 +120,17 @@ Standard walker used throughout. State actions receive session via `visitor.inte
 ```
 interview/
 ├── __init__.py                    # Package initialization
-├── interview_interact_action.py   # Abstract base class
+├── interview_interact_action.py   # Abstract base class (unified orchestrator)
+├── prompts.py                     # Prompt templates
 ├── info.yaml                      # Action metadata
 ├── README.md                      # This file
-├── core/
-│   ├── __init__.py
-│   ├── interview_session.py       # InterviewSession Node
-│   ├── question_node.py            # QuestionNode
-│   ├── question_walker.py          # QuestionWalker for tree traversal
-│   ├── question_edge.py            # QuestionEdge with conditions
-│   └── validation.py               # Validation enums
-├── states/
-│   ├── __init__.py
-│   ├── interview_state.py           # InterviewStateInteractAction
-│   ├── review_state.py             # ReviewStateInteractAction
-│   ├── completed_state.py          # CompletedStateInteractAction
-│   └── cancelled_state.py          # CancelledStateInteractAction
+└── core/
+    ├── __init__.py
+    ├── interview_session.py       # InterviewSession Node
+    ├── question_node.py           # QuestionNode
+    ├── question_walker.py         # QuestionWalker for tree traversal
+    ├── question_edge.py           # QuestionEdge with conditions
+    └── validation.py              # Validation enums
 ```
 
 ## Usage
@@ -484,6 +488,46 @@ Validators can return:
 - `(ValidationStatus, message)`: Status and feedback message
 - `bool`: True for VALID, False for INVALID
 
+## Unified Classification System
+
+The interview system uses a single unified prompt (`INTERVIEW_PROMPT_TEMPLATE`) that combines intent detection and field extraction in one LLM call. This approach is more efficient and ensures consistency.
+
+### Intent Detection
+
+The system detects five intent types:
+- **CANCELLATION**: User wants to cancel/stop the interview
+- **CONFIRMATION**: User confirms/approves information (only in REVIEW state)
+- **UPDATE**: User wants to change/update a previously answered field
+- **SUBMISSION**: User is providing answers to unanswered questions
+- **NONE**: No clear intent or conversational filler
+
+### Input Processing
+
+The unified prompt accepts both:
+- **User's utterance**: The raw user message
+- **Interpretation**: LLM-generated interpretation of user intent (when available)
+
+Both are provided to the prompt when available, giving the classification system more context for accurate intent detection and extraction.
+
+### Classification Result
+
+The `ClassificationResult` dataclass contains:
+- `intent`: Detected intent type
+- `confidence`: Confidence score (0.0-1.0)
+- `extracted_data`: Extracted field values (for SUBMISSION intent)
+- `update_field`: Field to update (for UPDATE intent)
+- `update_value`: New value (for UPDATE intent)
+- `needs_value_prompt`: Whether to prompt for new value
+- `needs_field_clarification`: Whether field needs clarification
+
+### State Transitions
+
+State transitions happen within the same interaction when appropriate:
+- **ACTIVE → REVIEW**: When all required questions are answered
+- **REVIEW → COMPLETED**: When CONFIRMATION intent is detected
+- **REVIEW → ACTIVE**: When UPDATE intent is detected and processed
+- **Any → CANCELLED**: When CANCELLATION intent is detected
+
 ## Validation System
 
 ### Three-Tier Validation
@@ -532,33 +576,7 @@ class MyInterviewAction(InterviewInteractAction):
     question_index = [...]
 ```
 
-**Alternative: Extend CompletedState**
-
-You can still override `on_complete()` by extending CompletedStateInteractAction:
-
-```python
-from jvagent.action.interview.states.completed_state import CompletedStateInteractAction
-
-class CustomCompletedState(CompletedStateInteractAction):
-    async def on_complete(self, session: InterviewSession, visitor: InteractWalker) -> None:
-        """Process data when interview completes."""
-        data = session.export_data()
-        # Store in user profile, database, etc.
-        user = await visitor.interaction.get_conversation().get_user()
-        user.preferences = data["responses"]
-        await user.save()
-    
-    async def should_cleanup_session(self, session: InterviewSession) -> bool:
-        return True  # Cleanup after processing
-```
-
-Then use in your interview action:
-```python
-async def on_register(self) -> None:
-    # ... create state actions ...
-    completed_action = await CustomCompletedState.create(agent_id=self.agent_id)
-    # ... connect actions ...
-```
+**Note:** Completion handlers are the recommended approach. The system automatically calls registered handlers when the interview transitions to COMPLETED state.
 
 ### Pattern B: Separate Data Handler Action
 
@@ -649,35 +667,36 @@ When `question_index` changes (via `on_reload()`), question nodes are automatica
 2. Disconnects and deletes old question nodes
 3. Rebuilds question node chain from new `question_index`
 
-## State Extensibility
+## Completion Handling
 
-### Completion Handling
-
-**Recommended: Use `@on_interview_complete` Decorator**
+**Use `@on_interview_complete` Decorator**
 
 Register a completion handler using the decorator:
 
 ```python
+from jvagent.action.interview.interview_interact_action import (
+    InterviewInteractAction,
+    on_interview_complete,
+)
+from jvagent.action.interview.core.interview_session import InterviewSession
+from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.action.interact.base import InteractAction
+
 @on_interview_complete('InterviewActionName')
-async def handle_completion(session: InterviewSession, visitor: InteractWalker) -> None:
-    # Process collected data
-    pass
+async def handle_completion(
+    session: InterviewSession,
+    visitor: InteractWalker,
+    action: InteractAction
+) -> None:
+    """Process collected data when interview completes."""
+    data = session.extract_data()
+    # Process data, send notifications, etc.
+    await action.respond(visitor, directives=["Thank you! Your data has been processed."])
+    # Clean up session after processing
+    await session.cleanup()
 ```
 
-**Alternative: CompletedState Hooks**
-
-You can still extend `CompletedStateInteractAction` and override:
-- `on_complete(session, visitor)`: Process data on completion
-- `get_completion_message(session)`: Customize completion message
-- `should_cleanup_session(session)`: Control cleanup behavior
-
-### ActiveState
-
-Can be extended to customize question processing, revision handling, etc.
-
-### ReviewState
-
-Can be extended to customize summary formatting, edit detection, etc.
+The completion handler is called automatically when the interview transitions to COMPLETED state.
 
 ## Multiple Interviews Per Agent
 
@@ -788,51 +807,55 @@ class RegistrationInterviewAction(InterviewInteractAction):
 ### Example 2: Onboarding with Custom Completion Handler
 
 ```python
-from jvagent.action.interview.interview_interact_action import InterviewInteractAction
-from jvagent.action.interview.states.completed_state import CompletedStateInteractAction
+from jvagent.action.interview.interview_interact_action import (
+    InterviewInteractAction,
+    on_interview_complete,
+)
 from jvagent.action.interview.core.interview_session import InterviewSession
 from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.action.interact.base import InteractAction
 from jvspatial.core.annotations import attribute
+from typing import Any, Dict, List
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-class CustomOnboardingCompletedState(CompletedStateInteractAction):
-    """Custom completion handler that processes onboarding data."""
+@on_interview_complete('OnboardingInterviewAction')
+async def handle_onboarding_completion(
+    session: InterviewSession,
+    visitor: InteractWalker,
+    action: InteractAction
+) -> None:
+    """Process onboarding data when interview completes."""
+    data = session.extract_data()
     
-    async def on_complete(self, session: InterviewSession, visitor: InteractWalker) -> None:
-        """Process onboarding data when interview completes."""
-        data = session.extract_data()
-        
-        # Example: Store in user profile
-        conversation = await visitor.interaction.get_conversation()
-        user = await conversation.get_user()
-        
-        if user:
-            # Store preferences from onboarding
-            user.preferences = {
-                "communication_preference": data["responses"].get("comm_pref"),
-                "interests": data["responses"].get("interests"),
-                "timezone": data["responses"].get("timezone"),
-            }
-            await user.save()
-            logger.info(f"Onboarding data saved to user profile: {user.id}")
+    # Example: Store in user profile
+    conversation = await visitor.interaction.get_conversation()
+    user = await conversation.get_user()
     
-    async def get_completion_message(self, session: InterviewSession) -> str:
-        """Custom completion message."""
-        return "Welcome aboard! Your preferences have been saved."
+    if user:
+        # Store preferences from onboarding
+        user.preferences = {
+            "communication_preference": data["responses"].get("comm_pref"),
+            "interests": data["responses"].get("interests"),
+            "timezone": data["responses"].get("timezone"),
+        }
+        await user.save()
+        logger.info(f"Onboarding data saved to user profile: {user.id}")
     
-    async def should_cleanup_session(self, session: InterviewSession) -> bool:
-        """Cleanup after data is processed."""
-        return True
+    # Send custom completion message
+    await action.respond(visitor, directives=["Welcome aboard! Your preferences have been saved."])
+    
+    # Clean up session after processing
+    await session.cleanup()
 
 
 class OnboardingInterviewAction(InterviewInteractAction):
     """Onboarding interview with custom completion handling.
     
     Sessions identified by interview_type='OnboardingInterviewAction'.
-    Uses CustomOnboardingCompletedState to process data on completion.
+    Uses @on_interview_complete decorator to process data on completion.
     """
     
     description: str = "User onboarding interview flow"
@@ -869,31 +892,6 @@ class OnboardingInterviewAction(InterviewInteractAction):
         ],
         description="List of question configurations. Can be overridden in agent.yaml"
     )
-    
-    async def on_register(self) -> None:
-        """Override to use custom completed state."""
-        from jvagent.action.interview.states.interview_state import InterviewStateInteractAction
-        from jvagent.action.interview.states.review_state import ReviewStateInteractAction
-        from jvagent.action.interview.states.cancelled_state import CancelledStateInteractAction
-        
-        # Create state actions (use custom completed state)
-        interview_action = await InterviewStateInteractAction.create(agent_id=self.agent_id)
-        review_action = await ReviewStateInteractAction.create(agent_id=self.agent_id)
-        completed_action = await CustomOnboardingCompletedState.create(agent_id=self.agent_id)
-        cancelled_action = await CancelledStateInteractAction.create(agent_id=self.agent_id)
-        
-        # Connect state actions according to state diagram flow
-        await self.connect(active_action)
-        await active_action.connect(review_action)
-        await active_action.connect(cancelled_action)
-        await review_action.connect(completed_action)
-        await review_action.connect(active_action, direction="both")
-        await review_action.connect(cancelled_action)
-        
-        # Build QuestionNode chain
-        await self._build_question_nodes(active_action)
-        
-        logger.info(f"OnboardingInterviewAction: Registered with custom completion handler")
 ```
 
 ### Example 3: Appointment Booking with Separate Data Handler

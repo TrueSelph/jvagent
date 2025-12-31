@@ -61,6 +61,12 @@ class InterviewSession(Node):
         description="Arbitrary context data for storing intermediate processing results, flags, or other state"
     )
     
+    # Update history tracking
+    update_history: List[Dict[str, Any]] = attribute(
+        default_factory=list,
+        description="History of updates: [{field, old_value, new_value, timestamp}]"
+    )
+    
     # Active question tracking (user-specific state)
     active_question_key: Optional[str] = attribute(
         default=None,
@@ -115,6 +121,37 @@ class InterviewSession(Node):
         """Set response for a question."""
         self.responses[question_key] = value
     
+    def update_response(self, question_key: str, new_value: Any, old_value: Any = None) -> None:
+        """Update an existing response with audit trail.
+        
+        Args:
+            question_key: Question key to update
+            new_value: New value to set
+            old_value: Old value (if None, will be retrieved from responses)
+        """
+        if old_value is None:
+            old_value = self.responses.get(question_key)
+        
+        self.responses[question_key] = new_value
+        
+        self.update_history.append({
+            "field": question_key,
+            "old_value": old_value,
+            "new_value": new_value,
+            "timestamp": datetime.now()
+        })
+    
+    def can_update_field(self, field: str) -> bool:
+        """Check if field is updateable (is it answered?).
+        
+        Args:
+            field: Field name to check
+            
+        Returns:
+            True if field has been answered and can be updated
+        """
+        return field in self.responses
+    
     def set_validation_status(self, question_key: str, status: ValidationStatus) -> None:
         """Set validation status for a question."""
         self.validation_results[question_key] = status.value
@@ -144,6 +181,7 @@ class InterviewSession(Node):
         self.responses = {}
         self.validation_results = {}
         self.context = {}
+        self.update_history = []
         self.active_question_key = None
         self.completed_at = None
         await self.save()
