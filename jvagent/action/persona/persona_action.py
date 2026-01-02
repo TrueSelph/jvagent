@@ -4,6 +4,7 @@ This module provides a simplified PersonaAction class that serves as a tool-base
 action for applying agent prompts with configurable parameters.
 """
 
+import json
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -17,6 +18,11 @@ from jvagent.action.persona.prompts import (
     NO_DIRECTIVES_SUB_PROMPT,
     PARAMETERS_SUB_PROMPT,
     SYSTEM_PROMPT_TEMPLATE,
+    INTERPRETATION_INSIGHTS_PROMPT,
+    REVISION_MECHANISM_PROMPT,
+    CONTEXT_EVALUATION_PROMPT,
+    PRIORITIZATION_INSTRUCTIONS_PROMPT,
+    DIRECTIVE_PRE_CHECK_PROMPT,
     format_conditional_section,
     format_parameter,
     get_channel_directive,
@@ -77,6 +83,12 @@ class PersonaAction(Action):
         default=SYSTEM_PROMPT_TEMPLATE, description="System prompt template for the agent"
     )
 
+    # Structured output configuration (optional, default False for backward compatibility)
+    use_structured_output: bool = attribute(
+        default=False,
+        description="Enable structured JSON output with insights, context evaluation, and revisions (default: False for backward compatibility)"
+    )
+
     # Standard collection of configurable parameters
     parameters: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
@@ -93,16 +105,16 @@ class PersonaAction(Action):
                 "response": "Admit that the request is outside your role or ability; Do not give inaccurate answers and avoid giving details not explicitly stated in this prompt."
             },
             {
-                "condition": "You are likely to resend a message for a second time.",
-                "response": "State that you didn't quite catch that or you didn't understand and ask the user to rephrase or clarify their response."
+                "condition": "User requests information that you have already provided.",
+                "response": "Make the user aware that you have already provided the information."
             },
             {
-                "condition": "you are likely to send a message or ask for information that you have already repeated/asked several times",
-                "response": "Apologize and tell the user that you are experiencing some technical difficulties and ask them to cancel what they were doing then direct them to a human agent"
+                "condition": "The conversation seems repetitive.",
+                "response": "Bring the circular conversation to the user's attention."
             },
             {
-                "condition": "The conversation has diverged from the ongoing activity in the event history",
-                "response": "Remind the user to return to complete the ongoing activity"
+                "condition": "The user has diverged from the ongoing activity highlghted in conversation history",
+                "response": "Respond but in closing, remind the user to return to complete the ongoing activity"
             }
         ],
         description="Standard collection of configurable parameters to apply when executing the prompt",
@@ -219,16 +231,20 @@ class PersonaAction(Action):
         # Get ResponseBus from visitor
         response_bus = getattr(visitor, "response_bus", None) if visitor else None
 
-        # Determine prompt based on with_utterance flag and multi-call awareness
-        # If interaction has a response, the utterance is already in history (added by _get_conversation_history)
-        # So we pass empty prompt to avoid duplication at the end
-        if with_utterance and with_response and interaction.response:
-            prompt = ""  # Don't duplicate utterance - it's already in history
-        else:
-            prompt = interaction.utterance if with_utterance else ""
+        # # Determine prompt based on with_utterance flag and multi-call awareness
+        # # If interaction has a response, the utterance is already in history (added by _get_conversation_history)
+        # # So we pass empty prompt to avoid duplication at the end
+        # if with_utterance and with_response and interaction.response:
+        #     prompt = ""  # Don't duplicate utterance - it's already in history
+        # else:
+        #     prompt = interaction.utterance if with_utterance else ""
+        prompt = interaction.utterance if with_utterance else ""
 
         # Make the language model call
         try:
+            # Enable JSON response format if structured output is requested
+            response_format = {"type": "json_object"} if self.use_structured_output else None
+            
             response = await model_action.generate(
                 prompt=prompt,
                 stream=streaming,
@@ -240,7 +256,15 @@ class PersonaAction(Action):
                 max_tokens=self.model_max_tokens,
                 response_bus=response_bus,
                 interaction=interaction,
+                response_format=response_format,
             )
+
+            # Parse structured output if enabled
+            if self.use_structured_output and response:
+                parsed_response = self._parse_structured_output(response)
+                if parsed_response:
+                    response = parsed_response
+                # If parsing fails, response remains as-is (fallback)
 
             # Mark directives and parameters as executed only if we got a meaningful response
             if response and response.strip():
@@ -279,6 +303,87 @@ class PersonaAction(Action):
             logger.debug(f"PersonaAction: failed to resolve user display name: {e}")
         return "user"
 
+    def _build_interpretation_insights_section(self, interpretation: Optional[str]) -> str:
+        """Build the interpretation/insights section when interpretation is available.
+
+        Args:
+            interpretation: The interaction.interpretation field (set by InteractRouter)
+
+        Returns:
+            Formatted interpretation section, or empty string if no interpretation
+        """
+        if not interpretation or not interpretation.strip():
+            return ""
+        
+        return INTERPRETATION_INSIGHTS_PROMPT.format(interpretation=interpretation)
+
+    def _build_context_evaluation_section(self) -> str:
+        """Build the context evaluation section.
+
+        Returns:
+            Formatted context evaluation section
+        """
+        return CONTEXT_EVALUATION_PROMPT
+
+    def _parse_structured_output(self, response: str) -> Optional[str]:
+        """Parse structured JSON output to extract final message content.
+
+        When use_structured_output is enabled, the LLM returns a JSON response with:
+        - insights: List of gathered insights
+        - context_evaluation: Structured context assessment
+        - revisions: List of revision attempts with the final message content
+
+        This method extracts the final message content from the last revision.
+
+        Args:
+            response: The JSON string response from the LLM
+
+        Returns:
+            Final message content string, or None if parsing fails
+        """
+        try:
+            # Try to parse JSON
+            if isinstance(response, str):
+                # Clean up potential markdown code blocks
+                response_clean = response.strip()
+                if response_clean.startswith("```json"):
+                    response_clean = response_clean[7:]
+                if response_clean.startswith("```"):
+                    response_clean = response_clean[3:]
+                if response_clean.endswith("```"):
+                    response_clean = response_clean[:-3]
+                response_clean = response_clean.strip()
+                
+                data = json.loads(response_clean)
+            else:
+                data = response
+
+            # Extract final message from revisions
+            if "revisions" in data and data["revisions"]:
+                # Get the last revision's content
+                last_revision = data["revisions"][-1]
+                if "content" in last_revision:
+                    final_content = last_revision["content"]
+                    
+                    # Log insights and context evaluation if available (for debugging)
+                    if "insights" in data:
+                        logger.debug(f"PersonaAction insights: {data['insights']}")
+                    if "context_evaluation" in data:
+                        logger.debug(f"PersonaAction context evaluation: {data['context_evaluation']}")
+                    
+                    return final_content
+
+            # Fallback: if no revisions, return the whole response
+            logger.warning("PersonaAction: Structured output enabled but no revisions found in response")
+            return response if isinstance(response, str) else json.dumps(response)
+
+        except json.JSONDecodeError as e:
+            logger.warning(f"PersonaAction: Failed to parse structured JSON output: {e}. Returning raw response.")
+            return response if isinstance(response, str) else str(response)
+        except Exception as e:
+            logger.error(f"PersonaAction: Error parsing structured output: {e}", exc_info=True)
+            return response if isinstance(response, str) else str(response)
+
     async def _compose_prompt(
         self,
         interaction: Interaction,
@@ -288,11 +393,15 @@ class PersonaAction(Action):
         """Compose the system prompt using the consolidated template.
 
         Uses SYSTEM_PROMPT_TEMPLATE with conditional placeholders for all sections:
+        - General Instructions (always included)
         - Agent Identity & Context (always included)
         - Task Description (always included)
+        - Interpretation/Insights (conditionally included)
+        - Revision Mechanism (always included)
+        - Prioritization Instructions (always included)
+        - Context Evaluation (always included)
         - Directives (conditionally included)
         - Parameters (conditionally included)
-        - General Principles (always included)
         - Channel Formatting (conditionally included)
 
         Args:
@@ -344,8 +453,23 @@ class PersonaAction(Action):
             else "None specified"
         )
 
+        # Build interpretation/insights section (if interpretation available)
+        interpretation_section = self._build_interpretation_insights_section(interaction.interpretation)
+
+        # Build revision mechanism section (always included for quality)
+        revision_mechanism = REVISION_MECHANISM_PROMPT
+
+        # Build prioritization instructions section (always included)
+        prioritization_instructions = PRIORITIZATION_INSTRUCTIONS_PROMPT
+
+        # Build context evaluation section (always included)
+        context_evaluation = self._build_context_evaluation_section()
+
         # Build directives section - consolidate all directives into a single numbered list
         directives_section = ""
+        directive_pre_check = ""
+        directive_count = len(applicable_directives)
+        
         if applicable_directives:
             # Create a single numbered list of all directives (no action tagging)
             directive_list = "\n".join(
@@ -353,7 +477,18 @@ class PersonaAction(Action):
                 for i, d in enumerate(applicable_directives)
             )
             directives_section = DIRECTIVES_SUB_PROMPT.format(
-                directive_list=directive_list
+                directive_list=directive_list,
+                directive_count=directive_count
+            )
+            
+            # Build directive pre-check section (summary for verification)
+            directive_summary = "\n".join(
+                f"Directive #{i+1}: {d.get('content', str(d))[:100]}{'...' if len(d.get('content', str(d))) > 100 else ''}"
+                for i, d in enumerate(applicable_directives)
+            )
+            directive_pre_check = DIRECTIVE_PRE_CHECK_PROMPT.format(
+                directive_count=directive_count,
+                directive_summary=directive_summary
             )
         else:
             directives_section = NO_DIRECTIVES_SUB_PROMPT
@@ -379,10 +514,12 @@ class PersonaAction(Action):
             channel_formatting_section = f"### CHANNEL FORMATTING\n{channel_directive}"
 
         # Format all conditional sections
+        interpretation_section = format_conditional_section(interpretation_section, bool(interpretation_section))
         directives_section = format_conditional_section(directives_section, bool(directives_section))
         parameters_section = format_conditional_section(parameters_section, bool(parameters_section))
         channel_formatting_section = format_conditional_section(channel_formatting_section, bool(channel_formatting_section))
         continuation_guidance = format_conditional_section(continuation_guidance, bool(continuation_guidance))
+        directive_pre_check = format_conditional_section(directive_pre_check, bool(directive_pre_check))
 
         # Build and return the final prompt using self.system_prompt (which defaults to SYSTEM_PROMPT_TEMPLATE
         # but can be overridden by agent-specific configurations)
@@ -395,10 +532,15 @@ class PersonaAction(Action):
             user=await self._get_user_display_name(interaction),
             date=date_str,
             time=time_str,
+            interpretation_section=interpretation_section,
+            revision_mechanism=revision_mechanism,
+            prioritization_instructions=prioritization_instructions,
+            context_evaluation=context_evaluation,
             directives_section=directives_section,
             parameters_section=parameters_section,
             channel_formatting_section=channel_formatting_section,
             continuation_guidance=continuation_guidance,
+            directive_pre_check=directive_pre_check,
         )
 
     async def _get_conversation_history(

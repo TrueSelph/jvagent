@@ -186,7 +186,7 @@ class RetrievalInteractAction(InteractAction):
         """
         # Format results as a string
         results_parts = []
-        for i, result in enumerate(results, 1):
+        for result in results:
             # Extract document content
             document = result.get("document", {})
             if isinstance(document, dict):
@@ -199,7 +199,7 @@ class RetrievalInteractAction(InteractAction):
             score_str = f" (Relevance score: {score:.3f})" if score is not None else ""
 
             # Format each result
-            results_parts.append(f"{i}. {content}{score_str}")
+            results_parts.append(f"- {content}{score_str}")
 
         results_str = "\n".join(results_parts)
 
