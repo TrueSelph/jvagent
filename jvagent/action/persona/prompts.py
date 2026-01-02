@@ -173,6 +173,7 @@ REVISION_MECHANISM_PROMPT = """
 - No repetition of previous messages
 - Response grounded in provided information (no hallucinations)
 - Natural, conversational tone maintained
+- End cleanly without unnecessary closings unless the conversation is finished
 """
 
 # ============================================================================

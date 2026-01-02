@@ -4,15 +4,20 @@ This module centralizes all prompt templates used throughout the interview
 action system for consistency and maintainability.
 """
 
-# Review state directive templates
-REVIEW_SUMMARY_HEADER_TEMPLATE = "Tell the user: Here's what I have:\n"
+# Consolidated review directive template
+# Single template handling all review scenarios: confirmation, unclear edit, unclear general
+# Placeholders (populate one section, leave others empty):
+#   - {summary_items}: Formatted list of field-value pairs (one per line with "- " prefix)
+#   - {instructions}: Instructions for user actions
+#   - {prompt}: Confirmation prompt
+#   - {field_list}: Comma-separated list of available fields
+#   - {confirmation_section}: Confirmation content (use REVIEW_CONFIRMATION_CONTENT.format(...))
+#   - {unclear_edit_section}: Unclear edit content (use REVIEW_UNCLEAR_EDIT_CONTENT.format(...))
+#   - {unclear_general_section}: Unclear general content (use REVIEW_UNCLEAR_GENERAL_CONTENT)
+REVIEW_DIRECTIVE_TEMPLATE = """{confirmation_section}{unclear_edit_section}{unclear_general_section}"""
 
-REVIEW_SUMMARY_ITEM_TEMPLATE = "{display_name}: {value}"
-
-# Consolidated review confirmation template with all subparts
-# Placeholders: {summary}, {instructions}, {prompt}
-# Default values for instructions and prompt are provided below
-REVIEW_CONFIRMATION_TEMPLATE = """Present the following collected information for review and confirmation.
+# Confirmation content template
+REVIEW_CONFIRMATION_CONTENT = """Present the following collected information for review and confirmation.
 
 {summary}
 
@@ -21,16 +26,22 @@ Tell the user: You can:
 
 {prompt}"""
 
-# Default values for consolidated template placeholders
+# Unclear edit content template
+REVIEW_UNCLEAR_EDIT_CONTENT = """Ask: Which field would you like to change? Available fields: {field_list}"""
+
+# Unclear general content (static, no placeholders)
+REVIEW_UNCLEAR_GENERAL_CONTENT = """Tell the user: I didn't understand. Ask: Please say 'yes' to confirm, 'no' to edit, or specify which field you'd like to change."""
+
+# Default values for review confirmation
 REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS = """Tell the user:
 - Say "yes" or "correct" to confirm, or specify which field to change
 - Say "cancel" to abandon the process"""
 
 REVIEW_CONFIRMATION_DEFAULT_PROMPT = """Ask: "Does everything look correct?" or similar phrasing to prompt their response."""
 
-REVIEW_UNCLEAR_EDIT_DIRECTIVE_TEMPLATE = """Ask: Which field would you like to change? Available fields: {field_list}"""
-
-REVIEW_UNCLEAR_GENERAL_DIRECTIVE_TEMPLATE = """Tell the user: I didn't understand. Ask: Please say 'yes' to confirm, 'no' to edit, or specify which field you'd like to change."""
+# Summary formatting templates (used to build summary for confirmation)
+REVIEW_SUMMARY_HEADER_TEMPLATE = "Tell the user: Here's what I have:\n"
+REVIEW_SUMMARY_ITEM_TEMPLATE = "{display_name}: {value}"
 
 # Update prompt template (for prompting user for new value when updating)
 UPDATE_PROMPT_FOR_VALUE_TEMPLATE = """Tell the user: The current value for {field_display} is: {current_value}
@@ -80,6 +91,16 @@ CONTEXT:
 - Answered fields: {answered_fields_with_values}
 - Unanswered fields to extract (if SUBMISSION): {entities_to_extract}
 
+IMPORTANT - CONVERSATION HISTORY:
+- Conversation history is available in the message history
+- Information may be provided in fragments across multiple messages
+- Review previous messages to piece together complete field values
+- Consider context from earlier turns when extracting current message content
+- If a field value is incomplete in the current message, check history for missing pieces
+- **PARTIAL ANSWERS**: Users may provide partial answers to multi-part questions (e.g., a follow-up last name when asked for it)
+- **CONTEXT MATCHING**: Match user responses to previously asked questions in the conversation history
+- **INCREMENTAL EXTRACTION**: Extract what is provided even if incomplete; the system will ask for missing pieces
+
 INTENT TYPES (check in priority order):
 1. CANCELLATION - HIGHEST PRIORITY (overrides all others)
    Indicators: "cancel", "abort", "stop", "quit", "nevermind", "forget it", "don't want to continue", "changed my mind", "no thanks", "not interested"
@@ -95,7 +116,7 @@ INTENT TYPES (check in priority order):
    Must identify: field name and optionally new value
 
 4. SUBMISSION - Providing answers to unanswered questions
-   Extract field values from message
+   Extract field values from message and conversation history
 
 5. NONE - No clear intent
 
@@ -104,6 +125,8 @@ EXTRACTION RULES:
 - For UPDATE: Use "field" and "value" keys (field is null if unclear, value is null if not provided)
 - Only include fields with EXPLICITLY stated or clearly implied values
 - Do NOT invent or guess values
+- **FRAGMENTED INFORMATION**: If information spans multiple messages, combine fragments from current message and conversation history to form complete values
+- **CONTEXT AWARENESS**: Use conversation history to understand references (e.g., "my email" refers to email mentioned earlier, "that value" refers to previously discussed field)
 
 Return ONLY valid JSON (no markdown):
 {{

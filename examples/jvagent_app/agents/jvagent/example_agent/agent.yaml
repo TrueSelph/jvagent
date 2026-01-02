@@ -200,7 +200,7 @@ actions:
       # The unified classification detects intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE)
       # and extracts field values in a single LLM call
       model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
-      model: "gpt-4o-mini"  # Model for unified classification and extraction
+      model: "gpt-4o"  # Model for unified classification and extraction
       model_temperature: 0.1  # Temperature for LLM generation
       model_max_tokens: 4096  # Max tokens for LLM generation
       use_history: true  # Use conversation history for LLM generation
