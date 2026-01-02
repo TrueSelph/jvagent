@@ -27,6 +27,142 @@ from jvagent.action.response.streaming import create_sse_response, format_sse_ch
 
 logger = logging.getLogger(__name__)
 
+# Import INTERACTION level to ensure it's registered and available for logging
+from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
+
+
+def _build_interaction_log_data(interaction, app_id, agent_id=None):
+    """Build comprehensive log data dictionary for interaction logging.
+    
+    This function extracts all available interaction data and builds a complete
+    log payload that includes the full interaction state, metadata, and context.
+    
+    Args:
+        interaction: Interaction node instance
+        app_id: Application ID
+        agent_id: Optional agent ID
+    
+    Returns:
+        Tuple of (log_data_dict, message_string) for logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
+    """
+    # Extract all interaction fields
+    interaction_id = interaction.id if hasattr(interaction, "id") else None
+    user_id = interaction.user_id if hasattr(interaction, "user_id") else ""
+    session_id = interaction.session_id if hasattr(interaction, "session_id") else ""
+    conversation_id = (
+        interaction.conversation_id if hasattr(interaction, "conversation_id") else ""
+    )
+    utterance = interaction.utterance if hasattr(interaction, "utterance") else ""
+    response = interaction.response if hasattr(interaction, "response") else None
+    channel = interaction.channel if hasattr(interaction, "channel") else "default"
+    interpretation = (
+        interaction.interpretation if hasattr(interaction, "interpretation") else None
+    )
+    anchors = interaction.anchors if hasattr(interaction, "anchors") else []
+    actions = interaction.actions if hasattr(interaction, "actions") else []
+    directives = interaction.directives if hasattr(interaction, "directives") else []
+    parameters = interaction.parameters if hasattr(interaction, "parameters") else []
+    events = interaction.events if hasattr(interaction, "events") else []
+    observability_metrics = (
+        interaction.observability_metrics
+        if hasattr(interaction, "observability_metrics")
+        else []
+    )
+    streamed = interaction.streamed if hasattr(interaction, "streamed") else False
+    closed = interaction.closed if hasattr(interaction, "closed") else False
+    started_at = (
+        interaction.started_at.isoformat()
+        if hasattr(interaction, "started_at") and interaction.started_at
+        else None
+    )
+    completed_at = (
+        interaction.completed_at.isoformat()
+        if hasattr(interaction, "completed_at") and interaction.completed_at
+        else None
+    )
+    
+    # Get full interaction state (comprehensive export)
+    if hasattr(interaction, "get_state"):
+        interaction_data = interaction.get_state()
+    else:
+        # Fallback: build comprehensive state manually
+        interaction_data = {
+            "id": interaction_id,
+            "conversation_id": conversation_id,
+            "user_id": user_id,
+            "session_id": session_id,
+            "utterance": utterance,
+            "channel": channel,
+            "response": response,
+            "actions": actions,
+            "directives": directives,
+            "parameters": parameters,
+            "events": events,
+            "observability_metrics": observability_metrics,
+            "interpretation": interpretation,
+            "anchors": anchors,
+            "started_at": started_at,
+            "completed_at": completed_at,
+            "closed": closed,
+            "streamed": streamed,
+        }
+    
+    # Build message
+    message = f"Interaction: {utterance[:100]}" if utterance else "Interaction completed"
+    if response:
+        message += f" → {response[:100]}"
+    
+    # Build event code
+    event_code = "interaction_completed"
+    if closed:
+        event_code = "interaction_closed"
+    
+    # Calculate duration if available
+    duration = None
+    if hasattr(interaction, "get_duration"):
+        duration = interaction.get_duration()
+        if duration <= 0:
+            duration = None
+    
+    # Build comprehensive extra dict for logger
+    # All fields in 'extra' will be captured by DBLogHandler and stored in log_data
+    # Only interaction properties are included (no nested 'details' dict)
+    log_data = {
+        "event_code": event_code,
+        # Core identifiers
+        "app_id": app_id,
+        "agent_id": agent_id or "",
+        "user_id": user_id,
+        "session_id": session_id,
+        "interaction_id": interaction_id or "",
+        "conversation_id": conversation_id,
+        # Full interaction payload
+        "interaction_data": interaction_data,
+        # Interaction properties
+        "utterance": utterance,
+        "response": response,
+        "channel": channel,
+        "actions": actions,
+        "directives": directives,
+        "parameters": parameters,
+        "events": events,
+        "observability_metrics": observability_metrics,
+        "interpretation": interpretation,
+        "anchors": anchors,
+        "streamed": streamed,
+        "closed": closed,
+        "has_response": response is not None,
+        "action_count": len(actions),
+        "started_at": started_at,
+        "completed_at": completed_at,
+    }
+    
+    # Add duration if available
+    if duration is not None:
+        log_data["duration_seconds"] = duration
+    
+    return log_data, message
+
 # Module-level flag to track if rate limiter has been initialized from config
 _rate_limiter_initialized = False
 
@@ -298,18 +434,17 @@ async def interact_endpoint(
             interaction.close_interaction()
             await interaction.save()
 
-            # Log interaction asynchronously (non-blocking)
+            # Log interaction using INTERACTION level
             try:
-                from jvagent.logging.service import get_logging_service
                 from jvagent.core.app import App
                 app = await App.get()
                 if app:
-                    asyncio.create_task(
-                        get_logging_service().log_interaction(interaction, app.id, agent_id)
-                    )
+                    log_data, message = _build_interaction_log_data(interaction, app.id, agent_id)
+                    # Use logger.log() directly to ensure extra parameter is passed correctly
+                    logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
             except Exception as e:
                 # Log error but don't fail the request
-                logger.warning(f"Failed to schedule interaction logging: {e}")
+                logger.warning(f"Failed to log interaction: {e}")
 
             # Build response with environment-based filtering
             result = build_interact_response(
@@ -433,20 +568,19 @@ async def _stream_interaction(
             interaction.close_interaction()
             await interaction.save()
 
-            # Log interaction asynchronously (non-blocking)
+            # Log interaction using INTERACTION level
             try:
-                from jvagent.logging.service import get_logging_service
                 from jvagent.core.app import App
                 app = await App.get()
                 if app:
                     # Get agent_id from walker or agent
                     agent_id_for_logging = walker.agent_id if hasattr(walker, 'agent_id') else agent.id
-                    asyncio.create_task(
-                        get_logging_service().log_interaction(interaction, app.id, agent_id_for_logging)
-                    )
+                    log_data, message = _build_interaction_log_data(interaction, app.id, agent_id_for_logging)
+                    # Use logger.log() directly to ensure extra parameter is passed correctly
+                    logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
             except Exception as e:
                 # Log error but don't fail the request
-                logger.warning(f"Failed to schedule interaction logging: {e}")
+                logger.warning(f"Failed to log interaction: {e}")
 
             # Send final consolidated response (filtered for production)
             report = await walker.get_report()
@@ -490,19 +624,19 @@ async def _stream_interaction(
             interaction.close_interaction()
             await interaction.save()
 
-            # Log interaction asynchronously (non-blocking)
+            # Log interaction using INTERACTION level
             try:
-                from jvagent.logging.service import get_logging_service
+                from jvagent.core.app import App
                 app = await App.get()
                 if app:
                     # Get agent_id from walker
                     agent_id_from_walker = walker.agent_id if hasattr(walker, 'agent_id') else None
-                    asyncio.create_task(
-                        get_logging_service().log_interaction(interaction, app.id, agent_id_from_walker)
-                    )
+                    log_data, message = _build_interaction_log_data(interaction, app.id, agent_id_from_walker)
+                    # Use logger.log() directly to ensure extra parameter is passed correctly
+                    logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
             except Exception as e:
                 # Log error but don't fail the request
-                logger.warning(f"Failed to schedule interaction logging: {e}")
+                logger.warning(f"Failed to log interaction: {e}")
 
             report = await walker.get_report()
             final_response = build_interact_response(

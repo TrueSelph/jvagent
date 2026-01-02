@@ -414,17 +414,22 @@ See the [InteractAction API Guide](jvagent/action/interact/README.md) for comple
 
 ### Logging System
 
-jvagent includes a comprehensive logging system that maintains complete interaction logs in a separate database. This enables audit trails, compliance, and debugging without impacting main database performance.
+jvagent includes a comprehensive logging system that maintains complete interaction and error logs in a separate database. This enables audit trails, compliance, and debugging without impacting main database performance.
 
 **Key Features:**
 - Separate logging database connection
 - Complete interaction data capture
+- Automatic error logging via DBLogHandler
+- Custom INTERACTION log level for interaction tracking
 - Query logs by agent, user, conversation, or time range
 - Archive logs to external storage (JSON/CSV)
 - Configurable retention policies
 - Non-blocking async logging
 
-See the [Logging System Documentation](docs/logging.md) for complete details on configuration, API endpoints, and usage.
+**Documentation:**
+- [Logging System](docs/logging.md) - Comprehensive logging system documentation
+- [Interaction Logging](docs/interaction-logging.md) - INTERACTION log level and interaction logging
+- [Error Logging](docs/error-logging.md) - Error logging and querying
 
 ## Directory Structure
 
