@@ -33,11 +33,12 @@ from .prompts import (
     UPDATE_PROMPT_FOR_VALUE_TEMPLATE,
     REVIEW_SUMMARY_HEADER_TEMPLATE,
     REVIEW_SUMMARY_ITEM_TEMPLATE,
-    REVIEW_CONFIRMATION_TEMPLATE,
+    REVIEW_DIRECTIVE_TEMPLATE,
+    REVIEW_CONFIRMATION_CONTENT,
     REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS,
     REVIEW_CONFIRMATION_DEFAULT_PROMPT,
-    REVIEW_UNCLEAR_EDIT_DIRECTIVE_TEMPLATE,
-    REVIEW_UNCLEAR_GENERAL_DIRECTIVE_TEMPLATE,
+    REVIEW_UNCLEAR_EDIT_CONTENT,
+    REVIEW_UNCLEAR_GENERAL_CONTENT,
     COMPLETION_MESSAGE_TEMPLATE,
     CANCELLATION_MESSAGE_TEMPLATE,
     ACTIVE_EVENT_MESSAGE_TEMPLATE,
@@ -225,8 +226,8 @@ class InterviewInteractAction(InteractAction, ABC):
     )
     
     model: str = attribute(
-        default="gpt-4o-mini", 
-        description="Default model name"
+        default="gpt-4o", 
+        description="Default model name; use a capable model for best results"
     )
     
     model_temperature: float = attribute(
@@ -265,14 +266,20 @@ class InterviewInteractAction(InteractAction, ABC):
         description="Template for each summary item. Use {display_name} and {value} placeholders. Defaults to REVIEW_SUMMARY_ITEM_TEMPLATE from prompts.py",
     )
     
-    # Confirmation directive template (for REVIEW state)
-    # Consolidated template with placeholders: {summary}, {instructions}, {prompt}
-    confirmation_template: str = attribute(
-        default=REVIEW_CONFIRMATION_TEMPLATE,
-        description="Consolidated template for review confirmation. Use {summary}, {instructions}, and {prompt} placeholders. Defaults to REVIEW_CONFIRMATION_TEMPLATE from prompts.py",
+    # Consolidated review directive template (for REVIEW state)
+    # Single template handling all scenarios: confirmation, unclear edit, unclear general
+    review_directive_template: str = attribute(
+        default=REVIEW_DIRECTIVE_TEMPLATE,
+        description="Consolidated review directive template. Use with REVIEW_CONFIRMATION_CONTENT, REVIEW_UNCLEAR_EDIT_CONTENT, or REVIEW_UNCLEAR_GENERAL_CONTENT. Defaults to REVIEW_DIRECTIVE_TEMPLATE from prompts.py",
     )
     
-    # Default values for consolidated template placeholders (can be customized)
+    # Confirmation content template
+    confirmation_content_template: str = attribute(
+        default=REVIEW_CONFIRMATION_CONTENT,
+        description="Confirmation content template with {summary}, {instructions}, {prompt} placeholders. Defaults to REVIEW_CONFIRMATION_CONTENT from prompts.py",
+    )
+    
+    # Default values for confirmation content
     confirmation_instructions: str = attribute(
         default=REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS,
         description="Default instructions text for review confirmation. Used in {instructions} placeholder. Defaults to REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS from prompts.py",
@@ -283,15 +290,15 @@ class InterviewInteractAction(InteractAction, ABC):
         description="Default prompt text for review confirmation. Used in {prompt} placeholder. Defaults to REVIEW_CONFIRMATION_DEFAULT_PROMPT from prompts.py",
     )
     
-    # Unclear response directive templates (for REVIEW state)
-    unclear_edit_directive_template: str = attribute(
-        default=REVIEW_UNCLEAR_EDIT_DIRECTIVE_TEMPLATE,
-        description="Template for unclear edit intent. Use {field_list} placeholder. Defaults to REVIEW_UNCLEAR_EDIT_DIRECTIVE_TEMPLATE from prompts.py",
+    # Unclear response content templates
+    unclear_edit_content_template: str = attribute(
+        default=REVIEW_UNCLEAR_EDIT_CONTENT,
+        description="Unclear edit content template with {field_list} placeholder. Defaults to REVIEW_UNCLEAR_EDIT_CONTENT from prompts.py",
     )
     
-    unclear_general_directive_template: str = attribute(
-        default=REVIEW_UNCLEAR_GENERAL_DIRECTIVE_TEMPLATE,
-        description="Template for general unclear responses. Defaults to REVIEW_UNCLEAR_GENERAL_DIRECTIVE_TEMPLATE from prompts.py",
+    unclear_general_content_template: str = attribute(
+        default=REVIEW_UNCLEAR_GENERAL_CONTENT,
+        description="Unclear general content template. Defaults to REVIEW_UNCLEAR_GENERAL_CONTENT from prompts.py",
     )
     
     # Interview prompt template
@@ -452,7 +459,12 @@ class InterviewInteractAction(InteractAction, ABC):
                 # Ask which field to update
                 answered_fields = session.get_answered_questions()
                 field_list = ", ".join([f.replace("_", " ") for f in answered_fields])
-                directive = self.unclear_edit_directive_template.format(field_list=field_list)
+                unclear_edit_section = self.unclear_edit_content_template.format(field_list=field_list)
+                directive = self.review_directive_template.format(
+                    confirmation_section="",
+                    unclear_edit_section=unclear_edit_section,
+                    unclear_general_section="",
+                )
                 await self._respond_with_directive(visitor, directive, self.active_event_message_template.format(class_name=self.get_class_name()))
                 return
             
@@ -571,7 +583,12 @@ class InterviewInteractAction(InteractAction, ABC):
                 # Ask which field to update
                 answered_fields = session.get_answered_questions()
                 field_list = ", ".join([f.replace("_", " ") for f in answered_fields])
-                directive = self.unclear_edit_directive_template.format(field_list=field_list)
+                unclear_edit_section = self.unclear_edit_content_template.format(field_list=field_list)
+                directive = self.review_directive_template.format(
+                    confirmation_section="",
+                    unclear_edit_section=unclear_edit_section,
+                    unclear_general_section="",
+                )
                 await self._respond_with_directive(visitor, directive, self.review_event_message_template.format(class_name=self.get_class_name()))
                 return
             
@@ -592,7 +609,11 @@ class InterviewInteractAction(InteractAction, ABC):
         
         # Handle unclear response (NONE intent or other)
         if classification_result.intent == "NONE" or not classification_result.intent:
-            directive = self.unclear_general_directive_template
+            directive = self.review_directive_template.format(
+                confirmation_section="",
+                unclear_edit_section="",
+                unclear_general_section=self.unclear_general_content_template,
+            )
             await self._respond_with_directive(visitor, directive, self.review_event_message_template.format(class_name=self.get_class_name()))
             return
         
@@ -929,11 +950,18 @@ class InterviewInteractAction(InteractAction, ABC):
         """
         summary = self._format_summary(session)
         
-        # Use consolidated template with all subparts as placeholders
-        return self.confirmation_template.format(
+        # Build confirmation section using confirmation content template
+        confirmation_section = self.confirmation_content_template.format(
             summary=summary,
             instructions=self.confirmation_instructions,
             prompt=self.confirmation_prompt,
+        )
+        
+        # Use consolidated directive template with confirmation section populated
+        return self.review_directive_template.format(
+            confirmation_section=confirmation_section,
+            unclear_edit_section="",
+            unclear_general_section="",
         )
     
     async def _respond_with_directive(
@@ -1067,9 +1095,9 @@ class InterviewInteractAction(InteractAction, ABC):
                     interaction,
                     self.history_limit,
                     with_utterance=True,
-                    with_response=False,
+                    with_response=True,
                     with_interpretation=False,
-                    with_event=True,
+                    with_event=False,
                     max_statement_length=self.max_statement_length,
                 )
             
