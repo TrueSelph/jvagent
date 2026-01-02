@@ -1,6 +1,6 @@
 # Logging System
 
-The jvagent logging system provides comprehensive interaction logging with a separate database connection, enabling you to maintain complete audit trails of all interactions without impacting the performance of the main application database.
+The jvagent logging system provides comprehensive logging with a separate database connection, enabling you to maintain complete audit trails of all interactions and errors without impacting the performance of the main application database.
 
 ## Overview
 
@@ -456,7 +456,7 @@ The `interaction_data` field contains the complete exported structure from the i
 
 ## Automatic Database Logging
 
-The jvagent logging system includes `DBLogHandler`, a custom Python logging handler that automatically intercepts all log records and persists them to the database. This eliminates the need for explicit database logging calls throughout the codebase.
+The jvagent logging system uses jvspatial's `DBLogHandler`, a custom Python logging handler that automatically intercepts all log records and persists them to the database. This eliminates the need for explicit database logging calls throughout the codebase.
 
 ### How It Works
 
@@ -547,6 +547,13 @@ Automatic database logging respects the existing logging configuration:
 - **Global disable**: Set `JVAGENT_LOGGING_ENABLED=false` to prevent handler installation
 - **App-level disable**: Set `app.logging_enabled=false` to skip database logging for specific apps (handler still installed but skips logging)
 - **Graceful degradation**: When disabled, logs still go to console/file handlers, only database logging is skipped
+
+## Related Documentation
+
+- [Interaction Logging](interaction-logging.md) - INTERACTION log level and interaction logging
+- [Error Logging](error-logging.md) - Error logging and querying
+- [jvspatial Logging Service](../../jvspatial/docs/md/logging-service.md) - Base logging service
+- [jvspatial Custom Log Levels](../../jvspatial/docs/md/custom-log-levels.md) - Custom log level system
 
 ## Error Logging
 

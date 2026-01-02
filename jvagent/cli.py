@@ -279,15 +279,27 @@ def create_server_from_config(debug: bool = False) -> Server:
         log_level=log_level,
     )
 
-    # Initialize logging database and conditionally load endpoints
-    from jvagent.logging.config import initialize_logging_database, get_logging_config
+    # Initialize logging database (automatically installs DBLogHandler)
+    # Import INTERACTION level to ensure it's registered before initialization
+    from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
+    import logging
     
-    # Only import endpoints if logging is enabled (they will check app-level config at runtime)
-    logging_config = get_logging_config()
-    if logging_config.get("enabled", True):
-        from jvagent.logging import endpoints  # noqa: F401 - Import to register endpoints
+    from jvspatial.logging.config import initialize_logging_database, get_logging_config
     
-    initialize_logging_database()
+    # Get config and add INTERACTION level to log_levels
+    config = get_logging_config()
+    log_levels = config.get("log_levels", {logging.ERROR, logging.CRITICAL}).copy()
+    
+    # Add INTERACTION level to capture interaction logs
+    log_levels.add(INTERACTION_LEVEL_NUMBER)
+    
+    # Initialize with updated log_levels
+    initialize_logging_database(
+        log_levels=log_levels,
+    )
+    
+    # Import endpoints to register them
+    from jvagent.logging import endpoints  # noqa: F401 - Import to register endpoints
 
     return server
 
@@ -589,27 +601,7 @@ def run_server(update_if_exists: bool = False, debug: bool = False, app_root: st
             # Remove the log counter handler after displaying summary
             root_logger.removeHandler(log_counter)
         
-        # Register startup hook to ensure DBLogHandler is installed after server.run() calls configure_standard_logging()
-        async def ensure_db_log_handler():
-            """Ensure DBLogHandler is installed after server configuration."""
-            import logging
-            from jvagent.logging.handler import DBLogHandler as DBLogHandlerClass
-            
-            root_logger = logging.getLogger()
-            handler_exists = any(
-                isinstance(h, DBLogHandlerClass)
-                for h in root_logger.handlers
-            )
-            
-            if not handler_exists:
-                # Handler was removed, re-install it
-                from jvagent.logging.config import get_logging_config, initialize_logging_database
-                # Re-initialize to ensure DBLogHandler is installed (database registration is idempotent)
-                initialize_logging_database()
-        
-        server.lifecycle_manager.add_startup_hook(ensure_db_log_handler)
-        
-        # Register the startup hook using lifecycle manager directly (synchronous call)
+        # Register the startup hook to display summary
         server.lifecycle_manager.add_startup_hook(show_startup_summary)
 
         # Start the server
@@ -641,6 +633,11 @@ def run_server(update_if_exists: bool = False, debug: bool = False, app_root: st
 
 
 async def show_status(app_root: str = None) -> None:
+    """Show application status.
+
+    Args:
+        app_root: Path to the app root directory. If None, uses current working directory.
+    """
     # Set database path environment variables BEFORE any database initialization
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
     db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
@@ -648,11 +645,6 @@ async def show_status(app_root: str = None) -> None:
         db_path = "./jvagent_db"
     if db_type == "json":
         os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
-    """Show application status.
-
-    Args:
-        app_root: Path to the app root directory. If None, uses current working directory.
-    """
     from jvagent.core.app_loader import AppLoader
 
     if app_root is None:

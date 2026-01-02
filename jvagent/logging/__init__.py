@@ -1,28 +1,22 @@
-"""Logging system for jvagent interactions."""
+"""Logging system for jvagent.
 
-from jvagent.logging.config import get_logging_config, initialize_logging_database
-from jvagent.logging.service import LoggingService, get_logging_service
-from jvagent.logging.archive import ArchiveService, get_archive_service
-from jvagent.logging.retention import RetentionTask, get_retention_task
-from jvagent.logging.models import InteractionLog, ErrorLog
+Provides:
+1. INTERACTION custom log level for interaction logging
+2. Custom endpoints for querying logs by agent_id and time frame
 
-# Conditionally import endpoints only if logging is enabled globally
-# App-level checks are performed at runtime in each endpoint
-_logging_config = get_logging_config()
-if _logging_config.get("enabled", True):
-    # Import endpoints to ensure they are registered
-    from jvagent.logging import endpoints  # noqa: F401
+The INTERACTION level is automatically registered when this module is imported.
+Use the standard logger with logger.interaction() to log interactions.
+
+For custom logging services, use jvspatial's BaseLoggingService.
+"""
+
+# Import service to ensure INTERACTION level is registered
+from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
+
+# Import endpoints to ensure they are registered
+from jvagent.logging import endpoints  # noqa: F401
 
 __all__ = [
-    "get_logging_config",
-    "initialize_logging_database",
-    "LoggingService",
-    "get_logging_service",
-    "ArchiveService",
-    "get_archive_service",
-    "RetentionTask",
-    "get_retention_task",
-    "InteractionLog",
-    "ErrorLog",
+    "INTERACTION_LEVEL_NUMBER",
 ]
 
