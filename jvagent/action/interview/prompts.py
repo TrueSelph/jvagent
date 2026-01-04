@@ -27,7 +27,13 @@ Tell the user: You can:
 {prompt}"""
 
 # Unclear edit content template
-REVIEW_UNCLEAR_EDIT_CONTENT = """Ask: Which field would you like to change? Available fields: {field_list}"""
+# Used when user wants to update but hasn't specified which field
+# Placeholders: {summary} (formatted summary of current information), {field_list} (comma-separated list of fields)
+REVIEW_UNCLEAR_EDIT_CONTENT = """Tell the user: I understand you'd like to make changes to the information above.
+
+{summary}
+
+Tell the user: Which field would you like to change? Available fields: {field_list}"""
 
 # Unclear general content (static, no placeholders)
 REVIEW_UNCLEAR_GENERAL_CONTENT = """Tell the user: I didn't understand. Ask: Please say 'yes' to confirm, 'no' to edit, or specify which field you'd like to change."""
@@ -69,10 +75,8 @@ CANCELLATION_EVENT_MESSAGE_TEMPLATE = "interview process cancelled as part of {c
 # Question directive template (for ACTIVE state - question prompting)
 # Consolidated template that handles description, question, and optional instructions
 # Instructions placeholder will be empty string if no instructions provided
-QUESTION_DIRECTIVE_TEMPLATE = """Tailor your response to get the information needed based on the following description:
-{description}
-As a guide, you may paraphrase the following but be sure to avoid asking for other information not related to this description unless specified elsewhere:
-{question}
+QUESTION_DIRECTIVE_TEMPLATE = """Make a request to the user based on the following description:
+{question} ({description})
 
 {instructions}
 """
@@ -105,20 +109,39 @@ INTENT TYPES (check in priority order):
 1. CANCELLATION - HIGHEST PRIORITY (overrides all others)
    Indicators: "cancel", "abort", "stop", "quit", "nevermind", "forget it", "don't want to continue", "changed my mind", "no thanks", "not interested"
    Key: Abandons ENTIRE process, not just one question
-   Distinguish: "Stop asking me that" = skip question (NOT cancellation), "Change my email" = UPDATE (specific field)
+   Distinguish: "Stop asking me that; I don't have an answer; I don't know" = skip question (NOT cancellation), 
+   Distinguish: "No" = indicator of response to a question (NOT cancellation), 
    Rule: If abandonment language present, prefer CANCELLATION over UPDATE
 
 2. CONFIRMATION - Only in REVIEW state
    Indicators: "yes", "correct", "looks good", "sounds good", "okay", "sure", "confirm", "approve"
+   CRITICAL: "No" is NOT a CONFIRMATION indicator. "No" in REVIEW state means 
+   the user is rejecting the confirmation and wants to UPDATE information.
+   CONFIRMATION only applies to positive affirmations.
 
 3. UPDATE - Change a SPECIFIC previously answered field
-   Indicators: "change", "update", "actually", "instead", "wrong", "modify", "edit", "fix"
-   Must identify: field name and optionally new value
+   Indicators: "change", "update", "actually", "instead", "wrong", "modify", 
+   "edit", "fix", "not correct", "that's wrong"
+   STATE-AWARE RULE: In REVIEW state, "no" (rejecting confirmation) = UPDATE
+   - If current_state is REVIEW and user says "no" or interpretation indicates 
+     "not correct" or "wrong", classify as UPDATE
+   - If interpretation indicates user wants to change/correct information, 
+     prefer UPDATE over other intents
+   - UPDATE in REVIEW state means user wants to edit previously provided information
+   Must identify: field name and optionally new value (field can be null if unclear)
 
 4. SUBMISSION - Providing answers to unanswered questions
    Extract field values from message and conversation history
 
 5. NONE - No clear intent
+
+CONTEXT AWARENESS:
+- Use the interpretation field when available - it provides structured context 
+  beyond the raw utterance
+- If interpretation indicates "not correct", "wrong", "needs to be changed", 
+  or similar rejection language, prefer UPDATE intent
+- Interpretation helps distinguish between "no" as rejection (UPDATE) vs 
+  "no" as answer to a question (SUBMISSION)
 
 EXTRACTION RULES:
 - For SUBMISSION: Include all extracted field-value pairs as separate keys (e.g., "user_name": "John", "user_email": "john@example.com")
@@ -146,6 +169,10 @@ EXAMPLES:
 "Actually, my email is wrong" → {{"intent": "UPDATE", "field": null, "value": null}}
 "My email is john@example.com" → {{"intent": "UPDATE", "field": "user_email", "value": null}}
 "Yes, that looks correct" → {{"intent": "CONFIRMATION", "confidence": 0.95}}
+"no" in REVIEW state with interpretation "not correct" → {{"intent": "UPDATE", "field": null, "value": null}}
+"no" in REVIEW state → {{"intent": "UPDATE", "field": null, "value": null}} (rejecting confirmation, not CONFIRMATION)
+"no" in ACTIVE state as answer to question → {{"intent": "SUBMISSION"}}
+"no thanks" → {{"intent": "CANCELLATION", "confidence": 1.0}}
 "My name is John Doe" → {{"intent": "SUBMISSION", "user_name": "John Doe"}}
 "My name is John and email is john@example.com" → {{"intent": "SUBMISSION", "user_name": "John", "user_email": "john@example.com"}}"""
 

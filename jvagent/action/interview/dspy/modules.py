@@ -1,0 +1,246 @@
+"""DSPy modules for interview classification and extraction.
+
+This module provides DSPy Module classes that can be optimized using
+DSPy's teleprompters and evaluators.
+"""
+
+import logging
+from typing import Any, Dict, Optional
+
+import dspy
+
+from jvagent.action.interview.interview_interact_action import ClassificationResult
+from jvagent.action.interview.dspy.signatures import InterviewClassification
+
+logger = logging.getLogger(__name__)
+
+
+class InterviewClassifier(dspy.Module):
+    """DSPy module for classifying interview intents and extracting field values.
+    
+    This module uses a DSPy Predict module with the InterviewClassification
+    signature to perform classification. It can be optimized using DSPy's
+    teleprompters (BootstrapFewShot, MIPROv2, etc.) and evaluated with
+    dspy.Evaluate.
+    
+    Example:
+        >>> classifier = InterviewClassifier()
+        >>> result = classifier(
+        ...     user_message="My name is John Doe",
+        ...     current_state="ACTIVE",
+        ...     progress_info="0/5 questions answered",
+        ...     answered_fields="None",
+        ...     entities_to_extract="- user_name: Full name"
+        ... )
+        >>> print(result.intent)  # "SUBMISSION"
+        >>> print(result.extracted_data)  # {"user_name": "John Doe"}
+    """
+    
+    def __init__(self):
+        """Initialize the classifier with a Predict module."""
+        super().__init__()
+        self.classify = dspy.Predict(InterviewClassification)
+    
+    def forward(
+        self,
+        user_message: str,
+        current_state: str,
+        progress_info: str,
+        answered_fields: str,
+        entities_to_extract: str,
+        conversation_history: Optional[str] = None,
+    ) -> ClassificationResult:
+        """Classify intent and extract field values.
+        
+        Args:
+            user_message: User's utterance (raw message)
+            current_state: Current interview state
+            progress_info: Progress information (e.g., "3/5 questions answered")
+            answered_fields: Previously answered fields with values
+            entities_to_extract: Unanswered fields to extract
+            conversation_history: Optional formatted conversation history for context
+            
+        Returns:
+            ClassificationResult with intent, confidence, and extracted data
+        """
+        try:
+            # Build kwargs for classification, only include history if provided
+            classify_kwargs = {
+                "user_message": user_message,
+                "current_state": current_state,
+                "progress_info": progress_info,
+                "answered_fields": answered_fields,
+                "entities_to_extract": entities_to_extract,
+            }
+            if conversation_history:
+                classify_kwargs["conversation_history"] = conversation_history
+            
+            # Call the DSPy Predict module
+            prediction = self.classify(**classify_kwargs)
+            
+            # Extract intent and ensure it's uppercase
+            intent = str(prediction.intent).upper() if prediction.intent else "NONE"
+            
+            # Extract confidence, defaulting to 1.0 if not provided
+            confidence = float(prediction.confidence) if prediction.confidence is not None else 1.0
+            
+            # Extract field and value for UPDATE intent
+            # Handle both None and string "null" from JSON parsing
+            field = None
+            if prediction.field:
+                field_str = str(prediction.field).strip().lower()
+                if field_str and field_str != "null" and field_str != "none":
+                    field = str(prediction.field)
+            value = prediction.value  # Can be any type
+            
+            # Extract extracted_data for SUBMISSION intent
+            extracted_data = None
+            if intent == "SUBMISSION" and prediction.extracted_data:
+                # Ensure extracted_data is a dict
+                if isinstance(prediction.extracted_data, dict):
+                    extracted_data = prediction.extracted_data
+                elif isinstance(prediction.extracted_data, str):
+                    # Try to parse as JSON if it's a string
+                    try:
+                        import json
+                        extracted_data = json.loads(prediction.extracted_data)
+                    except (json.JSONDecodeError, ValueError):
+                        logger.warning(
+                            f"InterviewClassifier: Could not parse extracted_data as JSON: {prediction.extracted_data}"
+                        )
+                        extracted_data = None
+                else:
+                    # Try to convert to dict
+                    try:
+                        extracted_data = dict(prediction.extracted_data)
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            f"InterviewClassifier: Could not convert extracted_data to dict: {prediction.extracted_data}"
+                        )
+                        extracted_data = None
+                
+                # Filter out empty/None/whitespace-only values
+                if extracted_data:
+                    filtered_data = {}
+                    for key, val in extracted_data.items():
+                        if val is not None:
+                            if isinstance(val, str) and val.strip():
+                                filtered_data[key] = val
+                            elif not isinstance(val, str):
+                                filtered_data[key] = val
+                    
+                    extracted_data = filtered_data if filtered_data else None
+            
+            # Build and return ClassificationResult
+            return ClassificationResult(
+                intent=intent,
+                confidence=confidence,
+                field=field,
+                value=value,
+                extracted_data=extracted_data
+            )
+            
+        except Exception as e:
+            logger.error(
+                f"InterviewClassifier: Error during classification: {e}",
+                exc_info=True
+            )
+            # Return default NONE result on error
+            return ClassificationResult(intent="NONE", confidence=0.0)
+    
+    async def aforward(
+        self,
+        user_message: str,
+        current_state: str,
+        progress_info: str,
+        answered_fields: str,
+        entities_to_extract: str,
+        conversation_history: Optional[str] = None,
+    ) -> ClassificationResult:
+        """Async version of forward.
+        
+        Args:
+            user_message: User's utterance (raw message)
+            current_state: Current interview state
+            progress_info: Progress information
+            answered_fields: Previously answered fields with values
+            entities_to_extract: Unanswered fields to extract
+            conversation_history: Optional formatted conversation history for context
+            
+        Returns:
+            ClassificationResult with intent, confidence, and extracted data
+        """
+        # Use DSPy's async support
+        try:
+            # Build kwargs for classification, only include history if provided
+            classify_kwargs = {
+                "user_message": user_message,
+                "current_state": current_state,
+                "progress_info": progress_info,
+                "answered_fields": answered_fields,
+                "entities_to_extract": entities_to_extract,
+            }
+            if conversation_history:
+                classify_kwargs["conversation_history"] = conversation_history
+            
+            prediction = await self.classify.acall(**classify_kwargs)
+            
+            # Process prediction same as sync version
+            intent = str(prediction.intent).upper() if prediction.intent else "NONE"
+            confidence = float(prediction.confidence) if prediction.confidence is not None else 1.0
+            # Handle both None and string "null" from JSON parsing
+            field = None
+            if prediction.field:
+                field_str = str(prediction.field).strip().lower()
+                if field_str and field_str != "null" and field_str != "none":
+                    field = str(prediction.field)
+            value = prediction.value
+            
+            extracted_data = None
+            if intent == "SUBMISSION" and prediction.extracted_data:
+                if isinstance(prediction.extracted_data, dict):
+                    extracted_data = prediction.extracted_data
+                elif isinstance(prediction.extracted_data, str):
+                    try:
+                        import json
+                        extracted_data = json.loads(prediction.extracted_data)
+                    except (json.JSONDecodeError, ValueError):
+                        logger.warning(
+                            f"InterviewClassifier: Could not parse extracted_data as JSON: {prediction.extracted_data}"
+                        )
+                        extracted_data = None
+                else:
+                    try:
+                        extracted_data = dict(prediction.extracted_data)
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            f"InterviewClassifier: Could not convert extracted_data to dict: {prediction.extracted_data}"
+                        )
+                        extracted_data = None
+                
+                if extracted_data:
+                    filtered_data = {}
+                    for key, val in extracted_data.items():
+                        if val is not None:
+                            if isinstance(val, str) and val.strip():
+                                filtered_data[key] = val
+                            elif not isinstance(val, str):
+                                filtered_data[key] = val
+                    
+                    extracted_data = filtered_data if filtered_data else None
+            
+            return ClassificationResult(
+                intent=intent,
+                confidence=confidence,
+                field=field,
+                value=value,
+                extracted_data=extracted_data
+            )
+            
+        except Exception as e:
+            logger.error(
+                f"InterviewClassifier: Error during async classification: {e}",
+                exc_info=True
+            )
+            return ClassificationResult(intent="NONE", confidence=0.0)
+

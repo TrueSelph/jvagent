@@ -266,6 +266,107 @@ class QuestionWalker(Walker):
         actual_value = session.responses.get(question_name)
         return actual_value == expected_value
     
+    async def should_process_question(
+        self,
+        question_name: str,
+        session: InterviewSession
+    ) -> bool:
+        """Check if a question should be processed given current session state.
+        
+        A question should be processed if:
+        1. It's in the question_index (exists)
+        2. It's reachable via conditional edges from answered questions
+        3. No conditional edge skips it based on current answers
+        
+        This method traverses the question graph from the root, evaluating
+        branch conditions based on current session.responses to determine
+        if the target question is on a reachable path.
+        
+        Args:
+            question_name: Name of the question to check
+            session: Interview session with current responses
+            
+        Returns:
+            True if question should be asked, False if skipped by conditionals
+        """
+        # Check if question exists in question_index
+        question_config = session.get_question_by_name(question_name)
+        if not question_config:
+            return False
+        
+        # If question is already answered, we don't need to process it again
+        if question_name in session.get_answered_questions():
+            return False
+        
+        # Build a map of question names to configs
+        question_map = {q.get("name"): q for q in session.question_index if q.get("name")}
+        
+        # Start traversal from first question in question_index
+        if not session.question_index:
+            return False
+        
+        # Traverse the graph to see if we can reach this question
+        visited = set()
+        to_visit = [session.question_index[0].get("name")]
+        
+        while to_visit:
+            current_question = to_visit.pop(0)
+            if current_question in visited:
+                continue
+            visited.add(current_question)
+            
+            # Found the target question - it's reachable
+            if current_question == question_name:
+                return True
+            
+            # Get question config
+            current_config = question_map.get(current_question)
+            if not current_config:
+                continue
+            
+            # Check branches to find next questions
+            branches = current_config.get("branches", [])
+            if branches:
+                # For branches, we can only evaluate conditions if prerequisite questions are answered
+                # Try to evaluate conditions to find matching branch
+                branch_matched = False
+                for branch in branches:
+                    condition = branch.get("condition", {})
+                    # Check if we can evaluate this condition (prerequisite question is answered)
+                    condition_question = condition.get("question")
+                    if condition_question and condition_question in session.get_answered_questions():
+                        if self._condition_matches(condition, session):
+                            target = branch.get("target")
+                            if target and target not in visited:
+                                to_visit.append(target)
+                                branch_matched = True
+                                break
+                
+                # If no branch matched, check default_next
+                if not branch_matched:
+                    default_next = current_config.get("default_next")
+                    if default_next and default_next not in visited:
+                        to_visit.append(default_next)
+            else:
+                # No branches, check default_next or next in list
+                # For linear flow, we can continue even if current question is unanswered
+                default_next = current_config.get("default_next")
+                if default_next and default_next not in visited:
+                    to_visit.append(default_next)
+                else:
+                    # Linear flow - find next question in list
+                    current_idx = next(
+                        (i for i, q in enumerate(session.question_index) if q.get("name") == current_question),
+                        -1
+                    )
+                    if current_idx >= 0 and current_idx + 1 < len(session.question_index):
+                        next_question = session.question_index[current_idx + 1].get("name")
+                        if next_question and next_question not in visited:
+                            to_visit.append(next_question)
+        
+        # Question not reachable from current state
+        return False
+    
     async def process_and_validate(
         self,
         value: Any,

@@ -29,6 +29,7 @@ def install_pip_dependencies(
     action_name: str,
     action_path: Optional[Path] = None,
     upgrade: bool = False,
+    skip_if_installed: bool = True,
 ) -> bool:
     """Install pip dependencies for an action.
 
@@ -37,6 +38,7 @@ def install_pip_dependencies(
         action_name: Name of the action (for logging)
         action_path: Optional path to the action directory (for logging)
         upgrade: If True, upgrade packages if already installed
+        skip_if_installed: If True, check if packages are already installed before attempting install
 
     Returns:
         True if installation succeeded, False otherwise
@@ -55,6 +57,20 @@ def install_pip_dependencies(
 
     if not dependencies:
         return True
+
+    # If skip_if_installed is True and not upgrading, check which packages need installation
+    if skip_if_installed and not upgrade:
+        packages_to_install = []
+        for dep in dependencies:
+            if not check_pip_dependency_installed(dep):
+                packages_to_install.append(dep)
+        
+        # If all packages are already installed, skip
+        if not packages_to_install:
+            logger.debug(f"All dependencies for action {action_name} are already installed")
+            return True
+        
+        dependencies = packages_to_install
 
     logger.info(
         f"Installing pip dependencies for action {action_name}: {', '.join(dependencies)}"

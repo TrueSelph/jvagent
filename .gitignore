@@ -55,7 +55,7 @@ jvagent_db/
 logs/
 jvdb_logs/
 jvagent_logs/
-jvspatial_logs/
+jvspatial.logs/
 
 # Testing
 .pytest_cache/

@@ -88,6 +88,12 @@ class PersonaAction(Action):
         default=False,
         description="Enable structured JSON output with insights, context evaluation, and revisions (default: False for backward compatibility)"
     )
+    
+    # DSPy Integration
+    use_dspy: bool = attribute(
+        default=False,
+        description="Use DSPy module for response generation (enables optimization of directive/parameter following via DSPy teleprompters)"
+    )
 
     # Standard collection of configurable parameters
     parameters: List[Dict[str, Any]] = attribute(
@@ -199,99 +205,28 @@ class PersonaAction(Action):
                 "or PersonaAction's own parameters."
             )
 
-        # Compose the prompt (pass directives and all applicable parameters including persona parameters)
-        system_prompt = await self._compose_prompt(interaction, applicable_directives, applicable_parameters)
-
-        conversation_history = None
-        if use_history:
-            conversation_history = await self._get_conversation_history(
+        # Use DSPy if enabled
+        if self.use_dspy:
+            return await self._respond_with_dspy(
                 interaction,
+                visitor,
+                applicable_directives,
+                applicable_parameters,
+                use_history,
                 history_limit,
-                with_utterance=with_utterance,
-                with_response=with_response,
-                with_interpretation=with_interpretation,
-                with_event=with_event,
-                max_statement_length=max_statement_length,
+                with_utterance,
+                with_interpretation,
+                with_event,
+                with_response,
+                max_statement_length,
             )
 
-            # for reply coherence
-            if with_interpretation and not with_response and interaction.response:
-                conversation_history.append({
-                    "role": "assistant",
-                    "content": interaction.response,
-                })
-
-        streaming = bool(
-            visitor
-            and getattr(visitor, "stream_mode", True)
-            and getattr(visitor, "response_bus", None)
-            and getattr(visitor, "session_id", None)
+        # Legacy implementation
+        return await self._respond_legacy(
+            interaction, visitor, applicable_directives, applicable_parameters,
+            use_history, history_limit, with_utterance, with_interpretation,
+            with_event, with_response, max_statement_length
         )
-
-        # Get ResponseBus from visitor
-        response_bus = getattr(visitor, "response_bus", None) if visitor else None
-
-        # # Determine prompt based on with_utterance flag and multi-call awareness
-        # # If interaction has a response, the utterance is already in history (added by _get_conversation_history)
-        # # So we pass empty prompt to avoid duplication at the end
-        # if with_utterance and with_response and interaction.response:
-        #     prompt = ""  # Don't duplicate utterance - it's already in history
-        # else:
-        #     prompt = interaction.utterance if with_utterance else ""
-        prompt = interaction.utterance if with_utterance else ""
-
-        # Make the language model call
-        try:
-            # Enable JSON response format if structured output is requested
-            response_format = {"type": "json_object"} if self.use_structured_output else None
-            
-            response = await model_action.generate(
-                prompt=prompt,
-                stream=streaming,
-                system=system_prompt,
-                history=conversation_history,
-                calling_action_name=self.get_class_name(),
-                model=self.model,
-                temperature=self.model_temperature,
-                max_tokens=self.model_max_tokens,
-                response_bus=response_bus,
-                interaction=interaction,
-                response_format=response_format,
-            )
-
-            # Parse structured output if enabled
-            if self.use_structured_output and response:
-                parsed_response = self._parse_structured_output(response)
-                if parsed_response:
-                    response = parsed_response
-                # If parsing fails, response remains as-is (fallback)
-
-            # Mark directives and parameters as executed only if we got a meaningful response
-            if response and response.strip():
-                if applicable_directives:
-                    interaction.set_to_executed(directives=applicable_directives)
-                if applicable_parameters:
-                    interaction.set_to_executed(parameters=applicable_parameters)
-
-            # Set interaction.response immediately after getting the complete response
-            if response:
-                current_response = interaction.response or ""
-                if current_response and current_response.strip() and current_response != response:
-                    interaction.set_response(f"{current_response}\n\n{response}")
-                else:
-                    interaction.set_response(response)
-                await interaction.save()
-
-            # Record PersonaAction execution AFTER response is generated and saved
-            # This ensures PersonaAction appears after the InteractAction that called it
-            # in the actions list, preserving the call order
-            interaction.record_action_execution("PersonaAction")
-
-            return response
-
-        except Exception as e:
-            logger.error(f"Error in PersonaAction.respond: {e}", exc_info=True)
-            raise
 
     async def _get_user_display_name(self, interaction: Interaction) -> str:
         """Resolve a friendly user name for prompt personalization."""
@@ -621,6 +556,480 @@ class PersonaAction(Action):
             })
 
         return history if history else []
+    
+    
+    async def _respond_with_dspy(
+        self,
+        interaction: Interaction,
+        visitor: Optional[Any],
+        applicable_directives: List[Dict[str, Any]],
+        applicable_parameters: List[Dict[str, Any]],
+        use_history: bool,
+        history_limit: int,
+        with_utterance: bool,
+        with_interpretation: bool,
+        with_event: bool,
+        with_response: bool,
+        max_statement_length: Optional[int],
+    ) -> str:
+        """DSPy-based response generation with all prompt elements modeled.
+        
+        This method extracts all elements from the persona prompt and passes them
+        as structured inputs to the DSPy module, enabling optimization of directive
+        and parameter following.
+        
+        Args:
+            interaction: The active interaction object
+            visitor: Optional InteractWalker for streaming support
+            applicable_directives: List of unexecuted directives
+            applicable_parameters: List of unexecuted parameters
+            use_history: Whether to include conversation history
+            history_limit: Number of past interactions to include
+            with_utterance: Whether to include user utterances
+            with_interpretation: Include interpretations in history
+            with_event: Include events in history
+            with_response: Include AI responses in history
+            max_statement_length: Truncate to this length
+            
+        Returns:
+            Generated response string
+        """
+        try:
+            # Import DSPy components
+            import dspy
+            from jvagent.action.model.dspy import DSPyLM
+            from jvagent.action.persona.dspy import PersonaResponseModule
+            
+            # Get model action
+            model_action = await self.get_model_action(required=True)
+            if not model_action:
+                logger.warning(f"{self.get_class_name()}: Could not get model action for DSPy response generation")
+                # Fall back to legacy implementation
+                return await self._respond_legacy(
+                    interaction, visitor, applicable_directives, applicable_parameters,
+                    use_history, history_limit, with_utterance, with_interpretation,
+                    with_event, with_response, max_statement_length
+                )
+            
+            # Prepare date/time
+            now = datetime.now()
+            date_str = now.strftime("%A, %d %B, %Y")
+            time_str = now.strftime("%I:%M %p")
+            
+            # Get user display name
+            user_display_name = await self._get_user_display_name(interaction)
+            
+            # Detect continuation mode
+            is_continuation = bool(interaction.response)
+            previous_response = None
+            original_user_utterance = None
+            
+            if is_continuation:
+                from jvagent.memory.conversation import Conversation
+                previous_response = await Conversation.truncate_statement(
+                    interaction.response or "",
+                    max_length=2000,
+                    keep_last=True,
+                    interaction=interaction
+                )
+                original_user_utterance = await Conversation.truncate_statement(
+                    interaction.utterance or "",
+                    max_length=500,
+                    interaction=interaction
+                )
+            
+            # Get conversation history (for both streaming and non-streaming)
+            conversation_history_list = None
+            conversation_history_str = None
+            if use_history:
+                conversation_history_list = await self._get_conversation_history(
+                    interaction,
+                    history_limit,
+                    with_utterance=with_utterance,
+                    with_response=with_response,
+                    with_interpretation=with_interpretation,
+                    with_event=with_event,
+                    max_statement_length=max_statement_length,
+                )
+                from jvagent.action.model.dspy import format_conversation_history_for_dspy
+                conversation_history_str = format_conversation_history_for_dspy(conversation_history_list)
+            
+            # Get channel formatting
+            from jvagent.action.persona.prompts import get_channel_directive
+            channel = interaction.channel or "default"
+            channel_formatting = get_channel_directive(channel)
+            
+            # Detect streaming mode (same as legacy implementation)
+            streaming = bool(
+                visitor
+                and getattr(visitor, "stream_mode", True)
+                and getattr(visitor, "response_bus", None)
+                and getattr(visitor, "session_id", None)
+            )
+            
+            # Get ResponseBus from visitor
+            response_bus = getattr(visitor, "response_bus", None) if visitor else None
+            
+            # Create DSPyLM adapter
+            lm = DSPyLM(
+                model_action=model_action,
+                model_type="chat",
+                model=self.model,
+                temperature=self.model_temperature,
+                max_tokens=self.model_max_tokens,
+            )
+            
+            # Configure DSPy and call module
+            with dspy.context(lm=lm):
+                module = PersonaResponseModule()
+                
+                # If streaming, we need to handle it differently
+                # For streaming, format the DSPy signature and call DSPyLM directly
+                if streaming:
+                    logger.debug(f"{self.get_class_name()}: Using DSPy signature formatting for streaming")
+                    # Format signature inputs (same as PersonaResponseModule does)
+                    from jvagent.action.persona.dspy.signatures import PersonaResponse
+                    
+                    # Format capabilities
+                    capabilities_str = (
+                        "\n".join(f"- {cap}" for cap in self.persona_capabilities)
+                        if self.persona_capabilities
+                        else "None specified"
+                    )
+                    
+                    # Format directives
+                    directive_count = len(applicable_directives)
+                    if applicable_directives:
+                        directives_str = "\n".join(
+                            f"{i+1}. {d.get('content', str(d))}"
+                            for i, d in enumerate(applicable_directives)
+                        )
+                        directive_count_str = f"{directive_count} directive(s)"
+                    else:
+                        directives_str = "None"
+                        directive_count_str = "0 directive(s)"
+                    
+                    # Format parameters
+                    if applicable_parameters:
+                        from jvagent.action.persona.prompts import format_parameter
+                        parameters_str = "\n".join(
+                            format_parameter(p, index=i+1)
+                            for i, p in enumerate(applicable_parameters)
+                        )
+                    else:
+                        parameters_str = "None"
+                    
+                    # Format continuation fields
+                    is_continuation_str = "true" if is_continuation else "false"
+                    prev_response = previous_response or ""
+                    orig_utterance = original_user_utterance or ""
+                    channel_formatting_str = channel_formatting or ""
+                    
+                    # Build kwargs for DSPy signature (same format as PersonaResponseModule)
+                    # Ensure all required fields are non-None strings to avoid validation errors
+                    signature_kwargs = {
+                        "user_utterance": str(interaction.utterance if with_utterance else ""),
+                        "persona_name": str(self.persona_name or ""),
+                        "persona_description": str(self.persona_description or ""),
+                        "persona_capabilities": str(capabilities_str),
+                        "user_display_name": str(user_display_name or ""),
+                        "current_date": str(date_str),
+                        "current_time": str(time_str),
+                        "directives": str(directives_str),
+                        "directive_count": str(directive_count_str),
+                        "parameters": str(parameters_str),
+                        "is_continuation": str(is_continuation_str),
+                        "channel": str(channel or "default"),
+                    }
+                    
+                    # Add optional fields only if they have values
+                    if interaction.interpretation and with_interpretation:
+                        signature_kwargs["interpretation"] = interaction.interpretation
+                    if conversation_history_str:
+                        signature_kwargs["conversation_history"] = conversation_history_str
+                    if prev_response:
+                        signature_kwargs["previous_response"] = prev_response
+                    if orig_utterance:
+                        signature_kwargs["original_user_utterance"] = orig_utterance
+                    if channel_formatting_str:
+                        signature_kwargs["channel_formatting"] = channel_formatting_str
+                    
+                    # Format the signature into a prompt manually
+                    # We format it the same way DSPy's Predict module would format it
+                    # DSPy formats signatures as: docstring + "\n\n" + "Field: value" for each field + "\n\nResponse:"
+                    
+                    # Get the signature's docstring (instructions)
+                    signature_doc = PersonaResponse.__doc__ or ""
+                    
+                    # Get field descriptions - use a safe approach
+                    def get_field_desc(field_name: str) -> str:
+                        """Safely get field description from signature."""
+                        try:
+                            field_obj = getattr(PersonaResponse, field_name, None)
+                            if field_obj:
+                                # Try various ways to get description
+                                if hasattr(field_obj, 'json_schema_extra') and field_obj.json_schema_extra:
+                                    desc = field_obj.json_schema_extra.get('desc', '')
+                                    if desc:
+                                        return desc
+                                if hasattr(field_obj, 'description'):
+                                    desc = getattr(field_obj, 'description', '')
+                                    if desc:
+                                        return desc
+                                if hasattr(field_obj, 'desc'):
+                                    desc = getattr(field_obj, 'desc', '')
+                                    if desc:
+                                        return desc
+                        except Exception:
+                            pass
+                        # Fallback to human-readable field name
+                        return field_name.replace('_', ' ').title()
+                    
+                    # Format input fields (only non-empty ones)
+                    input_parts = []
+                    for field_name, field_value in signature_kwargs.items():
+                        if field_value:  # Only include non-empty fields
+                            field_desc = get_field_desc(field_name)
+                            input_parts.append(f"{field_desc}: {field_value}")
+                    
+                    # Get output field description
+                    output_desc = 'Response'
+                    try:
+                        output_field = getattr(PersonaResponse, 'response', None)
+                        if output_field:
+                            if hasattr(output_field, 'json_schema_extra') and output_field.json_schema_extra:
+                                output_desc = output_field.json_schema_extra.get('desc', 'Response')
+                            elif hasattr(output_field, 'description'):
+                                output_desc = getattr(output_field, 'description', 'Response')
+                            elif hasattr(output_field, 'desc'):
+                                output_desc = getattr(output_field, 'desc', 'Response')
+                    except Exception:
+                        pass  # Use default 'Response'
+                    
+                    # Format as DSPy would: docstring + "\n\n" + input fields + "\n\n" + output field
+                    formatted_prompt = f"{signature_doc.strip()}\n\n" + "\n".join(input_parts) + f"\n\n{output_desc}:"
+                    
+                    logger.debug(f"{self.get_class_name()}: Formatted DSPy signature prompt (length: {len(formatted_prompt)})")
+                    logger.debug(f"{self.get_class_name()}: DSPy prompt preview: {formatted_prompt[:200]}...")
+                    
+                    # Format for DSPyLM
+                    # The formatted_prompt contains the complete DSPy signature with all inputs
+                    # DSPyLM expects either:
+                    # 1. messages=[{"role": "system", "content": "..."}, {"role": "user", "content": "..."}]
+                    # 2. prompt="..." (as user prompt) with optional system message
+                    # 
+                    # Since our formatted signature is a complete prompt, we should pass it as the user prompt
+                    # The signature already contains all instructions and inputs, so no separate system message is needed
+                    # However, DSPyLM's query() method expects system and prompt separately
+                    # So we'll pass the formatted signature as the prompt parameter directly
+                    
+                    # Call DSPyLM with streaming enabled
+                    # Pass the formatted signature as the prompt (user message)
+                    # This ensures the DSPy signature is used, not the legacy prompt
+                    streaming_response = await lm.aforward(
+                        prompt=formatted_prompt,  # Pass formatted signature as prompt
+                        stream=True,
+                    )
+                    
+                    # Check if we got a streaming response
+                    if hasattr(streaming_response, 'stream'):
+                        # Stream chunks and publish to ResponseBus
+                        chunks = []
+                        async for chunk in streaming_response.stream():
+                            if chunk:
+                                chunks.append(chunk)
+                                # Publish chunk to ResponseBus if available
+                                if response_bus and visitor and visitor.session_id:
+                                    await response_bus.publish_message(
+                                        session_id=visitor.session_id,
+                                        content=chunk,
+                                        channel=getattr(visitor, "channel", "default"),
+                                        message_type="stream_chunk",
+                                        interaction_id=interaction.id,
+                                    )
+                        
+                        # Collect full response
+                        response = "".join(chunks)
+                        
+                        # Publish final message to ResponseBus
+                        if response_bus and visitor and visitor.session_id:
+                            await response_bus.publish_message(
+                                session_id=visitor.session_id,
+                                content=response,
+                                channel=getattr(visitor, "channel", "default"),
+                                message_type="final",
+                                interaction_id=interaction.id,
+                            )
+                    else:
+                        # Fallback: not a streaming response, collect content
+                        response = streaming_response.choices[0].message.content if hasattr(streaming_response, 'choices') else str(streaming_response)
+                else:
+                    # Non-streaming path - use the module
+                    # Ensure all required string fields are not None to avoid validation errors
+                    response = await module.aforward(
+                        user_utterance=str(interaction.utterance if with_utterance else ""),
+                        persona_name=str(self.persona_name or ""),
+                        persona_description=str(self.persona_description or ""),
+                        persona_capabilities=self.persona_capabilities or [],  # Module will format this
+                        user_display_name=str(user_display_name or ""),
+                        current_date=str(date_str),
+                        current_time=str(time_str),
+                        directives=applicable_directives or [],  # Module will format this
+                        parameters=applicable_parameters or [],  # Module will format this
+                        interpretation=interaction.interpretation if (interaction.interpretation and with_interpretation) else None,
+                        conversation_history=conversation_history_str,
+                        is_continuation=is_continuation,
+                        previous_response=previous_response,
+                        original_user_utterance=original_user_utterance,
+                        channel=str(channel or "default"),
+                        channel_formatting=channel_formatting,
+                    )
+            
+            # Handle structured output if enabled
+            if self.use_structured_output and response:
+                parsed_response = self._parse_structured_output(response)
+                if parsed_response:
+                    response = parsed_response
+            
+            # Mark directives and parameters as executed only if we got a meaningful response
+            if response and response.strip():
+                if applicable_directives:
+                    interaction.set_to_executed(directives=applicable_directives)
+                if applicable_parameters:
+                    interaction.set_to_executed(parameters=applicable_parameters)
+            
+            # Set interaction.response immediately after getting the complete response
+            if response:
+                current_response = interaction.response or ""
+                if current_response and current_response.strip() and current_response != response:
+                    interaction.set_response(f"{current_response}\n\n{response}")
+                else:
+                    interaction.set_response(response)
+                await interaction.save()
+            
+            # Record PersonaAction execution AFTER response is generated and saved
+            interaction.record_action_execution("PersonaAction")
+            
+            return response
+            
+        except Exception as e:
+            logger.error(
+                f"{self.get_class_name()}: Failed to generate response via DSPy: {e}",
+                exc_info=True
+            )
+            # Fall back to legacy implementation on error
+            logger.warning(
+                f"{self.get_class_name()}: Falling back to legacy implementation. "
+                f"Error type: {type(e).__name__}, Error: {str(e)}"
+            )
+            return await self._respond_legacy(
+                interaction, visitor, applicable_directives, applicable_parameters,
+                use_history, history_limit, with_utterance, with_interpretation,
+                with_event, with_response, max_statement_length
+            )
+    
+    async def _respond_legacy(
+        self,
+        interaction: Interaction,
+        visitor: Optional[Any],
+        applicable_directives: List[Dict[str, Any]],
+        applicable_parameters: List[Dict[str, Any]],
+        use_history: bool,
+        history_limit: int,
+        with_utterance: bool,
+        with_interpretation: bool,
+        with_event: bool,
+        with_response: bool,
+        max_statement_length: Optional[int],
+    ) -> str:
+        """Legacy response generation implementation (extracted from original respond method).
+        
+        This is the original implementation, extracted to avoid code duplication.
+        """
+        # Get model action (required=True raises error if not found)
+        model_action = await self.get_model_action(required=True)
+
+        conversation_history = None
+        if use_history:
+            conversation_history = await self._get_conversation_history(
+                interaction,
+                history_limit,
+                with_utterance=with_utterance,
+                with_response=with_response,
+                with_interpretation=with_interpretation,
+                with_event=with_event,
+                max_statement_length=max_statement_length,
+            )
+
+            # for reply coherence
+            if with_interpretation and not with_response and interaction.response:
+                conversation_history.append({
+                    "role": "assistant",
+                    "content": interaction.response,
+                })
+
+        streaming = bool(
+            visitor
+            and getattr(visitor, "stream_mode", True)
+            and getattr(visitor, "response_bus", None)
+            and getattr(visitor, "session_id", None)
+        )
+
+        # Get ResponseBus from visitor
+        response_bus = getattr(visitor, "response_bus", None) if visitor else None
+
+        prompt = interaction.utterance if with_utterance else ""
+
+        # Make the language model call
+        try:
+            # Enable JSON response format if structured output is requested
+            response_format = {"type": "json_object"} if self.use_structured_output else None
+            
+            response = await model_action.generate(
+                prompt=prompt,
+                stream=streaming,
+                system=await self._compose_prompt(interaction, applicable_directives, applicable_parameters),
+                history=conversation_history,
+                calling_action_name=self.get_class_name(),
+                model=self.model,
+                temperature=self.model_temperature,
+                max_tokens=self.model_max_tokens,
+                response_bus=response_bus,
+                interaction=interaction,
+                response_format=response_format,
+            )
+
+            # Parse structured output if enabled
+            if self.use_structured_output and response:
+                parsed_response = self._parse_structured_output(response)
+                if parsed_response:
+                    response = parsed_response
+                # If parsing fails, response remains as-is (fallback)
+
+            # Mark directives and parameters as executed only if we got a meaningful response
+            if response and response.strip():
+                if applicable_directives:
+                    interaction.set_to_executed(directives=applicable_directives)
+                if applicable_parameters:
+                    interaction.set_to_executed(parameters=applicable_parameters)
+
+            # Set interaction.response immediately after getting the complete response
+            if response:
+                current_response = interaction.response or ""
+                if current_response and current_response.strip() and current_response != response:
+                    interaction.set_response(f"{current_response}\n\n{response}")
+                else:
+                    interaction.set_response(response)
+                await interaction.save()
+
+            # Record PersonaAction execution AFTER response is generated and saved
+            interaction.record_action_execution("PersonaAction")
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Error in PersonaAction.respond (legacy): {e}", exc_info=True)
+            raise
 
     async def healthcheck(self) -> bool:
         """Check if the PersonaAction is healthy.

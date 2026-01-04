@@ -42,6 +42,12 @@ class SignupInterviewInteractAction(InterviewInteractAction):
     
     description: str = "User signup interview flow for registration and training scheduling"
 
+    # DSPy Integration
+    use_dspy: bool = attribute(
+        default=True,
+        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)"
+    )
+
     # REQUIRED when using InteractRouter: Anchors for intelligent routing
     # Must cover both initial entry and intermediate states (when answering questions)
     anchors: List[str] = attribute(
