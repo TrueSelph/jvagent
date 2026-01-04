@@ -15,6 +15,8 @@ The Interview Action provides a reusable way to collect responses from users in 
 - **Per-User Session Isolation**: Sessions attached to Conversation nodes for user separation
 - **Type-Based Session Management**: Sessions identified by `interview_type` field (survives action rebuilds)
 - **Unified Classification System**: Single LLM call detects intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE) and extracts field values
+- **DSPy Integration**: Optional DSPy-based classification with typed signatures, optimizable with teleprompters
+- **State-Aware Classification**: Enhanced rules for accurate intent detection (e.g., "no" in REVIEW state = UPDATE, not CONFIRMATION)
 - **Unified Orchestrator**: All state logic and directive generation handled within the main InterviewInteractAction class
 - **Logical State Management**: Four distinct states (ACTIVE, REVIEW, COMPLETED, CANCELLED) with clear transitions
 - **Same-Interaction State Transitions**: State transitions happen within the same interaction when appropriate
@@ -23,6 +25,8 @@ The Interview Action provides a reusable way to collect responses from users in 
 - **Completion Handlers**: Register completion handlers via `@on_interview_complete` decorator
 - **Question Node Rebuilding**: Automatically rebuilds question nodes when `question_index` changes
 - **agent.yaml Overrides**: Override `question_index` and prompt templates in agent configuration
+- **Standard Anchors**: Automatically includes standard anchors for common interview scenarios (cancellation, correction, review confirmation, etc.) - no need to specify them in each implementation
+- **Enhanced UPDATE Handling**: When UPDATE intent has null field, shows summary and prompts for field selection
 
 ## State Machine
 
@@ -116,6 +120,63 @@ Specialized edge connecting QuestionNodes with optional condition metadata:
 #### 6. InteractWalker
 Standard walker used throughout. The interview action receives session via conversation queries.
 
+### Standard Anchors
+
+All interview implementations automatically include standard anchors that cover common interview flow scenarios. These standard anchors ensure proper routing classification for scenarios that apply to all interviews, regardless of the specific implementation.
+
+**Standard anchors are automatically merged with implementation-specific anchors** (implementation-specific anchors first, then standard anchors appended). This means you don't need to specify standard anchors in your implementation - they're included automatically.
+
+#### Standard Anchor Categories
+
+1. **Cancellation** (any state):
+   - "User requests to cancel interview process"
+   - "User wants to stop the interview"
+   - "User wants to abort the interview"
+   - "User wants to exit the interview"
+
+2. **Correction/Update** (ACTIVE or REVIEW states):
+   - "User indicates that not all information is correct"
+   - "User wants to change previously provided information"
+   - "User wants to update their answers"
+   - "User wants to correct their responses"
+   - "User indicates information needs to be changed"
+
+3. **Review Confirmation** (REVIEW state):
+   - "User confirms the information is correct"
+   - "User approves the summary"
+   - "User confirms all information is accurate"
+
+4. **General Interview Continuation** (intermediate states):
+   - "User is answering interview questions"
+   - "User is providing interview information"
+   - "User is responding to interview prompts"
+
+#### How It Works
+
+- Standard anchors are defined in the `InterviewInteractAction` base class as `_standard_interview_anchors`
+- They are automatically merged with implementation-specific anchors in `__init_subclass__`
+- They are also merged in `on_register()` and `on_reload()` to handle agent.yaml overrides
+- Implementation-specific anchors are listed first, followed by standard anchors
+- Duplicates are automatically removed while preserving order
+
+#### Example
+
+```python
+class MyInterviewAction(InterviewInteractAction):
+    anchors: List[str] = attribute(
+        default_factory=lambda: [
+            "User wants to start my interview",  # Implementation-specific
+            "User is providing my interview data",  # Implementation-specific
+            # Standard anchors (cancellation, correction, etc.) are automatically added
+        ]
+    )
+```
+
+The final anchors list will include:
+1. "User wants to start my interview"
+2. "User is providing my interview data"
+3. All standard anchors (cancellation, correction, review confirmation, continuation)
+
 ## File Structure
 
 ```
@@ -125,13 +186,17 @@ interview/
 ├── prompts.py                     # Prompt templates
 ├── info.yaml                      # Action metadata
 ├── README.md                      # This file
-└── core/
-    ├── __init__.py
-    ├── interview_session.py       # InterviewSession Node
-    ├── question_node.py           # QuestionNode
-    ├── question_walker.py         # QuestionWalker for tree traversal
-    ├── question_edge.py           # QuestionEdge with conditions
-    └── validation.py              # Validation enums
+├── core/
+│   ├── __init__.py
+│   ├── interview_session.py       # InterviewSession Node
+│   ├── question_node.py           # QuestionNode
+│   ├── question_walker.py         # QuestionWalker for tree traversal
+│   ├── question_edge.py           # QuestionEdge with conditions
+│   └── validation.py              # Validation enums
+└── dspy/
+    ├── __init__.py                 # DSPy package exports
+    ├── signatures.py               # DSPy signatures for classification
+    └── modules.py                  # DSPy modules (InterviewClassifier)
 ```
 
 ## Usage
@@ -148,8 +213,9 @@ class RegistrationInterviewAction(InterviewInteractAction):
     
     description: str = "User registration interview flow"
     
-    # REQUIRED: Anchors for InteractRouter routing
-    # Must cover both initial entry and intermediate states (when answering questions)
+    # Anchors for InteractRouter routing
+    # Standard interview anchors (cancellation, correction, review confirmation, etc.) are
+    # automatically included. You only need to specify implementation-specific anchors.
     anchors: List[str] = attribute(
         default_factory=lambda: [
             # Initial entry anchors - when user wants to start registration
@@ -162,8 +228,10 @@ class RegistrationInterviewAction(InterviewInteractAction):
             "User is answering registration questions",
             "User is completing registration form",
             "User responds to registration prompt",
+            # Note: Standard anchors (cancellation, correction, review confirmation, etc.)
+            # are automatically merged with these implementation-specific anchors
         ],
-        description="Anchor statements for InteractRouter routing"
+        description="Anchor statements for InteractRouter routing. Standard interview anchors are automatically included."
     )
     
     question_index: List[Dict[str, Any]] = attribute(
@@ -204,6 +272,7 @@ actions:
       - "User requests registration"
       - "User is providing registration information"
       - "User is answering registration questions"
+      # Note: Standard anchors are automatically merged with these when the action is registered
     question_index:
       - name: user_name
         question: "What's your full name?"
@@ -497,14 +566,58 @@ Validators can return a corrected value as the third element of the tuple. If pr
 
 The interview system uses a single unified prompt (`INTERVIEW_PROMPT_TEMPLATE`) that combines intent detection and field extraction in one LLM call. This approach is more efficient and ensures consistency.
 
+### Classification Backend Options
+
+The system supports two classification backends:
+
+1. **Legacy Prompt-Based Classification** (default): Uses a structured prompt template with JSON response format
+2. **DSPy-Based Classification** (optional): Uses typed DSPy signatures that can be optimized with DSPy teleprompters
+
+Enable DSPy classification by setting `use_dspy=True` in your interview action:
+
+```python
+class MyInterviewAction(InterviewInteractAction):
+    use_dspy: bool = attribute(
+        default=True,
+        description="Use DSPy module for classification"
+    )
+```
+
+**Benefits of DSPy Integration:**
+- Typed signatures for better structure and validation
+- Optimizable with DSPy teleprompters (BootstrapFewShot, MIPROv2, etc.)
+- Evaluable with `dspy.Evaluate` for performance measurement
+- Consistent interface regardless of backend
+
 ### Intent Detection
 
-The system detects five intent types:
+The system detects five intent types with state-aware rules:
+
 - **CANCELLATION**: User wants to cancel/stop the interview
+  - Highest priority, overrides all other intents
+  - Can occur in any state
+  
 - **CONFIRMATION**: User confirms/approves information (only in REVIEW state)
+  - Only applies to positive affirmations ("yes", "correct", "looks good", etc.)
+  - **CRITICAL**: "No" is NOT a CONFIRMATION indicator
+  
 - **UPDATE**: User wants to change/update a previously answered field
+  - **State-Aware Rule**: In REVIEW state, "no" (rejecting confirmation) = UPDATE
+  - When field is null, system shows summary and asks which field to change
+  - Uses interpretation field when available for better context
+  
 - **SUBMISSION**: User is providing answers to unanswered questions
+  - Extracts field values from message and conversation history
+  
 - **NONE**: No clear intent or conversational filler
+
+### State-Aware Classification Rules
+
+The classification system includes state-aware rules for better accuracy:
+
+- **"No" in REVIEW state**: Classified as UPDATE (rejecting confirmation), not CONFIRMATION
+- **Interpretation context**: When interpretation indicates "not correct" or "wrong", prefers UPDATE intent
+- **Field normalization**: Handles string "null" values from JSON parsing, normalizing them to Python None
 
 ### Input Processing
 
@@ -512,7 +625,7 @@ The unified prompt accepts both:
 - **User's utterance**: The raw user message
 - **Interpretation**: LLM-generated interpretation of user intent (when available)
 
-Both are provided to the prompt when available, giving the classification system more context for accurate intent detection and extraction.
+Both are provided to the prompt when available, giving the classification system more context for accurate intent detection and extraction. The interpretation field is particularly useful for distinguishing between "no" as rejection (UPDATE) vs "no" as answer to a question (SUBMISSION).
 
 ### Classification Result
 
@@ -522,6 +635,14 @@ The `ClassificationResult` dataclass contains:
 - `extracted_data`: Extracted field values (for SUBMISSION intent)
 - `field`: Field name (for UPDATE intent, null if unclear)
 - `value`: Field value (for UPDATE intent, null if not provided)
+
+### UPDATE Intent Handling
+
+When UPDATE intent is detected:
+
+1. **With field specified**: Processes the update inline using QuestionNode validation
+2. **Without field (null)**: Shows summary of current information and prompts user to specify which field to change
+3. **Field normalization**: Automatically handles string "null" values from JSON parsing
 
 ### State Transitions
 
@@ -726,6 +847,8 @@ Each maintains its own sessions via `interview_type` identification.
 4. **Data Processing**: Choose appropriate pattern (A, B, or C) based on complexity
 5. **Session Cleanup**: Clean up sessions after data is processed
 6. **Type Identification**: Always use unique class names for interview types
+7. **DSPy Classification**: Enable `use_dspy=True` for optimizable and evaluable classification
+8. **State-Aware Responses**: Be aware that "no" in REVIEW state means UPDATE (rejecting confirmation), not CONFIRMATION
 
 ## Troubleshooting
 
@@ -766,7 +889,9 @@ class RegistrationInterviewAction(InterviewInteractAction):
     
     description: str = "User registration interview flow"
     
-    # REQUIRED when using InteractRouter: Anchors for intelligent routing
+    # Anchors for InteractRouter routing
+    # Standard interview anchors (cancellation, correction, review confirmation, etc.)
+    # are automatically included - you only need to specify implementation-specific anchors
     anchors: List[str] = attribute(
         default_factory=lambda: [
             # Initial entry anchors
@@ -776,8 +901,9 @@ class RegistrationInterviewAction(InterviewInteractAction):
             # Intermediate state anchors
             "User is providing registration information",
             "User is answering registration questions",
+            # Note: Standard anchors are automatically merged with these
         ],
-        description="Anchor statements for InteractRouter routing"
+        description="Anchor statements for InteractRouter routing. Standard interview anchors are automatically included."
     )
     
     question_index: List[Dict[str, Any]] = attribute(
@@ -1007,3 +1133,32 @@ class AppointmentInterviewAction(InterviewInteractAction):
 ### Example 4: Signup Interview (Production Example)
 
 See `examples/jvagent_app/agents/jvagent/example_agent/actions/jvagent/signup_interview_interact_action/` for a production example that replaces the original hardcoded questions.
+
+### Example 5: Using DSPy Classification
+
+Enable DSPy-based classification for optimizable and evaluable classification:
+
+```python
+from jvagent.action.interview.interview_interact_action import InterviewInteractAction
+from jvspatial.core.annotations import attribute
+
+class MyInterviewAction(InterviewInteractAction):
+    """Interview with DSPy classification enabled."""
+    
+    use_dspy: bool = attribute(
+        default=True,
+        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)"
+    )
+    
+    question_index: List[Dict[str, Any]] = attribute(
+        default_factory=lambda: [
+            # ... question configurations ...
+        ]
+    )
+```
+
+**Benefits:**
+- Typed signatures provide better structure and validation
+- Can be optimized with DSPy teleprompters for improved performance
+- Can be evaluated with `dspy.Evaluate` to measure classification accuracy
+- Same interface as legacy classification, just with different backend

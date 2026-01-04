@@ -107,9 +107,42 @@ class InterviewInteractAction(InteractAction, ABC):
         Use @input_handler('question_name') and @input_validator('question_name') decorators
         to register handlers and validators instead of embedding them in question_index.
         Use @on_interview_complete('InterviewType') to register completion handlers.
+    
+    Standard Anchors:
+        Standard anchors are automatically included for all interview implementations,
+        covering common scenarios like cancellation, correction, review confirmation,
+        and general interview continuation. These are merged with implementation-specific
+        anchors (implementation-specific first, then standard anchors appended).
     """
     
     description: str = "Unified orchestrator for interview system"
+    
+    # Standard anchors that are automatically included for all interview implementations
+    # These cover common interview flow scenarios and ensure proper routing classification
+    _standard_interview_anchors: List[str] = [
+        # Cancellation (any state)
+        "User requests to cancel interview process",
+        "User wants to stop the interview",
+        "User wants to abort the interview",
+        "User wants to exit the interview",
+        
+        # Correction/Update (ACTIVE or REVIEW states)
+        "User indicates that not all information is correct",
+        "User wants to change previously provided information",
+        "User wants to update their answers",
+        "User wants to correct their responses",
+        "User indicates information needs to be changed",
+        
+        # Review Confirmation (REVIEW state)
+        "User confirms the information is correct",
+        "User approves the summary",
+        "User confirms all information is accurate",
+        
+        # General Interview Continuation (intermediate states)
+        "User is answering interview questions",
+        "User is providing interview information",
+        "User is responding to interview prompts",
+    ]
     
     # Class-level registries for decorator-registered handlers and validators
     # These are populated when the class is defined via decorators
@@ -145,6 +178,11 @@ class InterviewInteractAction(InteractAction, ABC):
                     cls._input_handlers[question_name] = attr
                 elif handler_type == "input_validator":
                     cls._input_validators[question_name] = attr
+        
+        # Note: We don't merge anchors in __init_subclass__ because we can't reliably
+        # extract default values from Field/PrivateAttr descriptors at class definition time.
+        # Merging is handled in on_register() and on_reload() where we have an instance
+        # and can access the actual attribute value.
     
     @staticmethod
     def get_completion_handler(interview_type: str) -> Optional[Callable]:
@@ -193,6 +231,25 @@ class InterviewInteractAction(InteractAction, ABC):
                 cls._input_validators[question_name] = validator
         
         return validator
+    
+    def _merge_standard_anchors(self) -> None:
+        """Merge standard interview anchors with current anchors attribute.
+        
+        This method ensures standard anchors are always included, even when
+        anchors are overridden in agent.yaml. Should be called from on_register()
+        and on_reload() to handle runtime configuration changes.
+        """
+        # Get current anchors value (may be from agent.yaml override)
+        current_anchors = getattr(self, 'anchors', [])
+        if not isinstance(current_anchors, list):
+            current_anchors = []
+        
+        # Merge: current anchors first, then standard anchors appended
+        # Remove duplicates while preserving order
+        merged_anchors = list(dict.fromkeys(current_anchors + self._standard_interview_anchors))
+        
+        # Update the anchors attribute
+        self.anchors = merged_anchors
     
     weight: int = attribute(
         default=-40,
@@ -253,6 +310,12 @@ class InterviewInteractAction(InteractAction, ABC):
     history_limit: int = attribute(
         default=5, 
         description="Max number of statements to include in history"
+    )
+    
+    # DSPy Integration
+    use_dspy: bool = attribute(
+        default=False,
+        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)"
     )
     
     # Summary formatting templates (for REVIEW state)
@@ -454,12 +517,24 @@ class InterviewInteractAction(InteractAction, ABC):
         
         # Handle update intent
         if classification_result.intent == "UPDATE":
+            # Normalize field - handle string "null" or empty string
+            field = classification_result.field
+            if field and isinstance(field, str):
+                field = field.strip()
+                if field.lower() in ("null", "none", ""):
+                    field = None
+                    classification_result.field = None
+            
             # Check if field needs clarification
-            if not classification_result.field:
-                # Ask which field to update
+            if not field:
+                # Ask which field to update - show summary for context
                 answered_fields = session.get_answered_questions()
                 field_list = ", ".join([f.replace("_", " ") for f in answered_fields])
-                unclear_edit_section = self.unclear_edit_content_template.format(field_list=field_list)
+                summary = self._format_summary(session)
+                unclear_edit_section = self.unclear_edit_content_template.format(
+                    summary=summary,
+                    field_list=field_list
+                )
                 directive = self.review_directive_template.format(
                     confirmation_section="",
                     unclear_edit_section=unclear_edit_section,
@@ -579,16 +654,45 @@ class InterviewInteractAction(InteractAction, ABC):
         
         # Handle update
         if classification_result.intent == "UPDATE":
-            if not classification_result.field:
-                # Ask which field to update
+            # Normalize field - handle string "null" or empty string
+            field = classification_result.field
+            if field and isinstance(field, str):
+                field = field.strip()
+                if field.lower() in ("null", "none", ""):
+                    field = None
+                    classification_result.field = None
+            
+            if not field:
+                # Ask which field to update - show summary for context
                 answered_fields = session.get_answered_questions()
+                if not answered_fields:
+                    # No fields to update - this shouldn't happen in REVIEW state, but handle gracefully
+                    logger.warning(f"{self.get_class_name()}: UPDATE intent with null field but no answered fields")
+                    directive = self.review_directive_template.format(
+                        confirmation_section="",
+                        unclear_edit_section="",
+                        unclear_general_section=self.unclear_general_content_template,
+                    )
+                    await self._respond_with_directive(visitor, directive, self.review_event_message_template.format(class_name=self.get_class_name()))
+                    return
+                
                 field_list = ", ".join([f.replace("_", " ") for f in answered_fields])
-                unclear_edit_section = self.unclear_edit_content_template.format(field_list=field_list)
+                summary = self._format_summary(session)
+                
+                # Ensure summary is not empty - if it is, use a fallback
+                if not summary or not summary.strip():
+                    summary = "No information available to review."
+                
+                unclear_edit_section = self.unclear_edit_content_template.format(
+                    summary=summary,
+                    field_list=field_list
+                )
                 directive = self.review_directive_template.format(
                     confirmation_section="",
                     unclear_edit_section=unclear_edit_section,
                     unclear_general_section="",
                 )
+                
                 await self._respond_with_directive(visitor, directive, self.review_event_message_template.format(class_name=self.get_class_name()))
                 return
             
@@ -715,6 +819,13 @@ class InterviewInteractAction(InteractAction, ABC):
             True if update completed, False if prompting for value or validation failed
         """
         field = classification_result.field
+        # Normalize field - handle string "null" or empty string
+        if field and isinstance(field, str):
+            field = field.strip()
+            if field.lower() in ("null", "none", ""):
+                field = None
+                classification_result.field = None
+        
         if not field:
             logger.warning(f"{self.get_class_name()}: Update field is None")
             return False
@@ -793,8 +904,8 @@ class InterviewInteractAction(InteractAction, ABC):
     ) -> None:
         """Process and validate extracted responses using QuestionWalker.
         
-        Only stores responses if they pass validation. Invalid responses trigger
-        a directive with feedback instead of being stored.
+        Processes all extracted responses in question_index order, storing valid ones
+        and tracking the first invalid field. Respects conditional edges between questions.
         
         Args:
             responses: Extracted responses dictionary
@@ -803,7 +914,21 @@ class InterviewInteractAction(InteractAction, ABC):
             interaction: Current interaction
             question_walker: QuestionWalker instance
         """
-        for field, value in responses.items():
+        # Track results
+        valid_fields = []
+        first_invalid_feedback = None
+        
+        # Sort responses by question_index order for sequential processing
+        sorted_fields = self._sort_by_question_order(list(responses.keys()), session)
+        
+        for field in sorted_fields:
+            value = responses[field]
+            
+            # Check if this question is reachable given current state and conditional edges
+            if not await question_walker.should_process_question(field, session):
+                logger.debug(f"{self.get_class_name()}: Skipping {field} - not reachable given current conditional edges")
+                continue
+            
             # Find question node for validation
             question_node = await self._get_question_node(field, session)
             if not question_node:
@@ -838,39 +963,104 @@ class InterviewInteractAction(InteractAction, ABC):
             if validation_status == ValidationStatus.VALID:
                 # Store final value (may be autocorrected) - only if valid
                 session.set_response(field, final_value)
-                # Clear active_question_key so traversal finds next unanswered question
-                session.active_question_key = None
+                valid_fields.append(field)
+                
+                # Re-evaluate conditional graph after each storage (may skip subsequent questions)
+                await self._update_reachable_questions(session, question_walker)
                 await session.save()
             
             elif validation_status == ValidationStatus.VALID_WITH_FLAG:
                 # Store final value (may be autocorrected) but ask for clarification
                 session.set_response(field, final_value)
-                # Clear active_question_key so traversal finds next unanswered question
-                session.active_question_key = None
+                valid_fields.append(field)
+                
+                # Re-evaluate conditional graph after each storage
+                await self._update_reachable_questions(session, question_walker)
                 await session.save()
                 
-                # Ask clarifying question
+                # Ask clarifying question (but continue processing other fields)
                 if feedback:
                     # Use feedback message as-is without prepending
                     feedback_msg = feedback
                     await self._respond_with_directive(visitor, feedback_msg, self.active_event_message_template.format(class_name=self.get_class_name()))
             
             else:  # INVALID
-                # CRITICAL: Do NOT store invalid values, especially if there's a custom validator
-                # Keep active_question_key pointing to this field so we can re-ask
-                session.active_question_key = field
-                await session.save()
-                
-                # Generate directive with validation feedback
-                if has_custom_validator and feedback:
-                    # Use validator's feedback message as-is without prepending
-                    error_msg = feedback
-                else:
-                    # Fallback to generic message
-                    error_msg = feedback or f"Tell the user: Please provide a valid value for {field}."
-                
-                await self._respond_with_directive(visitor, error_msg, self.active_event_message_template.format(class_name=self.get_class_name()))
-                break  # Stop processing further responses, focus on correcting this field
+                # Track first invalid field only
+                if not first_invalid_feedback:
+                    # Generate directive with validation feedback
+                    if has_custom_validator and feedback:
+                        # Use validator's feedback message as-is without prepending
+                        error_msg = feedback
+                    else:
+                        # Fallback to generic message
+                        error_msg = feedback or f"Tell the user: Please provide a valid value for {field}."
+                    first_invalid_feedback = (field, error_msg)
+        
+        # Handle first invalid field if any
+        if first_invalid_feedback:
+            field, error_msg = first_invalid_feedback
+            # Keep active_question_key pointing to this field so we can re-ask
+            session.active_question_key = field
+            await session.save()
+            await self._respond_with_directive(visitor, error_msg, self.active_event_message_template.format(class_name=self.get_class_name()))
+            return  # Stop here, wait for correction
+        
+        # All processed successfully, clear active_question_key
+        session.active_question_key = None
+        await session.save()
+    
+    def _sort_by_question_order(
+        self,
+        fields: List[str],
+        session: InterviewSession
+    ) -> List[str]:
+        """Sort fields by their position in question_index.
+        
+        This ensures fields are processed in the logical order defined by the
+        interview schema, which is important for conditional edge evaluation.
+        
+        Args:
+            fields: List of field names to sort
+            session: Interview session with question_index
+            
+        Returns:
+            Sorted list of field names in question_index order
+        """
+        # Create a map of field name to index position
+        field_to_index = {}
+        for idx, question_config in enumerate(session.question_index):
+            field_name = question_config.get("name", "")
+            if field_name:
+                field_to_index[field_name] = idx
+        
+        # Sort fields by their index, unknown fields go to the end
+        def get_sort_key(field: str) -> int:
+            return field_to_index.get(field, len(session.question_index))
+        
+        return sorted(fields, key=get_sort_key)
+    
+    async def _update_reachable_questions(
+        self,
+        session: InterviewSession,
+        question_walker: QuestionWalker
+    ) -> None:
+        """Re-evaluate which questions are reachable after new answers.
+        
+        This method is called after storing a valid response to update
+        the session's understanding of which questions should be processed.
+        Conditional edges may cause some questions to be skipped.
+        
+        Currently, this is a no-op as the reachability check happens
+        dynamically in should_process_question. This method exists for
+        potential future optimizations (e.g., caching reachable questions).
+        
+        Args:
+            session: Interview session
+            question_walker: QuestionWalker instance
+        """
+        # Currently a no-op - reachability is checked dynamically
+        # This method exists for potential future optimizations
+        pass
     
     async def _get_question_node(
         self, 
@@ -977,13 +1167,15 @@ class InterviewInteractAction(InteractAction, ABC):
             directive: Directive string
             event_name: Event name to add
         """
-        if directive:
+        if directive and directive.strip():
             await visitor.add_event(event_name)
             await self.respond(
                 visitor,
                 directives=[directive],
                 parameters=self.parameters if self.parameters else None
             )
+        else:
+            logger.warning(f"{self.get_class_name()}: Attempted to send empty directive, event_name={event_name}")
     
     async def _classify_and_extract(
         self,
@@ -1024,6 +1216,10 @@ class InterviewInteractAction(InteractAction, ABC):
         # Skip classification for terminal states
         if session.state == InterviewState.COMPLETED or session.state == InterviewState.CANCELLED:
             return ClassificationResult(intent="NONE")
+        
+        # Use DSPy if enabled, otherwise use legacy implementation
+        if self.use_dspy:
+            return await self._classify_with_dspy(session, user_message, interaction, visitor)
         
         # Unified classification and extraction using single prompt
         try:
@@ -1130,10 +1326,17 @@ class InterviewInteractAction(InteractAction, ABC):
             confidence = result.get("confidence", 1.0)
             
             # Build ClassificationResult
+            # Normalize field - handle string "null" from JSON
+            field_value = result.get("field")
+            if field_value and isinstance(field_value, str):
+                field_str = field_value.strip().lower()
+                if field_str == "null" or field_str == "none":
+                    field_value = None
+            
             classification_result = ClassificationResult(
                 intent=intent,
                 confidence=confidence,
-                field=result.get("field"),
+                field=field_value,
                 value=result.get("value")
             )
             
@@ -1163,12 +1366,151 @@ class InterviewInteractAction(InteractAction, ABC):
             logger.error(f"{self.get_class_name()}: Failed to classify/extract via unified prompt: {e}", exc_info=True)
             return ClassificationResult(intent="NONE")
     
-
+    async def _classify_with_dspy(
+        self,
+        session: InterviewSession,
+        user_message: str,
+        interaction: Interaction,
+        visitor: "InteractWalker"
+    ) -> ClassificationResult:
+        """DSPy-based classification and extraction routine.
+        
+        Uses DSPy modules with typed signatures for classification, enabling
+        optimization via DSPy teleprompters (BootstrapFewShot, MIPROv2, etc.)
+        and evaluation with dspy.Evaluate.
+        
+        Args:
+            session: Interview session
+            user_message: User's utterance (raw message)
+            interaction: Current interaction
+            visitor: InteractWalker
+            
+        Returns:
+            ClassificationResult with unified intent and extracted data
+        """
+        try:
+            # Import DSPy components
+            import dspy
+            from jvagent.action.model.dspy import DSPyLM
+            from jvagent.action.interview.dspy import InterviewClassifier
+            
+            # Build context for classification (same as legacy implementation)
+            current_state = session.state.value
+            
+            # Calculate progress
+            answered = len(session.get_answered_questions())
+            total = len(session.question_index)
+            progress_info = f"{answered}/{total} questions answered"
+            
+            # Format answered fields with values
+            answered_fields = session.get_answered_questions()
+            answered_fields_with_values = []
+            for field in answered_fields:
+                value = session.get_response(field)
+                question_config = session.get_question_by_name(field)
+                description = ""
+                if question_config:
+                    constraints = question_config.get("constraints", {})
+                    description = constraints.get("description", "")
+                    if not description:
+                        description = field.replace("_", " ").title()
+                answered_fields_with_values.append(f"- {field} ({description}): {value}")
+            
+            answered_fields_str = "\n".join(answered_fields_with_values) if answered_fields_with_values else "None"
+            
+            # Get unanswered questions for extraction
+            unanswered = session.get_unanswered_questions()
+            if session.active_question_key and session.active_question_key in unanswered:
+                # Focus on the active question (revision or re-prompt for invalid)
+                active_questions = [q for q in session.question_index if q.get("name") == session.active_question_key]
+            else:
+                active_questions = [q for q in session.question_index if q.get("name") in unanswered]
+            
+            # Build entities list for extraction
+            entities_list = []
+            
+            for item in active_questions:
+                key = item.get('name')
+                constraints = item.get('constraints', {})
+                if not key or not constraints:
+                    continue
+                desc = constraints.get('description', '')
+                other_constraints = {k: v for k, v in constraints.items() if k != 'description'}
+                constraint_strs = [f"{k}: {v}" for k, v in other_constraints.items()]
+                constraint_part = f" ({', '.join(constraint_strs)})" if constraint_strs else ""
+                entities_list.append(f"- {key}: {desc}{constraint_part}")
+            
+            entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
+            
+            # Get conversation history if needed (same as legacy implementation)
+            conversation_history = None
+            formatted_history = None
+            if self.use_history:
+                conversation_history = await self._get_conversation_history(
+                    interaction,
+                    self.history_limit,
+                    with_utterance=True,
+                    with_response=True,
+                    with_interpretation=False,
+                    with_event=False,
+                    max_statement_length=self.max_statement_length,
+                )
+                # Format history for DSPy signature
+                from jvagent.action.model.dspy import format_conversation_history_for_dspy
+                formatted_history = format_conversation_history_for_dspy(conversation_history)
+            
+            # Get model action
+            model_action = await self.get_model_action(required=True)
+            if not model_action:
+                logger.warning(f"{self.get_class_name()}: Could not get model action for DSPy classification")
+                return ClassificationResult(intent="NONE")
+            
+            # Create DSPy LM adapter
+            # Pass model, temperature, and max_tokens to allow agent.yaml overrides
+            lm = DSPyLM(
+                model_action=model_action,
+                model_type="chat",
+                model=self.model,
+                temperature=self.model_temperature,
+                max_tokens=self.model_max_tokens,
+            )
+            
+            # Configure DSPy with the adapter
+            with dspy.context(lm=lm):
+                # Create classifier instance
+                classifier = InterviewClassifier()
+                
+                # Build kwargs for classifier, include history if available
+                classifier_kwargs = {
+                    "user_message": user_message,
+                    "current_state": current_state,
+                    "progress_info": progress_info,
+                    "answered_fields": answered_fields_str,
+                    "entities_to_extract": entities_to_extract,
+                }
+                if formatted_history:
+                    classifier_kwargs["conversation_history"] = formatted_history
+                
+                # Call classifier with async forward
+                classification_result = await classifier.aforward(**classifier_kwargs)
+                
+                return classification_result
+                
+        except Exception as e:
+            logger.error(
+                f"{self.get_class_name()}: Failed to classify/extract via DSPy: {e}",
+                exc_info=True
+            )
+            return ClassificationResult(intent="NONE")
+    
     async def on_register(self) -> None:
         """Register the action and build question nodes.
         
         Note: Errors are automatically logged by the base Action class.
         """
+        
+        # Merge standard anchors with any anchors set via agent.yaml
+        self._merge_standard_anchors()
         
         # Validate question_index is defined
         if not self.question_index:
@@ -1179,6 +1521,9 @@ class InterviewInteractAction(InteractAction, ABC):
 
     async def on_reload(self) -> None:
         """Reload the action - rebuild question nodes if question_index changed."""
+        
+        # Merge standard anchors with any anchors set via agent.yaml (may have changed on reload)
+        self._merge_standard_anchors()
         
         # Get current question node labels to detect changes
         existing_nodes = await self.nodes(direction="out", node=QuestionNode)
@@ -1341,9 +1686,9 @@ class InterviewInteractAction(InteractAction, ABC):
         interaction: Interaction,
         history_limit: int,
         with_utterance: bool = True,
-        with_response: bool = False,
+        with_response: bool = True,
         with_interpretation: bool = False,
-        with_event: bool = True,
+        with_event: bool = False,
         max_statement_length: Optional[int] = None,
     ) -> Optional[List[Dict[str, Any]]]:
         """Get formatted conversation history for the language model.
@@ -1371,7 +1716,7 @@ class InterviewInteractAction(InteractAction, ABC):
 
         history = await conversation.get_interaction_history(
             limit=history_limit,
-            excluded=interaction.id,
+            # excluded=interaction.id,
             with_utterance=with_utterance,
             with_response=with_response,
             with_interpretation=with_interpretation,

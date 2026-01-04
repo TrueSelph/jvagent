@@ -640,6 +640,8 @@ class ActionLoader:
         This is critical for endpoint discovery - parent package __init__.py files
         import endpoints.py modules which register endpoints via @endpoint decorators.
         
+        Also installs pip dependencies for core actions before importing.
+        
         Returns:
             Number of core action packages imported
         """
@@ -652,7 +654,16 @@ class ActionLoader:
         # Build core action cache to get all core actions
         action_cache = self._build_core_action_cache()
         
-        # Import each core action's parent packages
+        # First, install dependencies for all core actions
+        for action_name, action_info in action_cache.items():
+            action_dir = action_info["dir"]
+            data = action_info.get("data")
+            
+            if data:
+                # Install pip dependencies before importing
+                self._ensure_dependencies_installed(data, action_name, action_dir)
+        
+        # Then import each core action's parent packages
         # We need to import parent packages, not just the action modules themselves
         # This ensures __init__.py files execute and import endpoints
         imported_packages = set()

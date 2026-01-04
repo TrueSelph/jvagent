@@ -33,10 +33,14 @@ The InteractRouter automatically uses the class name (`MyInteractAction`) as the
 
 1. **InteractRouter executes first** (weight: -100)
 2. **Collects anchors** from all enabled InteractActions
-3. **Builds context** from conversation history (configurable limit, default: 10 interactions)
+3. **Builds context** from conversation history (configurable limit, default: 3 interactions)
+   - Includes user utterances for conversational context
+   - Includes AI responses to understand prior exchanges
+   - Includes interpretations for routing context
+   - Includes events for system activity awareness
 4. **Calls LLM** with prompt containing:
    - Current utterance
-   - Conversation history (utterances, responses, events)
+   - Rich conversation history (user utterances, AI responses, interpretations, events)
    - Available anchors dictionary
 5. **Parses JSON response**:
    ```json
@@ -64,7 +68,7 @@ After InteractRouter stores routing information, other InteractActions can:
 ### Properties
 
 - `model_action_type`: Type of LanguageModelAction to use (e.g., "OpenAILanguageModelAction"). If empty, uses first available LanguageModelAction.
-- `history_limit`: Number of previous interactions to include in conversation history (default: 10)
+- `history_limit`: Number of previous interactions to include in conversation history (default: 3). The history includes user utterances, AI responses, interpretations, and events for comprehensive context.
 - `weight`: Execution weight (default: -100 to run first)
 - `exceptions`: Optional list of InteractAction entity names (class names) that must always execute, regardless of routing. Most routing‑exception use cases can also be handled via the `always_execute` flag on InteractAction (see below).
 
