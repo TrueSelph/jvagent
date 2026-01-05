@@ -314,32 +314,77 @@ actions:
 
 ## Configuration
 
+### Configuration Priority
+
+Configuration is loaded with the following priority (highest to lowest):
+1. **Environment variables** (from `.env` file or system environment) - Highest priority
+2. **app.yaml config section** - Default values
+3. **Hardcoded defaults** in code - Lowest priority
+
 ### Application Configuration (app.yaml)
 
-The `app.yaml` file includes a `config` section with application-level defaults:
-- Server configuration (host, port, title)
-- Database configuration defaults
-- File storage defaults
-- Authentication defaults
-- Admin user defaults
+The `app.yaml` file includes a comprehensive `config` section with application-level defaults. Most non-sensitive configuration should be in `app.yaml`:
+
+**Server Configuration:**
+- `server.title`, `server.description`, `server.version`
+- `server.host`, `server.port`
+
+**Database Configuration:**
+- `database.type` - Database type (`json`, `mongodb`, `sqlite`, `dynamodb`)
+- `database.uri` - MongoDB connection URI (default: `mongodb://localhost:27017`)
+- `database.name` - Database name (default: `jvagent_db`)
+- `database.path` - Path for JSON/SQLite databases
+
+**File Storage Configuration:**
+- `file_storage.provider` - Storage provider (`local`, `s3`)
+- `file_storage.root_dir` - Root directory for local storage
+- `file_storage.enabled` - Enable/disable file storage
+
+**Authentication Configuration:**
+- `auth.enabled` - Enable authentication
+- `auth.jwt_expire_minutes` - JWT expiration time
+
+**Logging Configuration:**
+- `logging.enabled` - Enable/disable logging
+- `logging.levels` - Comma-separated log levels (e.g., `INTERACTION,ERROR,CRITICAL`)
+- `logging.retention_days` - Log retention period in days
+- `logging.database` - Logging database configuration
+
+**CORS Configuration:**
+- `cors.enabled` - Enable CORS
+- `cors.origins` - Comma-separated list of allowed origins
+
+**Development Settings:**
+- `development.debug` - Enable debug mode
+- `development.environment` - Environment mode (`development` or `production`)
+
+**API Configuration:**
+- `api.prefix` - API route prefix
+- `api.graph_endpoint_enabled` - Enable graph visualization endpoint
 
 **Note**: Configuration in `app.yaml` can use environment variable placeholders (e.g., `${VAR_NAME}`) which are automatically resolved when the app is loaded.
 
 ### Environment Configuration (.env)
 
-The `.env` file contains runtime-specific configuration that overrides `app.yaml` defaults. See `.env.example` for available options.
+The `.env` file should **ONLY contain sensitive information** that should not be committed to version control:
 
-**Key configuration variables:**
-- `JVAGENT_HOST`, `JVAGENT_PORT`: Server host and port
-- `JVAGENT_ENVIRONMENT`: Environment mode (`development` or `production`, default: `development`)
-  - Set to `production` in production deployments to exclude observability metrics and debugging data from API responses
-- `JVSPATIAL_DB_PATH`: Database path (default: `./jvagent_db`, production will use its own path)
-- `JVSPATIAL_FILE_INTERFACE`: File storage provider (local, s3)
-- `JVSPATIAL_FILES_ROOT_PATH`: Root path for file storage (production will use its own path)
-- `JVSPATIAL_JWT_SECRET`: JWT secret key (MUST be set in production)
-- `JVAGENT_ADMIN_PASSWORD`: Admin password (MUST be set in production)
+**Required Secrets:**
+- `OPENAI_API_KEY` - OpenAI API key (for language model actions)
+- `TYPESENSE_API_KEY` - Typesense API key (for vector store actions)
+- `JVSPATIAL_JWT_SECRET` - JWT secret key (MUST be set in production)
+- `JVAGENT_ADMIN_PASSWORD` - Admin password (MUST be set in production)
 
-**Note**: Actions are packaged within each agent folder (`agents/{namespace}/{agent_name}/actions/{namespace}/{action_name}/`). Environment variable placeholders like `${VAR_NAME}` in YAML files are automatically resolved from the environment.
+**Optional Overrides:**
+You can override any `app.yaml` configuration using environment variables if needed for local development:
+- `JVAGENT_HOST`, `JVAGENT_PORT` - Override server host/port
+- `JVSPATIAL_MONGODB_URI` - Override MongoDB URI
+- `JVSPATIAL_MONGODB_DB_NAME` - Override database name
+- `JVAGENT_LOG_LEVEL` - Override log level (`debug`, `info`, `warning`, `error`)
+
+**Important**: 
+- Add `.env` to `.gitignore` to prevent committing secrets
+- In production, use secure secret management (environment variables, secret managers, etc.)
+- Non-sensitive configuration should be in `app.yaml`, not `.env`
 
 ## Running the Application
 
