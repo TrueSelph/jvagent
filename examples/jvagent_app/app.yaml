@@ -34,11 +34,13 @@ tags:
 # Application configuration defaults
 # These are application-level defaults that can be overridden by .env or environment variables
 # In production, the running jvagent instance will use its own paths and settings
+# Environment variable placeholders (e.g., ${VAR_NAME}) are automatically resolved
 config:
   # Server configuration
   server:
     title: jvagent Demo App API
     description: API for jvagent Demo App
+    version: 0.0.1
     host: 0.0.0.0
     port: 8000
   
@@ -46,6 +48,11 @@ config:
   database:
     type: json
     path: ./jvagent_db
+    # MongoDB configuration (uncomment to use MongoDB instead of JSON)
+    # type: mongodb
+    # uri: mongodb://localhost:27017
+    # name: jvagent_db  # Optional: specify database name (defaults to "jvdb" if not set via JVSPATIAL_MONGODB_DB_NAME)
+    # Note: MongoDB database names cannot contain dots (.) - use underscores instead
   
   # File storage configuration (defaults - production will override)
   file_storage:
@@ -57,6 +64,7 @@ config:
   auth:
     enabled: true
     jwt_expire_minutes: 60
+    # JWT secret should be set via JVSPATIAL_JWT_SECRET environment variable
   
   # Admin user configuration (defaults - production MUST override password)
   admin:
@@ -68,6 +76,38 @@ config:
   interact:
     rate_limit_per_minute: 60  # per IP+agent_id combination
     max_utterance_length: 2000  # maximum characters for utterance input (set to null to disable)
+  
+  # Logging system configuration
+  logging:
+    enabled: true
+    levels: INTERACTION,ERROR,CRITICAL  # Comma-separated log levels to capture
+    retention_days: 60  # Log retention period in days (0 = indefinite)
+    # Logging database configuration
+    # If not specified, logging database defaults to same as main database
+    database:
+      # type: mongodb  # Defaults to same as database.type if not set (uncomment for MongoDB)
+      # uri: mongodb://localhost:27017  # Defaults to same as database.uri if not set (uncomment for MongoDB)
+      name: jvagent_logs  # Defaults to jvagent_logs if not set via JVAGENT_LOG_DB_NAME
+      path: ./jvagent_logs  # For JSON/SQLite logging databases
+  
+  # CORS configuration
+  cors:
+    enabled: true
+    origins: http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:5173,http://localhost:5173
+  
+  # Development settings
+  development:
+    debug: false
+    environment: development  # development or production
+  
+  # API configuration
+  api:
+    prefix: /api
+    graph_endpoint_enabled: true
+  
+  # Paths configuration
+  paths:
+    agents: ./agents
 
 # Agents
 # List of agents (automatically installed when you run jvagent or bootstrap)

@@ -5,7 +5,7 @@ Command-line interface for the jvagent application.
 
 import logging
 import os
-from typing import List
+from typing import Any, List
 
 from dotenv import load_dotenv
 from jvspatial.api import Server
@@ -217,26 +217,110 @@ async def ensure_admin_user() -> bool:
     return True
 
 
-def create_server_from_config(debug: bool = False) -> Server:
-    """Create and configure Server instance from environment variables.
+def _get_config_value(config: dict, path: str, env_var: str = None, default: Any = None) -> Any:
+    """Get configuration value from nested dict path with environment variable fallback.
+    
+    Args:
+        config: Configuration dictionary (from app.yaml)
+        path: Dot-separated path to config value (e.g., "server.host")
+        env_var: Environment variable name to check (takes precedence)
+        default: Default value if not found
+    
+    Returns:
+        Configuration value (env var > config > default)
+    """
+    # Environment variables take highest priority
+    if env_var and os.getenv(env_var) is not None:
+        value = os.getenv(env_var)
+        # Convert string "true"/"false" to boolean
+        if value.lower() in ("true", "false"):
+            return value.lower() == "true"
+        # Try to convert to int if default is int
+        if isinstance(default, int) and value.isdigit():
+            return int(value)
+        return value
+    
+    # Try to get from config dict using dot notation
+    if config:
+        keys = path.split(".")
+        current = config
+        for key in keys:
+            if isinstance(current, dict) and key in current:
+                current = current[key]
+            else:
+                current = None
+                break
+        if current is not None:
+            return current
+    
+    # Return default
+    return default
+
+
+def create_server_from_config(debug: bool = False, app_root: str = None) -> Server:
+    """Create and configure Server instance from app.yaml and environment variables.
+    
+    Configuration priority (highest to lowest):
+    1. Environment variables
+    2. app.yaml config section
+    3. Hardcoded defaults
+
+    Args:
+        debug: Enable debug mode
+        app_root: Path to app root directory (for loading app.yaml)
 
     Returns:
         Configured Server instance with authentication enabled by default.
     """
-    # Get configuration from environment variables
+    # Try to load app.yaml config
+    app_config = {}
+    if app_root is None:
+        app_root = os.getcwd()
+    
+    try:
+        from pathlib import Path
+        app_yaml_path = Path(app_root) / "app.yaml"
+        if app_yaml_path.exists():
+            import yaml
+            from jvagent.core.env_resolver import resolve_env_placeholders
+            
+            with open(app_yaml_path, "r", encoding="utf-8") as f:
+                yaml_data = yaml.safe_load(f)
+                if yaml_data and "config" in yaml_data:
+                    # Resolve environment variable placeholders
+                    app_config = resolve_env_placeholders(yaml_data.get("config", {}))
+    except Exception as e:
+        logger.debug(f"Could not load app.yaml config: {e}")
+        app_config = {}
+    
+    # Get configuration with priority: env var > app.yaml > default
     # Server configuration
-    title = os.getenv("JVAGENT_TITLE", "jvagent API")
-    description = os.getenv("JVAGENT_DESCRIPTION", "jvagent Agentive Platform API")
-    version = os.getenv("JVAGENT_VERSION", __version__)
-    host = os.getenv("JVAGENT_HOST", "127.0.0.1")
-    port = int(os.getenv("JVAGENT_PORT", "8000"))
+    title = _get_config_value(app_config, "server.title", "JVAGENT_TITLE", "jvagent API")
+    description = _get_config_value(app_config, "server.description", "JVAGENT_DESCRIPTION", "jvagent Agentive Platform API")
+    version = _get_config_value(app_config, "server.version", "JVAGENT_VERSION", __version__)
+    host = _get_config_value(app_config, "server.host", "JVAGENT_HOST", "127.0.0.1")
+    port = int(_get_config_value(app_config, "server.port", "JVAGENT_PORT", 8000))
 
     # Database configuration
-    db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
-    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
+    db_type = _get_config_value(app_config, "database.type", "JVSPATIAL_DB_TYPE", "json")
+    db_path = _get_config_value(app_config, "database.path", "JVSPATIAL_DB_PATH", "./jvagent_db")
     # Ensure db_path is never None or empty (jvspatial falls back to "./jvdb" if None)
     if not db_path or db_path.strip() == "":
         db_path = "./jvagent_db"
+    
+    # MongoDB configuration
+    mongodb_uri = _get_config_value(app_config, "database.uri", "JVSPATIAL_MONGODB_URI", "mongodb://localhost:27017")
+    mongodb_db_name = _get_config_value(app_config, "database.name", "JVSPATIAL_MONGODB_DB_NAME", None)
+    
+    # Handle empty string from unresolved placeholder (resolve_env_placeholders returns "" if env var not found)
+    if not mongodb_uri or mongodb_uri.strip() == "":
+        mongodb_uri = os.getenv("JVSPATIAL_MONGODB_URI", "mongodb://localhost:27017")
+    
+    # Set MongoDB environment variables if using MongoDB
+    if db_type == "mongodb":
+        os.environ["JVSPATIAL_MONGODB_URI"] = mongodb_uri
+        if mongodb_db_name:
+            os.environ["JVSPATIAL_MONGODB_DB_NAME"] = mongodb_db_name
     
     # Set JVSPATIAL_JSONDB_PATH unconditionally to ensure DatabaseManager uses the correct path
     # (DatabaseManager uses JVSPATIAL_JSONDB_PATH, not JVSPATIAL_DB_PATH)
@@ -245,13 +329,13 @@ def create_server_from_config(debug: bool = False) -> Server:
         os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
 
     # Graph endpoint configuration
-    graph_endpoint_enabled = os.getenv("JVSPATIAL_GRAPH_ENDPOINT_ENABLED", "false").lower() == "true"
+    graph_endpoint_enabled = _get_config_value(app_config, "api.graph_endpoint_enabled", "JVSPATIAL_GRAPH_ENDPOINT_ENABLED", False)
 
     # Authentication configuration (enabled by default for jvagent)
-    auth_enabled = os.getenv("JVAGENT_AUTH_ENABLED", "true").lower() == "true"
+    auth_enabled = _get_config_value(app_config, "auth.enabled", "JVAGENT_AUTH_ENABLED", True)
     jwt_auth_enabled = os.getenv("JVSPATIAL_JWT_AUTH_ENABLED", "true").lower() == "true"
     jwt_secret = os.getenv("JVSPATIAL_JWT_SECRET", "jvagent-secret-key-change-in-production")
-    jwt_expire_minutes = int(os.getenv("JVSPATIAL_JWT_EXPIRE_MINUTES", "60"))
+    jwt_expire_minutes = int(_get_config_value(app_config, "auth.jwt_expire_minutes", "JVSPATIAL_JWT_EXPIRE_MINUTES", 60))
 
     # Log server creation details only in debug mode
     if debug:
@@ -261,6 +345,27 @@ def create_server_from_config(debug: bool = False) -> Server:
 
     # Determine log level based on debug flag or environment variable
     log_level = os.getenv("JVAGENT_LOG_LEVEL", "debug" if debug else "info")
+    
+    # Override with app.yaml development.debug if available
+    debug_mode = _get_config_value(app_config, "development.debug", "JVSPATIAL_DEBUG", False)
+    if debug_mode:
+        log_level = "debug"
+
+    # CORS configuration
+    cors_enabled = _get_config_value(app_config, "cors.enabled", "JVSPATIAL_CORS_ENABLED", True)
+    cors_origins_str = _get_config_value(app_config, "cors.origins", "JVSPATIAL_CORS_ORIGINS", None)
+    if cors_origins_str and isinstance(cors_origins_str, str):
+        cors_origins = [origin.strip() for origin in cors_origins_str.split(",") if origin.strip()]
+    else:
+        # Default CORS origins
+        cors_origins = [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+        ]
 
     # Create server with configuration
     server = Server(
@@ -271,12 +376,17 @@ def create_server_from_config(debug: bool = False) -> Server:
         port=port,
         db_type=db_type,
         db_path=db_path,
+        db_connection_string=mongodb_uri if db_type == "mongodb" else None,
+        db_database_name=mongodb_db_name if db_type == "mongodb" else None,
         auth_enabled=auth_enabled,
         jwt_auth_enabled=jwt_auth_enabled,
         jwt_secret=jwt_secret,
         jwt_expire_minutes=jwt_expire_minutes,
         graph_endpoint_enabled=graph_endpoint_enabled,
         log_level=log_level,
+        debug=debug_mode,
+        cors_enabled=cors_enabled,
+        cors_origins=cors_origins,
     )
 
     # Initialize logging database (automatically installs DBLogHandler)
@@ -286,17 +396,55 @@ def create_server_from_config(debug: bool = False) -> Server:
     
     from jvspatial.logging.config import initialize_logging_database, get_logging_config
     
-    # Get config and add INTERACTION level to log_levels
-    config = get_logging_config()
-    log_levels = config.get("log_levels", {logging.ERROR, logging.CRITICAL}).copy()
-    
-    # Add INTERACTION level to capture interaction logs
-    log_levels.add(INTERACTION_LEVEL_NUMBER)
-    
-    # Initialize with updated log_levels
-    initialize_logging_database(
-        log_levels=log_levels,
-    )
+    # Get logging configuration from app.yaml if available
+    logging_enabled = _get_config_value(app_config, "logging.enabled", "JVAGENT_LOGGING_ENABLED", True)
+    if logging_enabled:
+        # Get log levels from app.yaml or environment
+        log_levels_str = _get_config_value(app_config, "logging.levels", "JVAGENT_DB_LOGGING_LEVELS", "ERROR,CRITICAL")
+        if isinstance(log_levels_str, str):
+            log_level_names = [level.strip().upper() for level in log_levels_str.split(",")]
+        else:
+            log_level_names = ["ERROR", "CRITICAL"]
+        
+        # Convert level names to logging constants
+        log_levels = set()
+        for level_name in log_level_names:
+            try:
+                level = getattr(logging, level_name)
+                log_levels.add(level)
+            except AttributeError:
+                logger.warning(f"Invalid log level: {level_name}, skipping")
+        
+        # Default to ERROR and CRITICAL if no valid levels
+        if not log_levels:
+            log_levels = {logging.ERROR, logging.CRITICAL}
+        
+        # Add INTERACTION level to capture interaction logs
+        log_levels.add(INTERACTION_LEVEL_NUMBER)
+        
+        # Get logging database config from app.yaml
+        log_db_type = _get_config_value(app_config, "logging.database.type", "JVAGENT_LOG_DB_TYPE", None)
+        log_db_uri = _get_config_value(app_config, "logging.database.uri", "JVAGENT_LOG_DB_URI", None)
+        log_db_name = _get_config_value(app_config, "logging.database.name", "JVAGENT_LOG_DB_NAME", "jvagent_logs")
+        
+        # Handle empty string from unresolved placeholder - default to main database URI
+        if not log_db_uri or log_db_uri.strip() == "":
+            log_db_uri = os.getenv("JVAGENT_LOG_DB_URI") or mongodb_uri
+        
+        # Set logging database environment variables if specified
+        if log_db_type:
+            os.environ["JVAGENT_LOG_DB_TYPE"] = log_db_type
+        if log_db_uri:
+            os.environ["JVAGENT_LOG_DB_URI"] = log_db_uri
+        if log_db_name:
+            os.environ["JVAGENT_LOG_DB_NAME"] = log_db_name
+        
+        # Initialize with updated log_levels
+        initialize_logging_database(
+            log_levels=log_levels,
+        )
+    else:
+        logger.info("Logging is disabled in configuration")
     
     # Import endpoints to register them
     from jvagent.logging import endpoints  # noqa: F401 - Import to register endpoints
@@ -556,8 +704,8 @@ def run_server(update_if_exists: bool = False, debug: bool = False, app_root: st
     bootstrap_log.start("jvagent application")
 
     try:
-        # Create server from configuration
-        server = create_server_from_config(debug=debug)
+        # Create server from configuration (pass app_root to load app.yaml)
+        server = create_server_from_config(debug=debug, app_root=app_root)
 
         # Perform bootstrap tasks before server starts
         admin_exists = asyncio.run(
