@@ -1,11 +1,24 @@
-import { useState, FormEvent } from 'react'
+import { useState, FormEvent, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth'
+import { getConfigAsync, saveConfig } from '../config/config'
 
 export function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [serverUrl, setServerUrl] = useState('')
   const { login, loading, error } = useAuth()
   const [localError, setLocalError] = useState<string | null>(null)
+
+  // Load saved URL from config on mount
+  useEffect(() => {
+    getConfigAsync().then((config) => {
+      if (config.jvagent.url) {
+        setServerUrl(config.jvagent.url)
+      }
+    }).catch((err) => {
+      console.warn('Failed to load config:', err)
+    })
+  }, [])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -16,14 +29,41 @@ export function Login() {
       return
     }
 
+    if (!serverUrl) {
+      setLocalError('Please enter the server URL')
+      return
+    }
+
+    // Validate URL format (allow URLs without protocol for convenience)
+    let validatedUrl = serverUrl.trim()
+    if (!validatedUrl.match(/^https?:\/\//i)) {
+      // If no protocol, assume http://
+      validatedUrl = `http://${validatedUrl}`
+    }
+    
     try {
-      await login({ email, password })
+      new URL(validatedUrl)
+    } catch {
+      setLocalError('Please enter a valid URL (e.g., localhost:8000 or http://localhost:8000)')
+      return
+    }
+
+    // Update state with validated URL if it changed
+    if (validatedUrl !== serverUrl) {
+      setServerUrl(validatedUrl)
+    }
+
+    // Save the URL to config before attempting login
+    saveConfig({ jvagent: { url: validatedUrl } })
+
+    try {
+      await login({ email, password, serverUrl: validatedUrl })
     } catch (err: any) {
       let errorMsg = err.response?.data?.detail || err.message || 'Login failed'
       
       // Check for network errors
       if (err.code === 'ERR_NETWORK' || err.message?.includes('Network Error') || err.message?.includes('Failed to fetch')) {
-        errorMsg = 'Network Error: Cannot connect to jvagent server. Please ensure the server is running and accessible.'
+        errorMsg = 'Network Error: Cannot connect to jvagent server. Please check the server URL and ensure the server is running.'
       }
       
       setLocalError(errorMsg)
@@ -46,6 +86,22 @@ export function Login() {
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
+              <label htmlFor="server-url" className="sr-only">
+                Server URL
+              </label>
+              <input
+                id="server-url"
+                name="server-url"
+                type="text"
+                required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Server URL (e.g., localhost:8000 or http://localhost:8000)"
+                value={serverUrl}
+                onChange={(e) => setServerUrl(e.target.value)}
+                disabled={loading}
+              />
+            </div>
+            <div>
               <label htmlFor="email" className="sr-only">
                 Email address
               </label>
@@ -55,7 +111,7 @@ export function Login() {
                 type="email"
                 autoComplete="email"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
                 placeholder="Email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}

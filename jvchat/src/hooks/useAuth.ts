@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiClient } from '../config/api'
 import { setToken, removeToken, getToken, removeUserId, setUserId } from '../utils/storage'
+import { saveConfig } from '../config/config'
 import type { LoginRequest } from '../types/api'
 
 interface AuthState {
@@ -58,6 +59,11 @@ export function useAuth() {
     async (credentials: LoginRequest) => {
       setState((prev) => ({ ...prev, loading: true, error: null }))
       try {
+        // Save server URL to config if provided
+        if (credentials.serverUrl) {
+          saveConfig({ jvagent: { url: credentials.serverUrl } })
+        }
+
         const response = await apiClient.login(credentials)
         console.log('Login response received:', response)
         console.log('Access token to store:', response.access_token)

@@ -30,20 +30,10 @@ let cachedConfig: AppConfig | null = null
 let configLoadPromise: Promise<AppConfig> | null = null
 
 async function loadConfigFromFile(): Promise<Partial<AppConfig>> {
-  if (typeof window === 'undefined') return {}
-  
-  try {
-    // Try to load from config.json (browser-readable version of config.yaml)
-    const response = await fetch('/config.json')
-    if (response.ok) {
-      const config = await response.json()
-      return config as Partial<AppConfig>
-    }
-  } catch (error) {
-    // config.json not found, that's okay
-    console.debug('config.json not found, using defaults')
-  }
-  
+  // File-based config loading removed - configuration is now handled via:
+  // 1. User input from login screen (saved to localStorage)
+  // 2. Environment variables (VITE_JVAGENT_URL)
+  // 3. Default values
   return {}
 }
 
