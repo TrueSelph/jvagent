@@ -527,8 +527,8 @@ def main() -> None:
 
     # Extract app root path (first positional argument that's not a flag or command)
     app_root = None
-    commands = ["run", "status", "agent", "action", "bootstrap"]
-    flags = ["--debug", "--update", "--migrate"]
+    commands = ["run", "status", "agent", "action", "bootstrap", "bundle"]
+    flags = ["--debug", "--update", "--migrate", "--lambda", "--docker", "--zip"]
 
     # Find app root: first argument that's not a command or flag
     for i, arg in enumerate(args):
@@ -592,8 +592,79 @@ def main() -> None:
     elif args[0] == "bootstrap":
         # Bootstrap application graph
         asyncio.run(bootstrap_only(update_if_exists=update_flag, app_root=app_root))
+    elif args[0] == "bundle":
+        # Bundle application for deployment
+        handle_bundle_command(args[1:], app_root=app_root)
     else:
         print_usage()
+
+
+def handle_bundle_command(args: List[str], app_root: str = None) -> None:
+    """Handle bundle command.
+
+    Args:
+        args: Command arguments
+        app_root: Path to the app root directory. If None, uses current working directory.
+    """
+    import sys
+
+    if app_root is None:
+        app_root = os.getcwd()
+
+    # Parse arguments
+    output_dir = "./bundle"
+    generate_lambda = False
+    generate_docker = False
+    create_zip = False
+
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--output-dir" and i + 1 < len(args):
+            output_dir = args[i + 1]
+            i += 2
+        elif arg == "--lambda":
+            generate_lambda = True
+            i += 1
+        elif arg == "--docker":
+            generate_docker = True
+            i += 1
+        elif arg == "--zip":
+            create_zip = True
+            i += 1
+        else:
+            logger.warning(f"Unknown bundle argument: {arg}")
+            i += 1
+
+    # Create bundler
+    from jvagent.bundle import Bundler
+
+    bundler = Bundler(
+        app_root=app_root,
+        output_dir=output_dir,
+        generate_lambda=generate_lambda,
+        generate_docker=generate_docker,
+    )
+
+    # Create bundle
+    success = bundler.bundle()
+
+    if not success:
+        logger.error("Bundling failed")
+        sys.exit(1)
+
+    # Create ZIP if requested
+    if create_zip:
+        zip_path = bundler.create_zip()
+        if zip_path:
+            logger.info(f"ZIP archive created: {zip_path}")
+        else:
+            logger.error("Failed to create ZIP archive")
+            sys.exit(1)
+
+    print(f"\n✓ Bundle created successfully: {output_dir}")
+    if create_zip:
+        print(f"✓ ZIP archive created: {zip_path}")
 
 
 def print_usage() -> None:
@@ -609,6 +680,12 @@ jvagent - Agentive Platform
     jvagent [<app_root>] status             Show application status
     jvagent [<app_root>] bootstrap [--update]  Bootstrap application graph
                                   --update: Update existing agents/actions from YAML files
+    jvagent [<app_root>] bundle [--output-dir <dir>] [--lambda] [--docker] [--zip]
+                                  Bundle application for deployment
+                                  --output-dir: Output directory (default: ./bundle)
+                                  --lambda: Generate Lambda handler
+                                  --docker: Generate Dockerfile
+                                  --zip: Create ZIP archive
     jvagent [<app_root>] agent list         List all installed agents
     jvagent [<app_root>] agent uninstall <name>    Uninstall an agent
     jvagent [<app_root>] action list <agent_name>  List actions for an agent
@@ -639,6 +716,7 @@ Examples:
     jvagent /path/to/my_app                    # Run from specified app directory
     jvagent /path/to/my_app --update           # Run with update flag
     jvagent /path/to/my_app bootstrap          # Bootstrap from specified directory
+    jvagent /path/to/my_app bundle --lambda --zip  # Bundle with Lambda handler and ZIP
     """
     )
 
