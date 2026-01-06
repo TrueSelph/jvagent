@@ -126,6 +126,12 @@ class PersonaAction(Action):
         description="Standard collection of configurable parameters to apply when executing the prompt",
     )
 
+    def __init__(self, *args, **kwargs):
+        """Initialize PersonaAction."""
+        super().__init__(*args, **kwargs)
+        # Cache DSPy module instance for reuse across calls
+        self._dspy_module = None
+
     async def on_register(self) -> None:
         """Initialize when action is registered."""
         await super().on_register()
@@ -237,6 +243,47 @@ class PersonaAction(Action):
         except Exception as e:
             logger.debug(f"PersonaAction: failed to resolve user display name: {e}")
         return "user"
+    
+    def _extract_response_from_prediction(self, prediction: Any) -> str:
+        """Extract response field from DSPy prediction object.
+        
+        ChainOfThought returns both 'reasoning' and 'response' fields.
+        This method safely extracts only the 'response' field.
+        
+        Args:
+            prediction: DSPy prediction object (Prediction, dict, or string)
+            
+        Returns:
+            Response string
+        """
+        if isinstance(prediction, str):
+            # If prediction is already a string, use it directly
+            return prediction
+        elif hasattr(prediction, 'response'):
+            # Prediction object with response attribute
+            return prediction.response
+        elif isinstance(prediction, dict) and 'response' in prediction:
+            # Dictionary with response key
+            return prediction['response']
+        elif hasattr(prediction, '__getitem__') and 'response' in prediction:
+            # Object that supports dictionary-like access
+            return prediction['response']
+        else:
+            # Fallback: try to get response from prediction store
+            response = None
+            if hasattr(prediction, 'get'):
+                response = prediction.get('response', None)
+            if response is None:
+                response = getattr(prediction, 'response', None)
+            if response is None:
+                logger.warning(
+                    f"{self.get_class_name()}: Prediction does not contain 'response' field. "
+                    f"Prediction type: {type(prediction)}, "
+                    f"Available fields: {list(prediction.keys()) if hasattr(prediction, 'keys') else 'unknown'}"
+                )
+                # If no response field, use the prediction string representation
+                response = str(prediction)
+            return response
 
     def _build_interpretation_insights_section(self, interpretation: Optional[str]) -> str:
         """Build the interpretation/insights section when interpretation is available.
@@ -679,211 +726,56 @@ class PersonaAction(Action):
                 max_tokens=self.model_max_tokens,
             )
             
-            # Configure DSPy and call module
-            with dspy.context(lm=lm):
-                module = PersonaResponseModule()
-                
-                # If streaming, we need to handle it differently
-                # For streaming, format the DSPy signature and call DSPyLM directly
-                if streaming:
-                    logger.debug(f"{self.get_class_name()}: Using DSPy signature formatting for streaming")
-                    # Format signature inputs (same as PersonaResponseModule does)
-                    from jvagent.action.persona.dspy.signatures import PersonaResponse
-                    
-                    # Format capabilities
-                    capabilities_str = (
-                        "\n".join(f"- {cap}" for cap in self.persona_capabilities)
-                        if self.persona_capabilities
-                        else "None specified"
-                    )
-                    
-                    # Format directives
-                    directive_count = len(applicable_directives)
-                    if applicable_directives:
-                        directives_str = "\n".join(
-                            f"{i+1}. {d.get('content', str(d))}"
-                            for i, d in enumerate(applicable_directives)
-                        )
-                        directive_count_str = f"{directive_count} directive(s)"
-                    else:
-                        directives_str = "None"
-                        directive_count_str = "0 directive(s)"
-                    
-                    # Format parameters
-                    if applicable_parameters:
-                        from jvagent.action.persona.prompts import format_parameter
-                        parameters_str = "\n".join(
-                            format_parameter(p, index=i+1)
-                            for i, p in enumerate(applicable_parameters)
-                        )
-                    else:
-                        parameters_str = "None"
-                    
-                    # Format continuation fields
-                    is_continuation_str = "true" if is_continuation else "false"
-                    prev_response = previous_response or ""
-                    orig_utterance = original_user_utterance or ""
-                    channel_formatting_str = channel_formatting or ""
-                    
-                    # Build kwargs for DSPy signature (same format as PersonaResponseModule)
-                    # Ensure all required fields are non-None strings to avoid validation errors
-                    signature_kwargs = {
+            # Get or create cached module instance
+            if self._dspy_module is None:
+                self._dspy_module = PersonaResponseModule()
+            
+            module = self._dspy_module
+            
+            # Set LM on module for module-level configuration
+            module.set_lm(lm)
+            
+            # Configure DSPy with explicit adapter and LM
+            from dspy.adapters import ChatAdapter
+            # ChatAdapter defaults to use_json_adapter_fallback=True, so we can use default
+            adapter = ChatAdapter()
+            
+            # Prepare module arguments (used for both streaming and non-streaming)
+            module_kwargs = {
                         "user_utterance": str(interaction.utterance if with_utterance else ""),
                         "persona_name": str(self.persona_name or ""),
                         "persona_description": str(self.persona_description or ""),
-                        "persona_capabilities": str(capabilities_str),
+                "persona_capabilities": self.persona_capabilities or [],
                         "user_display_name": str(user_display_name or ""),
                         "current_date": str(date_str),
                         "current_time": str(time_str),
-                        "directives": str(directives_str),
-                        "directive_count": str(directive_count_str),
-                        "parameters": str(parameters_str),
-                        "is_continuation": str(is_continuation_str),
+                "directives": applicable_directives or [],
+                "parameters": applicable_parameters or [],
+                "interpretation": interaction.interpretation if (interaction.interpretation and with_interpretation) else None,
+                "conversation_history": conversation_history_str,
+                "is_continuation": is_continuation,
+                "previous_response": previous_response,
+                "original_user_utterance": original_user_utterance,
                         "channel": str(channel or "default"),
-                    }
-                    
-                    # Add optional fields only if they have values
-                    if interaction.interpretation and with_interpretation:
-                        signature_kwargs["interpretation"] = interaction.interpretation
-                    if conversation_history_str:
-                        signature_kwargs["conversation_history"] = conversation_history_str
-                    if prev_response:
-                        signature_kwargs["previous_response"] = prev_response
-                    if orig_utterance:
-                        signature_kwargs["original_user_utterance"] = orig_utterance
-                    if channel_formatting_str:
-                        signature_kwargs["channel_formatting"] = channel_formatting_str
-                    
-                    # Format the signature into a prompt manually
-                    # We format it the same way DSPy's Predict module would format it
-                    # DSPy formats signatures as: docstring + "\n\n" + "Field: value" for each field + "\n\nResponse:"
-                    
-                    # Get the signature's docstring (instructions)
-                    signature_doc = PersonaResponse.__doc__ or ""
-                    
-                    # Get field descriptions - use a safe approach
-                    def get_field_desc(field_name: str) -> str:
-                        """Safely get field description from signature."""
-                        try:
-                            field_obj = getattr(PersonaResponse, field_name, None)
-                            if field_obj:
-                                # Try various ways to get description
-                                if hasattr(field_obj, 'json_schema_extra') and field_obj.json_schema_extra:
-                                    desc = field_obj.json_schema_extra.get('desc', '')
-                                    if desc:
-                                        return desc
-                                if hasattr(field_obj, 'description'):
-                                    desc = getattr(field_obj, 'description', '')
-                                    if desc:
-                                        return desc
-                                if hasattr(field_obj, 'desc'):
-                                    desc = getattr(field_obj, 'desc', '')
-                                    if desc:
-                                        return desc
-                        except Exception:
-                            pass
-                        # Fallback to human-readable field name
-                        return field_name.replace('_', ' ').title()
-                    
-                    # Format input fields (only non-empty ones)
-                    input_parts = []
-                    for field_name, field_value in signature_kwargs.items():
-                        if field_value:  # Only include non-empty fields
-                            field_desc = get_field_desc(field_name)
-                            input_parts.append(f"{field_desc}: {field_value}")
-                    
-                    # Get output field description
-                    output_desc = 'Response'
-                    try:
-                        output_field = getattr(PersonaResponse, 'response', None)
-                        if output_field:
-                            if hasattr(output_field, 'json_schema_extra') and output_field.json_schema_extra:
-                                output_desc = output_field.json_schema_extra.get('desc', 'Response')
-                            elif hasattr(output_field, 'description'):
-                                output_desc = getattr(output_field, 'description', 'Response')
-                            elif hasattr(output_field, 'desc'):
-                                output_desc = getattr(output_field, 'desc', 'Response')
-                    except Exception:
-                        pass  # Use default 'Response'
-                    
-                    # Format as DSPy would: docstring + "\n\n" + input fields + "\n\n" + output field
-                    formatted_prompt = f"{signature_doc.strip()}\n\n" + "\n".join(input_parts) + f"\n\n{output_desc}:"
-                    
-                    logger.debug(f"{self.get_class_name()}: Formatted DSPy signature prompt (length: {len(formatted_prompt)})")
-                    logger.debug(f"{self.get_class_name()}: DSPy prompt preview: {formatted_prompt[:200]}...")
-                    
-                    # Format for DSPyLM
-                    # The formatted_prompt contains the complete DSPy signature with all inputs
-                    # DSPyLM expects either:
-                    # 1. messages=[{"role": "system", "content": "..."}, {"role": "user", "content": "..."}]
-                    # 2. prompt="..." (as user prompt) with optional system message
-                    # 
-                    # Since our formatted signature is a complete prompt, we should pass it as the user prompt
-                    # The signature already contains all instructions and inputs, so no separate system message is needed
-                    # However, DSPyLM's query() method expects system and prompt separately
-                    # So we'll pass the formatted signature as the prompt parameter directly
-                    
-                    # Call DSPyLM with streaming enabled
-                    # Pass the formatted signature as the prompt (user message)
-                    # This ensures the DSPy signature is used, not the legacy prompt
-                    streaming_response = await lm.aforward(
-                        prompt=formatted_prompt,  # Pass formatted signature as prompt
-                        stream=True,
-                    )
-                    
-                    # Check if we got a streaming response
-                    if hasattr(streaming_response, 'stream'):
-                        # Stream chunks and publish to ResponseBus
-                        chunks = []
-                        async for chunk in streaming_response.stream():
-                            if chunk:
-                                chunks.append(chunk)
-                                # Publish chunk to ResponseBus if available
-                                if response_bus and visitor and visitor.session_id:
-                                    await response_bus.publish_message(
-                                        session_id=visitor.session_id,
-                                        content=chunk,
-                                        channel=getattr(visitor, "channel", "default"),
-                                        message_type="stream_chunk",
-                                        interaction_id=interaction.id,
-                                    )
-                        
-                        # Collect full response
-                        response = "".join(chunks)
-                        
-                        # Publish final message to ResponseBus
-                        if response_bus and visitor and visitor.session_id:
-                            await response_bus.publish_message(
-                                session_id=visitor.session_id,
-                                content=response,
-                                channel=getattr(visitor, "channel", "default"),
-                                message_type="final",
-                                interaction_id=interaction.id,
-                            )
-                    else:
-                        # Fallback: not a streaming response, collect content
-                        response = streaming_response.choices[0].message.content if hasattr(streaming_response, 'choices') else str(streaming_response)
-                else:
-                    # Non-streaming path - use the module
-                    # Ensure all required string fields are not None to avoid validation errors
-                    response = await module.aforward(
-                        user_utterance=str(interaction.utterance if with_utterance else ""),
-                        persona_name=str(self.persona_name or ""),
-                        persona_description=str(self.persona_description or ""),
-                        persona_capabilities=self.persona_capabilities or [],  # Module will format this
-                        user_display_name=str(user_display_name or ""),
-                        current_date=str(date_str),
-                        current_time=str(time_str),
-                        directives=applicable_directives or [],  # Module will format this
-                        parameters=applicable_parameters or [],  # Module will format this
-                        interpretation=interaction.interpretation if (interaction.interpretation and with_interpretation) else None,
-                        conversation_history=conversation_history_str,
-                        is_continuation=is_continuation,
-                        previous_response=previous_response,
-                        original_user_utterance=original_user_utterance,
-                        channel=str(channel or "default"),
-                        channel_formatting=channel_formatting,
-                    )
+                "channel_formatting": channel_formatting,
+            }
+            
+            # Configure DSPy context with adapter and call module
+            # For DSPy, we use the module's acall() method which properly handles
+            # signature formatting through the adapter system. Streaming is handled
+            # at the LM level through DSPyLM, but for now we'll use non-streaming
+            # to avoid async complexity. Streaming can be added later if needed.
+            # Note: DSPy's streamify() can cause async deadlocks, so we use standard acall()
+            if streaming:
+                logger.debug(f"{self.get_class_name()}: DSPy mode - using non-streaming for reliability (streaming support can be added later)")
+            
+            # Configure DSPy context with adapter and call module
+            with dspy.context(lm=lm, adapter=adapter):
+                # Use module's acall method for proper DSPy integration
+                prediction = await module.acall(**module_kwargs)
+                
+                # Extract response from prediction
+                response = self._extract_response_from_prediction(prediction)
             
             # Handle structured output if enabled
             if self.use_structured_output and response:
@@ -906,6 +798,48 @@ class PersonaAction(Action):
                 else:
                     interaction.set_response(response)
                 await interaction.save()
+            
+            # Publish to ResponseBus if available (for both streaming and non-streaming)
+            # This ensures jvchat receives the response properly
+            # jvchat expects:
+            # - 'stream_chunk' messages to build content (then 'final' to stop streaming)
+            # - 'adhoc' messages for complete non-streaming responses
+            # - 'final' messages only stop streaming indicator, don't create/update content
+            if response and response_bus and visitor and visitor.session_id:
+                if streaming:
+                    # For streaming: send as stream_chunk, then final to stop streaming
+                    # Since we have the complete response, we'll send it as a single stream_chunk
+                    # then immediately send final to stop streaming
+                    logger.debug(f"{self.get_class_name()}: Publishing DSPy response to ResponseBus (streaming mode)")
+                    
+                    # Send the complete response as a stream_chunk
+                    await response_bus.publish_message(
+                        session_id=visitor.session_id,
+                        content=response,
+                        channel=getattr(visitor, "channel", "default"),
+                        message_type="stream_chunk",
+                        interaction_id=interaction.id,
+                    )
+                    
+                    # Send final to stop streaming indicator
+                    await response_bus.publish_message(
+                        session_id=visitor.session_id,
+                        content="",  # Final messages don't need content
+                        channel=getattr(visitor, "channel", "default"),
+                        message_type="final",
+                        interaction_id=interaction.id,
+                    )
+                else:
+                    # For non-streaming: send as 'adhoc' message type
+                    # jvchat creates message bubbles from 'adhoc' messages
+                    logger.debug(f"{self.get_class_name()}: Publishing DSPy response to ResponseBus (non-streaming mode, adhoc)")
+                    await response_bus.publish_message(
+                        session_id=visitor.session_id,
+                        content=response,
+                        channel=getattr(visitor, "channel", "default"),
+                        message_type="adhoc",
+                        interaction_id=interaction.id,
+                    )
             
             # Record PersonaAction execution AFTER response is generated and saved
             interaction.record_action_execution("PersonaAction")
