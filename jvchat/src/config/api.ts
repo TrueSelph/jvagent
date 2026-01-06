@@ -33,10 +33,7 @@ class ApiClient {
     // Update baseURL when async config loads
     getConfigAsync().then((config) => {
       if (config.jvagent.url !== baseURL) {
-        this.baseUrls = this._buildBaseUrls(config.jvagent.url)
-        console.log('Updating API client baseURLs to:', this.baseUrls)
-        this.client.defaults.baseURL = this.baseUrls[0]
-        this.client.defaults.timeout = config.jvagent.timeout
+        this.updateBaseUrl(config.jvagent.url)
       }
     }).catch((err) => {
       console.warn('Failed to load async config:', err)
@@ -100,6 +97,20 @@ class ApiClient {
     )
   }
 
+  /**
+   * Update the base URL for the API client.
+   * This is called when the user changes the server URL in the login form.
+   */
+  updateBaseUrl(url: string): void {
+    this.baseUrls = this._buildBaseUrls(url)
+    console.log('Updating API client baseURLs to:', this.baseUrls)
+    this.client.defaults.baseURL = this.baseUrls[0]
+    // Update timeout from config
+    this.client.defaults.timeout = getJvagentTimeout()
+    // Reset resolved login path when URL changes
+    this.resolvedLoginPath = undefined
+  }
+
   private _buildBaseUrls(primary: string): string[] {
     const urls = [primary]
     const swapped = this._swapHost(primary)
@@ -135,10 +146,18 @@ class ApiClient {
 
   async login(credentials: LoginRequest): Promise<LoginResponse> {
     try {
+      // If serverUrl is provided, update the base URL first
+      if (credentials.serverUrl) {
+        this.updateBaseUrl(credentials.serverUrl)
+      }
+
+      // Extract login credentials (without serverUrl)
+      const { serverUrl, ...loginCreds } = credentials
+
       // If we already found a working login path, use it directly (single call)
       if (this.resolvedLoginPath) {
         const response = await this._withFallback((baseURL) =>
-          this.client.post<any>(this.resolvedLoginPath!, credentials, { baseURL })
+          this.client.post<any>(this.resolvedLoginPath!, loginCreds, { baseURL })
         )
         return this._extractLoginResponse(response)
       }
@@ -150,7 +169,7 @@ class ApiClient {
       for (const baseURL of this.baseUrls) {
         for (const path of loginPaths) {
           try {
-            const response = await this.client.post<any>(path, credentials, { baseURL })
+            const response = await this.client.post<any>(path, loginCreds, { baseURL })
             this.resolvedLoginPath = path
             return this._extractLoginResponse(response)
           } catch (err: any) {

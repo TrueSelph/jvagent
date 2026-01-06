@@ -34,29 +34,16 @@ npm install
 
 Configuration can be provided in multiple ways (in order of priority):
 
-1. **`public/config.json`** (recommended for development):
-```json
-{
-  "jvagent": {
-    "url": "http://localhost:8000",
-    "timeout": 30000
-  },
-  "ui": {
-    "theme": "light",
-    "messages_per_page": 50,
-    "auto_scroll": true
-  }
-}
-```
+1. **Login Screen** (recommended): Enter the server URL directly in the login form. The URL is saved to localStorage and persists across sessions.
 
-2. **Environment variable**: Set `VITE_JVAGENT_URL` (only affects the URL):
+2. **Environment variable**: Set `VITE_JVAGENT_URL` (only affects the default URL):
 ```bash
 export VITE_JVAGENT_URL=http://localhost:8000
 ```
 
-3. **localStorage**: The app can store configuration in browser localStorage (set programmatically)
+3. **localStorage**: Configuration is automatically saved to browser localStorage when you log in. You can also set it programmatically if needed.
 
-**Note**: The `config.yaml` file in the project root is for reference only. Browsers cannot read YAML files directly. Use `public/config.json` instead, or set the environment variable.
+**Note**: The `config.yaml` file in the project root is for reference only and shows the configuration structure. Configuration is managed through the login screen and localStorage.
 
 ## CORS Configuration
 
@@ -113,7 +100,6 @@ jvchat/
 │   ├── types/           # TypeScript type definitions
 │   ├── utils/           # Utility functions
 │   └── styles/          # Global styles
-├── public/              # Static assets
 └── dist/                # Build output
 ```
 

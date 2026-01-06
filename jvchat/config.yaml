@@ -1,8 +1,21 @@
+# jvchat Configuration
+# This file serves as a reference template for the configuration structure.
+#
+# Configuration priority (highest to lowest):
+# 1. User input from login screen (saved to localStorage)
+# 2. Environment variable VITE_JVAGENT_URL (for URL only)
+# 3. Default values below
+
 jvagent:
+  # Server URL - can be overridden from login screen
   url: http://localhost:8000
+  # Request timeout in milliseconds
   timeout: 30000
 
 ui:
+  # Theme: 'light' or 'dark'
   theme: light
+  # Number of messages to load per page
   messages_per_page: 50
+  # Automatically scroll to bottom when new messages arrive
   auto_scroll: true
