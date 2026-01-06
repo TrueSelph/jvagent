@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 class PersonaResponseModule(dspy.Module):
     """DSPy module for generating persona responses with complete prompt element modeling.
     
-    This module uses a DSPy Predict module with the PersonaResponse signature to generate
-    responses. It can be optimized using DSPy's teleprompters (BootstrapFewShot, MIPROv2, etc.)
-    to improve directive and parameter following consistency.
+    This module uses a DSPy ChainOfThought module with the PersonaResponse signature to generate
+    responses with step-by-step reasoning. It can be optimized using DSPy's teleprompters 
+    (BootstrapFewShot, MIPROv2, etc.) to improve directive and parameter following consistency.
     
     Example:
         >>> module = PersonaResponseModule()
@@ -37,9 +37,9 @@ class PersonaResponseModule(dspy.Module):
     """
     
     def __init__(self):
-        """Initialize the module with a Predict module."""
+        """Initialize the module with a ChainOfThought module for better reasoning."""
         super().__init__()
-        self.generate = dspy.Predict(PersonaResponse)
+        self.generate = dspy.ChainOfThought(PersonaResponse)
     
     async def aforward(
         self,
@@ -114,7 +114,6 @@ class PersonaResponseModule(dspy.Module):
                 parameters_str = "None"
             
             # Format continuation fields
-            is_continuation_str = "true" if is_continuation else "false"
             prev_response = previous_response or ""
             orig_utterance = original_user_utterance or ""
             
@@ -133,7 +132,7 @@ class PersonaResponseModule(dspy.Module):
                 "directives": directives_str,
                 "directive_count": directive_count_str,
                 "parameters": parameters_str,
-                "is_continuation": is_continuation_str,
+                "is_continuation": is_continuation,  # Pass bool directly
                 "channel": channel,
             }
             
@@ -149,10 +148,41 @@ class PersonaResponseModule(dspy.Module):
             if channel_formatting_str:
                 classify_kwargs["channel_formatting"] = channel_formatting_str
             
-            # Call DSPy Predict module (use acall for async)
+            # Call DSPy ChainOfThought module (use acall for async)
             prediction = await self.generate.acall(**classify_kwargs)
             
-            return prediction.response
+            # ChainOfThought adds a 'reasoning' field along with 'response'
+            # We need to extract only the 'response' field, not the reasoning
+            # Handle different types: Prediction object, dict, or string
+            if isinstance(prediction, str):
+                # If prediction is already a string, use it directly
+                response = prediction
+            elif hasattr(prediction, 'response'):
+                # Prediction object with response attribute
+                response = prediction.response
+            elif isinstance(prediction, dict) and 'response' in prediction:
+                # Dictionary with response key
+                response = prediction['response']
+            elif hasattr(prediction, '__getitem__') and 'response' in prediction:
+                # Object that supports dictionary-like access
+                response = prediction['response']
+            else:
+                # Fallback: try to get response from prediction store
+                response = None
+                if hasattr(prediction, 'get'):
+                    response = prediction.get('response', None)
+                if response is None:
+                    response = getattr(prediction, 'response', None)
+                if response is None:
+                    logger.warning(
+                        f"PersonaResponseModule: Prediction does not contain 'response' field. "
+                        f"Prediction type: {type(prediction)}, "
+                        f"Available fields: {list(prediction.keys()) if hasattr(prediction, 'keys') else 'unknown'}"
+                    )
+                    # If no response field, use the prediction string representation
+                    response = str(prediction)
+            
+            return response
             
         except Exception as e:
             logger.error(

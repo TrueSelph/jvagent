@@ -65,7 +65,7 @@ class PersonaResponse(dspy.Signature):
     conversation_history: Optional[str] = dspy.InputField(desc="Formatted conversation history (or empty if none). Check history to ensure response differs from previous messages.")
     
     # Continuation mode (conditional)
-    is_continuation: str = dspy.InputField(desc="Whether this is a continuation of a previous response ('true' or 'false')")
+    is_continuation: bool = dspy.InputField(desc="Whether this is a continuation of a previous response")
     previous_response: Optional[str] = dspy.InputField(desc="Previous response text if continuation (truncated to last 2000 chars, or empty if not continuation)")
     original_user_utterance: Optional[str] = dspy.InputField(desc="Original user utterance if continuation (truncated to 500 chars, or empty if not continuation)")
     
