@@ -1,80 +1,50 @@
-# jvagent Bundling Service
+# jvagent Dockerfile Generator
 
-The bundling service creates deployment-ready packages for jvagent applications, suitable for AWS Lambda and Docker deployments.
+The bundle module generates Dockerfiles for jvagent applications by extending a base template and including pip dependencies discovered from action info.yaml files.
 
 ## Overview
 
-The bundling service packages jvagent applications into self-contained bundles that include:
-- Application source files (app.yaml, agents/, etc.)
-- All Python dependencies
-- jvagent and jvspatial as editable packages
-- Optional Lambda handler and Dockerfile
+**Note:** The generated Dockerfile is currently tuned for AWS Lambda deployment with EFS support. It uses the AWS Lambda Python base image and includes Lambda Web Adapter for HTTP API support.
+
+The bundler generates a ready-to-use Dockerfile directly in your jvagent app directory. The Dockerfile:
+- Extends a base template optimized for AWS Lambda with EFS support
+- Automatically discovers pip dependencies from all actions in your app
+- Includes separate RUN commands per action for better Docker layer caching
 
 ## Usage
 
-### Basic Bundling
+### Generate Dockerfile
 
-Create a bundle from your jvagent app:
+The bundle command supports two execution methods:
 
+**Method 1: Change to app directory first (recommended)**
 ```bash
-jvagent [<app_root>] bundle
+cd /path/to/jvagent_app
+jvagent bundle
 ```
 
-This creates a `./bundle` directory with all necessary files.
-
-### Command Options
-
+**Method 2: Specify app path as argument**
 ```bash
-jvagent [<app_root>] bundle [OPTIONS]
+jvagent bundle /path/to/jvagent_app
 ```
 
-**Options:**
-- `--output-dir <dir>`: Specify output directory (default: `./bundle`)
-- `--lambda`: Generate Lambda handler entrypoint
-- `--docker`: Generate Dockerfile
-- `--zip`: Create ZIP archive after bundling
+You can also specify the path before the command:
+```bash
+jvagent /path/to/jvagent_app bundle
+```
 
 **Examples:**
 
 ```bash
-# Basic bundle
+# Method 1: Change to app directory first
+cd /path/to/my_app
 jvagent bundle
 
-# Bundle with Lambda handler
-jvagent bundle --lambda
+# Method 2: Specify path after command
+jvagent bundle /path/to/my_app
 
-# Bundle with Lambda handler and ZIP
-jvagent bundle --lambda --zip
-
-# Bundle with Docker support
-jvagent bundle --docker
-
-# Full bundle with all options
-jvagent bundle --lambda --docker --zip --output-dir ./my-bundle
-```
-
-## Bundle Structure
-
-The bundling service creates the following structure:
-
-```
-bundle/
-├── app/                    # Application source
-│   ├── app.yaml
-│   ├── agents/
-│   ├── .env (optional)
-│   └── ... (other app files)
-├── packages/               # All Python packages (pip install --target)
-│   ├── dspy/
-│   ├── fastapi/
-│   └── ... (other dependencies)
-├── src/                    # Editable package sources
-│   ├── jvagent/           # Installed as editable (pip install -e)
-│   └── jvspatial/         # Installed as editable (pip install -e)
-├── lambda_handler.py       # Lambda entrypoint (optional, generated with --lambda)
-├── Dockerfile              # Docker support (optional, generated with --docker)
-├── requirements.txt        # Locked dependencies
-└── README.md               # Deployment instructions
+# Method 3: Specify path before command
+jvagent /path/to/my_app bundle
 ```
 
 ## How It Works
@@ -82,206 +52,150 @@ bundle/
 ### 1. App Validation
 - Validates that `app.yaml` exists in the app root directory
 
-### 2. Bundle Directory Creation
-- Creates the bundle directory structure
-- Removes existing bundle if it exists
+### 2. Dependency Discovery
+- Scans `agents/{namespace}/{agent_name}/actions/` directory structure
+- For each action, reads `info.yaml` file
+- Extracts `package.dependencies.pip` list from each action
 
-### 3. App Source Copying
-- Copies `app.yaml`, `agents/`, `.env`, and other app files to `bundle/app/`
+### 3. Dockerfile Generation
+- Loads base Dockerfile template (`Dockerfile.base`)
+- Generates separate RUN commands per action for pip dependencies
+- Extends the base template with action-specific dependencies
+- Writes `Dockerfile` to the app directory
 
-### 4. Editable Package Installation
-- Detects jvagent and jvspatial source directories via:
-  - Environment variables (`JVAGENT_SOURCE_DIR`, `JVSPATIAL_SOURCE_DIR`)
-  - Parent directory traversal (common development layout)
-  - Import-based detection
-- Copies source to `bundle/src/` and installs as editable packages using `pip install -e`
+## Generated Dockerfile
 
-### 5. Dependency Installation
-- Collects requirements from:
-  - `requirements.txt` in app root (if exists)
-  - Dependencies from jvagent and jvspatial `pyproject.toml` files
-- Installs all dependencies to `bundle/packages/` using `pip install --target`
+**AWS Lambda Optimized:** The generated Dockerfile is specifically tuned for AWS Lambda deployment with EFS support.
 
-### 6. Bootstrap Validation
-- Bootstraps the app in an isolated environment to:
-  - Force dependency resolution
-  - Validate that all dependencies are available
-  - Ensure the app can initialize correctly
+The generated Dockerfile:
+- Uses AWS Lambda Python 3.12 base image (`public.ecr.aws/lambda/python:3.12`)
+- Includes Lambda Web Adapter for HTTP API Gateway integration
+- Clones and installs jvagent and jvspatial as editable packages from GitHub
+- Installs action-specific pip dependencies (one RUN command per action)
+- Sets up EFS-compatible virtual environment (`/mnt/venv`)
+- Configures Lambda-specific environment variables and paths
+- Includes runtime script optimized for Lambda execution
 
-### 7. Optional File Generation
-- **Lambda Handler** (`--lambda`): Generates `lambda_handler.py` for AWS Lambda deployment
-- **Dockerfile** (`--docker`): Generates `Dockerfile` for containerized deployment
-- **ZIP Archive** (`--zip`): Creates a ZIP file of the entire bundle
+## Base Template
 
-## Package Source Detection
+The base Dockerfile template (`Dockerfile.base`) is optimized for AWS Lambda deployment and includes:
+- AWS Lambda Python 3.12 base image
+- Lambda Web Adapter setup for HTTP API Gateway integration
+- Base Python environment with numpy, tiktoken, pydantic (installed in read-only `/opt/venv`)
+- jvagent and jvspatial installation from GitHub (dev branch)
+- EFS virtual environment setup (`/mnt/venv`) with system-site-packages inheritance
+- Lambda-specific environment variables (port 8080, paths, readiness checks)
+- Runtime script that creates EFS venv on first run and executes jvagent
 
-The bundler automatically detects jvagent and jvspatial source directories using the following methods (in order):
+Action-specific dependencies are inserted into the template at the `{{ACTION_DEPENDENCIES}}` placeholder.
 
-1. **Environment Variables**:
-   ```bash
-   export JVAGENT_SOURCE_DIR=/path/to/jvagent
-   export JVSPATIAL_SOURCE_DIR=/path/to/jvspatial
-   ```
+## Action Dependency Discovery
 
-2. **Parent Directory Traversal**: Checks parent directories of the current jvagent installation
+The generator automatically discovers dependencies by:
+1. Scanning `agents/` directory for all agents
+2. For each agent, scanning `actions/{namespace}/{action_name}/` directories
+3. Reading `info.yaml` from each action directory
+4. Extracting `package.dependencies.pip` list
 
-3. **Import-based Detection**: Uses Python's import system to locate installed packages
+**Example info.yaml structure:**
+```yaml
+package:
+  name: jvagent/my_action
+  dependencies:
+    pip:
+      - openai>=1.0.0
+      - httpx>=0.24.0
+```
 
-If source directories cannot be detected, the bundler will log a warning and skip editable package installation. You can set the environment variables to explicitly specify the source directories.
-
-## Deployment
+## Docker Build and Deployment
 
 ### AWS Lambda Deployment
 
-1. **Create bundle with Lambda handler**:
-   ```bash
-   jvagent bundle --lambda --zip
-   ```
+The generated Dockerfile is optimized for AWS Lambda container-based deployments. After generating the Dockerfile:
 
-2. **Upload to Lambda**:
-   - Upload the generated ZIP file to AWS Lambda
-   - Set handler to: `lambda_handler.handler`
-   - Configure environment variables (see below)
+```bash
+# Build Docker image
+docker build -t my-jvagent-app .
 
-3. **Configure API Gateway**:
-   - Set up API Gateway trigger for your Lambda function
-   - Configure CORS if needed
+# Tag and push to Amazon ECR (for Lambda deployment)
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
+docker tag my-jvagent-app:latest <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-jvagent-app:latest
+docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-jvagent-app:latest
+```
 
-**Lambda Environment Variables:**
-- `JVAGENT_ADMIN_PASSWORD`: Admin user password (required)
-- `JVSPATIAL_DB_TYPE`: Database type (default: `dynamodb` for Lambda)
-- `JVSPATIAL_DYNAMODB_TABLE_NAME`: DynamoDB table name
-- `JVSPATIAL_DYNAMODB_REGION`: AWS region
-- Other variables as defined in your app.yaml
+Then deploy as a container-based Lambda function with:
+- Container image from ECR
+- EFS mount point configured (for `/mnt/venv`)
+- Environment variables set (see below)
+- API Gateway trigger configured
 
-### Docker Deployment
+### Local Testing
 
-1. **Create bundle with Dockerfile**:
-   ```bash
-   jvagent bundle --docker
-   ```
+For local testing, you can run the container:
 
-2. **Build Docker image**:
-   ```bash
-   cd bundle
-   docker build -t my-jvagent-app .
-   ```
+```bash
+# Build Docker image
+docker build -t my-jvagent-app .
 
-3. **Run container**:
-   ```bash
-   docker run -p 8000:8000 \
-     -e JVAGENT_ADMIN_PASSWORD=your-password \
-     -e JVSPATIAL_DB_TYPE=json \
-     -e JVSPATIAL_DB_PATH=/app/data/jvagent_db \
-     my-jvagent-app
-   ```
+# Run container locally
+docker run -p 8080:8080 \
+  -e JVAGENT_ADMIN_PASSWORD=your-password \
+  -e JVSPATIAL_DB_TYPE=json \
+  -e JVSPATIAL_DB_PATH=/app/data/jvagent_db \
+  my-jvagent-app
+```
 
-**Docker Environment Variables:**
+**Note:** The Dockerfile is optimized for Lambda. For non-Lambda deployments, you may need to modify the base image and configuration.
+
+### Environment Variables
+
+Configure the following environment variables when running the container:
+
 - `JVAGENT_ADMIN_PASSWORD`: Admin user password (required)
 - `JVSPATIAL_DB_TYPE`: Database type (default: `json`)
 - `JVSPATIAL_DB_PATH`: Database path (default: `/app/data/jvagent_db`)
 - `JVSPATIAL_MONGODB_URI`: MongoDB connection string (if using MongoDB)
-- Other variables as defined in your app.yaml
+- Other variables as defined in your `app.yaml`
 
-### Local Testing
+### AWS Lambda Deployment (Primary Use Case)
 
-To test the bundled app locally:
+The generated Dockerfile is specifically optimized for AWS Lambda container-based deployments with EFS support:
 
-```bash
-cd bundle/app
-export PYTHONPATH="../packages:../src/jvagent:../src/jvspatial:$PYTHONPATH"
-python -m jvagent
-```
+- **Base Image**: AWS Lambda Python 3.12 (`public.ecr.aws/lambda/python:3.12`)
+- **Lambda Web Adapter**: Included for HTTP API Gateway integration
+- **EFS Virtual Environment**: Uses `/mnt/venv` for writable package installation
+- **Read-Only Base Packages**: Heavy dependencies (numpy, pydantic) in `/opt/venv`
+- **Lambda-Specific Configuration**: Port 8080, proper PATH setup, readiness checks
 
-Or use the generated README in the bundle directory for specific instructions.
+**Deployment Steps:**
+1. Generate Dockerfile: `jvagent bundle`
+2. Build image: `docker build -t my-jvagent-app .`
+3. Push to ECR: Tag and push to your ECR repository
+4. Create Lambda function: Use container image from ECR
+5. Configure EFS: Mount EFS to `/mnt` for persistent venv
+6. Set environment variables: Configure Lambda environment variables
+7. Create API Gateway: Set up HTTP API trigger
 
-## Requirements
+**Note:** This Dockerfile is currently tuned for AWS Lambda. For other deployment targets, you may need to modify the base image and configuration.
 
-The bundling service requires:
-- Python 3.8+
-- pip
-- Access to jvagent and jvspatial source directories (for editable package installation)
-- All dependencies listed in your app's `requirements.txt` (if exists)
-
-## Troubleshooting
-
-### Package Source Not Found
-
-If you see warnings about jvagent/jvspatial source directories not being found:
-
-1. Set environment variables:
-   ```bash
-   export JVAGENT_SOURCE_DIR=/path/to/jvagent
-   export JVSPATIAL_SOURCE_DIR=/path/to/jvspatial
-   ```
-
-2. Or ensure the source directories are in parent directories of the jvagent installation
-
-### Bootstrap Validation Fails
-
-If bootstrap validation fails:
-- Check that all dependencies are available
-- Verify that `app.yaml` is valid
-- Ensure database paths are correctly configured
-- Check logs for specific error messages
-
-### Large Bundle Size
-
-Bundles can be large due to all dependencies being included:
-- Consider using Lambda layers for dependencies
-- Exclude unnecessary files from the bundle
-- Use dependency analysis to minimize included packages
-
-## Implementation Details
+## Implementation
 
 ### Bundler Class
-
-The `Bundler` class in `bundler.py` handles all bundling operations:
 
 ```python
 from jvagent.bundle import Bundler
 
-bundler = Bundler(
-    app_root="./my-app",
-    output_dir="./bundle",
-    generate_lambda=True,
-    generate_docker=False,
-)
-
-success = bundler.bundle()
-if success:
-    zip_path = bundler.create_zip()
+bundler = Bundler(app_root="./my-app")
+success = bundler.generate_dockerfile()
 ```
 
-### Lambda Handler
+### Module Structure
 
-The Lambda handler (`lambda_handler.py`) provides:
-- Automatic Python path setup
-- Server initialization using `LambdaServer`
-- Application graph bootstrapping
-- Mangum handler for AWS Lambda compatibility
-
-### Dockerfile
-
-The generated Dockerfile:
-- Uses Python 3.11 slim base image
-- Installs editable packages (jvagent, jvspatial)
-- Sets up proper working directories
-- Configures environment variables
-- Exposes port 8000
-
-## Best Practices
-
-1. **Always test bundles locally** before deploying
-2. **Use environment variables** for configuration, not hardcoded values
-3. **Keep bundle size manageable** by excluding unnecessary files
-4. **Version your bundles** for easier rollback
-5. **Use Lambda layers** for large dependencies to reduce bundle size
-6. **Monitor bundle creation time** - large apps may take several minutes
+- `bundler.py` - Main Bundler class
+- `dockerfile_generator.py` - Dependency discovery and Dockerfile generation
+- `Dockerfile.base` - Base Dockerfile template
 
 ## See Also
 
 - [jvagent CLI Documentation](../cli.py)
-- [AWS Lambda Deployment Guide](../../../examples/api/lambda_example.py)
 - [Docker Deployment Guide](../../../examples/api/README.md)
-

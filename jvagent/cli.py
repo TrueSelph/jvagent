@@ -526,11 +526,13 @@ def main() -> None:
     args = sys.argv[1:]
 
     # Extract app root path (first positional argument that's not a flag or command)
+    # This handles both: "jvagent /path/to/app bundle" and "jvagent bundle /path/to/app"
     app_root = None
     commands = ["run", "status", "agent", "action", "bootstrap", "bundle"]
-    flags = ["--debug", "--update", "--migrate", "--lambda", "--docker", "--zip"]
+    flags = ["--debug", "--update", "--migrate"]
 
     # Find app root: first argument that's not a command or flag
+    # This extracts paths whether they appear before or after the command
     for i, arg in enumerate(args):
         if arg not in commands and arg not in flags and not arg.startswith("-"):
             # Check if it's a valid path
@@ -541,6 +543,7 @@ def main() -> None:
                 break
 
     # Default to current working directory if not provided
+    # This handles: "cd /path/to/app && jvagent bundle"
     if app_root is None:
         app_root = os.getcwd()
 
@@ -600,71 +603,47 @@ def main() -> None:
 
 
 def handle_bundle_command(args: List[str], app_root: str = None) -> None:
-    """Handle bundle command.
+    """Handle bundle command - generates Dockerfile in app directory.
+
+    Supports both:
+    - jvagent /path/to/app bundle
+    - jvagent bundle /path/to/app
+    - jvagent bundle (uses current working directory)
 
     Args:
-        args: Command arguments
-        app_root: Path to the app root directory. If None, uses current working directory.
+        args: Command arguments (may contain app root path)
+        app_root: Path to the app root directory. If None, checks args or uses current working directory.
     """
     import sys
+    from pathlib import Path
 
+    # If app_root not provided, check if first arg is a path
     if app_root is None:
-        app_root = os.getcwd()
-
-    # Parse arguments
-    output_dir = "./bundle"
-    generate_lambda = False
-    generate_docker = False
-    create_zip = False
-
-    i = 0
-    while i < len(args):
-        arg = args[i]
-        if arg == "--output-dir" and i + 1 < len(args):
-            output_dir = args[i + 1]
-            i += 2
-        elif arg == "--lambda":
-            generate_lambda = True
-            i += 1
-        elif arg == "--docker":
-            generate_docker = True
-            i += 1
-        elif arg == "--zip":
-            create_zip = True
-            i += 1
+        if args and args[0]:
+            potential_path = Path(args[0]).expanduser().resolve()
+            if potential_path.exists() and potential_path.is_dir():
+                app_root = str(potential_path)
+                logger.debug(f"Using app root from command argument: {app_root}")
+            else:
+                app_root = os.getcwd()
+                logger.debug(f"Argument '{args[0]}' is not a valid path, using current working directory")
         else:
-            logger.warning(f"Unknown bundle argument: {arg}")
-            i += 1
+            app_root = os.getcwd()
+            logger.debug(f"Using current working directory as app root: {app_root}")
 
     # Create bundler
     from jvagent.bundle import Bundler
 
-    bundler = Bundler(
-        app_root=app_root,
-        output_dir=output_dir,
-        generate_lambda=generate_lambda,
-        generate_docker=generate_docker,
-    )
+    bundler = Bundler(app_root=app_root)
 
-    # Create bundle
-    success = bundler.bundle()
+    # Generate Dockerfile
+    success = bundler.generate_dockerfile()
 
     if not success:
-        logger.error("Bundling failed")
+        logger.error("Dockerfile generation failed")
         sys.exit(1)
 
-    # Create ZIP if requested
-    if create_zip:
-        zip_path = bundler.create_zip()
-        if zip_path:
-            logger.info(f"ZIP archive created: {zip_path}")
-        else:
-            logger.error("Failed to create ZIP archive")
-            sys.exit(1)
-
-    print(f"\n✓ Bundle created successfully: {output_dir}")
-    if create_zip:
-        print(f"✓ ZIP archive created: {zip_path}")
+    print(f"\n✓ Dockerfile generated successfully in {app_root}")
 
 
 def print_usage() -> None:
@@ -680,12 +659,11 @@ jvagent - Agentive Platform
     jvagent [<app_root>] status             Show application status
     jvagent [<app_root>] bootstrap [--update]  Bootstrap application graph
                                   --update: Update existing agents/actions from YAML files
-    jvagent [<app_root>] bundle [--output-dir <dir>] [--lambda] [--docker] [--zip]
-                                  Bundle application for deployment
-                                  --output-dir: Output directory (default: ./bundle)
-                                  --lambda: Generate Lambda handler
-                                  --docker: Generate Dockerfile
-                                  --zip: Create ZIP archive
+    jvagent [<app_root>] bundle [<app_root>]
+                                  Generate Dockerfile in app directory
+                                  Discovers action dependencies from info.yaml files
+                                  App root can be specified before or after 'bundle' command
+                                  Defaults to current working directory if not specified
     jvagent [<app_root>] agent list         List all installed agents
     jvagent [<app_root>] agent uninstall <name>    Uninstall an agent
     jvagent [<app_root>] action list <agent_name>  List actions for an agent
@@ -716,7 +694,9 @@ Examples:
     jvagent /path/to/my_app                    # Run from specified app directory
     jvagent /path/to/my_app --update           # Run with update flag
     jvagent /path/to/my_app bootstrap          # Bootstrap from specified directory
-    jvagent /path/to/my_app bundle --lambda --zip  # Bundle with Lambda handler and ZIP
+    jvagent /path/to/my_app bundle             # Generate Dockerfile in app directory
+    jvagent bundle /path/to/my_app             # Generate Dockerfile (path after command)
+    jvagent bundle                             # Generate Dockerfile in current directory
     """
     )
 
