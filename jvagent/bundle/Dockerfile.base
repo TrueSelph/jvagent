@@ -1,0 +1,63 @@
+# syntax=docker/dockerfile:1
+FROM public.ecr.aws/lambda/python:3.12
+
+# 1. Add Lambda Web Adapter
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.8.4 /lambda-adapter /opt/extensions/lambda-adapter
+
+# 2. Environment Variables
+ENV JVAGENT_PORT=8080
+ENV JVAGENT_HOST=0.0.0.0
+# Point to the EFS venv bin first, then the Image venv bin
+ENV PATH="/mnt/venv/bin:/opt/venv/bin:$PATH"
+# Ensure Lambda Web Adapter is patient during the first initialization
+ENV AWS_LWA_READINESS_CHECK_MIN_INTERVAL=5s
+ENV AWS_LWA_READINESS_CHECK_TIMEOUT=60s
+
+WORKDIR /var/task
+COPY . /var/task/
+COPY .env.example /var/task/.env
+
+# 3. Build the "Base" in the Image (Read-Only)
+# We install the heavy hitters here so they never have to be written to EFS.
+RUN set -eux && \
+    dnf -y update && \
+    dnf install -y git gcc gcc-c++ python3-devel && \
+    python -m venv /opt/venv && \
+    git clone --depth 1 --single-branch --branch dev https://github.com/TrueSelph/jvagent /var/task/jvagent && \
+    git clone --depth 1 --single-branch --branch dev https://github.com/TrueSelph/jvspatial /var/task/jvspatial && \
+    /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'numpy>=1.26.0,<2.0' 'tiktoken<0.8.0' 'pydantic[email]' && \
+    /opt/venv/bin/pip install --no-cache-dir -e /var/task/jvagent && \
+    /opt/venv/bin/pip install --no-cache-dir -e /var/task/jvspatial && \
+    dnf clean all
+
+# 4. Action-specific pip dependencies will be inserted here
+# {{ACTION_DEPENDENCIES}}
+
+# 5. Runtime Script
+RUN <<EOF cat > /var/task/run.sh
+#!/bin/sh
+set -e
+
+# If the EFS venv doesn't exist, create it.
+# --system-site-packages allows this venv to "see" the numpy/pydantic in /opt/venv
+if [ ! -f /mnt/venv/bin/python ]; then
+    echo "Creating inherited venv on EFS..."
+    python -m venv --system-site-packages /mnt/venv
+    # Link the image's pip to EFS so 'pip install' works correctly
+    /mnt/venv/bin/pip install --upgrade pip
+fi
+
+# Activate the EFS venv
+export VIRTUAL_ENV=/mnt/venv
+
+echo "Starting jvagent..."
+# When jvagent calls 'pip install' internally, it will now target /mnt/venv/lib/...
+exec jvagent .
+EOF
+
+RUN chmod +x /var/task/run.sh
+
+ENTRYPOINT []
+CMD ["/var/task/run.sh"]
+

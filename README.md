@@ -25,6 +25,8 @@ A modular, pluggable agentive platform built on jvspatial that provides a produc
 - [Namespace System](#namespace-system)
 - [API Usage](#api-usage)
 - [Development](#development)
+- [Deployment](#deployment)
+  - [Dockerfile Generation](#dockerfile-generation)
 
 ## Installation
 
@@ -1563,6 +1565,101 @@ await conversation.save()
 # - Analytics: 0 (preserve all data)
 # - Mixed use: Set agent default, override per-conversation as needed
 ```
+
+## Deployment
+
+### Dockerfile Generation
+
+jvagent includes a Dockerfile generator that creates deployment-ready Dockerfiles for your applications. **Note:** The generated Dockerfile is currently optimized for AWS Lambda container-based deployments with EFS support.
+
+The generator automatically discovers all pip dependencies from your actions and includes them in the Dockerfile.
+
+#### Generate Dockerfile
+
+**Method 1: Change to app directory first (recommended)**
+```bash
+cd /path/to/jvagent_app
+jvagent bundle
+```
+
+**Method 2: Specify app path as argument**
+```bash
+jvagent bundle /path/to/jvagent_app
+```
+
+The command will:
+1. Validate that `app.yaml` exists
+2. Scan all actions in `agents/` directory
+3. Extract pip dependencies from each action's `info.yaml` file
+4. Generate a `Dockerfile` in the app directory
+
+#### Generated Dockerfile
+
+**AWS Lambda Optimized:** The generated Dockerfile is specifically tuned for AWS Lambda container-based deployments.
+
+The generated Dockerfile:
+- Uses AWS Lambda Python 3.12 base image (`public.ecr.aws/lambda/python:3.12`)
+- Includes Lambda Web Adapter for HTTP API Gateway integration
+- Clones and installs jvagent and jvspatial from GitHub (dev branch)
+- Installs action-specific pip dependencies (one RUN command per action for better caching)
+- Sets up EFS-compatible virtual environment (`/mnt/venv` for writable packages)
+- Configures Lambda-specific environment variables and paths
+- Includes runtime script optimized for Lambda execution
+
+**Note:** For non-Lambda deployments, you may need to modify the base image and configuration in the generated Dockerfile.
+
+#### Building and Deploying
+
+**AWS Lambda Deployment (Primary Use Case):**
+
+After generating the Dockerfile:
+
+```bash
+# Build Docker image
+docker build -t my-jvagent-app .
+
+# Tag and push to Amazon ECR
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
+docker tag my-jvagent-app:latest <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-jvagent-app:latest
+docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-jvagent-app:latest
+```
+
+Then deploy as a container-based Lambda function with:
+- Container image from ECR
+- EFS mount point configured (for `/mnt/venv`)
+- Environment variables configured
+- API Gateway HTTP API trigger
+
+**Local Testing:**
+
+For local testing, you can run the container:
+
+```bash
+docker run -p 8080:8080 \
+  -e JVAGENT_ADMIN_PASSWORD=your-password \
+  -e JVSPATIAL_DB_TYPE=json \
+  -e JVSPATIAL_DB_PATH=/app/data/jvagent_db \
+  my-jvagent-app
+```
+
+**Note:** The Dockerfile is optimized for AWS Lambda. For other deployment targets, you may need to modify the base image and configuration.
+
+#### Action Dependencies
+
+The generator automatically discovers dependencies from action `info.yaml` files:
+
+```yaml
+package:
+  name: jvagent/my_action
+  dependencies:
+    pip:
+      - openai>=1.0.0
+      - httpx>=0.24.0
+```
+
+Each action's dependencies are installed in separate RUN commands for optimal Docker layer caching.
+
+For more details, see [jvagent/bundle/README.md](jvagent/bundle/README.md).
 
 ## License
 
