@@ -12,6 +12,28 @@ from typing import List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+def _is_path_inside(path1: Path, path2: Path) -> bool:
+    """Check if path1 is inside path2 (Python version compatible).
+
+    Args:
+        path1: Path to check
+        path2: Path to check against
+
+    Returns:
+        True if path1 is inside path2, False otherwise
+    """
+    try:
+        # Python 3.9+
+        return path1.is_relative_to(path2)
+    except AttributeError:
+        # Python < 3.9
+        try:
+            path1.relative_to(path2)
+            return True
+        except ValueError:
+            return False
+
+
 class Bundler:
     """Bundles jvagent applications into deployment-ready packages."""
 
@@ -122,6 +144,17 @@ class Bundler:
         """Copy app source files to bundle/app/."""
         logger.info("Copying app source files...")
 
+        # Resolve paths to avoid recursion issues
+        app_root_resolved = self.app_root.resolve()
+        output_dir_resolved = self.output_dir.resolve()
+
+        # Check if output directory is inside app root (would cause recursion)
+        if _is_path_inside(output_dir_resolved, app_root_resolved):
+            logger.warning(
+                f"Bundle output directory {output_dir_resolved} is inside app root {app_root_resolved}. "
+                "This could cause recursion. Consider using a different output directory."
+            )
+
         # Files/directories to copy
         items_to_copy = [
             "app.yaml",
@@ -133,6 +166,14 @@ class Bundler:
         for item in items_to_copy:
             source = self.app_root / item
             if source.exists():
+                # Check if source is inside output directory (prevent recursion)
+                source_resolved = source.resolve()
+                if _is_path_inside(output_dir_resolved, source_resolved) or _is_path_inside(
+                    source_resolved, output_dir_resolved
+                ):
+                    logger.warning(f"Skipping {item} - would cause recursion with bundle directory")
+                    continue
+
                 dest = self.bundle_app_dir / item
                 if source.is_dir():
                     shutil.copytree(source, dest, dirs_exist_ok=True)
@@ -142,6 +183,16 @@ class Bundler:
 
         # Copy any other Python files or config files in root
         for item in self.app_root.iterdir():
+            # Skip if it's the bundle output directory or inside it
+            item_resolved = item.resolve()
+            if (
+                item_resolved == output_dir_resolved
+                or _is_path_inside(item_resolved, output_dir_resolved)
+                or (item_resolved.is_dir() and _is_path_inside(output_dir_resolved, item_resolved))
+            ):
+                logger.debug(f"Skipping {item.name} - it's the bundle output directory or inside it")
+                continue
+
             if item.is_file() and item.suffix in [".py", ".yaml", ".yml", ".json", ".txt"]:
                 if item.name not in ["app.yaml", ".env"]:
                     dest = self.bundle_app_dir / item.name
@@ -242,6 +293,23 @@ class Bundler:
                 package_root = source_dir.parent
             else:
                 logger.warning(f"Could not find setup.py or pyproject.toml for {package_name}")
+                continue
+
+            # Check if package source is inside bundle or app_root (would cause recursion)
+            package_root_resolved = package_root.resolve()
+            output_dir_resolved = self.output_dir.resolve()
+            app_root_resolved = self.app_root.resolve()
+
+            # Prevent copying if package is inside bundle or app_root
+            if (
+                _is_path_inside(output_dir_resolved, package_root_resolved)
+                or _is_path_inside(package_root_resolved, output_dir_resolved)
+                or _is_path_inside(app_root_resolved, package_root_resolved)
+            ):
+                logger.warning(
+                    f"Skipping {package_name} - package source {package_root_resolved} "
+                    "would cause recursion (inside bundle or app root)"
+                )
                 continue
 
             # Copy entire package root to bundle/src/
