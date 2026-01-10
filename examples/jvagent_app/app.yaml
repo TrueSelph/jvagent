@@ -53,6 +53,17 @@ config:
     # uri: mongodb://localhost:27017
     # name: jvagent_db  # Optional: specify database name (defaults to "jvdb" if not set via JVSPATIAL_MONGODB_DB_NAME)
     # Note: MongoDB database names cannot contain dots (.) - use underscores instead
+    # DynamoDB configuration (uncomment to use DynamoDB instead of JSON)
+    # Ideal for AWS Lambda serverless deployments and production AWS environments
+    # type: dynamodb
+    # table_name: jvspatial  # Base table name (default: "jvspatial")
+    # region: us-east-1  # AWS region name (default: "us-east-1")
+    # endpoint_url: http://localhost:8000  # Optional: for local DynamoDB testing (DynamoDB Local)
+    # access_key_id: ${AWS_ACCESS_KEY_ID}  # Optional: AWS access key (uses IAM role if not set)
+    # secret_access_key: ${AWS_SECRET_ACCESS_KEY}  # Optional: AWS secret key (uses IAM role if not set)
+    # Note: For local development, use DynamoDB Local with endpoint_url set to "http://localhost:8000"
+    # Note: In AWS Lambda, IAM role credentials are automatically used if access_key_id is not set
+    # Note: You can use environment variable placeholders (e.g., ${AWS_ACCESS_KEY_ID}) for sensitive values
   
   # File storage configuration (defaults - production will override)
   file_storage:
@@ -89,6 +100,15 @@ config:
       # uri: mongodb://localhost:27017  # Defaults to same as database.uri if not set (uncomment for MongoDB)
       name: jvagent_logs  # Defaults to jvagent_logs if not set via JVAGENT_LOG_DB_NAME
       path: ./jvagent_logs  # For JSON/SQLite logging databases
+      # DynamoDB logging database (uncomment to use DynamoDB for logging)
+      # type: dynamodb  # Defaults to same as database.type if not set (uncomment for DynamoDB)
+      # table_name: jvagent_logs  # Table name for logging (default: "jvagent_logs")
+      # region: us-east-1  # AWS region name (defaults to main database region if not set)
+      # endpoint_url: http://localhost:8000  # Optional: for local DynamoDB testing
+      # access_key_id: ${AWS_ACCESS_KEY_ID}  # Optional: AWS access key (uses IAM role if not set)
+      # secret_access_key: ${AWS_SECRET_ACCESS_KEY}  # Optional: AWS secret key (uses IAM role if not set)
+      # Note: If not specified, logging database uses same configuration as main database
+      # Note: You can use environment variable placeholders (e.g., ${AWS_ACCESS_KEY_ID}) for sensitive values
   
   # CORS configuration
   cors:
