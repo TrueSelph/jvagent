@@ -3,5 +3,4 @@ FROM registry.v75inc.dev/jvagent/jvagent-base:latest
 WORKDIR /var/task
 COPY . /var/task/
 
-# Install action dependencies
 # {{ACTION_DEPENDENCIES}}
