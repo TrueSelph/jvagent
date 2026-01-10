@@ -12,6 +12,10 @@ import dspy
 class RouterClassification(dspy.Signature):
     """Classify user utterance intent and route to appropriate InteractActions.
     
+    When used with ChainOfThought, the LLM will generate concise reasoning about
+    the user's intent (which serves as the interpretation), then determine which
+    actions should handle the request.
+    
     Analyze the user's utterance and conversation history to determine intent,
     then match against available action anchors to identify which actions should
     handle this request.
@@ -24,14 +28,14 @@ class RouterClassification(dspy.Signature):
     - Consider conversation history for context (ongoing topics, prior questions, references)
     - Be precise but inclusive - missing a relevant action is worse than including an extra one
     
-    INTERPRETATION GUIDELINES:
-    - Keep interpretation under 50 words
+    REASONING GUIDELINES (used as interpretation):
+    - The reasoning should be concise (under 50 words) and serve as the intent interpretation
     - Capture what the user wants (information request, providing data, or both)
     - Include relevant context (IDs, references to prior conversation, ongoing events, user-provided details)
     - Example format: "User requests status update for ticket #789, mentions deadline"
     
     MATCHING GUIDELINES:
-    - An action matches if its anchors align with the interpretation and describe handling this type of request
+    - An action matches if its anchors align with the reasoning/interpretation and describe handling this type of request
     - Prefer actions with more specific/detailed anchor matches
     - Include all actions that reasonably match (it's ok to route to multiple actions)
     - Consider conversation history and events - is this continuing a prior topic or answering a previous question?
@@ -50,9 +54,7 @@ class RouterClassification(dspy.Signature):
     )
     
     # Output fields - routing result
-    interpretation: str = dspy.OutputField(
-        desc="Intent interpretation in under 50 words. Capture what the user wants and relevant context (IDs, references, ongoing events). Example: 'User requests status update for ticket #789, mentions deadline'"
-    )
+    # Note: interpretation is now provided by ChainOfThought's reasoning field
     actions: List[str] = dspy.OutputField(
         desc="List of action names that should handle this request. Use exact action names from available_actions. Return empty list [] if no match. Multiple actions allowed."
     )
