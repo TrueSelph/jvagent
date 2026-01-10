@@ -322,6 +322,38 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         if mongodb_db_name:
             os.environ["JVSPATIAL_MONGODB_DB_NAME"] = mongodb_db_name
     
+    # DynamoDB configuration
+    dynamodb_table_name = _get_config_value(app_config, "database.table_name", "JVSPATIAL_DYNAMODB_TABLE_NAME", None)
+    dynamodb_region = _get_config_value(app_config, "database.region", "JVSPATIAL_DYNAMODB_REGION", None)
+    dynamodb_endpoint_url = _get_config_value(app_config, "database.endpoint_url", "JVSPATIAL_DYNAMODB_ENDPOINT_URL", None)
+    dynamodb_access_key_id = _get_config_value(app_config, "database.access_key_id", "AWS_ACCESS_KEY_ID", None)
+    dynamodb_secret_access_key = _get_config_value(app_config, "database.secret_access_key", "AWS_SECRET_ACCESS_KEY", None)
+    
+    # Handle empty strings from unresolved placeholders
+    if dynamodb_table_name and dynamodb_table_name.strip() == "":
+        dynamodb_table_name = None
+    if dynamodb_region and dynamodb_region.strip() == "":
+        dynamodb_region = None
+    if dynamodb_endpoint_url and dynamodb_endpoint_url.strip() == "":
+        dynamodb_endpoint_url = None
+    if dynamodb_access_key_id and dynamodb_access_key_id.strip() == "":
+        dynamodb_access_key_id = None
+    if dynamodb_secret_access_key and dynamodb_secret_access_key.strip() == "":
+        dynamodb_secret_access_key = None
+    
+    # Set DynamoDB environment variables if using DynamoDB (for backward compatibility)
+    if db_type == "dynamodb":
+        if dynamodb_table_name:
+            os.environ["JVSPATIAL_DYNAMODB_TABLE_NAME"] = dynamodb_table_name
+        if dynamodb_region:
+            os.environ["JVSPATIAL_DYNAMODB_REGION"] = dynamodb_region
+        if dynamodb_endpoint_url:
+            os.environ["JVSPATIAL_DYNAMODB_ENDPOINT_URL"] = dynamodb_endpoint_url
+        if dynamodb_access_key_id:
+            os.environ["AWS_ACCESS_KEY_ID"] = dynamodb_access_key_id
+        if dynamodb_secret_access_key:
+            os.environ["AWS_SECRET_ACCESS_KEY"] = dynamodb_secret_access_key
+    
     # Set JVSPATIAL_JSONDB_PATH unconditionally to ensure DatabaseManager uses the correct path
     # (DatabaseManager uses JVSPATIAL_JSONDB_PATH, not JVSPATIAL_DB_PATH)
     # This must be set before any database initialization occurs
@@ -340,7 +372,15 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     # Log server creation details only in debug mode
     if debug:
         logger.debug(f"Creating server: {title} v{version}")
-        logger.debug(f"Database: {db_type} at {db_path}")
+        if db_type == "dynamodb":
+            db_info = f"Database: {db_type}"
+            if dynamodb_table_name:
+                db_info += f" (table: {dynamodb_table_name})"
+            if dynamodb_region:
+                db_info += f" (region: {dynamodb_region})"
+            logger.debug(db_info)
+        else:
+            logger.debug(f"Database: {db_type} at {db_path}")
         logger.debug(f"Authentication: {'enabled' if auth_enabled else 'disabled'}")
 
     # Determine log level based on debug flag or environment variable
@@ -368,26 +408,45 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         ]
 
     # Create server with configuration
-    server = Server(
-        title=title,
-        description=description,
-        version=version,
-        host=host,
-        port=port,
-        db_type=db_type,
-        db_path=db_path,
-        db_connection_string=mongodb_uri if db_type == "mongodb" else None,
-        db_database_name=mongodb_db_name if db_type == "mongodb" else None,
-        auth_enabled=auth_enabled,
-        jwt_auth_enabled=jwt_auth_enabled,
-        jwt_secret=jwt_secret,
-        jwt_expire_minutes=jwt_expire_minutes,
-        graph_endpoint_enabled=graph_endpoint_enabled,
-        log_level=log_level,
-        debug=debug_mode,
-        cors_enabled=cors_enabled,
-        cors_origins=cors_origins,
-    )
+    server_kwargs = {
+        "title": title,
+        "description": description,
+        "version": version,
+        "host": host,
+        "port": port,
+        "db_type": db_type,
+        "db_path": db_path,
+        "auth_enabled": auth_enabled,
+        "jwt_auth_enabled": jwt_auth_enabled,
+        "jwt_secret": jwt_secret,
+        "jwt_expire_minutes": jwt_expire_minutes,
+        "graph_endpoint_enabled": graph_endpoint_enabled,
+        "log_level": log_level,
+        "debug": debug_mode,
+        "cors_enabled": cors_enabled,
+        "cors_origins": cors_origins,
+    }
+    
+    # Add MongoDB-specific configuration
+    if db_type == "mongodb":
+        server_kwargs["db_connection_string"] = mongodb_uri
+        if mongodb_db_name:
+            server_kwargs["db_database_name"] = mongodb_db_name
+    
+    # Add DynamoDB-specific configuration
+    if db_type == "dynamodb":
+        if dynamodb_table_name:
+            server_kwargs["dynamodb_table_name"] = dynamodb_table_name
+        if dynamodb_region:
+            server_kwargs["dynamodb_region"] = dynamodb_region
+        if dynamodb_endpoint_url:
+            server_kwargs["dynamodb_endpoint_url"] = dynamodb_endpoint_url
+        if dynamodb_access_key_id:
+            server_kwargs["dynamodb_access_key_id"] = dynamodb_access_key_id
+        if dynamodb_secret_access_key:
+            server_kwargs["dynamodb_secret_access_key"] = dynamodb_secret_access_key
+    
+    server = Server(**server_kwargs)
 
     # Initialize logging database (automatically installs DBLogHandler)
     # Import INTERACTION level to ensure it's registered before initialization
@@ -426,18 +485,53 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         log_db_type = _get_config_value(app_config, "logging.database.type", "JVAGENT_LOG_DB_TYPE", None)
         log_db_uri = _get_config_value(app_config, "logging.database.uri", "JVAGENT_LOG_DB_URI", None)
         log_db_name = _get_config_value(app_config, "logging.database.name", "JVAGENT_LOG_DB_NAME", "jvagent_logs")
+        log_db_path = _get_config_value(app_config, "logging.database.path", "JVAGENT_LOG_DB_PATH", None)
         
-        # Handle empty string from unresolved placeholder - default to main database URI
-        if not log_db_uri or log_db_uri.strip() == "":
+        # DynamoDB logging database configuration
+        log_dynamodb_table_name = _get_config_value(app_config, "logging.database.table_name", "JVSPATIAL_LOG_DB_TABLE_NAME", None)
+        log_dynamodb_region = _get_config_value(app_config, "logging.database.region", "JVSPATIAL_LOG_DB_REGION", None)
+        log_dynamodb_endpoint_url = _get_config_value(app_config, "logging.database.endpoint_url", "JVSPATIAL_LOG_DB_ENDPOINT_URL", None)
+        log_dynamodb_access_key_id = _get_config_value(app_config, "logging.database.access_key_id", "AWS_ACCESS_KEY_ID", None)
+        log_dynamodb_secret_access_key = _get_config_value(app_config, "logging.database.secret_access_key", "AWS_SECRET_ACCESS_KEY", None)
+        
+        # Handle empty strings from unresolved placeholders
+        if log_db_uri and log_db_uri.strip() == "":
             log_db_uri = os.getenv("JVAGENT_LOG_DB_URI") or mongodb_uri
+        if log_db_path and log_db_path.strip() == "":
+            log_db_path = None
+        if log_dynamodb_table_name and log_dynamodb_table_name.strip() == "":
+            log_dynamodb_table_name = None
+        if log_dynamodb_region and log_dynamodb_region.strip() == "":
+            log_dynamodb_region = None
+        if log_dynamodb_endpoint_url and log_dynamodb_endpoint_url.strip() == "":
+            log_dynamodb_endpoint_url = None
+        if log_dynamodb_access_key_id and log_dynamodb_access_key_id.strip() == "":
+            log_dynamodb_access_key_id = None
+        if log_dynamodb_secret_access_key and log_dynamodb_secret_access_key.strip() == "":
+            log_dynamodb_secret_access_key = None
         
         # Set logging database environment variables if specified
         if log_db_type:
-            os.environ["JVAGENT_LOG_DB_TYPE"] = log_db_type
+            os.environ["JVSPATIAL_LOG_DB_TYPE"] = log_db_type
         if log_db_uri:
-            os.environ["JVAGENT_LOG_DB_URI"] = log_db_uri
+            os.environ["JVSPATIAL_LOG_DB_URI"] = log_db_uri
         if log_db_name:
-            os.environ["JVAGENT_LOG_DB_NAME"] = log_db_name
+            os.environ["JVSPATIAL_LOG_DB_NAME"] = log_db_name
+        if log_db_path:
+            os.environ["JVSPATIAL_LOG_DB_PATH"] = log_db_path
+        
+        # Set DynamoDB logging database environment variables if using DynamoDB
+        if log_db_type == "dynamodb":
+            if log_dynamodb_table_name:
+                os.environ["JVSPATIAL_LOG_DB_TABLE_NAME"] = log_dynamodb_table_name
+            if log_dynamodb_region:
+                os.environ["JVSPATIAL_LOG_DB_REGION"] = log_dynamodb_region
+            if log_dynamodb_endpoint_url:
+                os.environ["JVSPATIAL_LOG_DB_ENDPOINT_URL"] = log_dynamodb_endpoint_url
+            if log_dynamodb_access_key_id:
+                os.environ["AWS_ACCESS_KEY_ID"] = log_dynamodb_access_key_id
+            if log_dynamodb_secret_access_key:
+                os.environ["AWS_SECRET_ACCESS_KEY"] = log_dynamodb_secret_access_key
         
         # Initialize with updated log_levels
         initialize_logging_database(
