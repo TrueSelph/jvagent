@@ -99,6 +99,18 @@ class InteractRouter(InteractAction):
             "If not provided, uses default routing prompt template."
         ),
     )
+    enable_dspy_cache: bool = attribute(
+        default=True,
+        description="Whether to enable DSPy caching for improved latency (default: True). Caching reduces LLM API calls for identical requests."
+    )
+    cache_disk_enabled: Optional[bool] = attribute(
+        default=None,
+        description="Whether to enable disk cache (default: None, uses DSPy default). Set to False to disable disk cache, True to enable, or None to use DSPy's default."
+    )
+    cache_memory_enabled: Optional[bool] = attribute(
+        default=None,
+        description="Whether to enable memory cache (default: None, uses DSPy default). Set to False to disable memory cache, True to enable, or None to use DSPy's default."
+    )
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute routing analysis on the interaction.
@@ -340,7 +352,7 @@ class InteractRouter(InteractAction):
         anchors_dict: Dict[str, List[str]],
         interaction_history: List[Dict[str, Any]],
     ) -> Optional[Dict[str, Any]]:
-        """Route using DSPy module.
+        """Route using DSPy module with caching support.
         
         Args:
             interaction: The current interaction
@@ -358,13 +370,41 @@ class InteractRouter(InteractAction):
                 logger.warning("InteractRouter: Could not get model action for DSPy routing")
                 return None
             
+            # Configure DSPy cache if custom settings provided
+            if self.enable_dspy_cache and (self.cache_disk_enabled is not None or self.cache_memory_enabled is not None):
+                # Only configure if at least one setting is explicitly provided
+                # This allows fine-grained control while defaulting to DSPy's sensible defaults
+                try:
+                    # Get current cache settings or use defaults
+                    current_cache = getattr(dspy, 'cache', None)
+                    
+                    # Only reconfigure if we need to change from defaults
+                    if current_cache is None or (
+                        (self.cache_disk_enabled is not None and current_cache.enable_disk_cache != self.cache_disk_enabled) or
+                        (self.cache_memory_enabled is not None and current_cache.enable_memory_cache != self.cache_memory_enabled)
+                    ):
+                        # Use DSPy's configure_cache if we need custom settings
+                        # Note: This affects global cache, so we only do it if explicitly configured
+                        # configure_cache is available via dspy.clients import
+                        from dspy.clients import configure_cache, DISK_CACHE_DIR, DISK_CACHE_LIMIT
+                        
+                        configure_cache(
+                            enable_disk_cache=self.cache_disk_enabled if self.cache_disk_enabled is not None else True,
+                            enable_memory_cache=self.cache_memory_enabled if self.cache_memory_enabled is not None else True,
+                            disk_cache_dir=DISK_CACHE_DIR,
+                            disk_size_limit_bytes=DISK_CACHE_LIMIT,
+                        )
+                        logger.debug("InteractRouter: Configured DSPy cache with custom settings")
+                except Exception as e:
+                    logger.warning(f"InteractRouter: Failed to configure DSPy cache: {e}, using defaults")
+            
             # Format conversation history for DSPy
             formatted_history = format_conversation_history_for_dspy(interaction_history)
             
             # Format anchors dict to JSON string
             anchors_json = json.dumps(anchors_dict, indent=2)
             
-            # Create DSPy LM adapter
+            # Create DSPy LM adapter with caching enabled/disabled based on configuration
             # Pass model, temperature, and max_tokens to allow agent.yaml overrides
             lm = DSPyLM(
                 model_action=model_action,
@@ -372,7 +412,11 @@ class InteractRouter(InteractAction):
                 model=self.model,
                 temperature=self.model_temperature,
                 max_tokens=self.model_max_tokens,
+                cache=self.enable_dspy_cache,  # Enable/disable cache based on configuration
             )
+            
+            # Track cache state for logging
+            cache_enabled = self.enable_dspy_cache and lm.cache
             
             # Configure DSPy with the adapter
             with dspy.context(lm=lm):
@@ -388,7 +432,19 @@ class InteractRouter(InteractAction):
                     router_kwargs["conversation_history"] = formatted_history
                 
                 # Call router module with async forward
+                # Note: Cache hits are handled transparently by DSPyLM's request_cache decorator
+                import time
+                start_time = time.time()
                 routing_result = await router_module.aforward(**router_kwargs)
+                elapsed_time = time.time() - start_time
+                
+                # Log cache status (cache hits are very fast, typically < 1ms)
+                if cache_enabled:
+                    # Very fast responses (< 10ms) are likely cache hits
+                    if elapsed_time < 0.01:
+                        logger.debug(f"InteractRouter: Likely cache hit (response time: {elapsed_time*1000:.2f}ms)")
+                    else:
+                        logger.debug(f"InteractRouter: Cache miss or first request (response time: {elapsed_time*1000:.2f}ms)")
                 
                 # Return structured result matching legacy format
                 return {

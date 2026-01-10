@@ -18,10 +18,14 @@ logger = logging.getLogger(__name__)
 class RouterModule(dspy.Module):
     """DSPy module for routing user utterances to appropriate InteractActions.
     
-    This module uses a DSPy Predict module with the RouterClassification
-    signature to perform routing. It can be optimized using DSPy's
-    teleprompters (BootstrapFewShot, MIPROv2, etc.) and evaluated with
-    dspy.Evaluate.
+    This module uses a DSPy ChainOfThought module with the RouterClassification
+    signature to perform routing with concise reasoning. The LLM generates concise
+    reasoning (under 50 words) that serves directly as the intent interpretation,
+    eliminating the need for a separate interpretation field. This optimization
+    reduces latency and token usage.
+    
+    The module can be optimized using DSPy's teleprompters (BootstrapFewShot, MIPROv2, etc.)
+    and evaluated with dspy.Evaluate.
     
     Example:
         >>> router = RouterModule()
@@ -30,14 +34,28 @@ class RouterModule(dspy.Module):
         ...     available_actions='{"OrderAction": ["User asks about order status"]}',
         ...     conversation_history="User: I placed an order\nSystem: Order confirmed"
         ... )
-        >>> print(result["interpretation"])  # "User requests order status"
+        >>> print(result["interpretation"])  # Concise reasoning used as interpretation
         >>> print(result["actions"])  # ["OrderAction"]
     """
     
     def __init__(self):
-        """Initialize the router module with a Predict module."""
+        """Initialize the router module with a ChainOfThought module.
+        
+        Uses a customized rationale field that encourages concise reasoning
+        suitable for direct use as interpretation, eliminating the need for
+        a separate interpretation field.
+        """
         super().__init__()
-        self.route = dspy.Predict(RouterClassification)
+        # Customize rationale field to produce concise reasoning (< 50 words)
+        # that can be used directly as interpretation
+        concise_rationale = dspy.OutputField(
+            prefix="Brief analysis:",
+            desc="Concise intent analysis in under 50 words. Capture what the user wants and relevant context (IDs, references, ongoing events). Example: 'User requests status update for ticket #789, mentions deadline'"
+        )
+        self.route = dspy.ChainOfThought(
+            RouterClassification,
+            rationale_field=concise_rationale
+        )
     
     def forward(
         self,
@@ -64,11 +82,17 @@ class RouterModule(dspy.Module):
             if conversation_history:
                 route_kwargs["conversation_history"] = conversation_history
             
-            # Call the DSPy Predict module
+            # Call the DSPy ChainOfThought module
             prediction = self.route(**route_kwargs)
             
-            # Extract interpretation
-            interpretation = str(prediction.interpretation).strip() if prediction.interpretation else ""
+            # ChainOfThought adds a 'reasoning' field along with original outputs
+            # Use reasoning directly as interpretation (optimization: eliminates separate interpretation generation)
+            reasoning = str(prediction.reasoning).strip() if hasattr(prediction, 'reasoning') and prediction.reasoning else ""
+            if reasoning:
+                logger.debug(f"RouterModule: Reasoning (used as interpretation): {reasoning[:200]}...")
+            
+            # Use reasoning as interpretation (fallback to empty string if not available)
+            interpretation = reasoning
             
             # Extract actions - handle both list and string formats
             actions = []
@@ -148,11 +172,17 @@ class RouterModule(dspy.Module):
             if conversation_history:
                 route_kwargs["conversation_history"] = conversation_history
             
-            # Call the DSPy Predict module (use acall for async)
+            # Call the DSPy ChainOfThought module (use acall for async)
             prediction = await self.route.acall(**route_kwargs)
             
-            # Process prediction same as sync version
-            interpretation = str(prediction.interpretation).strip() if prediction.interpretation else ""
+            # ChainOfThought adds a 'reasoning' field along with original outputs
+            # Use reasoning directly as interpretation (optimization: eliminates separate interpretation generation)
+            reasoning = str(prediction.reasoning).strip() if hasattr(prediction, 'reasoning') and prediction.reasoning else ""
+            if reasoning:
+                logger.debug(f"RouterModule: Reasoning (used as interpretation): {reasoning[:200]}...")
+            
+            # Use reasoning as interpretation (fallback to empty string if not available)
+            interpretation = reasoning
             
             actions = []
             if prediction.actions:

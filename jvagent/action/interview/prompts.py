@@ -175,4 +175,3 @@ EXAMPLES:
 "no thanks" → {{"intent": "CANCELLATION", "confidence": 1.0}}
 "My name is John Doe" → {{"intent": "SUBMISSION", "user_name": "John Doe"}}
 "My name is John and email is john@example.com" → {{"intent": "SUBMISSION", "user_name": "John", "user_email": "john@example.com"}}"""
-
