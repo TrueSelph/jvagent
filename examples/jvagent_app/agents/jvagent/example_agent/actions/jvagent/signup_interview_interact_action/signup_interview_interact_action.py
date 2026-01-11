@@ -98,6 +98,16 @@ class SignupInterviewInteractAction(InterviewInteractAction):
                 },
                 "required": True
             },
+            {
+                "name": "phone_number",
+                "question": "What is your phone number? (optional)",
+                "constraints": {
+                    "description": "The user's phone number",
+                    "instructions": "Please provide a phone number if you'd like us to contact you via phone. You can skip this question if you prefer not to provide it.",
+                    "type": "string",
+                },
+                "required": False
+            },
         ],
         description="List of question configurations. Can be overridden in agent.yaml. "
                     "Handlers and validators can be registered via decorators (@input_handler, @input_validator) "

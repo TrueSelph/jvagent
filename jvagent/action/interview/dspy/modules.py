@@ -10,7 +10,8 @@ from typing import Any, Dict, Optional
 import dspy
 
 from jvagent.action.interview.interview_interact_action import ClassificationResult
-from jvagent.action.interview.dspy.signatures import InterviewClassification
+from jvagent.action.interview.dspy.signatures import create_interview_classification_signature
+from jvagent.action.interview.prompts import INTERVIEW_CLASSIFICATION_SIGNATURE
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +27,8 @@ class InterviewClassifier(dspy.Module):
     Example:
         >>> classifier = InterviewClassifier()
         >>> result = classifier(
-        ...     user_message="My name is John Doe",
+        ...     user_input="My name is John Doe",
         ...     current_state="ACTIVE",
-        ...     progress_info="0/5 questions answered",
         ...     answered_fields="None",
         ...     entities_to_extract="- user_name: Full name"
         ... )
@@ -36,41 +36,52 @@ class InterviewClassifier(dspy.Module):
         >>> print(result.extracted_data)  # {"user_name": "John Doe"}
     """
     
-    def __init__(self):
-        """Initialize the classifier with a Predict module."""
+    def __init__(self, action_instance=None):
+        """Initialize the classifier with a Predict module.
+        
+        Args:
+            action_instance: Optional InterviewInteractAction instance. If provided,
+                uses the signature docstring from action_instance.interview_classification_signature.
+                If None, uses the default from prompts.py.
+        """
         super().__init__()
-        self.classify = dspy.Predict(InterviewClassification)
+        if action_instance and hasattr(action_instance, 'interview_classification_signature'):
+            docstring = action_instance.interview_classification_signature
+        else:
+            docstring = INTERVIEW_CLASSIFICATION_SIGNATURE
+        signature_class = create_interview_classification_signature(docstring)
+        self.classify = dspy.Predict(signature_class)
     
     def forward(
         self,
-        user_message: str,
+        user_input: str,
         current_state: str,
-        progress_info: str,
         answered_fields: str,
         entities_to_extract: str,
+        required_fields_info: str,
         conversation_history: Optional[str] = None,
     ) -> ClassificationResult:
         """Classify intent and extract field values.
         
         Args:
-            user_message: User's utterance (raw message)
+            user_input: User's input (typically with reasoning)
             current_state: Current interview state
-            progress_info: Progress information (e.g., "3/5 questions answered")
             answered_fields: Previously answered fields with values
             entities_to_extract: Unanswered fields to extract
+            required_fields_info: List of required field names
             conversation_history: Optional formatted conversation history for context
             
         Returns:
             ClassificationResult with intent, confidence, and extracted data
         """
         try:
-            # Build kwargs for classification, only include history if provided
+            # Build kwargs for classification, include history if provided
             classify_kwargs = {
-                "user_message": user_message,
+                "user_input": user_input,
                 "current_state": current_state,
-                "progress_info": progress_info,
                 "answered_fields": answered_fields,
                 "entities_to_extract": entities_to_extract,
+                "required_fields_info": required_fields_info,
             }
             if conversation_history:
                 classify_kwargs["conversation_history"] = conversation_history
@@ -150,21 +161,21 @@ class InterviewClassifier(dspy.Module):
     
     async def aforward(
         self,
-        user_message: str,
+        user_input: str,
         current_state: str,
-        progress_info: str,
         answered_fields: str,
         entities_to_extract: str,
+        required_fields_info: str,
         conversation_history: Optional[str] = None,
     ) -> ClassificationResult:
         """Async version of forward.
         
         Args:
-            user_message: User's utterance (raw message)
+            user_input: User's input (typically with reasoning)
             current_state: Current interview state
-            progress_info: Progress information
             answered_fields: Previously answered fields with values
             entities_to_extract: Unanswered fields to extract
+            required_fields_info: List of required field names
             conversation_history: Optional formatted conversation history for context
             
         Returns:
@@ -172,13 +183,13 @@ class InterviewClassifier(dspy.Module):
         """
         # Use DSPy's async support
         try:
-            # Build kwargs for classification, only include history if provided
+            # Build kwargs for classification, include history if provided
             classify_kwargs = {
-                "user_message": user_message,
+                "user_input": user_input,
                 "current_state": current_state,
-                "progress_info": progress_info,
                 "answered_fields": answered_fields,
                 "entities_to_extract": entities_to_extract,
+                "required_fields_info": required_fields_info,
             }
             if conversation_history:
                 classify_kwargs["conversation_history"] = conversation_history

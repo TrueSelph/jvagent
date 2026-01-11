@@ -18,6 +18,7 @@ from jvagent.action.persona.prompts import (
     NO_DIRECTIVES_SUB_PROMPT,
     PARAMETERS_SUB_PROMPT,
     SYSTEM_PROMPT_TEMPLATE,
+    PERSONA_RESPONSE_SIGNATURE,
     INTERPRETATION_INSIGHTS_PROMPT,
     REVISION_MECHANISM_PROMPT,
     CONTEXT_EVALUATION_PROMPT,
@@ -93,6 +94,12 @@ class PersonaAction(Action):
     use_dspy: bool = attribute(
         default=False,
         description="Use DSPy module for response generation (enables optimization of directive/parameter following via DSPy teleprompters)"
+    )
+    
+    # DSPy signature docstring (single source of truth, can be overridden in agent.yaml for runtime customization)
+    persona_response_signature: str = attribute(
+        default=PERSONA_RESPONSE_SIGNATURE,
+        description="DSPy signature docstring for PersonaResponse. Can be overridden in agent.yaml for runtime customization. Defaults to PERSONA_RESPONSE_SIGNATURE from prompts.py",
     )
 
     # Standard collection of configurable parameters
@@ -726,9 +733,10 @@ class PersonaAction(Action):
                 max_tokens=self.model_max_tokens,
             )
             
-            # Get or create cached module instance
+            # Get or create cached module instance with action instance for signature docstring
+            # Note: If signature docstring changes at runtime, module should be recreated
             if self._dspy_module is None:
-                self._dspy_module = PersonaResponseModule()
+                self._dspy_module = PersonaResponseModule(action_instance=self)
             
             module = self._dspy_module
             

@@ -9,7 +9,8 @@ from typing import Any, Dict, List, Optional
 
 import dspy
 
-from jvagent.action.persona.dspy.signatures import PersonaResponse
+from jvagent.action.persona.dspy.signatures import create_persona_response_signature
+from jvagent.action.persona.prompts import PERSONA_RESPONSE_SIGNATURE
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +37,21 @@ class PersonaResponseModule(dspy.Module):
         ... )
     """
     
-    def __init__(self):
-        """Initialize the module with a ChainOfThought module for better reasoning."""
+    def __init__(self, action_instance=None):
+        """Initialize the module with a ChainOfThought module for better reasoning.
+        
+        Args:
+            action_instance: Optional PersonaAction instance. If provided,
+                uses the signature docstring from action_instance.persona_response_signature.
+                If None, uses the default from prompts.py.
+        """
         super().__init__()
-        self.generate = dspy.ChainOfThought(PersonaResponse)
+        if action_instance and hasattr(action_instance, 'persona_response_signature'):
+            docstring = action_instance.persona_response_signature
+        else:
+            docstring = PERSONA_RESPONSE_SIGNATURE
+        signature_class = create_persona_response_signature(docstring)
+        self.generate = dspy.ChainOfThought(signature_class)
     
     async def aforward(
         self,

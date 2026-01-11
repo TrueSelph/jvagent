@@ -2,7 +2,7 @@
 
 from jvagent.action.model.dspy import DSPyLM
 from jvagent.action.interview.dspy.modules import InterviewClassifier
-from jvagent.action.interview.dspy.signatures import InterviewClassification
+from jvagent.action.interview.dspy.signatures import create_interview_classification_signature
 
-__all__ = ["DSPyLM", "InterviewClassifier", "InterviewClassification"]
+__all__ = ["DSPyLM", "InterviewClassifier", "create_interview_classification_signature"]
 

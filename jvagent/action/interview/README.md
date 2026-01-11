@@ -153,10 +153,11 @@ All interview implementations automatically include standard anchors that cover 
 
 #### How It Works
 
-- Standard anchors are defined in the `InterviewInteractAction` base class as `_standard_interview_anchors`
-- They are automatically merged with implementation-specific anchors in `__init_subclass__`
-- They are also merged in `on_register()` and `on_reload()` to handle agent.yaml overrides
-- Implementation-specific anchors are listed first, followed by standard anchors
+- Standard anchor templates are defined in the `InterviewInteractAction` base class as `_standard_interview_anchor_templates`
+- They are automatically contextualized with the class name (e.g., "SignupInterviewInteractAction") in `_merge_standard_anchors()`
+- This helps distinguish multiple interview instances coexisting in a single agent
+- They are automatically merged with implementation-specific anchors in `on_register()` and `on_reload()`
+- Implementation-specific anchors are listed first, followed by context-specific standard anchors
 - Duplicates are automatically removed while preserving order
 
 #### Example
@@ -175,7 +176,7 @@ class MyInterviewAction(InterviewInteractAction):
 The final anchors list will include:
 1. "User wants to start my interview"
 2. "User is providing my interview data"
-3. All standard anchors (cancellation, correction, review confirmation, continuation)
+3. All standard anchors contextualized with class name (e.g., "User cancels MyInterviewAction", "User answers MyInterviewAction question", etc.)
 
 ## File Structure
 
