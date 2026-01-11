@@ -21,6 +21,7 @@ from jvagent.action.router.dspy import RouterModule
 from jvagent.action.router.prompts import (
     ROUTING_PROMPT_TEMPLATE,
     SYSTEM_PROMPT_TEMPLATE,
+    ROUTER_CLASSIFICATION_SIGNATURE,
 )
 from jvagent.memory.conversation import Conversation
 
@@ -110,6 +111,12 @@ class InteractRouter(InteractAction):
     cache_memory_enabled: Optional[bool] = attribute(
         default=None,
         description="Whether to enable memory cache (default: None, uses DSPy default). Set to False to disable memory cache, True to enable, or None to use DSPy's default."
+    )
+    
+    # DSPy signature docstring (single source of truth, can be overridden in agent.yaml for runtime customization)
+    router_classification_signature: str = attribute(
+        default=ROUTER_CLASSIFICATION_SIGNATURE,
+        description="DSPy signature docstring for RouterClassification. Can be overridden in agent.yaml for runtime customization. Defaults to ROUTER_CLASSIFICATION_SIGNATURE from prompts.py",
     )
 
     async def execute(self, visitor: "InteractWalker") -> None:
@@ -420,8 +427,8 @@ class InteractRouter(InteractAction):
             
             # Configure DSPy with the adapter
             with dspy.context(lm=lm):
-                # Create router module instance
-                router_module = RouterModule()
+                # Create router module instance with action instance for signature docstring
+                router_module = RouterModule(action_instance=self)
                 
                 # Build kwargs for router, include history if available
                 router_kwargs = {

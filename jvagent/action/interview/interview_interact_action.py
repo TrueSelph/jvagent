@@ -47,6 +47,8 @@ from .prompts import (
     CANCELLATION_EVENT_MESSAGE_TEMPLATE,
     QUESTION_DIRECTIVE_TEMPLATE,
     INTERVIEW_PROMPT_TEMPLATE,
+    INTERVIEW_CLASSIFICATION_SIGNATURE,
+    REQUIRED_FIELD_DECLINE_TEMPLATE,
 )
 
 if TYPE_CHECKING:
@@ -71,13 +73,13 @@ _input_handler_registry: Dict[Tuple[str, str], Callable] = {}
 class ClassificationResult:
     """Result of unified classification and extraction routine.
     
-    Uses unified intent types: CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE
+    Uses unified intent types: CANCELLATION, CONFIRMATION, UPDATE, DECLINE, SUBMISSION, NONE
     """
-    intent: str  # "CANCELLATION", "CONFIRMATION", "UPDATE", "SUBMISSION", "NONE"
+    intent: str  # "CANCELLATION", "CONFIRMATION", "UPDATE", "DECLINE", "SUBMISSION", "NONE"
     confidence: float = 1.0  # Confidence score for the classification
     
-    # Unified field/value structure (used for both UPDATE and SUBMISSION)
-    field: Optional[str] = None  # Field name (for UPDATE intent) or null
+    # Unified field/value structure (used for UPDATE, DECLINE, and SUBMISSION)
+    field: Optional[str] = None  # Field name (for UPDATE/DECLINE intent) or null
     value: Optional[Any] = None  # Field value (for UPDATE intent) or null
     
     # For SUBMISSION intent - extracted field values (multiple fields)
@@ -119,29 +121,32 @@ class InterviewInteractAction(InteractAction, ABC):
     
     # Standard anchors that are automatically included for all interview implementations
     # These cover common interview flow scenarios and ensure proper routing classification
-    _standard_interview_anchors: List[str] = [
+    # Base anchor templates - will be contextualized with class name in _merge_standard_anchors
+    _standard_interview_anchor_templates: List[str] = [
         # Cancellation (any state)
-        "User requests to cancel interview process",
-        "User wants to stop the interview",
-        "User wants to abort the interview",
-        "User wants to exit the interview",
+        "User cancels {interview_type}",
+        "User stops {interview_type}",
+        "User aborts {interview_type}",
         
-        # Correction/Update (ACTIVE or REVIEW states)
-        "User indicates that not all information is correct",
-        "User wants to change previously provided information",
-        "User wants to update their answers",
-        "User wants to correct their responses",
-        "User indicates information needs to be changed",
+        # Update (ACTIVE or REVIEW states)
+        "User changes {interview_type} information",
+        "User corrects {interview_type} answer",
+        "User updates {interview_type} response",
         
-        # Review Confirmation (REVIEW state)
-        "User confirms the information is correct",
-        "User approves the summary",
-        "User confirms all information is accurate",
+        # Confirmation (REVIEW state)
+        "User confirms {interview_type} information",
+        "User approves {interview_type} summary",
         
-        # General Interview Continuation (intermediate states)
-        "User is answering interview questions",
-        "User is providing interview information",
-        "User is responding to interview prompts",
+        # Decline (ACTIVE state, non-required fields)
+        "User declines to answer {interview_type} question",
+        "User skips {interview_type} question",
+        "User can't provide {interview_type} answer",
+        "User prefers not to answer {interview_type}",
+        
+        # Submission (ACTIVE state)
+        "User answers {interview_type} question",
+        "User provides {interview_type} information",
+        "User responds to {interview_type} prompt",
     ]
     
     # Class-level registries for decorator-registered handlers and validators
@@ -238,15 +243,25 @@ class InterviewInteractAction(InteractAction, ABC):
         This method ensures standard anchors are always included, even when
         anchors are overridden in agent.yaml. Should be called from on_register()
         and on_reload() to handle runtime configuration changes.
+        
+        Standard anchors are contextualized with the class name to help distinguish
+        multiple interview instances coexisting in a single agent.
         """
         # Get current anchors value (may be from agent.yaml override)
         current_anchors = getattr(self, 'anchors', [])
         if not isinstance(current_anchors, list):
             current_anchors = []
         
+        # Generate context-specific standard anchors using class name
+        interview_type = self.get_class_name()
+        standard_anchors = [
+            template.format(interview_type=interview_type)
+            for template in self._standard_interview_anchor_templates
+        ]
+        
         # Merge: current anchors first, then standard anchors appended
         # Remove duplicates while preserving order
-        merged_anchors = list(dict.fromkeys(current_anchors + self._standard_interview_anchors))
+        merged_anchors = list(dict.fromkeys(current_anchors + standard_anchors))
         
         # Update the anchors attribute
         self.anchors = merged_anchors
@@ -370,6 +385,12 @@ class InterviewInteractAction(InteractAction, ABC):
         description="Interview prompt template that combines intent detection (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION) with response extraction in a single LLM call. Defaults to INTERVIEW_PROMPT_TEMPLATE from prompts.py",
     )
     
+    # DSPy signature docstring (single source of truth, can be overridden in agent.yaml for runtime customization)
+    interview_classification_signature: str = attribute(
+        default=INTERVIEW_CLASSIFICATION_SIGNATURE,
+        description="DSPy signature docstring for InterviewClassification. Can be overridden in agent.yaml for runtime customization. Defaults to INTERVIEW_CLASSIFICATION_SIGNATURE from prompts.py",
+    )
+    
     # Update prompt template (for prompting user for new value when updating)
     update_prompt_for_value_template: str = attribute(
         default=UPDATE_PROMPT_FOR_VALUE_TEMPLATE,
@@ -416,6 +437,12 @@ class InterviewInteractAction(InteractAction, ABC):
     question_directive_template: str = attribute(
         default=QUESTION_DIRECTIVE_TEMPLATE,
         description="Consolidated template for formatting question directives. Uses {question}, {description}, and {instructions} placeholders. Instructions are optional and only included if provided. Defaults to QUESTION_DIRECTIVE_TEMPLATE from prompts.py",
+    )
+    
+    # Required field decline template (for when user tries to decline a required field)
+    required_field_decline_template: str = attribute(
+        default=REQUIRED_FIELD_DECLINE_TEMPLATE,
+        description="Template for insisting user answer a required field when they try to decline. Uses {field_display} and {question} placeholders. Defaults to REQUIRED_FIELD_DECLINE_TEMPLATE from prompts.py",
     )
 
     async def _generate_directive(
@@ -557,13 +584,55 @@ class InterviewInteractAction(InteractAction, ABC):
             
             updated_field = classification_result.field
             
-            # Check if all questions answered after update
-            if session.has_all_required_answers():
-                session.active_question_key = None
-                session.transition_to(InterviewState.REVIEW)
-                await session.save()
-                # State will be checked in _generate_directive to generate review directive
-                return
+            # Continue to next question logic below (don't transition to REVIEW yet - 
+            # we may still have non-required questions to ask)
+        
+        # Handle decline intent
+        elif classification_result.intent == "DECLINE":
+            field = classification_result.field
+            if field and isinstance(field, str):
+                field = field.strip()
+                if field.lower() in ("null", "none", ""):
+                    field = None
+            
+            # If field not specified, try to use active question as fallback
+            if not field and session.active_question_key:
+                field = session.active_question_key
+                logger.debug(f"{self.get_class_name()}: DECLINE intent without field specified, using active question: {field}")
+            
+            if not field:
+                # Field not specified and no active question - treat as unclear response
+                logger.warning(f"{self.get_class_name()}: DECLINE intent without field specified and no active question")
+                # Continue to next question logic below
+            else:
+                # Check if field is required
+                question_config = session.get_question_by_name(field)
+                is_required = question_config.get("required", False) if question_config else False
+                
+                if is_required:
+                    # Required field - insist on answer
+                    field_display = field.replace("_", " ").title()
+                    question_text = question_config.get("question", field_display) if question_config else field_display
+                    
+                    # Generate directive using required_field_decline_template
+                    directive = self.required_field_decline_template.format(
+                        field_display=field_display,
+                        question=question_text
+                    )
+                    
+                    # Keep active_question_key pointing to this required field
+                    session.active_question_key = field
+                    await session.save()
+                    
+                    await self._respond_with_directive(visitor, directive, self.active_event_message_template.format(class_name=self.get_class_name()))
+                    return  # Don't advance to next question
+                else:
+                    # Non-required field - store "n/a" and continue
+                    session.set_response(field, "n/a")
+                    session.set_validation_status(field, ValidationStatus.VALID)
+                    await session.save()
+                    logger.debug(f"{self.get_class_name()}: Declined non-required field {field}, stored as 'n/a'")
+                    # Continue to next question logic below
         
         # Handle response extraction
         elif classification_result.intent == "SUBMISSION" and classification_result.extracted_data:
@@ -585,14 +654,6 @@ class InterviewInteractAction(InteractAction, ABC):
             if session.active_question_key and session.active_question_key in session.get_unanswered_questions():
                 return
         
-        # Check if all required questions are answered
-        if session.has_all_required_answers():
-            session.active_question_key = None
-            session.transition_to(InterviewState.REVIEW)
-            await session.save()
-            # State will be checked in _generate_directive to generate review directive
-            return
-        
         # Get directive for next question using QuestionWalker
         question_walker = QuestionWalker()
         question_walker.interview_session = session
@@ -601,7 +662,8 @@ class InterviewInteractAction(InteractAction, ABC):
         
         unanswered = session.get_unanswered_questions()
         if not unanswered:
-            # All questions answered, transition to REVIEW
+            # All questions answered (or declined), transition to REVIEW
+            # Note: This includes both required and non-required questions
             session.active_question_key = None
             session.transition_to(InterviewState.REVIEW)
             await session.save()
@@ -1192,6 +1254,9 @@ class InterviewInteractAction(InteractAction, ABC):
         This runs in parallel with directive generation to maintain InterviewSession
         state and data while determining the best directive to drive the conversation.
         
+        Uses router interpretation as primary source when available, providing structured
+        context for classification and extraction.
+        
         Args:
             session: Interview session
             utterance: User's utterance (fallback if interpretation not available)
@@ -1201,81 +1266,38 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
             ClassificationResult with unified intent and extracted data
         """
-        # Build user message with both utterance and interpretation (if available)
-        user_message_parts = []
-        if utterance and utterance.strip():
-            user_message_parts.append(f"User's utterance: {utterance}")
-        if interaction.interpretation and interaction.interpretation.strip():
-            user_message_parts.append(f"Interpretation: {interaction.interpretation}")
-        
-        if not user_message_parts:
-            return ClassificationResult(intent="NONE")
-        
-        user_message = "\n".join(user_message_parts)
-        
         # Skip classification for terminal states
         if session.state == InterviewState.COMPLETED or session.state == InterviewState.CANCELLED:
             return ClassificationResult(intent="NONE")
         
+        # Build user input - prioritize interpretation when available
+        interpretation_available = interaction.interpretation and interaction.interpretation.strip()
+        if interpretation_available:
+            # Use interpretation as primary source, include utterance only for context if different
+            user_input = interaction.interpretation
+            if utterance and utterance.strip() and utterance.strip() != interaction.interpretation.strip():
+                # Only include utterance if it adds context (is different from interpretation)
+                user_input = f"Interpretation: {interaction.interpretation}\nUser's utterance: {utterance}"
+        elif utterance and utterance.strip():
+            user_input = utterance
+        else:
+            return ClassificationResult(intent="NONE")
+        
         # Use DSPy if enabled, otherwise use legacy implementation
         if self.use_dspy:
-            return await self._classify_with_dspy(session, user_message, interaction, visitor)
+            return await self._classify_with_dspy(session, user_input, interaction, visitor)
         
         # Unified classification and extraction using single prompt
         try:
             # Build context for unified prompt
-            current_state = session.state.value
+            context = self._build_classification_context(session)
             
-            # Calculate progress
-            answered = len(session.get_answered_questions())
-            total = len(session.question_index)
-            progress_info = f"{answered}/{total} questions answered"
-            
-            # Format answered fields with values
-            answered_fields = session.get_answered_questions()
-            answered_fields_with_values = []
-            for field in answered_fields:
-                value = session.get_response(field)
-                question_config = session.get_question_by_name(field)
-                description = ""
-                if question_config:
-                    constraints = question_config.get("constraints", {})
-                    description = constraints.get("description", "")
-                    if not description:
-                        description = field.replace("_", " ").title()
-                answered_fields_with_values.append(f"- {field} ({description}): {value}")
-            
-            # Get unanswered questions for extraction
-            unanswered = session.get_unanswered_questions()
-            if session.active_question_key and session.active_question_key in unanswered:
-                # Focus on the active question (revision or re-prompt for invalid)
-                active_questions = [q for q in session.question_index if q.get("name") == session.active_question_key]
-            else:
-                active_questions = [q for q in session.question_index if q.get("name") in unanswered]
-            
-            # Build entities list for extraction
-            entities_list = []
-            
-            for item in active_questions:
-                key = item.get('name')
-                constraints = item.get('constraints', {})
-                if not key or not constraints:
-                    continue
-                desc = constraints.get('description', '')
-                other_constraints = {k: v for k, v in constraints.items() if k != 'description'}
-                constraint_strs = [f"{k}: {v}" for k, v in other_constraints.items()]
-                constraint_part = f" ({', '.join(constraint_strs)})" if constraint_strs else ""
-                entities_list.append(f"- {key}: {desc}{constraint_part}")
-            
-            entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
-            
-            # Build unified prompt
             prompt = self.interview_prompt.format(
-                user_message=user_message,
-                current_state=current_state,
-                progress_info=progress_info,
-                answered_fields_with_values="\n".join(answered_fields_with_values) if answered_fields_with_values else "None",
-                entities_to_extract=entities_to_extract
+                user_input=user_input,
+                current_state=context["current_state"],
+                answered_fields=context["answered_fields"],
+                entities_to_extract=context["entities_to_extract"],
+                required_fields_info=context["required_fields_info"]
             )
             
             # Get model action
@@ -1298,8 +1320,8 @@ class InterviewInteractAction(InteractAction, ABC):
                 )
             
             # Call LLM with unified prompt
-            # Use the primary text (interpretation if available, otherwise utterance) as the prompt
-            primary_text = interaction.interpretation if interaction.interpretation else utterance
+            # Use interpretation as primary text when available (already in user_input)
+            primary_text = interaction.interpretation if interpretation_available else utterance
             response = await model_action.generate(
                 prompt=primary_text,
                 stream=False,
@@ -1366,10 +1388,64 @@ class InterviewInteractAction(InteractAction, ABC):
             logger.error(f"{self.get_class_name()}: Failed to classify/extract via unified prompt: {e}", exc_info=True)
             return ClassificationResult(intent="NONE")
     
+    def _build_classification_context(
+        self,
+        session: InterviewSession
+    ) -> Dict[str, str]:
+        """Build minimal context for classification.
+        
+        Args:
+            session: Interview session
+            
+        Returns:
+            Dictionary with current_state, answered_fields, entities_to_extract, required_fields_info
+        """
+        current_state = session.state.value
+        
+        # Format answered fields (minimal - just field names)
+        answered_fields = session.get_answered_questions()
+        answered_fields_str = ", ".join(answered_fields) if answered_fields else "None"
+        
+        # Get unanswered questions for extraction
+        unanswered = session.get_unanswered_questions()
+        if session.active_question_key and session.active_question_key in unanswered:
+            active_questions = [q for q in session.question_index if q.get("name") == session.active_question_key]
+        else:
+            active_questions = [q for q in session.question_index if q.get("name") in unanswered]
+        
+        # Build entities list for extraction with required field information
+        entities_list = []
+        required_fields = set(session.get_required_questions())
+        
+        for item in active_questions:
+            key = item.get('name')
+            constraints = item.get('constraints', {})
+            if not key or not constraints:
+                continue
+            desc = constraints.get('description', '')
+            other_constraints = {k: v for k, v in constraints.items() if k != 'description'}
+            constraint_strs = [f"{k}: {v}" for k, v in other_constraints.items()]
+            constraint_part = f" ({', '.join(constraint_strs)})" if constraint_strs else ""
+            is_required = key in required_fields
+            required_marker = " [REQUIRED]" if is_required else " [OPTIONAL]"
+            entities_list.append(f"- {key}: {desc}{constraint_part}{required_marker}")
+        
+        entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
+        
+        # Build required fields info (simplified - comma-separated)
+        required_fields_info = ", ".join(sorted(required_fields)) if required_fields else "None"
+        
+        return {
+            "current_state": current_state,
+            "answered_fields": answered_fields_str,
+            "entities_to_extract": entities_to_extract,
+            "required_fields_info": required_fields_info,
+        }
+    
     async def _classify_with_dspy(
         self,
         session: InterviewSession,
-        user_message: str,
+        user_input: str,
         interaction: Interaction,
         visitor: "InteractWalker"
     ) -> ClassificationResult:
@@ -1381,7 +1457,7 @@ class InterviewInteractAction(InteractAction, ABC):
         
         Args:
             session: Interview session
-            user_message: User's utterance (raw message)
+            user_input: User's input (typically with reasoning)
             interaction: Current interaction
             visitor: InteractWalker
             
@@ -1394,55 +1470,10 @@ class InterviewInteractAction(InteractAction, ABC):
             from jvagent.action.model.dspy import DSPyLM
             from jvagent.action.interview.dspy import InterviewClassifier
             
-            # Build context for classification (same as legacy implementation)
-            current_state = session.state.value
+            # Build context for classification
+            context = self._build_classification_context(session)
             
-            # Calculate progress
-            answered = len(session.get_answered_questions())
-            total = len(session.question_index)
-            progress_info = f"{answered}/{total} questions answered"
-            
-            # Format answered fields with values
-            answered_fields = session.get_answered_questions()
-            answered_fields_with_values = []
-            for field in answered_fields:
-                value = session.get_response(field)
-                question_config = session.get_question_by_name(field)
-                description = ""
-                if question_config:
-                    constraints = question_config.get("constraints", {})
-                    description = constraints.get("description", "")
-                    if not description:
-                        description = field.replace("_", " ").title()
-                answered_fields_with_values.append(f"- {field} ({description}): {value}")
-            
-            answered_fields_str = "\n".join(answered_fields_with_values) if answered_fields_with_values else "None"
-            
-            # Get unanswered questions for extraction
-            unanswered = session.get_unanswered_questions()
-            if session.active_question_key and session.active_question_key in unanswered:
-                # Focus on the active question (revision or re-prompt for invalid)
-                active_questions = [q for q in session.question_index if q.get("name") == session.active_question_key]
-            else:
-                active_questions = [q for q in session.question_index if q.get("name") in unanswered]
-            
-            # Build entities list for extraction
-            entities_list = []
-            
-            for item in active_questions:
-                key = item.get('name')
-                constraints = item.get('constraints', {})
-                if not key or not constraints:
-                    continue
-                desc = constraints.get('description', '')
-                other_constraints = {k: v for k, v in constraints.items() if k != 'description'}
-                constraint_strs = [f"{k}: {v}" for k, v in other_constraints.items()]
-                constraint_part = f" ({', '.join(constraint_strs)})" if constraint_strs else ""
-                entities_list.append(f"- {key}: {desc}{constraint_part}")
-            
-            entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
-            
-            # Get conversation history if needed (same as legacy implementation)
+            # Get conversation history if needed
             conversation_history = None
             formatted_history = None
             if self.use_history:
@@ -1477,16 +1508,16 @@ class InterviewInteractAction(InteractAction, ABC):
             
             # Configure DSPy with the adapter
             with dspy.context(lm=lm):
-                # Create classifier instance
-                classifier = InterviewClassifier()
+                # Create classifier instance with action instance for signature docstring
+                classifier = InterviewClassifier(action_instance=self)
                 
                 # Build kwargs for classifier, include history if available
                 classifier_kwargs = {
-                    "user_message": user_message,
-                    "current_state": current_state,
-                    "progress_info": progress_info,
-                    "answered_fields": answered_fields_str,
-                    "entities_to_extract": entities_to_extract,
+                    "user_input": user_input,
+                    "current_state": context["current_state"],
+                    "answered_fields": context["answered_fields"],
+                    "entities_to_extract": context["entities_to_extract"],
+                    "required_fields_info": context["required_fields_info"],
                 }
                 if formatted_history:
                     classifier_kwargs["conversation_history"] = formatted_history
@@ -1726,6 +1757,119 @@ class InterviewInteractAction(InteractAction, ABC):
         )
 
         return history if history else []
+    
+    def _extract_values_from_interpretation(
+        self,
+        interpretation: str,
+        available_fields: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """Extract field-value pairs from router interpretation text.
+        
+        The router's interpretation contains extracted values in natural language.
+        This method parses common patterns to extract structured field-value pairs.
+        
+        Args:
+            interpretation: Router interpretation string with embedded values
+            available_fields: Optional list of field names to match against
+            
+        Returns:
+            Dictionary of extracted field-value pairs
+        """
+        if not interpretation or not interpretation.strip():
+            return {}
+        
+        extracted = {}
+        text = interpretation.strip()
+        
+        # Common field name patterns (case-insensitive)
+        field_patterns = {
+            'name': r'\bname\s+[:\'"]?\s*([\'"]?)([^\'"\n,]+?)\1',
+            'email': r'\bemail\s+[:\'"]?\s*([\'"]?)([^\'"\n,]+?)\1',
+            'user_name': r'\buser[_\s]?name\s+[:\'"]?\s*([\'"]?)([^\'"\n,]+?)\1',
+            'user_email': r'\buser[_\s]?email\s+[:\'"]?\s*([\'"]?)([^\'"\n,]+?)\1',
+            'phone': r'\bphone\s+[:\'"]?\s*([\'"]?)([^\'"\n,]+?)\1',
+            'ticket': r'\bticket\s+#?(\d+)',
+            'order': r'\border\s+#?(\d+)',
+            'id': r'\bid\s+[:\'"]?\s*([\'"]?)([^\'"\n,]+?)\1',
+        }
+        
+        # Pattern: "name 'John Doe' and email 'john@example.com'"
+        # Match: field name followed by quoted value
+        quoted_value_pattern = r'\b(\w+)\s+[\'"]([^\'"]+)[\'"]'
+        matches = re.finditer(quoted_value_pattern, text, re.IGNORECASE)
+        for match in matches:
+            field_candidate = match.group(1).lower()
+            value = match.group(2).strip()
+            
+            # Normalize field name
+            field_name = None
+            if 'name' in field_candidate and 'email' not in field_candidate:
+                field_name = 'user_name' if 'user' in field_candidate else 'name'
+            elif 'email' in field_candidate:
+                field_name = 'user_email' if 'user' in field_candidate else 'email'
+            elif 'phone' in field_candidate:
+                field_name = 'phone'
+            elif available_fields:
+                # Try to match against available fields
+                for field in available_fields:
+                    if field_candidate in field.lower() or field.lower() in field_candidate:
+                        field_name = field
+                        break
+            
+            if field_name and value:
+                extracted[field_name] = value
+        
+        # Pattern: "ticket #789" or "order #12345"
+        ticket_order_pattern = r'\b(ticket|order)\s+#?(\d+)'
+        matches = re.finditer(ticket_order_pattern, text, re.IGNORECASE)
+        for match in matches:
+            field_type = match.group(1).lower()
+            value = match.group(2)
+            field_name = 'ticket_id' if field_type == 'ticket' else 'order_id'
+            extracted[field_name] = value
+        
+        # Pattern: "$99.99" or "for $99.99"
+        amount_pattern = r'\$(\d+(?:\.\d{2})?)'
+        amount_matches = re.findall(amount_pattern, text)
+        if amount_matches:
+            # Use last amount found (most specific)
+            extracted['amount'] = amount_matches[-1]
+        
+        # Pattern: "from 'old@example.com' to 'new@example.com'"
+        # Extract both old and new values for UPDATE intent
+        from_to_pattern = r"from\s+['\"]([^'\"]+)['\"]\s+to\s+['\"]([^'\"]+)['\"]"
+        from_to_match = re.search(from_to_pattern, text, re.IGNORECASE)
+        if from_to_match:
+            # For UPDATE, we typically want the new value
+            extracted['old_value'] = from_to_match.group(1)
+            extracted['new_value'] = from_to_match.group(2)
+            # If it's an email field, try to identify it
+            if '@' in from_to_match.group(1):
+                extracted['user_email'] = from_to_match.group(2)
+        
+        # Pattern: Standalone quoted values that might be field values
+        # Look for patterns like "provides 'value'" or "mentions 'value'"
+        standalone_quoted = r"(?:provides|mentions|gives|says|states)\s+['\"]([^'\"]+)['\"]"
+        standalone_matches = re.finditer(standalone_quoted, text, re.IGNORECASE)
+        for match in standalone_matches:
+            value = match.group(1).strip()
+            # Try to infer field from context or value type
+            if '@' in value and 'email' not in extracted:
+                extracted['user_email'] = value
+            elif value.replace(' ', '').replace('-', '').isdigit() and len(value) >= 5:
+                # Looks like an ID
+                if 'id' not in extracted:
+                    extracted['id'] = value
+        
+        # Filter out empty values and normalize
+        filtered = {}
+        for key, val in extracted.items():
+            if val and isinstance(val, str) and val.strip():
+                filtered[key] = val.strip()
+            elif val and not isinstance(val, str):
+                filtered[key] = val
+        
+        return filtered
     
     def _extract_json(self, response: str) -> Dict[str, Any]:
         """Extract JSON from response string.

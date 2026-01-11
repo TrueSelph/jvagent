@@ -144,7 +144,7 @@ actions:
       model: "gpt-4o-mini"
       model_temperature: 0.1
       model_max_tokens: 8192
-      use_dspy: true
+      use_dspy: false
 
   # Example action from the 'jvagent' namespace
   # Located at: agents/jvagent/example_agent/actions/jvagent/example_action/

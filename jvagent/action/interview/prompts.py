@@ -81,97 +81,123 @@ QUESTION_DIRECTIVE_TEMPLATE = """Make a request to the user based on the followi
 {instructions}
 """
 
-# Interview Prompt Template
-# This prompt combines intent detection (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION) 
-# with response extraction in a single LLM call for efficiency and consistency.
-INTERVIEW_PROMPT_TEMPLATE = """Analyze the user's message to determine PRIMARY INTENT and extract field values.
+# Required field decline template (for when user tries to decline a required field)
+# Used to politely but firmly insist the user must provide an answer
+# Placeholders: {field_display} (human-readable field name), {question} (original question text)
+REQUIRED_FIELD_DECLINE_TEMPLATE = """Tell the user: I understand, but {field_display} is required to complete this process.
 
-USER MESSAGE:
-{user_message}
+Ask: {question}"""
+
+# DSPy Signature Docstring (single source of truth for InterviewClassification)
+# This docstring is used by the InterviewClassification DSPy signature
+# Can be overridden via action class attribute for runtime customization
+INTERVIEW_CLASSIFICATION_SIGNATURE = """Classify user intent and extract field values from interview context.
+    
+    The user_input contains router interpretation with reasoning and extracted values.
+    Focus on interview-specific state-aware logic and field mapping.
+    
+    INTENT TYPES (priority order):
+    1. CANCELLATION - User explicitly abandons entire process
+       - If active question exists, ambiguous phrases = DECLINE, NOT CANCELLATION
+       - Only use if language explicitly abandons entire interview
+    
+    2. CONFIRMATION - Only in REVIEW state, positive affirmation
+       - "No" in REVIEW state = UPDATE (rejecting confirmation)
+    
+    3. UPDATE - Change specific answered field
+       - In REVIEW state, "no" = UPDATE
+       - Identify field name and optionally new value
+    
+    4. DECLINE - Decline active question (only non-required fields)
+       - When active question exists, ambiguous responses = DECLINE, NOT CANCELLATION
+       - Must specify field name (use active question from entities_to_extract)
+    
+    5. SUBMISSION - Providing answers to unanswered questions
+       - Extract field values from user_input (interpretation already contains values)
+    
+    6. NONE - No clear intent
+    
+    EXTRACTION:
+    - For SUBMISSION: Extract field-value pairs from user_input (interpretation has values)
+    - For UPDATE: Use "field" and "value" keys
+    - Map values to field names from entities_to_extract
+    
+    CONTEXT-AWARE EXTRACTION (CRITICAL):
+    - Use conversation_history to resolve fragmentary references to full values
+    - When user provides partial values, pronouns, or references (e.g., "the first one", "that option", "same as before", "9am"), match them to complete values from recent conversation history
+    - If the AI recently presented options, lists, or specific values, resolve user fragments to the full matching option/value from those recent mentions
+    - Examples of fragment resolution:
+      * Partial value ("9am") → full matching option ("Monday 9:00 AM - 11:00 AM") when that option was recently presented
+      * Ordinal reference ("the first one") → full value from first option/item in recent AI response
+      * Demonstrative reference ("that option", "this one") → full value from recently mentioned options
+      * Temporal reference ("same as before", "like last time") → previously mentioned value from conversation history
+      * Partial match (e.g., "John" when "John Smith" was mentioned) → full matching value from context
+    - Extract complete, contextually appropriate entities rather than just literal fragments
+    - When conversation_history is available, prioritize resolving fragments to full values over extracting partial fragments
+    
+    Return JSON with intent, confidence, field (for UPDATE/DECLINE), value (for UPDATE),
+    and extracted_data (for SUBMISSION) as field-value pairs.
+    """
+
+# Interview Prompt Template
+# Simplified template that relies on router interpretation for reasoning and extraction.
+# Focuses on interview-specific state-aware logic and field mapping.
+INTERVIEW_PROMPT_TEMPLATE = """Classify intent and extract field values from user input.
+
+USER INPUT (contains router interpretation with reasoning):
+{user_input}
 
 CONTEXT:
 - Current state: {current_state}
-- Progress: {progress_info}
-- Answered fields: {answered_fields_with_values}
-- Unanswered fields to extract (if SUBMISSION): {entities_to_extract}
+- Answered fields: {answered_fields}
+- Unanswered fields: {entities_to_extract}
+- Required fields: {required_fields_info}
 
-IMPORTANT - CONVERSATION HISTORY:
-- Conversation history is available in the message history
-- Information may be provided in fragments across multiple messages
-- Review previous messages to piece together complete field values
-- Consider context from earlier turns when extracting current message content
-- If a field value is incomplete in the current message, check history for missing pieces
-- **PARTIAL ANSWERS**: Users may provide partial answers to multi-part questions (e.g., a follow-up last name when asked for it)
-- **CONTEXT MATCHING**: Match user responses to previously asked questions in the conversation history
-- **INCREMENTAL EXTRACTION**: Extract what is provided even if incomplete; the system will ask for missing pieces
+INTENT CLASSIFICATION (priority order):
+1. CANCELLATION - User explicitly abandons entire process (e.g., "cancel", "abort", "stop the interview")
+   - If entities_to_extract shows active question, ambiguous phrases like "I don't want to" = DECLINE, NOT CANCELLATION
+   - Only use CANCELLATION if language explicitly abandons the entire interview
 
-INTENT TYPES (check in priority order):
-1. CANCELLATION - HIGHEST PRIORITY (overrides all others)
-   Indicators: "cancel", "abort", "stop", "quit", "nevermind", "forget it", "don't want to continue", "changed my mind", "no thanks", "not interested"
-   Key: Abandons ENTIRE process, not just one question
-   Distinguish: "Stop asking me that; I don't have an answer; I don't know" = skip question (NOT cancellation), 
-   Distinguish: "No" = indicator of response to a question (NOT cancellation), 
-   Rule: If abandonment language present, prefer CANCELLATION over UPDATE
+2. CONFIRMATION - Only in REVIEW state, positive affirmation (e.g., "yes", "correct", "looks good")
+   - "No" in REVIEW state = UPDATE (rejecting confirmation)
 
-2. CONFIRMATION - Only in REVIEW state
-   Indicators: "yes", "correct", "looks good", "sounds good", "okay", "sure", "confirm", "approve"
-   CRITICAL: "No" is NOT a CONFIRMATION indicator. "No" in REVIEW state means 
-   the user is rejecting the confirmation and wants to UPDATE information.
-   CONFIRMATION only applies to positive affirmations.
+3. UPDATE - Change specific answered field (e.g., "change email", "wrong", "not correct")
+   - In REVIEW state, "no" = UPDATE
+   - Identify field name and optionally new value
 
-3. UPDATE - Change a SPECIFIC previously answered field
-   Indicators: "change", "update", "actually", "instead", "wrong", "modify", 
-   "edit", "fix", "not correct", "that's wrong"
-   STATE-AWARE RULE: In REVIEW state, "no" (rejecting confirmation) = UPDATE
-   - If current_state is REVIEW and user says "no" or interpretation indicates 
-     "not correct" or "wrong", classify as UPDATE
-   - If interpretation indicates user wants to change/correct information, 
-     prefer UPDATE over other intents
-   - UPDATE in REVIEW state means user wants to edit previously provided information
-   Must identify: field name and optionally new value (field can be null if unclear)
+4. DECLINE - Decline to answer active question (only for non-required fields)
+   - When active question exists, ambiguous responses = DECLINE, NOT CANCELLATION
+   - Must specify field name (use active question from entities_to_extract)
 
-4. SUBMISSION - Providing answers to unanswered questions
-   Extract field values from message and conversation history
+5. SUBMISSION - Providing answers to unanswered questions
+   - Extract field values from user input (interpretation already contains values)
 
-5. NONE - No clear intent
+6. NONE - No clear intent
 
-CONTEXT AWARENESS:
-- Use the interpretation field when available - it provides structured context 
-  beyond the raw utterance
-- If interpretation indicates "not correct", "wrong", "needs to be changed", 
-  or similar rejection language, prefer UPDATE intent
-- Interpretation helps distinguish between "no" as rejection (UPDATE) vs 
-  "no" as answer to a question (SUBMISSION)
+EXTRACTION:
+- For SUBMISSION: Extract field-value pairs from user input (interpretation already has values)
+- For UPDATE: Use "field" and "value" keys
+- Map extracted values to field names from entities_to_extract
 
-EXTRACTION RULES:
-- For SUBMISSION: Include all extracted field-value pairs as separate keys (e.g., "user_name": "John", "user_email": "john@example.com")
-- For UPDATE: Use "field" and "value" keys (field is null if unclear, value is null if not provided)
-- Only include fields with EXPLICITLY stated or clearly implied values
-- Do NOT invent or guess values
-- **FRAGMENTED INFORMATION**: If information spans multiple messages, combine fragments from current message and conversation history to form complete values
-- **CONTEXT AWARENESS**: Use conversation history to understand references (e.g., "my email" refers to email mentioned earlier, "that value" refers to previously discussed field)
+CONTEXT-AWARE EXTRACTION (CRITICAL):
+- Use conversation history to resolve fragmentary references to full values
+- When user provides partial values, pronouns, or references (e.g., "the first one", "that option", "same as before", "9am"), match them to complete values from recent conversation history
+- If the AI recently presented options, lists, or specific values, resolve user fragments to the full matching option/value from those recent mentions
+- Examples of fragment resolution:
+  * Partial value ("9am") → full matching option ("Monday 9:00 AM - 11:00 AM") when that option was recently presented
+  * Ordinal reference ("the first one") → full value from first option/item in recent AI response
+  * Demonstrative reference ("that option", "this one") → full value from recently mentioned options
+  * Temporal reference ("same as before", "like last time") → previously mentioned value from conversation history
+  * Partial match (e.g., "John" when "John Smith" was mentioned) → full matching value from context
+- Extract complete, contextually appropriate entities rather than just literal fragments
+- When conversation history is available, prioritize resolving fragments to full values over extracting partial fragments
 
-Return ONLY valid JSON (no markdown):
+Return JSON:
 {{
-  "intent": "CANCELLATION" | "CONFIRMATION" | "UPDATE" | "SUBMISSION" | "NONE",
+  "intent": "CANCELLATION" | "CONFIRMATION" | "UPDATE" | "DECLINE" | "SUBMISSION" | "NONE",
   "confidence": 0.0-1.0,
   "field": "field_name" | null,
-  "value": "extracted_value | new_value" | null,
-  // For SUBMISSION: include additional field-value pairs here
-}}
-
-EXAMPLES:
-"Cancel this" → {{"intent": "CANCELLATION", "confidence": 1.0}}
-"Nevermind, forget it" → {{"intent": "CANCELLATION", "confidence": 1.0}}
-"I don't want to continue" → {{"intent": "CANCELLATION", "confidence": 1.0}}
-"Stop asking me that" → {{"intent": "SUBMISSION"}} (skip question, not cancellation)
-"Change my email to john@example.com" → {{"intent": "UPDATE", "field": "user_email", "value": "john@example.com"}}
-"Actually, my email is wrong" → {{"intent": "UPDATE", "field": null, "value": null}}
-"My email is john@example.com" → {{"intent": "UPDATE", "field": "user_email", "value": null}}
-"Yes, that looks correct" → {{"intent": "CONFIRMATION", "confidence": 0.95}}
-"no" in REVIEW state with interpretation "not correct" → {{"intent": "UPDATE", "field": null, "value": null}}
-"no" in REVIEW state → {{"intent": "UPDATE", "field": null, "value": null}} (rejecting confirmation, not CONFIRMATION)
-"no" in ACTIVE state as answer to question → {{"intent": "SUBMISSION"}}
-"no thanks" → {{"intent": "CANCELLATION", "confidence": 1.0}}
-"My name is John Doe" → {{"intent": "SUBMISSION", "user_name": "John Doe"}}
-"My name is John and email is john@example.com" → {{"intent": "SUBMISSION", "user_name": "John", "user_email": "john@example.com"}}"""
+  "value": "value" | null,
+  // For SUBMISSION: include field-value pairs
+  // For DECLINE: field must be specified
+}}"""

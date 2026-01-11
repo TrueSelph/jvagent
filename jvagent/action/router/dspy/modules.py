@@ -10,7 +10,8 @@ from typing import Any, Dict, List, Optional
 
 import dspy
 
-from jvagent.action.router.dspy.signatures import RouterClassification
+from jvagent.action.router.dspy.signatures import create_router_classification_signature
+from jvagent.action.router.prompts import ROUTER_CLASSIFICATION_SIGNATURE
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,8 @@ class RouterModule(dspy.Module):
     """DSPy module for routing user utterances to appropriate InteractActions.
     
     This module uses a DSPy ChainOfThought module with the RouterClassification
-    signature to perform routing with concise reasoning. The LLM generates concise
-    reasoning (under 50 words) that serves directly as the intent interpretation,
+    signature to perform routing with concise interpretation. The LLM generates concise
+    interpretation (under 80 words) that serves directly as the intent interpretation,
     eliminating the need for a separate interpretation field. This optimization
     reduces latency and token usage.
     
@@ -34,26 +35,41 @@ class RouterModule(dspy.Module):
         ...     available_actions='{"OrderAction": ["User asks about order status"]}',
         ...     conversation_history="User: I placed an order\nSystem: Order confirmed"
         ... )
-        >>> print(result["interpretation"])  # Concise reasoning used as interpretation
+        >>> print(result["interpretation"])  # Concise interpretation
         >>> print(result["actions"])  # ["OrderAction"]
     """
     
-    def __init__(self):
+    def __init__(self, action_instance=None):
         """Initialize the router module with a ChainOfThought module.
         
-        Uses a customized rationale field that encourages concise reasoning
-        suitable for direct use as interpretation, eliminating the need for
-        a separate interpretation field.
+        Args:
+            action_instance: Optional InteractRouter instance. If provided,
+                uses the signature docstring from action_instance.router_classification_signature.
+                If None, uses the default from prompts.py.
         """
         super().__init__()
-        # Customize rationale field to produce concise reasoning (< 50 words)
+        if action_instance and hasattr(action_instance, 'router_classification_signature'):
+            docstring = action_instance.router_classification_signature
+        else:
+            docstring = ROUTER_CLASSIFICATION_SIGNATURE
+        signature_class = create_router_classification_signature(docstring)
+        # Customize rationale field to produce concise interpretation (< 50 words)
         # that can be used directly as interpretation
         concise_rationale = dspy.OutputField(
             prefix="Brief analysis:",
-            desc="Concise intent analysis in under 50 words. Capture what the user wants and relevant context (IDs, references, ongoing events). Example: 'User requests status update for ticket #789, mentions deadline'"
+            desc=(
+                "Concise, shorthanded intent analysis in under 80 words. Capture what the user wants and relevant context. "
+                "CRITICAL: Always extract and include specific information from the current utterance and conversation history. "
+                "Extract concrete values: names, emails, IDs, ticket numbers, dates, amounts, and other specific data. "
+                "Scan both the current utterance AND conversation history for pertinent details. "
+                "The interpretation must be rich enough for downstream actions to extract information without re-parsing the raw utterance. "
+                "Examples: 'User provides name \"John Doe\" and email \"john@example.com\" for signup', "
+                "'User requests status for ticket #789, deadline Friday', "
+                "'User confirms order #12345 for $99.99'"
+            )
         )
         self.route = dspy.ChainOfThought(
-            RouterClassification,
+            signature_class,
             rationale_field=concise_rationale
         )
     
@@ -87,9 +103,10 @@ class RouterModule(dspy.Module):
             
             # ChainOfThought adds a 'reasoning' field along with original outputs
             # Use reasoning directly as interpretation (optimization: eliminates separate interpretation generation)
+            # Note: Internally DSPy uses 'reasoning', but we label it as 'interpretation' for consistency
             reasoning = str(prediction.reasoning).strip() if hasattr(prediction, 'reasoning') and prediction.reasoning else ""
             if reasoning:
-                logger.debug(f"RouterModule: Reasoning (used as interpretation): {reasoning[:200]}...")
+                logger.debug(f"RouterModule: Interpretation: {reasoning[:200]}...")
             
             # Use reasoning as interpretation (fallback to empty string if not available)
             interpretation = reasoning
@@ -177,9 +194,10 @@ class RouterModule(dspy.Module):
             
             # ChainOfThought adds a 'reasoning' field along with original outputs
             # Use reasoning directly as interpretation (optimization: eliminates separate interpretation generation)
+            # Note: Internally DSPy uses 'reasoning', but we label it as 'interpretation' for consistency
             reasoning = str(prediction.reasoning).strip() if hasattr(prediction, 'reasoning') and prediction.reasoning else ""
             if reasoning:
-                logger.debug(f"RouterModule: Reasoning (used as interpretation): {reasoning[:200]}...")
+                logger.debug(f"RouterModule: Interpretation: {reasoning[:200]}...")
             
             # Use reasoning as interpretation (fallback to empty string if not available)
             interpretation = reasoning
