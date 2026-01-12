@@ -100,12 +100,17 @@ INTERVIEW_CLASSIFICATION_SIGNATURE = """Classify user intent and extract field v
     1. CANCELLATION - User explicitly abandons entire process
        - Only use if language explicitly abandons entire interview (e.g., "cancel", "abort", "stop the interview")
     
-    2. CONFIRMATION - Only in REVIEW state, positive affirmation
+    2. CONFIRMATION - Only in REVIEW state, positive affirmation WITHOUT providing new values
        - "No" in REVIEW state = UPDATE (rejecting confirmation)
+       - CRITICAL: Do NOT classify as CONFIRMATION if user provides a specific value that differs from current stored values
+       - CONFIRMATION is ONLY for pure affirmations like "yes", "correct", "looks good", "that's right" WITHOUT any new values
     
-    3. UPDATE - Change specific answered field
+    3. UPDATE - Change specific answered field (e.g., "change email", "wrong", "not correct", providing new value)
        - In REVIEW state, "no" = UPDATE
        - Identify field name and optionally new value
+       - AFFIRMATIVE WORDS: Words like "Ok", "yes", "sure" before a new value do NOT make it CONFIRMATION - they're just conversational fillers
+       - CRITICAL: In REVIEW state, if user provides a specific value, classify as UPDATE (even if prefixed with "Ok", "yes", etc.)
+       - INTERPRETATION AWARENESS: Even if router interpretation says "confirms", if user provides a value, classify as UPDATE
     
     4. DECLINE - User explicitly refuses to answer an optional question (only non-required fields)
        - Only use when user explicitly declines to answer (e.g., "I don't want to answer", "skip this", "I'd rather not provide that", "I'd prefer not to say")
@@ -120,6 +125,7 @@ INTERVIEW_CLASSIFICATION_SIGNATURE = """Classify user intent and extract field v
        - When user provides wrong type/format → SUBMISSION
     
     6. NONE - No clear intent
+    
     
     EXTRACTION:
     - For SUBMISSION: Extract field-value pairs from user_input (interpretation has values)
@@ -161,12 +167,17 @@ INTENT CLASSIFICATION (priority order):
 1. CANCELLATION - User explicitly abandons entire process (e.g., "cancel", "abort", "stop the interview")
    - Only use CANCELLATION if language explicitly abandons the entire interview
 
-2. CONFIRMATION - Only in REVIEW state, positive affirmation (e.g., "yes", "correct", "looks good")
+2. CONFIRMATION - Only in REVIEW state, positive affirmation WITHOUT providing new values
    - "No" in REVIEW state = UPDATE (rejecting confirmation)
+   - CRITICAL: Do NOT classify as CONFIRMATION if user provides a specific value that differs from current stored values
+   - CONFIRMATION is ONLY for pure affirmations like "yes", "correct", "looks good", "that's right" WITHOUT any new values
 
-3. UPDATE - Change specific answered field (e.g., "change email", "wrong", "not correct")
+3. UPDATE - Change specific answered field (e.g., "change email", "wrong", "not correct", providing new value)
    - In REVIEW state, "no" = UPDATE
    - Identify field name and optionally new value
+   - AFFIRMATIVE WORDS: Words like "Ok", "yes", "sure" before a new value do NOT make it CONFIRMATION - they're just conversational fillers
+   - CRITICAL: In REVIEW state, if user provides a specific value, classify as UPDATE (even if prefixed with "Ok", "yes", etc.)
+   - INTERPRETATION AWARENESS: Even if router interpretation says "confirms", if user provides a value, classify as UPDATE
 
 4. DECLINE - User explicitly refuses to answer an optional question (only for non-required fields)
    - Only use when user explicitly declines to answer (e.g., "I don't want to answer", "skip this", "I'd rather not provide that", "I'd prefer not to say")
