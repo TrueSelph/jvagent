@@ -17,11 +17,10 @@ action system for consistency and maintainability.
 REVIEW_DIRECTIVE_TEMPLATE = """{confirmation_section}{unclear_edit_section}{unclear_general_section}"""
 
 # Confirmation content template
-REVIEW_CONFIRMATION_CONTENT = """Present the following collected information for review and confirmation.
+REVIEW_CONFIRMATION_CONTENT = """Prompt: Here's what I have so far:
 
 {summary}
 
-Tell the user: You can:
 {instructions}
 
 {prompt}"""
@@ -29,24 +28,22 @@ Tell the user: You can:
 # Unclear edit content template
 # Used when user wants to update but hasn't specified which field
 # Placeholders: {summary} (formatted summary of current information), {field_list} (comma-separated list of fields)
-REVIEW_UNCLEAR_EDIT_CONTENT = """Tell the user: I understand you'd like to make changes to the information above.
+REVIEW_UNCLEAR_EDIT_CONTENT = """Got it, you'd like to make some changes. Here's what I have:
 
 {summary}
 
-Tell the user: Which field would you like to change? Available fields: {field_list}"""
+Which one would you like to change? I can update: {field_list}"""
 
 # Unclear general content (static, no placeholders)
-REVIEW_UNCLEAR_GENERAL_CONTENT = """Tell the user: I didn't understand. Ask: Please say 'yes' to confirm, 'no' to edit, or specify which field you'd like to change."""
+REVIEW_UNCLEAR_GENERAL_CONTENT = """Prompt: I'm not quite sure what you meant there. Could you clarify what you'd like to do?"""
 
 # Default values for review confirmation
-REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS = """Tell the user:
-- Say "yes" or "correct" to confirm, or specify which field to change
-- Say "cancel" to abandon the process"""
+REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS = """Prompt: Just let me know if everything looks good, or tell me what you'd like to change. You can also let me know if you'd like to cancel altogether."""
 
 REVIEW_CONFIRMATION_DEFAULT_PROMPT = """Ask: "Does everything look correct?" or similar phrasing to prompt their response."""
 
 # Summary formatting templates (used to build summary for confirmation)
-REVIEW_SUMMARY_HEADER_TEMPLATE = "Tell the user: Here's what I have:\n"
+REVIEW_SUMMARY_HEADER_TEMPLATE = ""
 REVIEW_SUMMARY_ITEM_TEMPLATE = "{display_name}: {value}"
 
 # Update prompt template (for prompting user for new value when updating)

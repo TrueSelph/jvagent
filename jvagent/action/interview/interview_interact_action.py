@@ -13,13 +13,14 @@ field values in a single LLM call. All state management and directive generation
 is handled within the main InterviewInteractAction class.
 """
 
+import inspect
 import json
 import logging
 import re
 from abc import ABC
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.memory import Interaction
@@ -68,6 +69,12 @@ _completion_handlers: Dict[str, Callable] = {}
 _input_validator_registry: Dict[Tuple[str, str], Callable] = {}
 _input_handler_registry: Dict[Tuple[str, str], Callable] = {}
 
+# Module-level registry for input directive overrides
+# Keyed by (interview_type, question_name) -> function
+# This is populated when @input_directive_override decorated functions are defined
+# Format: {(interview_type, question_name): function}
+_input_directive_override_registry: Dict[Tuple[str, str], Callable] = {}
+
 
 @dataclass
 class ClassificationResult:
@@ -84,8 +91,6 @@ class ClassificationResult:
     
     # For SUBMISSION intent - extracted field values (multiple fields)
     extracted_data: Optional[Dict[str, Any]] = None  # Extracted responses for "SUBMISSION" intent
-
-
 
 
 class InterviewInteractAction(InteractAction, ABC):
@@ -108,6 +113,7 @@ class InterviewInteractAction(InteractAction, ABC):
     Decorator Support:
         Use @input_handler('question_name') and @input_validator('question_name') decorators
         to register handlers and validators instead of embedding them in question_index.
+        Use @input_directive_override('question_name') to customize directives after field storage.
         Use @on_interview_complete('InterviewType') to register completion handlers.
     
     Standard Anchors:
@@ -153,6 +159,7 @@ class InterviewInteractAction(InteractAction, ABC):
     # These are populated when the class is defined via decorators
     _input_handlers: Dict[str, Callable] = {}
     _input_validators: Dict[str, Callable] = {}
+    _input_directive_overrides: Dict[str, Callable] = {}
     
     def __init_subclass__(cls, **kwargs):
         """Initialize subclass and collect decorator-registered handlers/validators."""
@@ -161,8 +168,9 @@ class InterviewInteractAction(InteractAction, ABC):
         # Initialize class-level registries
         cls._input_handlers = {}
         cls._input_validators = {}
+        cls._input_directive_overrides = {}
         
-        # Load validators/handlers from module-level registry for this class
+        # Load validators/handlers/overrides from module-level registry for this class
         class_name = cls.__name__
         for (interview_type, question_name), func in _input_validator_registry.items():
             if interview_type == class_name:
@@ -171,6 +179,10 @@ class InterviewInteractAction(InteractAction, ABC):
         for (interview_type, question_name), func in _input_handler_registry.items():
             if interview_type == class_name:
                 cls._input_handlers[question_name] = func
+        
+        for (interview_type, question_name), func in _input_directive_override_registry.items():
+            if interview_type == class_name:
+                cls._input_directive_overrides[question_name] = func
         
         # Also scan class attributes for decorated functions (class methods)
         for attr_name in dir(cls):
@@ -183,6 +195,8 @@ class InterviewInteractAction(InteractAction, ABC):
                     cls._input_handlers[question_name] = attr
                 elif handler_type == "input_validator":
                     cls._input_validators[question_name] = attr
+                elif handler_type == "input_directive_override":
+                    cls._input_directive_overrides[question_name] = attr
         
         # Note: We don't merge anchors in __init_subclass__ because we can't reliably
         # extract default values from Field/PrivateAttr descriptors at class definition time.
@@ -236,6 +250,108 @@ class InterviewInteractAction(InteractAction, ABC):
                 cls._input_validators[question_name] = validator
         
         return validator
+    
+    @classmethod
+    def get_input_directive_override(cls, question_name: str) -> Optional[Callable]:
+        """Get input directive override for a question by name (from decorator registry).
+        
+        Checks both class-level registry and module-level registry.
+        
+        Args:
+            question_name: Name of the question
+            
+        Returns:
+            Input directive override function if found, None otherwise
+        """
+        # First check class-level registry
+        override = cls._input_directive_overrides.get(question_name)
+        
+        # If not found, check module-level registry (in case it was registered after class definition)
+        if not override:
+            override = _input_directive_override_registry.get((cls.__name__, question_name))
+            if override:
+                # Cache it in class registry for future lookups
+                cls._input_directive_overrides[question_name] = override
+        
+        return override
+    
+    async def _call_override_function(
+        self,
+        func: Callable,
+        *args: Any,
+        **kwargs: Any
+    ) -> Any:
+        """Call an override function, handling both async and sync functions.
+        
+        Args:
+            func: The function to call (may be async or sync)
+            *args: Positional arguments to pass to the function
+            **kwargs: Keyword arguments to pass to the function
+            
+        Returns:
+            The result of calling the function
+        """
+        if inspect.iscoroutinefunction(func):
+            return await func(*args, **kwargs)
+        else:
+            return func(*args, **kwargs)
+    
+    def _process_directive_override(
+        self,
+        override_result: Optional[Any],
+        default_directive: str
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Process directive override result and return directives to queue separately.
+        
+        Args:
+            override_result: Result from directive override function (None, str, or Tuple[str, str])
+            default_directive: Default directive to use if no override or for append mode
+            
+        Returns:
+            Tuple of (default_directive_to_queue, custom_directive_to_queue):
+            - (default_directive, None): No override, queue only default
+            - (default_directive, custom_directive): Append mode or simple string - queue both separately
+            - (None, custom_directive): Replace mode - queue only custom
+            - (None, None): Invalid override result
+        """
+        if override_result is None:
+            # No override, use default directive only
+            return (default_directive if default_directive and default_directive.strip() else None, None)
+        
+        if isinstance(override_result, str):
+            # Simple string: queue both default and custom directives separately
+            default = default_directive if default_directive and default_directive.strip() else None
+            return (default, override_result)
+        
+        if isinstance(override_result, tuple) and len(override_result) == 2:
+            mode, directive = override_result
+            if not isinstance(mode, str) or not isinstance(directive, str):
+                logger.warning(
+                    f"{self.get_class_name()}: Invalid directive override tuple format. "
+                    f"Expected (str, str), got ({type(mode).__name__}, {type(directive).__name__})"
+                )
+                return (None, None)
+            
+            mode = mode.lower()
+            if mode == "replace":
+                # Replace mode: queue only custom directive, skip default
+                return (None, directive)
+            elif mode == "append":
+                # Append mode: queue both default and custom directives separately
+                default = default_directive if default_directive and default_directive.strip() else None
+                return (default, directive)
+            else:
+                logger.warning(
+                    f"{self.get_class_name()}: Invalid directive override mode '{mode}'. "
+                    f"Expected 'append' or 'replace'"
+                )
+                return (None, None)
+        
+        logger.warning(
+            f"{self.get_class_name()}: Invalid directive override return type. "
+            f"Expected None, str, or Tuple[str, str], got {type(override_result).__name__}"
+        )
+        return (None, None)
     
     def _merge_standard_anchors(self) -> None:
         """Merge standard interview anchors with current anchors attribute.
@@ -567,7 +683,7 @@ class InterviewInteractAction(InteractAction, ABC):
                     unclear_edit_section=unclear_edit_section,
                     unclear_general_section="",
                 )
-                await self._respond_with_directive(visitor, directive, self.active_event_message_template.format(class_name=self.get_class_name()))
+                await self._queue_directive(visitor, directive)
                 return
             
             # Handle the update inline (reusing QuestionNode processing/validation)
@@ -624,7 +740,7 @@ class InterviewInteractAction(InteractAction, ABC):
                     session.active_question_key = field
                     await session.save()
                     
-                    await self._respond_with_directive(visitor, directive, self.active_event_message_template.format(class_name=self.get_class_name()))
+                    await self._queue_directive(visitor, directive)
                     return  # Don't advance to next question
                 else:
                     # Non-required field - store "n/a" and continue
@@ -682,7 +798,7 @@ class InterviewInteractAction(InteractAction, ABC):
                     new_value = session.get_response(updated_field)
                     confirmation = f"Tell the user: Updated {field_display} to {new_value}. "
                     directive = confirmation + directive
-                await self._respond_with_directive(visitor, directive, self.active_event_message_template.format(class_name=self.get_class_name()))
+                await self._queue_directive(visitor, directive)
     
     async def _generate_review_directive(
         self,
@@ -735,7 +851,7 @@ class InterviewInteractAction(InteractAction, ABC):
                         unclear_edit_section="",
                         unclear_general_section=self.unclear_general_content_template,
                     )
-                    await self._respond_with_directive(visitor, directive, self.review_event_message_template.format(class_name=self.get_class_name()))
+                    await self._queue_directive(visitor, directive)
                     return
                 
                 field_list = ", ".join([f.replace("_", " ") for f in answered_fields])
@@ -755,7 +871,7 @@ class InterviewInteractAction(InteractAction, ABC):
                     unclear_general_section="",
                 )
                 
-                await self._respond_with_directive(visitor, directive, self.review_event_message_template.format(class_name=self.get_class_name()))
+                await self._queue_directive(visitor, directive)
                 return
             
             # Handle the update inline (reusing QuestionNode processing/validation)
@@ -770,7 +886,7 @@ class InterviewInteractAction(InteractAction, ABC):
             if update_completed:
                 # Show updated summary immediately in same turn
                 directive = self._build_confirmation_directive(session)
-                await self._respond_with_directive(visitor, directive, self.review_event_message_template.format(class_name=self.get_class_name()))
+                await self._queue_directive(visitor, directive)
             return
         
         # Handle unclear response (NONE intent or other)
@@ -780,12 +896,12 @@ class InterviewInteractAction(InteractAction, ABC):
                 unclear_edit_section="",
                 unclear_general_section=self.unclear_general_content_template,
             )
-            await self._respond_with_directive(visitor, directive, self.review_event_message_template.format(class_name=self.get_class_name()))
+            await self._queue_directive(visitor, directive)
             return
         
         # Default: Show summary for review (first entry to REVIEW state)
         directive = self._build_confirmation_directive(session)
-        await self._respond_with_directive(visitor, directive, self.review_event_message_template.format(class_name=self.get_class_name()))
+        await self._queue_directive(visitor, directive)
     
     async def _generate_completed_directive(
         self,
@@ -811,17 +927,15 @@ class InterviewInteractAction(InteractAction, ABC):
             except Exception as e:
                 logger.error(f"{self.get_class_name()}: Completion handler failed: {e}", exc_info=True)
                 # Send generic completion message on error
-                await self._respond_with_directive(
+                await self._queue_directive(
                     visitor,
-                    self.completion_message_template,
-                    self.completion_event_message_template.format(class_name=self.get_class_name())
+                    self.completion_message_template
                 )
         else:
             # No completion handler registered, send generic message
-            await self._respond_with_directive(
+            await self._queue_directive(
                 visitor,
-                self.completion_message_template,
-                self.completion_event_message_template.format(class_name=self.get_class_name())
+                self.completion_message_template
             )
         
         # Clean up and remove the session (always, regardless of handler success/failure)
@@ -846,10 +960,9 @@ class InterviewInteractAction(InteractAction, ABC):
             visitor: InteractWalker
         """
         # Send cancellation message first
-        await self._respond_with_directive(
+        await self._queue_directive(
             visitor,
-            self.cancellation_message_template,
-            self.cancellation_event_message_template.format(class_name=self.get_class_name())
+            self.cancellation_message_template
         )
         
         # Clean up and remove the session
@@ -908,7 +1021,7 @@ class InterviewInteractAction(InteractAction, ABC):
                 current_value=current_value
             )
             
-            await self._respond_with_directive(visitor, directive, self.active_event_message_template.format(class_name=self.get_class_name()))
+            await self._queue_directive(visitor, directive)
             return False  # Update not completed, waiting for value
         
         # Process and validate the new value (same flow as SUBMISSION)
@@ -932,6 +1045,36 @@ class InterviewInteractAction(InteractAction, ABC):
             session.update_response(field, new_value, old_value)
             await session.save()
             logger.debug(f"{self.get_class_name()}: Updated {field} to {new_value}")
+            
+            # Check for directive override after successful update
+            override_func = self.get_input_directive_override(field)
+            if override_func:
+                try:
+                    override_result = await self._call_override_function(
+                        override_func, field, new_value, session, interaction, visitor
+                    )
+                    
+                    # Only process override if it's not None (None means use default)
+                    if override_result is not None:
+                        # Get default confirmation directive
+                        field_display = field.replace("_", " ").title()
+                        default_directive = f"Tell the user: Updated {field_display} to {new_value}."
+                        
+                        # Process override result - returns (default_directive, custom_directive)
+                        default_to_queue, custom_to_queue = self._process_directive_override(override_result, default_directive)
+                        
+                        # Queue directives if present
+                        if default_to_queue:
+                            await self._queue_directive(visitor, default_to_queue)
+                        if custom_to_queue:
+                            await self._queue_directive(visitor, custom_to_queue)
+                        
+                        # If either directive was queued, return early
+                        if default_to_queue or custom_to_queue:
+                            return True  # Update completed with custom directive
+                except Exception as e:
+                    logger.warning(f"{self.get_class_name()}: Directive override raised exception: {e}", exc_info=True)
+            
             return True  # Update completed
             
         elif validation_status == ValidationStatus.VALID_WITH_FLAG:
@@ -940,12 +1083,47 @@ class InterviewInteractAction(InteractAction, ABC):
             session.update_response(field, new_value, old_value)
             await session.save()
             
+            # Check for directive override after successful update
+            override_func = self.get_input_directive_override(field)
+            if override_func:
+                try:
+                    override_result = await self._call_override_function(
+                        override_func, field, new_value, session, interaction, visitor
+                    )
+                    
+                    # Only process override if it's not None (None means use default)
+                    if override_result is not None:
+                        # Get default directive (feedback message or confirmation)
+                        default_directive = feedback if feedback else ""
+                        if not default_directive:
+                            field_display = field.replace("_", " ").title()
+                            default_directive = f"Tell the user: Updated {field_display} to {new_value}."
+                        else:
+                            # Ensure proper prefix if not already present
+                            if not default_directive.startswith("Tell the user:") and not default_directive.startswith("Ask:"):
+                                default_directive = f"Ask: {default_directive}"
+                        
+                        # Process override result - returns (default_directive, custom_directive)
+                        default_to_queue, custom_to_queue = self._process_directive_override(override_result, default_directive)
+                        
+                        # Queue directives if present
+                        if default_to_queue:
+                            await self._queue_directive(visitor, default_to_queue)
+                        if custom_to_queue:
+                            await self._queue_directive(visitor, custom_to_queue)
+                        
+                        # If either directive was queued, return early
+                        if default_to_queue or custom_to_queue:
+                            return True  # Update stored with custom directive
+                except Exception as e:
+                    logger.warning(f"{self.get_class_name()}: Directive override raised exception: {e}", exc_info=True)
+            
             if feedback:
                 # Ensure proper prefix if not already present
                 feedback_msg = feedback
                 if not feedback_msg.startswith("Tell the user:") and not feedback_msg.startswith("Ask:"):
                     feedback_msg = f"Ask: {feedback_msg}"
-                await self._respond_with_directive(visitor, feedback_msg, self.active_event_message_template.format(class_name=self.get_class_name()))
+                await self._queue_directive(visitor, feedback_msg)
             return True  # Update stored, clarification requested
             
         else:  # INVALID
@@ -953,7 +1131,7 @@ class InterviewInteractAction(InteractAction, ABC):
             error_msg = feedback or f"Tell the user: Please provide a valid value for {field}."
             if not error_msg.startswith("Tell the user:") and not error_msg.startswith("Ask:"):
                 error_msg = f"Tell the user: {error_msg}"
-            await self._respond_with_directive(visitor, error_msg, self.active_event_message_template.format(class_name=self.get_class_name()))
+            await self._queue_directive(visitor, error_msg)
             return False  # Update failed, waiting for valid value
     
     async def _process_responses_to_questions(
@@ -1030,6 +1208,38 @@ class InterviewInteractAction(InteractAction, ABC):
                 # Re-evaluate conditional graph after each storage (may skip subsequent questions)
                 await self._update_reachable_questions(session, question_walker)
                 await session.save()
+                
+                # Check for directive override after successful storage
+                override_func = self.get_input_directive_override(field)
+                if override_func:
+                    try:
+                        override_result = await self._call_override_function(
+                            override_func, field, final_value, session, interaction, visitor
+                        )
+                        
+                        # Only process override if it's not None (None means use default)
+                        if override_result is not None:
+                            # Get default directive (next question directive)
+                            question_walker_for_directive = QuestionWalker()
+                            question_walker_for_directive.interview_session = session
+                            question_walker_for_directive.interaction = interaction
+                            question_walker_for_directive.question_directive_template = self.question_directive_template
+                            default_directive = await question_walker_for_directive.get_directive(session, self) or ""
+                            
+                            # Process override result - returns (default_directive, custom_directive)
+                            default_to_queue, custom_to_queue = self._process_directive_override(override_result, default_directive)
+                            
+                            # Queue directives if present
+                            if default_to_queue:
+                                await self._queue_directive(visitor, default_to_queue)
+                            if custom_to_queue:
+                                await self._queue_directive(visitor, custom_to_queue)
+                            
+                            # If either directive was queued, return early
+                            if default_to_queue or custom_to_queue:
+                                return  # Don't continue to next question in this turn
+                    except Exception as e:
+                        logger.warning(f"{self.get_class_name()}: Directive override raised exception: {e}", exc_info=True)
             
             elif validation_status == ValidationStatus.VALID_WITH_FLAG:
                 # Store final value (may be autocorrected) but ask for clarification
@@ -1040,11 +1250,45 @@ class InterviewInteractAction(InteractAction, ABC):
                 await self._update_reachable_questions(session, question_walker)
                 await session.save()
                 
+                # Check for directive override after successful storage
+                override_func = self.get_input_directive_override(field)
+                if override_func:
+                    try:
+                        override_result = await self._call_override_function(
+                            override_func, field, final_value, session, interaction, visitor
+                        )
+                        
+                        # Only process override if it's not None (None means use default)
+                        if override_result is not None:
+                            # Get default directive (feedback message or next question)
+                            default_directive = feedback if feedback else ""
+                            if not default_directive:
+                                question_walker_for_directive = QuestionWalker()
+                                question_walker_for_directive.interview_session = session
+                                question_walker_for_directive.interaction = interaction
+                                question_walker_for_directive.question_directive_template = self.question_directive_template
+                                default_directive = await question_walker_for_directive.get_directive(session, self) or ""
+                            
+                            # Process override result - returns (default_directive, custom_directive)
+                            default_to_queue, custom_to_queue = self._process_directive_override(override_result, default_directive)
+                            
+                            # Queue directives if present
+                            if default_to_queue:
+                                await self._queue_directive(visitor, default_to_queue)
+                            if custom_to_queue:
+                                await self._queue_directive(visitor, custom_to_queue)
+                            
+                            # Continue processing other fields (VALID_WITH_FLAG doesn't stop processing)
+                            # Note: We continue even if directives were queued, as VALID_WITH_FLAG allows multiple fields
+                            continue
+                    except Exception as e:
+                        logger.warning(f"{self.get_class_name()}: Directive override raised exception: {e}", exc_info=True)
+                
                 # Ask clarifying question (but continue processing other fields)
                 if feedback:
                     # Use feedback message as-is without prepending
                     feedback_msg = feedback
-                    await self._respond_with_directive(visitor, feedback_msg, self.active_event_message_template.format(class_name=self.get_class_name()))
+                    await self._queue_directive(visitor, feedback_msg)
             
             else:  # INVALID
                 # Track first invalid field only
@@ -1064,7 +1308,7 @@ class InterviewInteractAction(InteractAction, ABC):
             # Keep active_question_key pointing to this field so we can re-ask
             session.active_question_key = field
             await session.save()
-            await self._respond_with_directive(visitor, error_msg, self.active_event_message_template.format(class_name=self.get_class_name()))
+            await self._queue_directive(visitor, error_msg)
             return  # Stop here, wait for correction
         
         # All processed successfully, clear active_question_key
@@ -1170,7 +1414,9 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
             Formatted summary string
         """
-        lines = [self.summary_header_template]
+        lines = []
+        if self.summary_header_template and self.summary_header_template.strip():
+            lines.append(self.summary_header_template)
         
         for question_config in session.question_index:
             field_name = question_config.get("name", "")
@@ -1216,28 +1462,37 @@ class InterviewInteractAction(InteractAction, ABC):
             unclear_general_section="",
         )
     
-    async def _respond_with_directive(
+    async def _queue_directive(
         self,
         visitor: "InteractWalker",
-        directive: str,
-        event_name: str
+        directive: str
     ) -> None:
-        """Respond with a directive.
+        """Queue a directive for later response generation.
+        
+        The event is determined automatically based on the session state and added only once
+        per execution, even if multiple directives are queued.
         
         Args:
             visitor: InteractWalker
-            directive: Directive string
-            event_name: Event name to add
+            directive: Directive string to queue
         """
         if directive and directive.strip():
-            await visitor.add_event(event_name)
-            await self.respond(
-                visitor,
-                directives=[directive],
-                parameters=self.parameters if self.parameters else None
-            )
+            # Add event only once per execution, determined by session state
+            if not self._event_added:
+                # Determine event based on session state from visitor
+                session = getattr(visitor, 'interview_session', None)
+                if session and session.state == InterviewState.REVIEW:
+                    event_name = self.review_event_message_template.format(class_name=self.get_class_name())
+                else:
+                    # Default to active event for ACTIVE, COMPLETED, CANCELLED states or if session not available
+                    event_name = self.active_event_message_template.format(class_name=self.get_class_name())
+                
+                await visitor.add_event(event_name)
+                self._event_added = True
+            
+            await visitor.add_directive(directive)
         else:
-            logger.warning(f"{self.get_class_name()}: Attempted to send empty directive, event_name={event_name}")
+            logger.warning(f"{self.get_class_name()}: Attempted to queue empty directive")
     
     async def _classify_and_extract(
         self,
@@ -1653,6 +1908,9 @@ class InterviewInteractAction(InteractAction, ABC):
             
         Note: Errors are automatically logged by InteractWalker.
         """
+        # Initialize event tracking (event added only once per execution)
+        self._event_added = False
+        
         interaction = visitor.interaction
         if not interaction:
             logger.warning(f"{self.get_class_name()}: No interaction available")
@@ -1711,6 +1969,9 @@ class InterviewInteractAction(InteractAction, ABC):
             visitor,
             interaction
         )
+        
+        # Reset event tracking for next execution
+        self._event_added = False
     
     async def _get_conversation_history(
         self,
@@ -1757,119 +2018,6 @@ class InterviewInteractAction(InteractAction, ABC):
         )
 
         return history if history else []
-    
-    def _extract_values_from_interpretation(
-        self,
-        interpretation: str,
-        available_fields: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
-        """Extract field-value pairs from router interpretation text.
-        
-        The router's interpretation contains extracted values in natural language.
-        This method parses common patterns to extract structured field-value pairs.
-        
-        Args:
-            interpretation: Router interpretation string with embedded values
-            available_fields: Optional list of field names to match against
-            
-        Returns:
-            Dictionary of extracted field-value pairs
-        """
-        if not interpretation or not interpretation.strip():
-            return {}
-        
-        extracted = {}
-        text = interpretation.strip()
-        
-        # Common field name patterns (case-insensitive)
-        field_patterns = {
-            'name': r'\bname\s+[:\'"]?\s*([\'"]?)([^\'"\n,]+?)\1',
-            'email': r'\bemail\s+[:\'"]?\s*([\'"]?)([^\'"\n,]+?)\1',
-            'user_name': r'\buser[_\s]?name\s+[:\'"]?\s*([\'"]?)([^\'"\n,]+?)\1',
-            'user_email': r'\buser[_\s]?email\s+[:\'"]?\s*([\'"]?)([^\'"\n,]+?)\1',
-            'phone': r'\bphone\s+[:\'"]?\s*([\'"]?)([^\'"\n,]+?)\1',
-            'ticket': r'\bticket\s+#?(\d+)',
-            'order': r'\border\s+#?(\d+)',
-            'id': r'\bid\s+[:\'"]?\s*([\'"]?)([^\'"\n,]+?)\1',
-        }
-        
-        # Pattern: "name 'John Doe' and email 'john@example.com'"
-        # Match: field name followed by quoted value
-        quoted_value_pattern = r'\b(\w+)\s+[\'"]([^\'"]+)[\'"]'
-        matches = re.finditer(quoted_value_pattern, text, re.IGNORECASE)
-        for match in matches:
-            field_candidate = match.group(1).lower()
-            value = match.group(2).strip()
-            
-            # Normalize field name
-            field_name = None
-            if 'name' in field_candidate and 'email' not in field_candidate:
-                field_name = 'user_name' if 'user' in field_candidate else 'name'
-            elif 'email' in field_candidate:
-                field_name = 'user_email' if 'user' in field_candidate else 'email'
-            elif 'phone' in field_candidate:
-                field_name = 'phone'
-            elif available_fields:
-                # Try to match against available fields
-                for field in available_fields:
-                    if field_candidate in field.lower() or field.lower() in field_candidate:
-                        field_name = field
-                        break
-            
-            if field_name and value:
-                extracted[field_name] = value
-        
-        # Pattern: "ticket #789" or "order #12345"
-        ticket_order_pattern = r'\b(ticket|order)\s+#?(\d+)'
-        matches = re.finditer(ticket_order_pattern, text, re.IGNORECASE)
-        for match in matches:
-            field_type = match.group(1).lower()
-            value = match.group(2)
-            field_name = 'ticket_id' if field_type == 'ticket' else 'order_id'
-            extracted[field_name] = value
-        
-        # Pattern: "$99.99" or "for $99.99"
-        amount_pattern = r'\$(\d+(?:\.\d{2})?)'
-        amount_matches = re.findall(amount_pattern, text)
-        if amount_matches:
-            # Use last amount found (most specific)
-            extracted['amount'] = amount_matches[-1]
-        
-        # Pattern: "from 'old@example.com' to 'new@example.com'"
-        # Extract both old and new values for UPDATE intent
-        from_to_pattern = r"from\s+['\"]([^'\"]+)['\"]\s+to\s+['\"]([^'\"]+)['\"]"
-        from_to_match = re.search(from_to_pattern, text, re.IGNORECASE)
-        if from_to_match:
-            # For UPDATE, we typically want the new value
-            extracted['old_value'] = from_to_match.group(1)
-            extracted['new_value'] = from_to_match.group(2)
-            # If it's an email field, try to identify it
-            if '@' in from_to_match.group(1):
-                extracted['user_email'] = from_to_match.group(2)
-        
-        # Pattern: Standalone quoted values that might be field values
-        # Look for patterns like "provides 'value'" or "mentions 'value'"
-        standalone_quoted = r"(?:provides|mentions|gives|says|states)\s+['\"]([^'\"]+)['\"]"
-        standalone_matches = re.finditer(standalone_quoted, text, re.IGNORECASE)
-        for match in standalone_matches:
-            value = match.group(1).strip()
-            # Try to infer field from context or value type
-            if '@' in value and 'email' not in extracted:
-                extracted['user_email'] = value
-            elif value.replace(' ', '').replace('-', '').isdigit() and len(value) >= 5:
-                # Looks like an ID
-                if 'id' not in extracted:
-                    extracted['id'] = value
-        
-        # Filter out empty values and normalize
-        filtered = {}
-        for key, val in extracted.items():
-            if val and isinstance(val, str) and val.strip():
-                filtered[key] = val.strip()
-            elif val and not isinstance(val, str):
-                filtered[key] = val
-        
-        return filtered
     
     def _extract_json(self, response: str) -> Dict[str, Any]:
         """Extract JSON from response string.
@@ -1957,7 +2105,6 @@ def input_handler(question_name: str):
         
         # Try to determine the interview_type from the module where this function is defined
         try:
-            import inspect
             module = inspect.getmodule(func)
             if module:
                 # Look for InterviewInteractAction subclasses in the module
@@ -2005,7 +2152,6 @@ def input_validator(question_name: str):
         
         # Try to determine the interview_type from the module where this function is defined
         try:
-            import inspect
             module = inspect.getmodule(func)
             if module:
                 # Look for InterviewInteractAction subclasses in the module
@@ -2023,6 +2169,75 @@ def input_validator(question_name: str):
                 logger.warning(f"Could not get module for validator '{func.__name__}'")
         except Exception as e:
             logger.warning(f"Error registering validator '{func.__name__}': {e}")
+        
+        return func
+    return decorator
+
+
+def input_directive_override(question_name: str):
+    """Decorator to register a directive override for a specific question.
+    
+    Directive overrides allow customizing agent responses after a field value is
+    successfully validated and stored. They can replace or append to the default directive.
+    
+    The decorator registers the override in a module-level registry.
+    The interview_type is determined from the module where the override is defined
+    by looking for InterviewInteractAction subclasses in that module.
+    
+    Args:
+        question_name: Name of the question (must match 'name' field in question_index)
+        
+    Handler Signature:
+        The handler must accept five parameters:
+        - field_name: str - Name of the field that was just stored
+        - value: Any - The value that was stored
+        - session: InterviewSession - Interview session for context
+        - interaction: Interaction - Current interaction
+        - visitor: InteractWalker - Walker for context
+        
+    Returns:
+        Optional[Union[str, Tuple[str, str]]]:
+        - None: Use default directive (no override)
+        - str: Replace default directive with this string
+        - Tuple[str, str]: First element is mode ("append" or "replace"), second is directive string
+        
+    Example:
+        @input_directive_override('user_email')
+        async def custom_email_directive(
+            field_name: str,
+            value: str,
+            session: InterviewSession,
+            interaction: Interaction,
+            visitor: InteractWalker
+        ) -> Optional[Union[str, Tuple[str, str]]]:
+            if '@example.com' in value:
+                return "Tell the user: Thank you for using your work email!"
+            return None  # Use default directive
+    """
+    def decorator(func: Callable) -> Callable:
+        # Store the question name on the function for later lookup
+        func._interview_question_name = question_name  # type: ignore
+        func._interview_handler_type = "input_directive_override"  # type: ignore
+        
+        # Try to determine the interview_type from the module where this function is defined
+        try:
+            module = inspect.getmodule(func)
+            if module:
+                # Look for InterviewInteractAction subclasses in the module
+                for name, obj in vars(module).items():
+                    if (inspect.isclass(obj) and 
+                        issubclass(obj, InterviewInteractAction) and 
+                        obj is not InterviewInteractAction):
+                        interview_type = obj.__name__
+                        # Register in module-level registry
+                        _input_directive_override_registry[(interview_type, question_name)] = func
+                        break
+                else:
+                    logger.warning(f"Could not determine interview_type for directive override '{func.__name__}' - it will be registered when the class is defined")
+            else:
+                logger.warning(f"Could not get module for directive override '{func.__name__}'")
+        except Exception as e:
+            logger.warning(f"Error registering directive override '{func.__name__}': {e}")
         
         return func
     return decorator

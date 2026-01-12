@@ -8,6 +8,7 @@ from .interview_interact_action import (
     InterviewInteractAction,
     input_handler,
     input_validator,
+    input_directive_override,
     on_interview_complete,
 )
 
@@ -25,6 +26,7 @@ __all__ = [
     "InterviewInteractAction",
     "input_handler",
     "input_validator",
+    "input_directive_override",
     "on_interview_complete",
     "InterviewSession",
     "QuestionNode",

@@ -1,12 +1,13 @@
 """Signup interview for user registration and training availability."""
 
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from jvagent.action.interview.interview_interact_action import (
     InterviewInteractAction,
     input_handler,
     input_validator,
+    input_directive_override,
     on_interview_complete,
 )
 from jvagent.action.interview.core.interview_session import InterviewSession
@@ -110,8 +111,9 @@ class SignupInterviewInteractAction(InterviewInteractAction):
             },
         ],
         description="List of question configurations. Can be overridden in agent.yaml. "
-                    "Handlers and validators can be registered via decorators (@input_handler, @input_validator) "
-                    "or specified as string references in constraints (input_handler, input_validator)."
+                    "Handlers, validators, and directive overrides can be registered via decorators "
+                    "(@input_handler, @input_validator, @input_directive_override) or specified as string "
+                    "references in constraints (input_handler, input_validator)."
     )
 
 
@@ -425,6 +427,41 @@ async def check_training_availability(
 
     # No match found - return original input (validator will catch it)
     return user_input
+
+
+@input_directive_override('user_email')
+async def custom_email_directive(
+    field_name: str,
+    value: str,
+    session: InterviewSession,
+    interaction: Interaction,
+    visitor: InteractWalker
+) -> Optional[Union[str, Tuple[str, str]]]:
+    """Custom directive after email is collected.
+    
+    This demonstrates the @input_directive_override decorator, which allows
+    customizing the agent's response after a field value is successfully stored.
+    
+    Args:
+        field_name: Name of the field that was just stored
+        value: The email value that was stored
+        session: Interview session for context
+        interaction: Current interaction
+        visitor: Walker for context
+        
+    Returns:
+        Optional directive override:
+        - None: Use default directive (no override)
+        - str: Replace default directive with this string
+        - Tuple[str, str]: (mode, directive) where mode is "append" or "replace"
+    """
+    # Check if email domain matches specific criteria
+    if '@mail.com' in value.lower():
+        # Replace default directive with custom message for example.com emails
+        return ("append", "Tell the user: Thank you for using your work email! We'll send you special updates about jvagent training.")
+    
+    # Return None to use default directive for other emails
+    return None
 
 
 @on_interview_complete('SignupInterviewInteractAction')

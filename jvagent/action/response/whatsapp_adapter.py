@@ -57,13 +57,29 @@ class WhatsAppAdapter(ChannelAdapter):
         Args:
             message: ResponseMessage object
         """
+        # TESTING: Log when handle_message is called
+        logger.warning(
+            f"WhatsAppAdapter: handle_message CALLED - message_id={message.id}, "
+            f"message_type={message.message_type}, channel={self.channel}"
+        )
+        
         if not self.should_handle(message):
+            logger.warning(
+                f"WhatsAppAdapter: handle_message - should_handle returned False for message_id={message.id}"
+            )
             return
 
         # Send adhoc and final messages to WhatsApp
         # Final messages contain complete streamed responses
         if message.message_type in ("adhoc", "final"):
+            logger.warning(
+                f"WhatsAppAdapter: handle_message - About to call send_to_destination for message_id={message.id}, "
+                f"message_type={message.message_type}"
+            )
             success = await self.send_to_destination(message)
+            logger.warning(
+                f"WhatsAppAdapter: handle_message - send_to_destination returned success={success} for message_id={message.id}"
+            )
             if success:
                 message.mark_delivered()
             else:
@@ -80,57 +96,75 @@ class WhatsAppAdapter(ChannelAdapter):
         Returns:
             True if message was sent successfully, False otherwise
         """
-        if not self.api_url or not self.api_key:
-            logger.warning(
-                "WhatsAppAdapter: Cannot send - api_url or api_key not configured"
-            )
-            return False
+        # TESTING: Log when send_to_destination is called
+        logger.warning(
+            f"WhatsAppAdapter: send_to_destination CALLED - message_id={message.id}, "
+            f"message_type={message.message_type}, channel={self.channel}"
+        )
+        logger.warning(
+            f"WhatsAppAdapter: send_to_destination - message_content={message.content[:100] if message.content else None}, "
+            f"metadata={message.metadata}"
+        )
+        logger.warning(
+            f"WhatsAppAdapter: send_to_destination - api_url={self.api_url}, api_key_configured={bool(self.api_key)}"
+        )
+        
+        # TESTING: Comment out actual implementation
+        # if not self.api_url or not self.api_key:
+        #     logger.warning(
+        #         "WhatsAppAdapter: Cannot send - api_url or api_key not configured"
+        #     )
+        #     return False
 
-        try:
-            import aiohttp
+        # try:
+        #     import aiohttp
 
-            # Extract recipient from message metadata
-            recipient = message.metadata.get("recipient")
-            if not recipient:
-                logger.warning(
-                    f"WhatsAppAdapter: No recipient in message metadata for {message.id}"
-                )
-                return False
+        #     # Extract recipient from message metadata
+        #     recipient = message.metadata.get("recipient")
+        #     if not recipient:
+        #         logger.warning(
+        #             f"WhatsAppAdapter: No recipient in message metadata for {message.id}"
+        #         )
+        #         return False
 
-            # Prepare WhatsApp API payload
-            payload = {
-                "to": recipient,
-                "type": "text",
-                "text": {"body": message.content},
-            }
+        #     # Prepare WhatsApp API payload
+        #     payload = {
+        #         "to": recipient,
+        #         "type": "text",
+        #         "text": {"body": message.content},
+        #     }
 
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            }
+        #     headers = {
+        #         "Authorization": f"Bearer {self.api_key}",
+        #         "Content-Type": "application/json",
+        #     }
 
-            # Send to WhatsApp API
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.api_url, json=payload, headers=headers
-                ) as response:
-                    if response.status == 200:
-                        logger.info(
-                            f"WhatsAppAdapter: Successfully sent message {message.id} to {recipient}"
-                        )
-                        return True
-                    else:
-                        error_text = await response.text()
-                        logger.error(
-                            f"WhatsAppAdapter: Failed to send message {message.id}: "
-                            f"HTTP {response.status} - {error_text}"
-                        )
-                        return False
+        #     # Send to WhatsApp API
+        #     async with aiohttp.ClientSession() as session:
+        #         async with session.post(
+        #             self.api_url, json=payload, headers=headers
+        #         ) as response:
+        #             if response.status == 200:
+        #                 logger.info(
+        #                     f"WhatsAppAdapter: Successfully sent message {message.id} to {recipient}"
+        #                 )
+        #                 return True
+        #             else:
+        #                 error_text = await response.text()
+        #                 logger.error(
+        #                     f"WhatsAppAdapter: Failed to send message {message.id}: "
+        #                     f"HTTP {response.status} - {error_text}"
+        #                 )
+        #                 return False
 
-        except Exception as e:
-            logger.error(
-                f"WhatsAppAdapter: Error sending message {message.id} to WhatsApp: {e}",
-                exc_info=True,
-            )
-            return False
+        # except Exception as e:
+        #     logger.error(
+        #         f"WhatsAppAdapter: Error sending message {message.id} to WhatsApp: {e}",
+        #         exc_info=True,
+        #     )
+        #     return False
+        
+        # TESTING: Return True to simulate successful send
+        logger.warning(f"WhatsAppAdapter: send_to_destination COMPLETED (test mode) - message_id={message.id}")
+        return True
 
