@@ -33,6 +33,12 @@ ROUTER_CLASSIFICATION_SIGNATURE = """Classify user utterance intent and route to
     - Consider conversation history for context (ongoing topics, prior questions, references)
     - Be precise but inclusive - missing a relevant action is worse than including an extra one
     
+    CRITICAL: ONGOING ACTIVITY DETECTION
+    - **ALWAYS check last [EVENT] message in conversation_history for ongoing activities**
+    - Look for event like "[EVENT] Ongoing Activity: ..."
+    - If an action is mentioned in the last [EVENT] message as an ongoing activity, it is likely still active
+    - **PRIORITY ROUTING**: Actions with ongoing activities should be routed to even if the current utterance is ambiguous
+    
     INTERPRETATION GUIDELINES:
     - The interpretation should be concise (under 80 words) and serve as the intent interpretation
     - Capture what the user wants (information request, providing data, or both)
@@ -49,6 +55,8 @@ ROUTER_CLASSIFICATION_SIGNATURE = """Classify user utterance intent and route to
     - Prefer actions with more specific/detailed anchor matches
     - Include all actions that reasonably match (it's ok to route to multiple actions)
     - Consider conversation history and events - is this continuing a prior topic or answering a previous question?
+    - **CRITICAL**: Before checking anchors, check if any actions have ongoing activities in [EVENT] messages
+    - If an action has an ongoing activity in recent events, prioritize routing to it, especially for ambiguous utterances
     - Return ONLY the action name (key) from available_actions, not the anchor statements
     - Example: If available_actions contains {"SignupInterviewInteractAction": ["User wants to sign up"]}, return ["SignupInterviewInteractAction"], not ["User wants to sign up"]
     """
@@ -65,10 +73,13 @@ CRITICAL: The available_actions input is a JSON dictionary where:
 - You MUST return ONLY the action names (keys), NEVER the anchor statements (values)
 
 Process:
-1. Review conversation history for context (ongoing topics, prior questions, references)
-2. Analyze current utterance intent
-3. Match intent to action anchors - each anchor describes when that action should handle a request
-4. Return matched action NAMES (dictionary keys) in JSON format
+1. **CRITICAL FIRST STEP**: Check [EVENT] messages in conversation history for ongoing activities
+   - Look for last event entry like "[EVENT] Ongoing Activity: ..."
+   - If an action has an ongoing activity in the last event, prioritize routing to it
+2. Review conversation history for context (ongoing topics, prior questions, references)
+3. Analyze current utterance intent
+4. Match intent to action anchors - each anchor describes when that action should handle a request
+5. Return matched action NAMES (dictionary keys) in JSON format
 
 Matching rules:
 - Match when utterance intent aligns with anchor descriptions
@@ -97,12 +108,17 @@ CRITICAL: The anchors JSON is a dictionary where:
 - VALUES are lists of anchor statements (e.g., ["User wants to sign up", "User cancels SignupInterviewInteractAction"])
 
 Instructions:
-1. Interpret the user's intent in <50 words. Capture:
+1. **CRITICAL FIRST STEP**: Check [EVENT] messages in conversation history for ongoing activities
+   - Look for recent events like "[EVENT] Ongoing Activity..."
+   - If an action has an ongoing activity in recent events, prioritize routing to it
+
+2. Interpret the user's intent in <80 words. Capture:
    - What they want (information request, providing data, or both)
    - Relevant context (IDs, references to prior conversation, ongoing events, user-provided details)
    - Example format: "User requests status update for ticket #789, mentions deadline"
 
-2. Match interpretation to actions by comparing intent with each action's anchor statements:
+3. Match interpretation to actions by comparing intent with each action's anchor statements:
+   - **PRIORITY**: First check if any actions have ongoing activities in [EVENT] messages - these should be routed to even with ambiguous utterances
    - An action matches if its anchors align with the interpretation and describe handling this type of request
    - Prefer actions with more specific/detailed anchor matches
    - Include all actions that reasonably match (it's ok to route to multiple actions)
