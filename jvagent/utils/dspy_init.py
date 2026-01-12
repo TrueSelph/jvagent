@@ -14,19 +14,19 @@ logger = logging.getLogger(__name__)
 
 def safe_configure_dspy_cache(
     disk_cache_dir: Optional[str] = None,
-    enable_disk_cache: bool = True,
+    enable_disk_cache: bool = False,
     enable_memory_cache: bool = True,
 ) -> None:
     """Safely configure DSPy cache with error handling.
     
     This function ensures that DSPy cache is properly initialized even if
-    the default cache directory cannot be created. It falls back to
-    memory-only cache if disk cache fails.
+    the default cache directory cannot be created. By default, disk cache
+    is disabled to avoid file system issues during bootstrap.
     
     Args:
         disk_cache_dir: Optional custom cache directory. If None, uses
             DSPY_CACHEDIR env var or default ~/.dspy_cache
-        enable_disk_cache: Whether to enable disk cache (default: True)
+        enable_disk_cache: Whether to enable disk cache (default: False)
         enable_memory_cache: Whether to enable memory cache (default: True)
     """
     try:
@@ -137,9 +137,9 @@ def safe_import_dspy() -> bool:
         return True
     except Exception as e:
         logger.warning(f"Error importing or initializing DSPy: {e}")
-        # Try to configure cache as fallback
+        # Try to configure cache as fallback with disk cache disabled
         try:
-            safe_configure_dspy_cache()
+            safe_configure_dspy_cache(enable_disk_cache=False, enable_memory_cache=True)
             import dspy
             _ = dspy.cache
             return True
@@ -153,9 +153,12 @@ def ensure_dspy_initialized() -> None:
     
     This should be called early in the application bootstrap process,
     before any dspy modules are imported or used.
+    
+    By default, configures memory-only cache to avoid file system issues.
     """
-    # Configure cache first
-    safe_configure_dspy_cache()
+    # Configure cache first with disk cache disabled by default
+    # This prevents errors from malformed cache paths and state loading issues
+    safe_configure_dspy_cache(enable_disk_cache=False, enable_memory_cache=True)
     
     # Then verify import works
     if not safe_import_dspy():
