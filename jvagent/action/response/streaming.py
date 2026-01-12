@@ -97,11 +97,18 @@ def create_sse_response(
 
     Returns:
         FastAPI StreamingResponse configured for SSE
+
+    Note:
+        Headers are configured for compatibility with:
+        - AWS API Gateway (Lambda deployments)
+        - Nginx reverse proxies (X-Accel-Buffering)
+        - Standard SSE clients
     """
     default_headers = {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",  # Disable nginx buffering for real-time streaming
     }
     if headers:
         default_headers.update(headers)

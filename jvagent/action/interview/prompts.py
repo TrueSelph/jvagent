@@ -98,8 +98,7 @@ INTERVIEW_CLASSIFICATION_SIGNATURE = """Classify user intent and extract field v
     
     INTENT TYPES (priority order):
     1. CANCELLATION - User explicitly abandons entire process
-       - If active question exists, ambiguous phrases = DECLINE, NOT CANCELLATION
-       - Only use if language explicitly abandons entire interview
+       - Only use if language explicitly abandons entire interview (e.g., "cancel", "abort", "stop the interview")
     
     2. CONFIRMATION - Only in REVIEW state, positive affirmation
        - "No" in REVIEW state = UPDATE (rejecting confirmation)
@@ -108,12 +107,17 @@ INTERVIEW_CLASSIFICATION_SIGNATURE = """Classify user intent and extract field v
        - In REVIEW state, "no" = UPDATE
        - Identify field name and optionally new value
     
-    4. DECLINE - Decline active question (only non-required fields)
-       - When active question exists, ambiguous responses = DECLINE, NOT CANCELLATION
+    4. DECLINE - User explicitly refuses to answer an optional question (only non-required fields)
+       - Only use when user explicitly declines to answer (e.g., "I don't want to answer", "skip this", "I'd rather not provide that", "I'd prefer not to say")
        - Must specify field name (use active question from entities_to_extract)
+       - CRITICAL: Invalid choices/values should be SUBMISSION, not DECLINE. If user provides a value that doesn't match constraints, selects an invalid option, or provides wrong type/format, classify as SUBMISSION (validation will handle them as INVALID)
     
     5. SUBMISSION - Providing answers to unanswered questions
        - Extract field values from user_input (interpretation already contains values)
+       - Includes invalid choices/values - validation system will mark them as INVALID and provide feedback
+       - When user provides a value that doesn't match constraints → SUBMISSION
+       - When user selects an option that doesn't exist → SUBMISSION
+       - When user provides wrong type/format → SUBMISSION
     
     6. NONE - No clear intent
     
@@ -155,7 +159,6 @@ CONTEXT:
 
 INTENT CLASSIFICATION (priority order):
 1. CANCELLATION - User explicitly abandons entire process (e.g., "cancel", "abort", "stop the interview")
-   - If entities_to_extract shows active question, ambiguous phrases like "I don't want to" = DECLINE, NOT CANCELLATION
    - Only use CANCELLATION if language explicitly abandons the entire interview
 
 2. CONFIRMATION - Only in REVIEW state, positive affirmation (e.g., "yes", "correct", "looks good")
@@ -165,12 +168,17 @@ INTENT CLASSIFICATION (priority order):
    - In REVIEW state, "no" = UPDATE
    - Identify field name and optionally new value
 
-4. DECLINE - Decline to answer active question (only for non-required fields)
-   - When active question exists, ambiguous responses = DECLINE, NOT CANCELLATION
+4. DECLINE - User explicitly refuses to answer an optional question (only for non-required fields)
+   - Only use when user explicitly declines to answer (e.g., "I don't want to answer", "skip this", "I'd rather not provide that", "I'd prefer not to say")
    - Must specify field name (use active question from entities_to_extract)
+   - CRITICAL: Invalid choices/values should be SUBMISSION, not DECLINE. If user provides a value that doesn't match constraints, selects an invalid option, or provides wrong type/format, classify as SUBMISSION (validation will handle them as INVALID)
 
 5. SUBMISSION - Providing answers to unanswered questions
    - Extract field values from user input (interpretation already contains values)
+   - Includes invalid choices/values - validation system will mark them as INVALID and provide feedback
+   - When user provides a value that doesn't match constraints → SUBMISSION
+   - When user selects an option that doesn't exist → SUBMISSION
+   - When user provides wrong type/format → SUBMISSION
 
 6. NONE - No clear intent
 
