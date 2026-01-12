@@ -172,7 +172,6 @@ def validate_available_times(value: str, session: InterviewSession) -> Tuple[Val
         return ValidationStatus.INVALID, "Ask: Please provide your available training times", None
 
     value = value.strip()
-    print(f"\033[94mValidating available times: {value}\033[0m")
 
     # Available training times
     AVAILABLE_TRAINING_TIMES = [
