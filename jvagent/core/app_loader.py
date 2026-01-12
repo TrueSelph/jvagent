@@ -196,7 +196,31 @@ class AppLoader:
 
             # Step 1: Ensure Root node exists
             # This may trigger imports, but DSPy is already initialized
-            root = await Root.get()
+            # Wrap in try/except to handle any signature_version errors from old cached state
+            try:
+                root = await Root.get()
+            except (AttributeError, TypeError) as root_error:
+                error_msg = str(root_error)
+                if "signature_version" in error_msg:
+                    logger.warning(
+                        f"signature_version error during Root.get() (likely old cached state): {root_error}. "
+                        f"Retrying after clearing DSPy cache."
+                    )
+                    # Try to clear cache and retry
+                    try:
+                        from jvagent.utils.dspy_init import ensure_dspy_initialized
+                        ensure_dspy_initialized()
+                        root = await Root.get()
+                    except Exception as retry_error:
+                        logger.error(
+                            f"Failed to get Root node after cache clear: {retry_error}. "
+                            f"Original error: {root_error}"
+                        )
+                        return None
+                else:
+                    logger.error(f"Error getting Root node: {root_error}")
+                    return None
+            
             if root is None:
                 logger.error("Failed to get Root node")
                 return None

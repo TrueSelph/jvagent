@@ -155,14 +155,95 @@ def ensure_dspy_initialized() -> None:
     before any dspy modules are imported or used.
     
     By default, configures memory-only cache to avoid file system issues.
+    This prevents errors from malformed cache paths and old state loading issues.
     """
-    # Configure cache first with disk cache disabled by default
-    # This prevents errors from malformed cache paths and state loading issues
-    safe_configure_dspy_cache(enable_disk_cache=False, enable_memory_cache=True)
-    
-    # Then verify import works
-    if not safe_import_dspy():
-        logger.warning(
-            "DSPy initialization had issues, but continuing. "
-            "DSPy features may not work correctly."
-        )
+    try:
+        # Step 1: Set environment variable BEFORE any dspy imports
+        # This helps prevent disk cache creation, though we'll still reconfigure after import
+        # Use a safe temp directory that won't cause issues if it doesn't exist
+        import tempfile
+        temp_cache_dir = os.path.join(tempfile.gettempdir(), ".dspy_cache_disabled")
+        if "DSPY_CACHEDIR" not in os.environ:
+            os.environ["DSPY_CACHEDIR"] = temp_cache_dir
+        
+        # Step 2: Import dspy.clients module (this triggers cache creation at module level)
+        # We need to import it to access configure_cache, but we'll reconfigure immediately
+        try:
+            from dspy.clients import configure_cache, DISK_CACHE_LIMIT
+            import dspy
+        except ImportError:
+            logger.debug("DSPy not available, skipping initialization")
+            return
+        except AttributeError as e:
+            # Handle signature_version and other attribute errors from old cached state
+            if "signature_version" in str(e) or "attribute" in str(e).lower():
+                logger.warning(
+                    f"Error accessing DSPy cache (possibly old cached state): {e}. "
+                    f"Clearing cache and reconfiguring."
+                )
+                # Clear the cache by reconfiguring
+                try:
+                    configure_cache(
+                        enable_disk_cache=False,
+                        enable_memory_cache=True,
+                        disk_cache_dir=temp_cache_dir,
+                        disk_size_limit_bytes=DISK_CACHE_LIMIT,
+                    )
+                    # Clear memory cache if it exists
+                    if hasattr(dspy, 'cache') and hasattr(dspy.cache, 'reset_memory_cache'):
+                        dspy.cache.reset_memory_cache()
+                except Exception as clear_error:
+                    logger.warning(f"Failed to clear cache: {clear_error}")
+            raise
+        
+        # Step 3: Immediately reconfigure cache with disk cache disabled
+        # This overrides the default cache created at import time
+        try:
+            configure_cache(
+                enable_disk_cache=False,
+                enable_memory_cache=True,
+                disk_cache_dir=temp_cache_dir,
+                disk_size_limit_bytes=DISK_CACHE_LIMIT,
+            )
+            logger.debug("DSPy cache configured: disk=False, memory=True")
+        except Exception as config_error:
+            logger.warning(
+                f"Failed to configure DSPy cache: {config_error}. "
+                f"Continuing with default cache."
+            )
+        
+        # Step 4: Clear memory cache to remove any old state
+        # This prevents signature_version errors from old cached data
+        try:
+            if hasattr(dspy, 'cache') and hasattr(dspy.cache, 'reset_memory_cache'):
+                dspy.cache.reset_memory_cache()
+                logger.debug("Cleared DSPy memory cache to remove old state")
+        except Exception as clear_error:
+            logger.debug(f"Could not clear memory cache (may not exist): {clear_error}")
+        
+        # Step 5: Verify cache is accessible
+        try:
+            _ = dspy.cache
+            logger.debug("DSPy initialized successfully with memory-only cache")
+        except AttributeError as e:
+            if "signature_version" in str(e):
+                logger.warning(
+                    f"signature_version error detected: {e}. "
+                    f"This may indicate old cached state. Cache has been reconfigured."
+                )
+            else:
+                logger.warning(f"DSPy cache access error: {e}")
+                
+    except Exception as e:
+        # Catch any other errors (including signature_version errors)
+        error_msg = str(e)
+        if "signature_version" in error_msg:
+            logger.warning(
+                f"signature_version error during DSPy initialization: {e}. "
+                f"This is likely from old cached state. Continuing with memory-only cache."
+            )
+        else:
+            logger.warning(
+                f"Error initializing DSPy: {e}. "
+                f"Continuing, but DSPy features may not work correctly."
+            )
