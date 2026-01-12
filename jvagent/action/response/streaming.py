@@ -118,4 +118,3 @@ def create_sse_response(
         media_type="text/event-stream",
         headers=default_headers,
     )
-
