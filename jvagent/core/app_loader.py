@@ -173,8 +173,9 @@ class AppLoader:
         bootstrap_log.start(f"v{descriptor.version}")
 
         try:
-            # Step 0a: Ensure DSPy is safely initialized before importing actions
+            # Step 0a: Ensure DSPy is safely initialized FIRST, before any other imports
             # This prevents cache directory errors and state loading issues
+            # Must happen before any dspy modules are imported
             try:
                 from jvagent.utils.dspy_init import ensure_dspy_initialized
                 ensure_dspy_initialized()
@@ -187,12 +188,14 @@ class AppLoader:
             # Step 0b: Pre-import all action __init__.py modules
             # This ensures Action subclasses are available for _collect_class_names()
             # before any queries are executed
+            # DSPy is already initialized, so any dspy imports in actions will use the configured cache
             from jvagent.action.action_loader import ActionLoader
 
             action_loader = ActionLoader(base_path=str(self.base_path))
             action_loader.pre_import_action_modules()
 
             # Step 1: Ensure Root node exists
+            # This may trigger imports, but DSPy is already initialized
             root = await Root.get()
             if root is None:
                 logger.error("Failed to get Root node")
