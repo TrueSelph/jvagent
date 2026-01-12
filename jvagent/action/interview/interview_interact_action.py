@@ -916,6 +916,13 @@ class InterviewInteractAction(InteractAction, ABC):
             session: Interview session
             visitor: InteractWalker
         """
+        # Explicitly add completion event BEFORE cleaning up the session
+        # This ensures the event is recorded even if the session is removed
+        # Mark event as added to prevent _queue_directive from adding it again
+        completion_event = self.completion_event_message_template.format(class_name=self.get_class_name())
+        await visitor.add_event(completion_event)
+        self._event_added = True  # Prevent duplicate event addition in _queue_directive
+        
         # Get completion handler for this interview type
         interview_type = session.interview_type
         completion_handler = self.get_completion_handler(interview_type)
@@ -1481,14 +1488,29 @@ class InterviewInteractAction(InteractAction, ABC):
             if not self._event_added:
                 # Determine event based on session state from visitor
                 session = getattr(visitor, 'interview_session', None)
-                if session and session.state == InterviewState.REVIEW:
-                    event_name = self.review_event_message_template.format(class_name=self.get_class_name())
+                if session:
+                    if session.state == InterviewState.COMPLETED:
+                        # Completion event is already added explicitly in _generate_completed_directive
+                        # Skip to avoid duplicate events
+                        event_name = None
+                    elif session.state == InterviewState.CANCELLED:
+                        event_name = self.cancellation_event_message_template.format(class_name=self.get_class_name())
+                    elif session.state == InterviewState.REVIEW:
+                        event_name = self.review_event_message_template.format(class_name=self.get_class_name())
+                    else:
+                        # Default to active event for ACTIVE state or if state not recognized
+                        event_name = self.active_event_message_template.format(class_name=self.get_class_name())
                 else:
-                    # Default to active event for ACTIVE, COMPLETED, CANCELLED states or if session not available
+                    # No session available, default to active event
                     event_name = self.active_event_message_template.format(class_name=self.get_class_name())
                 
-                await visitor.add_event(event_name)
-                self._event_added = True
+                # Only add event if one was determined (skip if COMPLETED state already handled)
+                if event_name:
+                    await visitor.add_event(event_name)
+                    self._event_added = True
+                else:
+                    # Event already added explicitly, just mark as added
+                    self._event_added = True
             
             await visitor.add_directive(directive)
         else:

@@ -173,7 +173,18 @@ class AppLoader:
         bootstrap_log.start(f"v{descriptor.version}")
 
         try:
-            # Step 0: Pre-import all action __init__.py modules
+            # Step 0a: Ensure DSPy is safely initialized before importing actions
+            # This prevents cache directory errors and state loading issues
+            try:
+                from jvagent.utils.dspy_init import ensure_dspy_initialized
+                ensure_dspy_initialized()
+            except Exception as dspy_error:
+                logger.warning(
+                    f"Error initializing DSPy during bootstrap: {dspy_error}. "
+                    f"Continuing with bootstrap, but DSPy features may not work."
+                )
+            
+            # Step 0b: Pre-import all action __init__.py modules
             # This ensures Action subclasses are available for _collect_class_names()
             # before any queries are executed
             from jvagent.action.action_loader import ActionLoader

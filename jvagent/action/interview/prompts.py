@@ -64,7 +64,7 @@ ACTIVE_EVENT_MESSAGE_TEMPLATE = "Ongoing Activity: interviewing user as part of 
 REVIEW_EVENT_MESSAGE_TEMPLATE = "Ongoing Activity: reviewing interview responses as part of {class_name}"
 
 # Completion event message template (for COMPLETED state)
-COMPLETION_EVENT_MESSAGE_TEMPLATE = "interview process completed as part of {class_name}"
+COMPLETION_EVENT_MESSAGE_TEMPLATE = "Completed activity: {class_name}"
 
 # Cancellation event message template (for CANCELLED state)
 CANCELLATION_EVENT_MESSAGE_TEMPLATE = "interview process cancelled as part of {class_name}"

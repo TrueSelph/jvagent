@@ -59,13 +59,17 @@ class RouterModule(dspy.Module):
             prefix="Brief analysis:",
             desc=(
                 "Concise, shorthanded intent analysis in under 80 words. Capture what the user wants and relevant context. "
+                "CRITICAL FIRST STEP: Check last [EVENT] message in conversation_history for ongoing activities. "
+                "If an action is mentioned in the last [EVENT] message as an ongoing activity (e.g., 'Ongoing Activity: ...'), "
+                "prioritize routing to that action. "
                 "CRITICAL: Always extract and include specific information from the current utterance and conversation history. "
                 "Extract concrete values: names, emails, IDs, ticket numbers, dates, amounts, and other specific data. "
                 "Scan both the current utterance AND conversation history for pertinent details. "
                 "The interpretation must be rich enough for downstream actions to extract information without re-parsing the raw utterance. "
                 "Examples: 'User provides name \"John Doe\" and email \"john@example.com\" for signup', "
                 "'User requests status for ticket #789, deadline Friday', "
-                "'User confirms order #12345 for $99.99'"
+                "'User confirms order #12345 for $99.99', "
+                "'User responds with \"nope\" during active SignupInterviewInteractAction interview'"
             )
         )
         self.route = dspy.ChainOfThought(
