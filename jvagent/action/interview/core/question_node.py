@@ -405,7 +405,7 @@ class QuestionNode(Node):
                 return ValidationStatus.INVALID, f"Validation error: {str(e)}", None
         
         # Check for ambiguous values that might need clarification
-        # This is a heuristic - can be customized per question
+        # This is a heuristic - can be customized per question via ambiguous_patterns in constraints
         ambiguous_patterns = constraints.get("ambiguous_patterns", [])
         if isinstance(value, str):
             value_lower = value.lower()
@@ -413,12 +413,6 @@ class QuestionNode(Node):
                 if pattern in value_lower:
                     feedback = constraints.get("ambiguous_feedback", "I'd like to clarify this.")
                     return ValidationStatus.VALID_WITH_FLAG, feedback, None
-        
-        # Check for common ambiguous time expressions
-        if constraints.get("type") == "datetime" or "time" in question_key.lower() or "date" in question_key.lower():
-            time_ambiguous = ["next", "this", "tomorrow", "today", "soon", "later"]
-            if isinstance(value, str) and any(ambiguous in value.lower() for ambiguous in time_ambiguous):
-                return ValidationStatus.VALID_WITH_FLAG, "Got it. Let me clarify the specific time.", None
         
         # All checks passed
         return ValidationStatus.VALID, None, None

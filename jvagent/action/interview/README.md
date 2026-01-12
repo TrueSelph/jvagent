@@ -563,6 +563,111 @@ Validators can return:
 **Autocorrection Support:**
 Validators can return a corrected value as the third element of the tuple. If provided, the system will store the corrected value instead of the original input. This is useful for fuzzy matching scenarios (e.g., correcting "next tuesday" to a specific date, or matching "morning" to "9:00 AM").
 
+### Directive Overrides
+
+Customize agent responses after a field value is successfully validated and stored using the `@input_directive_override` decorator. This allows you to conditionally replace or append to the default directive based on the stored value.
+
+**Recommended Approach: Use Decorators**
+
+The cleanest way to register directive overrides is using the `@input_directive_override` decorator:
+
+```python
+from jvagent.action.interview.interview_interact_action import (
+    InterviewInteractAction,
+    input_directive_override,
+)
+from jvagent.action.interview.core.interview_session import InterviewSession
+from jvagent.memory import Interaction
+from jvagent.action.interact.interact_walker import InteractWalker
+from typing import Optional, Union, Tuple
+
+@input_directive_override('user_email')
+async def custom_email_directive(
+    field_name: str,
+    value: str,
+    session: InterviewSession,
+    interaction: Interaction,
+    visitor: InteractWalker
+) -> Optional[Union[str, Tuple[str, str]]]:
+    """Custom directive after email is collected."""
+    # Check if email domain matches specific criteria
+    if '@example.com' in value:
+        # Replace default directive
+        return "Tell the user: Thank you for using your work email! We'll send you special updates."
+    # Return None to use default directive
+    return None
+
+class MyInterviewAction(InterviewInteractAction):
+    question_index = [
+        {
+            "name": "user_email",
+            "constraints": {
+                # Override is automatically found via decorator
+            }
+        }
+    ]
+```
+
+**Override Function Signature:**
+
+The override function must accept five parameters:
+- `field_name: str` - Name of the field that was just stored
+- `value: Any` - The value that was stored
+- `session: InterviewSession` - Interview session for context
+- `interaction: Interaction` - Current interaction
+- `visitor: InteractWalker` - Walker for context
+
+**Return Values:**
+
+The override function can return:
+- `None` - Use default directive (no override)
+- `str` - Replace default directive with this string
+- `Tuple[str, str]` - First element is mode ("append" or "replace"), second is directive string
+
+**Append vs Replace:**
+
+You can specify whether to append to or replace the default directive:
+
+```python
+@input_directive_override('user_name')
+async def append_name_directive(
+    field_name: str,
+    value: str,
+    session: InterviewSession,
+    interaction: Interaction,
+    visitor: InteractWalker
+) -> Optional[Union[str, Tuple[str, str]]]:
+    """Append custom message after name is collected."""
+    # Append to default directive
+    return ("append", f"Tell the user: Nice to meet you, {value}!")
+
+@input_directive_override('user_email')
+async def replace_email_directive(
+    field_name: str,
+    value: str,
+    session: InterviewSession,
+    interaction: Interaction,
+    visitor: InteractWalker
+) -> Optional[Union[str, Tuple[str, str]]]:
+    """Replace default directive for email."""
+    # Explicitly replace default directive
+    return ("replace", "Tell the user: Your email has been recorded. We'll send you updates soon!")
+```
+
+**When Overrides Are Triggered:**
+
+Directive overrides are checked:
+- After a field value is successfully validated and stored (VALID or VALID_WITH_FLAG status)
+- In both SUBMISSION flow (when answering questions) and UPDATE flow (when updating existing values)
+- Before the default directive is sent to the user
+
+**Important Notes:**
+
+- Override functions can be either sync or async
+- If an override returns a directive, it is sent immediately and processing stops for that field
+- Overrides only apply after successful validation - invalid values won't trigger overrides
+- Multiple fields can have overrides - each is checked independently after its value is stored
+
 ## Unified Classification System
 
 The interview system uses a single unified prompt (`INTERVIEW_PROMPT_TEMPLATE`) that combines intent detection and field extraction in one LLM call. This approach is more efficient and ensures consistency.
