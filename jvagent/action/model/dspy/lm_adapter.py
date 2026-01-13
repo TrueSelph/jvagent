@@ -11,7 +11,6 @@ from typing import Any, Optional
 
 import dspy
 from dspy.clients.base_lm import BaseLM
-from dspy.clients.cache import request_cache
 
 from jvagent.action.model.language.base import LanguageModelAction
 
@@ -40,7 +39,7 @@ class DSPyLM(BaseLM):
         model: Optional model identifier (overrides model_action.model if provided)
         temperature: Sampling temperature (overrides model_action.temperature if provided)
         max_tokens: Maximum tokens to generate (overrides model_action.max_tokens if provided)
-        cache: Whether to enable DSPy caching (defaults to True)
+        cache: Whether to enable DSPy caching (defaults to False, disabled to prevent bootstrap errors)
         **kwargs: Additional arguments passed to BaseLM
     """
     
@@ -51,7 +50,7 @@ class DSPyLM(BaseLM):
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        cache: bool = True,
+        cache: bool = False,
         **kwargs
     ):
         """Initialize the adapter with a jvagent LanguageModelAction.
@@ -62,7 +61,7 @@ class DSPyLM(BaseLM):
             model: Optional model identifier to override model_action.model
             temperature: Sampling temperature (overrides model_action.temperature if provided)
             max_tokens: Maximum tokens to generate (overrides model_action.max_tokens if provided)
-            cache: Whether to enable DSPy caching (defaults to True)
+            cache: Whether to enable DSPy caching (defaults to False, disabled to prevent bootstrap errors)
             **kwargs: Additional arguments passed to BaseLM
         """
         # Use provided model override, or fall back to model_action's model identifier
@@ -84,23 +83,10 @@ class DSPyLM(BaseLM):
         self.model_action = model_action
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
         
-        # Wrap the uncached forward methods with caching if enabled
-        # Note: Streaming requests bypass caching
-        if self.cache:
-            self._cached_forward = request_cache(
-                cache_arg_name=None,  # Use all kwargs as request
-                ignored_args_for_cache_key=["api_key", "api_base", "base_url"],
-                enable_memory_cache=True,
-            )(self._uncached_forward)
-            
-            self._cached_aforward = request_cache(
-                cache_arg_name=None,
-                ignored_args_for_cache_key=["api_key", "api_base", "base_url"],
-                enable_memory_cache=True,
-            )(self._uncached_aforward)
-        else:
-            self._cached_forward = self._uncached_forward
-            self._cached_aforward = self._uncached_aforward
+        # Cache is disabled by default - use uncached methods directly
+        # Note: Streaming requests always bypass caching
+        self._cached_forward = self._uncached_forward
+        self._cached_aforward = self._uncached_aforward
     
     def forward(
         self,
