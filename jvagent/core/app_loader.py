@@ -173,54 +173,16 @@ class AppLoader:
         bootstrap_log.start(f"v{descriptor.version}")
 
         try:
-            # Step 0a: Ensure DSPy is safely initialized FIRST, before any other imports
-            # This prevents cache directory errors and state loading issues
-            # Must happen before any dspy modules are imported
-            try:
-                from jvagent.utils.dspy_init import ensure_dspy_initialized
-                ensure_dspy_initialized()
-            except Exception as dspy_error:
-                logger.warning(
-                    f"Error initializing DSPy during bootstrap: {dspy_error}. "
-                    f"Continuing with bootstrap, but DSPy features may not work."
-                )
-            
-            # Step 0b: Pre-import all action __init__.py modules
+            # Step 0: Pre-import all action __init__.py modules
             # This ensures Action subclasses are available for _collect_class_names()
             # before any queries are executed
-            # DSPy is already initialized, so any dspy imports in actions will use the configured cache
             from jvagent.action.action_loader import ActionLoader
 
             action_loader = ActionLoader(base_path=str(self.base_path))
             action_loader.pre_import_action_modules()
 
             # Step 1: Ensure Root node exists
-            # This may trigger imports, but DSPy is already initialized
-            # Wrap in try/except to handle any signature_version errors from old cached state
-            try:
-                root = await Root.get()
-            except (AttributeError, TypeError) as root_error:
-                error_msg = str(root_error)
-                if "signature_version" in error_msg:
-                    logger.warning(
-                        f"signature_version error during Root.get() (likely old cached state): {root_error}. "
-                        f"Retrying after clearing DSPy cache."
-                    )
-                    # Try to clear cache and retry
-                    try:
-                        from jvagent.utils.dspy_init import ensure_dspy_initialized
-                        ensure_dspy_initialized()
-                        root = await Root.get()
-                    except Exception as retry_error:
-                        logger.error(
-                            f"Failed to get Root node after cache clear: {retry_error}. "
-                            f"Original error: {root_error}"
-                        )
-                        return None
-                else:
-                    logger.error(f"Error getting Root node: {root_error}")
-                    return None
-            
+            root = await Root.get()
             if root is None:
                 logger.error("Failed to get Root node")
                 return None
