@@ -81,7 +81,7 @@ class TypesenseVectorStore(VectorStore):
 
     async def _initialize_client(self) -> None:
         """Initialize Typesense client connection.
-        
+
         This method can be called multiple times safely - it will only initialize
         the client if it doesn't already exist. Called automatically during
         on_register() and when client is needed for operations.
@@ -119,18 +119,18 @@ class TypesenseVectorStore(VectorStore):
 
     async def on_register(self) -> None:
         """Called when action is registered during installation.
-        
+
         Validates configuration. Client initialization is handled automatically
         by the base class via _initialize_client(). This method should only be
         called once during action registration.
         """
         await super().on_register()
-        
+
         logger.info(f"TypesenseVectorStore registered: {self.protocol}://{self.host}:{self.port}")
 
     async def _cleanup_client(self) -> None:
         """Clean up Typesense client connection.
-        
+
         Typesense client doesn't have an explicit close method,
         so we just clear the reference.
         """
@@ -148,6 +148,9 @@ class TypesenseVectorStore(VectorStore):
             return
 
         # Check if collection exists
+        if not self._client:
+            await self._initialize_client()
+
         try:
             self._client.collections[collection].retrieve()
             self._collections[collection] = True
@@ -221,7 +224,7 @@ class TypesenseVectorStore(VectorStore):
         """
         # Ensure client is initialized
         await self._initialize_client()
-        
+
         if not TYPESENSE_AVAILABLE or not self._client:
             raise RuntimeError("Typesense client not available")
 
@@ -286,7 +289,7 @@ class TypesenseVectorStore(VectorStore):
         """
         # Ensure client is initialized
         await self._initialize_client()
-        
+
         if not TYPESENSE_AVAILABLE or not self._client:
             raise RuntimeError("Typesense client not available")
 
@@ -300,9 +303,9 @@ class TypesenseVectorStore(VectorStore):
             filter_parts = []
             for key, value in filters.items():
                 if isinstance(value, list):
-                    filter_parts.append(f"{key}:={','.join(map(str, value))}")
+                    filter_parts.append(f"metadata.{key}:={','.join(map(str, value))}")
                 else:
-                    filter_parts.append(f"{key}:={value}")
+                    filter_parts.append(f"metadata.{key}:={value}")
             if filter_parts:
                 filter_by = " && ".join(filter_parts)
 
@@ -327,11 +330,11 @@ class TypesenseVectorStore(VectorStore):
             multi_search_request = {
                 "searches": [search_parameters]
             }
-            
+
             # Perform multi_search - this sends the request in the body, not the URL
             # The vector_query string is sent as part of the JSON body, not in the URL
             results_response = self._client.multi_search.perform(multi_search_request, {})
-            
+
             # Extract results from multi_search response
             # multi_search returns {"results": [{"hits": [...], ...}]}
             if results_response and "results" in results_response and len(results_response["results"]) > 0:
@@ -352,7 +355,7 @@ class TypesenseVectorStore(VectorStore):
                 # Use inverse rank as similarity score
                 max_results = len(results.get("hits", []))
                 similarity_score = 1.0 - (rank - 1) / max_results if max_results > 0 else 0.0
-                
+
                 # If there's a vector distance in the hit, use that
                 if "vector_distance" in hit:
                     distance = hit["vector_distance"]
@@ -430,7 +433,7 @@ class TypesenseVectorStore(VectorStore):
         """
         # Ensure client is initialized
         await self._initialize_client()
-        
+
         if not TYPESENSE_AVAILABLE or not self._client:
             return False
 
@@ -651,4 +654,3 @@ class TypesenseVectorStore(VectorStore):
         except Exception as e:
             logger.error(f"Error updating document {document_id} in collection {collection}: {e}", exc_info=True)
             return False
-
