@@ -1,0 +1,18 @@
+package:
+  name: jvagent/whatsapp
+  author: V75 Inc.
+  archetype: Whatsapp
+  version: 1.0.0
+  meta:
+    title: Whatsapp
+    description: WhatsApp implementation using multiple providers
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - filetype>=1.2.0
+      
