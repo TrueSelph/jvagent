@@ -1,0 +1,5 @@
+# Example Action Dependencies
+# Add Python package dependencies for this action
+
+requests>=2.31.0
+
