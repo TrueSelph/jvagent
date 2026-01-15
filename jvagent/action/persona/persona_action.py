@@ -192,8 +192,9 @@ class PersonaAction(Action):
         persona_parameters_to_add = list(self.parameters) if self.parameters is not None else []
         
         if persona_parameters_to_add:
-            interaction.add_parameters(persona_parameters_to_add, persona_action_name)
-            await interaction.save()
+            # Only save if parameters were actually added (not duplicates)
+            if interaction.add_parameters(persona_parameters_to_add, persona_action_name):
+                await interaction.save()
 
         # Get unexecuted directives and parameters (now includes persona parameters)
         applicable_directives = interaction.get_unexecuted_directives()
@@ -799,13 +800,18 @@ class PersonaAction(Action):
                     interaction.set_to_executed(parameters=applicable_parameters)
             
             # Set interaction.response immediately after getting the complete response
+            # Only save if the response actually changed
             if response:
                 current_response = interaction.response or ""
+                response_changed = False
                 if current_response and current_response.strip() and current_response != response:
-                    interaction.set_response(f"{current_response}\n\n{response}")
+                    response_changed = interaction.set_response(f"{current_response}\n\n{response}")
                 else:
-                    interaction.set_response(response)
-                await interaction.save()
+                    response_changed = interaction.set_response(response)
+                
+                # Only save if response actually changed
+                if response_changed:
+                    await interaction.save()
             
             # Publish to ResponseBus if available (for both streaming and non-streaming)
             # This ensures jvchat receives the response properly
@@ -956,13 +962,18 @@ class PersonaAction(Action):
                     interaction.set_to_executed(parameters=applicable_parameters)
 
             # Set interaction.response immediately after getting the complete response
+            # Only save if the response actually changed
             if response:
                 current_response = interaction.response or ""
+                response_changed = False
                 if current_response and current_response.strip() and current_response != response:
-                    interaction.set_response(f"{current_response}\n\n{response}")
+                    response_changed = interaction.set_response(f"{current_response}\n\n{response}")
                 else:
-                    interaction.set_response(response)
-                await interaction.save()
+                    response_changed = interaction.set_response(response)
+                
+                # Only save if response actually changed
+                if response_changed:
+                    await interaction.save()
 
             # Record PersonaAction execution AFTER response is generated and saved
             interaction.record_action_execution("PersonaAction")

@@ -108,7 +108,7 @@ class Interaction(Node):
         default=False, description="Whether the interaction is closed"
     )
 
-    def add_directive(self, directive: str, action_name: str) -> None:
+    def add_directive(self, directive: str, action_name: str) -> bool:
         """Add a directive to the interaction.
 
         Directives are instructions issued by non-persona actions.
@@ -118,12 +118,15 @@ class Interaction(Node):
         Args:
             directive: Directive string to add
             action_name: Class name (camelCase) of the action that added this directive
+
+        Returns:
+            True if directive was added (not a duplicate), False if duplicate was found
         """
         if directive and action_name:
             # Check for duplicates: same action_name and same content
             for existing in self.directives:
                 if existing.get("action_name") == action_name and existing.get("content") == directive:
-                    return  # Duplicate found, skip adding
+                    return False  # Duplicate found, skip adding
             
             entry = {
                 "action_name": action_name,
@@ -131,8 +134,10 @@ class Interaction(Node):
                 "executed": False
             }
             self.directives.append(entry)
+            return True  # Added
+        return False  # Invalid input
 
-    def add_event(self, event: str, action_name: str) -> None:
+    def add_event(self, event: str, action_name: str) -> bool:
         """Add an event to the interaction.
 
         Events are logs and do not require execution tracking -
@@ -141,10 +146,15 @@ class Interaction(Node):
         Args:
             event: Event string to add
             action_name: Class name (camelCase) of the action that added this event
+
+        Returns:
+            True if event was added, False if invalid input
         """
         if event and action_name:
             entry = {"action_name": action_name, "content": event}
             self.events.append(entry)  # Events can have duplicates (logs)
+            return True  # Added
+        return False  # Invalid input
 
     def record_action_execution(self, action_name: str) -> None:
         """Record an action execution in the processing log.
@@ -178,7 +188,7 @@ class Interaction(Node):
                     logger.warning(f"Interaction.unrecord_action_execution: Unrecorded action {action_name}")
                     break
 
-    def add_parameter(self, parameter: Dict[str, Any], action_name: str) -> None:
+    def add_parameter(self, parameter: Dict[str, Any], action_name: str) -> bool:
         """Add a parameter to the applicable parameters list.
 
         New parameters are added with executed=False by default.
@@ -189,9 +199,12 @@ class Interaction(Node):
         Args:
             parameter: Parameter data (id, condition, response, etc.)
             action_name: Class name (camelCase) of the action that added this parameter
+
+        Returns:
+            True if parameter was added (not a duplicate), False if duplicate was found
         """
         if not parameter:
-            return
+            return False
         
         # Check for duplicates: same action_name and same parameter content
         # Compare all keys except 'executed' and 'action_name' (which are set automatically)
@@ -202,7 +215,7 @@ class Interaction(Node):
                 # Compare parameter content (excluding executed and action_name)
                 existing_copy = {k: v for k, v in existing.items() if k not in ("executed", "action_name")}
                 if existing_copy == param_copy:
-                    return  # Duplicate found, skip adding
+                    return False  # Duplicate found, skip adding
         
         # Not a duplicate, add it
         parameter["action_name"] = action_name
@@ -210,8 +223,9 @@ class Interaction(Node):
         if "executed" not in parameter:
             parameter["executed"] = False
         self.parameters.append(parameter)
+        return True  # Added
 
-    def add_parameters(self, parameters: List[Dict[str, Any]], action_name: str) -> None:
+    def add_parameters(self, parameters: List[Dict[str, Any]], action_name: str) -> bool:
         """Add multiple parameters to the interaction.
 
         Bulk convenience method that adds multiple parameters with the same action_name.
@@ -220,15 +234,21 @@ class Interaction(Node):
         Args:
             parameters: List of parameter dictionaries to add
             action_name: Class name (camelCase) of the action that added these parameters
+
+        Returns:
+            True if any parameter was added (not a duplicate), False if all were duplicates or empty
         """
         if not parameters:
-            return
+            return False
         
+        any_added = False
         for parameter in parameters:
             if parameter and isinstance(parameter, dict):
-                self.add_parameter(parameter, action_name)
+                if self.add_parameter(parameter, action_name):
+                    any_added = True
+        return any_added
 
-    def add_directives(self, directives: List[str], action_name: str) -> None:
+    def add_directives(self, directives: List[str], action_name: str) -> bool:
         """Add multiple directives to the interaction.
 
         Bulk convenience method that adds multiple directives with the same action_name.
@@ -237,13 +257,19 @@ class Interaction(Node):
         Args:
             directives: List of directive strings to add
             action_name: Class name (camelCase) of the action that added these directives
+
+        Returns:
+            True if any directive was added (not a duplicate), False if all were duplicates or empty
         """
         if not directives:
-            return
+            return False
         
+        any_added = False
         for directive in directives:
             if directive:  # Skip empty directives
-                self.add_directive(directive, action_name)
+                if self.add_directive(directive, action_name):
+                    any_added = True
+        return any_added
 
     def has_response(self) -> bool:
         """Check if the interaction has a response.
@@ -253,13 +279,19 @@ class Interaction(Node):
         """
         return self.response is not None
 
-    def set_response(self, content: str) -> None:
+    def set_response(self, content: str) -> bool:
         """Set the interaction response.
 
         Args:
             content: Response content
+
+        Returns:
+            True if the response was changed, False if it was already set to this value
         """
+        if self.response == content:
+            return False  # No change, avoid unnecessary saves
         self.response = content
+        return True  # Changed
 
     def get_unexecuted_directives(self) -> List[Dict[str, Any]]:
         """Get directives that have not yet been executed.

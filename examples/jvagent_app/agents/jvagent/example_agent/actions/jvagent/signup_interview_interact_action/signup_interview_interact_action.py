@@ -3,7 +3,7 @@
 import re
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from jvagent.action.interview.interview_interact_action import (
+from jvagent.action.interview import (
     InterviewInteractAction,
     input_handler,
     input_validator,
@@ -11,7 +11,7 @@ from jvagent.action.interview.interview_interact_action import (
     on_interview_complete,
 )
 from jvagent.action.interview.core.interview_session import InterviewSession
-from jvagent.action.interview.core.validation import ValidationStatus
+from jvagent.action.interview.core.enums import ValidationStatus
 from jvagent.memory import Interaction
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.interact.base import InteractAction
@@ -458,7 +458,7 @@ async def custom_email_directive(
     # Check if email domain matches specific criteria
     if '@mail.com' in value.lower():
         # Replace default directive with custom message for example.com emails
-        return ("append", "Tell the user: Thank you for using your work email! We'll send you special updates about jvagent training.")
+        return ("replace", "Tell the user: Thank you for using your work email! We'll send you special updates about jvagent training.")
     
     # Return None to use default directive for other emails
     return None

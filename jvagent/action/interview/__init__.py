@@ -3,9 +3,11 @@
 This package provides the InterviewInteractAction class with unified inline state handling.
 """
 
-# Import the action class and decorators so they can be imported from the package
-from .interview_interact_action import (
-    InterviewInteractAction,
+# Import the action class
+from .interview_interact_action import InterviewInteractAction
+
+# Import decorators from decorators module
+from .decorators import (
     input_handler,
     input_validator,
     input_directive_override,

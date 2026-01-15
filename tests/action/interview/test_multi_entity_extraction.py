@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from jvagent.action.interview.core.interview_session import InterviewSession
 from jvagent.action.interview.core.question_walker import QuestionWalker
-from jvagent.action.interview.core.validation import InterviewState, ValidationStatus
+from jvagent.action.interview.core.enums import InterviewState, ValidationStatus
 from jvagent.memory import Interaction
 
 
