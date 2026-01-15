@@ -26,10 +26,11 @@ from jvagent.action.interact.base import InteractAction
 from jvagent.memory import Interaction
 from jvspatial.core.annotations import attribute
 
+from .core.interview_service import InterviewService
 from .core.interview_session import InterviewSession
 from .core.question_node import QuestionNode
 from .core.question_walker import QuestionWalker
-from .core.validation import InterviewState, ValidationStatus
+from .core.enums import InterviewState, ValidationStatus
 from .prompts import (
     UPDATE_PROMPT_FOR_VALUE_TEMPLATE,
     REVIEW_SUMMARY_HEADER_TEMPLATE,
@@ -58,22 +59,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Module-level registry for completion handlers (keyed by interview_type)
-# This is populated when @on_interview_complete decorated functions are defined
-_completion_handlers: Dict[str, Callable] = {}
-
-# Module-level registry for input validators and handlers
-# Keyed by (interview_type, question_name) -> function
-# This is populated when @input_validator or @input_handler decorated functions are defined
-# Format: {(interview_type, question_name): function}
-_input_validator_registry: Dict[Tuple[str, str], Callable] = {}
-_input_handler_registry: Dict[Tuple[str, str], Callable] = {}
-
-# Module-level registry for input directive overrides
-# Keyed by (interview_type, question_name) -> function
-# This is populated when @input_directive_override decorated functions are defined
-# Format: {(interview_type, question_name): function}
-_input_directive_override_registry: Dict[Tuple[str, str], Callable] = {}
+# Import registry access functions (decorators are in separate module)
+from .decorators import (
+    get_completion_handler as _get_completion_handler,
+    get_input_handler as _get_input_handler,
+    get_input_validator as _get_input_validator,
+    get_input_directive_override as _get_input_directive_override,
+    get_pending_input_handlers,
+    get_pending_input_validators,
+    get_pending_input_directive_overrides,
+    clear_pending_registrations,
+)
 
 
 @dataclass
@@ -172,17 +168,28 @@ class InterviewInteractAction(InteractAction, ABC):
 
         # Load validators/handlers/overrides from module-level registry for this class
         class_name = cls.__name__
-        for (interview_type, question_name), func in _input_validator_registry.items():
-            if interview_type == class_name:
-                cls._input_validators[question_name] = func
+        
+        # Load from module-level registries
+        # Note: We need to iterate through all registrations since we can't access the registry directly
+        # The decorator module provides access functions, but for __init_subclass__ we need to
+        # check all possible question names. For now, we'll rely on pending registries and
+        # attribute scanning, which is the primary mechanism.
+        
+        # Load from pending registries (for functions decorated before class definition)
+        pending_validators = get_pending_input_validators(class_name)
+        for question_name, func in pending_validators.items():
+            cls._input_validators[question_name] = func
 
-        for (interview_type, question_name), func in _input_handler_registry.items():
-            if interview_type == class_name:
-                cls._input_handlers[question_name] = func
+        pending_handlers = get_pending_input_handlers(class_name)
+        for question_name, func in pending_handlers.items():
+            cls._input_handlers[question_name] = func
 
-        for (interview_type, question_name), func in _input_directive_override_registry.items():
-            if interview_type == class_name:
-                cls._input_directive_overrides[question_name] = func
+        pending_overrides = get_pending_input_directive_overrides(class_name)
+        for question_name, func in pending_overrides.items():
+            cls._input_directive_overrides[question_name] = func
+
+        # Clear pending registrations for this class
+        clear_pending_registrations(class_name)
 
         # Also scan class attributes for decorated functions (class methods)
         for attr_name in dir(cls):
@@ -193,9 +200,9 @@ class InterviewInteractAction(InteractAction, ABC):
 
                 if handler_type == "input_handler":
                     cls._input_handlers[question_name] = attr
-                elif handler_type == "input_validator":
+                elif handler_type == "input_validator" and question_name:
                     cls._input_validators[question_name] = attr
-                elif handler_type == "input_directive_override":
+                elif handler_type == "input_directive_override" and question_name:
                     cls._input_directive_overrides[question_name] = attr
 
         # Note: We don't merge anchors in __init_subclass__ because we can't reliably
@@ -213,7 +220,7 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
             Completion handler function if found, None otherwise
         """
-        return _completion_handlers.get(interview_type)
+        return _get_completion_handler(interview_type)
 
     @classmethod
     def get_input_handler(cls, question_name: str) -> Optional[Callable]:
@@ -230,7 +237,7 @@ class InterviewInteractAction(InteractAction, ABC):
 
         # If not found, check module-level registry (in case it was registered after class definition)
         if not handler:
-            handler = _input_handler_registry.get((cls.__name__, question_name))
+            handler = _get_input_handler(cls.__name__, question_name)
             if handler:
                 # Cache it in class registry for future lookups
                 cls._input_handlers[question_name] = handler
@@ -249,14 +256,13 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
             Input validator function if found, None otherwise
         """
-        # First check class-level registry
         validator = cls._input_validators.get(question_name)
 
         # If not found, check module-level registry (in case it was registered after class definition)
         if not validator:
-            validator = _input_validator_registry.get((cls.__name__, question_name))
+            validator = _get_input_validator(cls.__name__, question_name)
             if validator:
-                # Cache it in class registry for future lookups
+                # Move to class registry
                 cls._input_validators[question_name] = validator
 
         return validator
@@ -273,14 +279,13 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
             Input directive override function if found, None otherwise
         """
-        # First check class-level registry
         override = cls._input_directive_overrides.get(question_name)
 
         # If not found, check module-level registry (in case it was registered after class definition)
         if not override:
-            override = _input_directive_override_registry.get((cls.__name__, question_name))
+            override = _get_input_directive_override(cls.__name__, question_name)
             if override:
-                # Cache it in class registry for future lookups
+                # Move to class registry
                 cls._input_directive_overrides[question_name] = override
 
         return override
@@ -571,348 +576,6 @@ class InterviewInteractAction(InteractAction, ABC):
         description="Template for insisting user answer a required field when they try to decline. Uses {field_display} and {question} placeholders. Defaults to REQUIRED_FIELD_DECLINE_TEMPLATE from prompts.py",
     )
 
-    async def _generate_directive(
-        self,
-        session: InterviewSession,
-        classification_result: ClassificationResult,
-        visitor: "InteractWalker",
-        interaction: Interaction
-    ) -> None:
-        """Generate and send directive based on session state and classification result.
-
-        Flow:
-        1. Handle high-priority intents (CANCELLATION, CONFIRMATION) that cause state transitions
-        2. Route to state-specific handlers based on current session state
-        3. Handle cascading state transitions (e.g., ACTIVE -> REVIEW -> COMPLETED in same turn)
-
-        Args:
-            session: Interview session
-            classification_result: Result from classification routine
-            visitor: InteractWalker
-            interaction: Current interaction
-        """
-        # ========================================================================
-        # STEP 1: Handle high-priority intents that cause immediate state transitions
-        # ========================================================================
-
-        # CANCELLATION: Highest priority - can occur in any state
-        if classification_result.intent == "CANCELLATION" and session.state != InterviewState.CANCELLED:
-            try:
-                session.transition_to(InterviewState.CANCELLED)
-                await session.save()
-                # Fall through to state-based routing (CANCELLED branch will handle it)
-            except Exception as e:
-                logger.error(f"{self.get_class_name()}: Failed to transition to CANCELLED: {e}", exc_info=True)
-
-        # CONFIRMATION: Only valid in REVIEW state - transition to COMPLETED immediately
-        if classification_result.intent == "CONFIRMATION" and session.state == InterviewState.REVIEW:
-            try:
-                session.transition_to(InterviewState.COMPLETED)
-                await session.save()
-                await self._generate_completed_directive(session, visitor)
-                return  # Exit early - completion handled in same turn
-            except Exception as e:
-                logger.error(f"{self.get_class_name()}: Failed to transition to COMPLETED: {e}", exc_info=True)
-
-        # ========================================================================
-        # STEP 2: Route to state-specific handlers
-        # ========================================================================
-
-        if session.state == InterviewState.ACTIVE:
-            await self._generate_active_directive(session, classification_result, visitor, interaction)
-            # Handle cascading transition: ACTIVE -> REVIEW (when all questions answered)
-            if session.state == InterviewState.REVIEW:
-                await self._generate_review_directive(session, classification_result, visitor)
-                # Handle cascading transition: REVIEW -> COMPLETED (if CONFIRMATION was missed)
-                # Note: This should not occur as CONFIRMATION is handled above, but kept as safeguard
-                if session.state == InterviewState.COMPLETED:
-                    await self._generate_completed_directive(session, visitor)
-
-        elif session.state == InterviewState.REVIEW:
-            # Handle REVIEW state (UPDATE intent, unclear responses, first-time summary display)
-            # Note: CONFIRMATION intent is handled above and returns early
-            await self._generate_review_directive(session, classification_result, visitor)
-
-        elif session.state == InterviewState.COMPLETED:
-            # Handle already-completed state (e.g., from previous interaction)
-            await self._generate_completed_directive(session, visitor)
-
-        elif session.state == InterviewState.CANCELLED:
-            # Handle cancelled state (cleanup and message)
-            await self._generate_cancelled_directive(session, visitor)
-
-        else:
-            logger.warning(f"{self.get_class_name()}: Unknown session state: {session.state}")
-
-    async def _generate_active_directive(
-        self,
-        session: InterviewSession,
-        classification_result: ClassificationResult,
-        visitor: "InteractWalker",
-        interaction: Interaction
-    ) -> None:
-        """Generate directive for ACTIVE state (question flow).
-
-        Logic flow:
-        - If responses extracted: validate and store via QuestionNode
-        - If update handled: confirm update
-        - Use QuestionWalker to find next unanswered question
-        - Generate directive from QuestionNode
-        - Check if all required questions answered → transition to REVIEW
-
-        Args:
-            session: Interview session
-            classification_result: Classification result
-            visitor: InteractWalker
-            interaction: Current interaction
-        """
-        updated_field = None
-
-        # Handle update intent
-        if classification_result.intent == "UPDATE":
-            # Normalize field - handle string "null" or empty string
-            field = classification_result.field
-            if field and isinstance(field, str):
-                field = field.strip()
-                if field.lower() in ("null", "none", ""):
-                    field = None
-                    classification_result.field = None
-
-            # Check if field needs clarification
-            if not field:
-                # Ask which field to update - show summary for context
-                answered_fields = session.get_answered_questions()
-                field_list = ", ".join([f.replace("_", " ") for f in answered_fields])
-                summary = self._format_summary(session)
-                unclear_edit_section = self.unclear_edit_content_template.format(
-                    summary=summary,
-                    field_list=field_list
-                )
-                directive = self.review_directive_template.format(
-                    confirmation_section="",
-                    unclear_edit_section=unclear_edit_section,
-                    unclear_general_section="",
-                )
-                await self._queue_directive(visitor, directive)
-                return
-
-            # Handle the update inline (reusing QuestionNode processing/validation)
-            update_completed = await self._handle_update_inline(
-                classification_result,
-                session,
-                visitor,
-                interaction
-            )
-
-            if not update_completed:
-                # Waiting for value or clarification
-                return
-
-            updated_field = classification_result.field
-
-            # Continue to next question logic below (don't transition to REVIEW yet -
-            # we may still have non-required questions to ask)
-
-        # Handle decline intent
-        elif classification_result.intent == "DECLINE":
-            field = classification_result.field
-            if field and isinstance(field, str):
-                field = field.strip()
-                if field.lower() in ("null", "none", ""):
-                    field = None
-
-            # If field not specified, try to use active question as fallback
-            if not field and session.active_question_key:
-                field = session.active_question_key
-                logger.debug(f"{self.get_class_name()}: DECLINE intent without field specified, using active question: {field}")
-
-            if not field:
-                # Field not specified and no active question - treat as unclear response
-                logger.warning(f"{self.get_class_name()}: DECLINE intent without field specified and no active question")
-                # Continue to next question logic below
-            else:
-                # Check if field is required
-                question_config = session.get_question_by_name(field)
-                is_required = question_config.get("required", False) if question_config else False
-
-                if is_required:
-                    # Required field - insist on answer
-                    field_display = field.replace("_", " ").title()
-                    question_text = question_config.get("question", field_display) if question_config else field_display
-
-                    # Generate directive using required_field_decline_template
-                    directive = self.required_field_decline_template.format(
-                        field_display=field_display,
-                        question=question_text
-                    )
-
-                    # Keep active_question_key pointing to this required field
-                    session.active_question_key = field
-                    await session.save()
-
-                    await self._queue_directive(visitor, directive)
-                    return  # Don't advance to next question
-                else:
-                    # Non-required field - store "n/a" and continue
-                    session.set_response(field, "n/a")
-                    session.set_validation_status(field, ValidationStatus.VALID)
-                    await session.save()
-                    logger.debug(f"{self.get_class_name()}: Declined non-required field {field}, stored as 'n/a'")
-                    # Continue to next question logic below
-
-        # Handle response extraction
-        elif classification_result.intent == "SUBMISSION" and classification_result.extracted_data:
-            # Validate and store responses
-            question_walker = QuestionWalker()
-            question_walker.interview_session = session
-            question_walker.interaction = interaction
-            question_walker.question_directive_template = self.question_directive_template
-
-            await self._process_responses_to_questions(
-                classification_result.extracted_data,
-                session,
-                visitor,
-                interaction,
-                question_walker
-            )
-
-            # If active_question_key is set to an unanswered field (invalid response), return
-            if session.active_question_key and session.active_question_key in session.get_unanswered_questions():
-                return
-
-        # Get directive for next question using QuestionWalker
-        question_walker = QuestionWalker()
-        question_walker.interview_session = session
-        question_walker.interaction = interaction
-        question_walker.question_directive_template = self.question_directive_template
-
-        unanswered = session.get_unanswered_questions()
-        if not unanswered:
-            # All questions answered (or declined), transition to REVIEW
-            # Note: This includes both required and non-required questions
-            session.active_question_key = None
-            session.transition_to(InterviewState.REVIEW)
-            await session.save()
-            # State will be checked in _generate_directive to generate review directive
-            return
-
-        start_from = session.active_question_key if session.active_question_key in unanswered else None
-        question_node = await question_walker.find_next_question(session, interview_action=self, start_from=start_from)
-
-        if question_node:
-            directive = await question_node.execute(question_walker)
-            if directive:
-                # If an update was just handled, prepend a brief confirmation
-                if updated_field:
-                    field_display = updated_field.replace("_", " ").title()
-                    new_value = session.get_response(updated_field)
-                    confirmation = f"Tell the user: Updated {field_display} to {new_value}. "
-                    directive = confirmation + directive
-                await self._queue_directive(visitor, directive)
-
-    async def _generate_review_directive(
-        self,
-        session: InterviewSession,
-        classification_result: ClassificationResult,
-        visitor: "InteractWalker"
-    ) -> None:
-        """Generate directive for REVIEW state (summary and confirmation).
-
-        Logic flow:
-        - Show summary for user to review
-        - Handle UPDATE intent: process update and show updated summary
-        - Handle CONFIRMATION intent: transition to COMPLETED (handled at top level)
-        - Handle unclear responses: prompt for clarification
-
-        Args:
-            session: Interview session
-            classification_result: Classification result
-            visitor: InteractWalker
-        """
-        # Note: CONFIRMATION intent is handled at the top level of _generate_directive
-        # to ensure state transition and completion happen in the same turn
-        # This check remains as a safeguard but should not be reached if CONFIRMATION was detected
-        if classification_result.intent == "CONFIRMATION":
-            # This should have been handled above, but if we reach here, handle it
-            logger.warning(f"{self.get_class_name()}: CONFIRMATION intent reached _generate_review_directive, should have been handled earlier")
-            session.transition_to(InterviewState.COMPLETED)
-            await session.save()
-            await self._generate_completed_directive(session, visitor)
-            return
-
-        # Handle update
-        if classification_result.intent == "UPDATE":
-            # Normalize field - handle string "null" or empty string
-            field = classification_result.field
-            if field and isinstance(field, str):
-                field = field.strip()
-                if field.lower() in ("null", "none", ""):
-                    field = None
-                    classification_result.field = None
-
-            if not field:
-                # Ask which field to update - show summary for context
-                answered_fields = session.get_answered_questions()
-                if not answered_fields:
-                    # No fields to update - this shouldn't happen in REVIEW state, but handle gracefully
-                    logger.warning(f"{self.get_class_name()}: UPDATE intent with null field but no answered fields")
-                    directive = self.review_directive_template.format(
-                        confirmation_section="",
-                        unclear_edit_section="",
-                        unclear_general_section=self.unclear_general_content_template,
-                    )
-                    await self._queue_directive(visitor, directive)
-                    return
-
-                field_list = ", ".join([f.replace("_", " ") for f in answered_fields])
-                summary = self._format_summary(session)
-
-                # Ensure summary is not empty - if it is, use a fallback
-                if not summary or not summary.strip():
-                    summary = "No information available to review."
-
-                unclear_edit_section = self.unclear_edit_content_template.format(
-                    summary=summary,
-                    field_list=field_list
-                )
-                directive = self.review_directive_template.format(
-                    confirmation_section="",
-                    unclear_edit_section=unclear_edit_section,
-                    unclear_general_section="",
-                )
-
-                await self._queue_directive(visitor, directive)
-                return
-
-            # Handle the update inline (reusing QuestionNode processing/validation)
-            interaction = visitor.interaction
-            update_completed = await self._handle_update_inline(
-                classification_result,
-                session,
-                visitor,
-                interaction
-            )
-
-            if update_completed:
-                # Show updated summary immediately in same turn
-                directive = self._build_confirmation_directive(session)
-                await self._queue_directive(visitor, directive)
-            return
-
-        # Handle unclear response (NONE intent or other)
-        if classification_result.intent == "NONE" or not classification_result.intent:
-            directive = self.review_directive_template.format(
-                confirmation_section="",
-                unclear_edit_section="",
-                unclear_general_section=self.unclear_general_content_template,
-            )
-            await self._queue_directive(visitor, directive)
-            return
-
-        # Default: Show summary for review (first entry to REVIEW state)
-        directive = self._build_confirmation_directive(session)
-        await self._queue_directive(visitor, directive)
-
     async def _generate_completed_directive(
         self,
         session: InterviewSession,
@@ -990,348 +653,6 @@ class InterviewInteractAction(InteractAction, ABC):
         except Exception as e:
             logger.error(f"{self.get_class_name()}: Failed to cleanup cancelled session: {e}", exc_info=True)
 
-    async def _handle_update_inline(
-        self,
-        classification_result: ClassificationResult,
-        session: InterviewSession,
-        visitor: "InteractWalker",
-        interaction: Interaction
-    ) -> bool:
-        """Handle update inline using QuestionNode processing/validation.
-
-        Reuses the same QuestionNode flow as SUBMISSION for consistency.
-
-        Args:
-            classification_result: Classification result with UPDATE intent
-            session: Interview session
-            visitor: InteractWalker
-            interaction: Current interaction
-
-        Returns:
-            True if update completed, False if prompting for value or validation failed
-        """
-        field = classification_result.field
-        # Normalize field - handle string "null" or empty string
-        if field and isinstance(field, str):
-            field = field.strip()
-            if field.lower() in ("null", "none", ""):
-                field = None
-                classification_result.field = None
-
-        if not field:
-            logger.warning(f"{self.get_class_name()}: Update field is None")
-            return False
-
-        # Get question node
-        question_node = await self._get_question_node(field, session)
-        if not question_node:
-            logger.warning(f"{self.get_class_name()}: Question node not found for {field}")
-            return False
-
-        # If value is missing, prompt for it
-        if classification_result.value is None:
-            current_value = session.get_response(field)
-            field_display = field.replace("_", " ").title()
-
-            directive = self.update_prompt_for_value_template.format(
-                field_display=field_display,
-                current_value=current_value
-            )
-
-            await self._queue_directive(visitor, directive)
-            return False  # Update not completed, waiting for value
-
-        # Process and validate the new value (same flow as SUBMISSION)
-        new_value = classification_result.value
-
-        # Process input first (handles custom transformations like autocorrection)
-        if isinstance(new_value, str):
-            new_value = await question_node.process_input(new_value, session, interaction)
-
-        # Validate the processed value
-        validation_status, feedback, corrected_value = await question_node.validate_response(new_value, session)
-
-        # Use corrected value if validator provided one
-        if corrected_value is not None:
-            new_value = corrected_value
-        session.set_validation_status(field, validation_status)
-
-        if validation_status == ValidationStatus.VALID:
-            # Update session with audit trail
-            old_value = session.get_response(field)
-            session.update_response(field, new_value, old_value)
-            await session.save()
-            logger.debug(f"{self.get_class_name()}: Updated {field} to {new_value}")
-
-            # Check for directive override after successful update
-            override_func = self.get_input_directive_override(field)
-            if override_func:
-                try:
-                    override_result = await self._call_override_function(
-                        override_func, field, new_value, session, interaction, visitor
-                    )
-
-                    # Only process override if it's not None (None means use default)
-                    if override_result is not None:
-                        # Get default confirmation directive
-                        field_display = field.replace("_", " ").title()
-                        default_directive = f"Tell the user: Updated {field_display} to {new_value}."
-
-                        # Process override result - returns (default_directive, custom_directive)
-                        default_to_queue, custom_to_queue = self._process_directive_override(override_result, default_directive)
-
-                        # Queue directives if present
-                        if default_to_queue:
-                            await self._queue_directive(visitor, default_to_queue)
-                        if custom_to_queue:
-                            await self._queue_directive(visitor, custom_to_queue)
-
-                        # If either directive was queued, return early
-                        if default_to_queue or custom_to_queue:
-                            return True  # Update completed with custom directive
-                except Exception as e:
-                    logger.warning(f"{self.get_class_name()}: Directive override raised exception: {e}", exc_info=True)
-
-            return True  # Update completed
-
-        elif validation_status == ValidationStatus.VALID_WITH_FLAG:
-            # Store but ask for clarification
-            old_value = session.get_response(field)
-            session.update_response(field, new_value, old_value)
-            await session.save()
-
-            # Check for directive override after successful update
-            override_func = self.get_input_directive_override(field)
-            if override_func:
-                try:
-                    override_result = await self._call_override_function(
-                        override_func, field, new_value, session, interaction, visitor
-                    )
-
-                    # Only process override if it's not None (None means use default)
-                    if override_result is not None:
-                        # Get default directive (feedback message or confirmation)
-                        default_directive = feedback if feedback else ""
-                        if not default_directive:
-                            field_display = field.replace("_", " ").title()
-                            default_directive = f"Tell the user: Updated {field_display} to {new_value}."
-                        else:
-                            # Ensure proper prefix if not already present
-                            if not default_directive.startswith("Tell the user:") and not default_directive.startswith("Ask:"):
-                                default_directive = f"Ask: {default_directive}"
-
-                        # Process override result - returns (default_directive, custom_directive)
-                        default_to_queue, custom_to_queue = self._process_directive_override(override_result, default_directive)
-
-                        # Queue directives if present
-                        if default_to_queue:
-                            await self._queue_directive(visitor, default_to_queue)
-                        if custom_to_queue:
-                            await self._queue_directive(visitor, custom_to_queue)
-
-                        # If either directive was queued, return early
-                        if default_to_queue or custom_to_queue:
-                            return True  # Update stored with custom directive
-                except Exception as e:
-                    logger.warning(f"{self.get_class_name()}: Directive override raised exception: {e}", exc_info=True)
-
-            if feedback:
-                # Ensure proper prefix if not already present
-                feedback_msg = feedback
-                if not feedback_msg.startswith("Tell the user:") and not feedback_msg.startswith("Ask:"):
-                    feedback_msg = f"Ask: {feedback_msg}"
-                await self._queue_directive(visitor, feedback_msg)
-            return True  # Update stored, clarification requested
-
-        else:  # INVALID
-            # Don't store, ask for correction
-            error_msg = feedback or f"Tell the user: Please provide a valid value for {field}."
-            if not error_msg.startswith("Tell the user:") and not error_msg.startswith("Ask:"):
-                error_msg = f"Tell the user: {error_msg}"
-            await self._queue_directive(visitor, error_msg)
-            return False  # Update failed, waiting for valid value
-
-    async def _process_responses_to_questions(
-        self,
-        responses: Dict[str, Any],
-        session: InterviewSession,
-        visitor: "InteractWalker",
-        interaction: Interaction,
-        question_walker: QuestionWalker
-    ) -> None:
-        """Process and validate extracted responses using QuestionWalker.
-
-        Processes all extracted responses in question_index order, storing valid ones
-        and tracking the first invalid field. Respects conditional edges between questions.
-
-        Args:
-            responses: Extracted responses dictionary
-            session: Interview session
-            visitor: InteractWalker
-            interaction: Current interaction
-            question_walker: QuestionWalker instance
-        """
-        # Track results
-        valid_fields = []
-        first_invalid_feedback = None
-
-        # Sort responses by question_index order for sequential processing
-        sorted_fields = self._sort_by_question_order(list(responses.keys()), session)
-
-        for field in sorted_fields:
-            value = responses[field]
-
-            # Check if this question is reachable given current state and conditional edges
-            if not await question_walker.should_process_question(field, session):
-                logger.debug(f"{self.get_class_name()}: Skipping {field} - not reachable given current conditional edges")
-                continue
-
-            # Find question node for validation
-            question_node = await self._get_question_node(field, session)
-            if not question_node:
-                logger.warning(f"{self.get_class_name()}: Question node not found for {field}")
-                continue
-
-            # Use QuestionWalker to process and validate
-            # Returns (final_value, validation_status, feedback) where final_value may be autocorrected
-            final_value, validation_status, feedback = await question_walker.process_and_validate(
-                value,
-                question_node,
-                session,
-                interaction
-            )
-            session.set_validation_status(field, validation_status)
-
-            # Check if there's a custom validator registered for this field
-            has_custom_validator = False
-            question_name = question_node.state.get("name", "")
-            if question_name and session:
-                action_class = question_node._get_action_class_from_session(session)
-                if action_class:
-                    validator = action_class.get_input_validator(question_name)
-                    if validator:
-                        has_custom_validator = True
-
-            # Also check for string reference validator
-            constraints = question_node.state.get("constraints", {})
-            if not has_custom_validator and constraints.get("input_validator"):
-                has_custom_validator = True
-
-            if validation_status == ValidationStatus.VALID:
-                # Store final value (may be autocorrected) - only if valid
-                session.set_response(field, final_value)
-                valid_fields.append(field)
-
-                # Re-evaluate conditional graph after each storage (may skip subsequent questions)
-                await self._update_reachable_questions(session, question_walker)
-                await session.save()
-
-                # Check for directive override after successful storage
-                override_func = self.get_input_directive_override(field)
-                if override_func:
-                    try:
-                        override_result = await self._call_override_function(
-                            override_func, field, final_value, session, interaction, visitor
-                        )
-
-                        # Only process override if it's not None (None means use default)
-                        if override_result is not None:
-                            # Get default directive (next question directive)
-                            question_walker_for_directive = QuestionWalker()
-                            question_walker_for_directive.interview_session = session
-                            question_walker_for_directive.interaction = interaction
-                            question_walker_for_directive.question_directive_template = self.question_directive_template
-                            default_directive = await question_walker_for_directive.get_directive(session, self) or ""
-
-                            # Process override result - returns (default_directive, custom_directive)
-                            default_to_queue, custom_to_queue = self._process_directive_override(override_result, default_directive)
-
-                            # Queue directives if present
-                            if default_to_queue:
-                                await self._queue_directive(visitor, default_to_queue)
-                            if custom_to_queue:
-                                await self._queue_directive(visitor, custom_to_queue)
-
-                            # If either directive was queued, return early
-                            if default_to_queue or custom_to_queue:
-                                return  # Don't continue to next question in this turn
-                    except Exception as e:
-                        logger.warning(f"{self.get_class_name()}: Directive override raised exception: {e}", exc_info=True)
-
-            elif validation_status == ValidationStatus.VALID_WITH_FLAG:
-                # Store final value (may be autocorrected) but ask for clarification
-                session.set_response(field, final_value)
-                valid_fields.append(field)
-
-                # Re-evaluate conditional graph after each storage
-                await self._update_reachable_questions(session, question_walker)
-                await session.save()
-
-                # Check for directive override after successful storage
-                override_func = self.get_input_directive_override(field)
-                if override_func:
-                    try:
-                        override_result = await self._call_override_function(
-                            override_func, field, final_value, session, interaction, visitor
-                        )
-
-                        # Only process override if it's not None (None means use default)
-                        if override_result is not None:
-                            # Get default directive (feedback message or next question)
-                            default_directive = feedback if feedback else ""
-                            if not default_directive:
-                                question_walker_for_directive = QuestionWalker()
-                                question_walker_for_directive.interview_session = session
-                                question_walker_for_directive.interaction = interaction
-                                question_walker_for_directive.question_directive_template = self.question_directive_template
-                                default_directive = await question_walker_for_directive.get_directive(session, self) or ""
-
-                            # Process override result - returns (default_directive, custom_directive)
-                            default_to_queue, custom_to_queue = self._process_directive_override(override_result, default_directive)
-
-                            # Queue directives if present
-                            if default_to_queue:
-                                await self._queue_directive(visitor, default_to_queue)
-                            if custom_to_queue:
-                                await self._queue_directive(visitor, custom_to_queue)
-
-                            # Continue processing other fields (VALID_WITH_FLAG doesn't stop processing)
-                            # Note: We continue even if directives were queued, as VALID_WITH_FLAG allows multiple fields
-                            continue
-                    except Exception as e:
-                        logger.warning(f"{self.get_class_name()}: Directive override raised exception: {e}", exc_info=True)
-
-                # Ask clarifying question (but continue processing other fields)
-                if feedback:
-                    # Use feedback message as-is without prepending
-                    feedback_msg = feedback
-                    await self._queue_directive(visitor, feedback_msg)
-
-            else:  # INVALID
-                # Track first invalid field only
-                if not first_invalid_feedback:
-                    # Generate directive with validation feedback
-                    if has_custom_validator and feedback:
-                        # Use validator's feedback message as-is without prepending
-                        error_msg = feedback
-                    else:
-                        # Fallback to generic message
-                        error_msg = feedback or f"Tell the user: Please provide a valid value for {field}."
-                    first_invalid_feedback = (field, error_msg)
-
-        # Handle first invalid field if any
-        if first_invalid_feedback:
-            field, error_msg = first_invalid_feedback
-            # Keep active_question_key pointing to this field so we can re-ask
-            session.active_question_key = field
-            await session.save()
-            await self._queue_directive(visitor, error_msg)
-            return  # Stop here, wait for correction
-
-        # All processed successfully, clear active_question_key
-        session.active_question_key = None
-        await session.save()
-
     def _sort_by_question_order(
         self,
         fields: List[str],
@@ -1399,6 +720,25 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
             QuestionNode if found, None otherwise
         """
+        # Check cache first (stored in session context)
+        if session.context is None:
+            session.context = {}
+        
+        node_cache = session.context.get("_question_node_cache", {})
+        if field in node_cache:
+            cached_node_id = node_cache[field]
+            try:
+                from jvspatial.core import Node
+                cached_node = await Node.get(cached_node_id)
+                if cached_node and isinstance(cached_node, QuestionNode):
+                    return cached_node
+                else:
+                    # Cache entry is stale, remove it
+                    del node_cache[field]
+            except Exception:
+                # Cache entry is invalid, remove it
+                del node_cache[field]
+        
         # Find question config
         question_config = session.get_question_by_name(field)
         if not question_config:
@@ -1835,7 +1175,8 @@ class InterviewInteractAction(InteractAction, ABC):
             logger.warning(f"{self.get_class_name()}: question_index is empty. Define questions in subclass or agent.yaml")
 
         # Build QuestionNode chain
-        await self._build_question_nodes()
+        service = InterviewService(self)
+        await service.build_question_nodes()
 
     async def on_reload(self) -> None:
         """Reload the action - rebuild question nodes if question_index changed."""
@@ -1987,7 +1328,8 @@ class InterviewInteractAction(InteractAction, ABC):
         utterance = visitor.utterance if visitor.utterance else ""
 
         # Unified classification and extraction routine
-        classification_result = await self._classify_and_extract(
+        service = InterviewService(self)
+        classification_result = await service.classify_and_extract(
             session,
             utterance,
             interaction,
@@ -1995,7 +1337,7 @@ class InterviewInteractAction(InteractAction, ABC):
         )
 
         # Generate directive based on state and classification
-        await self._generate_directive(
+        await service.generate_directive(
             session,
             classification_result,
             visitor,
@@ -2099,213 +1441,3 @@ class InterviewInteractAction(InteractAction, ABC):
                 raise
             logger.warning(f"{self.get_class_name()}: Could not get model action: {e}")
             return None
-
-
-def input_handler(question_name: str):
-    """Decorator to register an input handler for a specific question.
-
-    Input handlers process raw user input before validation (e.g., normalize time expressions).
-
-    The decorator registers the handler in a module-level registry.
-    The interview_type is determined from the module where the handler is defined
-    by looking for InterviewInteractAction subclasses in that module.
-
-    Args:
-        question_name: Name of the question (must match 'name' field in question_index)
-
-    Handler Signature:
-        The handler must accept three parameters:
-        - raw_input: str - Raw user input string
-        - session: InterviewSession - Interview session for context
-        - interaction: Interaction - Interaction node for accessing interaction context
-
-    Example:
-        @input_handler('available_times')
-        def check_training_availability(
-            raw_input: str,
-            session: InterviewSession,
-            interaction: Interaction
-        ) -> str:
-            # Process and normalize input
-            # Can access interaction.user_id, interaction.utterance, etc.
-            return processed_input
-    """
-    def decorator(func: Callable) -> Callable:
-        # Store the question name on the function for later lookup
-        func._interview_question_name = question_name  # type: ignore
-        func._interview_handler_type = "input_handler"  # type: ignore
-
-        # Try to determine the interview_type from the module where this function is defined
-        try:
-            module = inspect.getmodule(func)
-            if module:
-                # Look for InterviewInteractAction subclasses in the module
-                for name, obj in vars(module).items():
-                    if (inspect.isclass(obj) and
-                        issubclass(obj, InterviewInteractAction) and
-                        obj is not InterviewInteractAction):
-                        interview_type = obj.__name__
-                        # Register in module-level registry
-                        _input_handler_registry[(interview_type, question_name)] = func
-                        break
-                else:
-                    logger.warning(f"Could not determine interview_type for handler '{func.__name__}' - it will be registered when the class is defined")
-            else:
-                logger.warning(f"Could not get module for handler '{func.__name__}'")
-        except Exception as e:
-            logger.warning(f"Error registering handler '{func.__name__}': {e}")
-
-        return func
-    return decorator
-
-
-def input_validator(question_name: str):
-    """Decorator to register a validator for a specific question.
-
-    Validators validate responses with custom logic.
-
-    The decorator registers the validator in a module-level registry.
-    The interview_type is determined from the module where the validator is defined
-    by looking for InterviewInteractAction subclasses in that module.
-
-    Args:
-        question_name: Name of the question (must match 'name' field in question_index)
-
-    Example:
-        @input_validator('user_email')
-        def validate_email(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-            # Validate email
-            return ValidationStatus.VALID, None
-    """
-    def decorator(func: Callable) -> Callable:
-        # Store the question name on the function for later lookup
-        func._interview_question_name = question_name  # type: ignore
-        func._interview_handler_type = "input_validator"  # type: ignore
-
-        # Try to determine the interview_type from the module where this function is defined
-        try:
-            module = inspect.getmodule(func)
-            if module:
-                # Look for InterviewInteractAction subclasses in the module
-                for name, obj in vars(module).items():
-                    if (inspect.isclass(obj) and
-                        issubclass(obj, InterviewInteractAction) and
-                        obj is not InterviewInteractAction):
-                        interview_type = obj.__name__
-                        # Register in module-level registry
-                        _input_validator_registry[(interview_type, question_name)] = func
-                        break
-                else:
-                    logger.warning(f"Could not determine interview_type for validator '{func.__name__}' - it will be registered when the class is defined")
-            else:
-                logger.warning(f"Could not get module for validator '{func.__name__}'")
-        except Exception as e:
-            logger.warning(f"Error registering validator '{func.__name__}': {e}")
-
-        return func
-    return decorator
-
-
-def input_directive_override(question_name: str):
-    """Decorator to register a directive override for a specific question.
-
-    Directive overrides allow customizing agent responses after a field value is
-    successfully validated and stored. They can replace or append to the default directive.
-
-    The decorator registers the override in a module-level registry.
-    The interview_type is determined from the module where the override is defined
-    by looking for InterviewInteractAction subclasses in that module.
-
-    Args:
-        question_name: Name of the question (must match 'name' field in question_index)
-
-    Handler Signature:
-        The handler must accept five parameters:
-        - field_name: str - Name of the field that was just stored
-        - value: Any - The value that was stored
-        - session: InterviewSession - Interview session for context
-        - interaction: Interaction - Current interaction
-        - visitor: InteractWalker - Walker for context
-
-    Returns:
-        Optional[Union[str, Tuple[str, str]]]:
-        - None: Use default directive (no override)
-        - str: Replace default directive with this string
-        - Tuple[str, str]: First element is mode ("append" or "replace"), second is directive string
-
-    Example:
-        @input_directive_override('user_email')
-        async def custom_email_directive(
-            field_name: str,
-            value: str,
-            session: InterviewSession,
-            interaction: Interaction,
-            visitor: InteractWalker
-        ) -> Optional[Union[str, Tuple[str, str]]]:
-            if '@example.com' in value:
-                return "Tell the user: Thank you for using your work email!"
-            return None  # Use default directive
-    """
-    def decorator(func: Callable) -> Callable:
-        # Store the question name on the function for later lookup
-        func._interview_question_name = question_name  # type: ignore
-        func._interview_handler_type = "input_directive_override"  # type: ignore
-
-        # Try to determine the interview_type from the module where this function is defined
-        try:
-            module = inspect.getmodule(func)
-            if module:
-                # Look for InterviewInteractAction subclasses in the module
-                for name, obj in vars(module).items():
-                    if (inspect.isclass(obj) and
-                        issubclass(obj, InterviewInteractAction) and
-                        obj is not InterviewInteractAction):
-                        interview_type = obj.__name__
-                        # Register in module-level registry
-                        _input_directive_override_registry[(interview_type, question_name)] = func
-                        break
-                else:
-                    logger.warning(f"Could not determine interview_type for directive override '{func.__name__}' - it will be registered when the class is defined")
-            else:
-                logger.warning(f"Could not get module for directive override '{func.__name__}'")
-        except Exception as e:
-            logger.warning(f"Error registering directive override '{func.__name__}': {e}")
-
-        return func
-    return decorator
-
-
-def on_interview_complete(interview_type: str):
-    """Decorator to register a completion handler for a specific interview type.
-
-    Completion handlers are called when an interview session reaches the COMPLETED state.
-    Use this to process collected data, trigger downstream actions, or perform cleanup.
-
-    Args:
-        interview_type: Class name of the InterviewInteractAction (e.g., 'SignupInterviewInteractAction')
-
-    Handler Signature:
-        The handler must accept three parameters:
-        - session: InterviewSession - The completed interview session with all collected responses
-        - visitor: InteractWalker - The walker for accessing context and responding
-        - action: InteractAction - The action instance (use action.respond() to send responses)
-
-    Example:
-        @on_interview_complete('SignupInterviewInteractAction')
-        async def handle_signup_completion(
-            session: InterviewSession,
-            visitor: InteractWalker,
-            action: InteractAction
-        ) -> None:
-            # Process collected data
-            user_name = session.responses.get('user_name')
-            user_email = session.responses.get('user_email')
-            # Send response using action.respond()
-            await action.respond(visitor, directives=["Thank you for signing up!"])
-            # Trigger downstream actions, send notifications, etc.
-    """
-    def decorator(func: Callable) -> Callable:
-        # Register the handler in the module-level registry
-        _completion_handlers[interview_type] = func
-        return func
-    return decorator

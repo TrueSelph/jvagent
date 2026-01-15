@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
 
-from .validation import ValidationStatus
+from .question_branch_evaluator import QuestionBranchEvaluator
+from .enums import ValidationStatus
 
 if TYPE_CHECKING:
     from .interview_session import InterviewSession
@@ -24,7 +25,7 @@ class QuestionNode(Node):
     
     Each QuestionNode represents a single question in the interview flow with:
     - Question text and constraints (stored in state)
-    - Three-tier validation (VALID, VALID_WITH_FLAG, INVALID)
+    - Two-tier validation (VALID, INVALID) with optional feedback messages
     - Required vs optional flags
     - Validation rules embedded in constraints
     - Input handlers and validators coordination
@@ -52,13 +53,11 @@ class QuestionNode(Node):
     def _resolve_callable(self, callable_ref: Any) -> Optional[Any]:
         """Resolve a callable reference (function or string) to a callable object.
         
-        Supports multiple string reference formats:
-        1. Full qualified path: "package.module.function_name"
-        2. Module-qualified: "module_name.function_name" (tries to import module)
-        3. Function name only: "function_name" (searches in sys.modules)
+        Only supports fully qualified paths (package.module.function_name) for reliability.
+        Validates the reference format early and provides clear error messages.
         
         Args:
-            callable_ref: Either a callable object or a string reference
+            callable_ref: Either a callable object or a fully qualified string reference
             
         Returns:
             Resolved callable object, or None if resolution fails
@@ -67,75 +66,62 @@ class QuestionNode(Node):
             return callable_ref
         
         if not isinstance(callable_ref, str):
+            logger.warning(f"QuestionNode: Invalid callable reference type: {type(callable_ref).__name__}. Expected callable or string.")
             return None
         
-        # Try multiple resolution strategies
-        strategies = [
-            # Strategy 1: Full qualified path (e.g., "package.module.function")
-            lambda ref: self._resolve_qualified_path(ref),
-            # Strategy 2: Module.function format (e.g., "module_name.function_name")
-            lambda ref: self._resolve_module_function(ref),
-            # Strategy 3: Function name only - search in loaded modules
-            lambda ref: self._resolve_function_name(ref),
-        ]
+        # Validate format: must be fully qualified path (at least module.function)
+        if "." not in callable_ref:
+            logger.error(
+                f"QuestionNode: Invalid callable reference format: '{callable_ref}'. "
+                f"Must be fully qualified path (e.g., 'package.module.function_name'). "
+                f"Function name only is not supported to avoid conflicts."
+            )
+            return None
         
-        for strategy in strategies:
-            try:
-                result = strategy(callable_ref)
-                if result is not None:
-                    return result
-            except Exception as e:
-                continue
+        # Resolve using fully qualified path only
+        parts = callable_ref.rsplit(".", 1)
+        if len(parts) != 2:
+            logger.error(
+                f"QuestionNode: Invalid callable reference format: '{callable_ref}'. "
+                f"Expected format: 'package.module.function_name'"
+            )
+            return None
         
-        logger.warning(f"QuestionNode: Failed to resolve callable '{callable_ref}' using any strategy")
-        return None
-    
-    def _resolve_qualified_path(self, ref: str) -> Optional[Any]:
-        """Resolve using full qualified path (package.module.function)."""
-        parts = ref.rsplit(".", 1)
-        if len(parts) == 2:
-            module_name, func_name = parts
-            # Try importing the module
+        module_name, func_name = parts
+        
+        try:
+            # Import the module
             module = __import__(module_name, fromlist=[func_name])
-            return getattr(module, func_name, None)
-        return None
-    
-    def _resolve_module_function(self, ref: str) -> Optional[Any]:
-        """Resolve using module.function format, checking sys.modules first."""
-        import sys
-        parts = ref.rsplit(".", 1)
-        if len(parts) == 2:
-            module_name, func_name = parts
-            # Check if module is already loaded
-            if module_name in sys.modules:
-                module = sys.modules[module_name]
-                return getattr(module, func_name, None)
-            # Try importing
-            try:
-                module = __import__(module_name, fromlist=[func_name])
-                return getattr(module, func_name, None)
-            except ImportError:
+            func = getattr(module, func_name, None)
+            
+            if func is None:
+                logger.error(
+                    f"QuestionNode: Function '{func_name}' not found in module '{module_name}'. "
+                    f"Check that the function exists and is exported from the module."
+                )
                 return None
-        return None
-    
-    def _resolve_function_name(self, ref: str) -> Optional[Any]:
-        """Resolve function name by searching in loaded modules."""
-        import sys
-        func_name = ref
-        
-        # Search through loaded modules for the function
-        for module_name, module in sys.modules.items():
-            if module is None:
-                continue
-            try:
-                if hasattr(module, func_name):
-                    func = getattr(module, func_name)
-                    if callable(func) and not isinstance(func, type):
-                        return func
-            except Exception:
-                continue
-        
-        return None
+            
+            if not callable(func):
+                logger.error(
+                    f"QuestionNode: '{callable_ref}' is not callable. "
+                    f"Found {type(func).__name__} instead of a function."
+                )
+                return None
+            
+            return func
+            
+        except ImportError as e:
+            logger.error(
+                f"QuestionNode: Failed to import module '{module_name}' for callable '{callable_ref}': {e}. "
+                f"Ensure the module path is correct and the module is importable."
+            )
+            return None
+        except Exception as e:
+            logger.error(
+                f"QuestionNode: Unexpected error resolving callable '{callable_ref}': {e}",
+                exc_info=True
+            )
+            return None
     
     async def process_input(
         self,
@@ -243,17 +229,7 @@ class QuestionNode(Node):
         Returns:
             True if condition matches, False otherwise
         """
-        if not condition:
-            return False
-        
-        question_name = condition.get("question")
-        expected_value = condition.get("equals")
-        
-        if not question_name or expected_value is None:
-            return False
-        
-        actual_value = session.responses.get(question_name)
-        return actual_value == expected_value
+        return QuestionBranchEvaluator.matches(condition, session)
 
     async def execute(self, walker: Any) -> Optional[str]:
         """Execute question node to check if info is needed and return directive.
@@ -314,8 +290,7 @@ class QuestionNode(Node):
         Returns (validation_status, feedback_message, corrected_value)
         
         Status can be:
-        - VALID: Response meets all constraints, store and continue
-        - VALID_WITH_FLAG: Response is acceptable but needs clarification (e.g., "next Tuesday")
+        - VALID: Response meets all constraints, store and continue. May include optional feedback message for clarification.
         - INVALID: Response doesn't meet constraints, needs correction
         
         Args:
@@ -387,12 +362,12 @@ class QuestionNode(Node):
                     if len(result) == 2:
                         # (status, message) - no correction
                         status, message = result
-                        final_status = ValidationStatus(status) if isinstance(status, str) else status
+                        final_status = self._normalize_validation_status(status)
                         return final_status, message, None
                     elif len(result) == 3:
                         # (status, message, corrected_value) - with correction
                         status, message, corrected_value = result
-                        final_status = ValidationStatus(status) if isinstance(status, str) else status
+                        final_status = self._normalize_validation_status(status)
                         return final_status, message, corrected_value
                     else:
                         logger.warning(f"Validator '{validator.__name__}' returned unexpected tuple length: {len(result)}")
@@ -406,14 +381,52 @@ class QuestionNode(Node):
         
         # Check for ambiguous values that might need clarification
         # This is a heuristic - can be customized per question via ambiguous_patterns in constraints
+        # Returns VALID with optional feedback message (not a separate status)
         ambiguous_patterns = constraints.get("ambiguous_patterns", [])
         if isinstance(value, str):
             value_lower = value.lower()
             for pattern in ambiguous_patterns:
                 if pattern in value_lower:
                     feedback = constraints.get("ambiguous_feedback", "I'd like to clarify this.")
-                    return ValidationStatus.VALID_WITH_FLAG, feedback, None
+                    return ValidationStatus.VALID, feedback, None
         
         # All checks passed
         return ValidationStatus.VALID, None, None
+    
+    def _normalize_validation_status(self, status: Any) -> ValidationStatus:
+        """Normalize validation status, handling legacy VALID_WITH_FLAG.
+        
+        Converts VALID_WITH_FLAG to VALID for backward compatibility.
+        Old validators that return VALID_WITH_FLAG will be treated as VALID.
+        
+        Args:
+            status: Validation status (string, enum, or ValidationStatus)
+            
+        Returns:
+            Normalized ValidationStatus
+        """
+        if isinstance(status, ValidationStatus):
+            # If it's already a ValidationStatus but somehow VALID_WITH_FLAG exists, convert it
+            if status.value == "valid_with_flag":
+                return ValidationStatus.VALID
+            return status
+        
+        if isinstance(status, str):
+            # Handle legacy VALID_WITH_FLAG string
+            if status.lower() in ("valid_with_flag", "valid-with-flag"):
+                logger.warning(
+                    "Validator returned VALID_WITH_FLAG which is deprecated. "
+                    "Return VALID with a feedback message instead."
+                )
+                return ValidationStatus.VALID
+            
+            try:
+                return ValidationStatus(status)
+            except ValueError:
+                logger.warning(f"Invalid validation status: {status}. Defaulting to INVALID.")
+                return ValidationStatus.INVALID
+        
+        # Unknown type, default to INVALID
+        logger.warning(f"Invalid validation status type: {type(status).__name__}. Defaulting to INVALID.")
+        return ValidationStatus.INVALID
 

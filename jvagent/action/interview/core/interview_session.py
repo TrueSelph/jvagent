@@ -1,12 +1,15 @@
 """InterviewSession node for managing interview state."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
 
-from .validation import InterviewState, ValidationStatus
+from .enums import InterviewState, ValidationStatus
+
+if TYPE_CHECKING:
+    from .question_walker import QuestionWalker
 
 
 class InterviewSession(Node):
@@ -52,7 +55,7 @@ class InterviewSession(Node):
     # Validation tracking
     validation_results: Dict[str, str] = attribute(
         default_factory=dict,
-        description="Validation status per question (VALID/VALID_WITH_FLAG/INVALID)"
+        description="Validation status per question (VALID/INVALID)"
     )
     
     # Context storage for arbitrary data (user-specific state)
@@ -107,11 +110,46 @@ class InterviewSession(Node):
             if q.get("name") and q.get("required", False)
         ]
     
-    def has_all_required_answers(self) -> bool:
-        """Check if all required questions have been answered."""
-        required = set(self.get_required_questions())
+    async def has_all_required_answers(self, question_walker: Optional["QuestionWalker"] = None) -> bool:
+        """Check if all required questions have been answered.
+        
+        If question_walker is provided, only checks required questions that are
+        reachable on the current conditional path. Otherwise, checks all required
+        questions (backward compatible behavior).
+        
+        Args:
+            question_walker: Optional QuestionWalker to determine reachable questions
+            
+        Returns:
+            True if all required (and reachable) questions have been answered
+        """
+        if question_walker:
+            # Only check required questions on the active conditional path
+            required = await question_walker.get_reachable_required_questions(self)
+        else:
+            # Backward compatible: check all required questions
+            required = set(self.get_required_questions())
+        
         answered = set(self.get_answered_questions())
         return required.issubset(answered)
+    
+    async def get_required_questions_on_path(
+        self,
+        question_walker: "QuestionWalker"
+    ) -> List[str]:
+        """Get list of required question keys that are reachable on the current conditional path.
+        
+        Traverses the question graph from root following active conditional branches
+        and returns only required questions that are reachable given current responses.
+        
+        Args:
+            question_walker: QuestionWalker instance to determine reachable questions
+            
+        Returns:
+            List of required question names that are reachable on the current path
+        """
+        reachable_required = await question_walker.get_reachable_required_questions(self)
+        return list(reachable_required)
     
     def get_response(self, question_key: str) -> Any:
         """Get response for a specific question."""

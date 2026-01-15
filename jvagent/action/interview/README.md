@@ -17,10 +17,10 @@ The Interview Action provides a reusable way to collect responses from users in 
 - **Unified Classification System**: Single LLM call detects intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE) and extracts field values
 - **DSPy Integration**: Optional DSPy-based classification with typed signatures, optimizable with teleprompters
 - **State-Aware Classification**: Enhanced rules for accurate intent detection (e.g., "no" in REVIEW state = UPDATE, not CONFIRMATION)
-- **Unified Orchestrator**: All state logic and directive generation handled within the main InterviewInteractAction class
+- **Service Layer Architecture**: Modular design with specialized service classes for classification, state handling, and response processing
 - **Logical State Management**: Four distinct states (ACTIVE, REVIEW, COMPLETED, CANCELLED) with clear transitions
 - **Same-Interaction State Transitions**: State transitions happen within the same interaction when appropriate
-- **Three-Tier Validation**: VALID, VALID_WITH_FLAG, and INVALID response validation
+- **Two-Tier Validation**: VALID and INVALID response validation using `ValidationStatus` enum (VALID can include optional feedback messages for clarification)
 - **Custom Handlers & Validators**: Process input and validate responses with custom logic
 - **Completion Handlers**: Register completion handlers via `@on_interview_complete` decorator
 - **Question Node Rebuilding**: Automatically rebuilds question nodes when `question_index` changes
@@ -63,14 +63,16 @@ The abstract base class that orchestrates the complete interview flow. **Must be
 **Key Methods:**
 - `on_register()`: Builds question node chain from `question_index`
 - `on_reload()`: Rebuilds question nodes if `question_index` changed
-- `execute()`: Loads/creates session, classifies intent, and generates directives
-- `_classify_and_extract()`: Unified classification and extraction using single LLM call
-- `_generate_directive()`: Routes to state-specific directive generation
-- `_generate_active_directive()`: Handles ACTIVE state (question flow, updates)
-- `_generate_review_directive()`: Handles REVIEW state (summary, confirmation, edits)
-- `_generate_completed_directive()`: Handles COMPLETED state (calls completion handlers)
-- `_generate_cancelled_directive()`: Handles CANCELLED state (cleanup)
-- `_build_question_nodes()`: Builds QuestionNode chain from `question_index`
+- `execute()`: Loads/creates session, classifies intent, and generates directives via `InterviewService`
+
+**Service Layer Architecture:**
+The interview system uses a service layer pattern with specialized components:
+- `InterviewService`: Orchestrates classification, state handling, and directive generation
+- `StateHandler`: Generates state-specific directives (ACTIVE, REVIEW, COMPLETED, CANCELLED)
+- `ResponseProcessor`: Processes, validates, and stores user responses
+- `InterviewClassifier`: Handles intent classification and field extraction
+- `QuestionBuilder`: Builds QuestionNode tree from `question_index`
+- `InterviewStateMachine`: Manages state transitions with validation
 
 **Unified Classification:**
 The system uses a single unified prompt (`INTERVIEW_PROMPT_TEMPLATE`) that:
@@ -98,7 +100,7 @@ Persistent node that stores:
 #### 3. QuestionNode
 Represents individual interview questions with:
 - Question text and constraints
-- Three-tier validation logic
+- Two-tier validation logic (VALID/INVALID)
 - Custom input handlers (`process_input()`)
 - Custom validators
 - Required vs optional flags
@@ -117,7 +119,33 @@ Specialized edge connecting QuestionNodes with optional condition metadata:
 - Stores condition information for conditional traversal
 - Condition format: `{"question": "question_name", "equals": "value"}`
 
-#### 6. InteractWalker
+#### 6. QuestionBranchEvaluator
+Provides unified condition matching logic for conditional branching:
+- Static utility for evaluating branch conditions
+- Used by QuestionWalker for tree traversal
+
+#### 7. InterviewService
+Service layer that orchestrates interview components:
+- Coordinates between classification, state handling, and response processing
+- Provides unified interface for interview operations
+
+#### 8. StateHandler
+Encapsulates state-specific directive generation logic:
+- Generates directives based on current interview state
+- Handles state transitions and flow control
+
+#### 9. ResponseProcessor
+Consolidates logic for processing, validating, and storing user responses:
+- Processes extracted field values
+- Handles directive overrides (append and replace modes)
+- Manages field validation and storage
+
+#### 10. InterviewClassifier
+Handles intent classification and field extraction:
+- Unified LLM-based classification and extraction
+- Supports both legacy prompt-based and DSPy-based backends
+
+#### 11. InteractWalker
 Standard walker used throughout. The interview action receives session via conversation queries.
 
 ### Standard Anchors
@@ -182,18 +210,27 @@ The final anchors list will include:
 
 ```
 interview/
-├── __init__.py                    # Package initialization
-├── interview_interact_action.py   # Abstract base class (unified orchestrator)
+├── __init__.py                    # Package initialization (exports decorators)
+├── interview_interact_action.py   # Abstract base class (orchestrator)
+├── decorators.py                  # Decorator functions (@input_handler, @input_validator, etc.)
 ├── prompts.py                     # Prompt templates
 ├── info.yaml                      # Action metadata
 ├── README.md                      # This file
 ├── core/
 │   ├── __init__.py
 │   ├── interview_session.py       # InterviewSession Node
+│   ├── interview_service.py       # InterviewService (orchestration layer)
+│   ├── state_handlers.py          # StateHandler (state-specific directives)
+│   ├── response_processor.py      # ResponseProcessor (response processing)
+│   ├── classification.py          # InterviewClassifier (intent classification)
+│   ├── question_builder.py        # QuestionBuilder (question tree construction)
 │   ├── question_node.py           # QuestionNode
 │   ├── question_walker.py         # QuestionWalker for tree traversal
 │   ├── question_edge.py           # QuestionEdge with conditions
-│   └── validation.py              # Validation enums
+│   ├── question_branch_evaluator.py  # QuestionBranchEvaluator (condition matching)
+│   ├── state_machine.py           # InterviewStateMachine (state transitions)
+│   ├── context.py                 # InterviewContext (typed context wrapper)
+│   └── enums.py                   # InterviewState, ValidationStatus, Intent, ContextKey
 └── dspy/
     ├── __init__.py                 # DSPy package exports
     ├── signatures.py               # DSPy signatures for classification
@@ -205,7 +242,7 @@ interview/
 ### Basic Example: Extending InterviewInteractAction
 
 ```python
-from jvagent.action.interview.interview_interact_action import InterviewInteractAction
+from jvagent.action.interview import InterviewInteractAction
 from jvspatial.core.annotations import attribute
 from typing import Any, Dict, List
 
@@ -305,7 +342,7 @@ actions:
   - **pattern**: Regex pattern for validation
   - **input_handler**: String reference to function that processes raw input before validation (or use `@input_handler` decorator)
   - **input_validator**: String reference to function that validates responses (or use `@input_validator` decorator)
-  - **ambiguous_patterns**: Patterns that trigger VALID_WITH_FLAG
+  - **ambiguous_patterns**: Patterns that trigger VALID status with optional feedback message for clarification
 - **required**: Whether the question is required (default: False)
 - **branches**: Optional list of conditional branches (see Tree-Based Questions below)
 - **default_next**: Optional fallback question name if no branch conditions match
@@ -441,7 +478,7 @@ Process raw input before validation (e.g., normalize time expressions):
 The cleanest way to register handlers is using the `@input_handler` decorator:
 
 ```python
-from jvagent.action.interview.interview_interact_action import (
+from jvagent.action.interview import (
     InterviewInteractAction,
     input_handler,
 )
@@ -504,10 +541,11 @@ Validate responses with custom logic:
 The cleanest way to register validators is using the `@input_validator` decorator:
 
 ```python
-from jvagent.action.interview.interview_interact_action import (
+from jvagent.action.interview import (
     InterviewInteractAction,
     input_validator,
 )
+from jvagent.action.interview.core.enums import ValidationStatus
 
 @input_validator('user_email')
 def validate_email_domain(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
@@ -572,7 +610,7 @@ Customize agent responses after a field value is successfully validated and stor
 The cleanest way to register directive overrides is using the `@input_directive_override` decorator:
 
 ```python
-from jvagent.action.interview.interview_interact_action import (
+from jvagent.action.interview import (
     InterviewInteractAction,
     input_directive_override,
 )
@@ -638,7 +676,9 @@ async def append_name_directive(
     visitor: InteractWalker
 ) -> Optional[Union[str, Tuple[str, str]]]:
     """Append custom message after name is collected."""
-    # Append to default directive
+    # Append mode: custom directive is appended after the next question directive
+    # If there's a next question, it's queued first, then the custom directive
+    # If there's no next question (interview complete), only the custom directive is queued
     return ("append", f"Tell the user: Nice to meet you, {value}!")
 
 @input_directive_override('user_email')
@@ -650,23 +690,29 @@ async def replace_email_directive(
     visitor: InteractWalker
 ) -> Optional[Union[str, Tuple[str, str]]]:
     """Replace default directive for email."""
-    # Explicitly replace default directive
+    # Replace mode: only the custom directive is queued, no next question directive
     return ("replace", "Tell the user: Your email has been recorded. We'll send you updates soon!")
 ```
+
+**Append Mode Behavior:**
+- **With next question**: Next question directive is queued first, then the custom directive(s)
+- **Without next question**: Only the custom directive(s) are queued (interview may be complete)
+- Custom directives are **always** queued in append mode, regardless of whether a next question exists
 
 **When Overrides Are Triggered:**
 
 Directive overrides are checked:
-- After a field value is successfully validated and stored (VALID or VALID_WITH_FLAG status)
+- After a field value is successfully validated and stored (VALID status)
 - In both SUBMISSION flow (when answering questions) and UPDATE flow (when updating existing values)
 - Before the default directive is sent to the user
 
 **Important Notes:**
 
 - Override functions can be either sync or async
-- If an override returns a directive, it is sent immediately and processing stops for that field
 - Overrides only apply after successful validation - invalid values won't trigger overrides
 - Multiple fields can have overrides - each is checked independently after its value is stored
+- In append mode, custom directives are always queued, even if there's no next question
+- In replace mode, only the custom directive is queued and the normal flow is prevented from finding the next question
 
 ## Unified Classification System
 
@@ -697,25 +743,28 @@ class MyInterviewAction(InterviewInteractAction):
 
 ### Intent Detection
 
-The system detects five intent types with state-aware rules:
+The system detects intent types using the `Intent` enum with state-aware rules:
 
-- **CANCELLATION**: User wants to cancel/stop the interview
+- **Intent.CANCELLATION**: User wants to cancel/stop the interview
   - Highest priority, overrides all other intents
   - Can occur in any state
   
-- **CONFIRMATION**: User confirms/approves information (only in REVIEW state)
+- **Intent.CONFIRMATION**: User confirms/approves information (only in REVIEW state)
   - Only applies to positive affirmations ("yes", "correct", "looks good", etc.)
   - **CRITICAL**: "No" is NOT a CONFIRMATION indicator
   
-- **UPDATE**: User wants to change/update a previously answered field
+- **Intent.UPDATE**: User wants to change/update a previously answered field
   - **State-Aware Rule**: In REVIEW state, "no" (rejecting confirmation) = UPDATE
   - When field is null, system shows summary and asks which field to change
   - Uses interpretation field when available for better context
   
-- **SUBMISSION**: User is providing answers to unanswered questions
+- **Intent.SUBMISSION**: User is providing answers to unanswered questions
   - Extracts field values from message and conversation history
   
-- **NONE**: No clear intent or conversational filler
+- **Intent.DECLINE**: User declines to answer a non-required question
+  - Stores "n/a" for declined optional fields
+  
+- **Intent.NONE**: No clear intent or conversational filler
 
 ### State-Aware Classification Rules
 
@@ -760,20 +809,19 @@ State transitions happen within the same interaction when appropriate:
 
 ## Validation System
 
-### Three-Tier Validation
+### Two-Tier Validation
 
-1. **VALID**: Response meets all constraints
+The validation system uses the `ValidationStatus` enum with two statuses:
+
+1. **ValidationStatus.VALID**: Response meets all constraints
    - Stored immediately
    - System moves to next question
+   - Can optionally include a feedback message for clarification (e.g., for ambiguous values like "next Tuesday")
+   - Example: "next Tuesday" → stores value and optionally asks for specific time via feedback
 
-2. **VALID_WITH_FLAG**: Minor ambiguity but acceptable
-   - Stored immediately
-   - System asks clarifying follow-up
-   - Example: "next Tuesday" → asks for specific time
-
-3. **INVALID**: Response doesn't meet constraints
+2. **ValidationStatus.INVALID**: Response doesn't meet constraints
    - Not stored
-   - System provides feedback and re-asks
+   - System provides feedback and re-asks the question
 
 ## Data Handling Patterns
 
@@ -782,7 +830,7 @@ State transitions happen within the same interaction when appropriate:
 Use the `@on_interview_complete` decorator to register a completion handler:
 
 ```python
-from jvagent.action.interview.interview_interact_action import (
+from jvagent.action.interview import (
     InterviewInteractAction,
     on_interview_complete,
 )
@@ -904,7 +952,7 @@ When `question_index` changes (via `on_reload()`), question nodes are automatica
 Register a completion handler using the decorator:
 
 ```python
-from jvagent.action.interview.interview_interact_action import (
+from jvagent.action.interview import (
     InterviewInteractAction,
     on_interview_complete,
 )
@@ -980,7 +1028,7 @@ Each maintains its own sessions via `interview_type` identification.
 ### Example 1: Basic Registration Interview
 
 ```python
-from jvagent.action.interview.interview_interact_action import InterviewInteractAction
+from jvagent.action.interview import InterviewInteractAction
 from jvspatial.core.annotations import attribute
 from typing import Any, Dict, List
 
@@ -1042,7 +1090,7 @@ class RegistrationInterviewAction(InterviewInteractAction):
 ### Example 2: Onboarding with Custom Completion Handler
 
 ```python
-from jvagent.action.interview.interview_interact_action import (
+from jvagent.action.interview import (
     InterviewInteractAction,
     on_interview_complete,
 )
@@ -1134,9 +1182,9 @@ class OnboardingInterviewAction(InterviewInteractAction):
 ```python
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
-from jvagent.action.interview.interview_interact_action import InterviewInteractAction
+from jvagent.action.interview import InterviewInteractAction
 from jvagent.action.interview.core.interview_session import InterviewSession
-from jvagent.action.interview.core.validation import InterviewState
+from jvagent.action.interview.core.enums import InterviewState
 from jvspatial.core.annotations import attribute
 import logging
 
@@ -1245,7 +1293,7 @@ See `examples/jvagent_app/agents/jvagent/example_agent/actions/jvagent/signup_in
 Enable DSPy-based classification for optimizable and evaluable classification:
 
 ```python
-from jvagent.action.interview.interview_interact_action import InterviewInteractAction
+from jvagent.action.interview import InterviewInteractAction
 from jvspatial.core.annotations import attribute
 
 class MyInterviewAction(InterviewInteractAction):

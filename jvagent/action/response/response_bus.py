@@ -349,12 +349,19 @@ class ResponseBus:
             aggregated_response = streamed_content
 
         # Update interaction node with aggregated response (persist ad hoc aggregation without losing main response).
+        # Only update if the response actually changed to avoid unnecessary saves
+        response_changed = False
         if aggregated_response:
-            interaction.set_response(aggregated_response)
+            response_changed = interaction.set_response(aggregated_response)
         
-        # Add observability metrics to interaction
+        # Add observability metrics to interaction (only if changed)
+        observability_changed = False
         if observability_events and hasattr(interaction, "observability_metrics"):
-            interaction.observability_metrics = observability_events
+            # Only update if observability_metrics actually changed
+            current_metrics = getattr(interaction, "observability_metrics", None)
+            if current_metrics != observability_events:
+                interaction.observability_metrics = observability_events
+                observability_changed = True
         
         # Publish a final message (at most once) for subscribers.
         if not saw_final_message:

@@ -64,6 +64,23 @@ class ResponseMessage(Object):
         """Mark the message as delivered."""
         self.delivered = True
 
+    async def save(self) -> "ResponseMessage":
+        """Override save() to prevent ResponseMessage from being persisted.
+        
+        ResponseMessage objects are ephemeral and should never be saved to the database.
+        They are only stored in memory within the ResponseBus session queues.
+        
+        Returns:
+            Self (for chaining)
+        
+        Raises:
+            RuntimeError: Always raises, as ResponseMessage should never be saved
+        """
+        raise RuntimeError(
+            "ResponseMessage objects are ephemeral and cannot be saved to the database. "
+            "They are only stored in memory within the ResponseBus session queues."
+        )
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert message to dictionary format.
         

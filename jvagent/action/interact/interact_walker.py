@@ -482,8 +482,9 @@ class InteractWalker(Walker):
         # Filter out empty directives before calling bulk method
         valid_directives = [d for d in directives if d]
         if valid_directives:
-            self.interaction.add_directives(valid_directives, action_name)
-            await self.interaction.save()
+            # Only save if directives were actually added (not duplicates)
+            if self.interaction.add_directives(valid_directives, action_name):
+                await self.interaction.save()
 
     async def add_directive(self, directive: str) -> None:
         """Add a directive to the interaction with current action name.
@@ -519,8 +520,9 @@ class InteractWalker(Walker):
             raise RuntimeError("add_event() must be called from within InteractAction.execute()")
 
         action_name = self._current_action.get_class_name()
-        self.interaction.add_event(event, action_name)
-        await self.interaction.save()
+        # Only save if event was actually added (not invalid)
+        if self.interaction.add_event(event, action_name):
+            await self.interaction.save()
 
     async def add_parameters(self, parameters: List[Dict[str, Any]]) -> None:
         """Add multiple parameters to the interaction with current action name.
