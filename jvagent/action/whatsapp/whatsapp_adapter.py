@@ -16,37 +16,33 @@ class WhatsAppAdapter(ChannelAdapter):
     This adapter subscribes to the response bus and sends adhoc messages
     to WhatsApp via the WhatsApp API.
 
-    Example usage:
-        from jvagent.core.app import App
-        app = await App.get()
-        bus = await app.get_response_bus()
-        adapter = WhatsAppAdapter(
-            channel="whatsapp",
-            api_url="https://api.whatsapp.com/v1/messages",
-            api_key="your_api_key"
-        )
-        await adapter.subscribe_to_bus(bus)
-        await adapter.subscribe_to_session(session_id, receive_chunks=False)
+    This adapter is automatically created and registered by WhatsAppAction
+    in its on_register() method. Messages published with channel="whatsapp"
+    are automatically delivered to this adapter.
+
+    Example usage in action:
+        class WhatsAppAction(Action):
+            async def on_register(self):
+                adapter = WhatsAppAdapter(channel="whatsapp", action=self)
+                await adapter.initialize()
+                self._channel_adapter = adapter
     """
 
     def __init__(
         self,
         channel: str = "whatsapp",
-        api_url: Optional[str] = None,
-        api_key: Optional[str] = None,
+        action: Any = None,
         response_bus: Optional[ResponseBus] = None,
     ):
         """Initialize WhatsApp adapter.
 
         Args:
             channel: Channel name (default: "whatsapp")
-            api_url: WhatsApp API URL
-            api_key: WhatsApp API key
+            action: WhatsAppAction instance
             response_bus: Optional ResponseBus instance
         """
         super().__init__(channel, response_bus)
-        self.api_url = api_url
-        self.api_key = api_key
+        self.action = action
 
     async def handle_message(self, message: ResponseMessage) -> None:
         """Handle incoming message from response bus.
@@ -105,12 +101,18 @@ class WhatsAppAdapter(ChannelAdapter):
             f"WhatsAppAdapter: send_to_destination - message_content={message.content[:100] if message.content else None}, "
             f"metadata={message.metadata}"
         )
+        api_url = self.action.api_url if self.action else None
+        api_key = self.action.api_key if self.action else None
         logger.warning(
-            f"WhatsAppAdapter: send_to_destination - api_url={self.api_url}, api_key_configured={bool(self.api_key)}"
+            f"WhatsAppAdapter: send_to_destination - api_url={api_url}, api_key_configured={bool(api_key)}"
         )
         
+        if not self.action:
+            logger.warning("WhatsAppAdapter: Cannot send - no action instance")
+            return False
+        
         # TESTING: Comment out actual implementation
-        # if not self.api_url or not self.api_key:
+        # if not api_url or not api_key:
         #     logger.warning(
         #         "WhatsAppAdapter: Cannot send - api_url or api_key not configured"
         #     )

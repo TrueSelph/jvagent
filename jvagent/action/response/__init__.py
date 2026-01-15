@@ -15,13 +15,11 @@ from jvagent.action.response.streaming import (
     format_sse_chunk,
     stream_messages,
 )
-from jvagent.action.response.whatsapp_adapter import WhatsAppAdapter
 
 __all__ = [
     "ResponseMessage",
     "ResponseBus",
     "ChannelAdapter",
-    "WhatsAppAdapter",
     "create_sse_response",
     "format_sse_chunk",
     "stream_messages",

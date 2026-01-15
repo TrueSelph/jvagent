@@ -9,7 +9,7 @@ from .whatsapp_modules.wppconnect import WPPConnectAPI
 from .whatsapp_modules.wwebjs_api import WWebJSAPI
 
 
-class Whatsapp(Action):
+class WhatsAppAction(Action):
     """Action for WhatsApp integration using multiple providers."""
 
     provider: str = attribute(
@@ -43,8 +43,19 @@ class Whatsapp(Action):
     )
     
     async def on_register(self) -> None:
-        """Called when action is registered."""
-        pass
+        """Called when action is registered.
+        
+        Creates and initializes the WhatsApp channel adapter for automatic
+        message delivery via the response bus.
+        """
+        # Create WhatsAppAdapter instance
+        adapter = WhatsAppAdapter(action=self)
+        
+        # Initialize the adapter (gets ResponseBus and registers itself)
+        await adapter.initialize()
+        
+        # Store adapter instance for reference
+        self._channel_adapter = adapter
 
     async def on_enable(self) -> None:
         """Called when action is enabled."""

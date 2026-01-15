@@ -5,11 +5,15 @@ import logging
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
 from jvagent.action.response.message import ResponseMessage
 
 logger = logging.getLogger(__name__)
+
+# Forward declaration for type hints
+if TYPE_CHECKING:
+    from jvagent.action.response.channel_adapter import ChannelAdapter
 
 
 class ResponseBus:
@@ -52,6 +56,9 @@ class ResponseBus:
         self._accumulation_buffers: Dict[str, Dict[str, Any]] = {}
         self._observability_buffers: Dict[str, List[Dict[str, Any]]] = {}  # interaction_id -> events
         self._buffer_timestamps: Dict[str, float] = {}  # interaction_id -> creation time for TTL cleanup
+        
+        # Channel adapter registry: maps channel name -> list of adapter instances
+        self._channel_adapters: Dict[str, List[Any]] = {}  # channel -> list of ChannelAdapter instances
         
         # Configuration
         self._max_session_queue_size = 1000  # Bounded storage per session
@@ -128,6 +135,18 @@ class ResponseBus:
             message_kwargs["id"] = actual_message_id
         
         message = ResponseMessage(**message_kwargs)
+
+        # Auto-subscribe channel adapters for this channel/session (lazy subscription)
+        if channel in self._channel_adapters:
+            for adapter in self._channel_adapters[channel]:
+                if session_id not in adapter._subscribed_sessions:
+                    try:
+                        await adapter.subscribe_to_session(session_id, receive_chunks=False)
+                    except Exception as e:
+                        logger.error(
+                            f"Error auto-subscribing channel adapter {adapter.channel} to session {session_id}: {e}",
+                            exc_info=True,
+                        )
 
         # Add to ephemeral session queue (bounded storage)
         if session_id not in self._session_queues:
@@ -458,4 +477,29 @@ class ResponseBus:
             self._message_buffers.pop(interaction_id, None)
             self._observability_buffers.pop(interaction_id, None)
             self._buffer_timestamps.pop(interaction_id, None)
+
+    async def register_channel_adapter(self, adapter: Any) -> None:
+        """Register a channel adapter with the response bus.
+
+        Channel adapters are automatically subscribed to sessions when messages
+        are published for their channel (lazy subscription).
+
+        Args:
+            adapter: ChannelAdapter instance to register
+        """
+        if not hasattr(adapter, 'channel'):
+            logger.warning(f"Adapter {adapter} does not have a channel attribute, skipping registration")
+            return
+        
+        channel = adapter.channel
+        if channel not in self._channel_adapters:
+            self._channel_adapters[channel] = []
+        
+        # Prevent duplicate registrations
+        if adapter not in self._channel_adapters[channel]:
+            self._channel_adapters[channel].append(adapter)
+            logger.debug(f"Registered channel adapter for channel '{channel}'")
+        else:
+            logger.debug(f"Channel adapter for channel '{channel}' already registered")
+
 

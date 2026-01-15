@@ -11,7 +11,7 @@ from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
 from jvagent.action.interact.response_builder import build_interact_response
 
 
-from .whatsapp import Whatsapp
+from .whatsapp_action import WhatsAppAction
 from jvagent.action.response.message import ResponseMessage
 from jvagent.memory.conversation import Conversation
 
@@ -281,8 +281,8 @@ async def whatsapp_send_message(
     message: str,
 ) -> Dict[str, Any]:
     """Send a WhatsApp message via a specific WhatsApp action."""
-    action = await Whatsapp.get(action_id)
-    if not action or not isinstance(action, Whatsapp):
+    action = await WhatsAppAction.get(action_id)
+    if not action or not isinstance(action, WhatsAppAction):
         raise ResourceNotFoundError(f"WhatsApp action not found: {action_id}")
 
     result = await action.send_message(to, message)
