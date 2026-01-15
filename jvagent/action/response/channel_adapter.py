@@ -16,9 +16,25 @@ class ChannelAdapter(ABC):
     Channel adapters receive messages from the response bus and deliver them
     to external destinations (WhatsApp, web, etc.).
 
-    Subclasses should implement:
-    - subscribe_to_bus(): Subscribe to response bus
-    - handle_message(): Process incoming messages
+    The adapter system provides automatic message delivery:
+    - Adapters register themselves with ResponseBus via initialize()
+    - ResponseBus automatically subscribes adapters to sessions when messages
+      are published for their channel (lazy subscription)
+    - No manual wiring required in InteractWalker or elsewhere
+
+    Usage:
+        1. Create adapter instance in your Action's on_register() method
+        2. Call await adapter.initialize() to register with ResponseBus
+        3. Messages published with matching channel are automatically delivered
+
+    Example:
+        class MyAction(Action):
+            async def on_register(self):
+                adapter = MyChannelAdapter(channel="mychannel", action=self)
+                await adapter.initialize()
+
+    Subclasses must implement:
+    - handle_message(): Process incoming messages from response bus
     - send_to_destination(): Send message to external API
     """
 
@@ -27,11 +43,12 @@ class ChannelAdapter(ABC):
 
         Args:
             channel: Channel name this adapter handles (e.g., "whatsapp", "web")
-            response_bus: Optional ResponseBus instance (can be set later)
+            response_bus: Optional ResponseBus instance (can be set later via initialize())
         """
         self.channel = channel
         self.response_bus = response_bus
         self._subscribed_sessions: set = set()
+        self._initialized: bool = False
 
     async def subscribe_to_bus(self, response_bus: ResponseBus) -> None:
         """Subscribe to response bus for message delivery.
@@ -40,6 +57,40 @@ class ChannelAdapter(ABC):
             response_bus: ResponseBus instance to subscribe to
         """
         self.response_bus = response_bus
+
+    async def initialize(self) -> None:
+        """Initialize the channel adapter by getting ResponseBus and registering itself.
+
+        This method should be called after instantiation to:
+        1. Get the ResponseBus instance from App
+        2. Subscribe to the response bus
+        3. Register itself with the response bus for automatic session subscription
+
+        This is typically called from an action's on_register() method.
+        """
+        if self._initialized:
+            return
+        
+        # Get ResponseBus from App
+        try:
+            from jvagent.core.app import App
+            app = await App.get()
+            if app:
+                response_bus = await app.get_response_bus()
+                if response_bus:
+                    await self.subscribe_to_bus(response_bus)
+                    await response_bus.register_channel_adapter(self)
+                    self._initialized = True
+                    logger.info(f"ChannelAdapter for channel '{self.channel}' initialized and registered")
+                else:
+                    logger.warning(f"ChannelAdapter for channel '{self.channel}': ResponseBus not available")
+            else:
+                logger.warning(f"ChannelAdapter for channel '{self.channel}': App not available")
+        except Exception as e:
+            logger.error(
+                f"Error initializing ChannelAdapter for channel '{self.channel}': {e}",
+                exc_info=True,
+            )
 
     async def subscribe_to_session(
         self, session_id: str, receive_chunks: bool = False

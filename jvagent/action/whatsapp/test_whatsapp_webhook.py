@@ -45,14 +45,14 @@ if __name__ == "__main__":
 
 
     payload = {
-        "body": "Hello bot",
+        "body": "Hello bot. What is the meaning of life?",
         "from": "5926001234",
         "to": "5926001235",
         "name": "John Doe",
     }
 
     result = test_whatsapp_webhook(
-        "n.Agent.e7b7335fcdb0408b8deeb4a1",
+        "n.Agent.9a80784867374a9498f2088c",
         # "n.Whatsapp.64e6fcd7e8524704acf91745",
         payload=payload
     )
