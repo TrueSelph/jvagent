@@ -166,7 +166,9 @@ async def whatsapp_interact_webhook(request: Request, agent_id: str) -> Dict[str
     """WhatsApp Interact Webhook.
     
     Processes incoming WhatsApp messages and triggers an interaction via InteractWalker.
+    Returns immediately with 200 OK and processes the interaction asynchronously.
     """
+    import asyncio
     from jvagent.core.agent import Agent
     from jvagent.action.interact.interact_walker import InteractWalker
     from jvagent.action.interact.response_builder import build_interact_response
@@ -198,30 +200,44 @@ async def whatsapp_interact_webhook(request: Request, agent_id: str) -> Dict[str
             details={"agent_id": agent_id},
         )
 
-
-    convo_obj = await Conversation.find_one({"context.user_id": data.get("from")})
+    # Return immediately with 200 OK
+    response = {"status": "received"}
     
-    if convo_obj and getattr(convo_obj, "session_id", None):
-        walker = InteractWalker(
-            agent_id=agent_id,
-            utterance=utterance.strip(),
-            channel="whatsapp",
-            data=data or {},
-            session_id=convo_obj.session_id,
-            stream=False,
-        )
-    else:
-        walker = InteractWalker(
-            agent_id=agent_id,
-            utterance=utterance.strip(),
-            channel="whatsapp",
-            data=data or {},
-            user_id=data.get("from"),
-            stream=False,
-        )
-    await walker.spawn(agent)
+    # Process interaction asynchronously in background
+    async def process_interaction():
+        """Process the interaction in the background."""
+        try:
+            convo_obj = await Conversation.find_one({"context.user_id": data.get("from")})
+            
+            if convo_obj and getattr(convo_obj, "session_id", None):
+                walker = InteractWalker(
+                    agent_id=agent_id,
+                    utterance=utterance.strip(),
+                    channel="whatsapp",
+                    data=data or {},
+                    session_id=convo_obj.session_id,
+                    stream=False,
+                )
+            else:
+                walker = InteractWalker(
+                    agent_id=agent_id,
+                    utterance=utterance.strip(),
+                    channel="whatsapp",
+                    data=data or {},
+                    user_id=data.get("from"),
+                    stream=False,
+                )
+            await walker.spawn(agent)
+        except Exception as e:
+            logger.error(
+                f"Error processing WhatsApp interaction for agent {agent_id}: {e}",
+                exc_info=True,
+            )
     
-    return {"status": "received"}
+    # Start background task
+    asyncio.create_task(process_interaction())
+    
+    return response
     # # Get interaction result
     # interaction = walker.interaction
     # report = await walker.get_report()
