@@ -7,7 +7,7 @@ separation of concerns and maintainability.
 import json
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional, Set, Tuple
 
 from ..foundation.enums import Intent, InterviewState
 from ..session.interview_session import InterviewSession
@@ -48,14 +48,68 @@ class ClassificationHandler:
         """
         self.action = action
     
+    def extract_data_input_values(
+        self,
+        session: InterviewSession,
+        visitor: "InteractWalker"
+    ) -> Tuple[Dict[str, Any], Set[str]]:
+        """Extract values from visitor.data for fields with data_input_field configured.
+        
+        Scans question_graph for fields with data_input_field in constraints and checks
+        visitor.data dictionary for matching keys. Returns both the extracted values
+        and the set of field names that have data_input_field (for exclusion from LLM).
+        
+        Args:
+            session: Interview session
+            visitor: InteractWalker with data property
+            
+        Returns:
+            Tuple of (extracted_values_dict, excluded_field_names_set):
+            - extracted_values_dict: Maps question names to values found in visitor.data
+            - excluded_field_names_set: Set of question names that have data_input_field
+        """
+        extracted_values = {}
+        excluded_fields = set()
+        
+        # Get question graph from action
+        question_graph = self.action._get_question_graph()
+        
+        # Check visitor.data exists and is a dict
+        if not hasattr(visitor, 'data') or not isinstance(visitor.data, dict):
+            return extracted_values, excluded_fields
+        
+        # Scan question graph for data_input_field entries
+        for question_config in question_graph:
+            question_name = question_config.get("name")
+            if not question_name:
+                continue
+            
+            constraints = question_config.get("constraints", {})
+            data_input_field = constraints.get("data_input_field")
+            
+            if data_input_field:
+                # This field should be excluded from LLM extraction
+                excluded_fields.add(question_name)
+                
+                # Check if the data_input_field key exists in visitor.data
+                if data_input_field in visitor.data:
+                    value = visitor.data[data_input_field]
+                    # Only include if value is not None
+                    if value is not None:
+                        extracted_values[question_name] = value
+        
+        return extracted_values, excluded_fields
+    
     def build_classification_context(
         self,
-        session: InterviewSession
+        session: InterviewSession,
+        excluded_fields: Optional[Set[str]] = None
     ) -> Dict[str, str]:
         """Build minimal context for classification.
 
         Args:
             session: Interview session
+            excluded_fields: Optional set of field names to exclude from entities_to_extract
 
         Returns:
             Dictionary with current_state, answered_fields, entities_to_extract, required_fields_info
@@ -89,6 +143,8 @@ class ClassificationHandler:
                     active_questions.append(active_question_config)
 
         # Build entities list for extraction with required field information
+        # Exclude fields with data_input_field (they are handled separately)
+        excluded_set = excluded_fields or set()
         entities_list = []
         required_fields = set(session.get_required_questions())
 
@@ -97,8 +153,13 @@ class ClassificationHandler:
             constraints = item.get('constraints', {})
             if not key or not constraints:
                 continue
+            
+            # Skip fields that should be excluded from LLM extraction
+            if key in excluded_set:
+                continue
+            
             desc = constraints.get('description', '')
-            other_constraints = {k: v for k, v in constraints.items() if k != 'description'}
+            other_constraints = {k: v for k, v in constraints.items() if k not in ('description', 'data_input_field')}
             constraint_strs = [f"{k}: {v}" for k, v in other_constraints.items()]
             constraint_part = f" ({', '.join(constraint_strs)})" if constraint_strs else ""
             is_required = key in required_fields
@@ -142,8 +203,12 @@ class ClassificationHandler:
         if session.state == InterviewState.COMPLETED or session.state == InterviewState.CANCELLED:
             return ClassificationResult(intent=Intent.NONE)
 
+        # Extract data input values from visitor.data before LLM classification
+        data_input_values, excluded_fields = self.extract_data_input_values(session, visitor)
+        
         # Build user input - prioritize interpretation when available
         interpretation_available = interaction.interpretation and interaction.interpretation.strip()
+        user_input = None
         if interpretation_available:
             # Use interpretation as primary source, include utterance only for context if different
             user_input = interaction.interpretation
@@ -152,17 +217,22 @@ class ClassificationHandler:
                 user_input = f"Interpretation: {interaction.interpretation}\nUser's utterance: {utterance}"
         elif utterance and utterance.strip():
             user_input = utterance
-        else:
+        
+        # If no user input but we have data input values, process them without LLM
+        if not user_input:
+            if data_input_values:
+                # Process data input values without LLM classification
+                return self._build_result_from_data_inputs(data_input_values, session)
             return ClassificationResult(intent=Intent.NONE)
 
         # Use DSPy if enabled, otherwise use prompt-based implementation
         if self.action.use_dspy:
-            return await self._classify_with_dspy(session, user_input, interaction, visitor)
+            return await self._classify_with_dspy(session, user_input, interaction, visitor, data_input_values, excluded_fields)
 
         # Unified classification and extraction using single prompt
         try:
-            # Build context for unified prompt
-            context = self.build_classification_context(session)
+            # Build context for unified prompt (exclude fields with data_input_field)
+            context = self.build_classification_context(session, excluded_fields=excluded_fields)
 
             prompt = self.action.interview_prompt.format(
                 user_input=user_input,
@@ -213,6 +283,9 @@ class ClassificationHandler:
                 result = response
 
             if not result:
+                # If no LLM result but we have data input values, process them
+                if data_input_values:
+                    return self._build_result_from_data_inputs(data_input_values, session)
                 return ClassificationResult(intent=Intent.NONE)
 
             # Extract intent and convert to Intent enum
@@ -257,21 +330,174 @@ class ClassificationHandler:
                 if filtered_data:
                     classification_result.extracted_data = filtered_data
 
+            # Merge data input values into classification result
+            # Data input values take precedence and determine SUBMISSION vs UPDATE per field
+            classification_result = self._merge_data_input_values(
+                classification_result, data_input_values, session
+            )
+
             return classification_result
 
         except json.JSONDecodeError as e:
             logger.error(f"{self.action.get_class_name()}: Failed to parse unified classification JSON: {e}", exc_info=True)
+            # If LLM failed but we have data input values, process them
+            if data_input_values:
+                return self._build_result_from_data_inputs(data_input_values, session)
             return ClassificationResult(intent=Intent.NONE)
         except Exception as e:
             logger.error(f"{self.action.get_class_name()}: Failed to classify/extract via unified prompt: {e}", exc_info=True)
+            # If LLM failed but we have data input values, process them
+            if data_input_values:
+                return self._build_result_from_data_inputs(data_input_values, session)
             return ClassificationResult(intent=Intent.NONE)
+    
+    def _build_result_from_data_inputs(
+        self,
+        data_input_values: Dict[str, Any],
+        session: InterviewSession
+    ) -> ClassificationResult:
+        """Build ClassificationResult from data input values only.
+        
+        Checks if fields already have values in the session:
+        - If a field has an existing value, treat as UPDATE (set field and value)
+        - If a field doesn't have a value, treat as SUBMISSION (add to extracted_data)
+        
+        Args:
+            data_input_values: Dictionary mapping question names to values from visitor.data
+            session: Interview session
+            
+        Returns:
+            ClassificationResult with appropriate intent (UPDATE or SUBMISSION)
+        """
+        if not data_input_values:
+            return ClassificationResult(intent=Intent.NONE)
+        
+        # Separate fields into UPDATE (existing value) and SUBMISSION (no existing value)
+        update_fields = {}  # Fields that already have values - treat as UPDATE
+        submission_fields = {}  # Fields without values - treat as SUBMISSION
+        
+        for field_name, value in data_input_values.items():
+            existing_value = session.get_response(field_name)
+            if existing_value is not None:
+                # Field already has a value - treat as UPDATE
+                update_fields[field_name] = value
+            else:
+                # Field doesn't have a value - treat as SUBMISSION
+                submission_fields[field_name] = value
+        
+        # Handle UPDATE fields (fields with existing values)
+        if update_fields:
+            # Use the first field for UPDATE (handle one at a time)
+            first_update_field = next(iter(update_fields))
+            first_update_value = update_fields[first_update_field]
+            
+            result = ClassificationResult(
+                intent=Intent.UPDATE.value,
+                field=first_update_field,
+                value=first_update_value
+            )
+            
+            # If there are multiple update fields, log a warning
+            if len(update_fields) > 1:
+                logger.warning(
+                    f"{self.action.get_class_name()}: Multiple fields with existing values "
+                    f"from data_input_field: {list(update_fields.keys())}. "
+                    f"Processing first field '{first_update_field}' as UPDATE. "
+                    f"Other fields will need to be updated in subsequent interactions."
+                )
+            
+            return result
+        
+        # Handle SUBMISSION fields (fields without existing values)
+        if submission_fields:
+            result = ClassificationResult(
+                intent=Intent.SUBMISSION.value,
+                extracted_data=submission_fields
+            )
+            return result
+        
+        # Should not reach here, but handle gracefully
+        return ClassificationResult(intent=Intent.NONE)
+    
+    def _merge_data_input_values(
+        self,
+        classification_result: ClassificationResult,
+        data_input_values: Dict[str, Any],
+        session: InterviewSession
+    ) -> ClassificationResult:
+        """Merge data input values into classification result.
+        
+        Checks if fields already have values in the session:
+        - If a field has an existing value, treat as UPDATE (set field and value)
+        - If a field doesn't have a value, treat as SUBMISSION (add to extracted_data)
+        
+        Args:
+            classification_result: Current classification result from LLM
+            data_input_values: Dictionary mapping question names to values from visitor.data
+            session: Interview session
+            
+        Returns:
+            Updated ClassificationResult with data input values merged
+        """
+        if not data_input_values:
+            return classification_result
+        
+        # Separate fields into UPDATE (existing value) and SUBMISSION (no existing value)
+        update_fields = {}  # Fields that already have values - treat as UPDATE
+        submission_fields = {}  # Fields without values - treat as SUBMISSION
+        
+        for field_name, value in data_input_values.items():
+            existing_value = session.get_response(field_name)
+            if existing_value is not None:
+                # Field already has a value - treat as UPDATE
+                update_fields[field_name] = value
+            else:
+                # Field doesn't have a value - treat as SUBMISSION
+                submission_fields[field_name] = value
+        
+        # Handle UPDATE fields (fields with existing values)
+        if update_fields:
+            # If there are fields to update, set UPDATE intent
+            # Use the first field for UPDATE (handle one at a time)
+            first_update_field = next(iter(update_fields))
+            first_update_value = update_fields[first_update_field]
+            
+            classification_result.intent = Intent.UPDATE.value
+            classification_result.field = first_update_field
+            classification_result.value = first_update_value
+            
+            # If there are multiple update fields, log a warning
+            # (Subsequent fields could be handled in future interactions)
+            if len(update_fields) > 1:
+                logger.warning(
+                    f"{self.action.get_class_name()}: Multiple fields with existing values "
+                    f"from data_input_field: {list(update_fields.keys())}. "
+                    f"Processing first field '{first_update_field}' as UPDATE. "
+                    f"Other fields will need to be updated in subsequent interactions."
+                )
+        
+        # Handle SUBMISSION fields (fields without existing values)
+        if submission_fields:
+            if classification_result.extracted_data:
+                # Merge with existing extracted_data
+                classification_result.extracted_data.update(submission_fields)
+            else:
+                classification_result.extracted_data = submission_fields
+            
+            # If we have submission fields but no update fields, ensure intent is SUBMISSION
+            if not update_fields:
+                classification_result.intent = Intent.SUBMISSION.value
+        
+        return classification_result
     
     async def _classify_with_dspy(
         self,
         session: InterviewSession,
         user_input: str,
         interaction: "Interaction",
-        visitor: "InteractWalker"
+        visitor: "InteractWalker",
+        data_input_values: Dict[str, Any],
+        excluded_fields: Set[str]
     ) -> ClassificationResult:
         """DSPy-based classification and extraction routine.
 
@@ -284,6 +510,8 @@ class ClassificationHandler:
             user_input: User's input (typically with reasoning)
             interaction: Current interaction
             visitor: InteractWalker
+            data_input_values: Dictionary of values extracted from visitor.data
+            excluded_fields: Set of field names excluded from LLM extraction
 
         Returns:
             ClassificationResult with unified intent and extracted data
@@ -294,8 +522,8 @@ class ClassificationHandler:
             from jvagent.action.model.dspy import DSPyLM
             from jvagent.action.interview.dspy import InterviewClassifier
 
-            # Build context for classification
-            context = self.build_classification_context(session)
+            # Build context for classification (exclude fields with data_input_field)
+            context = self.build_classification_context(session, excluded_fields=excluded_fields)
 
             # Get conversation history if needed
             conversation_history = None
@@ -348,6 +576,11 @@ class ClassificationHandler:
 
                 # Call classifier with async forward
                 classification_result = await classifier.aforward(**classifier_kwargs)
+
+                # Merge data input values into classification result
+                classification_result = self._merge_data_input_values(
+                    classification_result, data_input_values, session
+                )
 
                 return classification_result
 

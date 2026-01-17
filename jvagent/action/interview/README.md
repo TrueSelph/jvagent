@@ -22,6 +22,7 @@ The Interview Action provides a reusable way to collect responses from users in 
 - **Same-Interaction State Transitions**: State transitions happen within the same interaction when appropriate
 - **Two-Tier Validation**: VALID and INVALID response validation using `ValidationStatus` enum (VALID can include optional feedback messages for clarification)
 - **Custom Handlers & Validators**: Process input and validate responses with custom logic
+- **Data Input Fields**: Extract values directly from `visitor.data` for file uploads and REST call data (bypasses LLM extraction)
 - **Completion Handlers**: Register completion handlers via `@on_interview_complete` decorator
 - **Question Node Rebuilding**: Automatically rebuilds question nodes when `question_index` changes
 - **agent.yaml Overrides**: Override `question_index` and prompt templates in agent configuration
@@ -81,6 +82,9 @@ The system uses a single unified prompt (`INTERVIEW_PROMPT_TEMPLATE`) that:
 - Extracts field values for SUBMISSION intent
 - Identifies update fields and values for UPDATE intent
 - All in a single LLM call for efficiency and consistency
+
+**Data Input Fields:**
+Fields with `data_input_field` configured are automatically excluded from LLM extraction. Values are extracted directly from `visitor.data` and treated as SUBMISSION intent, bypassing the LLM classification for those specific fields. This enables file uploads and other binary data to be handled without LLM processing.
 
 #### 2. InterviewSession Node
 Persistent node that stores:
@@ -358,6 +362,7 @@ actions:
   - **pattern**: Regex pattern for validation
   - **input_handler**: String reference to function that processes raw input before validation (or use `@input_handler` decorator)
   - **input_validator**: String reference to function that validates responses (or use `@input_validator` decorator)
+  - **data_input_field**: Key name in `visitor.data` dictionary to extract value from (e.g., "whatsapp_media"). When specified, the field is excluded from LLM extraction and values are extracted directly from `visitor.data`. Useful for file uploads and other data passed via REST calls.
   - **ambiguous_patterns**: Patterns that trigger VALID status with optional feedback message for clarification
 - **required**: Whether the question is required (default: False)
 - **branches**: Optional list of conditional branches (see Tree-Based Questions below)
@@ -619,6 +624,61 @@ Validators can return:
 **Autocorrection Support:**
 Validators can return a corrected value as the third element of the tuple. If provided, the system will store the corrected value instead of the original input. This is useful for fuzzy matching scenarios (e.g., correcting "next tuesday" to a specific date, or matching "morning" to "9:00 AM").
 
+### Data Input Fields (Direct Extraction from visitor.data)
+
+For fields that receive data directly from REST calls (e.g., file uploads, binary data), you can use `data_input_field` to extract values directly from the `visitor.data` dictionary, bypassing LLM extraction entirely.
+
+**How It Works:**
+- When `data_input_field` is specified in a question's constraints, the system checks `visitor.data` for a matching key
+- If the key exists, the value is extracted and treated as a SUBMISSION (new data)
+- The field is automatically excluded from LLM extraction (not included in `entities_to_extract`)
+- Values go through the same validation pipeline (input handlers and validators) as LLM-extracted values
+
+**Example: File Upload via WhatsApp Media**
+
+```python
+question_graph = [
+    {
+        "name": "report_media",
+        "question": "Please upload any images of the incident if you have them.",
+        "constraints": {
+            "description": "Images of the incident uploaded via WhatsApp media.",
+            "type": "list",
+            "data_input_field": "whatsapp_media"  # Maps to visitor.data["whatsapp_media"]
+        },
+        "required": False
+    }
+]
+```
+
+**REST Call Payload:**
+```json
+{
+  "channel": "whatsapp",
+  "data": {
+    "whatsapp_media": [
+      "http://www.imageabc.com/image.jpg",
+      "http://www.imageabe.com/image2.jpg"
+    ]
+  },
+  "session_id": "sess_2965a1c7e4d6426c",
+  "user_id": "5926555555",
+  "utterance": "I've attached media"
+}
+```
+
+**Key Behaviors:**
+- **Exclusion from LLM**: Fields with `data_input_field` are not sent to the LLM for extraction
+- **Always SUBMISSION**: Data input values are always treated as SUBMISSION intent, regardless of whether the field already has a value in the session
+- **Validation Pipeline**: Values still go through `process_input()` and `validate_response()` if handlers/validators are registered
+- **Coexistence**: Works alongside LLM extraction - other fields without `data_input_field` are still extracted by the LLM
+
+**Use Cases:**
+- File uploads (images, documents, etc.)
+- Binary data passed via REST calls
+- Pre-processed data that shouldn't be extracted from text
+- Data that comes from external systems rather than user utterances
+
 ### Directive Overrides
 
 Customize agent responses after a field value is successfully validated and stored using the `@input_directive_override` decorator. This allows you to conditionally replace or append to the default directive based on the stored value.
@@ -778,6 +838,7 @@ The system detects intent types using the `Intent` enum with state-aware rules:
   
 - **Intent.SUBMISSION**: User is providing answers to unanswered questions
   - Extracts field values from message and conversation history
+  - Also includes values from `data_input_field` (extracted directly from `visitor.data`, bypassing LLM)
   
 - **Intent.DECLINE**: User declines to answer a non-required question
   - Stores "n/a" for declined optional fields
