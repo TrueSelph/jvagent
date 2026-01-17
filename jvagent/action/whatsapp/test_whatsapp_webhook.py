@@ -1,5 +1,30 @@
 import requests
 
+BASE_URL = "http://localhost:8000"
+EMAIL = "admin@jvagent.example"
+PASSWORD = "your-admin-password-here"
+TARGETED_AGENT = "resolv_demo"
+SELECTED_AGENT = None
+
+
+def authenticate(email: str, password: str) -> str:
+    endpoint = f"{BASE_URL}/auth/login"
+    payload = {"email": email, "password": password}
+    response = requests.post(endpoint, json=payload)
+    if response.status_code != 200:
+        raise Exception(f"Failed to authenticate: {response.text}")
+    return response.json()["access_token"]
+
+
+def list_agents(token: str) -> list:
+    endpoint = f"{BASE_URL}/api/agents?page=1&per_page=10"
+    headers = {"accept": "application/json", "Authorization": f"Bearer {token}"}
+    response = requests.get(endpoint, headers=headers)
+    if response.status_code != 200:
+        raise Exception(f"Failed to list agents: {response.text}")
+    return response.json()["agents"]
+
+
 def test_whatsapp_webhook(
     agent_id: str,
     # action_id: str,
@@ -36,25 +61,29 @@ def test_whatsapp_webhook(
     return response.json()
 
 
-# Example usage
-if __name__ == "__main__":
-    # result = test_whatsapp_webhook(
-    #     agent_id="n.Agent.91d36bd5921a46ed8759440d"
-    # )
-    # print(result)
+############ token ############
+token = authenticate(EMAIL, PASSWORD)
+############ agents ############
+agents = list_agents(token)
+
+for agent in agents:
+    if agent["context"]["name"] == TARGETED_AGENT:
+        SELECTED_AGENT = agent
+        break
+############ test_whatsapp_webhook ############
 
 
-    payload = {
-        "body": "What did I just ask you?",
-        "from": "5926001234",
-        "to": "5926001235",
-        "name": "John Doe",
-    }
+payload = {
+    "body": "What did I just ask you?",
+    "from": "5926001234",
+    "to": "5926001235",
+    "name": "John Doe",
+}
 
-    result = test_whatsapp_webhook(
-        "n.Agent.1b26899b110b49dab0606bdd",
-        # "n.Whatsapp.64e6fcd7e8524704acf91745",
-        payload=payload
-    )
-    print("result")
-    print(result)
+result = test_whatsapp_webhook(
+    SELECTED_AGENT["id"],
+    # "n.Whatsapp.64e6fcd7e8524704acf91745",
+    payload=payload,
+)
+print("result")
+print(result)

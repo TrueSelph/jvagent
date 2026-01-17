@@ -72,7 +72,7 @@ actions:
       enabled: true
       api_key: ${OPENAI_API_KEY}
       model: gpt-4o-mini
-  
+
   # Persona action for interactive conversations
   - action: jvagent/persona
     context:
@@ -82,7 +82,7 @@ actions:
       model: gpt-4o-mini
       model_temperature: 0.3
       model_max_tokens: 4096
-  
+
   # Example action for demonstrations
   - action: jvagent/example_action
     context:

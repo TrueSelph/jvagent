@@ -1,8 +1,9 @@
 """Ultramsg Module."""
 
+
 class Ultramsg:
     """Handler for Ultramsg integration."""
-    
+
     def __init__(self):
         pass
 

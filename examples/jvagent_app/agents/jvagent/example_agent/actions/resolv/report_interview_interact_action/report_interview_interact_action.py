@@ -46,7 +46,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
     # DSPy Integration
     use_dspy: bool = attribute(
         default=True,
-        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)"
+        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)",
     )
 
     # REQUIRED when using InteractRouter: Anchors for intelligent routing
@@ -63,7 +63,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
             "User wants to change, update, or correct their report description, location, media, anonymous report option, reporting_on_behalf, stakeholder_name, stakeholder_address, stakeholder_phone, reporter_name, or reporter_address.",
             "User is revising, editing, or updating incident report information",
         ],
-        description="Anchor statements for InteractRouter routing"
+        description="Anchor statements for InteractRouter routing",
     )
 
     question_index: List[Dict[str, Any]] = attribute(
@@ -75,7 +75,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "description": "A full description of the incident or grievance being reported. Capture only what happened, not requests or opinions.",
                     "type": "string",
                 },
-                "required": True
+                "required": True,
             },
             {
                 "name": "report_location",
@@ -84,7 +84,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "description": "The precise location of the incident, including street and area name. Ignore vague references such as 'my area' or 'nearby'.",
                     "type": "string",
                 },
-                "required": True
+                "required": True,
             },
             # {
             #     "name": "report_media",
@@ -109,7 +109,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                 "branches": [
                     {
                         "condition": {"question": "is_sensitive", "equals": "yes"},
-                        "target": "REVIEW"  # Skip to review/confirmation when sensitive
+                        "target": "REVIEW",  # Skip to review/confirmation when sensitive
                     }
                 ],
                 # Continue normally if "no"
@@ -123,7 +123,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "type": "string",
                     "options": ["yes", "no"],
                 },
-                "required": True
+                "required": True,
             },
             {
                 "name": "stakeholder_name",
@@ -133,7 +133,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "type": "string",
                 },
                 "required": True,
-                "conditional": {"reporting_on_behalf": "yes"}
+                "conditional": {"reporting_on_behalf": "yes"},
             },
             {
                 "name": "stakeholder_address",
@@ -143,7 +143,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "type": "string",
                 },
                 "required": True,
-                "conditional": {"reporting_on_behalf": "yes"}
+                "conditional": {"reporting_on_behalf": "yes"},
             },
             {
                 "name": "stakeholder_phone",
@@ -154,7 +154,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "type": "string",
                 },
                 "required": True,
-                "conditional": {"reporting_on_behalf": "yes"}
+                "conditional": {"reporting_on_behalf": "yes"},
             },
             {
                 "name": "reporter_name",
@@ -163,7 +163,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "description": "The full name of the person submitting the report.",
                     "type": "string",
                 },
-                "required": True
+                "required": True,
             },
             {
                 "name": "reporter_address",
@@ -173,17 +173,20 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "type": "string",
                 },
                 "required": True,
-                "conditional": {"reporting_on_behalf": "no"}
-            }
+                "conditional": {"reporting_on_behalf": "no"},
+            },
         ],
         description="List of question configurations. Can be overridden in agent.yaml. "
-                    "Handlers, validators, and directive overrides can be registered via decorators "
-                    "(@input_handler, @input_validator, @input_directive_override) or specified as string "
-                    "references in constraints (input_handler, input_validator)."
+        "Handlers, validators, and directive overrides can be registered via decorators "
+        "(@input_handler, @input_validator, @input_directive_override) or specified as string "
+        "references in constraints (input_handler, input_validator).",
     )
 
-@input_validator('report_description')
-def validate_report_description(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+
+@input_validator("report_description")
+def validate_report_description(
+    value: str, session: InterviewSession
+) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the report description is not empty.
 
     Args:
@@ -202,13 +205,18 @@ def validate_report_description(value: str, session: InterviewSession) -> Tuple[
 
     # Check minimum length
     if len(value) < 10:
-        return ValidationStatus.INVALID, "Ask: Please provide a more detailed description of the report"
+        return (
+            ValidationStatus.INVALID,
+            "Ask: Please provide a more detailed description of the report",
+        )
 
     return ValidationStatus.VALID, None
 
 
-@input_validator('report_location')
-def validate_report_location(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+@input_validator("report_location")
+def validate_report_location(
+    value: str, session: InterviewSession
+) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the report location is not empty.
 
     Args:
@@ -243,8 +251,10 @@ def validate_report_location(value: str, session: InterviewSession) -> Tuple[Val
 #     return ValidationStatus.VALID, None
 
 
-@input_validator('is_sensitive')
-def validate_is_sensitive(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+@input_validator("is_sensitive")
+def validate_is_sensitive(
+    value: str, session: InterviewSession
+) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the is sensitive is either yes or no.
 
     Args:
@@ -267,8 +277,10 @@ def validate_is_sensitive(value: str, session: InterviewSession) -> Tuple[Valida
     return ValidationStatus.VALID, None
 
 
-@input_validator('reporting_on_behalf')
-def validate_reporting_on_behalf(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+@input_validator("reporting_on_behalf")
+def validate_reporting_on_behalf(
+    value: str, session: InterviewSession
+) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the reporting on behalf is either yes or no.
 
     Args:
@@ -279,20 +291,28 @@ def validate_reporting_on_behalf(value: str, session: InterviewSession) -> Tuple
         Tuple of (ValidationStatus, optional error message)
     """
     if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please indicate whether you are reporting on behalf of someone else"
+        return (
+            ValidationStatus.INVALID,
+            "Ask: Please indicate whether you are reporting on behalf of someone else",
+        )
 
     # Remove extra whitespace
     value = value.strip()
 
     # Check for valid options
     if value not in ["yes", "no"]:
-        return ValidationStatus.INVALID, "Ask: Please indicate whether you are reporting on behalf of someone else"
+        return (
+            ValidationStatus.INVALID,
+            "Ask: Please indicate whether you are reporting on behalf of someone else",
+        )
 
     return ValidationStatus.VALID, None
 
 
-@input_validator('stakeholder_name')
-def validate_stakeholder_name(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+@input_validator("stakeholder_name")
+def validate_stakeholder_name(
+    value: str, session: InterviewSession
+) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the stakeholder name is not empty.
 
     Args:
@@ -316,17 +336,25 @@ def validate_stakeholder_name(value: str, session: InterviewSession) -> Tuple[Va
     # Check that each part has at least 2 characters
     for part in name_parts:
         if len(part) < 2:
-            return ValidationStatus.INVALID, "Tell the user: Each name part should be at least 2 characters long"
+            return (
+                ValidationStatus.INVALID,
+                "Tell the user: Each name part should be at least 2 characters long",
+            )
 
     # Check for valid characters (letters, hyphens, apostrophes)
-    if not re.match(r'^[a-zA-Z\s\-\']+$', value):
-        return ValidationStatus.INVALID, "Tell the user: Name should only contain letters, spaces, hyphens, and apostrophes"
+    if not re.match(r"^[a-zA-Z\s\-\']+$", value):
+        return (
+            ValidationStatus.INVALID,
+            "Tell the user: Name should only contain letters, spaces, hyphens, and apostrophes",
+        )
 
     return ValidationStatus.VALID, None
 
 
-@input_validator('stakeholder_address')
-def validate_stakeholder_address(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+@input_validator("stakeholder_address")
+def validate_stakeholder_address(
+    value: str, session: InterviewSession
+) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the stakeholder address is not empty.
 
     Args:
@@ -345,8 +373,10 @@ def validate_stakeholder_address(value: str, session: InterviewSession) -> Tuple
     return ValidationStatus.VALID, None
 
 
-@input_validator('stakeholder_phone')
-def validate_stakeholder_phone(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+@input_validator("stakeholder_phone")
+def validate_stakeholder_phone(
+    value: str, session: InterviewSession
+) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the stakeholder phone is not empty.
 
     Args:
@@ -363,14 +393,19 @@ def validate_stakeholder_phone(value: str, session: InterviewSession) -> Tuple[V
     value = value.strip()
 
     # Check for valid phone number format
-    if not re.match(r'^\d{10}$', value):
-        return ValidationStatus.INVALID, "Tell the user: Please provide a valid 10-digit phone number"
+    if not re.match(r"^\d{10}$", value):
+        return (
+            ValidationStatus.INVALID,
+            "Tell the user: Please provide a valid 10-digit phone number",
+        )
 
     return ValidationStatus.VALID, None
 
 
-@input_validator('reporter_name')
-def validate_reporter_name(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+@input_validator("reporter_name")
+def validate_reporter_name(
+    value: str, session: InterviewSession
+) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the reporter name is not empty.
 
     Args:
@@ -389,22 +424,33 @@ def validate_reporter_name(value: str, session: InterviewSession) -> Tuple[Valid
     # Split by spaces and check for at least two parts (first and last name)
     name_parts = value.split()
     if len(name_parts) < 2:
-        return ValidationStatus.INVALID, "Ask: Please provide both the first and last name of the reporter"
+        return (
+            ValidationStatus.INVALID,
+            "Ask: Please provide both the first and last name of the reporter",
+        )
 
     # Check that each part has at least 2 characters
     for part in name_parts:
         if len(part) < 2:
-            return ValidationStatus.INVALID, "Tell the user: Each name part should be at least 2 characters long"
+            return (
+                ValidationStatus.INVALID,
+                "Tell the user: Each name part should be at least 2 characters long",
+            )
 
     # Check for valid characters (letters, hyphens, apostrophes)
-    if not re.match(r'^[a-zA-Z\s\-\']+$', value):
-        return ValidationStatus.INVALID, "Tell the user: Name should only contain letters, spaces, hyphens, and apostrophes"
+    if not re.match(r"^[a-zA-Z\s\-\']+$", value):
+        return (
+            ValidationStatus.INVALID,
+            "Tell the user: Name should only contain letters, spaces, hyphens, and apostrophes",
+        )
 
     return ValidationStatus.VALID, None
 
 
-@input_validator('reporter_address')
-def validate_reporter_address(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+@input_validator("reporter_address")
+def validate_reporter_address(
+    value: str, session: InterviewSession
+) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the reporter address is not empty.
 
     Args:
@@ -423,11 +469,9 @@ def validate_reporter_address(value: str, session: InterviewSession) -> Tuple[Va
     return ValidationStatus.VALID, None
 
 
-@input_handler('available_times')
+@input_handler("available_times")
 async def check_training_availability(
-    raw_input: str,
-    session: InterviewSession,
-    interaction: Interaction
+    raw_input: str, session: InterviewSession, interaction: Interaction
 ) -> str:
     """Process and autocorrect training time availability against hardcoded available times.
 
@@ -459,15 +503,15 @@ async def check_training_availability(
     user_input = raw_input.strip()
 
     # Normalize user input for comparison (case-insensitive, remove extra spaces)
-    normalized_input = re.sub(r'\s+', ' ', user_input.lower())
+    normalized_input = re.sub(r"\s+", " ", user_input.lower())
 
     # First, check if input is already in correct format (idempotent check)
     # This handles cases where process_input is called multiple times
     for available_time in AVAILABLE_TRAINING_TIMES:
-        normalized_available = re.sub(r'\s+', ' ', available_time.lower())
+        normalized_available = re.sub(r"\s+", " ", available_time.lower())
         if normalized_input == normalized_available:
             # Already in correct format
-            session.context['matched_training_times'] = [available_time]
+            session.context["matched_training_times"] = [available_time]
             await session.save()
             return available_time  # Return exact format
 
@@ -478,23 +522,23 @@ async def check_training_availability(
         time_part = user_input.replace("Available:", "").strip()
         for available_time in AVAILABLE_TRAINING_TIMES:
             if time_part.lower() == available_time.lower():
-                session.context['matched_training_times'] = [available_time]
+                session.context["matched_training_times"] = [available_time]
                 await session.save()
                 return available_time
 
     # Try to autocorrect partial inputs
     matched_times = []
     for available_time in AVAILABLE_TRAINING_TIMES:
-        normalized_available = re.sub(r'\s+', ' ', available_time.lower())
+        normalized_available = re.sub(r"\s+", " ", available_time.lower())
 
         # Extract day and times from available time
         day_match = False
-        matched_day = None
-        for day in ['monday', 'wednesday', 'friday', 'saturday']:
+        # matched_day = None
+        for day in ["monday", "wednesday", "friday", "saturday"]:
             if day in normalized_available:
                 if day in normalized_input:
                     day_match = True
-                    matched_day = day
+                    # matched_day = day
                     break
 
         if not day_match:
@@ -502,16 +546,18 @@ async def check_training_availability(
 
         # Extract time information from available time
         # Format: "monday 9:00 am - 11:00 am"
-        time_match = re.search(r'(\d+):(\d+)\s*(am|pm)\s*-\s*(\d+):(\d+)\s*(am|pm)', normalized_available)
+        time_match = re.search(
+            r"(\d+):(\d+)\s*(am|pm)\s*-\s*(\d+):(\d+)\s*(am|pm)", normalized_available
+        )
         if not time_match:
             continue
 
         start_hour = int(time_match.group(1))
-        start_min = int(time_match.group(2))
-        start_period = time_match.group(3)
+        # start_min = int(time_match.group(2))
+        # start_period = time_match.group(3)
         end_hour = int(time_match.group(4))
-        end_min = int(time_match.group(5))
-        end_period = time_match.group(6)
+        # end_min = int(time_match.group(5))
+        # end_period = time_match.group(6)
 
         # Try to match user input against this time slot
         # User might say: "9", "9 am", "9:00", "9:00 am", "9-11", "9 am - 11 am", "at 9", "monday at 9", etc.
@@ -519,22 +565,26 @@ async def check_training_availability(
         # Check if user input mentions the start hour (flexible matching)
         # Look for the hour number in the input - be flexible with patterns
         hour_patterns = [
-            rf'\b{start_hour}\b',  # Just the hour "9" (word boundary) - matches "9" in "monday at 9"
-            rf'at\s+{start_hour}\b',  # "at 9" or "monday at 9"
-            rf'{start_hour}\s*(am|pm)\b',  # "9 am" or "9 pm"
-            rf'{start_hour}:00',  # "9:00"
-            rf'{start_hour}:00\s*(am|pm)',  # "9:00 am"
+            rf"\b{start_hour}\b",  # Just the hour "9" (word boundary) - matches "9" in "monday at 9"
+            rf"at\s+{start_hour}\b",  # "at 9" or "monday at 9"
+            rf"{start_hour}\s*(am|pm)\b",  # "9 am" or "9 pm"
+            rf"{start_hour}:00",  # "9:00"
+            rf"{start_hour}:00\s*(am|pm)",  # "9:00 am"
         ]
 
-        start_time_mentioned = any(re.search(pattern, normalized_input, re.IGNORECASE) for pattern in hour_patterns)
+        start_time_mentioned = any(
+            re.search(pattern, normalized_input, re.IGNORECASE) for pattern in hour_patterns
+        )
 
         # Also check for time ranges like "9-11", "9 to 11", "9-11 am"
         range_patterns = [
-            rf'{start_hour}\s*-\s*{end_hour}',  # "9-11"
-            rf'{start_hour}\s+to\s+{end_hour}',  # "9 to 11"
-            rf'{start_hour}\s*-\s*{end_hour}\s*(am|pm)',  # "9-11 am"
+            rf"{start_hour}\s*-\s*{end_hour}",  # "9-11"
+            rf"{start_hour}\s+to\s+{end_hour}",  # "9 to 11"
+            rf"{start_hour}\s*-\s*{end_hour}\s*(am|pm)",  # "9-11 am"
         ]
-        has_range = any(re.search(pattern, normalized_input, re.IGNORECASE) for pattern in range_patterns)
+        has_range = any(
+            re.search(pattern, normalized_input, re.IGNORECASE) for pattern in range_patterns
+        )
 
         # If user mentions the day and start time (or range), autocorrect to full format
         # This handles cases like "Monday at 9" -> "Monday 9:00 AM - 11:00 AM"
@@ -545,7 +595,7 @@ async def check_training_availability(
     if matched_times:
         # If multiple matches, prefer the first one (most specific)
         matched_time = matched_times[0]
-        session.context['matched_training_times'] = [matched_time]
+        session.context["matched_training_times"] = [matched_time]
         await session.save()
         return matched_time  # Return autocorrected full format
 
@@ -553,26 +603,26 @@ async def check_training_availability(
     return user_input
 
 
-@input_directive_override('user_email')
+@input_directive_override("user_email")
 async def custom_email_directive(
     field_name: str,
     value: str,
     session: InterviewSession,
     interaction: Interaction,
-    visitor: InteractWalker
+    visitor: InteractWalker,
 ) -> Optional[Union[str, Tuple[str, str]]]:
     """Custom directive after email is collected.
-    
+
     This demonstrates the @input_directive_override decorator, which allows
     customizing the agent's response after a field value is successfully stored.
-    
+
     Args:
         field_name: Name of the field that was just stored
         value: The email value that was stored
         session: Interview session for context
         interaction: Current interaction
         visitor: Walker for context
-        
+
     Returns:
         Optional directive override:
         - None: Use default directive (no override)
@@ -580,19 +630,20 @@ async def custom_email_directive(
         - Tuple[str, str]: (mode, directive) where mode is "append" or "replace"
     """
     # Check if email domain matches specific criteria
-    if '@mail.com' in value.lower():
+    if "@mail.com" in value.lower():
         # Replace default directive with custom message for example.com emails
-        return ("append", "Tell the user: Thank you for using your work email! We'll send you special updates about jvagent training.")
-    
+        return (
+            "append",
+            "Tell the user: Thank you for using your work email! We'll send you special updates about jvagent training.",
+        )
+
     # Return None to use default directive for other emails
     return None
 
 
-@on_interview_complete('ReportInterviewInteractAction')
+@on_interview_complete("ReportInterviewInteractAction")
 async def handle_report_completion(
-    session: InterviewSession,
-    visitor: InteractWalker,
-    action: InteractAction
+    session: InterviewSession, visitor: InteractWalker, action: InteractAction
 ) -> None:
     """Handle completion of report interview.
 
@@ -605,18 +656,19 @@ async def handle_report_completion(
         action: The InteractAction instance (use action.respond() to send responses)
     """
     # Extract collected data
-    report_description = session.responses.get('report_description', '')
-    report_location = session.responses.get('report_location', '')
-    is_sensitive = session.responses.get('is_sensitive', '')
-    reporting_on_behalf = session.responses.get('reporting_on_behalf', '')
-    stakeholder_name = session.responses.get('stakeholder_name', '')
-    stakeholder_address = session.responses.get('stakeholder_address', '')
-    stakeholder_phone = session.responses.get('stakeholder_phone', '')
-    reporter_name = session.responses.get('reporter_name', '')
-    reporter_address = session.responses.get('reporter_address', '')
+    report_description = session.responses.get("report_description", "")
+    report_location = session.responses.get("report_location", "")
+    is_sensitive = session.responses.get("is_sensitive", "")
+    reporting_on_behalf = session.responses.get("reporting_on_behalf", "")
+    stakeholder_name = session.responses.get("stakeholder_name", "")
+    stakeholder_address = session.responses.get("stakeholder_address", "")
+    stakeholder_phone = session.responses.get("stakeholder_phone", "")
+    reporter_name = session.responses.get("reporter_name", "")
+    reporter_address = session.responses.get("reporter_address", "")
 
     # Log completion (in production, you might send notifications, create records, etc.)
     import logging
+
     logger = logging.getLogger(__name__)
     logger.info(
         f"Report interview completed:\n description: {report_description}\n location: {report_location}\n is_sensitive: {is_sensitive}\n reporting_on_behalf: {reporting_on_behalf}\n stakeholder_name: {stakeholder_name}\n stakeholder_address: {stakeholder_address}\n stakeholder_phone: {stakeholder_phone}\n reporter_name: {reporter_name}\n reporter_address: {reporter_address}"
