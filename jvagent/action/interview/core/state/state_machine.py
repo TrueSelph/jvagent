@@ -6,8 +6,9 @@ This module provides explicit state management with defined transitions.
 import logging
 from typing import Dict, List, Optional, Set
 
-from .interview_session import InterviewSession
-from .enums import InterviewState
+from ..session.interview_session import InterviewSession
+from ..foundation.enums import InterviewState
+from ..foundation.exceptions import InvalidStateTransitionError
 
 logger = logging.getLogger(__name__)
 
@@ -77,13 +78,12 @@ class InterviewStateMachine:
         
         # Check if transition is valid
         if not self.can_transition_to(new_state):
-            error_msg = (
-                f"Invalid state transition: {current_state.value} -> {new_state.value}. "
-                f"Valid transitions from {current_state.value}: "
-                f"{[s.value for s in self.VALID_TRANSITIONS.get(current_state, set())]}"
+            valid_transitions = [s.value for s in self.VALID_TRANSITIONS.get(current_state, set())]
+            raise InvalidStateTransitionError(
+                current_state.value,
+                new_state.value,
+                f"Valid transitions from {current_state.value}: {valid_transitions}"
             )
-            logger.error(error_msg)
-            raise ValueError(error_msg)
         
         # Record transition in history
         self._transition_history.append({

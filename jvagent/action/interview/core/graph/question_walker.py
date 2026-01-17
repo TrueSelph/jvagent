@@ -12,10 +12,12 @@ from jvspatial.core import Walker
 from jvagent.memory import Interaction
 
 from .question_branch_evaluator import QuestionBranchEvaluator
-from .interview_session import InterviewSession
+from ..session.interview_session import InterviewSession
 from .question_node import QuestionNode
 from .state_node import StateNode
-from .enums import ValidationStatus, InterviewState
+from ..foundation.enums import ValidationStatus, InterviewState
+from ..utils.cache_utils import QuestionNodeCache
+from ..state.state_machine import InterviewStateMachine
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -120,10 +122,15 @@ class QuestionWalker(Walker):
             # Get the InterviewState from the target string
             target_state = self._get_state_from_target(target)
             if target_state:
-                # Transition state directly
-                session.transition_to(target_state)
-                await session.save()
-                return True
+                # Use state machine for validated transitions
+                state_machine = InterviewStateMachine(session)
+                try:
+                    state_machine.transition_to(target_state, reason=f"QuestionWalker state target: {target}")
+                    await session.save()
+                    return True
+                except ValueError as e:
+                    logger.error(f"QuestionWalker: Invalid state transition: {e}", exc_info=True)
+                    return False
             else:
                 # Invalid state target
                 logger.warning(
@@ -549,24 +556,11 @@ class QuestionWalker(Walker):
         Returns:
             QuestionNode if found, None otherwise
         """
-        # Check cache first (stored in session context)
-        if session.context is None:
-            session.context = {}
-        
-        node_cache = session.context.get("_question_node_cache", {})
-        if question_name in node_cache:
-            cached_node_id = node_cache[question_name]
-            try:
-                from jvspatial.core import Node
-                cached_node = await Node.get(cached_node_id)
-                if cached_node and isinstance(cached_node, QuestionNode):
-                    return cached_node
-                else:
-                    # Cache entry is stale, remove it
-                    del node_cache[question_name]
-            except Exception:
-                # Cache entry is invalid, remove it
-                del node_cache[question_name]
+        # Use cache utility
+        cache = QuestionNodeCache(session)
+        cached_node = await cache.get_cached_node_by_id(question_name)
+        if cached_node:
+            return cached_node
         
         # If we have interview_action, search from there
         if interview_action:
@@ -574,8 +568,7 @@ class QuestionWalker(Walker):
             for node in question_nodes:
                 if node.label == question_name:
                     # Cache the node
-                    node_cache[question_name] = node.id
-                    session.context["_question_node_cache"] = node_cache
+                    cache.set(question_name, node.id)
                     return node
 
         # Try from current_question if available
@@ -585,8 +578,7 @@ class QuestionWalker(Walker):
             for node in connected_nodes:
                 if node.label == question_name:
                     # Cache the node
-                    node_cache[question_name] = node.id
-                    session.context["_question_node_cache"] = node_cache
+                    cache.set(question_name, node.id)
                     return node
 
             # Also check incoming connections (bidirectional)
@@ -594,8 +586,7 @@ class QuestionWalker(Walker):
             for node in connected_nodes:
                 if node.label == question_name:
                     # Cache the node
-                    node_cache[question_name] = node.id
-                    session.context["_question_node_cache"] = node_cache
+                    cache.set(question_name, node.id)
                     return node
 
         return None

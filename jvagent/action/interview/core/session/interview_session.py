@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
 
-from .enums import InterviewState, ValidationStatus
+from ..foundation.enums import InterviewState, ValidationStatus
 
 if TYPE_CHECKING:
-    from .question_walker import QuestionWalker
+    from ..graph.question_walker import QuestionWalker
 
 
 class InterviewSession(Node):

@@ -26,12 +26,19 @@ from jvagent.action.interact.base import InteractAction
 from jvagent.memory import Interaction
 from jvspatial.core.annotations import attribute
 
-from .core.enums import Intent, InterviewState, ValidationStatus
-from .core.interview_service import InterviewService
-from .core.interview_session import InterviewSession
-from .core.question_node import QuestionNode
-from .core.question_walker import QuestionWalker
-from .prompts import (
+from .core.foundation.enums import Intent, InterviewState, ValidationStatus
+from .core.session.interview_service import InterviewService
+from .core.session.interview_session import InterviewSession
+from .core.graph.question_node import QuestionNode
+from .core.graph.question_walker import QuestionWalker
+from .core.utils.session_utils import cleanup_session, sort_fields_by_question_order
+from .core.utils.cache_utils import QuestionNodeCache
+from .core.utils.constants import CACHE_KEY_QUESTION_NODES
+from .core.classification.classification_handler import ClassificationHandler, ClassificationResult
+from .core.processing.directive_builder import DirectiveBuilder
+from .core.foundation.exceptions import QuestionNotFoundError
+from .core.foundation.config import InterviewConfig, ModelConfig, TemplateConfig
+from .core.foundation.prompts import (
     UPDATE_PROMPT_FOR_VALUE_TEMPLATE,
     REVIEW_SUMMARY_HEADER_TEMPLATE,
     REVIEW_SUMMARY_ITEM_TEMPLATE,
@@ -60,7 +67,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Import registry access functions (decorators are in separate module)
-from .decorators import (
+from .core.foundation.decorators import (
     get_completion_handler as _get_completion_handler,
     get_input_handler as _get_input_handler,
     get_input_validator as _get_input_validator,
@@ -72,21 +79,7 @@ from .decorators import (
 )
 
 
-@dataclass
-class ClassificationResult:
-    """Result of unified classification and extraction routine.
-
-    Uses unified intent types: CANCELLATION, CONFIRMATION, UPDATE, DECLINE, SUBMISSION, NONE
-    """
-    intent: str  # "CANCELLATION", "CONFIRMATION", "UPDATE", "DECLINE", "SUBMISSION", "NONE"
-    confidence: float = 1.0  # Confidence score for the classification
-
-    # Unified field/value structure (used for UPDATE, DECLINE, and SUBMISSION)
-    field: Optional[str] = None  # Field name (for UPDATE/DECLINE intent) or null
-    value: Optional[Any] = None  # Field value (for UPDATE intent) or null
-
-    # For SUBMISSION intent - extracted field values (multiple fields)
-    extracted_data: Optional[Dict[str, Any]] = None  # Extracted responses for "SUBMISSION" intent
+# ClassificationResult moved to classification_handler module
 
 
 class InterviewInteractAction(InteractAction, ABC):
@@ -156,6 +149,24 @@ class InterviewInteractAction(InteractAction, ABC):
     _input_handlers: Dict[str, Callable] = {}
     _input_validators: Dict[str, Callable] = {}
     _input_directive_overrides: Dict[str, Callable] = {}
+    
+    # Instance-level handlers
+    _classification_handler: Optional[ClassificationHandler] = None
+    _directive_builder: Optional[DirectiveBuilder] = None
+    
+    @property
+    def classification_handler(self) -> ClassificationHandler:
+        """Get or create classification handler."""
+        if self._classification_handler is None:
+            self._classification_handler = ClassificationHandler(self)
+        return self._classification_handler
+    
+    @property
+    def directive_builder(self) -> DirectiveBuilder:
+        """Get or create directive builder."""
+        if self._directive_builder is None:
+            self._directive_builder = DirectiveBuilder(self)
+        return self._directive_builder
 
     weight: int = attribute(
         default=-40,
@@ -579,48 +590,13 @@ class InterviewInteractAction(InteractAction, ABC):
     ) -> None:
         """Generate directive for COMPLETED state.
 
-        Calls registered completion handler and cleans up session.
+        Delegates to DirectiveBuilder.
 
         Args:
             session: Interview session
             visitor: InteractWalker
         """
-        # Explicitly add completion event BEFORE cleaning up the session
-        # This ensures the event is recorded even if the session is removed
-        # Mark event as added to prevent _queue_directive from adding it again
-        completion_event = self.completion_event_message_template.format(class_name=self.get_class_name())
-        await visitor.add_event(completion_event)
-        self._event_added = True  # Prevent duplicate event addition in _queue_directive
-
-        # Get completion handler for this interview type
-        interview_type = session.interview_type
-        completion_handler = self.get_completion_handler(interview_type)
-
-        if completion_handler:
-            try:
-                await completion_handler(session, visitor, self)
-                # Completion handler is responsible for sending its own message if needed
-            except Exception as e:
-                logger.error(f"{self.get_class_name()}: Completion handler failed: {e}", exc_info=True)
-                # Send generic completion message on error
-                await self._queue_directive(
-                    visitor,
-                    self.completion_message_template
-                )
-        else:
-            # No completion handler registered, send generic message
-            await self._queue_directive(
-                visitor,
-                self.completion_message_template
-            )
-
-        # Clean up and remove the session (always, regardless of handler success/failure)
-        try:
-            await session.cleanup()
-            # Clear session reference from visitor
-            visitor.interview_session = None
-        except Exception as e:
-            logger.error(f"{self.get_class_name()}: Failed to cleanup completed session: {e}", exc_info=True)
+        await self.directive_builder.generate_completed_directive(session, visitor)
 
     async def _generate_cancelled_directive(
         self,
@@ -629,55 +605,14 @@ class InterviewInteractAction(InteractAction, ABC):
     ) -> None:
         """Generate directive for CANCELLED state.
 
-        Sends cancellation acknowledgment and removes/clears the session.
+        Delegates to DirectiveBuilder.
 
         Args:
             session: Interview session
             visitor: InteractWalker
         """
-        # Send cancellation message first
-        await self._queue_directive(
-            visitor,
-            self.cancellation_message_template
-        )
+        await self.directive_builder.generate_cancelled_directive(session, visitor)
 
-        # Clean up and remove the session
-        try:
-            await session.cleanup()
-            # Clear session reference from visitor
-            visitor.interview_session = None
-        except Exception as e:
-            logger.error(f"{self.get_class_name()}: Failed to cleanup cancelled session: {e}", exc_info=True)
-
-    def _sort_by_question_order(
-        self,
-        fields: List[str],
-        session: InterviewSession
-    ) -> List[str]:
-        """Sort fields by their position in question_index.
-
-        This ensures fields are processed in the logical order defined by the
-        interview schema, which is important for conditional edge evaluation.
-
-        Args:
-            fields: List of field names to sort
-            session: Interview session with question_index
-
-        Returns:
-            Sorted list of field names in question_index order
-        """
-        # Create a map of field name to index position
-        field_to_index = {}
-        for idx, question_config in enumerate(session.question_index):
-            field_name = question_config.get("name", "")
-            if field_name:
-                field_to_index[field_name] = idx
-
-        # Sort fields by their index, unknown fields go to the end
-        def get_sort_key(field: str) -> int:
-            return field_to_index.get(field, len(session.question_index))
-
-        return sorted(fields, key=get_sort_key)
 
     async def _update_reachable_questions(
         self,
@@ -712,7 +647,7 @@ class InterviewInteractAction(InteractAction, ABC):
             return False
 
         # Evaluate branches
-        from .core.question_branch_evaluator import QuestionBranchEvaluator
+        from .core.graph.question_branch_evaluator import QuestionBranchEvaluator
 
         for branch in branches:
             condition = branch.get("condition", {})
@@ -779,29 +714,16 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
             QuestionNode if found, None otherwise
         """
-        # Check cache first (stored in session context)
-        if session.context is None:
-            session.context = {}
-        
-        node_cache = session.context.get("_question_node_cache", {})
-        if field in node_cache:
-            cached_node_id = node_cache[field]
-            try:
-                from jvspatial.core import Node
-                cached_node = await Node.get(cached_node_id)
-                if cached_node and isinstance(cached_node, QuestionNode):
-                    return cached_node
-                else:
-                    # Cache entry is stale, remove it
-                    del node_cache[field]
-            except Exception:
-                # Cache entry is invalid, remove it
-                del node_cache[field]
+        # Use cache utility
+        cache = QuestionNodeCache(session)
+        cached_node = await cache.get_cached_node_by_id(field)
+        if cached_node:
+            return cached_node
         
         # Find question config
         question_config = session.get_question_by_name(field)
         if not question_config:
-            return None
+            raise QuestionNotFoundError(field)
 
         # Question nodes are connected directly to InterviewInteractAction
         question_nodes = await self.nodes(direction="out", node=QuestionNode)
@@ -818,11 +740,17 @@ class InterviewInteractAction(InteractAction, ABC):
                 label=field,
             )
             await self.connect(question_node)
+        
+        # Cache the node
+        if question_node:
+            cache.set(field, question_node.id)
 
         return question_node
 
     def _format_summary(self, session: InterviewSession) -> str:
         """Format collected responses as a summary.
+
+        Delegates to DirectiveBuilder.
 
         Args:
             session: Interview session
@@ -830,31 +758,12 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
             Formatted summary string
         """
-        lines = []
-        if self.summary_header_template and self.summary_header_template.strip():
-            lines.append(self.summary_header_template)
-
-        for question_config in session.question_index:
-            field_name = question_config.get("name", "")
-            if not field_name:
-                continue
-
-            value = session.get_response(field_name)
-            if value is None:
-                continue
-
-            # Format field name nicely
-            display_name = field_name.replace("_", " ").title()
-            item = self.summary_item_template.format(
-                display_name=display_name,
-                value=value
-            )
-            lines.append(item)
-
-        return "\n".join(lines)
+        return self.directive_builder.format_summary(session)
 
     def _build_confirmation_directive(self, session: InterviewSession) -> str:
         """Build the complete confirmation directive from consolidated template.
+
+        Delegates to DirectiveBuilder.
 
         Args:
             session: Interview session
@@ -862,21 +771,7 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
             Complete confirmation directive string
         """
-        summary = self._format_summary(session)
-
-        # Build confirmation section using confirmation content template
-        confirmation_section = self.confirmation_content_template.format(
-            summary=summary,
-            instructions=self.confirmation_instructions,
-            prompt=self.confirmation_prompt,
-        )
-
-        # Use consolidated directive template with confirmation section populated
-        return self.review_directive_template.format(
-            confirmation_section=confirmation_section,
-            unclear_edit_section="",
-            unclear_general_section="",
-        )
+        return self.directive_builder.build_confirmation_directive(session)
 
     async def _queue_directive(
         self,
@@ -885,45 +780,13 @@ class InterviewInteractAction(InteractAction, ABC):
     ) -> None:
         """Queue a directive for later response generation.
 
-        The event is determined automatically based on the session state and added only once
-        per execution, even if multiple directives are queued.
+        Delegates to DirectiveBuilder.
 
         Args:
             visitor: InteractWalker
             directive: Directive string to queue
         """
-        if directive and directive.strip():
-            # Add event only once per execution, determined by session state
-            if not self._event_added:
-                # Determine event based on session state from visitor
-                session = getattr(visitor, 'interview_session', None)
-                if session:
-                    if session.state == InterviewState.COMPLETED:
-                        # Completion event is already added explicitly in _generate_completed_directive
-                        # Skip to avoid duplicate events
-                        event_name = None
-                    elif session.state == InterviewState.CANCELLED:
-                        event_name = self.cancellation_event_message_template.format(class_name=self.get_class_name())
-                    elif session.state == InterviewState.REVIEW:
-                        event_name = self.review_event_message_template.format(class_name=self.get_class_name())
-                    else:
-                        # Default to active event for ACTIVE state or if state not recognized
-                        event_name = self.active_event_message_template.format(class_name=self.get_class_name())
-                else:
-                    # No session available, default to active event
-                    event_name = self.active_event_message_template.format(class_name=self.get_class_name())
-
-                # Only add event if one was determined (skip if COMPLETED state already handled)
-                if event_name:
-                    await visitor.add_event(event_name)
-                    self._event_added = True
-                else:
-                    # Event already added explicitly, just mark as added
-                    self._event_added = True
-
-            await visitor.add_directive(directive)
-        else:
-            logger.warning(f"{self.get_class_name()}: Attempted to queue empty directive")
+        await self.directive_builder.queue_directive(visitor, directive)
 
     async def _classify_and_extract(
         self,
@@ -934,14 +797,7 @@ class InterviewInteractAction(InteractAction, ABC):
     ) -> ClassificationResult:
         """Unified classification and extraction routine.
 
-        Uses a single LLM call to detect intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE)
-        and extract field values simultaneously for efficiency and consistency.
-
-        This runs in parallel with directive generation to maintain InterviewSession
-        state and data while determining the best directive to drive the conversation.
-
-        Uses router interpretation as primary source when available, providing structured
-        context for classification and extraction.
+        Delegates to ClassificationHandler for actual implementation.
 
         Args:
             session: Interview session
@@ -952,294 +808,9 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
             ClassificationResult with unified intent and extracted data
         """
-        # Skip classification for terminal states
-        if session.state == InterviewState.COMPLETED or session.state == InterviewState.CANCELLED:
-            return ClassificationResult(intent=Intent.NONE)
-
-        # Build user input - prioritize interpretation when available
-        interpretation_available = interaction.interpretation and interaction.interpretation.strip()
-        if interpretation_available:
-            # Use interpretation as primary source, include utterance only for context if different
-            user_input = interaction.interpretation
-            if utterance and utterance.strip() and utterance.strip() != interaction.interpretation.strip():
-                # Only include utterance if it adds context (is different from interpretation)
-                user_input = f"Interpretation: {interaction.interpretation}\nUser's utterance: {utterance}"
-        elif utterance and utterance.strip():
-            user_input = utterance
-        else:
-            return ClassificationResult(intent=Intent.NONE)
-
-        # Use DSPy if enabled, otherwise use prompt-based implementation
-        if self.use_dspy:
-            return await self._classify_with_dspy(session, user_input, interaction, visitor)
-
-        # Unified classification and extraction using single prompt
-        try:
-            # Build context for unified prompt
-            context = self._build_classification_context(session)
-
-            prompt = self.interview_prompt.format(
-                user_input=user_input,
-                current_state=context["current_state"],
-                answered_fields=context["answered_fields"],
-                entities_to_extract=context["entities_to_extract"],
-                required_fields_info=context["required_fields_info"]
-            )
-
-            # Get model action
-            model_action = await self.get_model_action(required=True)
-            if not model_action:
-                logger.warning(f"{self.get_class_name()}: Could not get model action for unified classification")
-                return ClassificationResult(intent=Intent.NONE)
-
-            # Get conversation history if needed
-            conversation_history = None
-            if self.use_history:
-                conversation_history = await self._get_conversation_history(
-                    interaction,
-                    self.history_limit,
-                    with_utterance=True,
-                    with_response=True,
-                    with_interpretation=False,
-                    with_event=False,
-                    max_statement_length=self.max_statement_length,
-                )
-
-            # Call LLM with unified prompt
-            # Use interpretation as primary text when available (already in user_input)
-            primary_text = interaction.interpretation if interpretation_available else utterance
-            response = await model_action.generate(
-                prompt=primary_text,
-                stream=False,
-                system=prompt,
-                history=conversation_history,
-                calling_action_name=self.get_class_name(),
-                model=self.model,
-                temperature=self.model_temperature,
-                max_tokens=self.model_max_tokens,
-                response_format={"type": "json_object"},
-            )
-
-            # Parse JSON response
-            if isinstance(response, str):
-                result = self._extract_json(response)
-            else:
-                result = response
-
-            if not result:
-                return ClassificationResult(intent=Intent.NONE)
-
-            # Extract intent and convert to Intent enum
-            intent_str = result.get("intent", Intent.NONE.value).upper()
-            try:
-                intent = Intent(intent_str)
-            except ValueError:
-                # Invalid intent value, default to NONE
-                logger.warning(f"{self.get_class_name()}: Invalid intent value '{intent_str}', defaulting to NONE")
-                intent = Intent.NONE
-            confidence = result.get("confidence", 1.0)
-
-            # Build ClassificationResult
-            # Normalize field - handle string "null" from JSON
-            field_value = result.get("field")
-            if field_value and isinstance(field_value, str):
-                field_str = field_value.strip().lower()
-                if field_str == "null" or field_str == "none":
-                    field_value = None
-
-            classification_result = ClassificationResult(
-                intent=intent.value,  # Store as string value for ClassificationResult
-                confidence=confidence,
-                field=field_value,
-                value=result.get("value")
-            )
-
-            # Handle SUBMISSION intent - extract field values
-            if intent == Intent.SUBMISSION:
-                # Extract field values (exclude intent-related keys)
-                intent_keys = {"intent", "confidence", "field", "value"}
-                extracted_data = {k: v for k, v in result.items() if k not in intent_keys}
-
-                # Filter out empty/None/whitespace-only values
-                filtered_data = {}
-                for field, value in extracted_data.items():
-                    if value is not None and isinstance(value, str) and value.strip():
-                        filtered_data[field] = value
-                    elif value is not None and not isinstance(value, str):
-                        filtered_data[field] = value
-
-                if filtered_data:
-                    classification_result.extracted_data = filtered_data
-
-            return classification_result
-
-        except json.JSONDecodeError as e:
-            logger.error(f"{self.get_class_name()}: Failed to parse unified classification JSON: {e}", exc_info=True)
-            return ClassificationResult(intent=Intent.NONE)
-        except Exception as e:
-            logger.error(f"{self.get_class_name()}: Failed to classify/extract via unified prompt: {e}", exc_info=True)
-            return ClassificationResult(intent=Intent.NONE)
-
-    def _build_classification_context(
-        self,
-        session: InterviewSession
-    ) -> Dict[str, str]:
-        """Build minimal context for classification.
-
-        Args:
-            session: Interview session
-
-        Returns:
-            Dictionary with current_state, answered_fields, entities_to_extract, required_fields_info
-        """
-        current_state = session.state.value
-
-        # Format answered fields (minimal - just field names)
-        answered_fields = session.get_answered_questions()
-        answered_fields_str = ", ".join(answered_fields) if answered_fields else "None"
-
-        # Get unanswered questions for extraction
-        unanswered = session.get_unanswered_questions()
-        if session.active_question_key and session.active_question_key in unanswered:
-            active_questions = [q for q in session.question_index if q.get("name") == session.active_question_key]
-        else:
-            active_questions = [q for q in session.question_index if q.get("name") in unanswered]
-        
-        # Ensure active_question_key is included if unanswered
-        # This is critical because classification happens before the response is stored,
-        # so branch conditions may not have matched yet, but the active question should
-        # still be in entities_to_extract for correct intent classification
-        if session.active_question_key:
-            answered_set = set(session.get_answered_questions())
-            active_question_names = set([q.get("name") for q in active_questions if q])
-            if (session.active_question_key not in active_question_names and 
-                session.active_question_key not in answered_set):
-                # Add the active question to active_questions
-                question_map = {q.get("name"): q for q in session.question_index if q.get("name")}
-                active_question_config = question_map.get(session.active_question_key)
-                if active_question_config:
-                    active_questions.append(active_question_config)
-
-        # Build entities list for extraction with required field information
-        entities_list = []
-        required_fields = set(session.get_required_questions())
-
-        for item in active_questions:
-            key = item.get('name')
-            constraints = item.get('constraints', {})
-            if not key or not constraints:
-                continue
-            desc = constraints.get('description', '')
-            other_constraints = {k: v for k, v in constraints.items() if k != 'description'}
-            constraint_strs = [f"{k}: {v}" for k, v in other_constraints.items()]
-            constraint_part = f" ({', '.join(constraint_strs)})" if constraint_strs else ""
-            is_required = key in required_fields
-            required_marker = " [REQUIRED]" if is_required else " [OPTIONAL]"
-            entities_list.append(f"- {key}: {desc}{constraint_part}{required_marker}")
-
-        entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
-
-        # Build required fields info (simplified - comma-separated)
-        required_fields_info = ", ".join(sorted(required_fields)) if required_fields else "None"
-
-        return {
-            "current_state": current_state,
-            "answered_fields": answered_fields_str,
-            "entities_to_extract": entities_to_extract,
-            "required_fields_info": required_fields_info,
-        }
-
-    async def _classify_with_dspy(
-        self,
-        session: InterviewSession,
-        user_input: str,
-        interaction: Interaction,
-        visitor: "InteractWalker"
-    ) -> ClassificationResult:
-        """DSPy-based classification and extraction routine.
-
-        Uses DSPy modules with typed signatures for classification, enabling
-        optimization via DSPy teleprompters (BootstrapFewShot, MIPROv2, etc.)
-        and evaluation with dspy.Evaluate.
-
-        Args:
-            session: Interview session
-            user_input: User's input (typically with reasoning)
-            interaction: Current interaction
-            visitor: InteractWalker
-
-        Returns:
-            ClassificationResult with unified intent and extracted data
-        """
-        try:
-            # Import DSPy components
-            import dspy
-            from jvagent.action.model.dspy import DSPyLM
-            from jvagent.action.interview.dspy import InterviewClassifier
-
-            # Build context for classification
-            context = self._build_classification_context(session)
-
-            # Get conversation history if needed
-            conversation_history = None
-            formatted_history = None
-            if self.use_history:
-                conversation_history = await self._get_conversation_history(
-                    interaction,
-                    self.history_limit,
-                    with_utterance=True,
-                    with_response=True,
-                    with_interpretation=False,
-                    with_event=False,
-                    max_statement_length=self.max_statement_length,
-                )
-                # Format history for DSPy signature
-                from jvagent.action.model.dspy import format_conversation_history_for_dspy
-                formatted_history = format_conversation_history_for_dspy(conversation_history)
-
-            # Get model action
-            model_action = await self.get_model_action(required=True)
-            if not model_action:
-                logger.warning(f"{self.get_class_name()}: Could not get model action for DSPy classification")
-                return ClassificationResult(intent=Intent.NONE)
-
-            # Create DSPy LM adapter
-            # Pass model, temperature, and max_tokens to allow agent.yaml overrides
-            lm = DSPyLM(
-                model_action=model_action,
-                model_type="chat",
-                model=self.model,
-                temperature=self.model_temperature,
-                max_tokens=self.model_max_tokens,
-            )
-
-            # Configure DSPy with the adapter
-            with dspy.context(lm=lm):
-                # Create classifier instance with action instance for signature docstring
-                classifier = InterviewClassifier(action_instance=self)
-
-                # Build kwargs for classifier, include history if available
-                classifier_kwargs = {
-                    "user_input": user_input,
-                    "current_state": context["current_state"],
-                    "answered_fields": context["answered_fields"],
-                    "entities_to_extract": context["entities_to_extract"],
-                    "required_fields_info": context["required_fields_info"],
-                }
-                if formatted_history:
-                    classifier_kwargs["conversation_history"] = formatted_history
-
-                # Call classifier with async forward
-                classification_result = await classifier.aforward(**classifier_kwargs)
-
-                return classification_result
-
-        except Exception as e:
-            logger.error(
-                f"{self.get_class_name()}: Failed to classify/extract via DSPy: {e}",
-                exc_info=True
-            )
-            return ClassificationResult(intent=Intent.NONE)
+        return await self.classification_handler.classify_and_extract(
+            session, utterance, interaction, visitor
+        )
 
     def _get_question_graph(self) -> List[Dict[str, Any]]:
         """Get question graph.
@@ -1266,7 +837,7 @@ class InterviewInteractAction(InteractAction, ABC):
             logger.warning(f"{self.get_class_name()}: question_graph is empty. Define questions in subclass or agent.yaml")
 
         # Validate graph structure
-        from .core.graph_validator import QuestionGraphValidator
+        from .core.graph.graph_validator import QuestionGraphValidator
         validator = QuestionGraphValidator(question_graph)
         validation_report = await validator.validate()
         
@@ -1282,7 +853,7 @@ class InterviewInteractAction(InteractAction, ABC):
 
         # Build QuestionNode and StateNode graph
         service = InterviewService(self)
-        await service.build_question_nodes()
+        await service.build_question_graph()
 
     async def on_reload(self) -> None:
         """Reload the action - rebuild question nodes if question_graph changed."""
@@ -1305,151 +876,14 @@ class InterviewInteractAction(InteractAction, ABC):
                 await self.disconnect(node)
                 await node.delete()
             # Also delete state nodes
-            from .core.state_node import StateNode
+            from .core.graph.state_node import StateNode
             existing_state_nodes = await self.nodes(direction="out", node=StateNode)
             for node in existing_state_nodes:
                 await self.disconnect(node)
                 await node.delete()
-            # Rebuild
-            await self._build_question_nodes()
-
-    async def _build_question_nodes(self) -> None:
-        """Build QuestionNode and StateNode graph from question_graph with conditional branches.
-
-        Creates QuestionNodes and StateNodes and connects them based on branches configuration.
-        Supports both linear (no branches) and tree-based (with branches) arrangements.
-        """
-        from .core.question_edge import QuestionEdge
-        from .core.state_node import StateNode
-
-        question_graph = self._get_question_graph()
-
-        # Create StateNodes for interview states
-        state_node_map = {}
-        for state in [InterviewState.REVIEW, InterviewState.COMPLETED, InterviewState.CANCELLED]:
-            state_node = await StateNode.create(
-                agent_id=self.agent_id,
-                state_type=state,
-                label=state.value.upper(),
-            )
-            state_node_map[state.value.upper()] = state_node
-            await self.connect(state_node)
-
-        # Create all question nodes first
-        question_node_map = {}
-        for question_config in question_graph:
-            question_name = question_config.get("name", "")
-            if not question_name:
-                continue
-
-            question_node = await QuestionNode.create(
-                agent_id=self.agent_id,
-                state=question_config,
-                label=question_name,
-            )
-            question_node_map[question_name] = question_node
-            await self.connect(question_node)
-
-        def resolve_target(target_name: str):
-            """Resolve target name to node (question or state)."""
-            if not target_name:
-                return None
-            # Check if it's a state target
-            if target_name.upper() in state_node_map:
-                return state_node_map[target_name.upper()]
-            # Check if it's a question
-            if target_name in question_node_map:
-                return question_node_map[target_name]
-            return None
-
-        # Now create edges based on branches
-        for question_config in question_graph:
-            question_name = question_config.get("name", "")
-            if not question_name:
-                continue
-
-            source_node = question_node_map.get(question_name)
-            if not source_node:
-                continue
-
-            branches = question_config.get("branches", [])
-            default_next = question_config.get("default_next")
-
-            # Create edges for branches (conditional)
-            if branches:
-                for branch in branches:
-                    condition = branch.get("condition", {})
-                    target_name = branch.get("target")
-                    target_node = resolve_target(target_name)
-                    if target_node:
-                        # Create edge with condition
-                        await source_node.connect(
-                            target_node,
-                            edge=QuestionEdge,
-                            condition=condition
-                        )
-                
-                # IMPORTANT: Also create default edge when branches exist but might not match
-                # This ensures the graph has a path when no branch condition matches
-                if default_next:
-                    # Has default_next, create edge for it (unconditional, for default path)
-                    target_node = resolve_target(default_next)
-                    if target_node:
-                        await source_node.connect(target_node, edge=QuestionEdge)
-                else:
-                    # No default_next specified, create edge to next question in sequence
-                    current_idx = next(
-                        (i for i, q in enumerate(question_graph) if q.get("name") == question_name),
-                        -1
-                    )
-                    if current_idx >= 0 and current_idx + 1 < len(question_graph):
-                        next_question_name = question_graph[current_idx + 1].get("name")
-                        if next_question_name and next_question_name in question_node_map:
-                            target_node = question_node_map[next_question_name]
-                            # Create unconditional edge (no condition) for default path
-                            await source_node.connect(target_node, edge=QuestionEdge)
-            elif default_next:
-                # No branches, just default_next
-                target_node = resolve_target(default_next)
-                if target_node:
-                    await source_node.connect(target_node, edge=QuestionEdge)
-            else:
-                # No branches, no default_next - sequential flow
-                current_idx = next(
-                    (i for i, q in enumerate(question_graph) if q.get("name") == question_name),
-                    -1
-                )
-                if current_idx >= 0 and current_idx + 1 < len(question_graph):
-                    next_question_name = question_graph[current_idx + 1].get("name")
-                    if next_question_name and next_question_name in question_node_map:
-                        target_node = question_node_map[next_question_name]
-                        await source_node.connect(target_node, edge=QuestionEdge)
-
-        # Ensure terminal questions (those without outgoing edges to other questions) transition to REVIEW
-        review_state_node = state_node_map.get(InterviewState.REVIEW.value.upper())
-        if review_state_node:
-            for question_name, question_node in question_node_map.items():
-                # Get all outgoing edges from this question node
-                outgoing_question_nodes = await question_node.nodes(direction="out", node=QuestionNode)
-                outgoing_state_nodes = await question_node.nodes(direction="out", node=StateNode)
-                
-                # Check if this question is terminal (no outgoing edges to other questions)
-                is_terminal = len(outgoing_question_nodes) == 0
-                
-                if is_terminal:
-                    # Check if it already has a transition to REVIEW
-                    has_review_transition = any(
-                        state_node.id == review_state_node.id 
-                        for state_node in outgoing_state_nodes
-                    )
-                    
-                    # If no REVIEW transition exists, add one
-                    if not has_review_transition:
-                        logger.debug(
-                            f"Adding REVIEW transition to terminal question '{question_name}' "
-                            f"(no outgoing edges to other questions)"
-                        )
-                        await question_node.connect(review_state_node, edge=QuestionEdge)
+            # Rebuild using QuestionGraphBuilder
+            service = InterviewService(self)
+            await service.build_question_graph()
 
 
     async def execute(self, visitor: "InteractWalker") -> None:
@@ -1467,7 +901,7 @@ class InterviewInteractAction(InteractAction, ABC):
         Note: Errors are automatically logged by InteractWalker.
         """
         # Initialize event tracking (event added only once per execution)
-        self._event_added = False
+        self.directive_builder.reset_event_tracking()
 
         interaction = visitor.interaction
         if not interaction:
@@ -1531,7 +965,7 @@ class InterviewInteractAction(InteractAction, ABC):
         )
 
         # Reset event tracking for next execution
-        self._event_added = False
+        self.directive_builder.reset_event_tracking()
 
     async def _get_conversation_history(
         self,
