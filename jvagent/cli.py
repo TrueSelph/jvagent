@@ -5,6 +5,7 @@ Command-line interface for the jvagent application.
 
 import logging
 import os
+import shutil
 from typing import Any, List
 
 from dotenv import load_dotenv
@@ -31,13 +32,6 @@ logger = logging.getLogger(__name__)
 
 # Suppress noisy asyncio selector logs
 logging.getLogger("asyncio").setLevel(logging.WARNING)
-
-from jvagent.utils.env import (
-    EnvironmentMode,
-    get_environment_mode,
-    is_development_mode,
-    is_production_mode,
-)
 
 
 def load_app_env(app_root: str = None) -> None:
@@ -219,13 +213,13 @@ async def ensure_admin_user() -> bool:
 
 def _get_config_value(config: dict, path: str, env_var: str = None, default: Any = None) -> Any:
     """Get configuration value from nested dict path with environment variable fallback.
-    
+
     Args:
         config: Configuration dictionary (from app.yaml)
         path: Dot-separated path to config value (e.g., "server.host")
         env_var: Environment variable name to check (takes precedence)
         default: Default value if not found
-    
+
     Returns:
         Configuration value (env var > config > default)
     """
@@ -239,7 +233,7 @@ def _get_config_value(config: dict, path: str, env_var: str = None, default: Any
         if isinstance(default, int) and value.isdigit():
             return int(value)
         return value
-    
+
     # Try to get from config dict using dot notation
     if config:
         keys = path.split(".")
@@ -252,14 +246,14 @@ def _get_config_value(config: dict, path: str, env_var: str = None, default: Any
                 break
         if current is not None:
             return current
-    
+
     # Return default
     return default
 
 
 def create_server_from_config(debug: bool = False, app_root: str = None) -> Server:
     """Create and configure Server instance from app.yaml and environment variables.
-    
+
     Configuration priority (highest to lowest):
     1. Environment variables
     2. app.yaml config section
@@ -276,14 +270,15 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     app_config = {}
     if app_root is None:
         app_root = os.getcwd()
-    
+
     try:
         from pathlib import Path
+
         app_yaml_path = Path(app_root) / "app.yaml"
         if app_yaml_path.exists():
             import yaml
             from jvagent.core.env_resolver import resolve_env_placeholders
-            
+
             with open(app_yaml_path, "r", encoding="utf-8") as f:
                 yaml_data = yaml.safe_load(f)
                 if yaml_data and "config" in yaml_data:
@@ -292,11 +287,13 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     except Exception as e:
         logger.debug(f"Could not load app.yaml config: {e}")
         app_config = {}
-    
+
     # Get configuration with priority: env var > app.yaml > default
     # Server configuration
     title = _get_config_value(app_config, "server.title", "JVAGENT_TITLE", "jvagent API")
-    description = _get_config_value(app_config, "server.description", "JVAGENT_DESCRIPTION", "jvagent Agentive Platform API")
+    description = _get_config_value(
+        app_config, "server.description", "JVAGENT_DESCRIPTION", "jvagent Agentive Platform API"
+    )
     version = _get_config_value(app_config, "server.version", "JVAGENT_VERSION", __version__)
     host = _get_config_value(app_config, "server.host", "JVAGENT_HOST", "127.0.0.1")
     port = int(_get_config_value(app_config, "server.port", "JVAGENT_PORT", 8000))
@@ -307,28 +304,42 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     # Ensure db_path is never None or empty (jvspatial falls back to "./jvdb" if None)
     if not db_path or db_path.strip() == "":
         db_path = "./jvagent_db"
-    
+
     # MongoDB configuration
-    mongodb_uri = _get_config_value(app_config, "database.uri", "JVSPATIAL_MONGODB_URI", "mongodb://localhost:27017")
-    mongodb_db_name = _get_config_value(app_config, "database.name", "JVSPATIAL_MONGODB_DB_NAME", None)
-    
+    mongodb_uri = _get_config_value(
+        app_config, "database.uri", "JVSPATIAL_MONGODB_URI", "mongodb://localhost:27017"
+    )
+    mongodb_db_name = _get_config_value(
+        app_config, "database.name", "JVSPATIAL_MONGODB_DB_NAME", None
+    )
+
     # Handle empty string from unresolved placeholder (resolve_env_placeholders returns "" if env var not found)
     if not mongodb_uri or mongodb_uri.strip() == "":
         mongodb_uri = os.getenv("JVSPATIAL_MONGODB_URI", "mongodb://localhost:27017")
-    
+
     # Set MongoDB environment variables if using MongoDB
     if db_type == "mongodb":
         os.environ["JVSPATIAL_MONGODB_URI"] = mongodb_uri
         if mongodb_db_name:
             os.environ["JVSPATIAL_MONGODB_DB_NAME"] = mongodb_db_name
-    
+
     # DynamoDB configuration
-    dynamodb_table_name = _get_config_value(app_config, "database.table_name", "JVSPATIAL_DYNAMODB_TABLE_NAME", None)
-    dynamodb_region = _get_config_value(app_config, "database.region", "JVSPATIAL_DYNAMODB_REGION", None)
-    dynamodb_endpoint_url = _get_config_value(app_config, "database.endpoint_url", "JVSPATIAL_DYNAMODB_ENDPOINT_URL", None)
-    dynamodb_access_key_id = _get_config_value(app_config, "database.access_key_id", "AWS_ACCESS_KEY_ID", None)
-    dynamodb_secret_access_key = _get_config_value(app_config, "database.secret_access_key", "AWS_SECRET_ACCESS_KEY", None)
-    
+    dynamodb_table_name = _get_config_value(
+        app_config, "database.table_name", "JVSPATIAL_DYNAMODB_TABLE_NAME", None
+    )
+    dynamodb_region = _get_config_value(
+        app_config, "database.region", "JVSPATIAL_DYNAMODB_REGION", None
+    )
+    dynamodb_endpoint_url = _get_config_value(
+        app_config, "database.endpoint_url", "JVSPATIAL_DYNAMODB_ENDPOINT_URL", None
+    )
+    dynamodb_access_key_id = _get_config_value(
+        app_config, "database.access_key_id", "AWS_ACCESS_KEY_ID", None
+    )
+    dynamodb_secret_access_key = _get_config_value(
+        app_config, "database.secret_access_key", "AWS_SECRET_ACCESS_KEY", None
+    )
+
     # Handle empty strings from unresolved placeholders
     if dynamodb_table_name and dynamodb_table_name.strip() == "":
         dynamodb_table_name = None
@@ -340,7 +351,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         dynamodb_access_key_id = None
     if dynamodb_secret_access_key and dynamodb_secret_access_key.strip() == "":
         dynamodb_secret_access_key = None
-    
+
     # Set DynamoDB environment variables if using DynamoDB (for backward compatibility)
     if db_type == "dynamodb":
         if dynamodb_table_name:
@@ -353,7 +364,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
             os.environ["AWS_ACCESS_KEY_ID"] = dynamodb_access_key_id
         if dynamodb_secret_access_key:
             os.environ["AWS_SECRET_ACCESS_KEY"] = dynamodb_secret_access_key
-    
+
     # Set JVSPATIAL_JSONDB_PATH unconditionally to ensure DatabaseManager uses the correct path
     # (DatabaseManager uses JVSPATIAL_JSONDB_PATH, not JVSPATIAL_DB_PATH)
     # This must be set before any database initialization occurs
@@ -361,13 +372,17 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
 
     # Graph endpoint configuration
-    graph_endpoint_enabled = _get_config_value(app_config, "api.graph_endpoint_enabled", "JVSPATIAL_GRAPH_ENDPOINT_ENABLED", False)
+    graph_endpoint_enabled = _get_config_value(
+        app_config, "api.graph_endpoint_enabled", "JVSPATIAL_GRAPH_ENDPOINT_ENABLED", False
+    )
 
     # Authentication configuration (enabled by default for jvagent)
     auth_enabled = _get_config_value(app_config, "auth.enabled", "JVAGENT_AUTH_ENABLED", True)
     jwt_auth_enabled = os.getenv("JVSPATIAL_JWT_AUTH_ENABLED", "true").lower() == "true"
     jwt_secret = os.getenv("JVSPATIAL_JWT_SECRET", "jvagent-secret-key-change-in-production")
-    jwt_expire_minutes = int(_get_config_value(app_config, "auth.jwt_expire_minutes", "JVSPATIAL_JWT_EXPIRE_MINUTES", 60))
+    jwt_expire_minutes = int(
+        _get_config_value(app_config, "auth.jwt_expire_minutes", "JVSPATIAL_JWT_EXPIRE_MINUTES", 60)
+    )
 
     # Log server creation details only in debug mode
     if debug:
@@ -385,7 +400,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
 
     # Determine log level based on debug flag or environment variable
     log_level = os.getenv("JVAGENT_LOG_LEVEL", "debug" if debug else "info")
-    
+
     # Override with app.yaml development.debug if available
     debug_mode = _get_config_value(app_config, "development.debug", "JVSPATIAL_DEBUG", False)
     if debug_mode:
@@ -426,13 +441,13 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         "cors_enabled": cors_enabled,
         "cors_origins": cors_origins,
     }
-    
+
     # Add MongoDB-specific configuration
     if db_type == "mongodb":
         server_kwargs["db_connection_string"] = mongodb_uri
         if mongodb_db_name:
             server_kwargs["db_database_name"] = mongodb_db_name
-    
+
     # Add DynamoDB-specific configuration
     if db_type == "dynamodb":
         if dynamodb_table_name:
@@ -445,26 +460,30 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
             server_kwargs["dynamodb_access_key_id"] = dynamodb_access_key_id
         if dynamodb_secret_access_key:
             server_kwargs["dynamodb_secret_access_key"] = dynamodb_secret_access_key
-    
+
     server = Server(**server_kwargs)
 
     # Initialize logging database (automatically installs DBLogHandler)
     # Import INTERACTION level to ensure it's registered before initialization
     from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
     import logging
-    
-    from jvspatial.logging.config import initialize_logging_database, get_logging_config
-    
+
+    from jvspatial.logging.config import initialize_logging_database
+
     # Get logging configuration from app.yaml if available
-    logging_enabled = _get_config_value(app_config, "logging.enabled", "JVAGENT_LOGGING_ENABLED", True)
+    logging_enabled = _get_config_value(
+        app_config, "logging.enabled", "JVAGENT_LOGGING_ENABLED", True
+    )
     if logging_enabled:
         # Get log levels from app.yaml or environment
-        log_levels_str = _get_config_value(app_config, "logging.levels", "JVAGENT_DB_LOGGING_LEVELS", "ERROR,CRITICAL")
+        log_levels_str = _get_config_value(
+            app_config, "logging.levels", "JVAGENT_DB_LOGGING_LEVELS", "ERROR,CRITICAL"
+        )
         if isinstance(log_levels_str, str):
             log_level_names = [level.strip().upper() for level in log_levels_str.split(",")]
         else:
             log_level_names = ["ERROR", "CRITICAL"]
-        
+
         # Convert level names to logging constants
         log_levels = set()
         for level_name in log_level_names:
@@ -473,27 +492,45 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
                 log_levels.add(level)
             except AttributeError:
                 logger.warning(f"Invalid log level: {level_name}, skipping")
-        
+
         # Default to ERROR and CRITICAL if no valid levels
         if not log_levels:
             log_levels = {logging.ERROR, logging.CRITICAL}
-        
+
         # Add INTERACTION level to capture interaction logs
         log_levels.add(INTERACTION_LEVEL_NUMBER)
-        
+
         # Get logging database config from app.yaml
-        log_db_type = _get_config_value(app_config, "logging.database.type", "JVAGENT_LOG_DB_TYPE", None)
-        log_db_uri = _get_config_value(app_config, "logging.database.uri", "JVAGENT_LOG_DB_URI", None)
-        log_db_name = _get_config_value(app_config, "logging.database.name", "JVAGENT_LOG_DB_NAME", "jvagent_logs")
-        log_db_path = _get_config_value(app_config, "logging.database.path", "JVAGENT_LOG_DB_PATH", None)
-        
+        log_db_type = _get_config_value(
+            app_config, "logging.database.type", "JVAGENT_LOG_DB_TYPE", None
+        )
+        log_db_uri = _get_config_value(
+            app_config, "logging.database.uri", "JVAGENT_LOG_DB_URI", None
+        )
+        log_db_name = _get_config_value(
+            app_config, "logging.database.name", "JVAGENT_LOG_DB_NAME", "jvagent_logs"
+        )
+        log_db_path = _get_config_value(
+            app_config, "logging.database.path", "JVAGENT_LOG_DB_PATH", None
+        )
+
         # DynamoDB logging database configuration
-        log_dynamodb_table_name = _get_config_value(app_config, "logging.database.table_name", "JVSPATIAL_LOG_DB_TABLE_NAME", None)
-        log_dynamodb_region = _get_config_value(app_config, "logging.database.region", "JVSPATIAL_LOG_DB_REGION", None)
-        log_dynamodb_endpoint_url = _get_config_value(app_config, "logging.database.endpoint_url", "JVSPATIAL_LOG_DB_ENDPOINT_URL", None)
-        log_dynamodb_access_key_id = _get_config_value(app_config, "logging.database.access_key_id", "AWS_ACCESS_KEY_ID", None)
-        log_dynamodb_secret_access_key = _get_config_value(app_config, "logging.database.secret_access_key", "AWS_SECRET_ACCESS_KEY", None)
-        
+        log_dynamodb_table_name = _get_config_value(
+            app_config, "logging.database.table_name", "JVSPATIAL_LOG_DB_TABLE_NAME", None
+        )
+        log_dynamodb_region = _get_config_value(
+            app_config, "logging.database.region", "JVSPATIAL_LOG_DB_REGION", None
+        )
+        log_dynamodb_endpoint_url = _get_config_value(
+            app_config, "logging.database.endpoint_url", "JVSPATIAL_LOG_DB_ENDPOINT_URL", None
+        )
+        log_dynamodb_access_key_id = _get_config_value(
+            app_config, "logging.database.access_key_id", "AWS_ACCESS_KEY_ID", None
+        )
+        log_dynamodb_secret_access_key = _get_config_value(
+            app_config, "logging.database.secret_access_key", "AWS_SECRET_ACCESS_KEY", None
+        )
+
         # Handle empty strings from unresolved placeholders
         if log_db_uri and log_db_uri.strip() == "":
             log_db_uri = os.getenv("JVAGENT_LOG_DB_URI") or mongodb_uri
@@ -509,7 +546,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
             log_dynamodb_access_key_id = None
         if log_dynamodb_secret_access_key and log_dynamodb_secret_access_key.strip() == "":
             log_dynamodb_secret_access_key = None
-        
+
         # Set logging database environment variables if specified
         if log_db_type:
             os.environ["JVSPATIAL_LOG_DB_TYPE"] = log_db_type
@@ -519,7 +556,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
             os.environ["JVSPATIAL_LOG_DB_NAME"] = log_db_name
         if log_db_path:
             os.environ["JVSPATIAL_LOG_DB_PATH"] = log_db_path
-        
+
         # Set DynamoDB logging database environment variables if using DynamoDB
         if log_db_type == "dynamodb":
             if log_dynamodb_table_name:
@@ -532,14 +569,14 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
                 os.environ["AWS_ACCESS_KEY_ID"] = log_dynamodb_access_key_id
             if log_dynamodb_secret_access_key:
                 os.environ["AWS_SECRET_ACCESS_KEY"] = log_dynamodb_secret_access_key
-        
+
         # Initialize with updated log_levels
         initialize_logging_database(
             log_levels=log_levels,
         )
     else:
         logger.info("Logging is disabled in configuration")
-    
+
     # Import endpoints to register them
     from jvagent.logging import endpoints  # noqa: F401 - Import to register endpoints
 
@@ -610,6 +647,36 @@ def disable_register_endpoint(server: Server) -> None:
         logger.warning(f"Could not disable register endpoint: {e}")
 
 
+def purge_app_data(app_root: str) -> None:
+    """Purge application data (database and logs).
+
+    Deletes the jvagent_db and jvagent_logs directories from the app root.
+    This is used when the --purge flag is passed with --update.
+
+    Args:
+        app_root: Path to the app root directory.
+    """
+    if app_root is None:
+        app_root = os.getcwd()
+
+    dirs_to_purge = ["jvagent_db", "jvagent_logs"]
+
+    logger.warning(f"Purging application data from {app_root}...")
+
+    for dir_name in dirs_to_purge:
+        dir_path = os.path.join(app_root, dir_name)
+        if os.path.exists(dir_path):
+            try:
+                shutil.rmtree(dir_path)
+                logger.info(f"Deleted directory: {dir_path}")
+            except Exception as e:
+                logger.error(f"Failed to delete {dir_path}: {e}")
+        else:
+            logger.debug(f"Directory not found (skipping): {dir_path}")
+
+    logger.info("Purge complete.")
+
+
 def main() -> None:
     """Main entry point for jvagent application."""
     import asyncio
@@ -623,7 +690,7 @@ def main() -> None:
     # This handles both: "jvagent /path/to/app bundle" and "jvagent bundle /path/to/app"
     app_root = None
     commands = ["run", "status", "agent", "action", "bootstrap", "bundle"]
-    flags = ["--debug", "--update", "--migrate"]
+    flags = ["--debug", "--update", "--migrate", "--purge"]
 
     # Find app root: first argument that's not a command or flag
     # This extracts paths whether they appear before or after the command
@@ -674,6 +741,16 @@ def main() -> None:
     if update_flag:
         args = [arg for arg in args if arg not in ["--update", "--migrate"]]
 
+    # Check for --purge flag (only valid with --update)
+    purge_flag = "--purge" in args
+    if purge_flag:
+        args = [arg for arg in args if arg != "--purge"]
+
+        if update_flag:
+            purge_app_data(app_root=app_root)
+        else:
+            logger.warning("The --purge flag is ignored because --update is not specified.")
+
     # If no arguments or "run" command, start the server
     if not args or args[0] == "run":
         run_server(update_if_exists=update_flag, debug=debug_flag, app_root=app_root)
@@ -720,7 +797,9 @@ def handle_bundle_command(args: List[str], app_root: str = None) -> None:
                 logger.debug(f"Using app root from command argument: {app_root}")
             else:
                 app_root = os.getcwd()
-                logger.debug(f"Argument '{args[0]}' is not a valid path, using current working directory")
+                logger.debug(
+                    f"Argument '{args[0]}' is not a valid path, using current working directory"
+                )
         else:
             app_root = os.getcwd()
             logger.debug(f"Using current working directory as app root: {app_root}")
@@ -774,6 +853,7 @@ Arguments:
 Flags:
     --update, --migrate        Force update of existing agents and actions from YAML files
                                 By default, existing agents/actions are used as-is
+    --purge                    Delete existing database and logs before starting (requires --update)
     --debug                    Enable debug logging (verbose output for troubleshooting)
 
 Environment Variables:
@@ -797,13 +877,13 @@ Examples:
 
 class StartupLogCounter(logging.Handler):
     """Logging handler that counts warnings and errors during startup."""
-    
+
     def __init__(self):
         super().__init__(level=logging.WARNING)  # Only capture WARNING and above
         self.warning_count = 0
         self.error_count = 0
         self.critical_count = 0
-    
+
     def emit(self, record: logging.LogRecord) -> None:
         """Count log records by level."""
         if record.levelno >= logging.CRITICAL:
@@ -812,7 +892,7 @@ class StartupLogCounter(logging.Handler):
             self.error_count += 1
         elif record.levelno >= logging.WARNING:
             self.warning_count += 1
-    
+
     def get_summary(self) -> dict:
         """Get summary of logged warnings and errors."""
         return {
@@ -880,27 +960,32 @@ def run_server(update_if_exists: bool = False, debug: bool = False, app_root: st
         async def show_startup_summary():
             """Display startup summary after server has started."""
             import asyncio
+
             # Small delay to ensure uvicorn logs appear first
             await asyncio.sleep(0.5)
-            
+
             summary = log_counter.get_summary()
             if summary["total"] > 0:
                 summary_parts = []
                 if summary["critical"] > 0:
                     summary_parts.append(f"❌ {summary['critical']} critical")
                 if summary["errors"] > 0:
-                    summary_parts.append(f"❌ {summary['errors']} error{'s' if summary['errors'] != 1 else ''}")
+                    summary_parts.append(
+                        f"❌ {summary['errors']} error{'s' if summary['errors'] != 1 else ''}"
+                    )
                 if summary["warnings"] > 0:
-                    summary_parts.append(f"⚠️  {summary['warnings']} warning{'s' if summary['warnings'] != 1 else ''}")
-                
+                    summary_parts.append(
+                        f"⚠️  {summary['warnings']} warning{'s' if summary['warnings'] != 1 else ''}"
+                    )
+
                 summary_msg = " | ".join(summary_parts)
                 logger.warning(f"⚠️  Startup Summary: {summary_msg}")
             else:
                 logger.info("✓ Startup Summary: No warnings or errors")
-            
+
             # Remove the log counter handler after displaying summary
             root_logger.removeHandler(log_counter)
-        
+
         # Register the startup hook to display summary
         server.lifecycle_manager.add_startup_hook(show_startup_summary)
 
@@ -915,10 +1000,14 @@ def run_server(update_if_exists: bool = False, debug: bool = False, app_root: st
             if summary["critical"] > 0:
                 summary_parts.append(f"❌ {summary['critical']} critical")
             if summary["errors"] > 0:
-                summary_parts.append(f"❌ {summary['errors']} error{'s' if summary['errors'] != 1 else ''}")
+                summary_parts.append(
+                    f"❌ {summary['errors']} error{'s' if summary['errors'] != 1 else ''}"
+                )
             if summary["warnings"] > 0:
-                summary_parts.append(f"⚠️  {summary['warnings']} warning{'s' if summary['warnings'] != 1 else ''}")
-            
+                summary_parts.append(
+                    f"⚠️  {summary['warnings']} warning{'s' if summary['warnings'] != 1 else ''}"
+                )
+
             summary_msg = " | ".join(summary_parts)
             logger.warning(f"⚠️  Startup Summary: {summary_msg}")
         root_logger.removeHandler(log_counter)
@@ -956,7 +1045,7 @@ async def show_status(app_root: str = None) -> None:
     # Ensure db_path is never None or empty
     if not db_path or db_path.strip() == "":
         db_path = "./jvagent_db"
-    
+
     # Set JVSPATIAL_JSONDB_PATH unconditionally to ensure DatabaseManager uses the correct path
     # This must be set before any database initialization occurs
     if db_type == "json":
@@ -1025,7 +1114,7 @@ async def bootstrap_only(update_if_exists: bool = False, app_root: str = None) -
     # Ensure db_path is never None or empty
     if not db_path or db_path.strip() == "":
         db_path = "./jvagent_db"
-    
+
     # Set JVSPATIAL_JSONDB_PATH unconditionally to ensure DatabaseManager uses the correct path
     # This must be set before any database initialization occurs
     if db_type == "json":
@@ -1053,10 +1142,14 @@ async def bootstrap_only(update_if_exists: bool = False, app_root: str = None) -
             if summary["critical"] > 0:
                 summary_parts.append(f"❌ {summary['critical']} critical")
             if summary["errors"] > 0:
-                summary_parts.append(f"❌ {summary['errors']} error{'s' if summary['errors'] != 1 else ''}")
+                summary_parts.append(
+                    f"❌ {summary['errors']} error{'s' if summary['errors'] != 1 else ''}"
+                )
             if summary["warnings"] > 0:
-                summary_parts.append(f"⚠️  {summary['warnings']} warning{'s' if summary['warnings'] != 1 else ''}")
-            
+                summary_parts.append(
+                    f"⚠️  {summary['warnings']} warning{'s' if summary['warnings'] != 1 else ''}"
+                )
+
             summary_msg = " | ".join(summary_parts)
             logger.warning(f"⚠️  Bootstrap Summary: {summary_msg}")
         else:
@@ -1234,7 +1327,6 @@ async def uninstall_agent(namespace: str, agent_name: str, app_root: str = None)
 
 async def list_actions(agent_name: str) -> None:
     """List actions for an agent."""
-    from jvagent.action.actions import Actions
     from jvagent.core.agent import Agent
 
     # Find the agent
@@ -1269,7 +1361,6 @@ async def list_actions(agent_name: str) -> None:
 
 async def enable_action(agent_name: str, action_label: str) -> None:
     """Enable an action for an agent."""
-    from jvagent.action.actions import Actions
     from jvagent.core.agent import Agent
 
     # Find the agent
@@ -1298,7 +1389,6 @@ async def enable_action(agent_name: str, action_label: str) -> None:
 
 async def disable_action(agent_name: str, action_label: str) -> None:
     """Disable an action for an agent."""
-    from jvagent.action.actions import Actions
     from jvagent.core.agent import Agent
 
     # Find the agent

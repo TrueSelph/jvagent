@@ -15,4 +15,3 @@ package:
     jvagent: ~0.0.1
     pip:
       - filetype>=1.2.0
-      

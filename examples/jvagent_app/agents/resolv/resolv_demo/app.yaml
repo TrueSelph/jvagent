@@ -1,7 +1,7 @@
 # jvagent Application Descriptor
 # This file defines the application metadata, configuration defaults, and lists agents.
 # Agents listed in the 'agents' section are automatically installed when you run jvagent or bootstrap.
-# 
+#
 # In production, this package will be used to bootstrap a running jvagent instance.
 # Runtime-specific settings (paths, secrets) should be configured via .env or environment variables.
 
@@ -43,7 +43,7 @@ config:
     version: 0.0.1
     host: 0.0.0.0
     port: 8000
-  
+
   # Database configuration (defaults - production will override)
   database:
     type: json
@@ -64,30 +64,30 @@ config:
     # Note: For local development, use DynamoDB Local with endpoint_url set to "http://localhost:8000"
     # Note: In AWS Lambda, IAM role credentials are automatically used if access_key_id is not set
     # Note: You can use environment variable placeholders (e.g., ${AWS_ACCESS_KEY_ID}) for sensitive values
-  
+
   # File storage configuration (defaults - production will override)
   file_storage:
     provider: local
     root_dir: ./.files
     enabled: true
-  
+
   # Authentication configuration (defaults - production MUST override secrets)
   auth:
     enabled: true
     jwt_expire_minutes: 60
     # JWT secret should be set via JVSPATIAL_JWT_SECRET environment variable
-  
+
   # Admin user configuration (defaults - production MUST override password)
   admin:
     username: admin
     email: admin@jvagent.example
     # Password should be set via JVAGENT_ADMIN_PASSWORD environment variable
-  
+
   # Interact endpoint configuration
   interact:
     rate_limit_per_minute: 60  # per IP+agent_id combination
     max_utterance_length: 2000  # maximum characters for utterance input (set to null to disable)
-  
+
   # Logging system configuration
   logging:
     enabled: true
@@ -109,22 +109,22 @@ config:
       # secret_access_key: ${AWS_SECRET_ACCESS_KEY}  # Optional: AWS secret key (uses IAM role if not set)
       # Note: If not specified, logging database uses same configuration as main database
       # Note: You can use environment variable placeholders (e.g., ${AWS_ACCESS_KEY_ID}) for sensitive values
-  
+
   # CORS configuration
   cors:
     enabled: true
     origins: http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:5173,http://localhost:5173
-  
+
   # Development settings
   development:
     debug: false
     environment: development  # development or production
-  
+
   # API configuration
   api:
     prefix: /api
     graph_endpoint_enabled: true
-  
+
   # Paths configuration
   paths:
     agents: ./agents
@@ -137,7 +137,7 @@ config:
 agents:
   # Example agent - will be loaded from agents/resolv/resolv_demo/
   - resolv/resolv_demo
-  
+
   # Add more agents here - they will be installed automatically when you run jvagent
   # - contrib/another_agent
   # - custom/custom_agent
