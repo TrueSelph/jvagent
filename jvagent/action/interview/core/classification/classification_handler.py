@@ -1,33 +1,121 @@
-"""Classification logic for interview action.
+"""Classification handler for interview action.
 
-This module handles intent classification and field extraction from user input.
+Extracted classification logic from interview_interact_action.py for better
+separation of concerns and maintainability.
 """
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from .interview_session import InterviewSession
-from .enums import InterviewState, Intent
+from ..foundation.enums import Intent, InterviewState
+from ..session.interview_session import InterviewSession
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
-    from jvagent.action.interview.interview_interact_action import ClassificationResult, InterviewInteractAction
     from jvagent.memory import Interaction
+    from jvagent.action.interview.interview_interact_action import InterviewInteractAction
 
 logger = logging.getLogger(__name__)
 
 
-class InterviewClassifier:
-    """Handles classification and extraction for interview actions."""
+@dataclass
+class ClassificationResult:
+    """Result of unified classification and extraction routine.
+
+    Uses unified intent types: CANCELLATION, CONFIRMATION, UPDATE, DECLINE, SUBMISSION, NONE
+    """
+    intent: str  # "CANCELLATION", "CONFIRMATION", "UPDATE", "DECLINE", "SUBMISSION", "NONE"
+    confidence: float = 1.0  # Confidence score for the classification
+
+    # Unified field/value structure (used for UPDATE, DECLINE, and SUBMISSION)
+    field: Optional[str] = None  # Field name (for UPDATE/DECLINE intent) or null
+    value: Optional[Any] = None  # Field value (for UPDATE intent) or null
+
+    # For SUBMISSION intent - extracted field values (multiple fields)
+    extracted_data: Optional[Dict[str, Any]] = None  # Extracted responses for "SUBMISSION" intent
+
+
+class ClassificationHandler:
+    """Handles classification and extraction logic for interview actions."""
     
     def __init__(self, action: "InterviewInteractAction"):
-        """Initialize classifier with action instance.
+        """Initialize classification handler with action instance.
         
         Args:
             action: InterviewInteractAction instance
         """
         self.action = action
+    
+    def build_classification_context(
+        self,
+        session: InterviewSession
+    ) -> Dict[str, str]:
+        """Build minimal context for classification.
+
+        Args:
+            session: Interview session
+
+        Returns:
+            Dictionary with current_state, answered_fields, entities_to_extract, required_fields_info
+        """
+        current_state = session.state.value
+
+        # Format answered fields (minimal - just field names)
+        answered_fields = session.get_answered_questions()
+        answered_fields_str = ", ".join(answered_fields) if answered_fields else "None"
+
+        # Get unanswered questions for extraction
+        unanswered = session.get_unanswered_questions()
+        if session.active_question_key and session.active_question_key in unanswered:
+            active_questions = [q for q in session.question_index if q.get("name") == session.active_question_key]
+        else:
+            active_questions = [q for q in session.question_index if q.get("name") in unanswered]
+        
+        # Ensure active_question_key is included if unanswered
+        # This is critical because classification happens before the response is stored,
+        # so branch conditions may not have matched yet, but the active question should
+        # still be in entities_to_extract for correct intent classification
+        if session.active_question_key:
+            answered_set = set(session.get_answered_questions())
+            active_question_names = set([q.get("name") for q in active_questions if q])
+            if (session.active_question_key not in active_question_names and 
+                session.active_question_key not in answered_set):
+                # Add the active question to active_questions
+                question_map = {q.get("name"): q for q in session.question_index if q.get("name")}
+                active_question_config = question_map.get(session.active_question_key)
+                if active_question_config:
+                    active_questions.append(active_question_config)
+
+        # Build entities list for extraction with required field information
+        entities_list = []
+        required_fields = set(session.get_required_questions())
+
+        for item in active_questions:
+            key = item.get('name')
+            constraints = item.get('constraints', {})
+            if not key or not constraints:
+                continue
+            desc = constraints.get('description', '')
+            other_constraints = {k: v for k, v in constraints.items() if k != 'description'}
+            constraint_strs = [f"{k}: {v}" for k, v in other_constraints.items()]
+            constraint_part = f" ({', '.join(constraint_strs)})" if constraint_strs else ""
+            is_required = key in required_fields
+            required_marker = " [REQUIRED]" if is_required else " [OPTIONAL]"
+            entities_list.append(f"- {key}: {desc}{constraint_part}{required_marker}")
+
+        entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
+
+        # Build required fields info (simplified - comma-separated)
+        required_fields_info = ", ".join(sorted(required_fields)) if required_fields else "None"
+
+        return {
+            "current_state": current_state,
+            "answered_fields": answered_fields_str,
+            "entities_to_extract": entities_to_extract,
+            "required_fields_info": required_fields_info,
+        }
     
     async def classify_and_extract(
         self,
@@ -35,7 +123,7 @@ class InterviewClassifier:
         utterance: str,
         interaction: "Interaction",
         visitor: "InteractWalker"
-    ) -> "ClassificationResult":
+    ) -> ClassificationResult:
         """Unified classification and extraction routine.
 
         Uses a single LLM call to detect intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE)
@@ -50,8 +138,6 @@ class InterviewClassifier:
         Returns:
             ClassificationResult with unified intent and extracted data
         """
-        from jvagent.action.interview.interview_interact_action import ClassificationResult
-        
         # Skip classification for terminal states
         if session.state == InterviewState.COMPLETED or session.state == InterviewState.CANCELLED:
             return ClassificationResult(intent=Intent.NONE)
@@ -76,7 +162,7 @@ class InterviewClassifier:
         # Unified classification and extraction using single prompt
         try:
             # Build context for unified prompt
-            context = await self._build_classification_context(session)
+            context = self.build_classification_context(session)
 
             prompt = self.action.interview_prompt.format(
                 user_input=user_input,
@@ -122,7 +208,7 @@ class InterviewClassifier:
 
             # Parse JSON response
             if isinstance(response, str):
-                result = self.action._extract_json(response)
+                result = self._extract_json(response)
             else:
                 result = response
 
@@ -179,90 +265,14 @@ class InterviewClassifier:
         except Exception as e:
             logger.error(f"{self.action.get_class_name()}: Failed to classify/extract via unified prompt: {e}", exc_info=True)
             return ClassificationResult(intent=Intent.NONE)
-
-    async def _build_classification_context(
-        self,
-        session: InterviewSession
-    ) -> Dict[str, str]:
-        """Build context for classification with all reachable unanswered questions.
-
-        Args:
-            session: Interview session
-
-        Returns:
-            Dictionary with current_state, answered_fields, entities_to_extract, required_fields_info
-        """
-        from .question_walker import QuestionWalker
-        
-        current_state = session.state.value
-
-        # Format answered fields (minimal - just field names)
-        answered_fields = session.get_answered_questions()
-        answered_fields_str = ", ".join(answered_fields) if answered_fields else "None"
-
-        # Get all reachable unanswered questions on the walk path
-        question_walker = QuestionWalker()
-        reachable_unanswered = await question_walker.get_reachable_unanswered_questions(
-            session, self.action
-        )
-        
-        # Ensure active_question_key is included if unanswered
-        # This is critical because classification happens before the response is stored,
-        # so branch conditions may not have matched yet, but the active question should
-        # still be in entities_to_extract for correct intent classification
-        if session.active_question_key:
-            unanswered_set = set(reachable_unanswered)
-            if (session.active_question_key not in unanswered_set and 
-                session.active_question_key not in session.get_answered_questions()):
-                reachable_unanswered.append(session.active_question_key)
-        
-        # Build a map of question names to configs for quick lookup
-        question_map = {q.get("name"): q for q in session.question_index if q.get("name")}
-        
-        # Filter to only include reachable unanswered questions
-        active_questions = [
-            question_map.get(name) for name in reachable_unanswered 
-            if name in question_map
-        ]
-        # Filter out None values
-        active_questions = [q for q in active_questions if q is not None]
-
-        # Build entities list for extraction with required field information
-        entities_list = []
-        required_fields = set(session.get_required_questions())
-
-        for item in active_questions:
-            key = item.get('name')
-            constraints = item.get('constraints', {})
-            if not key or not constraints:
-                continue
-            desc = constraints.get('description', '')
-            other_constraints = {k: v for k, v in constraints.items() if k != 'description'}
-            constraint_strs = [f"{k}: {v}" for k, v in other_constraints.items()]
-            constraint_part = f" ({', '.join(constraint_strs)})" if constraint_strs else ""
-            is_required = key in required_fields
-            required_marker = " [REQUIRED]" if is_required else " [OPTIONAL]"
-            entities_list.append(f"- {key}: {desc}{constraint_part}{required_marker}")
-
-        entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
-
-        # Build required fields info (simplified - comma-separated)
-        required_fields_info = ", ".join(sorted(required_fields)) if required_fields else "None"
-
-        return {
-            "current_state": current_state,
-            "answered_fields": answered_fields_str,
-            "entities_to_extract": entities_to_extract,
-            "required_fields_info": required_fields_info,
-        }
-
+    
     async def _classify_with_dspy(
         self,
         session: InterviewSession,
         user_input: str,
         interaction: "Interaction",
         visitor: "InteractWalker"
-    ) -> "ClassificationResult":
+    ) -> ClassificationResult:
         """DSPy-based classification and extraction routine.
 
         Uses DSPy modules with typed signatures for classification, enabling
@@ -278,16 +288,14 @@ class InterviewClassifier:
         Returns:
             ClassificationResult with unified intent and extracted data
         """
-        from jvagent.action.interview.interview_interact_action import ClassificationResult
-        
         try:
             # Import DSPy components
             import dspy
             from jvagent.action.model.dspy import DSPyLM
-            from jvagent.action.interview.dspy import InterviewClassifier as DSPyInterviewClassifier
+            from jvagent.action.interview.dspy import InterviewClassifier
 
             # Build context for classification
-            context = await self._build_classification_context(session)
+            context = self.build_classification_context(session)
 
             # Get conversation history if needed
             conversation_history = None
@@ -313,6 +321,7 @@ class InterviewClassifier:
                 return ClassificationResult(intent=Intent.NONE)
 
             # Create DSPy LM adapter
+            # Pass model, temperature, and max_tokens to allow agent.yaml overrides
             lm = DSPyLM(
                 model_action=model_action,
                 model_type="chat",
@@ -324,7 +333,7 @@ class InterviewClassifier:
             # Configure DSPy with the adapter
             with dspy.context(lm=lm):
                 # Create classifier instance with action instance for signature docstring
-                classifier = DSPyInterviewClassifier(action_instance=self.action)
+                classifier = InterviewClassifier(action_instance=self.action)
 
                 # Build kwargs for classifier, include history if available
                 classifier_kwargs = {
@@ -348,3 +357,26 @@ class InterviewClassifier:
                 exc_info=True
             )
             return ClassificationResult(intent=Intent.NONE)
+    
+    def _extract_json(self, response: str) -> Dict[str, Any]:
+        """Extract JSON from response string.
+
+        Args:
+            response: Response string
+
+        Returns:
+            Parsed JSON dictionary
+        """
+        import re
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            # Try to extract JSON from text
+            json_match = re.search(r'\{[^{}]*\}', response)
+            if json_match:
+                try:
+                    return json.loads(json_match.group())
+                except json.JSONDecodeError:
+                    pass
+            logger.warning(f"{self.action.get_class_name()}: Failed to extract JSON from response")
+            return {}

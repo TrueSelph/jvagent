@@ -10,10 +10,11 @@ from typing import TYPE_CHECKING, Any, Optional
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
 
-from .enums import InterviewState
+from ..foundation.enums import InterviewState
+from ..state.state_machine import InterviewStateMachine
 
 if TYPE_CHECKING:
-    from .interview_session import InterviewSession
+    from ..session.interview_session import InterviewSession
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +66,15 @@ class StateNode(Node):
             logger.debug(
                 f"StateNode: Transitioning session from {session.state.value} to {self.state_type.value}"
             )
-            session.transition_to(self.state_type)
-            await session.save()
+            # Use state machine for validated transitions
+            state_machine = InterviewStateMachine(session)
+            try:
+                state_machine.transition_to(self.state_type, reason=f"StateNode execution: {self.label}")
+                await session.save()
+            except ValueError as e:
+                logger.error(f"StateNode: Invalid state transition: {e}", exc_info=True)
+                # Re-raise to surface the error
+                raise
     
     def is_terminal(self) -> bool:
         """Check if this state is terminal (no outgoing transitions allowed).

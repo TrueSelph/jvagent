@@ -9,10 +9,10 @@ from typing import Any, Dict, Optional
 
 import dspy
 
-from jvagent.action.interview.core.enums import Intent
+from jvagent.action.interview.core.foundation.enums import Intent
 from jvagent.action.interview.interview_interact_action import ClassificationResult
 from jvagent.action.interview.dspy.signatures import create_interview_classification_signature
-from jvagent.action.interview.prompts import INTERVIEW_CLASSIFICATION_SIGNATURE
+from jvagent.action.interview.core.foundation.prompts import INTERVIEW_CLASSIFICATION_SIGNATURE
 
 logger = logging.getLogger(__name__)
 

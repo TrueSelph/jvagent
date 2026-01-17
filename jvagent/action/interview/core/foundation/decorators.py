@@ -9,7 +9,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
 if TYPE_CHECKING:
-    from jvagent.action.interview.core.interview_session import InterviewSession
+    from jvagent.action.interview.core.session.interview_session import InterviewSession
     from jvagent.action.interact.interact_walker import InteractWalker
     from jvagent.action.interact.base import InteractAction
     from jvagent.memory import Interaction

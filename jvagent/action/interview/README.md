@@ -71,7 +71,7 @@ The interview system uses a service layer pattern with specialized components:
 - `StateHandler`: Generates state-specific directives (ACTIVE, REVIEW, COMPLETED, CANCELLED)
 - `ResponseProcessor`: Processes, validates, and stores user responses
 - `InterviewClassifier`: Handles intent classification and field extraction
-- `QuestionBuilder`: Builds QuestionNode tree from `question_index`
+- `QuestionGraphBuilder`: Builds QuestionNode and StateNode graph from `question_graph`
 - `InterviewStateMachine`: Manages state transitions with validation
 
 **Unified Classification:**
@@ -218,19 +218,35 @@ interview/
 ├── README.md                      # This file
 ├── core/
 │   ├── __init__.py
-│   ├── interview_session.py       # InterviewSession Node
-│   ├── interview_service.py       # InterviewService (orchestration layer)
-│   ├── state_handlers.py          # StateHandler (state-specific directives)
-│   ├── response_processor.py      # ResponseProcessor (response processing)
-│   ├── classification.py          # InterviewClassifier (intent classification)
-│   ├── question_builder.py        # QuestionBuilder (question tree construction)
-│   ├── question_node.py           # QuestionNode
-│   ├── question_walker.py         # QuestionWalker for tree traversal
-│   ├── question_edge.py           # QuestionEdge with conditions
-│   ├── question_branch_evaluator.py  # QuestionBranchEvaluator (condition matching)
-│   ├── state_machine.py           # InterviewStateMachine (state transitions)
-│   ├── context.py                 # InterviewContext (typed context wrapper)
-│   └── enums.py                   # InterviewState, ValidationStatus, Intent, ContextKey
+│   ├── foundation/                # Core types & configuration
+│   │   ├── enums.py               # InterviewState, ValidationStatus, Intent, ContextKey
+│   │   ├── exceptions.py          # Custom exceptions
+│   │   └── config.py              # Configuration objects
+│   ├── graph/                     # Question graph domain
+│   │   ├── question_node.py       # QuestionNode
+│   │   ├── question_edge.py       # QuestionEdge with conditions
+│   │   ├── question_walker.py     # QuestionWalker for tree traversal
+│   │   ├── question_branch_evaluator.py  # QuestionBranchEvaluator (condition matching)
+│   │   ├── question_graph_builder.py  # QuestionGraphBuilder (question graph construction)
+│   │   ├── graph_validator.py     # QuestionGraphValidator
+│   │   └── condition_operators.py # ConditionOperator
+│   ├── state/                      # State management
+│   │   ├── state_machine.py       # InterviewStateMachine (state transitions)
+│   │   ├── state_node.py          # StateNode
+│   │   └── state_handlers.py      # StateHandler (state-specific directives)
+│   ├── classification/            # Classification & intent
+│   │   ├── classification_handler.py  # ClassificationHandler (intent classification)
+│   │   └── intent_handlers.py     # Intent handlers (strategy pattern)
+│   ├── processing/                 # Response processing & directives
+│   │   ├── response_processor.py  # ResponseProcessor (response processing)
+│   │   └── directive_builder.py  # DirectiveBuilder
+│   ├── session/                    # Session & service orchestration
+│   │   ├── interview_session.py   # InterviewSession Node
+│   │   └── interview_service.py   # InterviewService (orchestration layer)
+│   └── utils/                      # Utilities
+│       ├── session_utils.py       # Session utilities
+│       ├── cache_utils.py         # Cache utilities
+│       └── constants.py           # Constants
 └── dspy/
     ├── __init__.py                 # DSPy package exports
     ├── signatures.py               # DSPy signatures for classification

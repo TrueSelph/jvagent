@@ -10,8 +10,8 @@ from jvagent.action.interview import (
     input_directive_override,
     on_interview_complete,
 )
-from jvagent.action.interview.core.interview_session import InterviewSession
-from jvagent.action.interview.core.enums import ValidationStatus
+from jvagent.action.interview.core.session.interview_session import InterviewSession
+from jvagent.action.interview.core.foundation.enums import ValidationStatus
 from jvagent.memory import Interaction
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.interact.base import InteractAction

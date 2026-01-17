@@ -6,10 +6,12 @@ This module handles processing, validation, and storage of user responses.
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-from .interview_session import InterviewSession
-from .question_node import QuestionNode
-from .question_walker import QuestionWalker
-from .enums import ValidationStatus, ContextKey
+from ..session.interview_session import InterviewSession
+from ..graph.question_node import QuestionNode
+from ..graph.question_walker import QuestionWalker
+from ..foundation.enums import ValidationStatus, ContextKey
+from ..utils.session_utils import sort_fields_by_question_order
+from ..foundation.exceptions import QuestionNotFoundError
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -63,16 +65,19 @@ class ResponseProcessor:
             return False
 
         # Get question node
-        question_node = await self.action._get_question_node(field, session)
-        if not question_node:
-            # Error already logged in _get_question_node with context
+        try:
+            question_node = await self.action._get_question_node(field, session)
+            if not question_node:
+                raise QuestionNotFoundError(field)
+        except QuestionNotFoundError as e:
             # Provide user-friendly message
             field_display = field.replace("_", " ").title()
-            await self.action._queue_directive(
+            await self.action.directive_builder.queue_directive(
                 visitor,
                 f"Tell the user: I encountered an issue processing the {field_display} field. "
                 f"Please try again or contact support if the problem persists."
             )
+            logger.error(f"{self.action.get_class_name()}: {e}", exc_info=True)
             return False
 
         # If value is missing, prompt for it
@@ -208,7 +213,7 @@ class ResponseProcessor:
         append_mode_overrides = []  # Track fields with append mode overrides
 
         # Sort responses by question_index order for sequential processing
-        sorted_fields = self._sort_by_question_order(list(responses.keys()), session)
+        sorted_fields = sort_fields_by_question_order(list(responses.keys()), session)
 
         for field in sorted_fields:
             value = responses[field]
@@ -219,9 +224,11 @@ class ResponseProcessor:
                 continue
 
             # Find question node for validation
-            question_node = await self.action._get_question_node(field, session)
-            if not question_node:
-                # Error already logged in _get_question_node with context
+            try:
+                question_node = await self.action._get_question_node(field, session)
+                if not question_node:
+                    raise QuestionNotFoundError(field)
+            except QuestionNotFoundError as e:
                 # Skip this field and continue with others
                 logger.warning(
                     f"{self.action.get_class_name()}: Skipping field '{field}' - question node not found. "
@@ -400,33 +407,3 @@ class ResponseProcessor:
         # Clear active_question_key
         session.active_question_key = None
         await session.save()
-
-    def _sort_by_question_order(
-        self,
-        fields: List[str],
-        session: InterviewSession
-    ) -> List[str]:
-        """Sort fields by their position in question_index.
-
-        This ensures fields are processed in the logical order defined by the
-        interview schema, which is important for conditional edge evaluation.
-
-        Args:
-            fields: List of field names to sort
-            session: Interview session with question_index
-
-        Returns:
-            Sorted list of field names in question_index order
-        """
-        # Create a map of field name to index position
-        field_to_index = {}
-        for idx, question_config in enumerate(session.question_index):
-            field_name = question_config.get("name", "")
-            if field_name:
-                field_to_index[field_name] = idx
-
-        # Sort fields by their index, unknown fields go to the end
-        def get_sort_key(field: str) -> int:
-            return field_to_index.get(field, len(session.question_index))
-
-        return sorted(fields, key=get_sort_key)

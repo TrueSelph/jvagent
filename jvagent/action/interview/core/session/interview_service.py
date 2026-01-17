@@ -7,13 +7,13 @@ interview components (classification, state handling, response processing, etc.)
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
-from .classification import InterviewClassifier as ClassificationService
+from ..classification.classification_handler import ClassificationHandler as ClassificationService
 from .interview_session import InterviewSession
-from .question_builder import QuestionBuilder
-from .response_processor import ResponseProcessor
-from .state_handlers import StateHandler
-from .state_machine import InterviewStateMachine
-from .enums import InterviewState, Intent
+from ..graph.question_graph_builder import QuestionGraphBuilder
+from ..processing.response_processor import ResponseProcessor
+from ..state.state_handlers import StateHandler
+from ..state.state_machine import InterviewStateMachine
+from ..foundation.enums import InterviewState, Intent
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -64,10 +64,10 @@ class InterviewService:
         return self._response_processor
     
     @property
-    def question_builder(self) -> QuestionBuilder:
-        """Get or create question builder."""
+    def question_builder(self) -> QuestionGraphBuilder:
+        """Get or create question graph builder."""
         if self._question_builder is None:
-            self._question_builder = QuestionBuilder(self.action)
+            self._question_builder = QuestionGraphBuilder(self.action)
         return self._question_builder
     
     async def classify_and_extract(
@@ -92,9 +92,9 @@ class InterviewService:
             session, utterance, interaction, visitor
         )
     
-    async def build_question_nodes(self) -> None:
+    async def build_question_graph(self) -> None:
         """Build QuestionNode and StateNode graph from question_graph."""
-        await self.question_builder.build_question_nodes()
+        await self.question_builder.build_question_graph()
     
     async def generate_directive(
         self,

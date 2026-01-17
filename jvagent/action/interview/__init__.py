@@ -7,7 +7,7 @@ This package provides the InterviewInteractAction class with unified inline stat
 from .interview_interact_action import InterviewInteractAction
 
 # Import decorators from decorators module
-from .decorators import (
+from .core.foundation.decorators import (
     input_handler,
     input_validator,
     input_directive_override,

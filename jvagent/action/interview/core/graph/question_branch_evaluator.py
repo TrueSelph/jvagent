@@ -7,7 +7,7 @@ Supports enhanced operators for flexible condition evaluation.
 import logging
 from typing import Any, Dict
 
-from .interview_session import InterviewSession
+from ..session.interview_session import InterviewSession
 from .condition_operators import ConditionOperator
 
 logger = logging.getLogger(__name__)

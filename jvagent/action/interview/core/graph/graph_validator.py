@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
 from .condition_operators import ConditionOperator
-from .enums import InterviewState
+from ..foundation.enums import InterviewState
 
 logger = logging.getLogger(__name__)
 

@@ -31,7 +31,17 @@ class Intent(str, Enum):
 
 
 # Context keys for session.context dictionary
+# Import from utils for centralized constants
+from ..utils.constants import (
+    CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE,
+    CONTEXT_KEY_DIRECTIVE_OVERRIDE_APPEND_MODE,
+)
+
 class ContextKey:
-    """Constants for session context dictionary keys."""
-    DIRECTIVE_OVERRIDE_REPLACE_MODE = "_directive_override_replace_mode"
-    DIRECTIVE_OVERRIDE_APPEND_MODE = "_directive_override_append_mode"
+    """Constants for session context dictionary keys.
+    
+    Note: Values are imported from utils.constants for centralized management.
+    This class is maintained for backward compatibility.
+    """
+    DIRECTIVE_OVERRIDE_REPLACE_MODE = CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE
+    DIRECTIVE_OVERRIDE_APPEND_MODE = CONTEXT_KEY_DIRECTIVE_OVERRIDE_APPEND_MODE
