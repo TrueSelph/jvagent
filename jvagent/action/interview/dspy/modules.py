@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 
 import dspy
 
+from jvagent.action.interview.core.enums import Intent
 from jvagent.action.interview.interview_interact_action import ClassificationResult
 from jvagent.action.interview.dspy.signatures import create_interview_classification_signature
 from jvagent.action.interview.prompts import INTERVIEW_CLASSIFICATION_SIGNATURE
@@ -89,8 +90,14 @@ class InterviewClassifier(dspy.Module):
             # Call the DSPy Predict module
             prediction = self.classify(**classify_kwargs)
             
-            # Extract intent and ensure it's uppercase
-            intent = str(prediction.intent).upper() if prediction.intent else "NONE"
+            # Extract intent and convert to Intent enum
+            intent_str = str(prediction.intent).upper() if prediction.intent else Intent.NONE.value
+            try:
+                intent = Intent(intent_str)
+            except ValueError:
+                # Invalid intent value, default to NONE
+                logger.warning(f"InterviewClassifier: Invalid intent value '{intent_str}', defaulting to NONE")
+                intent = Intent.NONE
             
             # Extract confidence, defaulting to 1.0 if not provided
             confidence = float(prediction.confidence) if prediction.confidence is not None else 1.0
@@ -106,7 +113,7 @@ class InterviewClassifier(dspy.Module):
             
             # Extract extracted_data for SUBMISSION intent
             extracted_data = None
-            if intent == "SUBMISSION" and prediction.extracted_data:
+            if intent == Intent.SUBMISSION and prediction.extracted_data:
                 # Ensure extracted_data is a dict
                 if isinstance(prediction.extracted_data, dict):
                     extracted_data = prediction.extracted_data
@@ -144,7 +151,7 @@ class InterviewClassifier(dspy.Module):
             
             # Build and return ClassificationResult
             return ClassificationResult(
-                intent=intent,
+                intent=intent.value,  # Store as string value for ClassificationResult
                 confidence=confidence,
                 field=field,
                 value=value,
@@ -157,7 +164,7 @@ class InterviewClassifier(dspy.Module):
                 exc_info=True
             )
             # Return default NONE result on error
-            return ClassificationResult(intent="NONE", confidence=0.0)
+            return ClassificationResult(intent=Intent.NONE, confidence=0.0)
     
     async def aforward(
         self,
@@ -197,7 +204,14 @@ class InterviewClassifier(dspy.Module):
             prediction = await self.classify.acall(**classify_kwargs)
             
             # Process prediction same as sync version
-            intent = str(prediction.intent).upper() if prediction.intent else "NONE"
+            # Extract intent and convert to Intent enum
+            intent_str = str(prediction.intent).upper() if prediction.intent else Intent.NONE.value
+            try:
+                intent = Intent(intent_str)
+            except ValueError:
+                # Invalid intent value, default to NONE
+                logger.warning(f"InterviewClassifier: Invalid intent value '{intent_str}', defaulting to NONE")
+                intent = Intent.NONE
             confidence = float(prediction.confidence) if prediction.confidence is not None else 1.0
             # Handle both None and string "null" from JSON parsing
             field = None
@@ -208,7 +222,7 @@ class InterviewClassifier(dspy.Module):
             value = prediction.value
             
             extracted_data = None
-            if intent == "SUBMISSION" and prediction.extracted_data:
+            if intent == Intent.SUBMISSION and prediction.extracted_data:
                 if isinstance(prediction.extracted_data, dict):
                     extracted_data = prediction.extracted_data
                 elif isinstance(prediction.extracted_data, str):
@@ -241,7 +255,7 @@ class InterviewClassifier(dspy.Module):
                     extracted_data = filtered_data if filtered_data else None
             
             return ClassificationResult(
-                intent=intent,
+                intent=intent.value,  # Store as string value for ClassificationResult
                 confidence=confidence,
                 field=field,
                 value=value,
@@ -253,5 +267,5 @@ class InterviewClassifier(dspy.Module):
                 f"InterviewClassifier: Error during async classification: {e}",
                 exc_info=True
             )
-            return ClassificationResult(intent="NONE", confidence=0.0)
+            return ClassificationResult(intent=Intent.NONE, confidence=0.0)
 

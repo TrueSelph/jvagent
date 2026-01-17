@@ -223,13 +223,17 @@ class QuestionNode(Node):
         """Check if an edge condition matches the current session state.
         
         Args:
-            condition: Condition dict with 'question' and 'equals' keys
+            condition: Condition dict with 'op' and optional 'value' keys (question is implicit)
             session: Interview session
             
         Returns:
             True if condition matches, False otherwise
         """
-        return QuestionBranchEvaluator.matches(condition, session)
+        # Question is implicit - use the question node's label as the implicit question
+        question_name = self.state.get("name", "")
+        if not question_name:
+            return False
+        return QuestionBranchEvaluator.matches(condition, session, implicit_question=question_name)
 
     async def execute(self, walker: Any) -> Optional[str]:
         """Execute question node to check if info is needed and return directive.
@@ -394,10 +398,7 @@ class QuestionNode(Node):
         return ValidationStatus.VALID, None, None
     
     def _normalize_validation_status(self, status: Any) -> ValidationStatus:
-        """Normalize validation status, handling legacy VALID_WITH_FLAG.
-        
-        Converts VALID_WITH_FLAG to VALID for backward compatibility.
-        Old validators that return VALID_WITH_FLAG will be treated as VALID.
+        """Normalize validation status.
         
         Args:
             status: Validation status (string, enum, or ValidationStatus)
@@ -406,20 +407,9 @@ class QuestionNode(Node):
             Normalized ValidationStatus
         """
         if isinstance(status, ValidationStatus):
-            # If it's already a ValidationStatus but somehow VALID_WITH_FLAG exists, convert it
-            if status.value == "valid_with_flag":
-                return ValidationStatus.VALID
             return status
         
         if isinstance(status, str):
-            # Handle legacy VALID_WITH_FLAG string
-            if status.lower() in ("valid_with_flag", "valid-with-flag"):
-                logger.warning(
-                    "Validator returned VALID_WITH_FLAG which is deprecated. "
-                    "Return VALID with a feedback message instead."
-                )
-                return ValidationStatus.VALID
-            
             try:
                 return ValidationStatus(status)
             except ValueError:

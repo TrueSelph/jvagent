@@ -25,7 +25,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
     a specific interview flow. Sessions are identified by
     interview_type='ReportInterviewInteractAction' and attached to Conversation nodes.
 
-    The question_index can be overridden in agent.yaml to customize questions.
+    The question_graph can be overridden in agent.yaml to customize questions.
 
     Architecture:
         The interview system uses a unified classification and extraction approach
@@ -66,7 +66,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
         description="Anchor statements for InteractRouter routing"
     )
 
-    question_index: List[Dict[str, Any]] = attribute(
+    question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {
                 "name": "report_description",
@@ -141,14 +141,14 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "type": "string",
                     "options": ["yes", "no"],
                 },
+                "required": True,
                 "branches": [
                     {
-                        "condition": {"question": "reporting_on_behalf", "equals": "yes"},
+                        "condition": {"op": "equals", "value": "yes"},
                         "target": "stakeholder_name"
                     }
                 ],
-                "default_next": "reporter_name",
-                "required": True
+                "default_next": "reporter_name"
             },
             {
                 "name": "stakeholder_name",
@@ -157,9 +157,8 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "description": "Full legal name of the person the report concerns.",
                     "type": "string",
                 },
-                "default_next": "stakeholder_address",
-                "required": True
-                
+                "required": True,
+                "default_next": "stakeholder_address"
             },
             {
                 "name": "stakeholder_address",
@@ -168,8 +167,8 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "description": "Residential address of the stakeholder.",
                     "type": "string",
                 },
-                "default_next": "stakeholder_phone",
-                "required": True
+                "required": True,
+                "default_next": "stakeholder_phone"
             },
             {
                 "name": "stakeholder_phone",
@@ -179,8 +178,8 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "instructions": "If the user declines, mark as N/A.",
                     "type": "string",
                 },
-                "default_next": "reporter_name",
-                "required": True
+                "required": True,
+                "default_next": "reporter_name"
             },
             {
                 "name": "reporter_name",
@@ -189,8 +188,8 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "description": "The full name of the person submitting the report.",
                     "type": "string",
                 },
-                "default_next": "reporter_address",
-                "required": True
+                "required": True,
+                "default_next": "reporter_address"
             },
             {
                 "name": "reporter_address",
@@ -202,7 +201,8 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                 "required": True
             }
         ],
-        description="List of question configurations. Can be overridden in agent.yaml. "
+        description="List of question configurations defining the interview graph. Can be overridden in agent.yaml. "
+                    "Supports conditional branching via 'branches' and 'default_next'. "
                     "Handlers, validators, and directive overrides can be registered via decorators "
                     "(@input_handler, @input_validator, @input_directive_override) or specified as string "
                     "references in constraints (input_handler, input_validator)."

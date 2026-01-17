@@ -260,7 +260,25 @@ class ResponseProcessor:
                 valid_fields.append(field)
 
                 # Re-evaluate conditional graph after each storage (may skip subsequent questions)
-                await self.action._update_reachable_questions(session, question_walker)
+                # This will evaluate branches and trigger state transitions if needed
+                state_before = session.state
+                await self.action._update_reachable_questions(
+                    session, question_walker, just_answered_field=field
+                )
+                state_after = session.state
+                
+                # If state transition occurred, return early to let generate_active_directive handle it
+                if state_before != state_after:
+                    session.active_question_key = None
+                    await session.save()
+                    logger.debug(
+                        f"{self.action.get_class_name()}: State transition occurred "
+                        f"during response processing for field '{field}': "
+                        f"{state_before.value} -> {state_after.value}"
+                    )
+                    return
+                
+                # Save session if no state transition occurred
                 await session.save()
 
                 # Check for directive override after successful storage
@@ -344,6 +362,19 @@ class ResponseProcessor:
         if append_mode_overrides:
             # Use existing question_walker (already configured)
             next_question_node = await question_walker.find_next_question(session, self.action)
+            
+            # Note: State transitions should have already occurred during response processing
+            # If state is not ACTIVE, let generate_active_directive handle it
+            if session.state != InterviewState.ACTIVE:
+                # State transition happened - let generate_active_directive handle it
+                # Don't queue append mode directives, state directive takes precedence
+                session.active_question_key = None
+                await session.save()
+                logger.debug(
+                    f"{self.action.get_class_name()}: State is {session.state.value}, "
+                    f"skipping append directives"
+                )
+                return
             
             # Queue next question directive if it exists
             if next_question_node:

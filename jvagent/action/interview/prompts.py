@@ -72,7 +72,7 @@ CANCELLATION_EVENT_MESSAGE_TEMPLATE = "interview process cancelled as part of {c
 # Question directive template (for ACTIVE state - question prompting)
 # Consolidated template that handles description, question, and optional instructions
 # Instructions placeholder will be empty string if no instructions provided
-QUESTION_DIRECTIVE_TEMPLATE = """Make a request to the user based on the following description:
+QUESTION_DIRECTIVE_TEMPLATE = """Make a request to the user based on the following:
 {question} ({description})
 
 {instructions}
@@ -93,6 +93,11 @@ INTERVIEW_CLASSIFICATION_SIGNATURE = """Classify user intent and extract field v
     The user_input contains router interpretation with reasoning and extracted values.
     Focus on interview-specific state-aware logic and field mapping.
     
+    CRITICAL RULE - CHECK THIS FIRST:
+    - If ANY field mentioned by the user appears in entities_to_extract (unanswered questions), classify as SUBMISSION, NOT UPDATE
+    - This rule takes precedence over all other classification logic
+    - Example: If user says "yes" and "is_sensitive" is in entities_to_extract, it's SUBMISSION even if language suggests update
+    
     INTENT TYPES (priority order):
     1. CANCELLATION - User explicitly abandons entire process
        - Only use if language explicitly abandons entire interview (e.g., "cancel", "abort", "stop the interview")
@@ -102,24 +107,27 @@ INTERVIEW_CLASSIFICATION_SIGNATURE = """Classify user intent and extract field v
        - CRITICAL: Do NOT classify as CONFIRMATION if user provides a specific value that differs from current stored values
        - CONFIRMATION is ONLY for pure affirmations like "yes", "correct", "looks good", "that's right" WITHOUT any new values
     
-    3. UPDATE - Change specific answered field (e.g., "change email", "wrong", "not correct", providing new value)
+    3. SUBMISSION - Providing answers to unanswered questions
+       - CRITICAL PRIORITY: If a field appears in entities_to_extract (unanswered questions), classify as SUBMISSION, NOT UPDATE
+       - This applies even if user language suggests "change" or "update" - if the field is unanswered, it's SUBMISSION
+       - Extract field values from user_input (interpretation already contains values)
+       - Includes invalid choices/values - validation system will mark them as INVALID and provide feedback
+       - When user provides a value that doesn't match constraints → SUBMISSION
+       - When user selects an option that doesn't exist → SUBMISSION
+       - When user provides wrong type/format → SUBMISSION
+    
+    4. UPDATE - Change specific answered field (e.g., "change email", "wrong", "not correct", providing new value)
+       - ONLY use UPDATE if the field is in answered_fields (already answered) AND NOT in entities_to_extract
        - In REVIEW state, "no" = UPDATE
        - Identify field name and optionally new value
        - AFFIRMATIVE WORDS: Words like "Ok", "yes", "sure" before a new value do NOT make it CONFIRMATION - they're just conversational fillers
        - CRITICAL: In REVIEW state, if user provides a specific value, classify as UPDATE (even if prefixed with "Ok", "yes", etc.)
        - INTERPRETATION AWARENESS: Even if router interpretation says "confirms", if user provides a value, classify as UPDATE
     
-    4. DECLINE - User explicitly refuses to answer an optional question (only non-required fields)
+    5. DECLINE - User explicitly refuses to answer an optional question (only non-required fields)
        - Only use when user explicitly declines to answer (e.g., "I don't want to answer", "skip this", "I'd rather not provide that", "I'd prefer not to say")
        - Must specify field name (use active question from entities_to_extract)
        - CRITICAL: Invalid choices/values should be SUBMISSION, not DECLINE. If user provides a value that doesn't match constraints, selects an invalid option, or provides wrong type/format, classify as SUBMISSION (validation will handle them as INVALID)
-    
-    5. SUBMISSION - Providing answers to unanswered questions
-       - Extract field values from user_input (interpretation already contains values)
-       - Includes invalid choices/values - validation system will mark them as INVALID and provide feedback
-       - When user provides a value that doesn't match constraints → SUBMISSION
-       - When user selects an option that doesn't exist → SUBMISSION
-       - When user provides wrong type/format → SUBMISSION
     
     6. NONE - No clear intent
     
@@ -160,6 +168,13 @@ CONTEXT:
 - Unanswered fields: {entities_to_extract}
 - Required fields: {required_fields_info}
 
+CRITICAL: Before classifying intent, check if ANY field mentioned by the user appears in "Unanswered fields" above. If it does, classify as SUBMISSION, NOT UPDATE, regardless of the user's language.
+
+CRITICAL RULE - CHECK THIS FIRST:
+- If ANY field mentioned by the user appears in entities_to_extract (unanswered questions), classify as SUBMISSION, NOT UPDATE
+- This rule takes precedence over all other classification logic
+- Example: If user says "yes" and "is_sensitive" is in entities_to_extract, it's SUBMISSION even if language suggests update
+
 INTENT CLASSIFICATION (priority order):
 1. CANCELLATION - User explicitly abandons entire process (e.g., "cancel", "abort", "stop the interview")
    - Only use CANCELLATION if language explicitly abandons the entire interview
@@ -169,24 +184,27 @@ INTENT CLASSIFICATION (priority order):
    - CRITICAL: Do NOT classify as CONFIRMATION if user provides a specific value that differs from current stored values
    - CONFIRMATION is ONLY for pure affirmations like "yes", "correct", "looks good", "that's right" WITHOUT any new values
 
-3. UPDATE - Change specific answered field (e.g., "change email", "wrong", "not correct", providing new value)
+3. SUBMISSION - Providing answers to unanswered questions
+   - CRITICAL PRIORITY: If a field appears in entities_to_extract (unanswered questions), classify as SUBMISSION, NOT UPDATE
+   - This applies even if user language suggests "change" or "update" - if the field is unanswered, it's SUBMISSION
+   - Extract field values from user input (interpretation already contains values)
+   - Includes invalid choices/values - validation system will mark them as INVALID and provide feedback
+   - When user provides a value that doesn't match constraints → SUBMISSION
+   - When user selects an option that doesn't exist → SUBMISSION
+   - When user provides wrong type/format → SUBMISSION
+
+4. UPDATE - Change specific answered field (e.g., "change email", "wrong", "not correct", providing new value)
+   - ONLY use UPDATE if the field is in answered_fields (already answered) AND NOT in entities_to_extract
    - In REVIEW state, "no" = UPDATE
    - Identify field name and optionally new value
    - AFFIRMATIVE WORDS: Words like "Ok", "yes", "sure" before a new value do NOT make it CONFIRMATION - they're just conversational fillers
    - CRITICAL: In REVIEW state, if user provides a specific value, classify as UPDATE (even if prefixed with "Ok", "yes", etc.)
    - INTERPRETATION AWARENESS: Even if router interpretation says "confirms", if user provides a value, classify as UPDATE
 
-4. DECLINE - User explicitly refuses to answer an optional question (only for non-required fields)
+5. DECLINE - User explicitly refuses to answer an optional question (only for non-required fields)
    - Only use when user explicitly declines to answer (e.g., "I don't want to answer", "skip this", "I'd rather not provide that", "I'd prefer not to say")
    - Must specify field name (use active question from entities_to_extract)
    - CRITICAL: Invalid choices/values should be SUBMISSION, not DECLINE. If user provides a value that doesn't match constraints, selects an invalid option, or provides wrong type/format, classify as SUBMISSION (validation will handle them as INVALID)
-
-5. SUBMISSION - Providing answers to unanswered questions
-   - Extract field values from user input (interpretation already contains values)
-   - Includes invalid choices/values - validation system will mark them as INVALID and provide feedback
-   - When user provides a value that doesn't match constraints → SUBMISSION
-   - When user selects an option that doesn't exist → SUBMISSION
-   - When user provides wrong type/format → SUBMISSION
 
 6. NONE - No clear intent
 

@@ -117,7 +117,7 @@ Specialized walker that traverses QuestionNodes in a tree-based arrangement:
 #### 5. QuestionEdge
 Specialized edge connecting QuestionNodes with optional condition metadata:
 - Stores condition information for conditional traversal
-- Condition format: `{"question": "question_name", "equals": "value"}`
+- Condition format: `{"op": "equals", "value": "value"}` (question is implicit from branch context)
 
 #### 6. QuestionBranchEvaluator
 Provides unified condition matching logic for conditional branching:
@@ -143,7 +143,7 @@ Consolidates logic for processing, validating, and storing user responses:
 #### 10. InterviewClassifier
 Handles intent classification and field extraction:
 - Unified LLM-based classification and extraction
-- Supports both legacy prompt-based and DSPy-based backends
+- Supports both prompt-based and DSPy-based backends
 
 #### 11. InteractWalker
 Standard walker used throughout. The interview action receives session via conversation queries.
@@ -367,11 +367,11 @@ question_index = [
         "required": True,
         "branches": [
             {
-                "condition": {"question": "user_type", "equals": "premium"},
+                "condition": {"op": "equals", "value": "premium"},
                 "target": "premium_features"
             },
             {
-                "condition": {"question": "user_type", "equals": "standard"},
+                "condition": {"op": "equals", "value": "standard"},
                 "target": "standard_setup"
             }
         ],
@@ -382,7 +382,7 @@ question_index = [
         "question": "Which premium features interest you?",
         "branches": [
             {
-                "condition": {"question": "premium_features", "equals": "advanced"},
+                "condition": {"op": "equals", "value": "advanced"},
                 "target": "advanced_config"
             }
         ],
@@ -402,17 +402,19 @@ question_index = [
 
 #### Branch Condition Format
 
-Each branch condition uses simple equality matching:
+Each branch condition evaluates against the question that owns the branch (question is implicit):
 
 ```python
 {
     "condition": {
-        "question": "question_name",  # Name of the question to check
-        "equals": "expected_value"     # Value to match (must be exact match)
+        "op": "equals",           # Operator (equals, >=, <=, in, exists, etc.)
+        "value": "expected_value"  # Value to match (required for most operators)
     },
-    "target": "next_question_name"    # Question name to traverse to if condition matches
+    "target": "next_question_name"  # Question name to traverse to if condition matches
 }
 ```
+
+**Note**: The question is always implicit - conditions evaluate against the question that owns the branch. For example, if `is_sensitive` has a branch with condition `{"op": "equals", "value": "yes"}`, it evaluates `is_sensitive == "yes"`.
 
 #### How It Works
 
@@ -448,8 +450,8 @@ question_index = [
         "name": "account_type",
         "question": "What type of account do you want? (personal/business)",
         "branches": [
-            {"condition": {"question": "account_type", "equals": "business"}, "target": "business_details"},
-            {"condition": {"question": "account_type", "equals": "personal"}, "target": "personal_details"}
+            {"condition": {"op": "equals", "value": "business"}, "target": "business_details"},
+            {"condition": {"op": "equals", "value": "personal"}, "target": "personal_details"}
         ]
     },
     {
@@ -722,7 +724,7 @@ The interview system uses a single unified prompt (`INTERVIEW_PROMPT_TEMPLATE`) 
 
 The system supports two classification backends:
 
-1. **Legacy Prompt-Based Classification** (default): Uses a structured prompt template with JSON response format
+1. **Prompt-Based Classification** (default): Uses a structured prompt template with JSON response format
 2. **DSPy-Based Classification** (optional): Uses typed DSPy signatures that can be optimized with DSPy teleprompters
 
 Enable DSPy classification by setting `use_dspy=True` in your interview action:
@@ -1315,4 +1317,4 @@ class MyInterviewAction(InterviewInteractAction):
 - Typed signatures provide better structure and validation
 - Can be optimized with DSPy teleprompters for improved performance
 - Can be evaluated with `dspy.Evaluate` to measure classification accuracy
-- Same interface as legacy classification, just with different backend
+- Same interface as prompt-based classification, just with different backend

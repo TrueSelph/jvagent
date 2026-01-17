@@ -43,7 +43,7 @@ def input_handler(question_name: str, interview_type: Optional[str] = None):
     by looking for InterviewInteractAction subclasses in that module.
 
     Args:
-        question_name: Name of the question (must match 'name' field in question_index)
+        question_name: Name of the question (must match 'name' field in question_graph)
 
     Example:
         @input_handler('available_times')
@@ -100,7 +100,7 @@ def input_validator(question_name: str, interview_type: Optional[str] = None):
     by looking for InterviewInteractAction subclasses in that module.
 
     Args:
-        question_name: Name of the question (must match 'name' field in question_index)
+        question_name: Name of the question (must match 'name' field in question_graph)
 
     Example:
         @input_validator('user_email')
@@ -158,7 +158,7 @@ def input_directive_override(question_name: str, interview_type: Optional[str] =
     by looking for InterviewInteractAction subclasses in that module.
 
     Args:
-        question_name: Name of the question (must match 'name' field in question_index)
+        question_name: Name of the question (must match 'name' field in question_graph)
 
     Handler Signature:
         The handler must accept five parameters:

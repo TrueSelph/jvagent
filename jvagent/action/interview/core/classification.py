@@ -69,7 +69,7 @@ class InterviewClassifier:
         else:
             return ClassificationResult(intent=Intent.NONE)
 
-        # Use DSPy if enabled, otherwise use legacy implementation
+        # Use DSPy if enabled, otherwise use prompt-based implementation
         if self.action.use_dspy:
             return await self._classify_with_dspy(session, user_input, interaction, visitor)
 
@@ -129,8 +129,14 @@ class InterviewClassifier:
             if not result:
                 return ClassificationResult(intent=Intent.NONE)
 
-            # Extract intent
-            intent = result.get("intent", Intent.NONE).upper()
+            # Extract intent and convert to Intent enum
+            intent_str = result.get("intent", Intent.NONE.value).upper()
+            try:
+                intent = Intent(intent_str)
+            except ValueError:
+                # Invalid intent value, default to NONE
+                logger.warning(f"{self.action.get_class_name()}: Invalid intent value '{intent_str}', defaulting to NONE")
+                intent = Intent.NONE
             confidence = result.get("confidence", 1.0)
 
             # Build ClassificationResult
@@ -142,7 +148,7 @@ class InterviewClassifier:
                     field_value = None
 
             classification_result = ClassificationResult(
-                intent=intent,
+                intent=intent.value,  # Store as string value for ClassificationResult
                 confidence=confidence,
                 field=field_value,
                 value=result.get("value")
@@ -199,6 +205,16 @@ class InterviewClassifier:
         reachable_unanswered = await question_walker.get_reachable_unanswered_questions(
             session, self.action
         )
+        
+        # Ensure active_question_key is included if unanswered
+        # This is critical because classification happens before the response is stored,
+        # so branch conditions may not have matched yet, but the active question should
+        # still be in entities_to_extract for correct intent classification
+        if session.active_question_key:
+            unanswered_set = set(reachable_unanswered)
+            if (session.active_question_key not in unanswered_set and 
+                session.active_question_key not in session.get_answered_questions()):
+                reachable_unanswered.append(session.active_question_key)
         
         # Build a map of question names to configs for quick lookup
         question_map = {q.get("name"): q for q in session.question_index if q.get("name")}
@@ -331,4 +347,4 @@ class InterviewClassifier:
                 f"{self.action.get_class_name()}: Failed to classify/extract via DSPy: {e}",
                 exc_info=True
             )
-            return ClassificationResult(intent="NONE")
+            return ClassificationResult(intent=Intent.NONE)

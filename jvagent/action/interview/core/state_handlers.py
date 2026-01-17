@@ -7,9 +7,11 @@ import logging
 from typing import TYPE_CHECKING, Any, Optional
 
 from .interview_session import InterviewSession
+from .question_node import QuestionNode
 from .question_walker import QuestionWalker
 from .response_processor import ResponseProcessor
 from .state_machine import InterviewStateMachine
+from .state_node import StateNode
 from .enums import InterviewState, ValidationStatus, Intent, ContextKey
 
 if TYPE_CHECKING:
@@ -158,6 +160,9 @@ class StateHandler:
 
         # Handle response extraction
         elif classification_result.intent == Intent.SUBMISSION and classification_result.extracted_data:
+            # Capture state before processing responses
+            state_before_processing = session.state
+            
             # Validate and store responses
             question_walker = QuestionWalker()
             question_walker.interview_session = session
@@ -172,6 +177,28 @@ class StateHandler:
                 interaction,
                 question_walker
             )
+
+            # Check if state transition occurred during response processing
+            # This happens when a conditional branch targets a state node
+            state_changed = session.state != state_before_processing
+            
+            if state_changed:
+                # State transition occurred via StateNode.execute() during branch evaluation
+                # Generate directive for the new state
+                target_state = session.state
+                logger.debug(
+                    f"{self.action.get_class_name()}: State transitioned via StateNode from "
+                    f"{state_before_processing.value} to {target_state.value}"
+                )
+                
+                # Generate directive for the new state
+                if target_state == InterviewState.REVIEW:
+                    await self.generate_review_directive(session, classification_result, visitor, state_machine)
+                elif target_state == InterviewState.COMPLETED:
+                    await self.generate_completed_directive(session, visitor)
+                elif target_state == InterviewState.CANCELLED:
+                    await self.generate_cancelled_directive(session, visitor)
+                return
 
             # If active_question_key is set to an unanswered field (invalid response), return
             if session.active_question_key and session.active_question_key in session.get_unanswered_questions():
@@ -195,53 +222,34 @@ class StateHandler:
                 # Don't find next question - append mode override already handled it
                 return
 
-        # Get directive for next question using QuestionWalker
+        # Get directive for next node (question or state) using QuestionWalker
         question_walker = QuestionWalker()
         question_walker.interview_session = session
         question_walker.interaction = interaction
         question_walker.question_directive_template = self.action.question_directive_template
-
-        unanswered = session.get_unanswered_questions()
-        if not unanswered:
-            # All questions answered (or declined), transition to REVIEW
-            session.active_question_key = None
-            if state_machine:
-                state_machine.transition_to(InterviewState.REVIEW, reason="All questions answered")
-            else:
-                session.transition_to(InterviewState.REVIEW)
-            await session.save()
-            return
-
-        start_from = session.active_question_key if session.active_question_key in unanswered else None
-        question_node = await question_walker.find_next_question(session, interview_action=self.action, start_from=start_from)
         
-        # Check if a state target was encountered during traversal
-        state_target = (session.context or {}).get("_state_target")
-        if state_target:
-            # Clear the state target from context
-            session.context.pop("_state_target", None)
+        start_from = session.active_question_key if session.active_question_key in session.get_unanswered_questions() else None
+        node = await question_walker.find_next_question(session, interview_action=self.action, start_from=start_from)
+        
+        # Handle StateNode - execute transition and generate directive
+        if isinstance(node, StateNode):
+            # Execute state transition
+            await node.execute(session, question_walker)
+            session.active_question_key = None
             await session.save()
             
-            # Get the InterviewState from the state target
-            target_state = question_walker._get_state_from_target(state_target)
-            if target_state:
-                # Transition to the target state
-                session.active_question_key = None
-                if state_machine:
-                    state_machine.transition_to(target_state, reason=f"State target from question traversal")
-                else:
-                    session.transition_to(target_state)
-                await session.save()
-                
-                # Generate directive for the new state
-                if target_state == InterviewState.REVIEW:
-                    await self.generate_review_directive(session, classification_result, visitor, state_machine)
-                elif target_state == InterviewState.COMPLETED:
-                    await self.generate_completed_directive(session, visitor)
-                return
+            # Generate directive based on state type
+            if node.state_type == InterviewState.REVIEW:
+                await self.generate_review_directive(session, classification_result, visitor, state_machine)
+            elif node.state_type == InterviewState.COMPLETED:
+                await self.generate_completed_directive(session, visitor)
+            elif node.state_type == InterviewState.CANCELLED:
+                await self.generate_cancelled_directive(session, visitor)
+            return
         
-        if question_node:
-            directive = await question_node.execute(question_walker)
+        # Handle QuestionNode - execute and queue directive
+        if isinstance(node, QuestionNode):
+            directive = await node.execute(question_walker)
             if directive:
                 # If an update was just handled, prepend a brief confirmation
                 if updated_field:
@@ -250,17 +258,24 @@ class StateHandler:
                     confirmation = f"Tell the user: Updated {field_display} to {new_value}. "
                     directive = confirmation + directive
                 await self.action._queue_directive(visitor, directive)
-        elif not state_target:
-            # No question found and no state target - check if all required questions on path are answered
-            if await session.has_all_required_answers(question_walker):
-                # All required questions on the active path are answered, transition to REVIEW
-                session.active_question_key = None
-                if state_machine:
-                    state_machine.transition_to(InterviewState.REVIEW, reason="All required questions answered")
-                else:
-                    session.transition_to(InterviewState.REVIEW)
-                await session.save()
-                await self.generate_review_directive(session, classification_result, visitor, state_machine)
+            return
+        
+        # node is None - graph is incomplete (error condition)
+        logger.error(
+            f"{self.action.get_class_name()}: Graph traversal returned None. "
+            f"This indicates an incomplete graph definition. "
+            f"All questions may be answered but no StateNode edge exists."
+        )
+        # Emergency fallback: transition to REVIEW if all questions answered
+        unanswered = session.get_unanswered_questions()
+        if not unanswered:
+            session.active_question_key = None
+            if state_machine:
+                state_machine.transition_to(InterviewState.REVIEW, reason="Emergency fallback: all questions answered")
+            else:
+                session.transition_to(InterviewState.REVIEW)
+            await session.save()
+            await self.generate_review_directive(session, classification_result, visitor, state_machine)
     
     async def generate_review_directive(
         self,
