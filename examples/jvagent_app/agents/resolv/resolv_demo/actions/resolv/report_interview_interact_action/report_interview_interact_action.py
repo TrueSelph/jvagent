@@ -60,7 +60,6 @@ class ReportInterviewInteractAction(InterviewInteractAction):
             "User is providing or answering report questions",
             "User is completing report or providing availability",
             # Revision/edit - changing previously provided information
-            "User wants to change, update, or correct their report description, location, media, anonymous report option, reporting_on_behalf, stakeholder_name, stakeholder_address, stakeholder_phone, reporter_name, or reporter_address.",
             "User is revising, editing, or updating incident report information",
         ],
         description="Anchor statements for InteractRouter routing"
@@ -85,19 +84,17 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "description": "The precise location of the incident, including street and area name. Ignore vague references such as 'my area' or 'nearby'.",
                     "type": "string",
                 },
-                "default_next": "report_media",
                 "required": True
             },
             {
                 "name": "report_media",
-                "question": "Please upload any images or videos you may have related to your report.",
+                "question": "Please upload any images of the incident if you have them.",
                 "constraints": {
-                    "description": "Used to determine if media is provided or not.",
-                    "options": ["media", "no_media"],
-                    "type": "string",
+                    "description": "Images of the incident uploaded via WhatsApp media.",
+                    "type": "list",
+                    "data_input_field": "whatsapp_media",
                 },
-                "default_next": "new_report",
-                "required": True
+                "required": False
             },
             {
                 "name": "new_report",
@@ -469,6 +466,7 @@ async def handle_report_completion(
     # Extract collected data
     report_description = session.responses.get('report_description', '')
     report_location = session.responses.get('report_location', '')
+    incident_images = session.responses.get('incident_images', '')
     is_sensitive = session.responses.get('is_sensitive', '')
     reporting_on_behalf = session.responses.get('reporting_on_behalf', '')
     stakeholder_name = session.responses.get('stakeholder_name', '')
@@ -481,7 +479,7 @@ async def handle_report_completion(
     import logging
     logger = logging.getLogger(__name__)
     logger.info(
-        f"Report interview completed:\n description: {report_description}\n location: {report_location}\n is_sensitive: {is_sensitive}\n reporting_on_behalf: {reporting_on_behalf}\n stakeholder_name: {stakeholder_name}\n stakeholder_address: {stakeholder_address}\n stakeholder_phone: {stakeholder_phone}\n reporter_name: {reporter_name}\n reporter_address: {reporter_address}"
+        f"Report interview completed:\n description: {report_description}\n location: {report_location}\n incident_images: {incident_images}\n is_sensitive: {is_sensitive}\n reporting_on_behalf: {reporting_on_behalf}\n stakeholder_name: {stakeholder_name}\n stakeholder_address: {stakeholder_address}\n stakeholder_phone: {stakeholder_phone}\n reporter_name: {reporter_name}\n reporter_address: {reporter_address}"
     )
 
     # Send completion message
