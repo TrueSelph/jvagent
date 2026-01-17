@@ -9,6 +9,7 @@ from .question_edge import QuestionEdge
 from .question_node import QuestionNode
 from .question_walker import QuestionWalker
 from .response_processor import ResponseProcessor
+from .state_node import StateNode
 from .state_handlers import StateHandler
 from .state_machine import InterviewStateMachine
 from .context import InterviewContext
@@ -24,6 +25,7 @@ __all__ = [
     "QuestionNode",
     "QuestionWalker",
     "ResponseProcessor",
+    "StateNode",
     "StateHandler",
     "InterviewStateMachine",
     "InterviewState",

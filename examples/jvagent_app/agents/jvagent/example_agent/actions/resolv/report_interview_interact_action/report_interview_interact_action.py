@@ -25,7 +25,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
     a specific interview flow. Sessions are identified by
     interview_type='ReportInterviewInteractAction' and attached to Conversation nodes.
 
-    The question_index can be overridden in agent.yaml to customize questions.
+    The question_graph can be overridden in agent.yaml to customize questions.
 
     Architecture:
         The interview system uses a unified classification and extraction approach
@@ -66,7 +66,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
         description="Anchor statements for InteractRouter routing",
     )
 
-    question_index: List[Dict[str, Any]] = attribute(
+    question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {
                 "name": "report_description",
@@ -108,8 +108,8 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                 "required": True,
                 "branches": [
                     {
-                        "condition": {"question": "is_sensitive", "equals": "yes"},
-                        "target": "REVIEW",  # Skip to review/confirmation when sensitive
+                        "condition": {"op": "equals", "value": "yes"},
+                        "target": "REVIEW"  # Skip to review/confirmation when sensitive
                     }
                 ],
                 # Continue normally if "no"
@@ -124,6 +124,13 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "options": ["yes", "no"],
                 },
                 "required": True,
+                "branches": [
+                    {
+                        "condition": {"op": "equals", "value": "yes"},
+                        "target": "stakeholder_name"
+                    }
+                ],
+                "default_next": "reporter_name"
             },
             {
                 "name": "stakeholder_name",
@@ -133,7 +140,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "type": "string",
                 },
                 "required": True,
-                "conditional": {"reporting_on_behalf": "yes"},
+                "default_next": "stakeholder_address"
             },
             {
                 "name": "stakeholder_address",
@@ -143,7 +150,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "type": "string",
                 },
                 "required": True,
-                "conditional": {"reporting_on_behalf": "yes"},
+                "default_next": "stakeholder_phone"
             },
             {
                 "name": "stakeholder_phone",
@@ -154,7 +161,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "type": "string",
                 },
                 "required": True,
-                "conditional": {"reporting_on_behalf": "yes"},
+                "default_next": "reporter_name"
             },
             {
                 "name": "reporter_name",
@@ -164,6 +171,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "type": "string",
                 },
                 "required": True,
+                "default_next": "reporter_address"
             },
             {
                 "name": "reporter_address",
@@ -172,21 +180,18 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "description": "The home address of the person submitting the report, not the incident location.",
                     "type": "string",
                 },
-                "required": True,
-                "conditional": {"reporting_on_behalf": "no"},
-            },
+                "required": True
+            }
         ],
-        description="List of question configurations. Can be overridden in agent.yaml. "
-        "Handlers, validators, and directive overrides can be registered via decorators "
-        "(@input_handler, @input_validator, @input_directive_override) or specified as string "
-        "references in constraints (input_handler, input_validator).",
+        description="List of question configurations defining the interview graph. Can be overridden in agent.yaml. "
+                    "Supports conditional branching via 'branches' and 'default_next'. "
+                    "Handlers, validators, and directive overrides can be registered via decorators "
+                    "(@input_handler, @input_validator, @input_directive_override) or specified as string "
+                    "references in constraints (input_handler, input_validator)."
     )
 
-
-@input_validator("report_description")
-def validate_report_description(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
+@input_validator('report_description')
+def validate_report_description(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the report description is not empty.
 
     Args:
@@ -251,30 +256,28 @@ def validate_report_location(
 #     return ValidationStatus.VALID, None
 
 
-@input_validator("is_sensitive")
-def validate_is_sensitive(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the is sensitive is either yes or no.
+# @input_validator('is_sensitive')
+# def validate_is_sensitive(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+#     """Validate that the is sensitive is either yes or no.
 
-    Args:
-        value: The is sensitive string to validate
-        session: Interview session (for context)
+#     Args:
+#         value: The is sensitive string to validate
+#         session: Interview session (for context)
 
-    Returns:
-        Tuple of (ValidationStatus, optional error message)
-    """
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please indicate whether the report is sensitive"
+#     Returns:
+#         Tuple of (ValidationStatus, optional error message)
+#     """
+#     if not value or not isinstance(value, str):
+#         return ValidationStatus.INVALID, "Ask: Please indicate whether the report is sensitive"
 
-    # Remove extra whitespace
-    value = value.strip()
+#     # Remove extra whitespace
+#     value = value.strip()
 
-    # Check for valid options
-    if value not in ["yes", "no"]:
-        return ValidationStatus.INVALID, "Ask: Please indicate whether the report is sensitive"
+#     # Check for valid options
+#     if value not in ["yes", "no"]:
+#         return ValidationStatus.INVALID, "Ask: Please indicate whether the report is sensitive"
 
-    return ValidationStatus.VALID, None
+#     return ValidationStatus.VALID, None
 
 
 @input_validator("reporting_on_behalf")
@@ -469,176 +472,10 @@ def validate_reporter_address(
     return ValidationStatus.VALID, None
 
 
-@input_handler("available_times")
-async def check_training_availability(
-    raw_input: str, session: InterviewSession, interaction: Interaction
-) -> str:
-    """Process and autocorrect training time availability against hardcoded available times.
-
-    This handler autocorrects partial inputs (e.g., "Monday at 9" -> "Monday 9:00 AM - 11:00 AM")
-    or returns the original input if no match can be determined.
-
-    Args:
-        raw_input: Raw user input about availability
-        session: Interview session (for context)
-        interaction: Interaction node (can access interaction.user_id, interaction.utterance, etc.)
-
-    Returns:
-        Autocorrected availability string (full format) or original input if no match
-    """
-
-    # Hardcoded available training times
-    AVAILABLE_TRAINING_TIMES = [
-        "Monday 9:00 AM - 11:00 AM",
-        "Monday 2:00 PM - 4:00 PM",
-        "Wednesday 9:00 AM - 11:00 AM",
-        "Wednesday 2:00 PM - 4:00 PM",
-        "Friday 10:00 AM - 12:00 PM",
-        "Saturday 9:00 AM - 12:00 PM",
-    ]
-
-    if not raw_input or not isinstance(raw_input, str):
-        return raw_input
-
-    user_input = raw_input.strip()
-
-    # Normalize user input for comparison (case-insensitive, remove extra spaces)
-    normalized_input = re.sub(r"\s+", " ", user_input.lower())
-
-    # First, check if input is already in correct format (idempotent check)
-    # This handles cases where process_input is called multiple times
-    for available_time in AVAILABLE_TRAINING_TIMES:
-        normalized_available = re.sub(r"\s+", " ", available_time.lower())
-        if normalized_input == normalized_available:
-            # Already in correct format
-            session.context["matched_training_times"] = [available_time]
-            await session.save()
-            return available_time  # Return exact format
-
-    # Also check if input starts with "Available:" (from previous processing)
-    # This shouldn't happen, but handle it gracefully
-    if user_input.startswith("Available:"):
-        # Extract the time from "Available: Monday 9:00 AM - 11:00 AM"
-        time_part = user_input.replace("Available:", "").strip()
-        for available_time in AVAILABLE_TRAINING_TIMES:
-            if time_part.lower() == available_time.lower():
-                session.context["matched_training_times"] = [available_time]
-                await session.save()
-                return available_time
-
-    # Try to autocorrect partial inputs
-    matched_times = []
-    for available_time in AVAILABLE_TRAINING_TIMES:
-        normalized_available = re.sub(r"\s+", " ", available_time.lower())
-
-        # Extract day and times from available time
-        day_match = False
-        # matched_day = None
-        for day in ["monday", "wednesday", "friday", "saturday"]:
-            if day in normalized_available:
-                if day in normalized_input:
-                    day_match = True
-                    # matched_day = day
-                    break
-
-        if not day_match:
-            continue
-
-        # Extract time information from available time
-        # Format: "monday 9:00 am - 11:00 am"
-        time_match = re.search(
-            r"(\d+):(\d+)\s*(am|pm)\s*-\s*(\d+):(\d+)\s*(am|pm)", normalized_available
-        )
-        if not time_match:
-            continue
-
-        start_hour = int(time_match.group(1))
-        # start_min = int(time_match.group(2))
-        # start_period = time_match.group(3)
-        end_hour = int(time_match.group(4))
-        # end_min = int(time_match.group(5))
-        # end_period = time_match.group(6)
-
-        # Try to match user input against this time slot
-        # User might say: "9", "9 am", "9:00", "9:00 am", "9-11", "9 am - 11 am", "at 9", "monday at 9", etc.
-
-        # Check if user input mentions the start hour (flexible matching)
-        # Look for the hour number in the input - be flexible with patterns
-        hour_patterns = [
-            rf"\b{start_hour}\b",  # Just the hour "9" (word boundary) - matches "9" in "monday at 9"
-            rf"at\s+{start_hour}\b",  # "at 9" or "monday at 9"
-            rf"{start_hour}\s*(am|pm)\b",  # "9 am" or "9 pm"
-            rf"{start_hour}:00",  # "9:00"
-            rf"{start_hour}:00\s*(am|pm)",  # "9:00 am"
-        ]
-
-        start_time_mentioned = any(
-            re.search(pattern, normalized_input, re.IGNORECASE) for pattern in hour_patterns
-        )
-
-        # Also check for time ranges like "9-11", "9 to 11", "9-11 am"
-        range_patterns = [
-            rf"{start_hour}\s*-\s*{end_hour}",  # "9-11"
-            rf"{start_hour}\s+to\s+{end_hour}",  # "9 to 11"
-            rf"{start_hour}\s*-\s*{end_hour}\s*(am|pm)",  # "9-11 am"
-        ]
-        has_range = any(
-            re.search(pattern, normalized_input, re.IGNORECASE) for pattern in range_patterns
-        )
-
-        # If user mentions the day and start time (or range), autocorrect to full format
-        # This handles cases like "Monday at 9" -> "Monday 9:00 AM - 11:00 AM"
-        if start_time_mentioned or has_range:
-            matched_times.append(available_time)
-
-    # If we found a match, autocorrect to the full format
-    if matched_times:
-        # If multiple matches, prefer the first one (most specific)
-        matched_time = matched_times[0]
-        session.context["matched_training_times"] = [matched_time]
-        await session.save()
-        return matched_time  # Return autocorrected full format
-
-    # No match found - return original input (validator will catch it)
-    return user_input
 
 
-@input_directive_override("user_email")
-async def custom_email_directive(
-    field_name: str,
-    value: str,
-    session: InterviewSession,
-    interaction: Interaction,
-    visitor: InteractWalker,
-) -> Optional[Union[str, Tuple[str, str]]]:
-    """Custom directive after email is collected.
 
-    This demonstrates the @input_directive_override decorator, which allows
-    customizing the agent's response after a field value is successfully stored.
 
-    Args:
-        field_name: Name of the field that was just stored
-        value: The email value that was stored
-        session: Interview session for context
-        interaction: Current interaction
-        visitor: Walker for context
-
-    Returns:
-        Optional directive override:
-        - None: Use default directive (no override)
-        - str: Replace default directive with this string
-        - Tuple[str, str]: (mode, directive) where mode is "append" or "replace"
-    """
-    # Check if email domain matches specific criteria
-    if "@mail.com" in value.lower():
-        # Replace default directive with custom message for example.com emails
-        return (
-            "append",
-            "Tell the user: Thank you for using your work email! We'll send you special updates about jvagent training.",
-        )
-
-    # Return None to use default directive for other emails
-    return None
 
 
 @on_interview_complete("ReportInterviewInteractAction")

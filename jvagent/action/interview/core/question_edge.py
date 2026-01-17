@@ -15,13 +15,15 @@ class QuestionEdge(Edge):
     
     QuestionEdge extends Edge to store condition information that determines
     when this edge should be traversed based on previous question responses.
+    The question is implicit from the branch context - conditions evaluate
+    against the question that owns the branch.
     
     Attributes:
-        condition: Optional condition dict with 'question' and 'equals' keys
+        condition: Optional condition dict with 'op' and optional 'value' keys
     """
     
     condition: Optional[Dict[str, Any]] = attribute(
         default=None,
-        description="Condition dict for conditional traversal (e.g., {'question': 'user_type', 'equals': 'premium'})"
+        description="Condition dict for conditional traversal (e.g., {'op': 'equals', 'value': 'premium'})"
     )
 

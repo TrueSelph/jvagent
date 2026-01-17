@@ -4,7 +4,7 @@ Unified interview system for gathering structured information from users through
 multi-turn conversations with validation, revision, and confirmation flows.
 
 This is an abstract base class that should be extended to create concrete
-interview implementations. Each subclass should define its own question_index
+interview implementations. Each subclass should define its own question_graph
 with the questions for that interview flow.
 
 The system uses a unified classification and extraction approach that detects
@@ -26,11 +26,11 @@ from jvagent.action.interact.base import InteractAction
 from jvagent.memory import Interaction
 from jvspatial.core.annotations import attribute
 
+from .core.enums import Intent, InterviewState, ValidationStatus
 from .core.interview_service import InterviewService
 from .core.interview_session import InterviewSession
 from .core.question_node import QuestionNode
 from .core.question_walker import QuestionWalker
-from .core.enums import InterviewState, ValidationStatus
 from .prompts import (
     UPDATE_PROMPT_FOR_VALUE_TEMPLATE,
     REVIEW_SUMMARY_HEADER_TEMPLATE,
@@ -93,7 +93,7 @@ class InterviewInteractAction(InteractAction, ABC):
     """Unified interview system orchestrator.
 
     This action manages the complete interview lifecycle:
-    1. Creates and chains QuestionNode instances from question_index
+    1. Creates and chains QuestionNode and StateNode instances from question_graph
     2. Manages InterviewSession state (ACTIVE, REVIEW, COMPLETED, CANCELLED)
     3. Uses unified classification to detect intent and extract field values
     4. Generates appropriate directives based on state and classification results
@@ -104,11 +104,11 @@ class InterviewInteractAction(InteractAction, ABC):
     in one LLM call.
 
     Attributes:
-        question_index: List of question configurations defining the interview schema
+        question_graph: List of question configurations defining the interview graph schema
 
     Decorator Support:
         Use @input_handler('question_name') and @input_validator('question_name') decorators
-        to register handlers and validators instead of embedding them in question_index.
+        to register handlers and validators instead of embedding them in question_graph.
         Use @input_directive_override('question_name') to customize directives after field storage.
         Use @on_interview_complete('InterviewType') to register completion handlers.
 
@@ -156,6 +156,180 @@ class InterviewInteractAction(InteractAction, ABC):
     _input_handlers: Dict[str, Callable] = {}
     _input_validators: Dict[str, Callable] = {}
     _input_directive_overrides: Dict[str, Callable] = {}
+
+    weight: int = attribute(
+        default=-40,
+        description="Execution weight (runs after InteractRouter but before PersonaAction)",
+    )
+
+    question_graph: List[Dict[str, Any]] = attribute(
+        default_factory=list,
+        description="List of question configurations defining the interview graph schema. Can be overridden in agent.yaml. Supports conditional branching via 'branches' and 'default_next'.",
+    )
+
+    anchors: List[str] = attribute(
+        default_factory=list,
+        description=(
+            "Anchor statements for InteractRouter routing. REQUIRED when using InteractRouter. "
+            "Must include anchors for both initial entry (starting the interview) and intermediate states "
+            "(when questions are being answered). The action's class name is automatically used as the key "
+            "when collected by InteractRouter."
+        ),
+    )
+
+    # Model Configuration
+    model_action_type: str = attribute(
+        default="OpenAILanguageModelAction",
+        description="Entity type of the LanguageModelAction to use",
+    )
+
+    model: str = attribute(
+        default="gpt-4o",
+        description="Default model name; use a capable model for best results"
+    )
+
+    model_temperature: float = attribute(
+        default=0.1,
+        description="Temperature for LLM generation"
+    )
+
+    model_max_tokens: int = attribute(
+        default=4096,
+        description="Max tokens for LLM generation"
+    )
+
+    use_history: bool = attribute(
+        default=True,
+        description="Use conversation history for LLM generation"
+    )
+
+    max_statement_length: int = attribute(
+        default=400,
+        description="Max length of statement to include in history"
+    )
+
+    history_limit: int = attribute(
+        default=5,
+        description="Max number of statements to include in history"
+    )
+
+    # DSPy Integration
+    use_dspy: bool = attribute(
+        default=False,
+        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)"
+    )
+
+    # Summary formatting templates (for REVIEW state)
+    summary_header_template: str = attribute(
+        default=REVIEW_SUMMARY_HEADER_TEMPLATE,
+        description="Template for the summary header. Defaults to REVIEW_SUMMARY_HEADER_TEMPLATE from prompts.py",
+    )
+
+    summary_item_template: str = attribute(
+        default=REVIEW_SUMMARY_ITEM_TEMPLATE,
+        description="Template for each summary item. Use {display_name} and {value} placeholders. Defaults to REVIEW_SUMMARY_ITEM_TEMPLATE from prompts.py",
+    )
+
+    # Consolidated review directive template (for REVIEW state)
+    # Single template handling all scenarios: confirmation, unclear edit, unclear general
+    review_directive_template: str = attribute(
+        default=REVIEW_DIRECTIVE_TEMPLATE,
+        description="Consolidated review directive template. Use with REVIEW_CONFIRMATION_CONTENT, REVIEW_UNCLEAR_EDIT_CONTENT, or REVIEW_UNCLEAR_GENERAL_CONTENT. Defaults to REVIEW_DIRECTIVE_TEMPLATE from prompts.py",
+    )
+
+    # Confirmation content template
+    confirmation_content_template: str = attribute(
+        default=REVIEW_CONFIRMATION_CONTENT,
+        description="Confirmation content template with {summary}, {instructions}, {prompt} placeholders. Defaults to REVIEW_CONFIRMATION_CONTENT from prompts.py",
+    )
+
+    # Default values for confirmation content
+    confirmation_instructions: str = attribute(
+        default=REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS,
+        description="Default instructions text for review confirmation. Used in {instructions} placeholder. Defaults to REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS from prompts.py",
+    )
+
+    confirmation_prompt: str = attribute(
+        default=REVIEW_CONFIRMATION_DEFAULT_PROMPT,
+        description="Default prompt text for review confirmation. Used in {prompt} placeholder. Defaults to REVIEW_CONFIRMATION_DEFAULT_PROMPT from prompts.py",
+    )
+
+    # Unclear response content templates
+    unclear_edit_content_template: str = attribute(
+        default=REVIEW_UNCLEAR_EDIT_CONTENT,
+        description="Unclear edit content template with {field_list} placeholder. Defaults to REVIEW_UNCLEAR_EDIT_CONTENT from prompts.py",
+    )
+
+    unclear_general_content_template: str = attribute(
+        default=REVIEW_UNCLEAR_GENERAL_CONTENT,
+        description="Unclear general content template. Defaults to REVIEW_UNCLEAR_GENERAL_CONTENT from prompts.py",
+    )
+
+    # Interview prompt template
+    interview_prompt: str = attribute(
+        default=INTERVIEW_PROMPT_TEMPLATE,
+        description="Interview prompt template that combines intent detection (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION) with response extraction in a single LLM call. Defaults to INTERVIEW_PROMPT_TEMPLATE from prompts.py",
+    )
+
+    # DSPy signature docstring (single source of truth, can be overridden in agent.yaml for runtime customization)
+    interview_classification_signature: str = attribute(
+        default=INTERVIEW_CLASSIFICATION_SIGNATURE,
+        description="DSPy signature docstring for InterviewClassification. Can be overridden in agent.yaml for runtime customization. Defaults to INTERVIEW_CLASSIFICATION_SIGNATURE from prompts.py",
+    )
+
+    # Update prompt template (for prompting user for new value when updating)
+    update_prompt_for_value_template: str = attribute(
+        default=UPDATE_PROMPT_FOR_VALUE_TEMPLATE,
+        description="Template for prompting user for new value when updating a field. Use {field_display} and {current_value} placeholders. Defaults to UPDATE_PROMPT_FOR_VALUE_TEMPLATE from prompts.py",
+    )
+
+    # Completion message template (for COMPLETED state)
+    completion_message_template: str = attribute(
+        default=COMPLETION_MESSAGE_TEMPLATE,
+        description="Message template shown when interview is completed (if no completion handler is registered). Defaults to COMPLETION_MESSAGE_TEMPLATE from prompts.py",
+    )
+
+    # Cancellation message template (for CANCELLED state)
+    cancellation_message_template: str = attribute(
+        default=CANCELLATION_MESSAGE_TEMPLATE,
+        description="Message template shown when interview is cancelled. Defaults to CANCELLATION_MESSAGE_TEMPLATE from prompts.py",
+    )
+
+    # Active event message template (for ACTIVE state)
+    active_event_message_template: str = attribute(
+        default=ACTIVE_EVENT_MESSAGE_TEMPLATE,
+        description="Event message template for active interview state. Use {class_name} placeholder. Defaults to ACTIVE_EVENT_MESSAGE_TEMPLATE from prompts.py",
+    )
+
+    # Review event message template (for REVIEW state)
+    review_event_message_template: str = attribute(
+        default=REVIEW_EVENT_MESSAGE_TEMPLATE,
+        description="Event message template for review interview state. Use {class_name} placeholder. Defaults to REVIEW_EVENT_MESSAGE_TEMPLATE from prompts.py",
+    )
+
+    # Completion event message template (for COMPLETED state)
+    completion_event_message_template: str = attribute(
+        default=COMPLETION_EVENT_MESSAGE_TEMPLATE,
+        description="Event message template for completed interview state. Documents that the interview process has been completed. Use {class_name} placeholder. Defaults to COMPLETION_EVENT_MESSAGE_TEMPLATE from prompts.py",
+    )
+
+    # Cancellation event message template (for CANCELLED state)
+    cancellation_event_message_template: str = attribute(
+        default=CANCELLATION_EVENT_MESSAGE_TEMPLATE,
+        description="Event message template for cancelled interview state. Documents that the interview process has been cancelled. Use {class_name} placeholder. Defaults to CANCELLATION_EVENT_MESSAGE_TEMPLATE from prompts.py",
+    )
+
+    # Question directive template (for ACTIVE state - question prompting)
+    question_directive_template: str = attribute(
+        default=QUESTION_DIRECTIVE_TEMPLATE,
+        description="Consolidated template for formatting question directives. Uses {question}, {description}, and {instructions} placeholders. Instructions are optional and only included if provided. Defaults to QUESTION_DIRECTIVE_TEMPLATE from prompts.py",
+    )
+
+    # Required field decline template (for when user tries to decline a required field)
+    required_field_decline_template: str = attribute(
+        default=REQUIRED_FIELD_DECLINE_TEMPLATE,
+        description="Template for insisting user answer a required field when they try to decline. Uses {field_display} and {question} placeholders. Defaults to REQUIRED_FIELD_DECLINE_TEMPLATE from prompts.py",
+    )
 
     def __init_subclass__(cls, **kwargs):
         """Initialize subclass and collect decorator-registered handlers/validators."""
@@ -397,184 +571,6 @@ class InterviewInteractAction(InteractAction, ABC):
         # Update the anchors attribute
         self.anchors = merged_anchors
 
-    weight: int = attribute(
-        default=-40,
-        description="Execution weight (runs after InteractRouter but before PersonaAction)",
-    )
-
-    always_execute: bool = attribute(
-        default=False,
-        description="Only execute when interview should be active",
-    )
-
-    question_index: List[Dict[str, Any]] = attribute(
-        default_factory=list,
-        description="List of question configurations defining the interview schema. Can be overridden in agent.yaml",
-    )
-
-    anchors: List[str] = attribute(
-        default_factory=list,
-        description=(
-            "Anchor statements for InteractRouter routing. REQUIRED when using InteractRouter. "
-            "Must include anchors for both initial entry (starting the interview) and intermediate states "
-            "(when questions are being answered). The action's class name is automatically used as the key "
-            "when collected by InteractRouter."
-        ),
-    )
-
-    # Model Configuration
-    model_action_type: str = attribute(
-        default="OpenAILanguageModelAction",
-        description="Entity type of the LanguageModelAction to use",
-    )
-
-    model: str = attribute(
-        default="gpt-4o",
-        description="Default model name; use a capable model for best results"
-    )
-
-    model_temperature: float = attribute(
-        default=0.1,
-        description="Temperature for LLM generation"
-    )
-
-    model_max_tokens: int = attribute(
-        default=4096,
-        description="Max tokens for LLM generation"
-    )
-
-    use_history: bool = attribute(
-        default=True,
-        description="Use conversation history for LLM generation"
-    )
-
-    max_statement_length: int = attribute(
-        default=400,
-        description="Max length of statement to include in history"
-    )
-
-    history_limit: int = attribute(
-        default=5,
-        description="Max number of statements to include in history"
-    )
-
-    # DSPy Integration
-    use_dspy: bool = attribute(
-        default=False,
-        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)"
-    )
-
-    # Summary formatting templates (for REVIEW state)
-    summary_header_template: str = attribute(
-        default=REVIEW_SUMMARY_HEADER_TEMPLATE,
-        description="Template for the summary header. Defaults to REVIEW_SUMMARY_HEADER_TEMPLATE from prompts.py",
-    )
-
-    summary_item_template: str = attribute(
-        default=REVIEW_SUMMARY_ITEM_TEMPLATE,
-        description="Template for each summary item. Use {display_name} and {value} placeholders. Defaults to REVIEW_SUMMARY_ITEM_TEMPLATE from prompts.py",
-    )
-
-    # Consolidated review directive template (for REVIEW state)
-    # Single template handling all scenarios: confirmation, unclear edit, unclear general
-    review_directive_template: str = attribute(
-        default=REVIEW_DIRECTIVE_TEMPLATE,
-        description="Consolidated review directive template. Use with REVIEW_CONFIRMATION_CONTENT, REVIEW_UNCLEAR_EDIT_CONTENT, or REVIEW_UNCLEAR_GENERAL_CONTENT. Defaults to REVIEW_DIRECTIVE_TEMPLATE from prompts.py",
-    )
-
-    # Confirmation content template
-    confirmation_content_template: str = attribute(
-        default=REVIEW_CONFIRMATION_CONTENT,
-        description="Confirmation content template with {summary}, {instructions}, {prompt} placeholders. Defaults to REVIEW_CONFIRMATION_CONTENT from prompts.py",
-    )
-
-    # Default values for confirmation content
-    confirmation_instructions: str = attribute(
-        default=REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS,
-        description="Default instructions text for review confirmation. Used in {instructions} placeholder. Defaults to REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS from prompts.py",
-    )
-
-    confirmation_prompt: str = attribute(
-        default=REVIEW_CONFIRMATION_DEFAULT_PROMPT,
-        description="Default prompt text for review confirmation. Used in {prompt} placeholder. Defaults to REVIEW_CONFIRMATION_DEFAULT_PROMPT from prompts.py",
-    )
-
-    # Unclear response content templates
-    unclear_edit_content_template: str = attribute(
-        default=REVIEW_UNCLEAR_EDIT_CONTENT,
-        description="Unclear edit content template with {field_list} placeholder. Defaults to REVIEW_UNCLEAR_EDIT_CONTENT from prompts.py",
-    )
-
-    unclear_general_content_template: str = attribute(
-        default=REVIEW_UNCLEAR_GENERAL_CONTENT,
-        description="Unclear general content template. Defaults to REVIEW_UNCLEAR_GENERAL_CONTENT from prompts.py",
-    )
-
-    # Interview prompt template
-    interview_prompt: str = attribute(
-        default=INTERVIEW_PROMPT_TEMPLATE,
-        description="Interview prompt template that combines intent detection (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION) with response extraction in a single LLM call. Defaults to INTERVIEW_PROMPT_TEMPLATE from prompts.py",
-    )
-
-    # DSPy signature docstring (single source of truth, can be overridden in agent.yaml for runtime customization)
-    interview_classification_signature: str = attribute(
-        default=INTERVIEW_CLASSIFICATION_SIGNATURE,
-        description="DSPy signature docstring for InterviewClassification. Can be overridden in agent.yaml for runtime customization. Defaults to INTERVIEW_CLASSIFICATION_SIGNATURE from prompts.py",
-    )
-
-    # Update prompt template (for prompting user for new value when updating)
-    update_prompt_for_value_template: str = attribute(
-        default=UPDATE_PROMPT_FOR_VALUE_TEMPLATE,
-        description="Template for prompting user for new value when updating a field. Use {field_display} and {current_value} placeholders. Defaults to UPDATE_PROMPT_FOR_VALUE_TEMPLATE from prompts.py",
-    )
-
-    # Completion message template (for COMPLETED state)
-    completion_message_template: str = attribute(
-        default=COMPLETION_MESSAGE_TEMPLATE,
-        description="Message template shown when interview is completed (if no completion handler is registered). Defaults to COMPLETION_MESSAGE_TEMPLATE from prompts.py",
-    )
-
-    # Cancellation message template (for CANCELLED state)
-    cancellation_message_template: str = attribute(
-        default=CANCELLATION_MESSAGE_TEMPLATE,
-        description="Message template shown when interview is cancelled. Defaults to CANCELLATION_MESSAGE_TEMPLATE from prompts.py",
-    )
-
-    # Active event message template (for ACTIVE state)
-    active_event_message_template: str = attribute(
-        default=ACTIVE_EVENT_MESSAGE_TEMPLATE,
-        description="Event message template for active interview state. Use {class_name} placeholder. Defaults to ACTIVE_EVENT_MESSAGE_TEMPLATE from prompts.py",
-    )
-
-    # Review event message template (for REVIEW state)
-    review_event_message_template: str = attribute(
-        default=REVIEW_EVENT_MESSAGE_TEMPLATE,
-        description="Event message template for review interview state. Use {class_name} placeholder. Defaults to REVIEW_EVENT_MESSAGE_TEMPLATE from prompts.py",
-    )
-
-    # Completion event message template (for COMPLETED state)
-    completion_event_message_template: str = attribute(
-        default=COMPLETION_EVENT_MESSAGE_TEMPLATE,
-        description="Event message template for completed interview state. Documents that the interview process has been completed. Use {class_name} placeholder. Defaults to COMPLETION_EVENT_MESSAGE_TEMPLATE from prompts.py",
-    )
-
-    # Cancellation event message template (for CANCELLED state)
-    cancellation_event_message_template: str = attribute(
-        default=CANCELLATION_EVENT_MESSAGE_TEMPLATE,
-        description="Event message template for cancelled interview state. Documents that the interview process has been cancelled. Use {class_name} placeholder. Defaults to CANCELLATION_EVENT_MESSAGE_TEMPLATE from prompts.py",
-    )
-
-    # Question directive template (for ACTIVE state - question prompting)
-    question_directive_template: str = attribute(
-        default=QUESTION_DIRECTIVE_TEMPLATE,
-        description="Consolidated template for formatting question directives. Uses {question}, {description}, and {instructions} placeholders. Instructions are optional and only included if provided. Defaults to QUESTION_DIRECTIVE_TEMPLATE from prompts.py",
-    )
-
-    # Required field decline template (for when user tries to decline a required field)
-    required_field_decline_template: str = attribute(
-        default=REQUIRED_FIELD_DECLINE_TEMPLATE,
-        description="Template for insisting user answer a required field when they try to decline. Uses {field_display} and {question} placeholders. Defaults to REQUIRED_FIELD_DECLINE_TEMPLATE from prompts.py",
-    )
 
     async def _generate_completed_directive(
         self,
@@ -686,25 +682,88 @@ class InterviewInteractAction(InteractAction, ABC):
     async def _update_reachable_questions(
         self,
         session: InterviewSession,
-        question_walker: QuestionWalker
-    ) -> None:
-        """Re-evaluate which questions are reachable after new answers.
+        question_walker: QuestionWalker,
+        just_answered_field: Optional[str] = None
+    ) -> bool:
+        """Re-evaluate branches after storing a response.
 
-        This method is called after storing a valid response to update
-        the session's understanding of which questions should be processed.
-        Conditional edges may cause some questions to be skipped.
-
-        Currently, this is a no-op as the reachability check happens
-        dynamically in should_process_question. This method exists for
-        potential future optimizations (e.g., caching reachable questions).
+        If the just-answered field has conditional branches, evaluate them.
+        If a branch targets a state node, execute the state transition immediately.
 
         Args:
             session: Interview session
             question_walker: QuestionWalker instance
+            just_answered_field: Optional field name that was just answered
+
+        Returns:
+            True if state transition occurred, False otherwise
         """
-        # Currently a no-op - reachability is checked dynamically
-        # This method exists for potential future optimizations
-        pass
+        if not just_answered_field:
+            return False
+
+        # Get question config for the field just answered
+        question_config = session.get_question_by_name(just_answered_field)
+        if not question_config:
+            return False
+
+        # Check for branches
+        branches = question_config.get("branches", [])
+        if not branches:
+            return False
+
+        # Evaluate branches
+        from .core.question_branch_evaluator import QuestionBranchEvaluator
+
+        for branch in branches:
+            condition = branch.get("condition", {})
+            target = branch.get("target")
+            response_value = session.responses.get(just_answered_field)
+            
+            logger.debug(
+                f"Evaluating branch: question={just_answered_field}, "
+                f"condition={condition}, target={target}, "
+                f"response_value={response_value!r}"
+            )
+            
+            # Question is implicit - condition always evaluates against just_answered_field
+            if QuestionBranchEvaluator.matches(condition, session, implicit_question=just_answered_field):
+                logger.info(
+                    f"Branch condition MATCHED: {just_answered_field} {condition} -> {target}"
+                )
+                if target:
+                    # Check if it's a state target
+                    if question_walker._is_state_target(target):
+                        logger.info(
+                            f"Target '{target}' is a state target, initiating state transition"
+                        )
+                        # Execute state transition NOW
+                        handled = await question_walker._handle_state_target(
+                            target, session, interview_action=self
+                        )
+                        if handled:
+                            # Ensure session is saved after state transition
+                            await session.save()
+                            logger.info(
+                                f"State transition to '{target}' completed successfully"
+                            )
+                            return True  # State transition occurred
+                        else:
+                            logger.warning(
+                                f"State transition to '{target}' was not handled"
+                            )
+                    else:
+                        logger.debug(
+                            f"Target '{target}' is a question target, normal flow will handle it"
+                        )
+                    # If it's a question target, do nothing (normal flow handles it)
+                    break
+            else:
+                logger.debug(
+                    f"Branch condition NOT matched: {just_answered_field} {condition} "
+                    f"(response_value={response_value!r})"
+                )
+
+        return False
 
     async def _get_question_node(
         self,
@@ -895,7 +954,7 @@ class InterviewInteractAction(InteractAction, ABC):
         """
         # Skip classification for terminal states
         if session.state == InterviewState.COMPLETED or session.state == InterviewState.CANCELLED:
-            return ClassificationResult(intent="NONE")
+            return ClassificationResult(intent=Intent.NONE)
 
         # Build user input - prioritize interpretation when available
         interpretation_available = interaction.interpretation and interaction.interpretation.strip()
@@ -908,9 +967,9 @@ class InterviewInteractAction(InteractAction, ABC):
         elif utterance and utterance.strip():
             user_input = utterance
         else:
-            return ClassificationResult(intent="NONE")
+            return ClassificationResult(intent=Intent.NONE)
 
-        # Use DSPy if enabled, otherwise use legacy implementation
+        # Use DSPy if enabled, otherwise use prompt-based implementation
         if self.use_dspy:
             return await self._classify_with_dspy(session, user_input, interaction, visitor)
 
@@ -931,7 +990,7 @@ class InterviewInteractAction(InteractAction, ABC):
             model_action = await self.get_model_action(required=True)
             if not model_action:
                 logger.warning(f"{self.get_class_name()}: Could not get model action for unified classification")
-                return ClassificationResult(intent="NONE")
+                return ClassificationResult(intent=Intent.NONE)
 
             # Get conversation history if needed
             conversation_history = None
@@ -968,10 +1027,16 @@ class InterviewInteractAction(InteractAction, ABC):
                 result = response
 
             if not result:
-                return ClassificationResult(intent="NONE")
+                return ClassificationResult(intent=Intent.NONE)
 
-            # Extract intent
-            intent = result.get("intent", "NONE").upper()
+            # Extract intent and convert to Intent enum
+            intent_str = result.get("intent", Intent.NONE.value).upper()
+            try:
+                intent = Intent(intent_str)
+            except ValueError:
+                # Invalid intent value, default to NONE
+                logger.warning(f"{self.get_class_name()}: Invalid intent value '{intent_str}', defaulting to NONE")
+                intent = Intent.NONE
             confidence = result.get("confidence", 1.0)
 
             # Build ClassificationResult
@@ -983,14 +1048,14 @@ class InterviewInteractAction(InteractAction, ABC):
                     field_value = None
 
             classification_result = ClassificationResult(
-                intent=intent,
+                intent=intent.value,  # Store as string value for ClassificationResult
                 confidence=confidence,
                 field=field_value,
                 value=result.get("value")
             )
 
             # Handle SUBMISSION intent - extract field values
-            if intent == "SUBMISSION":
+            if intent == Intent.SUBMISSION:
                 # Extract field values (exclude intent-related keys)
                 intent_keys = {"intent", "confidence", "field", "value"}
                 extracted_data = {k: v for k, v in result.items() if k not in intent_keys}
@@ -1010,10 +1075,10 @@ class InterviewInteractAction(InteractAction, ABC):
 
         except json.JSONDecodeError as e:
             logger.error(f"{self.get_class_name()}: Failed to parse unified classification JSON: {e}", exc_info=True)
-            return ClassificationResult(intent="NONE")
+            return ClassificationResult(intent=Intent.NONE)
         except Exception as e:
             logger.error(f"{self.get_class_name()}: Failed to classify/extract via unified prompt: {e}", exc_info=True)
-            return ClassificationResult(intent="NONE")
+            return ClassificationResult(intent=Intent.NONE)
 
     def _build_classification_context(
         self,
@@ -1039,6 +1104,21 @@ class InterviewInteractAction(InteractAction, ABC):
             active_questions = [q for q in session.question_index if q.get("name") == session.active_question_key]
         else:
             active_questions = [q for q in session.question_index if q.get("name") in unanswered]
+        
+        # Ensure active_question_key is included if unanswered
+        # This is critical because classification happens before the response is stored,
+        # so branch conditions may not have matched yet, but the active question should
+        # still be in entities_to_extract for correct intent classification
+        if session.active_question_key:
+            answered_set = set(session.get_answered_questions())
+            active_question_names = set([q.get("name") for q in active_questions if q])
+            if (session.active_question_key not in active_question_names and 
+                session.active_question_key not in answered_set):
+                # Add the active question to active_questions
+                question_map = {q.get("name"): q for q in session.question_index if q.get("name")}
+                active_question_config = question_map.get(session.active_question_key)
+                if active_question_config:
+                    active_questions.append(active_question_config)
 
         # Build entities list for extraction with required field information
         entities_list = []
@@ -1121,7 +1201,7 @@ class InterviewInteractAction(InteractAction, ABC):
             model_action = await self.get_model_action(required=True)
             if not model_action:
                 logger.warning(f"{self.get_class_name()}: Could not get model action for DSPy classification")
-                return ClassificationResult(intent="NONE")
+                return ClassificationResult(intent=Intent.NONE)
 
             # Create DSPy LM adapter
             # Pass model, temperature, and max_tokens to allow agent.yaml overrides
@@ -1159,7 +1239,15 @@ class InterviewInteractAction(InteractAction, ABC):
                 f"{self.get_class_name()}: Failed to classify/extract via DSPy: {e}",
                 exc_info=True
             )
-            return ClassificationResult(intent="NONE")
+            return ClassificationResult(intent=Intent.NONE)
+
+    def _get_question_graph(self) -> List[Dict[str, Any]]:
+        """Get question graph.
+        
+        Returns:
+            List of question configuration dictionaries
+        """
+        return self.question_graph
 
     async def on_register(self) -> None:
         """Register the action and build question nodes.
@@ -1170,16 +1258,34 @@ class InterviewInteractAction(InteractAction, ABC):
         # Merge standard anchors with any anchors set via agent.yaml
         self._merge_standard_anchors()
 
-        # Validate question_index is defined
-        if not self.question_index:
-            logger.warning(f"{self.get_class_name()}: question_index is empty. Define questions in subclass or agent.yaml")
+        # Get question graph
+        question_graph = self._get_question_graph()
+        
+        # Validate question graph is defined
+        if not question_graph:
+            logger.warning(f"{self.get_class_name()}: question_graph is empty. Define questions in subclass or agent.yaml")
 
-        # Build QuestionNode chain
+        # Validate graph structure
+        from .core.graph_validator import QuestionGraphValidator
+        validator = QuestionGraphValidator(question_graph)
+        validation_report = await validator.validate()
+        
+        if not validation_report.is_valid():
+            validation_report.log_issues(self.get_class_name())
+            raise ValueError(
+                f"{self.get_class_name()}: Question graph validation failed. "
+                f"See logs for details."
+            )
+        
+        if validation_report.has_warnings():
+            validation_report.log_issues(self.get_class_name())
+
+        # Build QuestionNode and StateNode graph
         service = InterviewService(self)
         await service.build_question_nodes()
 
     async def on_reload(self) -> None:
-        """Reload the action - rebuild question nodes if question_index changed."""
+        """Reload the action - rebuild question nodes if question_graph changed."""
 
         # Merge standard anchors with any anchors set via agent.yaml (may have changed on reload)
         self._merge_standard_anchors()
@@ -1188,8 +1294,9 @@ class InterviewInteractAction(InteractAction, ABC):
         existing_nodes = await self.nodes(direction="out", node=QuestionNode)
         existing_labels = {n.label for n in existing_nodes}
 
-        # Get expected labels from question_index
-        expected_labels = {q.get("name", "") for q in self.question_index if q.get("name")}
+        # Get expected labels from question_graph
+        question_graph = self._get_question_graph()
+        expected_labels = {q.get("name", "") for q in question_graph if q.get("name")}
 
         # If labels changed, rebuild question nodes
         if existing_labels != expected_labels:
@@ -1197,20 +1304,40 @@ class InterviewInteractAction(InteractAction, ABC):
             for node in existing_nodes:
                 await self.disconnect(node)
                 await node.delete()
+            # Also delete state nodes
+            from .core.state_node import StateNode
+            existing_state_nodes = await self.nodes(direction="out", node=StateNode)
+            for node in existing_state_nodes:
+                await self.disconnect(node)
+                await node.delete()
             # Rebuild
             await self._build_question_nodes()
 
     async def _build_question_nodes(self) -> None:
-        """Build QuestionNode tree from question_index with conditional branches.
+        """Build QuestionNode and StateNode graph from question_graph with conditional branches.
 
-        Creates QuestionNodes and connects them based on branches configuration.
+        Creates QuestionNodes and StateNodes and connects them based on branches configuration.
         Supports both linear (no branches) and tree-based (with branches) arrangements.
         """
         from .core.question_edge import QuestionEdge
+        from .core.state_node import StateNode
+
+        question_graph = self._get_question_graph()
+
+        # Create StateNodes for interview states
+        state_node_map = {}
+        for state in [InterviewState.REVIEW, InterviewState.COMPLETED, InterviewState.CANCELLED]:
+            state_node = await StateNode.create(
+                agent_id=self.agent_id,
+                state_type=state,
+                label=state.value.upper(),
+            )
+            state_node_map[state.value.upper()] = state_node
+            await self.connect(state_node)
 
         # Create all question nodes first
         question_node_map = {}
-        for question_config in self.question_index:
+        for question_config in question_graph:
             question_name = question_config.get("name", "")
             if not question_name:
                 continue
@@ -1223,8 +1350,20 @@ class InterviewInteractAction(InteractAction, ABC):
             question_node_map[question_name] = question_node
             await self.connect(question_node)
 
+        def resolve_target(target_name: str):
+            """Resolve target name to node (question or state)."""
+            if not target_name:
+                return None
+            # Check if it's a state target
+            if target_name.upper() in state_node_map:
+                return state_node_map[target_name.upper()]
+            # Check if it's a question
+            if target_name in question_node_map:
+                return question_node_map[target_name]
+            return None
+
         # Now create edges based on branches
-        for question_config in self.question_index:
+        for question_config in question_graph:
             question_name = question_config.get("name", "")
             if not question_name:
                 continue
@@ -1236,35 +1375,81 @@ class InterviewInteractAction(InteractAction, ABC):
             branches = question_config.get("branches", [])
             default_next = question_config.get("default_next")
 
-            # Create edges for branches
+            # Create edges for branches (conditional)
             if branches:
                 for branch in branches:
                     condition = branch.get("condition", {})
                     target_name = branch.get("target")
-                    if target_name and target_name in question_node_map:
-                        target_node = question_node_map[target_name]
+                    target_node = resolve_target(target_name)
+                    if target_node:
                         # Create edge with condition
                         await source_node.connect(
                             target_node,
                             edge=QuestionEdge,
                             condition=condition
                         )
+                
+                # IMPORTANT: Also create default edge when branches exist but might not match
+                # This ensures the graph has a path when no branch condition matches
+                if default_next:
+                    # Has default_next, create edge for it (unconditional, for default path)
+                    target_node = resolve_target(default_next)
+                    if target_node:
+                        await source_node.connect(target_node, edge=QuestionEdge)
+                else:
+                    # No default_next specified, create edge to next question in sequence
+                    current_idx = next(
+                        (i for i, q in enumerate(question_graph) if q.get("name") == question_name),
+                        -1
+                    )
+                    if current_idx >= 0 and current_idx + 1 < len(question_graph):
+                        next_question_name = question_graph[current_idx + 1].get("name")
+                        if next_question_name and next_question_name in question_node_map:
+                            target_node = question_node_map[next_question_name]
+                            # Create unconditional edge (no condition) for default path
+                            await source_node.connect(target_node, edge=QuestionEdge)
             elif default_next:
-                # Create edge for default_next
-                if default_next in question_node_map:
-                    target_node = question_node_map[default_next]
+                # No branches, just default_next
+                target_node = resolve_target(default_next)
+                if target_node:
                     await source_node.connect(target_node, edge=QuestionEdge)
             else:
-                # Linear flow - connect to next question in list
+                # No branches, no default_next - sequential flow
                 current_idx = next(
-                    (i for i, q in enumerate(self.question_index) if q.get("name") == question_name),
+                    (i for i, q in enumerate(question_graph) if q.get("name") == question_name),
                     -1
                 )
-                if current_idx >= 0 and current_idx + 1 < len(self.question_index):
-                    next_question_name = self.question_index[current_idx + 1].get("name")
+                if current_idx >= 0 and current_idx + 1 < len(question_graph):
+                    next_question_name = question_graph[current_idx + 1].get("name")
                     if next_question_name and next_question_name in question_node_map:
                         target_node = question_node_map[next_question_name]
                         await source_node.connect(target_node, edge=QuestionEdge)
+
+        # Ensure terminal questions (those without outgoing edges to other questions) transition to REVIEW
+        review_state_node = state_node_map.get(InterviewState.REVIEW.value.upper())
+        if review_state_node:
+            for question_name, question_node in question_node_map.items():
+                # Get all outgoing edges from this question node
+                outgoing_question_nodes = await question_node.nodes(direction="out", node=QuestionNode)
+                outgoing_state_nodes = await question_node.nodes(direction="out", node=StateNode)
+                
+                # Check if this question is terminal (no outgoing edges to other questions)
+                is_terminal = len(outgoing_question_nodes) == 0
+                
+                if is_terminal:
+                    # Check if it already has a transition to REVIEW
+                    has_review_transition = any(
+                        state_node.id == review_state_node.id 
+                        for state_node in outgoing_state_nodes
+                    )
+                    
+                    # If no REVIEW transition exists, add one
+                    if not has_review_transition:
+                        logger.debug(
+                            f"Adding REVIEW transition to terminal question '{question_name}' "
+                            f"(no outgoing edges to other questions)"
+                        )
+                        await question_node.connect(review_state_node, edge=QuestionEdge)
 
 
     async def execute(self, visitor: "InteractWalker") -> None:
@@ -1308,11 +1493,12 @@ class InterviewInteractAction(InteractAction, ABC):
 
         # Create new session if none exists
         if not session:
+            question_graph = self._get_question_graph()
             session = await InterviewSession.create(
                 agent_id=self.agent_id,
                 conversation_id=conversation.id,
                 interview_type=interview_type,
-                question_index=self.question_index,
+                question_index=question_graph,  # Session still uses question_index internally for now
                 state=InterviewState.ACTIVE,
             )
             session.started_at = datetime.now()

@@ -93,7 +93,7 @@ class InterviewService:
         )
     
     async def build_question_nodes(self) -> None:
-        """Build QuestionNode tree from question_index."""
+        """Build QuestionNode and StateNode graph from question_graph."""
         await self.question_builder.build_question_nodes()
     
     async def generate_directive(

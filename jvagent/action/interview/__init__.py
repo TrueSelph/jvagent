@@ -20,6 +20,7 @@ from .core import (
     QuestionNode,
     QuestionWalker,
     QuestionEdge,
+    StateNode,
     InterviewState,
     ValidationStatus,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "QuestionNode",
     "QuestionWalker",
     "QuestionEdge",
+    "StateNode",
     "InterviewState",
     "ValidationStatus",
 ]

@@ -115,7 +115,7 @@ class InterviewSession(Node):
         
         If question_walker is provided, only checks required questions that are
         reachable on the current conditional path. Otherwise, checks all required
-        questions (backward compatible behavior).
+        questions.
         
         Args:
             question_walker: Optional QuestionWalker to determine reachable questions
@@ -127,7 +127,7 @@ class InterviewSession(Node):
             # Only check required questions on the active conditional path
             required = await question_walker.get_reachable_required_questions(self)
         else:
-            # Backward compatible: check all required questions
+            # Check all required questions
             required = set(self.get_required_questions())
         
         answered = set(self.get_answered_questions())
@@ -265,17 +265,18 @@ class InterviewSession(Node):
         branches = question_config.get("branches", [])
         
         # Check branches for matching conditions
+        # Question is implicit - condition evaluates against the question that owns this branch
         for branch in branches:
             condition = branch.get("condition", {})
-            question_name = condition.get("question")
-            expected_value = condition.get("equals")
+            operator = condition.get("op")
+            expected_value = condition.get("value")
             
-            if question_name and expected_value is not None:
-                actual_value = self.responses.get(question_name)
-                if actual_value == expected_value:
-                    target = branch.get("target")
-                    if target:
-                        next_questions.append(target)
+            # Use QuestionBranchEvaluator for proper evaluation
+            from .question_branch_evaluator import QuestionBranchEvaluator
+            if QuestionBranchEvaluator.matches(condition, self, implicit_question=question_config.get("name")):
+                target = branch.get("target")
+                if target:
+                    next_questions.append(target)
         
         # If no branch matched, check default_next
         if not next_questions:

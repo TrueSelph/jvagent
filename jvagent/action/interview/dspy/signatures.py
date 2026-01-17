@@ -40,7 +40,7 @@ def create_interview_classification_signature(docstring: str) -> Type:
                 desc="Comma-separated list of previously answered field names (minimal context for UPDATE intent)"
             )
             entities_to_extract: str = dspy.InputField(
-                desc="Unanswered fields to extract, formatted as a list with descriptions, constraints, and [REQUIRED] or [OPTIONAL] markers"
+                desc="Unanswered fields to extract, formatted as a list with descriptions, constraints, and [REQUIRED] or [OPTIONAL] markers. CRITICAL: If a field appears in this list, any user response for that field must be classified as SUBMISSION, NOT UPDATE, regardless of the user's language."
             )
             required_fields_info: str = dspy.InputField(
                 desc="List of required field names. Use this to determine if a field can be declined (only non-required fields can be declined)"
@@ -51,7 +51,7 @@ def create_interview_classification_signature(docstring: str) -> Type:
             
             # Output fields - matching ClassificationResult structure
             intent: Literal["CANCELLATION", "CONFIRMATION", "UPDATE", "DECLINE", "SUBMISSION", "NONE"] = dspy.OutputField(
-                desc="Primary intent: CANCELLATION (abandon process), CONFIRMATION (confirm in REVIEW state), UPDATE (change specific field), DECLINE (decline non-required field), SUBMISSION (provide answers), or NONE"
+                desc="Primary intent (priority order): 1) CANCELLATION (abandon process), 2) CONFIRMATION (confirm in REVIEW state), 3) SUBMISSION (provide answers - CRITICAL: if field in entities_to_extract, use SUBMISSION not UPDATE), 4) UPDATE (change specific field - ONLY if field in answered_fields AND NOT in entities_to_extract), 5) DECLINE (decline non-required field), 6) NONE"
             )
             confidence: float = dspy.OutputField(
                 desc="Confidence score between 0.0 and 1.0 for the classification"

@@ -25,7 +25,7 @@ class SignupInterviewInteractAction(InterviewInteractAction):
     a specific interview flow. Sessions are identified by
     interview_type='SignupInterviewInteractAction' and attached to Conversation nodes.
 
-    The question_index can be overridden in agent.yaml to customize questions.
+    The question_graph can be overridden in agent.yaml to customize questions.
 
     Architecture:
         The interview system uses a unified classification and extraction approach
@@ -66,7 +66,7 @@ class SignupInterviewInteractAction(InterviewInteractAction):
         description="Anchor statements for InteractRouter routing"
     )
 
-    question_index: List[Dict[str, Any]] = attribute(
+    question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {
                 "name": "user_name",
@@ -110,7 +110,10 @@ class SignupInterviewInteractAction(InterviewInteractAction):
                 "required": False
             },
         ],
-        description="List of question configurations. Can be overridden in agent.yaml. "
+        description="List of question configurations defining the interview graph. Can be overridden in agent.yaml. "
+                    "Supports conditional branching via 'branches' and 'default_next'. "
+                    "Enhanced condition operators are supported (==, !=, >, >=, <, <=, in, contains, exists, matches). "
+                    "Example: {\"condition\": {\"question\": \"age\", \"operator\": \">=\", \"value\": 18}, \"target\": \"next_question\"} "
                     "Handlers, validators, and directive overrides can be registered via decorators "
                     "(@input_handler, @input_validator, @input_directive_override) or specified as string "
                     "references in constraints (input_handler, input_validator)."
