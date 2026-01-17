@@ -101,10 +101,19 @@ class StateHandler:
             return
         
         # If active_question_key is set to an unanswered field (invalid response), return
+        # UNLESS we just updated a field - in that case, continue to find next question
         if session.active_question_key and session.active_question_key in session.get_unanswered_questions():
-            return
+            # Don't return early if we just updated a field - continue to find next question
+            if not handler_result.updated_field:
+                return
         
         updated_field = handler_result.updated_field
+        
+        # If we just updated a field and active_question_key was set to that field, clear it
+        # This ensures we find the next question correctly after an update
+        if updated_field and session.active_question_key == updated_field:
+            session.active_question_key = None
+            await session.save()
 
         # Get directive for next node (question or state) using QuestionWalker
         question_walker = QuestionWalker()

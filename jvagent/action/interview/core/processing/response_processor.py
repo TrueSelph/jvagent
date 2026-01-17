@@ -114,6 +114,13 @@ class ResponseProcessor:
             session.update_response(field, new_value, old_value)
             await session.save()
             logger.debug(f"{self.action.get_class_name()}: Updated {field} to {new_value}")
+            
+            # Re-evaluate conditional graph after update (may skip subsequent questions or trigger state transitions)
+            from ..graph.question_walker import QuestionWalker
+            question_walker = QuestionWalker()
+            question_walker.interview_session = session
+            question_walker.interaction = interaction
+            await self.action._update_reachable_questions(session, question_walker, just_answered_field=field)
 
             # Check for directive override after successful update
             override_func = self.action.get_input_directive_override(field)
