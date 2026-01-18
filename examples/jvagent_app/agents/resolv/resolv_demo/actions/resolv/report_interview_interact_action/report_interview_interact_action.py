@@ -118,11 +118,11 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                 },
                 "branches": [
                     {
-                        "condition": {"question": "is_sensitive", "equals": "no"},
+                        "condition": {"op": "equals", "value": "no"},
                         "target": "reporting_on_behalf"
                     },
                     {
-                        "condition": {"question": "is_sensitive", "equals": "yes"},
+                        "condition": {"op": "equals", "value": "yes"},
                         "target": "stakeholder_name"
                     }
                 ],

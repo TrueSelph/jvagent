@@ -134,24 +134,37 @@ When jvagent starts from an app directory, it:
    - Reads `agent.yaml` to get agent configuration
    - Resolves environment variables in agent config
    - Creates/updates the Agent node
-   - Discovers actions from `actions/{namespace}/{action_name}/` directories
-   - Reads `info.yaml` for each action and resolves environment variables
-   - Loads and registers actions with their configuration
-   - Imports `endpoints.py` modules for endpoint discovery
+   - Scans `agent.yaml` to identify required actions
+   - Resolves transitive dependencies from `info.yaml` files
+   - Discovers actions from `actions/{namespace}/{action_name}/` directories (only for required actions)
+   - Reads `info.yaml` for each required action and resolves environment variables
+   - Loads action classes conditionally (only for required actions and their dependencies)
+   - Imports `endpoints.py` modules for endpoint discovery (only for loaded actions)
+   - Registers actions with their configuration from `agent.yaml`
+   - **Important**: Actions not listed in any `agent.yaml` remain unloaded and their endpoints are not accessible
 
 ## Actions
 
 Actions are pluggable components that extend agent functionality. Actions can be:
-1. **Core actions** from the jvagent library (loaded automatically)
+1. **Core actions** from the jvagent library (loaded conditionally based on `agent.yaml`)
 2. **Local actions** packaged within each agent folder
 3. **Local overrides** of core actions (takes precedence over core)
 
-### Action Discovery
+**Conditional Loading**: Actions are only loaded if they are explicitly listed in `agent.yaml` or are required as dependencies of a loaded action. This ensures that unused actions remain unloaded and their endpoints are not accessible.
 
-Actions are discovered in the following order:
-1. **Local actions** from `actions/{namespace}/{action_name}/` (takes precedence)
-2. **Core actions** from jvagent library (`jvagent/action/*/`) if not found locally
-3. Error if action not found in either location
+### Action Discovery and Conditional Loading
+
+Actions are discovered and loaded conditionally based on `agent.yaml` configuration:
+
+1. **Required Actions**: Actions explicitly listed in `agent.yaml` are marked as required
+2. **Dependency Resolution**: For each required action, dependencies are resolved transitively from `info.yaml` files
+3. **Action Loading**: Only required actions (and their dependencies) are loaded:
+   - **Local actions** from `actions/{namespace}/{action_name}/` (takes precedence)
+   - **Core actions** from jvagent library (`jvagent/action/*/`) if not found locally
+4. **Endpoint Registration**: Endpoints are only registered for loaded actions
+5. **Unused Actions**: Actions not listed in any `agent.yaml` remain completely unloaded (no module import, no endpoints)
+
+**Important**: Only actions explicitly listed in `agent.yaml` (or required as dependencies) are loaded. Unused actions remain unloaded and their endpoints are not accessible.
 
 ### Using Core Actions
 
@@ -207,7 +220,9 @@ actions:
       history_limit: 10
 ```
 
-No stub directory needed - the action is automatically loaded from the core library.
+No stub directory needed - the action is automatically loaded from the core library when listed in `agent.yaml`.
+
+**Conditional Loading**: Core actions are only loaded if they are explicitly listed in `agent.yaml` or are required as dependencies of a loaded action. This ensures that unused actions remain unloaded and their endpoints are not accessible.
 
 ### Action Implementation
 
@@ -426,11 +441,14 @@ When jvagent starts with an app directory (either specified as a path or from wi
 4. **For each agent** listed in `app.yaml`:
    - Read `agent.yaml` and resolve environment variables
    - Create/update the Agent node
-   - Discover actions from `actions/{namespace}/{action_name}/` directories
-   - Read `info.yaml` for each action and resolve environment variables
-   - Load action classes and import `endpoints.py` modules via `__init__.py`
+   - Scan `agent.yaml` to identify required actions
+   - Resolve transitive dependencies from `info.yaml` files
+   - Discover actions from `actions/{namespace}/{action_name}/` directories (only for required actions)
+   - Read `info.yaml` for each required action and resolve environment variables
+   - Load action classes conditionally (only for required actions and their dependencies)
+   - Import `endpoints.py` modules via `__init__.py` (only for loaded actions)
    - Register actions with their configuration from `agent.yaml`
-5. **Start the API server** with all discovered endpoints
+5. **Start the API server** with endpoints from loaded actions only
 
 ## Development
 

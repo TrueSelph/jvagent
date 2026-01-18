@@ -10,7 +10,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Set, Tuple, Type
 
 import yaml
 
@@ -119,6 +119,79 @@ class ActionMetadata:
         return (
             f"ActionMetadata(namespace={self.namespace}, name={self.name}, version={self.version})"
         )
+
+
+class ActionRegistry:
+    """Registry for tracking required, resolved, and imported actions.
+
+    This class manages the lifecycle of action loading:
+    - Required actions: Actions explicitly listed in agent.yaml
+    - Resolved actions: Required actions + their transitive dependencies
+    - Imported actions: Actions that have been successfully imported
+    """
+
+    def __init__(self):
+        """Initialize the action registry."""
+        self.required_actions: Set[str] = set()  # e.g., {"jvagent/whatsapp", "jvagent/interact_router"}
+        self.resolved_actions: Set[str] = set()  # After dependency resolution
+        self.imported_actions: Set[str] = set()  # Successfully imported
+        self.action_metadata: Dict[str, ActionMetadata] = {}  # Cached metadata
+        self._resolving: Set[str] = set()  # Track actions currently being resolved (prevents cycles)
+
+    def add_required_action(self, action_ref: str) -> None:
+        """Mark action as required (from agent.yaml).
+
+        Args:
+            action_ref: Action reference in "namespace/action_name" format
+        """
+        if action_ref and "/" in action_ref:
+            self.required_actions.add(action_ref)
+
+    def should_import_action(self, action_ref: str) -> bool:
+        """Check if action should be imported.
+
+        Args:
+            action_ref: Action reference in "namespace/action_name" format
+
+        Returns:
+            True if action should be imported, False otherwise
+        """
+        return action_ref in self.resolved_actions and action_ref not in self.imported_actions
+
+    def mark_imported(self, action_ref: str) -> None:
+        """Mark action as successfully imported.
+
+        Args:
+            action_ref: Action reference in "namespace/action_name" format
+        """
+        self.imported_actions.add(action_ref)
+
+    def is_resolving(self, action_ref: str) -> bool:
+        """Check if action is currently being resolved (prevents circular dependencies).
+
+        Args:
+            action_ref: Action reference in "namespace/action_name" format
+
+        Returns:
+            True if action is currently being resolved
+        """
+        return action_ref in self._resolving
+
+    def start_resolving(self, action_ref: str) -> None:
+        """Mark action as being resolved.
+
+        Args:
+            action_ref: Action reference in "namespace/action_name" format
+        """
+        self._resolving.add(action_ref)
+
+    def finish_resolving(self, action_ref: str) -> None:
+        """Mark action as finished resolving.
+
+        Args:
+            action_ref: Action reference in "namespace/action_name" format
+        """
+        self._resolving.discard(action_ref)
 
 
 class ActionLoader:
@@ -467,6 +540,145 @@ class ActionLoader:
         logger.debug(f"Built core action cache with {len(action_cache)} actions")
         return action_cache
 
+    def _load_action_metadata_for_deps(
+        self, action_ref: str, core_cache: Dict[str, Dict[str, Any]]
+    ) -> Optional[ActionMetadata]:
+        """Load action metadata for dependency resolution.
+
+        This method loads metadata from info.yaml files for both core and local actions.
+        It's used during dependency resolution to discover action dependencies.
+
+        Args:
+            action_ref: Action reference in "namespace/action_name" format
+            core_cache: Core action cache from _build_core_action_cache()
+
+        Returns:
+            ActionMetadata if found, None otherwise
+        """
+        if "/" not in action_ref:
+            return None
+
+        namespace, action_name = action_ref.split("/", 1)
+
+        # Try core action first
+        if namespace == "jvagent":
+            action_info = core_cache.get(action_name)
+            if action_info:
+                action_dir = action_info["dir"]
+                data = action_info.get("data")
+                if not data:
+                    # Fallback: load from file
+                    info_file = action_dir / "info.yaml"
+                    if info_file.exists():
+                        data = self._load_info_yaml(info_file)
+                if data:
+                    metadata = ActionMetadata(data, action_dir, namespace=namespace)
+                    metadata.is_core_action = True
+                    return metadata
+        
+        # Try local action (from filesystem)
+        agents_path = self.base_path / "agents"
+        if agents_path.exists() and agents_path.is_dir():
+            # Search through all agent action directories
+            for agent_namespace_dir in agents_path.iterdir():
+                if not agent_namespace_dir.is_dir():
+                    continue
+                for agent_dir in agent_namespace_dir.iterdir():
+                    if not agent_dir.is_dir():
+                        continue
+                    agent_actions_path = agent_dir / "actions"
+                    if not agent_actions_path.exists():
+                        continue
+                    for action_namespace_dir in agent_actions_path.iterdir():
+                        if not action_namespace_dir.is_dir() or action_namespace_dir.name != namespace:
+                            continue
+                        for action_dir in action_namespace_dir.iterdir():
+                            if not action_dir.is_dir():
+                                continue
+                            info_file = action_dir / "info.yaml"
+                            if not info_file.exists():
+                                continue
+                            data = self._load_info_yaml(info_file)
+                            if not data:
+                                continue
+                            package = data.get("package", {})
+                            if not isinstance(package, dict):
+                                continue
+                            extracted_name = self._extract_action_name(package, action_dir)
+                            if extracted_name == action_name:
+                                return ActionMetadata(data, action_dir, namespace=namespace)
+        
+        return None
+
+    def _resolve_action_dependencies(
+        self,
+        action_ref: str,
+        core_cache: Dict[str, Dict[str, Any]],
+        registry: ActionRegistry,
+    ) -> Set[str]:
+        """Recursively resolve action dependencies.
+
+        This method resolves transitive dependencies by:
+        1. Loading the action's info.yaml
+        2. Extracting dependencies from dependencies.actions
+        3. Recursively resolving each dependency
+        4. Tracking visited actions to prevent circular dependencies
+
+        Args:
+            action_ref: Action reference in "namespace/action_name" format
+            core_cache: Core action cache from _build_core_action_cache()
+            registry: ActionRegistry instance to track resolution state
+
+        Returns:
+            Set of all action refs needed (including transitive deps)
+        """
+        # Prevent circular dependencies
+        if registry.is_resolving(action_ref):
+            logger.debug(f"Circular dependency detected for {action_ref}, skipping")
+            return {action_ref}  # Return self to include in resolved set
+
+        if action_ref in registry.resolved_actions:
+            # Already resolved, return empty set (already counted)
+            return set()
+
+        registry.start_resolving(action_ref)
+        all_deps = {action_ref}
+
+        try:
+            # Load metadata to get dependencies
+            metadata = self._load_action_metadata_for_deps(action_ref, core_cache)
+            if not metadata:
+                logger.debug(f"Could not load metadata for {action_ref}, skipping dependency resolution")
+                registry.resolved_actions.add(action_ref)
+                return all_deps
+
+            # Get action dependencies from info.yaml
+            dependencies = metadata.dependencies.get("actions", [])
+            if not isinstance(dependencies, list):
+                dependencies = []
+
+            # Recursively resolve each dependency
+            for dep_ref in dependencies:
+                if not isinstance(dep_ref, str) or "/" not in dep_ref:
+                    logger.warning(f"Invalid dependency format in {action_ref}: {dep_ref}")
+                    continue
+
+                dep_set = self._resolve_action_dependencies(dep_ref, core_cache, registry)
+                all_deps.update(dep_set)
+
+            # Mark as resolved
+            registry.resolved_actions.add(action_ref)
+            registry.action_metadata[action_ref] = metadata
+
+        except Exception as e:
+            logger.warning(f"Error resolving dependencies for {action_ref}: {e}")
+            # Still mark as resolved to avoid infinite loops
+            registry.resolved_actions.add(action_ref)
+        finally:
+            registry.finish_resolving(action_ref)
+
+        return all_deps
+
     def discover_core_action(self, namespace: str, action_name: str) -> Optional[ActionMetadata]:
         """Discover a core action from the jvagent library.
 
@@ -554,11 +766,33 @@ class ActionLoader:
         Scans all agents in the app directory and imports action class files directly,
         using the same approach as load_action_class().
         Also scans core actions from the jvagent library.
+
+        Note: This method imports ALL core actions. For conditional loading based on
+        agent.yaml configuration, use pre_import_action_modules_for_agents() instead.
         """
         imported_count = 0
         
-        # First, pre-import core action packages to ensure endpoints are registered
-        core_imported = self._pre_import_core_action_packages()
+        # First, scan all agent.yaml files to find required core actions
+        agents_path = self.base_path / "agents"
+        agent_paths = []
+        if agents_path.exists() and agents_path.is_dir():
+            for namespace_dir in agents_path.iterdir():
+                if not namespace_dir.is_dir():
+                    continue
+                namespace = namespace_dir.name
+                for agent_dir in namespace_dir.iterdir():
+                    if not agent_dir.is_dir():
+                        continue
+                    agent_name = agent_dir.name
+                    agent_paths.append((namespace, agent_name))
+        
+        # Scan agent.yaml files to find required core actions
+        required_core_actions = self._scan_required_core_actions(agent_paths) if agent_paths else None
+        
+        # Pre-import core action packages (only required ones if agent_paths found)
+        core_imported = self._pre_import_core_action_packages(
+            required_actions=required_core_actions
+        )
         imported_count += core_imported
 
         # Then, pre-import local actions from filesystem
@@ -646,21 +880,20 @@ class ActionLoader:
     def pre_import_action_modules_for_agents(self, agent_refs: List[str]) -> None:
         """Pre-import action modules only for specified agents from app.yaml.
 
+        This method implements conditional loading:
+        1. Scans agent.yaml files to collect required actions
+        2. Resolves transitive dependencies from info.yaml
+        3. Only imports modules for resolved actions
+        4. Ensures endpoints are registered only for loaded actions
+
         This ensures that only agents listed in app.yaml have their modules loaded,
         preventing conflicts and ensuring proper module isolation between agents.
 
         Args:
             agent_refs: List of agent references in "namespace/agent_name" format
         """
-        imported_count = 0
-
-        # First, pre-import core action packages to ensure endpoints are registered
-        # Core actions are shared and don't need agent-specific isolation
-        core_imported = self._pre_import_core_action_packages()
-        imported_count += core_imported
-
         # Build set of agent paths for quick lookup
-        agent_paths = set()
+        agent_paths = []
         for agent_ref in agent_refs:
             if "/" not in agent_ref:
                 logger.warning(
@@ -668,106 +901,241 @@ class ActionLoader:
                 )
                 continue
             namespace, agent_name = agent_ref.split("/", 1)
-            agent_paths.add((namespace, agent_name))
+            agent_paths.append((namespace, agent_name))
 
         if not agent_paths:
-            if imported_count > 0:
-                logger.debug(f"Pre-imported {imported_count} action class(es) for class discovery")
+            logger.debug("No valid agent paths found")
             return
 
-        # Pre-import local actions only for specified agents
+        # Step 1: Build action registry
+        registry = ActionRegistry()
+
+        # Step 2: Scan agent.yaml files to populate required actions
+        required_actions = self._scan_required_actions(agent_paths)
+        for action_ref in required_actions:
+            registry.add_required_action(action_ref)
+
+        if not registry.required_actions:
+            logger.debug("No actions found in agent.yaml files")
+            return
+
+        logger.debug(f"Found {len(registry.required_actions)} required action(s) from agent.yaml")
+
+        # Step 3: Resolve dependencies transitively
+        core_cache = self._build_core_action_cache()
+        for action_ref in list(registry.required_actions):
+            try:
+                resolved = self._resolve_action_dependencies(action_ref, core_cache, registry)
+                logger.debug(
+                    f"Resolved {len(resolved)} action(s) for {action_ref} "
+                    f"(including {len(resolved) - 1} dependencies)"
+                )
+            except Exception as e:
+                logger.warning(f"Error resolving dependencies for {action_ref}: {e}")
+
+        logger.debug(
+            f"Resolved {len(registry.resolved_actions)} total action(s) "
+            f"({len(registry.required_actions)} required + {len(registry.resolved_actions) - len(registry.required_actions)} dependencies)"
+        )
+
+        # Step 4: Import only resolved core actions
+        imported_count = 0
+        for action_ref in registry.resolved_actions:
+            if action_ref.startswith("jvagent/"):
+                # Core action - import conditionally
+                if self._import_action_module_conditionally(action_ref, registry):
+                    imported_count += 1
+            else:
+                # Local action - will be imported during agent loading
+                # We still mark it as "should import" for tracking
+                logger.debug(f"Local action {action_ref} will be imported during agent loading")
+
+        # Step 5: Pre-import local actions only for specified agents
+        agent_paths_set = set(agent_paths)
+        agents_path = self.base_path / "agents"
+
+        if agents_path.exists() and agents_path.is_dir():
+            # Iterate through agent directories, but only process those in agent_paths
+            for agent_namespace_dir in agents_path.iterdir():
+                if not agent_namespace_dir.is_dir():
+                    continue
+
+                agent_namespace = agent_namespace_dir.name
+
+                # Iterate through agent directories within each namespace
+                for agent_dir in agent_namespace_dir.iterdir():
+                    if not agent_dir.is_dir():
+                        continue
+
+                    agent_name = agent_dir.name
+
+                    # Only process agents listed in app.yaml
+                    if (agent_namespace, agent_name) not in agent_paths_set:
+                        continue
+
+                    # Look for actions directory
+                    agent_actions_path = agent_dir / "actions"
+                    if not agent_actions_path.exists() or not agent_actions_path.is_dir():
+                        continue
+
+                    # Iterate through namespace directories in actions folder
+                    for action_namespace_dir in agent_actions_path.iterdir():
+                        if not action_namespace_dir.is_dir():
+                            continue
+
+                        # Iterate through action directories
+                        for action_dir in action_namespace_dir.iterdir():
+                            if not action_dir.is_dir():
+                                continue
+
+                            # Look for info.yaml to get action metadata
+                            info_file = action_dir / "info.yaml"
+                            if not info_file.exists():
+                                continue
+
+                            # Load metadata to get action name and archetype
+                            try:
+                                data = self._load_info_yaml(info_file)
+                                if not data:
+                                    continue
+
+                                package = data.get("package", {})
+                                if not isinstance(package, dict):
+                                    continue
+
+                                # Extract action name and archetype using helpers
+                                action_name = self._extract_action_name(package, action_dir)
+                                action_namespace = action_namespace_dir.name
+                                action_ref = f"{action_namespace}/{action_name}"
+
+                                # Only import if in resolved actions
+                                if action_ref not in registry.resolved_actions:
+                                    logger.debug(
+                                        f"Skipping local action {action_ref} (not in resolved actions)"
+                                    )
+                                    continue
+
+                                # Skip if already imported
+                                if action_ref in registry.imported_actions:
+                                    continue
+
+                                archetype = package.get("archetype", "Action")
+
+                                # Install pip dependencies before importing
+                                self._ensure_dependencies_installed(data, action_name, action_dir)
+
+                                # Use agent-specific module naming: jvagent.actions.{agent_namespace}.{agent_name}.{action_namespace}.{action_name}
+                                module_name = (
+                                    f"jvagent.actions.{agent_namespace}.{agent_name}."
+                                    f"{action_namespace_dir.name}.{action_name}"
+                                )
+
+                                # Load action module using shared helper
+                                action_class = self._load_action_module(
+                                    module_name, action_dir, action_name, archetype
+                                )
+
+                                if action_class is not None:
+                                    registry.mark_imported(action_ref)
+                                    imported_count += 1
+
+                            except Exception as e:
+                                logger.warning(f"Error pre-importing action from {action_dir}: {e}")
+                                continue
+
+        if imported_count > 0:
+            logger.debug(
+                f"Pre-imported {imported_count} action class(es) for class discovery "
+                f"({len([a for a in registry.imported_actions if a.startswith('jvagent/')])} core, "
+                f"{len([a for a in registry.imported_actions if not a.startswith('jvagent/')])} local)"
+            )
+
+    def _scan_required_actions(
+        self, agent_paths: List[Tuple[str, str]]
+    ) -> Set[str]:
+        """Scan agent.yaml files to find all configured actions (core + local).
+
+        Args:
+            agent_paths: List of (namespace, agent_name) tuples to scan
+
+        Returns:
+            Set of all action references in "namespace/action_name" format 
+            (e.g., "jvagent/interact_router", "contrib/custom_action")
+        """
+        required_actions = set()
         agents_path = self.base_path / "agents"
 
         if not agents_path.exists() or not agents_path.is_dir():
-            logger.debug(f"Agents directory not found: {agents_path}")
-            if imported_count > 0:
-                logger.debug(f"Pre-imported {imported_count} action class(es) for class discovery")
-            return
+            return required_actions
 
-        # Iterate through agent directories, but only process those in agent_paths
-        for agent_namespace_dir in agents_path.iterdir():
-            if not agent_namespace_dir.is_dir():
+        for namespace, agent_name in agent_paths:
+            agent_path = agents_path / namespace / agent_name
+            agent_file = agent_path / "agent.yaml"
+
+            if not agent_file.exists():
                 continue
 
-            agent_namespace = agent_namespace_dir.name
+            try:
+                with open(agent_file, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
 
-            # Iterate through agent directories within each namespace
-            for agent_dir in agent_namespace_dir.iterdir():
-                if not agent_dir.is_dir():
+                if not data:
                     continue
 
-                agent_name = agent_dir.name
+                # Resolve environment variable placeholders
+                data = resolve_env_placeholders(data)
 
-                # Only process agents listed in app.yaml
-                if (agent_namespace, agent_name) not in agent_paths:
-                    continue
-
-                # Look for actions directory
-                agent_actions_path = agent_dir / "actions"
-                if not agent_actions_path.exists() or not agent_actions_path.is_dir():
-                    continue
-
-                # Iterate through namespace directories in actions folder
-                for action_namespace_dir in agent_actions_path.iterdir():
-                    if not action_namespace_dir.is_dir():
+                # Extract action references from actions list
+                actions = data.get("actions", [])
+                for action_config in actions:
+                    if not isinstance(action_config, dict):
                         continue
+                    action_ref = action_config.get("action", "")
+                    if action_ref and "/" in action_ref:
+                        # Include all actions (core + local)
+                        required_actions.add(action_ref)
 
-                    # Iterate through action directories
-                    for action_dir in action_namespace_dir.iterdir():
-                        if not action_dir.is_dir():
-                            continue
+            except Exception as e:
+                logger.warning(
+                    f"Error scanning agent.yaml for {namespace}/{agent_name}: {e}"
+                )
+                continue
 
-                        # Look for info.yaml to get action metadata
-                        info_file = action_dir / "info.yaml"
-                        if not info_file.exists():
-                            continue
+        return required_actions
 
-                        # Load metadata to get action name and archetype
-                        try:
-                            data = self._load_info_yaml(info_file)
-                            if not data:
-                                continue
+    def _scan_required_core_actions(
+        self, agent_paths: List[Tuple[str, str]]
+    ) -> Set[str]:
+        """Scan agent.yaml files to find core actions that are actually configured.
 
-                            package = data.get("package", {})
-                            if not isinstance(package, dict):
-                                continue
+        This method is kept for backward compatibility. New code should use
+        _scan_required_actions() which returns all actions.
 
-                            # Extract action name and archetype using helpers
-                            action_name = self._extract_action_name(package, action_dir)
-                            archetype = package.get("archetype", "Action")
+        Args:
+            agent_paths: List of (namespace, agent_name) tuples to scan
 
-                            # Install pip dependencies before importing
-                            self._ensure_dependencies_installed(data, action_name, action_dir)
+        Returns:
+            Set of core action references in "namespace/action_name" format (e.g., "jvagent/interact_router")
+        """
+        all_actions = self._scan_required_actions(agent_paths)
+        # Filter to only core actions for backward compatibility
+        return {action_ref for action_ref in all_actions if action_ref.startswith("jvagent/")}
 
-                            # Use agent-specific module naming: jvagent.actions.{agent_namespace}.{agent_name}.{action_namespace}.{action_name}
-                            module_name = (
-                                f"jvagent.actions.{agent_namespace}.{agent_name}."
-                                f"{action_namespace_dir.name}.{action_name}"
-                            )
-
-                            # Load action module using shared helper
-                            action_class = self._load_action_module(
-                                module_name, action_dir, action_name, archetype
-                            )
-
-                            if action_class is not None:
-                                imported_count += 1
-
-                        except Exception as e:
-                            logger.warning(f"Error pre-importing action from {action_dir}: {e}")
-                            continue
-
-        if imported_count > 0:
-            logger.debug(f"Pre-imported {imported_count} action class(es) for class discovery")
-
-    def _pre_import_core_action_packages(self) -> int:
+    def _pre_import_core_action_packages(
+        self, required_actions: Optional[Set[str]] = None
+    ) -> int:
         """Pre-import core action packages to ensure their __init__.py files execute.
-        
+
         This is critical for endpoint discovery - parent package __init__.py files
         import endpoints.py modules which register endpoints via @endpoint decorators.
-        
+
         Also installs pip dependencies for core actions before importing.
-        
+
+        Args:
+            required_actions: Optional set of core action references in "namespace/action_name" format.
+                           If provided, only actions in this set will be imported.
+                           If None, imports all core actions (backward compatibility).
+
         Returns:
             Number of core action packages imported
         """
@@ -776,37 +1144,55 @@ class ActionLoader:
             return 0
 
         imported_count = 0
-        
+
         # Build core action cache to get all core actions
         action_cache = self._build_core_action_cache()
-        
-        # First, install dependencies for all core actions
-        for action_name, action_info in action_cache.items():
+
+        # Filter actions if required_actions is provided
+        actions_to_import = {}
+        if required_actions is not None:
+            # Only import actions that are in the required set
+            for action_name, action_info in action_cache.items():
+                action_ref = f"jvagent/{action_name}"
+                if action_ref in required_actions:
+                    actions_to_import[action_name] = action_info
+        else:
+            # Import all core actions (backward compatibility)
+            actions_to_import = action_cache
+
+        if not actions_to_import:
+            logger.debug(
+                "No core actions to import (filtered or none available)"
+            )
+            return 0
+
+        # First, install dependencies for actions we'll import
+        for action_name, action_info in actions_to_import.items():
             action_dir = action_info["dir"]
             data = action_info.get("data")
-            
+
             if data:
                 # Install pip dependencies before importing
                 self._ensure_dependencies_installed(data, action_name, action_dir)
-        
+
         # Then import each core action's parent packages
         # We need to import parent packages, not just the action modules themselves
         # This ensures __init__.py files execute and import endpoints
         imported_packages = set()
-        
-        for action_name, action_info in action_cache.items():
+
+        for action_name, action_info in actions_to_import.items():
             relative_path = action_info["relative_path"]
-            
+
             # Build the full module path for the parent package
             # e.g., "model/language/openai" -> "jvagent.action.model.language"
             # We import the parent package, not the module itself
             path_parts = relative_path.split("/")
-            
+
             # Import parent packages (skip the last part which is the module name)
             for i in range(len(path_parts)):
-                parent_path = "/".join(path_parts[:i+1])
+                parent_path = "/".join(path_parts[: i + 1])
                 package_path = f"jvagent.action.{parent_path.replace('/', '.')}"
-                
+
                 # Only import each package once
                 if package_path not in imported_packages:
                     try:
@@ -819,10 +1205,12 @@ class ActionLoader:
                         logger.debug(f"Could not import core package {package_path}: {e}")
                     except Exception as e:
                         logger.warning(f"Error importing core package {package_path}: {e}")
-        
+
         if imported_count > 0:
-            logger.debug(f"Pre-imported {imported_count} core action package(s) for endpoint discovery")
-        
+            logger.debug(
+                f"Pre-imported {imported_count} core action package(s) for endpoint discovery"
+            )
+
         return imported_count
 
     def discover_actions(self, namespace: str, agent_name: str) -> List[ActionMetadata]:
@@ -900,6 +1288,112 @@ class ActionLoader:
                     continue
 
         return discovered
+
+    def _import_action_module_conditionally(
+        self,
+        action_ref: str,
+        registry: ActionRegistry,
+    ) -> bool:
+        """Import action module and its endpoints only if needed.
+        
+        This triggers:
+        - Module import (action_name.py or __init__.py)
+        - Endpoint import (via __init__.py: from . import endpoints)
+        - Endpoint registration (via @endpoint decorator to deferred registry)
+        
+        Args:
+            action_ref: Action reference in "namespace/action_name" format
+            registry: ActionRegistry instance
+            
+        Returns:
+            True if successfully imported, False otherwise
+        """
+        if "/" not in action_ref:
+            return False
+            
+        namespace, action_name = action_ref.split("/", 1)
+        
+        if namespace == "jvagent":
+            # Core action
+            return self._import_core_action_module_conditionally(action_name, registry)
+        else:
+            # Local action - handled during agent-specific pre-import
+            # This method is primarily for core actions
+            logger.debug(f"Skipping local action import in conditional import: {action_ref}")
+            return False
+
+    def _import_core_action_module_conditionally(
+        self,
+        action_name: str,
+        registry: ActionRegistry,
+    ) -> bool:
+        """Import core action module conditionally.
+        
+        Args:
+            action_name: Core action name (e.g., "whatsapp", "interact_router")
+            registry: ActionRegistry instance
+            
+        Returns:
+            True if successfully imported, False otherwise
+        """
+        action_ref = f"jvagent/{action_name}"
+        
+        # Check if already imported
+        if action_ref in registry.imported_actions:
+            return True
+        
+        # Check if should be imported
+        if not registry.should_import_action(action_ref):
+            logger.debug(f"Skipping import of {action_ref} (not in resolved actions)")
+            return False
+        
+        try:
+            # Get core action cache
+            core_cache = self._build_core_action_cache()
+            action_info = core_cache.get(action_name)
+            
+            if not action_info:
+                logger.debug(f"Core action {action_name} not found in cache")
+                return False
+            
+            action_dir = action_info["dir"]
+            relative_path = action_info["relative_path"]
+            data = action_info.get("data")
+            
+            # Install pip dependencies before importing
+            if data:
+                self._ensure_dependencies_installed(data, action_name, action_dir)
+            
+            # Import parent packages to ensure __init__.py files execute
+            # This is critical for endpoint discovery
+            path_parts = relative_path.split("/")
+            imported_packages = set()
+            
+            # Import all parent packages (e.g., for "whatsapp" -> "jvagent.action.whatsapp")
+            for i in range(len(path_parts)):
+                parent_path = "/".join(path_parts[: i + 1])
+                package_path = f"jvagent.action.{parent_path.replace('/', '.')}"
+                
+                # Only import each package once
+                if package_path not in imported_packages:
+                    try:
+                        importlib.import_module(package_path)
+                        imported_packages.add(package_path)
+                        logger.debug(f"Imported core action package: {package_path}")
+                    except ImportError as e:
+                        # Some packages might not have __init__.py, that's okay
+                        logger.debug(f"Could not import core package {package_path}: {e}")
+                    except Exception as e:
+                        logger.warning(f"Error importing core package {package_path}: {e}")
+            
+            # Mark as imported
+            registry.mark_imported(action_ref)
+            logger.debug(f"Successfully imported core action module: {action_ref}")
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Error importing core action module {action_ref}: {e}")
+            return False
 
     def load_action_class(self, metadata: ActionMetadata) -> Optional[Type[Action]]:
         """Load the action class from its module.

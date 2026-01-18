@@ -284,18 +284,11 @@ class QuestionGraphValidator:
                 condition = branch.get("condition", {})
                 if not condition:
                     continue
-                
+
                 # Question is implicit - condition always evaluates against the question that owns the branch
                 # No need to check for referenced question since it's always the current question
                 # This check is no longer needed as conditions always reference the owning question
-                                f"which appears later in the graph. This may cause the condition to always fail "
-                                f"if evaluated before '{referenced_question}' is answered."
-                            ),
-                            question_name=question_name,
-                            context={"referenced_question": referenced_question}
-                        )
-                    )
-    
+
     def _validate_reachability(self) -> None:
         """Validate that questions are reachable from the start.
         

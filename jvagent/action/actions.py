@@ -48,7 +48,9 @@ class Actions(Node):
         3. If exists and update_if_exists=False: skips registration to prevent duplicate
         4. If not exists: creates the action node in the graph
         5. Connects it to this Actions manager node
-        6. Calls the action's on_register() or on_reload() lifecycle hook
+        6. Calls the action's lifecycle hook:
+           - on_register() for new actions (even during update mode)
+           - on_reload() only for actions that actually existed before this registration
         7. Updates statistics
 
         Args:
@@ -69,7 +71,9 @@ class Actions(Node):
                     }
                 )
 
-                is_update_mode = False
+                # Track if action existed before this registration
+                # This determines whether to call on_register() or on_reload()
+                action_existed_before = existing_action is not None
 
                 if existing_action:
                     if not update_if_exists:
@@ -86,7 +90,6 @@ class Actions(Node):
                         return True
 
                     # Update mode: clean up all existing actions (including duplicates)
-                    is_update_mode = True
                     all_existing = await Action.find(
                         {
                             "context.agent_id": action.agent_id,
@@ -181,14 +184,19 @@ class Actions(Node):
                     return True
 
                 # Call appropriate lifecycle hook with error handling
+                # Use on_register() for new actions (even during update mode)
+                # Use on_reload() only for actions that actually existed before
                 try:
-                    if is_update_mode:
+                    if update_if_exists and action_existed_before:
+                        # True update: action existed before, use on_reload()
                         await action.on_reload()
+                        context_name = "on_reload"
                     else:
+                        # New action or fresh install: use on_register()
                         await action.on_register()
+                        context_name = "on_register"
                 except Exception as e:
                     # Log to console (database logging handled automatically by DBLogHandler)
-                    context_name = "on_reload" if is_update_mode else "on_register"
                     logger.error(
                         f"Error in lifecycle hook for action {action.label}: {e}",
                         exc_info=True,

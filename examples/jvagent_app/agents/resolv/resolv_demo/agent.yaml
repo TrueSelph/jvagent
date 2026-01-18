@@ -145,8 +145,23 @@ actions:
   - action: resolv/report_interview_interact_action
     context:
       enabled: true
+      description: "User report interview for creating report"
       weight: -50  # Runs after InteractRouter but before PersonaAction
-      # Model Configuration
+      # Anchors for InteractRouter routing - REQUIRED when using InteractRouter
+      # Must cover both initial entry and intermediate states (when answering questions)
+      anchors:
+        # Initial entry - starting report
+        - "User wants to report an incident"
+        - "User wants to submit an incident report"
+        # Intermediate state - answering questions
+        - "User is providing or answering report questions"
+        - "User is completing report or providing availability"
+        # Revision/edit - changing previously provided information
+        - "User is revising, editing, or updating incident report information"
+      # Model Configuration (for unified classification and extraction)
+      # These settings are used by the parent InterviewInteractAction for all LLM calls
+      # The unified classification detects intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE)
+      # and extracts field values in a single LLM call
       model_action_type: "OpenAILanguageModelAction"
       model: "gpt-4o-mini"
       model_temperature: 0.1
