@@ -395,7 +395,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         app_config, "auth.api_key_enabled", "JVAGENT_API_KEY_AUTH_ENABLED", auth_enabled
     )
     api_key_prefix = _get_config_value(
-        app_config, "auth.api_key_prefix", "JVAGENT_API_KEY_PREFIX", "sk_"
+        app_config, "auth.api_key_prefix", "JVAGENT_API_KEY_PREFIX", "jv_"
     )
     api_key_header = _get_config_value(
         app_config, "auth.api_key_header", "JVAGENT_API_KEY_HEADER", "x-api-key"
@@ -607,20 +607,13 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     else:
         logger.info("Logging is disabled in configuration")
 
-    # Import endpoint modules to ensure they're loaded
-    # The new automatic deferred registry system will handle registration:
-    # - If imported before server creation: endpoints go to deferred registry and are flushed automatically
-    # - If imported after server creation: endpoints register immediately
-    # No manual discovery needed!
+    # Import core endpoint modules to ensure they're loaded
+    # Core endpoints (logging, core, action base endpoints) are always needed
+    # Optional action endpoints (interact, persona, vectorstore, model, whatsapp, etc.)
+    # are loaded conditionally via pre_import_action_modules_for_agents() based on agent.yaml
     from jvagent.logging import endpoints  # noqa: F401
     from jvagent.core import endpoints as core_endpoints  # noqa: F401
     from jvagent.action import endpoints as action_endpoints  # noqa: F401
-    from jvagent.action import interact  # noqa: F401
-    from jvagent.action import agent_utils  # noqa: F401
-    from jvagent.action import persona  # noqa: F401
-    from jvagent.action import vectorstore  # noqa: F401
-    from jvagent.action import model  # noqa: F401
-    from jvagent.action import whatsapp  # noqa: F401
 
     return server
 

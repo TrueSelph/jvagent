@@ -173,14 +173,18 @@ class AppLoader:
         bootstrap_log.start(f"v{descriptor.version}")
 
         try:
-            # Step 0: Pre-import action __init__.py modules for agents listed in app.yaml
+            # Step 0: Pre-import action modules CONDITIONALLY for agents listed in app.yaml
+            # This implements conditional loading:
+            # - Only actions explicitly listed in agent.yaml are loaded
+            # - Action dependencies (from info.yaml) are transitively resolved and loaded
+            # - Endpoints are only registered for loaded actions
+            # - Unused actions remain completely unloaded (no module import, no endpoints)
             # This ensures Action subclasses are available for _collect_class_names()
-            # before any queries are executed
-            # Only modules for agents specified in app.yaml are loaded to prevent conflicts
+            # before any queries are executed, while preventing unused endpoints from being accessible
             from jvagent.action.action_loader import ActionLoader
 
             action_loader = ActionLoader(base_path=str(self.base_path))
-            # Only pre-import modules for agents listed in app.yaml
+            # Only pre-import modules for agents listed in app.yaml (with dependency resolution)
             agent_refs = descriptor.agents if descriptor.agents else []
             action_loader.pre_import_action_modules_for_agents(agent_refs)
 

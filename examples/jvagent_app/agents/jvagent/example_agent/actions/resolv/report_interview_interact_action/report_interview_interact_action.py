@@ -74,7 +74,8 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "description": "A full description of the incident or grievance being reported. Capture only what happened, not requests or opinions.",
                     "type": "string",
                 },
-                "required": True,
+                "default_next": "report_location",
+                "required": True
             },
             {
                 "name": "report_location",
@@ -83,7 +84,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "description": "The precise location of the incident, including street and area name. Ignore vague references such as 'my area' or 'nearby'.",
                     "type": "string",
                 },
-                "required": True,
+                "required": True
             },
             {
                 "name": "report_media",
@@ -93,7 +94,18 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "type": "list",
                     "data_input_field": "whatsapp_media",
                 },
-                "required": False,
+                "required": False
+            },
+            {
+                "name": "new_report",
+                "question": "I found a similar report. Would you like to continue creating this report?",
+                "constraints": {
+                    "description": "Used to determine if the user wants to continue creating a new report or not.",
+                    "type": "string",
+                    "options": ["yes", "no"],
+                },
+                "default_next": "is_sensitive",
+                "required": True
             },
             {
                 "name": "is_sensitive",
@@ -104,14 +116,18 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "type": "string",
                     "options": ["yes", "no"],
                 },
-                "required": True,
                 "branches": [
                     {
+                        "condition": {"op": "equals", "value": "no"},
+                        "target": "reporting_on_behalf"
+                    },
+                    {
                         "condition": {"op": "equals", "value": "yes"},
-                        "target": "REVIEW"  # Skip to review/confirmation when sensitive
+                        "target": "stakeholder_name"
                     }
                 ],
-                # Continue normally if "no"
+                "default_next": "reporting_on_behalf",
+                "required": True
             },
             {
                 "name": "reporting_on_behalf",
@@ -217,10 +233,8 @@ def validate_report_description(value: str, session: InterviewSession) -> Tuple[
     return ValidationStatus.VALID, None
 
 
-@input_validator("report_location")
-def validate_report_location(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
+@input_validator('report_location')
+def validate_report_location(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the report location is not empty.
 
     Args:
@@ -237,52 +251,50 @@ def validate_report_location(
     return ValidationStatus.VALID, None
 
 
-# @input_validator('report_media')
-# def validate_report_media(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-#     """Validate that the report media is not empty.
+@input_validator('report_media')
+def validate_report_media(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    """Validate that the report media is not empty.
 
-#     Args:
-#         value: The media string to validate
-#         session: Interview session (for context)
+    Args:
+        value: The media string to validate
+        session: Interview session (for context)
 
-#     Returns:
-#         Tuple of (ValidationStatus, optional error message)
-#     """
+    Returns:
+        Tuple of (ValidationStatus, optional error message)
+    """
 
-#     if not value or not isinstance(value, str):
-#         return ValidationStatus.INVALID, "Ask: Please provide the media of the report"
+    if not value or not isinstance(value, str):
+        return ValidationStatus.INVALID, "Ask: Please provide the media of the report"
 
-#     return ValidationStatus.VALID, None
-
-
-# @input_validator('is_sensitive')
-# def validate_is_sensitive(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-#     """Validate that the is sensitive is either yes or no.
-
-#     Args:
-#         value: The is sensitive string to validate
-#         session: Interview session (for context)
-
-#     Returns:
-#         Tuple of (ValidationStatus, optional error message)
-#     """
-#     if not value or not isinstance(value, str):
-#         return ValidationStatus.INVALID, "Ask: Please indicate whether the report is sensitive"
-
-#     # Remove extra whitespace
-#     value = value.strip()
-
-#     # Check for valid options
-#     if value not in ["yes", "no"]:
-#         return ValidationStatus.INVALID, "Ask: Please indicate whether the report is sensitive"
-
-#     return ValidationStatus.VALID, None
+    return ValidationStatus.VALID, None
 
 
-@input_validator("reporting_on_behalf")
-def validate_reporting_on_behalf(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
+@input_validator('is_sensitive')
+def validate_is_sensitive(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    """Validate that the is sensitive is either yes or no.
+
+    Args:
+        value: The is sensitive string to validate
+        session: Interview session (for context)
+
+    Returns:
+        Tuple of (ValidationStatus, optional error message)
+    """
+    if not value or not isinstance(value, str):
+        return ValidationStatus.INVALID, "Ask: Please indicate whether the report is sensitive"
+
+    # Remove extra whitespace
+    value = value.strip()
+
+    # Check for valid options
+    if value not in ["yes", "no"]:
+        return ValidationStatus.INVALID, "Ask: Please indicate whether the report is sensitive"
+
+    return ValidationStatus.VALID, None
+
+
+@input_validator('reporting_on_behalf')
+def validate_reporting_on_behalf(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the reporting on behalf is either yes or no.
 
     Args:
@@ -311,10 +323,8 @@ def validate_reporting_on_behalf(
     return ValidationStatus.VALID, None
 
 
-@input_validator("stakeholder_name")
-def validate_stakeholder_name(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
+@input_validator('stakeholder_name')
+def validate_stakeholder_name(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the stakeholder name is not empty.
 
     Args:
@@ -353,10 +363,8 @@ def validate_stakeholder_name(
     return ValidationStatus.VALID, None
 
 
-@input_validator("stakeholder_address")
-def validate_stakeholder_address(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
+@input_validator('stakeholder_address')
+def validate_stakeholder_address(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the stakeholder address is not empty.
 
     Args:
@@ -375,10 +383,8 @@ def validate_stakeholder_address(
     return ValidationStatus.VALID, None
 
 
-@input_validator("stakeholder_phone")
-def validate_stakeholder_phone(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
+@input_validator('stakeholder_phone')
+def validate_stakeholder_phone(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the stakeholder phone is not empty.
 
     Args:
@@ -404,10 +410,8 @@ def validate_stakeholder_phone(
     return ValidationStatus.VALID, None
 
 
-@input_validator("reporter_name")
-def validate_reporter_name(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
+@input_validator('reporter_name')
+def validate_reporter_name(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the reporter name is not empty.
 
     Args:
@@ -449,10 +453,8 @@ def validate_reporter_name(
     return ValidationStatus.VALID, None
 
 
-@input_validator("reporter_address")
-def validate_reporter_address(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
+@input_validator('reporter_address')
+def validate_reporter_address(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the reporter address is not empty.
 
     Args:
@@ -477,9 +479,11 @@ def validate_reporter_address(
 
 
 
-@on_interview_complete("ReportInterviewInteractAction")
+@on_interview_complete('ReportInterviewInteractAction')
 async def handle_report_completion(
-    session: InterviewSession, visitor: InteractWalker, action: InteractAction
+    session: InterviewSession,
+    visitor: InteractWalker,
+    action: InteractAction
 ) -> None:
     """Handle completion of report interview.
 
@@ -492,16 +496,16 @@ async def handle_report_completion(
         action: The InteractAction instance (use action.respond() to send responses)
     """
     # Extract collected data
-    report_description = session.responses.get("report_description", "")
-    report_location = session.responses.get("report_location", "")
-    incident_images = session.responses.get("incident_images", "")
-    is_sensitive = session.responses.get("is_sensitive", "")
-    reporting_on_behalf = session.responses.get("reporting_on_behalf", "")
-    stakeholder_name = session.responses.get("stakeholder_name", "")
-    stakeholder_address = session.responses.get("stakeholder_address", "")
-    stakeholder_phone = session.responses.get("stakeholder_phone", "")
-    reporter_name = session.responses.get("reporter_name", "")
-    reporter_address = session.responses.get("reporter_address", "")
+    report_description = session.responses.get('report_description', '')
+    report_location = session.responses.get('report_location', '')
+    incident_images = session.responses.get('incident_images', '')
+    is_sensitive = session.responses.get('is_sensitive', '')
+    reporting_on_behalf = session.responses.get('reporting_on_behalf', '')
+    stakeholder_name = session.responses.get('stakeholder_name', '')
+    stakeholder_address = session.responses.get('stakeholder_address', '')
+    stakeholder_phone = session.responses.get('stakeholder_phone', '')
+    reporter_name = session.responses.get('reporter_name', '')
+    reporter_address = session.responses.get('reporter_address', '')
 
     # Log completion (in production, you might send notifications, create records, etc.)
     import logging

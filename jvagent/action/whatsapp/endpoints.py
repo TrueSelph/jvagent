@@ -1,17 +1,16 @@
 """WhatsApp Action Endpoints."""
 
+import asyncio
 import logging
 from typing import Any, Dict, Optional
 
-
-import asyncio
 from fastapi import Request
-from jvagent.core.agent import Agent
-from jvagent.action.interact.interact_walker import InteractWalker
-from jvagent.memory.conversation import Conversation
 
+from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.core.agent import Agent
+from jvagent.memory.conversation import Conversation
 from jvspatial.api import endpoint
-from jvspatial.api.endpoints.response import success_response, ResponseField
+from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError
 
 from .whatsapp_action import WhatsAppAction
@@ -22,7 +21,8 @@ logger = logging.getLogger(__name__)
 @endpoint(
     "/whatsapp/interact/webhook/{agent_id}",
     methods=["POST"],
-    auth=False,
+    webhook=True,
+    webhook_auth="api_key",  # Validates API key from query param or header
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -56,7 +56,8 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
     try:
         request_data = await request.json()
         data = await action.api().parse_inbound_message(request_data)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Error parsing WhatsApp webhook request: {e}")
         data = {}
 
     logger.info(f"Received WhatsApp webhook for agent {agent_id}: {data}")

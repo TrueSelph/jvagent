@@ -739,8 +739,11 @@ package:
 - `package.meta`: Metadata object with title, description, group, and type
 - `package.config`: Configuration object (e.g., for ordering)
 - `package.dependencies`: Dependencies object with `jvagent` version and `actions` list
+  - `actions`: List of action dependencies (by `namespace/action_name`) that will be automatically loaded if this action is loaded
+  - Dependencies are resolved transitively (if A depends on B, and B depends on C, all three are loaded when A is required)
 - All configuration should be defined as typed Pydantic fields in your Action class
 - Override these properties in agent.yaml using the `context` object
+- **Conditional Loading**: Actions are only loaded if explicitly listed in `agent.yaml` or required as dependencies. Unused actions remain unloaded and their endpoints are not accessible.
 
 
 ## Creating Actions
@@ -824,6 +827,10 @@ actions:
 - **Vector Stores**: `jvagent/typesense_vectorstore`
 - **Other**: `jvagent/persona` (can be overridden locally)
 
+**Conditional Loading**: Core actions are only loaded if they are explicitly listed in `agent.yaml` or are required as dependencies of a loaded action. This ensures that unused actions remain unloaded and their endpoints are not accessible.
+
+**Action Dependencies**: Actions can declare dependencies in their `info.yaml` file. Dependencies are resolved transitively - if Action A depends on Action B, and Action B depends on Action C, all three are loaded when Action A is required. This allows actions to automatically load their required dependencies without explicitly listing them in `agent.yaml`.
+
 **Core Action Documentation:**
 - [InteractAction API Guide](jvagent/action/interact/README.md) - Complete guide to InteractAction API including `respond()` method
 - [InteractRouter](jvagent/action/router/README.md) - Intent-based routing for InteractActions
@@ -835,7 +842,7 @@ actions:
 **System Documentation:**
 - [Logging System](docs/logging.md) - Comprehensive interaction logging with separate database, archiving, and retention policies
 
-The action loader automatically discovers core actions from the jvagent library if they're not found locally.
+The action loader automatically discovers core actions from the jvagent library if they're not found locally. However, actions are only loaded if they are explicitly listed in an `agent.yaml` file or are required as dependencies of a loaded action. This ensures that unused actions remain unloaded and their endpoints are not accessible.
 
 ### Creating Custom Actions
 
@@ -1007,7 +1014,7 @@ from . import endpoints  # noqa: F401
 __all__ = ["MyAction"]
 ```
 
-This is the standard pattern that ensures endpoints are discovered when the action package is loaded.
+This is the standard pattern that ensures endpoints are discovered when the action package is loaded. Note that endpoints are only registered for actions that are explicitly listed in `agent.yaml` or required as dependencies.
 
 ### Step 4: Register in agent.yaml
 
@@ -1183,6 +1190,7 @@ Actions follow a standard structure that separates business logic from API endpo
 - ✅ **Clean organization**: Action class focused on core functionality
 - ✅ **Package structure**: Standard Python package pattern with `__init__.py`
 - ✅ **Automatic discovery**: Endpoints discovered when action package is loaded
+- ✅ **Conditional loading**: Endpoints are only registered for actions listed in `agent.yaml`
 - ✅ **Scalable**: Actions can have multiple modules, all organized in `__init__.py`
 - ✅ **Easy to maintain**: All endpoints in one place, package initialization centralized
 - ✅ **Consistent structure**: Standard pattern across all actions
@@ -1321,13 +1329,17 @@ When jvagent starts from an app directory, it automatically:
    - Resolves environment variable placeholders (e.g., `${VAR_NAME}`)
    - Installs agents listed in `app.yaml` (agents can only be installed via app.yaml)
 
-3. **Discovers and loads actions**:
-   - Scans `agents/{namespace}/{agent_name}/actions/{namespace}/{action_name}/` for actions
+3. **Discovers and loads actions conditionally**:
+   - Scans `agent.yaml` files to identify required actions
+   - Resolves transitive dependencies from `info.yaml` files
+   - Only loads actions explicitly listed in `agent.yaml` (plus their dependencies)
+   - Scans `agents/{namespace}/{agent_name}/actions/{namespace}/{action_name}/` for local actions
    - Discovers actions from `info.yaml` files
    - Resolves environment variables in action configs
-   - Loads action classes dynamically
-   - Imports `endpoints.py` modules for endpoint discovery
+   - Loads action classes dynamically only for required actions
+   - Imports `endpoints.py` modules for endpoint discovery (only for loaded actions)
    - Applies configuration from `agent.yaml`
+   - **Important**: Actions not listed in any `agent.yaml` remain unloaded and their endpoints are not accessible
 
 4. **Creates admin user** (if it doesn't exist):
    - Uses credentials from `.env` file
