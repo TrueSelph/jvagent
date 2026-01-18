@@ -461,7 +461,7 @@ async def custom_email_directive(
     # Check if email domain matches specific criteria
     if '@mail.com' in value.lower():
         # Replace default directive with custom message for example.com emails
-        return ("replace", "Tell the user: Thank you for using your work email! We'll send you special updates about jvagent training.")
+        return ("append", "Tell the user: Thank you for using your work email! We'll send you special updates about jvagent training.")
     
     # Return None to use default directive for other emails
     return None

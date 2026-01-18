@@ -192,13 +192,15 @@ class Actions(Node):
                     logger.error(
                         f"Error in lifecycle hook for action {action.label}: {e}",
                         exc_info=True,
-                        details={
-                            "agent_id": action.agent_id,
-                            "action_class": action.get_class_name(),
-                            "action_id": action.id,
-                            "action_label": action.label,
-                            "context": context_name,
-                            "error_code": f"action_{context_name}_error",
+                        extra={
+                            "details": {
+                                "agent_id": action.agent_id,
+                                "action_class": action.get_class_name(),
+                                "action_id": action.id,
+                                "action_label": action.label,
+                                "context": context_name,
+                                "error_code": f"action_{context_name}_error",
+                            }
                         }
                     )
                     raise  # Re-raise to be caught by outer handler
@@ -254,13 +256,15 @@ class Actions(Node):
                 logger.error(
                     f"Error in post_register for {action.label}: {e}",
                     exc_info=True,
-                    details={
-                        "agent_id": action.agent_id,
-                        "action_class": action.get_class_name(),
-                        "action_id": action.id,
-                        "action_label": action.label,
-                        "context": "post_register",
-                        "error_code": "action_post_register_error",
+                    extra={
+                        "details": {
+                            "agent_id": action.agent_id,
+                            "action_class": action.get_class_name(),
+                            "action_id": action.id,
+                            "action_label": action.label,
+                            "context": "post_register",
+                            "error_code": "action_post_register_error",
+                        }
                     }
                 )
 
@@ -317,13 +321,15 @@ class Actions(Node):
                     logger.error(
                         f"Error in on_deregister for action {action_id}: {e}",
                         exc_info=True,
-                        details={
-                            "agent_id": action.agent_id,
-                            "action_class": action.get_class_name(),
-                            "action_id": action.id,
-                            "action_label": action.label,
-                            "context": "on_deregister",
-                            "error_code": "action_deregister_error",
+                        extra={
+                            "details": {
+                                "agent_id": action.agent_id,
+                                "action_class": action.get_class_name(),
+                                "action_id": action.id,
+                                "action_label": action.label,
+                                "context": "on_deregister",
+                                "error_code": "action_deregister_error",
+                            }
                         }
                     )
                     # Continue with deregistration even if hook fails
