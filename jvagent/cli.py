@@ -12,6 +12,12 @@ from dotenv import load_dotenv
 from jvspatial.api import Server
 from jvspatial.api.auth.models import User
 from jvspatial.api.auth.service import AuthenticationService
+from jvspatial.api.config_groups import (
+    AuthConfig,
+    CORSConfig,
+    DatabaseConfig,
+    RateLimitConfig,
+)
 from jvspatial.core import Root
 
 from jvagent import __version__
@@ -383,6 +389,17 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     jwt_expire_minutes = int(
         _get_config_value(app_config, "auth.jwt_expire_minutes", "JVSPATIAL_JWT_EXPIRE_MINUTES", 60)
     )
+    
+    # API Key authentication configuration (enabled by default when auth is enabled)
+    api_key_auth_enabled = _get_config_value(
+        app_config, "auth.api_key_enabled", "JVAGENT_API_KEY_AUTH_ENABLED", auth_enabled
+    )
+    api_key_prefix = _get_config_value(
+        app_config, "auth.api_key_prefix", "JVAGENT_API_KEY_PREFIX", "sk_"
+    )
+    api_key_header = _get_config_value(
+        app_config, "auth.api_key_header", "JVAGENT_API_KEY_HEADER", "x-api-key"
+    )
 
     # Log server creation details only in debug mode
     if debug:
@@ -397,6 +414,12 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         else:
             logger.debug(f"Database: {db_type} at {db_path}")
         logger.debug(f"Authentication: {'enabled' if auth_enabled else 'disabled'}")
+        if auth_enabled:
+            logger.debug(f"  JWT Auth: {'enabled' if jwt_auth_enabled else 'disabled'}")
+            logger.debug(f"  API Key Auth: {'enabled' if api_key_auth_enabled else 'disabled'}")
+            if api_key_auth_enabled:
+                logger.debug(f"    API Key Prefix: {api_key_prefix}")
+                logger.debug(f"    API Key Header: {api_key_header}")
 
     # Determine log level based on debug flag or environment variable
     log_level = os.getenv("JVAGENT_LOG_LEVEL", "debug" if debug else "info")
@@ -422,44 +445,51 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
             "http://127.0.0.1:8000",
         ]
 
-    # Create server with configuration
+    # Build grouped configuration objects
+    # Database configuration
+    database_config = DatabaseConfig(
+        db_type=db_type,
+        db_path=db_path if db_type == "json" else None,
+        db_connection_string=mongodb_uri if db_type == "mongodb" else None,
+        db_database_name=mongodb_db_name if db_type == "mongodb" else None,
+        dynamodb_table_name=dynamodb_table_name if db_type == "dynamodb" else None,
+        dynamodb_region=dynamodb_region if db_type == "dynamodb" else None,
+        dynamodb_endpoint_url=dynamodb_endpoint_url if db_type == "dynamodb" else None,
+        dynamodb_access_key_id=dynamodb_access_key_id if db_type == "dynamodb" else None,
+        dynamodb_secret_access_key=dynamodb_secret_access_key if db_type == "dynamodb" else None,
+    )
+
+    # Auth configuration
+    auth_config = AuthConfig(
+        auth_enabled=auth_enabled,
+        jwt_auth_enabled=jwt_auth_enabled,
+        jwt_secret=jwt_secret,
+        jwt_expire_minutes=jwt_expire_minutes,
+        api_key_auth_enabled=api_key_auth_enabled,
+        api_key_prefix=api_key_prefix,
+        api_key_header=api_key_header,
+    )
+
+    # CORS configuration
+    cors_config = CORSConfig(
+        cors_enabled=cors_enabled,
+        cors_origins=cors_origins,
+    )
+
+    # Create server with grouped configuration
     server_kwargs = {
         "title": title,
         "description": description,
         "version": version,
         "host": host,
         "port": port,
-        "db_type": db_type,
-        "db_path": db_path,
-        "auth_enabled": auth_enabled,
-        "jwt_auth_enabled": jwt_auth_enabled,
-        "jwt_secret": jwt_secret,
-        "jwt_expire_minutes": jwt_expire_minutes,
+        "database": database_config,
+        "auth": auth_config,
+        "cors": cors_config,
         "graph_endpoint_enabled": graph_endpoint_enabled,
         "log_level": log_level,
         "debug": debug_mode,
-        "cors_enabled": cors_enabled,
-        "cors_origins": cors_origins,
     }
-
-    # Add MongoDB-specific configuration
-    if db_type == "mongodb":
-        server_kwargs["db_connection_string"] = mongodb_uri
-        if mongodb_db_name:
-            server_kwargs["db_database_name"] = mongodb_db_name
-
-    # Add DynamoDB-specific configuration
-    if db_type == "dynamodb":
-        if dynamodb_table_name:
-            server_kwargs["dynamodb_table_name"] = dynamodb_table_name
-        if dynamodb_region:
-            server_kwargs["dynamodb_region"] = dynamodb_region
-        if dynamodb_endpoint_url:
-            server_kwargs["dynamodb_endpoint_url"] = dynamodb_endpoint_url
-        if dynamodb_access_key_id:
-            server_kwargs["dynamodb_access_key_id"] = dynamodb_access_key_id
-        if dynamodb_secret_access_key:
-            server_kwargs["dynamodb_secret_access_key"] = dynamodb_secret_access_key
 
     server = Server(**server_kwargs)
 
@@ -577,8 +607,20 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     else:
         logger.info("Logging is disabled in configuration")
 
-    # Import endpoints to register them
-    from jvagent.logging import endpoints  # noqa: F401 - Import to register endpoints
+    # Import endpoint modules to ensure they're loaded
+    # The new automatic deferred registry system will handle registration:
+    # - If imported before server creation: endpoints go to deferred registry and are flushed automatically
+    # - If imported after server creation: endpoints register immediately
+    # No manual discovery needed!
+    from jvagent.logging import endpoints  # noqa: F401
+    from jvagent.core import endpoints as core_endpoints  # noqa: F401
+    from jvagent.action import endpoints as action_endpoints  # noqa: F401
+    from jvagent.action import interact  # noqa: F401
+    from jvagent.action import agent_utils  # noqa: F401
+    from jvagent.action import persona  # noqa: F401
+    from jvagent.action import vectorstore  # noqa: F401
+    from jvagent.action import model  # noqa: F401
+    from jvagent.action import whatsapp  # noqa: F401
 
     return server
 
