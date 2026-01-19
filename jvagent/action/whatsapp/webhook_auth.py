@@ -42,7 +42,6 @@ async def get_or_create_system_user() -> str:
     existing_user = await auth_service._find_user_by_email(SYSTEM_USER_EMAIL)
 
     if existing_user:
-        logger.debug(f"Found existing system user: {existing_user.id}")
         return existing_user.id
 
     # Create new system user
@@ -63,7 +62,6 @@ async def get_or_create_system_user() -> str:
             # Try to find again
             existing_user = await auth_service._find_user_by_email(SYSTEM_USER_EMAIL)
             if existing_user:
-                logger.debug(f"Found system user after creation conflict: {existing_user.id}")
                 return existing_user.id
         raise
     except Exception as e:

@@ -158,8 +158,4 @@ class QuestionGraphBuilder:
                     
                     # If no REVIEW transition exists, add one
                     if not has_review_transition:
-                        logger.debug(
-                            f"Adding REVIEW transition to terminal question '{question_name}' "
-                            f"(no outgoing edges to other questions)"
-                        )
                         await question_node.connect(review_state_node, edge=QuestionEdge)

@@ -34,8 +34,8 @@ actions:
 
 ### 2. Restart jvagent
 
-```powershell
-cd c:\Users\isoke\Projects\jvagent\examples\jvagent_app
+```bash
+cd examples/jvagent_app
 jvagent run
 ```
 
@@ -194,6 +194,6 @@ This Python implementation replicates the functionality of the original `intro_i
 
 ## Files Created
 
-- [`intro_interact_action.py`](file:///c:/Users/isoke/Projects/jvagent/examples/jvagent_app/actions/jvagent/intro_interact_action/intro_interact_action.py) - Main action class
-- [`__init__.py`](file:///c:/Users/isoke/Projects/jvagent/examples/jvagent_app/actions/jvagent/intro_interact_action/__init__.py) - Package init
-- [`info.yaml`](file:///c:/Users/isoke/Projects/jvagent/examples/jvagent_app/actions/jvagent/intro_interact_action/info.yaml) - Package metadata
+- `intro_interact_action.py` - Main action class
+- `__init__.py` - Package init
+- `info.yaml` - Package metadata

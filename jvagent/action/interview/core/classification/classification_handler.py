@@ -100,12 +100,15 @@ class ClassificationHandler:
         
         return extracted_values, excluded_fields
     
-    def build_classification_context(
+    async def build_classification_context(
         self,
         session: InterviewSession,
         excluded_fields: Optional[Set[str]] = None
     ) -> Dict[str, str]:
         """Build minimal context for classification.
+
+        Only includes reachable unanswered questions in entities_to_extract to prevent
+        premature extraction of questions that haven't been asked yet.
 
         Args:
             session: Interview session
@@ -120,30 +123,39 @@ class ClassificationHandler:
         answered_fields = session.get_answered_questions()
         answered_fields_str = ", ".join(answered_fields) if answered_fields else "None"
 
-        # Get unanswered questions for extraction
-        unanswered = session.get_unanswered_questions()
-        if session.active_question_key and session.active_question_key in unanswered:
-            active_questions = [q for q in session.question_index if q.get("name") == session.active_question_key]
-        else:
-            active_questions = [q for q in session.question_index if q.get("name") in unanswered]
+        # Get reachable unanswered questions using QuestionWalker
+        # This prevents premature extraction of questions that haven't been asked yet
+        from ..graph.question_walker import QuestionWalker
+        question_walker = QuestionWalker()
+        question_walker.interview_session = session
         
-        # Ensure active_question_key is included if unanswered
-        # This is critical because classification happens before the response is stored,
-        # so branch conditions may not have matched yet, but the active question should
-        # still be in entities_to_extract for correct intent classification
+        # Get reachable unanswered questions based on current question path
+        reachable_unanswered = await question_walker.get_reachable_unanswered_questions(session, self.action)
+        reachable_set = set(reachable_unanswered) if reachable_unanswered else set()
+        
+        # Build question map for quick lookup
+        question_map = {q.get("name"): q for q in session.question_index if q.get("name")}
+        
+        # Handle edge case: if no questions are answered yet, ensure first question is included
+        answered_set = set(session.get_answered_questions())
+        if not answered_set and session.question_index:
+            first_question_name = session.question_index[0].get("name")
+            if first_question_name and first_question_name not in reachable_set:
+                reachable_set.add(first_question_name)
+        
+        # Start with reachable questions
+        active_questions = [q for q in session.question_index if q.get("name") in reachable_set]
+        
+        # Always include the active question if it's unanswered
+        # This ensures the current question can be answered even if not yet in reachable list
         if session.active_question_key:
-            answered_set = set(session.get_answered_questions())
-            active_question_names = set([q.get("name") for q in active_questions if q])
-            if (session.active_question_key not in active_question_names and 
-                session.active_question_key not in answered_set):
-                # Add the active question to active_questions
-                question_map = {q.get("name"): q for q in session.question_index if q.get("name")}
+            if (session.active_question_key not in answered_set and 
+                session.active_question_key not in reachable_set):
+                # Active question is not reachable yet but should be included
                 active_question_config = question_map.get(session.active_question_key)
                 if active_question_config:
                     active_questions.append(active_question_config)
 
-        # Build entities list for extraction with required field information
-        # Exclude fields with data_input_field (they are handled separately)
         excluded_set = excluded_fields or set()
         entities_list = []
         required_fields = set(session.get_required_questions())
@@ -155,8 +167,15 @@ class ClassificationHandler:
                 continue
             
             # Skip fields that should be excluded from LLM extraction
+            # EXCEPT when the field is the active question (user is currently being asked this question)
+            # This is necessary for proper DECLINE intent classification when user declines to provide data
+            is_active_data_field = False
             if key in excluded_set:
-                continue
+                # Always include the active question for proper DECLINE intent classification
+                if key != session.active_question_key:
+                    continue
+                # If it's the active question, mark it as a data_input_field for special handling
+                is_active_data_field = True
             
             desc = constraints.get('description', '')
             other_constraints = {k: v for k, v in constraints.items() if k not in ('description', 'data_input_field')}
@@ -164,7 +183,9 @@ class ClassificationHandler:
             constraint_part = f" ({', '.join(constraint_strs)})" if constraint_strs else ""
             is_required = key in required_fields
             required_marker = " [REQUIRED]" if is_required else " [OPTIONAL]"
-            entities_list.append(f"- {key}: {desc}{constraint_part}{required_marker}")
+            # Add note for data_input_field questions to help LLM understand it can accept DECLINE
+            data_field_note = " (expects data input, but user may decline)" if is_active_data_field else ""
+            entities_list.append(f"- {key}: {desc}{constraint_part}{required_marker}{data_field_note}")
 
         entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
 
@@ -232,7 +253,7 @@ class ClassificationHandler:
         # Unified classification and extraction using single prompt
         try:
             # Build context for unified prompt (exclude fields with data_input_field)
-            context = self.build_classification_context(session, excluded_fields=excluded_fields)
+            context = await self.build_classification_context(session, excluded_fields=excluded_fields)
 
             prompt = self.action.interview_prompt.format(
                 user_input=user_input,
@@ -523,7 +544,7 @@ class ClassificationHandler:
             from jvagent.action.interview.dspy import InterviewClassifier
 
             # Build context for classification (exclude fields with data_input_field)
-            context = self.build_classification_context(session, excluded_fields=excluded_fields)
+            context = await self.build_classification_context(session, excluded_fields=excluded_fields)
 
             # Get conversation history if needed
             conversation_history = None

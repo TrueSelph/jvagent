@@ -85,5 +85,3 @@ result = test_whatsapp_webhook(
     # "n.Whatsapp.64e6fcd7e8524704acf91745",
     payload=payload,
 )
-print("result")
-print(result)

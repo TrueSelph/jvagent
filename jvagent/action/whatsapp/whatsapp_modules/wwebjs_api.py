@@ -99,10 +99,6 @@ class WWebJSAPI:
                 elif data:
                     kwargs["data"] = data
 
-                print("kwargskwargskwargskwargskwargs")
-                print(kwargs)
-                print(url)
-
                 async with session.request(method, url, **kwargs) as response:
                     response.raise_for_status()
 

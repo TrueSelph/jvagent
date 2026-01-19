@@ -201,4 +201,3 @@ class OpenRouterLanguageModelAction(OpenAILanguageModelAction):
             total_cost = prompt_cost + completion_cost
             self.total_cost += total_cost
 
-            logger.debug(f"Estimated OpenRouter cost: ${total_cost:.6f} " f"(model: {self.model})")

@@ -260,10 +260,6 @@ class DeclineHandler(IntentHandler):
         # If field not specified, try to use active question as fallback
         if not field and session.active_question_key:
             field = session.active_question_key
-            logger.debug(
-                f"{self.action.get_class_name()}: DECLINE intent without field specified, "
-                f"using active question: {field}"
-            )
         
         if not field:
             # Field not specified and no active question - treat as unclear response
@@ -273,7 +269,7 @@ class DeclineHandler(IntentHandler):
             )
             return HandlerResult(handled=False, should_continue=True)
         
-        # Check if field is required
+        # Check if field is required and if it's a data_input_field question
         question_config = session.get_question_by_name(field)
         is_required = question_config.get("required", False) if question_config else False
         
@@ -299,7 +295,20 @@ class DeclineHandler(IntentHandler):
             session.set_response(field, "n/a")
             session.set_validation_status(field, ValidationStatus.VALID)
             await session.save()
-            logger.debug(f"{self.action.get_class_name()}: Declined non-required field {field}, stored as 'n/a'")
+            
+            # Re-evaluate branches after storing decline value
+            # This ensures conditional flow respects the declined field
+            # and prevents question path disruption
+            from ..graph.question_walker import QuestionWalker
+            question_walker = QuestionWalker()
+            question_walker.interview_session = session
+            question_walker.interaction = interaction
+            await self.action._update_reachable_questions(session, question_walker, just_answered_field=field)
+            
+            logger.debug(
+                f"{self.action.get_class_name()}: Declined non-required field {field}, stored as 'n/a'. "
+                f"Branches re-evaluated to maintain question path integrity."
+            )
             return HandlerResult(handled=True, should_continue=True)
 
 
