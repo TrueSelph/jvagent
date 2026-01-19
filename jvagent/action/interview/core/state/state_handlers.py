@@ -89,6 +89,16 @@ class StateHandler:
         if not handler_result.should_continue:
             return
         
+        # If we just handled a decline and should continue, clear active_question_key
+        # This ensures we find the next question correctly and prevents question path disruption
+        if intent == Intent.DECLINE and handler_result.should_continue:
+            session.active_question_key = None
+            await session.save()
+            logger.debug(
+                f"{self.action.get_class_name()}: Cleared active_question_key after DECLINE handling "
+                f"for field '{classification_result.field}'"
+            )
+        
         # If state changed during handling (e.g., transition to REVIEW), handle new state
         if session.state != InterviewState.ACTIVE:
             target_state = session.state

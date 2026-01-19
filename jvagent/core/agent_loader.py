@@ -219,7 +219,6 @@ class AgentLoader:
                 self._apply_agent_properties(agent, descriptor)
 
                 await agent.save()
-                logger.debug(f"Updated existing agent: {descriptor.namespace}/{descriptor.name}")
             else:
                 # Build initial agent data
                 agent_data = {
@@ -237,9 +236,7 @@ class AgentLoader:
                         if not key.startswith("_") and key not in ["id", "namespace", "name"]:
                             agent_data[key] = value
 
-                # Create new agent with merged properties
                 agent = await Agent.create(**agent_data)
-                logger.debug(f"Created agent: {descriptor.namespace}/{descriptor.name}")
 
                 # Connect to Agents manager
                 app = await App.get()
@@ -296,7 +293,6 @@ class AgentLoader:
             if not key.startswith("_") and key not in ["id", "name"] and hasattr(agent, key):
                 try:
                     setattr(agent, key, value)
-                    logger.debug(f"Set agent.{key} = {value}")
                 except Exception as e:
                     logger.warning(f"Could not set agent.{key}: {e}")
 
@@ -320,8 +316,6 @@ class AgentLoader:
         # Create new Actions node
         actions = await Actions.create()
         await agent.connect(actions, direction="both")
-        logger.debug(f"Created Actions node for agent {agent.name}")
-
         return actions
 
     async def _ensure_memory_node(self, agent: Agent) -> Memory:
@@ -341,8 +335,6 @@ class AgentLoader:
         # Create new Memory node
         memory = await Memory.create()
         await agent.connect(memory, direction="both")
-        logger.debug(f"Created Memory node for agent {agent.name}")
-
         return memory
 
     def _get_expected_actions_from_descriptor(
@@ -464,10 +456,6 @@ class AgentLoader:
             # Remove actions not in agent.yaml
             for action_to_remove in sync_result["to_remove"]:
                 try:
-                    logger.debug(
-                        f"Deregistering action {action_to_remove.namespace}/{action_to_remove.label} "
-                        f"(not in agent.yaml)"
-                    )
                     await actions_manager.deregister_action(action_to_remove.id)
                 except Exception as e:
                     logger.error(
@@ -496,11 +484,8 @@ class AgentLoader:
                             # For core actions, use importlib.reload()
                             if core_module_path in sys.modules:
                                 importlib.reload(sys.modules[core_module_path])
-                                logger.debug(f"Reloaded core action module: {core_module_path}")
                         else:
-                            # For local actions, unload modules to ensure fresh import
                             await existing_action._unload_action_modules()
-                            logger.debug(f"Unloaded modules for action {namespace}/{label} (will reload)")
                     except Exception as e:
                         logger.warning(
                             f"Error reloading modules for action {namespace}/{label}: {e}",
@@ -516,7 +501,6 @@ class AgentLoader:
         )
 
         if not actions:
-            logger.debug(f"No actions found for agent {agent.name}")
             return
 
         # Register or update actions with the manager
@@ -549,10 +533,8 @@ class AgentLoader:
 
                 if existing_actions and update_if_exists:
                     updated_count += 1
-                    logger.debug(f"    ✓ Action: {action.namespace}/{action_label} (updated)")
                 else:
                     registered_count += 1
-                    logger.debug(f"    ✓ Action: {action.namespace}/{action_label}")
             else:
                 logger.warning(f"Failed to register action: {action_label}")
                 failed_count += 1
@@ -567,10 +549,6 @@ class AgentLoader:
         elif failed_count > 0:
             logger.warning(
                 f"Actions for {agent.name}: {registered_count} registered, {updated_count} updated, {failed_count} failed"
-            )
-        elif total_actions > 0:
-            logger.debug(
-                f"Actions for {agent.name}: {total_actions} total ({registered_count} registered, {updated_count} updated)"
             )
 
     async def _dedupe_agent_actions(self, agent: Agent, actions_manager: Actions) -> None:
@@ -634,7 +612,6 @@ class AgentLoader:
 
             if removed > 0:
                 await actions_manager.save()
-                logger.debug(f"Cleaned {removed} duplicate/orphan action(s) for agent {agent.name}")
         except Exception as exc:
             logger.error(
                 f"Failed to deduplicate actions for agent {agent.id}: {exc}", exc_info=True

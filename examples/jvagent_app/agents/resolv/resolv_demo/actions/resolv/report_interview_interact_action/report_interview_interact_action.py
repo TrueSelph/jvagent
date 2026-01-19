@@ -100,11 +100,16 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                 "name": "new_report",
                 "question": "I found a similar report. Would you like to continue creating this report?",
                 "constraints": {
-                    "description": "Used to determine if the user wants to continue creating a new report or not.",
+                    "description": "System found a similar report.Used to determine if the user wants to continue creating a new report or not.",
                     "type": "string",
                     "options": ["yes", "no"],
                 },
-                "default_next": "is_sensitive",
+                "branches": [
+                    {
+                        "condition": {"op": "equals", "value": "no"},
+                        "target": "CANCELLED"
+                    }
+                ],
                 "required": True
             },
             {
@@ -118,15 +123,10 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                 },
                 "branches": [
                     {
-                        "condition": {"op": "equals", "value": "no"},
-                        "target": "reporting_on_behalf"
-                    },
-                    {
                         "condition": {"op": "equals", "value": "yes"},
-                        "target": "stakeholder_name"
+                        "target": "REVIEW"
                     }
                 ],
-                "default_next": "reporting_on_behalf",
                 "required": True
             },
             {
@@ -244,24 +244,6 @@ def validate_report_location(value: str, session: InterviewSession) -> Tuple[Val
 
     if not value or not isinstance(value, str):
         return ValidationStatus.INVALID, "Ask: Please provide the location of the report"
-
-    return ValidationStatus.VALID, None
-
-
-@input_validator('report_media')
-def validate_report_media(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the report media is not empty.
-
-    Args:
-        value: The media string to validate
-        session: Interview session (for context)
-
-    Returns:
-        Tuple of (ValidationStatus, optional error message)
-    """
-
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the media of the report"
 
     return ValidationStatus.VALID, None
 

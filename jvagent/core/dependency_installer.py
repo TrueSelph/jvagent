@@ -65,9 +65,7 @@ def install_pip_dependencies(
             if not check_pip_dependency_installed(dep):
                 packages_to_install.append(dep)
         
-        # If all packages are already installed, skip
         if not packages_to_install:
-            logger.debug(f"All dependencies for action {action_name} are already installed")
             return True
         
         dependencies = packages_to_install

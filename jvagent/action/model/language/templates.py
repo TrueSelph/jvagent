@@ -64,7 +64,6 @@ class TemplateManager:
             self._template_dir = templates_dir
             return templates_dir
 
-        logger.debug(f"No templates directory found at {templates_dir}")
         return None
 
     async def _get_environment(self) -> Environment:
