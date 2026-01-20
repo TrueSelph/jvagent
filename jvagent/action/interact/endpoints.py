@@ -219,7 +219,7 @@ _initialize_rate_limiter_from_config()
     "/agents/{agent_id}/interact",
     methods=["POST"],
     auth=False,
-    tags=["Interact"],
+    tags=["Agent"],
     response=success_response(
         data={
             "user_id": ResponseField(

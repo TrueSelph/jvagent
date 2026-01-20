@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 
 
 @endpoint(
-    "/api/logs/agents/{agent_id}",
+    "/logs/agents/{agent_id}",
     methods=["GET"],
     auth=True,
-    tags=["Logging"],
+    tags=["App"],
     response=success_response(
         data={
             "errors": ResponseField(

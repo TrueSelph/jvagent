@@ -1,7 +1,7 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiClient } from '../config/api'
-import { setToken, removeToken, getToken, removeUserId, setUserId } from '../utils/storage'
+import { setToken, removeToken, getToken, removeUserId, setUserId, setRefreshToken, removeRefreshToken, getRefreshToken } from '../utils/storage'
 import { saveConfig } from '../config/config'
 import type { LoginRequest } from '../types/api'
 
@@ -18,12 +18,15 @@ export function useAuth() {
     loading: false,
     error: null,
   })
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Check token expiration on mount and periodically
+  // Proactive token refresh: check token expiration and refresh before it expires
   useEffect(() => {
-    const checkToken = () => {
+    const checkAndRefreshToken = async () => {
       const token = getToken()
-      if (!token) {
+      const refreshToken = getRefreshToken()
+      
+      if (!token || !refreshToken) {
         setState((prev) => ({ ...prev, isAuthenticated: false }))
         return
       }
@@ -33,27 +36,82 @@ export function useAuth() {
         const payload = JSON.parse(atob(token.split('.')[1]))
         const exp = payload.exp * 1000 // Convert to milliseconds
         const now = Date.now()
+        const timeUntilExpiry = exp - now
 
-        if (exp < now) {
-          // Token expired
-          removeToken()
-          setState((prev) => ({ ...prev, isAuthenticated: false }))
-          if (window.location.pathname !== '/login') {
-            navigate('/login', { replace: true })
+        // If token is already expired, let the API client handle it via 401 interceptor
+        if (timeUntilExpiry <= 0) {
+          return
+        }
+
+        // If token expires within 5 minutes, refresh proactively
+        const fiveMinutes = 5 * 60 * 1000
+        if (timeUntilExpiry < fiveMinutes) {
+          try {
+            const refreshResponse = await apiClient.refreshToken({ refresh_token: refreshToken })
+            setToken(refreshResponse.access_token)
+            if (refreshResponse.refresh_token) {
+              setRefreshToken(refreshResponse.refresh_token)
+            }
+            // Update user_id if provided in response
+            if (refreshResponse.user?.id) {
+              setUserId(refreshResponse.user.id)
+            }
+            console.log('Token refreshed proactively')
+            
+            // Reschedule next check with new token
+            // Decode new token to get its expiration
+            try {
+              const newPayload = JSON.parse(atob(refreshResponse.access_token.split('.')[1]))
+              const newExp = newPayload.exp * 1000
+              const newTimeUntilExpiry = newExp - Date.now()
+              const checkIn = Math.max(newTimeUntilExpiry - fiveMinutes, 60000) // At least 1 minute
+              if (refreshTimeoutRef.current) {
+                clearTimeout(refreshTimeoutRef.current)
+              }
+              refreshTimeoutRef.current = setTimeout(checkAndRefreshToken, checkIn)
+            } catch (e) {
+              // If we can't decode new token, schedule check in 2 minutes
+              if (refreshTimeoutRef.current) {
+                clearTimeout(refreshTimeoutRef.current)
+              }
+              refreshTimeoutRef.current = setTimeout(checkAndRefreshToken, 2 * 60 * 1000)
+            }
+          } catch (error) {
+            // Refresh failed, but don't clear tokens here - let 401 interceptor handle it
+            console.warn('Proactive token refresh failed:', error)
+            // Schedule retry in 1 minute
+            if (refreshTimeoutRef.current) {
+              clearTimeout(refreshTimeoutRef.current)
+            }
+            refreshTimeoutRef.current = setTimeout(checkAndRefreshToken, 60000)
           }
+        } else {
+          // Schedule next check for 1 minute before expiration
+          const checkIn = Math.max(timeUntilExpiry - fiveMinutes, 60000) // At least 1 minute
+          if (refreshTimeoutRef.current) {
+            clearTimeout(refreshTimeoutRef.current)
+          }
+          refreshTimeoutRef.current = setTimeout(checkAndRefreshToken, checkIn)
         }
       } catch (e) {
-        // Invalid token format
-        removeToken()
-        setState((prev) => ({ ...prev, isAuthenticated: false }))
+        // Invalid token format - let API client handle it
+        console.warn('Token validation error:', e)
       }
     }
 
-    checkToken()
-    // Check every 30 seconds
-    const interval = setInterval(checkToken, 30000)
-    return () => clearInterval(interval)
-  }, [navigate])
+    // Initial check
+    checkAndRefreshToken()
+
+    // Also check periodically (every 2 minutes) as a fallback
+    const interval = setInterval(checkAndRefreshToken, 2 * 60 * 1000)
+    
+    return () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current)
+      }
+      clearInterval(interval)
+    }
+  }, [])
 
   const login = useCallback(
     async (credentials: LoginRequest) => {
@@ -73,6 +131,15 @@ export function useAuth() {
         }
         
         setToken(response.access_token)
+        
+        // Store refresh token if provided
+        if (response.refresh_token) {
+          setRefreshToken(response.refresh_token)
+          console.log('Refresh token stored')
+        } else {
+          console.warn('Login response did not include refresh_token')
+        }
+        
         const storedToken = getToken()
         console.log('Token stored, verification:', storedToken ? 'Success' : 'Failed')
         console.log('Stored token preview:', storedToken ? storedToken.substring(0, 20) + '...' : 'None')
@@ -105,9 +172,23 @@ export function useAuth() {
     [navigate]
   )
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    // First, try to revoke tokens on the server
+    // This is best-effort - we'll clear local storage regardless of success/failure
+    try {
+      await apiClient.logout()
+    } catch (error) {
+      // Log error but continue with local logout
+      console.warn('Logout: Server logout failed, continuing with local logout:', error)
+    }
+
+    // Always clear local storage and state, regardless of server response
     removeToken()
+    removeRefreshToken() // Clear refresh token on logout
     removeUserId() // Clear user_id on logout
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current)
+    }
     setState({
       isAuthenticated: false,
       loading: false,
