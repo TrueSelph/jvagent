@@ -1,4 +1,5 @@
 const TOKEN_KEY = 'jvchat_token'
+const REFRESH_TOKEN_KEY = 'jvchat_refresh_token'
 const USER_ID_KEY = 'jvchat_user_id'
 const CONVERSATIONS_KEY = 'jvchat_conversations'
 const MESSAGES_KEY = 'jvchat_messages' // Store messages by session_id
@@ -16,6 +17,21 @@ export function setToken(token: string): void {
 export function removeToken(): void {
   if (typeof window === 'undefined') return
   localStorage.removeItem(TOKEN_KEY)
+}
+
+export function getRefreshToken(): string | null {
+  if (typeof window === 'undefined') return null
+  return localStorage.getItem(REFRESH_TOKEN_KEY)
+}
+
+export function setRefreshToken(token: string): void {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(REFRESH_TOKEN_KEY, token)
+}
+
+export function removeRefreshToken(): void {
+  if (typeof window === 'undefined') return
+  localStorage.removeItem(REFRESH_TOKEN_KEY)
 }
 
 export function getUserId(): string | null {
@@ -302,6 +318,7 @@ export function clearAllStorage(): void {
   if (typeof window === 'undefined') return
   try {
     removeToken()
+    removeRefreshToken()
     removeUserId()
     localStorage.removeItem(CONVERSATIONS_KEY)
     localStorage.removeItem(MESSAGES_KEY)

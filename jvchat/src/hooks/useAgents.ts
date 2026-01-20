@@ -39,7 +39,10 @@ export function useAgents(enabled?: boolean) {
       // Clear all local storage and invalidate session
       clearAllStorage()
       // logout() will also navigate to login screen
-      logout()
+      // Note: logout is async but we don't need to await it here
+      logout().catch((logoutErr) => {
+        console.warn('Logout error:', logoutErr)
+      })
     } finally {
       setLoading(false)
     }

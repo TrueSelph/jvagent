@@ -1,9 +1,11 @@
-import axios, { AxiosInstance, AxiosError } from 'axios'
+import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios'
 import { getJvagentUrl, getJvagentTimeout, getConfigAsync } from './config'
-import { getToken, removeToken, getUserId } from '../utils/storage'
+import { getToken, removeToken, getUserId, getRefreshToken, setToken, setRefreshToken, removeRefreshToken } from '../utils/storage'
 import type {
   LoginRequest,
   LoginResponse,
+  TokenRefreshRequest,
+  TokenRefreshResponse,
   AgentsResponse,
   InteractionRequest,
   InteractionResponse,
@@ -13,6 +15,11 @@ class ApiClient {
   private client: AxiosInstance
   private baseUrls: string[]
   private resolvedLoginPath?: string
+  private isRefreshing = false
+  private failedQueue: Array<{
+    resolve: (value?: any) => void
+    reject: (error?: any) => void
+  }> = []
 
   constructor() {
     // Initialize with default config, will be updated when config loads
@@ -62,10 +69,12 @@ class ApiClient {
       (error) => Promise.reject(error)
     )
 
-    // Response interceptor for error handling
+    // Response interceptor for error handling and token refresh
     this.client.interceptors.response.use(
       (response) => response,
-      (error: AxiosError) => {
+      async (error: AxiosError) => {
+        const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
+        
         console.error('API Error:', {
           message: error.message,
           status: error.response?.status,
@@ -84,14 +93,77 @@ class ApiClient {
           console.error('4. Network connectivity issue')
         }
         
-        if (error.response?.status === 401) {
-          // Token expired or invalid - clear token and redirect to login
-          removeToken()
-          // Use replace to avoid adding to history
-          if (window.location.pathname !== '/login') {
-            window.location.replace('/login')
+        // Handle 401 errors with token refresh
+        if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+          originalRequest._retry = true
+          
+          const refreshToken = getRefreshToken()
+          if (!refreshToken) {
+            // No refresh token available, redirect to login
+            removeToken()
+            removeRefreshToken()
+            if (window.location.pathname !== '/login') {
+              window.location.replace('/login')
+            }
+            return Promise.reject(error)
+          }
+          
+          // If already refreshing, queue this request
+          if (this.isRefreshing) {
+            return new Promise((resolve, reject) => {
+              this.failedQueue.push({ 
+                resolve: () => {
+                  // Retry original request with new token
+                  const token = getToken()
+                  if (token && originalRequest.headers) {
+                    originalRequest.headers.Authorization = `Bearer ${token}`
+                  }
+                  this.client(originalRequest).then(resolve).catch(reject)
+                }, 
+                reject 
+              })
+            })
+          }
+          
+          // Start refresh process
+          this.isRefreshing = true
+          
+          try {
+            const refreshResponse = await this.refreshToken({ refresh_token: refreshToken })
+            
+            // Update tokens
+            setToken(refreshResponse.access_token)
+            if (refreshResponse.refresh_token) {
+              setRefreshToken(refreshResponse.refresh_token)
+            }
+            
+            // Update original request with new token
+            if (originalRequest.headers) {
+              originalRequest.headers.Authorization = `Bearer ${refreshResponse.access_token}`
+            }
+            
+            // Process queued requests
+            this.failedQueue.forEach(({ resolve }) => resolve())
+            this.failedQueue = []
+            
+            // Retry original request
+            return this.client(originalRequest)
+          } catch (refreshError) {
+            // Refresh failed, clear tokens and redirect to login
+            this.failedQueue.forEach(({ reject }) => reject(refreshError))
+            this.failedQueue = []
+            
+            removeToken()
+            removeRefreshToken()
+            if (window.location.pathname !== '/login') {
+              window.location.replace('/login')
+            }
+            return Promise.reject(refreshError)
+          } finally {
+            this.isRefreshing = false
           }
         }
+        
         return Promise.reject(error)
       }
     )
@@ -203,7 +275,7 @@ class ApiClient {
       return payload.data as LoginResponse
     }
 
-    // Handle direct TokenResponse
+    // Handle direct TokenResponse (includes refresh_token and refresh_expires_in)
     if (payload.access_token && payload.token_type) {
       return payload as LoginResponse
     }
@@ -211,6 +283,101 @@ class ApiClient {
     throw new Error(
       payload.detail || payload.message || 'Unexpected login response format'
     )
+  }
+
+  async refreshToken(request: TokenRefreshRequest): Promise<TokenRefreshResponse> {
+    try {
+      // Try /api/auth/refresh first, fallback to /auth/refresh
+      const refreshPaths = ['/api/auth/refresh', '/auth/refresh']
+      let lastError: any
+
+      for (const baseURL of this.baseUrls) {
+        for (const path of refreshPaths) {
+          try {
+            // Don't use axios client here to avoid interceptor loops
+            const response = await fetch(`${baseURL}${path}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(request),
+            })
+
+            if (!response.ok) {
+              if (response.status === 404) {
+                continue // Try next path
+              }
+              const errorText = await response.text()
+              let errorMessage = `HTTP error! status: ${response.status}`
+              try {
+                const errorJson = JSON.parse(errorText)
+                errorMessage = errorJson.detail || errorJson.message || errorMessage
+              } catch {
+                errorMessage = errorText || errorMessage
+              }
+              throw new Error(errorMessage)
+            }
+
+            const data = await response.json()
+            return this._extractLoginResponse({ data })
+          } catch (err: any) {
+            lastError = err
+            if (err.message?.includes('404') || err.message?.includes('HTTP error! status: 404')) {
+              continue // Try next path
+            }
+            // Non-404 error, stop trying
+            throw err
+          }
+        }
+      }
+
+      throw lastError || new Error('Token refresh failed')
+    } catch (error: any) {
+      console.error('Token refresh error:', error)
+      throw error
+    }
+  }
+
+  async logout(): Promise<void> {
+    try {
+      // Try /api/auth/revoke-all first, fallback to /auth/revoke-all
+      const revokePaths = ['/api/auth/revoke-all', '/auth/revoke-all']
+      let lastError: any
+      let success = false
+
+      for (const baseURL of this.baseUrls) {
+        for (const path of revokePaths) {
+          try {
+            await this.client.post(path, {}, { baseURL })
+            success = true
+            console.log('Successfully revoked all tokens on server')
+            break
+          } catch (err: any) {
+            lastError = err
+            if (err.response?.status === 404) {
+              continue // Try next path
+            }
+            // For 401, token might already be invalid - that's okay, we're logging out anyway
+            if (err.response?.status === 401) {
+              console.warn('Logout: Token already invalid or expired, continuing with local logout')
+              success = true // Consider this success since we're logging out anyway
+              break
+            }
+            // For other errors, try next path/base
+            continue
+          }
+        }
+        if (success) break
+      }
+
+      if (!success && lastError) {
+        // Log error but don't throw - we still want to clear local storage
+        console.warn('Logout: Failed to revoke tokens on server:', lastError.message || lastError)
+      }
+    } catch (error: any) {
+      // Log error but don't throw - always allow local logout
+      console.warn('Logout: Error during server logout, continuing with local logout:', error)
+    }
   }
 
   async getAgents(enabled?: boolean): Promise<AgentsResponse> {

@@ -8,6 +8,8 @@ export interface LoginResponse {
   access_token: string
   token_type: string
   expires_in: number
+  refresh_token?: string
+  refresh_expires_in?: number
   user: {
     id: string
     email: string
@@ -16,6 +18,12 @@ export interface LoginResponse {
     is_active: boolean
   }
 }
+
+export interface TokenRefreshRequest {
+  refresh_token: string
+}
+
+export type TokenRefreshResponse = LoginResponse
 
 export interface Agent {
   id: string

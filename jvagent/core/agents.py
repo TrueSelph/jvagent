@@ -248,7 +248,7 @@ class Agents(Node):
     "/status",
     methods=["GET"],
     auth=True,  # Requires authentication - statistics contain sensitive system information
-    tags=["Agent"],
+    tags=["App"],
     response=success_response(
         data={
             "statistics": ResponseField(
