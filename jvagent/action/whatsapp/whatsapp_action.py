@@ -42,16 +42,32 @@ class WhatsAppAction(Action):
         default=None, description="ID of the API key used for webhook authentication"
     )
 
-    request_timeout: int = attribute(default=30, description="WhatsApp request timeout in seconds")
+    request_timeout: int = attribute(default=60, description="WhatsApp request timeout in seconds")
 
-    chunk_length: int = attribute(default=2000, description="WhatsApp chunk length")
+    chunk_length: int = attribute(default=4000, description="WhatsApp chunk length")
 
+    media_batch_window: float = attribute(
+        default=2.5,
+        description="Time window in seconds to batch multiple media messages together"
+    )
+
+    stt_action: Optional[str] = attribute(
+        default=None,
+        description="Label or Class used to transcribe voice messages or audio files",
+    )
+
+    # action configuration
+    
     async def on_register(self) -> None:
         """Called when action is registered.
 
         Creates and initializes the WhatsApp channel adapter for automatic
         message delivery via the response bus.
         """
+        # Initialize typing tracking
+        if not hasattr(self, "_typing_phones"):
+            self._typing_phones = set()
+
         # Create WhatsAppAdapter instance
         adapter = WhatsAppAdapter(action=self)
 
@@ -71,6 +87,10 @@ class WhatsAppAction(Action):
         and session registration are properly set up. This is critical for
         actions that were updated via --update flag.
         """
+        # Reinitialize typing tracking if needed
+        if not hasattr(self, "_typing_phones"):
+            self._typing_phones = set()
+
         # Reinitialize WhatsAppAdapter if not already initialized
         if not hasattr(self, "_channel_adapter") or self._channel_adapter is None:
             adapter = WhatsAppAdapter(action=self)
@@ -140,21 +160,7 @@ class WhatsAppAction(Action):
         """Called when action is enabled."""
         pass
 
-    async def send_message(self, to: str, message: str) -> Dict[str, Any]:
-        """Send a WhatsApp message."""
-        # Logic to delegate to specific provider will go here
-        return {"status": "sent", "to": to, "message": message, "provider": self.provider}
 
-    async def set_typing(self, phone: str, value: bool = True) -> None:
-        """Set or clear typing status for a phone number."""
-        if hasattr(self, "_channel_adapter"):
-            await self._channel_adapter.set_typing(phone, value)
-        else:
-            # Fallback if adapter not yet initialized
-            try:
-                await self.api().set_typing_status(phone=phone, value=value)
-            except Exception as e:
-                logger.warning(f"WhatsAppAction: Failed to set typing status without adapter: {e}")
 
     def api(self) -> Union[WPPConnectAPI, WWebJSAPI]:
         if self.provider == "wppconnect":
@@ -176,9 +182,7 @@ class WhatsAppAction(Action):
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
 
-    async def get_webhook_url(
-        self, allowed_ip: Optional[str] = None, regenerate: bool = False
-    ) -> str:
+    async def get_webhook_url(self, allowed_ip: Optional[str] = None, regenerate: bool = False) -> str:
         """Generate secure webhook URL with API key authentication.
 
         Creates or retrieves an API key for webhook authentication and returns
@@ -300,6 +304,55 @@ class WhatsAppAction(Action):
 
         return webhook_url
 
+    async def set_typing(self, phone: str, value: bool = True, is_group: bool = False) -> None:
+        """Set or clear typing status for a phone number.
+        
+        Args:
+            phone: Phone number
+            value: True to start typing, False to stop
+        """
+        # Initialize set if it doesn't exist (safety check)
+        if not hasattr(self, "_typing_phones"):
+            self._typing_phones = set()
+
+        if value:
+            if phone in self._typing_phones:
+                return  # Already typing
+            self._typing_phones.add(phone)
+        else:
+            if phone not in self._typing_phones:
+                return  # Not typing
+            self._typing_phones.discard(phone)
+
+        try:
+            await self.api().set_typing_status(phone=phone, value=value, is_group=is_group)
+        except Exception as e:
+            logger.warning(f"WhatsAppAction: Failed to set typing status for {phone}: {e}")
+            # If failed to start typing, remove from set so we can try again
+            if value:
+                self._typing_phones.discard(phone)
+
+    async def set_recording_status(
+        self, phone: str, value: bool = True, is_group: bool = False, duration: int = 5
+    ) -> None:
+        """Set or clear recording status for a phone number.
+
+        Args:
+            phone: Phone number
+            value: True to start recording, False to stop
+            is_group: Whether the chat is a group
+            duration: Duration of recording status in seconds
+        """
+        try:
+            await self.api().set_recording_status(
+                phone=phone, value=value, is_group=is_group, duration=duration
+            )
+        except Exception as e:
+            logger.warning(
+                f"WhatsAppAction: Failed to set recording status for {phone}: {e}"
+            )
+
+
     async def register_session(self) -> Dict[str, Any]:
         agent = await self.get_agent()
 
@@ -311,7 +364,12 @@ class WhatsAppAction(Action):
 
         # create webhook url if not set
         if not self.webhook_url:
-            await self.api().close_session()
+            # Try to close existing session (if endpoint exists)
+            try:
+                await self.api().close_session()
+            except Exception as e:
+                # Ignore errors - endpoint may not exist or session may not be active
+                logger.debug(f"Could not close session (this is normal): {e}")
 
             # Generate secure webhook URL with API key
             self.webhook_url = await self.get_webhook_url()
@@ -322,3 +380,5 @@ class WhatsAppAction(Action):
             wait_qr_code=True,
             auto_register=True,
         )
+
+

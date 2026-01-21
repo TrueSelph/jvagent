@@ -43,9 +43,9 @@ class WhatsAppAdapter(ChannelAdapter):
             action: WhatsAppAction instance
             response_bus: Optional ResponseBus instance
         """
+
         super().__init__(channel, response_bus)
         self.action = action
-        self._typing_phones = set()  # phone numbers set to track typing status
 
     async def handle_message(self, message: ResponseMessage) -> None:
         """Handle incoming message from response bus.
@@ -55,11 +55,6 @@ class WhatsAppAdapter(ChannelAdapter):
         Args:
             message: ResponseMessage object
         """
-        # TESTING: Log when handle_message is called
-        logger.warning(
-            f"WhatsAppAdapter: handle_message CALLED - message_id={message.id}, "
-            f"message_type={message.message_type}, channel={self.channel}"
-        )
 
         if not self.should_handle(message):
             logger.warning(
@@ -70,26 +65,19 @@ class WhatsAppAdapter(ChannelAdapter):
         # Trigger typing status for any message type if it's the start of an interaction response
         if message.interaction_id:
             interaction = await Interaction.get(message.interaction_id)
-            if interaction and interaction.user_id:
-                await self.set_typing(interaction.user_id, value=True)
+            if interaction and interaction.user_id and self.action:
+                await self.action.set_typing(interaction.user_id, value=True)
 
         # Send adhoc and final messages to WhatsApp
         # Final messages contain complete streamed responses
         if message.message_type in ("adhoc", "final"):
-            logger.warning(
-                f"WhatsAppAdapter: handle_message - About to call send_to_destination for message_id={message.id}, "
-                f"message_type={message.message_type}"
-            )
             success = await self.send_to_destination(message)
-            logger.warning(
-                f"WhatsAppAdapter: handle_message - send_to_destination returned success={success} for message_id={message.id}"
-            )
             
             # Clear typing status after message is sent ONLY for "final" messages
             if message.interaction_id and message.message_type == "final":
                 interaction = await Interaction.get(message.interaction_id)
-                if interaction and interaction.user_id:
-                    await self.set_typing(interaction.user_id, value=False)
+                if interaction and interaction.user_id and self.action:
+                    await self.action.set_typing(interaction.user_id, value=False)
 
             if success:
                 message.mark_delivered()
@@ -132,43 +120,16 @@ class WhatsAppAdapter(ChannelAdapter):
         chunks = self.chunk_long_message(sanitized_message)
 
         for chunk in chunks:
-            ss = await self.action.api().send_message(
+            await self.action.api().send_message(
                 phone=interaction.user_id,
                 message=chunk,
             )
-            logger.warning("ss")
-            logger.warning(ss)
 
-        logger.warning(f"WhatsAppAdapter: send_to_destination COMPLETED - message_id={message.id}")
+        # logger.warning(f"WhatsAppAdapter: send_to_destination COMPLETED - message_id={message.id}")
+        logger.warning(f"Response:\n\n{message.content}\n\n")
         return True
 
-    async def set_typing(self, phone: str, value: bool = True) -> None:
-        """Set or clear typing status for a phone number.
-        
-        Args:
-            phone: Phone number
-            value: True to start typing, False to stop
-        """
-        if not self.action:
-            return
 
-        if value:
-            if phone in self._typing_phones:
-                return  # Already typing
-            self._typing_phones.add(phone)
-        else:
-            if phone not in self._typing_phones:
-                return  # Not typing
-            self._typing_phones.discard(phone)
-
-        try:
-            logger.info(f"WhatsAppAdapter: Setting typing status to {value} for user {phone}")
-            await self.action.api().set_typing_status(
-                phone=phone,
-                value=value
-            )
-        except Exception as e:
-            logger.warning(f"WhatsAppAdapter: Failed to set typing status for {phone}: {e}")
 
     async def subscribe_to_session(
         self, session_id: str, receive_chunks: bool = False
