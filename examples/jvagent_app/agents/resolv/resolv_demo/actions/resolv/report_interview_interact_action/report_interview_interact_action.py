@@ -19,7 +19,7 @@ from jvspatial.core.annotations import attribute
 
 
 class ReportInterviewInteractAction(InterviewInteractAction):
-    """Report interview for report submission.
+    """Report Interview action is used to create reports.
 
     This is a concrete implementation of InterviewInteractAction that defines
     a specific interview flow. Sessions are identified by
@@ -41,7 +41,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
         generation prompts.
     """
 
-    description: str = "Report interview action for report submission"
+    description: str = "Report Interview action is used to create reports."
 
     # DSPy Integration
     use_dspy: bool = attribute(
@@ -53,14 +53,19 @@ class ReportInterviewInteractAction(InterviewInteractAction):
     # Must cover both initial entry and intermediate states (when answering questions)
     anchors: List[str] = attribute(
         default_factory=lambda: [
-            # Initial entry - starting report
-            "User wants to report an incident",
-            "User wants to submit an incident report",
-            # Intermediate state - answering questions
-            "User is providing or answering report questions",
-            "User is completing report or providing availability",
-            # Revision/edit - changing previously provided information
-            "User is revising, editing, or updating incident report information",
+            # Initial entry
+            "User wants to create a new report",
+            "User is reporting a problem, hazard, or issue",
+
+            # Providing details
+            "User is providing incident report details",
+            "User is answering incident report questions",
+
+            # Completion
+            "User is confirming resolution or partial resolution of a report",
+
+            # Revision/edit
+            "User is revising, editing, or updating report information"
         ],
         description="Anchor statements for InteractRouter routing"
     )
@@ -84,6 +89,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "description": "The precise location of the incident, including street and area name. Ignore vague references such as 'my area' or 'nearby'.",
                     "type": "string",
                 },
+                "default_next": "report_media",
                 "required": True
             },
             {
@@ -94,30 +100,14 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "type": "list",
                     "data_input_field": "whatsapp_media",
                 },
+                "default_next": "is_sensitive",
                 "required": False
-            },
-            {
-                "name": "new_report",
-                "question": "I found a similar report. Would you like to continue creating this report?",
-                "constraints": {
-                    "description": "System found a similar report.Used to determine if the user wants to continue creating a new report or not.",
-                    "type": "string",
-                    "options": ["yes", "no"],
-                },
-                "branches": [
-                    {
-                        "condition": {"op": "equals", "value": "no"},
-                        "target": "CANCELLED"
-                    }
-                ],
-                "required": True
             },
             {
                 "name": "is_sensitive",
                 "question": "I noticed that the report includes sensitive information. Would you like to keep it private?",
                 "constraints": {
-                    "description": "Indicates whether the user wants the report marked as private.",
-                    "instructions": "Only return a value if the user explicitly answers this question.",
+                    "description": "User explicit request to keep the report private or not. eg. 'Would you like to keep it private? yes/no'.",
                     "type": "string",
                     "options": ["yes", "no"],
                 },
@@ -125,6 +115,10 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     {
                         "condition": {"op": "equals", "value": "yes"},
                         "target": "REVIEW"
+                    },
+                    {
+                        "condition": {"op": "equals", "value": "no"},
+                        "target": "reporting_on_behalf"
                     }
                 ],
                 "required": True
@@ -159,7 +153,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
             },
             {
                 "name": "stakeholder_address",
-                "question": "What is the address of the person you're reporting on behalf of?",
+                "question": "What is the residential address of the person you're reporting on behalf of?",
                 "constraints": {
                     "description": "Residential address of the stakeholder.",
                     "type": "string",
@@ -172,7 +166,6 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                 "question": "What is the phone number of the person you're reporting on behalf of?",
                 "constraints": {
                     "description": "Contact number of the stakeholder.",
-                    "instructions": "If the user declines, mark as N/A.",
                     "type": "string",
                 },
                 "required": True,
@@ -180,7 +173,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
             },
             {
                 "name": "reporter_name",
-                "question": "What is your full name?",
+                "question": "What is the full name of the person submitting the report?",
                 "constraints": {
                     "description": "The full name of the person submitting the report.",
                     "type": "string",
@@ -190,9 +183,9 @@ class ReportInterviewInteractAction(InterviewInteractAction):
             },
             {
                 "name": "reporter_address",
-                "question": "What is your residential address?",
+                "question": "What is the residential address of the person submitting the report?",
                 "constraints": {
-                    "description": "The home address of the person submitting the report, not the incident location.",
+                    "description": "The home address of the person submitting the report, not the incident location or stakeholder address.",
                     "type": "string",
                 },
                 "required": True
@@ -243,31 +236,11 @@ def validate_report_location(value: str, session: InterviewSession) -> Tuple[Val
     """
 
     if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the location of the report"
-
-    return ValidationStatus.VALID, None
+        return ValidationStatus.INVALID, "Ask: Please provide the full address of the incident"
 
 
-@input_validator('is_sensitive')
-def validate_is_sensitive(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the is sensitive is either yes or no.
-
-    Args:
-        value: The is sensitive string to validate
-        session: Interview session (for context)
-
-    Returns:
-        Tuple of (ValidationStatus, optional error message)
-    """
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please indicate whether the report is sensitive"
-
-    # Remove extra whitespace
-    value = value.strip()
-
-    # Check for valid options
-    if value not in ["yes", "no"]:
-        return ValidationStatus.INVALID, "Ask: Please indicate whether the report is sensitive"
+    if len(value) < 10:
+        return ValidationStatus.INVALID, "Ask: Please provide the full address of the incident"
 
     return ValidationStatus.VALID, None
 
@@ -343,6 +316,9 @@ def validate_stakeholder_address(value: str, session: InterviewSession) -> Tuple
     """
     if not value or not isinstance(value, str):
         return ValidationStatus.INVALID, "Ask: Please provide the address of the stakeholder"
+
+    if len(value) < 10:
+        return ValidationStatus.INVALID, "Ask: Please provide the full address of the stakeholder"
 
     # Remove extra whitespace
     value = value.strip()
@@ -420,7 +396,10 @@ def validate_reporter_address(value: str, session: InterviewSession) -> Tuple[Va
         Tuple of (ValidationStatus, optional error message)
     """
     if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the address of the reporter"
+        return ValidationStatus.INVALID, "Ask: Please provide your full address"
+
+    if len(value) < 10:
+        return ValidationStatus.INVALID, "Ask: Please provide your full address"
 
     # Remove extra whitespace
     value = value.strip()
@@ -448,7 +427,7 @@ async def handle_report_completion(
     # Extract collected data
     report_description = session.responses.get('report_description', '')
     report_location = session.responses.get('report_location', '')
-    incident_images = session.responses.get('incident_images', '')
+    report_media = session.responses.get('report_media', '')
     is_sensitive = session.responses.get('is_sensitive', '')
     reporting_on_behalf = session.responses.get('reporting_on_behalf', '')
     stakeholder_name = session.responses.get('stakeholder_name', '')
@@ -461,7 +440,7 @@ async def handle_report_completion(
     import logging
     logger = logging.getLogger(__name__)
     logger.info(
-        f"Report interview completed:\n description: {report_description}\n location: {report_location}\n incident_images: {incident_images}\n is_sensitive: {is_sensitive}\n reporting_on_behalf: {reporting_on_behalf}\n stakeholder_name: {stakeholder_name}\n stakeholder_address: {stakeholder_address}\n stakeholder_phone: {stakeholder_phone}\n reporter_name: {reporter_name}\n reporter_address: {reporter_address}"
+        f"Report interview completed:\n description: {report_description}\n location: {report_location}\n report_media: {report_media}\n is_sensitive: {is_sensitive}\n reporting_on_behalf: {reporting_on_behalf}\n stakeholder_name: {stakeholder_name}\n stakeholder_address: {stakeholder_address}\n stakeholder_phone: {stakeholder_phone}\n reporter_name: {reporter_name}\n reporter_address: {reporter_address}"
     )
 
     # Send completion message

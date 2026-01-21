@@ -3,8 +3,8 @@ import { useAuth } from '../hooks/useAuth'
 import { getConfigAsync, saveConfig } from '../config/config'
 
 export function Login() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState('admin@jvagent.example')
+  const [password, setPassword] = useState('your-admin-password-here')
   const [serverUrl, setServerUrl] = useState('')
   const { login, loading, error } = useAuth()
   const [localError, setLocalError] = useState<string | null>(null)

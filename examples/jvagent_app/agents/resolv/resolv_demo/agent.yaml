@@ -1,63 +1,30 @@
-# Example Agent Configuration
-# This file defines the agent's metadata, configuration, and action assignments
-
-# Agent reference in namespace/agent_name format
 agent: resolv/resolv_demo
-
-# Agent metadata
 version: 1.0.0
 author: V75 Inc.
-
-# jvagent version requirement (optional)
 jvagent: ~0.0.1
-
-# Agent context: Properties that configure the agent
 context:
   alias: Resolv Demo Agent
   description: An example agent demonstrating jvagent agent configuration
   enabled: true
-
-# Action Assignments
-# Actions are discovered from:
-# 1. Local actions: actions/{namespace}/{action_name}/ (takes precedence)
-# 2. Core actions: jvagent library (jvagent/action/*/) if not found locally
-# Actions are referenced using the format: namespace/action_name
-#
-# Core actions (loaded from jvagent library if no local override exists):
-# - jvagent/interact_router
-# - jvagent/openai_embedding, jvagent/openai_lm
-# - jvagent/typesense_vectorstore
-# - jvagent/retrieval_interact_action
-#
-# Local overrides/custom actions:
-# - jvagent/persona (custom ExamplePersonaAction override)
-# - jvagent/example_action (custom action)
 actions:
-  # InteractRouter Action - Intent-based routing for InteractActions
-  # Core action from jvagent library (jvagent/action/router/)
   - action: jvagent/interact_router
     context:
       enabled: true
       description: "Intent-based routing action that analyzes utterances and routes to appropriate InteractActions"
-      # Model Configuration (uses OpenAI model action by entity type)
-      model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
-      history_limit: 3  # Number of previous interactions to include in context
-      # Optional: List of InteractAction entity names that must always execute.
-      # When using the InteractAction.always_execute flag, exceptions can be
-      # managed declaratively in code instead of being listed here.
+      # Model Configuration
+      model_action_type: "OpenAILanguageModelAction"
+      history_limit: 3
 
-  # OpenAI Embedding Model Action - Vector embeddings for semantic search
-  # Core action from jvagent library (jvagent/action/model/embedding/openai/)
   - action: jvagent/openai_embedding
     context:
       enabled: true
       description: "OpenAI embeddings API for generating vector embeddings"
       # API Configuration
-      api_key: ${OPENAI_API_KEY}  # Set in .env or environment
+      api_key: ${OPENAI_API_KEY}
       api_endpoint: "https://api.openai.com/v1"
       # Model Configuration
-      model: text-embedding-3-small  # Default embedding model
-      embedding_dimensions: 1536  # Expected dimensions (0 = auto-detect)
+      model: text-embedding-3-small
+      embedding_dimensions: 1536
       timeout: 30
 
   - action: jvagent/intro_interact_action
@@ -145,23 +112,24 @@ actions:
   - action: resolv/report_interview_interact_action
     context:
       enabled: true
-      description: "User report interview for creating report"
-      weight: -50  # Runs after InteractRouter but before PersonaAction
-      # Anchors for InteractRouter routing - REQUIRED when using InteractRouter
-      # Must cover both initial entry and intermediate states (when answering questions)
-      anchors:
-        # Initial entry - starting report
-        - "User wants to report an incident"
-        - "User wants to submit an incident report"
-        # Intermediate state - answering questions
-        - "User is providing or answering report questions"
-        - "User is completing report or providing availability"
-        # Revision/edit - changing previously provided information
-        - "User is revising, editing, or updating incident report information"
-      # Model Configuration (for unified classification and extraction)
-      # These settings are used by the parent InterviewInteractAction for all LLM calls
-      # The unified classification detects intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE)
-      # and extracts field values in a single LLM call
+      description: "Report Interview action is used to create reports."
+      weight: -50 
+      # Model Configuration
+      model_action_type: "OpenAILanguageModelAction"
+      model: "gpt-4o-mini"
+      model_temperature: 0.1
+      model_max_tokens: 4096
+      use_history: true
+      max_statement_length: 100
+      history_limit: 3
+      use_dspy: true
+
+  - action: resolv/feedback_interview_interact_action
+    context:
+      enabled: true
+      description: "Feedback Interview action is used to create feedback for incidents and projects."
+      weight: -50 
+      # Model Configuration
       model_action_type: "OpenAILanguageModelAction"
       model: "gpt-4o-mini"
       model_temperature: 0.1
@@ -182,14 +150,25 @@ actions:
       enabled: true
       description: "Agent Utils action for power user controls"
 
+  # - action: jvagent/whatsapp
+  #   context:
+  #     enabled: true
+  #     description: "WhatsApp provider (wppconnect, ultramsg, wwebjs)"
+  #     # whatsapp configuration
+  #     provider: "wppconnect"
+  #     api_url: "http://localhost:21465/api"
+  #     token: "$2b$10$_zA_ioGXQKMe6PvLVxJdM.JACjXZT6fv.IcJkuY2C9dBTMNnMe86G"
+  #     api_key: "THISISMYSECURETOKEN"
+  #     session: "NERDWHATS_AMERICA"
+  #     base_url: "https://9f598933b28d.ngrok-free.app"
 
   - action: jvagent/whatsapp
     context:
       enabled: true
-      description: "WhatsApp provider (wppconnect, ultramsg, ts-whatsapp)"
+      description: "WhatsApp provider (wppconnect, ultramsg, wwebjs)"
       # whatsapp configuration
       provider: "wwebjs"
       api_url: "http://localhost:21000"
       api_key: "THISISMYSECURETOKEN"
       session: "NERDWHATS_AMERICA"
-      base_url: "https://c58af803acba.ngrok-free.app"
+      base_url: "https://9f598933b28d.ngrok-free.app"

@@ -136,7 +136,7 @@ config:
 # Note: Agents can only be installed via this list in app.yaml - there is no direct agent installation
 agents:
   # Example agent - will be loaded from agents/jvagent/example_agent/
-  - jvagent/example_agent
+  # - jvagent/example_agent
   - resolv/resolv_demo
   
   # Add more agents here - they will be installed automatically when you run jvagent

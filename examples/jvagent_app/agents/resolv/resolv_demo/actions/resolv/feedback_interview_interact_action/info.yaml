@@ -1,20 +1,20 @@
 package:
   # Action name in namespace/action_name format
-  name: resolv/report_interview_interact_action
+  name: resolv/feedback_interview_interact_action
 
   # Package author
   author: V75 Inc.
 
   # Archetype: The main Action class name (same as the Action Node class)
-  archetype: ReportInterviewInteractAction
+  archetype: FeedbackInterviewInteractAction
 
   # Package version
   version: 1.0.0
 
   # Package metadata
   meta:
-    title: Report Interview Interact Action
-    description: Report Interview action is used to create reports. 
+    title: Feedback Interview Interact Action
+    description: Feedback Interview action is used to create feedback for incidents and projects.
     group: resolv
     type: action
 
