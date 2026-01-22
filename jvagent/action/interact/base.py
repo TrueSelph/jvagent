@@ -159,27 +159,48 @@ class InteractAction(Action, ABC):
         channel: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[Any]:
-        """Publish a raw content-based response directly to the response bus.
+        """Publish a response directly to the response bus, bypassing PersonaAction.
 
-        This method bypasses PersonaAction and publishes content directly to the response bus.
-        It does NOT set the response on the interaction object - use this for adhoc messages,
-        status updates, or responses that don't need to be persisted.
+        This method can be used as a drop-in replacement for `respond()` when you want to
+        bypass PersonaAction and supply a response directly. It automatically detects
+        streaming vs non-streaming mode and publishes appropriately.
+
+        When used as a full response replacement (default behavior):
+        - Streaming mode: Publishes content as `stream_chunk` message(s), then `final` to signal completion
+        - Non-streaming mode: Publishes content as `adhoc` message and sets `interaction.response` for persistence
+
+        For backward compatibility, if `message_type` is explicitly provided (not the default "final"),
+        it will be respected and used as-is. This allows existing code that uses `publish()` for
+        adhoc status updates to continue working.
 
         Args:
             visitor: The InteractWalker (required, provides interaction and response_bus)
             content: Response content to publish (required)
-            message_type: Type of message ("adhoc", "final", "stream_chunk")
+            message_type: Type of message ("adhoc", "final", "stream_chunk"). If not provided or
+                set to "final", auto-detects streaming mode and uses appropriate type. If explicitly
+                provided, uses the specified type (for backward compatibility with adhoc status updates).
             channel: Target channel (defaults to visitor.channel)
             metadata: Additional metadata for the message
 
         Returns:
-            ResponseMessage object if published successfully, None otherwise
+            ResponseMessage object if published successfully, None otherwise. For streaming mode,
+            returns the final message (the last one published).
 
         Examples:
-            # Publish a simple message
-            await self.publish(visitor, content="Processing your request...")
+            # Publish a full response (auto-detects streaming/non-streaming mode)
+            await self.publish(visitor, content="Here is your response...")
             
-            # Publish an adhoc status update
+            # Publish a full response in streaming mode (auto-detected)
+            # Will publish as stream_chunk + final
+            visitor.stream_mode = True
+            await self.publish(visitor, content="Streaming response...")
+            
+            # Publish a full response in non-streaming mode (auto-detected)
+            # Will publish as adhoc and set interaction.response
+            visitor.stream_mode = False
+            await self.publish(visitor, content="Non-streaming response...")
+            
+            # Publish an adhoc status update (explicit message_type for backward compatibility)
             await self.publish(
                 visitor,
                 content="Status: In progress",
@@ -210,16 +231,93 @@ class InteractAction(Action, ABC):
             )
             return None
 
-        message = await visitor.response_bus.publish_message(
-            session_id=visitor.session_id,
-            content=content,
-            channel=channel or visitor.channel,
-            message_type=message_type,
-            interaction_id=visitor.interaction.id if visitor.interaction else None,
-            metadata=metadata,
-        )
+        interaction = visitor.interaction
+        if not interaction:
+            logger.warning(
+                "Interaction not available - cannot publish response or set interaction.response"
+            )
 
-        return message
+        # Auto-detect streaming mode if message_type is default ("final")
+        # This allows backward compatibility: if message_type is explicitly provided, use it
+        auto_detect_mode = (message_type == "final")
+        
+        if auto_detect_mode:
+            # Detect streaming mode (same pattern as PersonaAction)
+            streaming = bool(
+                visitor
+                and getattr(visitor, "stream_mode", True)
+                and visitor.response_bus
+                and visitor.session_id
+            )
+            
+            if streaming:
+                # Streaming mode: publish as stream_chunk, then final
+                logger.debug(
+                    f"{self.get_class_name()}: Publishing response to ResponseBus (streaming mode)"
+                )
+                
+                # Send the complete response as a stream_chunk
+                await visitor.response_bus.publish_message(
+                    session_id=visitor.session_id,
+                    content=content,
+                    channel=channel or visitor.channel,
+                    message_type="stream_chunk",
+                    interaction_id=interaction.id if interaction else None,
+                    metadata=metadata,
+                )
+                
+                # Send final to stop streaming indicator
+                final_message = await visitor.response_bus.publish_message(
+                    session_id=visitor.session_id,
+                    content="",  # Final messages don't need content
+                    channel=channel or visitor.channel,
+                    message_type="final",
+                    interaction_id=interaction.id if interaction else None,
+                    metadata=metadata,
+                )
+                
+                return final_message
+            else:
+                # Non-streaming mode: publish as adhoc and set interaction.response
+                logger.debug(
+                    f"{self.get_class_name()}: Publishing response to ResponseBus (non-streaming mode, adhoc)"
+                )
+                
+                message = await visitor.response_bus.publish_message(
+                    session_id=visitor.session_id,
+                    content=content,
+                    channel=channel or visitor.channel,
+                    message_type="adhoc",
+                    interaction_id=interaction.id if interaction else None,
+                    metadata=metadata,
+                )
+                
+                # Set interaction.response for persistence (so it's available before finalize_interaction)
+                if interaction:
+                    response_changed = interaction.set_response(content)
+                    if response_changed:
+                        await interaction.save()
+                        logger.debug(
+                            f"{self.get_class_name()}: Set interaction.response and saved interaction"
+                        )
+                
+                return message
+        else:
+            # Backward compatibility: use explicitly provided message_type
+            logger.debug(
+                f"{self.get_class_name()}: Publishing message with explicit message_type={message_type}"
+            )
+            
+            message = await visitor.response_bus.publish_message(
+                session_id=visitor.session_id,
+                content=content,
+                channel=channel or visitor.channel,
+                message_type=message_type,
+                interaction_id=interaction.id if interaction else None,
+                metadata=metadata,
+            )
+            
+            return message
 
     async def respond(
         self,
