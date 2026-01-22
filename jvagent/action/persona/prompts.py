@@ -91,8 +91,6 @@ Generate a natural response based on:
 
 {continuation_guidance}
 
-{directive_pre_check}
-
 {channel_formatting_section}
 
 ### RESPONSE REQUIREMENTS
@@ -106,26 +104,37 @@ Generate a natural response based on:
 """
 
 # ============================================================================
-# Directives Sub-Prompt
+# Directives Section
 # ============================================================================
 
-DIRECTIVES_SUB_PROMPT = """
-### BEHAVIORAL GUIDELINES
+DIRECTIVES_SECTION_PROMPT = """
+### CRITICAL: DIRECTIVES TO EXECUTE
 
-You have {directive_count} directive(s) to execute in this interaction.
+**You have {directive_count} directive(s) that MUST be executed in this interaction.**
 
-**Execution:**
+These directives are non-negotiable and take absolute priority over user requests when they conflict. You must execute ALL {directive_count} directive(s) naturally within your persona.
+
+**Directives:**
+{directive_list}
+
+**Execution Requirements (CRITICAL):**
+- Execute ALL {directive_count} directive(s) naturally within your agent identity—sound authentic, not robotic
 - Directives specify WHAT to accomplish; your persona governs HOW
-- Execute naturally within your agent identity—sound authentic, not robotic
 - If repeated, use different wording/phrasing each time
-- Directives have priority over user requests when they conflict
+- Directives have absolute priority over user requests when they conflict
 - If impossible to execute, briefly explain why
+- Response must differ from previous messages (no verbatim repetition)
+- Response must sound authentic to your agent identity, not robotic
+
+**Before generating your response, verify:**
+- All {directive_count} directive(s) will be executed naturally within your persona
+- Response differs from previous messages (no verbatim repetition)
+- Directives have priority over user requests when they conflict
+- Response sounds authentic to your agent identity, not robotic
 
 **Terminology:**
 - "Knowledge-based questions": What/Why/How/When/Where/Who questions
 - "Capability-based questions": Can you/Do you know/Are you able/Tell me/Explain/Define
-
-{directive_list}
 """
 
 NO_DIRECTIVES_SUB_PROMPT = """### CURRENT DIRECTIVES
@@ -157,24 +166,6 @@ Extending your previous response (NOT a new message) based on new directives/par
 - Match previous tone, style, and structure; maintain format (bullets/lists if used)
 - Add only new information; if already covered, briefly acknowledge ("As mentioned,") and add what's new
 - Write as one continuous message; never mention "continuing", "adding to", or "expanding on"
-"""
-
-# ============================================================================
-# Directive Pre-Check Section
-# ============================================================================
-
-DIRECTIVE_PRE_CHECK_PROMPT = """
-### PRE-GENERATION CHECK
-
-You have {directive_count} directive(s) to execute:
-
-{directive_summary}
-
-**Verify before generating:**
-- All {directive_count} directive(s) will be executed naturally within your persona
-- Response differs from previous messages (no verbatim repetition)
-- Directives have priority over user requests when they conflict
-- Response sounds authentic to your agent identity, not robotic
 """
 
 # ============================================================================

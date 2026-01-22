@@ -14,7 +14,7 @@ from jvspatial.core.annotations import attribute
 from jvagent.action.base import Action
 from jvagent.action.persona.prompts import (
     CONTINUATION_GUIDANCE_PROMPT,
-    DIRECTIVES_SUB_PROMPT,
+    DIRECTIVES_SECTION_PROMPT,
     NO_DIRECTIVES_SUB_PROMPT,
     PARAMETERS_SUB_PROMPT,
     SYSTEM_PROMPT_TEMPLATE,
@@ -23,7 +23,6 @@ from jvagent.action.persona.prompts import (
     REVISION_MECHANISM_PROMPT,
     CONTEXT_EVALUATION_PROMPT,
     PRIORITIZATION_INSTRUCTIONS_PROMPT,
-    DIRECTIVE_PRE_CHECK_PROMPT,
     format_conditional_section,
     format_parameter,
     get_channel_directive,
@@ -457,7 +456,6 @@ class PersonaAction(Action):
 
         # Build directives section - consolidate all directives into a single numbered list
         directives_section = ""
-        directive_pre_check = ""
         directive_count = len(applicable_directives)
         
         if applicable_directives:
@@ -466,19 +464,9 @@ class PersonaAction(Action):
                 f"{i+1}. {d.get('content', str(d))}" 
                 for i, d in enumerate(applicable_directives)
             )
-            directives_section = DIRECTIVES_SUB_PROMPT.format(
+            directives_section = DIRECTIVES_SECTION_PROMPT.format(
                 directive_list=directive_list,
                 directive_count=directive_count
-            )
-            
-            # Build directive pre-check section (summary for verification)
-            directive_summary = "\n".join(
-                f"Directive #{i+1}: {d.get('content', str(d))[:100]}{'...' if len(d.get('content', str(d))) > 100 else ''}"
-                for i, d in enumerate(applicable_directives)
-            )
-            directive_pre_check = DIRECTIVE_PRE_CHECK_PROMPT.format(
-                directive_count=directive_count,
-                directive_summary=directive_summary
             )
         else:
             directives_section = NO_DIRECTIVES_SUB_PROMPT
@@ -509,7 +497,6 @@ class PersonaAction(Action):
         parameters_section = format_conditional_section(parameters_section, bool(parameters_section))
         channel_formatting_section = format_conditional_section(channel_formatting_section, bool(channel_formatting_section))
         continuation_guidance = format_conditional_section(continuation_guidance, bool(continuation_guidance))
-        directive_pre_check = format_conditional_section(directive_pre_check, bool(directive_pre_check))
 
         # Build and return the final prompt using self.system_prompt (which defaults to SYSTEM_PROMPT_TEMPLATE
         # but can be overridden by agent-specific configurations)
@@ -530,7 +517,6 @@ class PersonaAction(Action):
             parameters_section=parameters_section,
             channel_formatting_section=channel_formatting_section,
             continuation_guidance=continuation_guidance,
-            directive_pre_check=directive_pre_check,
         )
 
     async def _get_conversation_history(
