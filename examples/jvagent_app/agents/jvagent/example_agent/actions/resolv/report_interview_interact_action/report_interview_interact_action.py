@@ -9,6 +9,7 @@ from jvagent.action.interview import (
     input_validator,
     input_directive_override,
     on_interview_complete,
+    branch_function,
 )
 from jvagent.action.interview.core.session.interview_session import InterviewSession
 from jvagent.action.interview.core.foundation.enums import ValidationStatus
@@ -74,7 +75,6 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "description": "A full description of the incident or grievance being reported. Capture only what happened, not requests or opinions.",
                     "type": "string",
                 },
-                "default_next": "report_location",
                 "required": True
             },
             {
@@ -94,23 +94,14 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "type": "list",
                     "data_input_field": "whatsapp_media",
                 },
-                "required": False
-            },
-            {
-                "name": "new_report",
-                "question": "I found a similar report. Would you like to continue creating this report?",
-                "constraints": {
-                    "description": "System found a similar report.Used to determine if the user wants to continue creating a new report or not.",
-                    "type": "string",
-                    "options": ["yes", "no"],
-                },
                 "branches": [
                     {
-                        "condition": {"op": "equals", "value": "no"},
-                        "target": "CANCELLED"
+                        "condition": {"function": "check_contains_sensitive_info"},
+                        "target": "is_sensitive"
                     }
                 ],
-                "required": True
+                "default_next": "reporting_on_behalf",
+                "required": False
             },
             {
                 "name": "is_sensitive",
@@ -202,7 +193,8 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "Supports conditional branching via 'branches' and 'default_next'. "
                     "Handlers, validators, and directive overrides can be registered via decorators "
                     "(@input_handler, @input_validator, @input_directive_override) or specified as string "
-                    "references in constraints (input_handler, input_validator)."
+                    "references in constraints (input_handler, input_validator). "
+                    "Branch functions can be registered with @branch_function decorator for complex branching logic."
     )
 
 @input_validator('report_description')
@@ -457,9 +449,27 @@ def validate_reporter_address(value: str, session: InterviewSession) -> Tuple[Va
 
 
 
+# Example branch functions demonstrating the branch function feature
+# These can be used in question_graph branches with {"function": "function_name"}
 
-
-
+@branch_function('check_contains_sensitive_info')
+def check_contains_sensitive_info(
+    session: InterviewSession,
+    visitor: InteractWalker
+) -> bool:
+    """Check if report contains sensitive keywords.
+    
+    Returns True to branch to is_sensitive question, False to continue normal flow.
+    This is an example of a boolean-returning branch function (no operator needed).
+    """
+    description = session.responses.get('report_description', '').lower()
+    sensitive_keywords = ['abuse', 'assault', 'violence', 'threat', 'harassment']
+    
+    # Use session.context to store analysis for later use
+    has_sensitive = any(keyword in description for keyword in sensitive_keywords)
+    session.context['contains_sensitive_keywords'] = has_sensitive
+    
+    return has_sensitive
 
 
 @on_interview_complete('ReportInterviewInteractAction')

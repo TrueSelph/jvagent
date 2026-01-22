@@ -75,6 +75,7 @@ from .core.foundation.decorators import (
     get_pending_input_handlers,
     get_pending_input_validators,
     get_pending_input_directive_overrides,
+    get_pending_branch_functions,
     clear_pending_registrations,
 )
 
@@ -661,7 +662,8 @@ class InterviewInteractAction(InteractAction, ABC):
             )
             
             # Question is implicit - condition always evaluates against just_answered_field
-            if QuestionBranchEvaluator.matches(condition, session, implicit_question=just_answered_field):
+            # Note: visitor not directly available here, but branch functions can work without it
+            if await QuestionBranchEvaluator.matches(condition, session, implicit_question=just_answered_field, visitor=None):
                 logger.info(
                     f"Branch condition MATCHED: {just_answered_field} {condition} -> {target}"
                 )
@@ -838,7 +840,7 @@ class InterviewInteractAction(InteractAction, ABC):
 
         # Validate graph structure
         from .core.graph.graph_validator import QuestionGraphValidator
-        validator = QuestionGraphValidator(question_graph)
+        validator = QuestionGraphValidator(question_graph, interview_type=self.__class__.__name__)
         validation_report = await validator.validate()
         
         if not validation_report.is_valid():

@@ -179,7 +179,8 @@ class QuestionWalker(Walker):
                 current_question_name = session.active_question_key
             else:
                 # Find first unanswered question by traversing tree from root
-                current_question_name = await self._find_first_unanswered_in_tree(session, interview_action)
+                # Note: visitor not available here, but will be passed when needed in branch evaluation
+                current_question_name = await self._find_first_unanswered_in_tree(session, interview_action, visitor=None)
                 if not current_question_name:
                     # No unanswered questions found in traversal, check for StateNode edges
                     return await self._find_terminal_state_node(session, interview_action)
@@ -275,7 +276,8 @@ class QuestionWalker(Walker):
     async def _find_first_unanswered_in_tree(
         self,
         session: InterviewSession,
-        interview_action: Optional[Any] = None
+        interview_action: Optional[Any] = None,
+        visitor: Optional["InteractWalker"] = None
     ) -> Optional[str]:
         """Find first unanswered question by traversing tree from root.
 
@@ -352,7 +354,7 @@ class QuestionWalker(Walker):
                 for branch in branches:
                     condition = branch.get("condition", {})
                     # Question is implicit - condition always evaluates against question_name
-                    if QuestionBranchEvaluator.matches(condition, session, implicit_question=question_name):
+                    if await QuestionBranchEvaluator.matches(condition, session, implicit_question=question_name, visitor=visitor):
                         target = branch.get("target")
                         if not target:
                             continue
@@ -412,7 +414,8 @@ class QuestionWalker(Walker):
     async def get_reachable_unanswered_questions(
         self,
         session: InterviewSession,
-        interview_action: Optional[Any] = None
+        interview_action: Optional[Any] = None,
+        visitor: Optional["InteractWalker"] = None
     ) -> List[str]:
         """Get all unanswered questions reachable on the current walk path.
         
@@ -489,7 +492,7 @@ class QuestionWalker(Walker):
                 for branch in branches:
                     condition = branch.get("condition", {})
                     # Question is implicit - condition always evaluates against question_name
-                    if QuestionBranchEvaluator.matches(condition, session, implicit_question=question_name):
+                    if await QuestionBranchEvaluator.matches(condition, session, implicit_question=question_name, visitor=visitor):
                         target = branch.get("target")
                         if not target:
                             continue
@@ -594,7 +597,8 @@ class QuestionWalker(Walker):
     async def should_process_question(
         self,
         question_name: str,
-        session: InterviewSession
+        session: InterviewSession,
+        visitor: Optional["InteractWalker"] = None
     ) -> bool:
         """Check if a question should be processed given current session state.
 
@@ -660,7 +664,7 @@ class QuestionWalker(Walker):
                     # Question is implicit - condition always evaluates against current_question
                     if current_question in session.get_answered_questions():
                         # Condition evaluates against the question that owns the branch
-                        if QuestionBranchEvaluator.matches(condition, session, implicit_question=current_question):
+                        if await QuestionBranchEvaluator.matches(condition, session, implicit_question=current_question, visitor=visitor):
                             target = branch.get("target")
                             if target:
                                 # Skip state targets - they don't lead to questions
@@ -766,7 +770,8 @@ class QuestionWalker(Walker):
     async def get_next_questions(
         self,
         current_question_name: str,
-        session: InterviewSession
+        session: InterviewSession,
+        visitor: Optional["InteractWalker"] = None
     ) -> List[str]:
         """Get list of possible next questions based on branches.
 
@@ -793,7 +798,7 @@ class QuestionWalker(Walker):
         for branch in branches:
             condition = branch.get("condition", {})
             # Question is implicit - condition always evaluates against current_question_name
-            if QuestionBranchEvaluator.matches(condition, session, implicit_question=current_question_name):
+            if await QuestionBranchEvaluator.matches(condition, session, implicit_question=current_question_name, visitor=visitor):
                 target = branch.get("target")
                 if target and not self._is_state_target(target):
                     # Only include question targets, not state targets

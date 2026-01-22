@@ -22,6 +22,7 @@ The Interview Action provides a reusable way to collect responses from users in 
 - **Same-Interaction State Transitions**: State transitions happen within the same interaction when appropriate
 - **Two-Tier Validation**: VALID and INVALID response validation using `ValidationStatus` enum (VALID can include optional feedback messages for clarification)
 - **Custom Handlers & Validators**: Process input and validate responses with custom logic
+- **Branch Functions**: Define custom Python functions for complex branching logic with full access to session data and graph context
 - **Data Input Fields**: Extract values directly from `visitor.data` for file uploads and REST call data (bypasses LLM extraction)
 - **Completion Handlers**: Register completion handlers via `@on_interview_complete` decorator
 - **Question Node Rebuilding**: Automatically rebuilds question nodes when `question_index` changes
@@ -126,7 +127,9 @@ Specialized edge connecting QuestionNodes with optional condition metadata:
 #### 6. QuestionBranchEvaluator
 Provides unified condition matching logic for conditional branching:
 - Static utility for evaluating branch conditions
+- Supports both operator-based and function-based conditions
 - Used by QuestionWalker for tree traversal
+- Ensures functions only execute after questions are answered
 
 #### 7. InterviewService
 Service layer that orchestrates interview components:
@@ -364,8 +367,9 @@ actions:
   - **input_validator**: String reference to function that validates responses (or use `@input_validator` decorator)
   - **data_input_field**: Key name in `visitor.data` dictionary to extract value from (e.g., "whatsapp_media"). When specified, the field is excluded from LLM extraction and values are extracted directly from `visitor.data`. Useful for file uploads and other data passed via REST calls.
   - **ambiguous_patterns**: Patterns that trigger VALID status with optional feedback message for clarification
+- **Branch Functions**: Register custom branch functions using `@branch_function` decorator for complex branching logic (see Branch Functions section below)
 - **required**: Whether the question is required (default: False)
-- **branches**: Optional list of conditional branches (see Tree-Based Questions below)
+- **branches**: Optional list of conditional branches (see Tree-Based Questions below). Supports both operator-based conditions (`{"op": "equals", "value": "yes"}`) and function-based conditions (`{"function": "function_name"}` or `{"function": "function_name", "op": ">=", "value": 8}`)
 - **default_next**: Optional fallback question name if no branch conditions match
 
 ### Tree-Based Questions with Conditional Branching
@@ -423,8 +427,9 @@ question_index = [
 
 #### Branch Condition Format
 
-Each branch condition evaluates against the question that owns the branch (question is implicit):
+Each branch condition evaluates against the question that owns the branch (question is implicit). Two condition formats are supported:
 
+**Operator-Based Condition:**
 ```python
 {
     "condition": {
@@ -435,15 +440,230 @@ Each branch condition evaluates against the question that owns the branch (quest
 }
 ```
 
-**Note**: The question is always implicit - conditions evaluate against the question that owns the branch. For example, if `is_sensitive` has a branch with condition `{"op": "equals", "value": "yes"}`, it evaluates `is_sensitive == "yes"`.
+**Function-Based Condition:**
+```python
+{
+    "condition": {
+        "function": "function_name"  # Name of registered branch function
+    },
+    "target": "next_question_name"
+}
+```
+
+Or with operator evaluation:
+```python
+{
+    "condition": {
+        "function": "function_name",  # Function returns a value
+        "op": ">=",                   # Operator to evaluate function result
+        "value": 8                    # Expected value for comparison
+    },
+    "target": "next_question_name"
+}
+```
+
+**Note**: The question is always implicit - conditions evaluate against the question that owns the branch. For example, if `is_sensitive` has a branch with condition `{"op": "equals", "value": "yes"}`, it evaluates `is_sensitive == "yes"`. For function-based conditions, the function receives the session and visitor, allowing it to access all session data and graph context.
+
+#### Branch Functions
+
+Branch functions allow you to define custom Python functions that evaluate complex branching conditions with full access to session data and graph context. This enables sophisticated branching logic that goes beyond simple operator-based comparisons.
+
+**Function Registration:**
+
+Use the `@branch_function` decorator to register branch functions in your interview action class:
+
+```python
+from jvagent.action.interview import branch_function
+from jvagent.action.interview.core.session.interview_session import InterviewSession
+from jvagent.action.interact.interact_walker import InteractWalker
+
+@branch_function('check_contains_sensitive_info')
+def check_contains_sensitive_info(
+    session: InterviewSession,
+    visitor: InteractWalker
+) -> bool:
+    """Check if report contains sensitive keywords.
+    
+    Returns True to branch to is_sensitive question, False to continue normal flow.
+    """
+    description = session.responses.get('report_description', '').lower()
+    sensitive_keywords = ['abuse', 'assault', 'violence', 'threat', 'harassment']
+    
+    # Use session.context to store analysis for later use
+    has_sensitive = any(keyword in description for keyword in sensitive_keywords)
+    session.context['contains_sensitive_keywords'] = has_sensitive
+    
+    return has_sensitive
+```
+
+**Function Signature:**
+
+All branch functions must accept two parameters:
+- `session: InterviewSession` - Full access to session responses, context, and question index
+- `visitor: InteractWalker` - Access to graph traversal, conversation, and user data
+
+Functions can be either sync or async.
+
+**Return Types - Two Patterns:**
+
+1. **Boolean Return (Direct Branching)**: Function returns `bool` directly
+   ```python
+   "condition": {"function": "check_contains_sensitive_info"}
+   ```
+   - If function returns `True`, branch is taken
+   - If function returns `False`, branch is skipped
+   - No operator needed - result is used directly
+
+2. **Value Return with Operator**: Function returns any value, evaluated with an operator
+   ```python
+   "condition": {"function": "calculate_urgency_score", "op": ">=", "value": 8}
+   ```
+   - Function returns a value (e.g., `int`, `str`, etc.)
+   - Value is evaluated using the specified operator and expected value
+   - Supports all operators: `equals`, `>=`, `<=`, `in`, `contains`, `matches`, etc.
+
+**Usage in question_graph:**
+
+```python
+question_graph = [
+    {
+        "name": "report_description",
+        "question": "Describe the incident you'd like to report in a single message.",
+        "constraints": {
+            "description": "A full description of the incident or grievance being reported.",
+            "type": "string",
+        },
+        "required": True
+    },
+    {
+        "name": "report_media",
+        "question": "Please upload any images of the incident if you have them.",
+        "constraints": {
+            "description": "Images of the incident uploaded via WhatsApp media.",
+            "type": "list",
+            "data_input_field": "whatsapp_media",
+        },
+        "branches": [
+            {
+                "condition": {"function": "check_contains_sensitive_info"},
+                "target": "is_sensitive"
+            }
+        ],
+        "default_next": "reporting_on_behalf",
+        "required": False
+    },
+    {
+        "name": "is_sensitive",
+        "question": "I noticed that the report includes sensitive information. Would you like to keep it private?",
+        "constraints": {
+            "type": "string",
+            "options": ["yes", "no"],
+        },
+        "branches": [
+            {
+                "condition": {"op": "equals", "value": "yes"},
+                "target": "REVIEW"
+            }
+        ],
+        "required": True
+    }
+]
+```
+
+**Key Behaviors:**
+
+- Branch functions are only evaluated **after** the question is answered (prevents premature execution during graph traversal)
+- Functions have full access to `session.responses`, `session.context`, and `session.question_index`
+- Functions can use `visitor` to traverse the graph, access conversation history, or query user data
+- You can mix function-based and operator-based conditions in the same `branches` list
+- Functions can store computed values in `session.context` for later use or inter-function communication
+
+**When Functions Execute:**
+
+- Functions execute when the question owning the branch is answered (via `_update_reachable_questions`)
+- During graph traversal (before question is answered), function conditions return `False` without executing
+- This ensures functions only run when they have meaningful data to evaluate
+
+**Example: Complex Branching with Visitor Access**
+
+```python
+@branch_function('check_duplicate_report')
+async def check_duplicate_report(
+    session: InterviewSession,
+    visitor: InteractWalker
+) -> bool:
+    """Check if similar report exists using graph traversal."""
+    description = session.responses.get('report_description', '')
+    location = session.responses.get('report_location', '')
+    
+    # Access conversation via visitor
+    from jvagent.memory import Conversation
+    conversation = await visitor.nodes(direction="out", node=Conversation)
+    if conversation:
+        # Query for similar reports in the system
+        # similar_reports = await search_reports(description, location)
+        # return len(similar_reports) > 0
+        pass
+    
+    return False
+
+@branch_function('calculate_risk_score')
+async def calculate_risk_score(
+    session: InterviewSession,
+    visitor: InteractWalker
+) -> int:
+    """Calculate risk score 1-10 based on multiple factors.
+    
+    Returns numeric score to be evaluated with >= operator.
+    """
+    description = session.responses.get('report_description', '').lower()
+    location = session.responses.get('report_location', '')
+    
+    score = 5  # base score
+    
+    # Content analysis
+    if 'emergency' in description or 'urgent' in description:
+        score += 3
+    if 'immediate' in description or 'danger' in description:
+        score += 2
+    
+    # Store in context for later use
+    session.context['risk_score'] = score
+    return score
+```
+
+**Mixing Function-Based and Operator-Based Conditions:**
+
+You can combine both types of conditions in the same `branches` list:
+
+```python
+"branches": [
+    {
+        "condition": {"function": "check_similarity"},
+        "target": "duplicate_warning"
+    },
+    {
+        "condition": {"op": "equals", "value": "no"},
+        "target": "CANCELLED"
+    },
+    {
+        "condition": {"function": "get_priority", "op": "in", "value": ["high", "critical"]},
+        "target": "escalate"
+    }
+]
+```
 
 #### How It Works
 
 1. **QuestionWalker** traverses the question tree starting from the first unanswered question
-2. When a question has `branches`, it evaluates each condition against `session.responses`
+2. When a question has `branches`, it evaluates each condition:
+   - **Operator-based conditions**: Evaluated against `session.responses[question_name]`
+   - **Function-based conditions**: Functions are called with `session` and `visitor` (only after question is answered)
 3. If a condition matches, traversal continues to the `target` question
 4. If no condition matches, `default_next` is used (if provided)
 5. If no `default_next` and no branches, linear flow continues to next question in list
+
+**Important**: Function-based conditions are only evaluated after the question is answered. During graph traversal (before the question is answered), function conditions return `False` without executing the function. This prevents premature execution and ensures functions only run when they have meaningful data to evaluate.
 
 #### Linear Questions (No Branches)
 

@@ -2,13 +2,18 @@
 
 This module provides unified condition matching logic for conditional question branching.
 Supports enhanced operators for flexible condition evaluation.
+Also supports custom branch functions for complex condition evaluation.
 """
 
+import inspect
 import logging
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from ..session.interview_session import InterviewSession
 from .condition_operators import ConditionOperator
+
+if TYPE_CHECKING:
+    from jvagent.action.interact.interact_walker import InteractWalker
 
 logger = logging.getLogger(__name__)
 
@@ -18,13 +23,19 @@ class QuestionBranchEvaluator:
     
     Provides unified condition matching logic used throughout the interview system.
     Supports enhanced operators for flexible condition evaluation.
+    Also supports custom branch functions for complex condition evaluation with
+    full access to session data and graph context.
+    
+    Branch functions are only evaluated after the question is answered to prevent
+    premature execution during graph traversal.
     """
     
     @staticmethod
-    def matches(
+    async def matches(
         condition: Dict[str, Any],
         session: InterviewSession,
-        implicit_question: str
+        implicit_question: str,
+        visitor: Optional["InteractWalker"] = None
     ) -> bool:
         """Check if a condition matches the current session state.
 
@@ -35,11 +46,14 @@ class QuestionBranchEvaluator:
         - Equality: {"op": "equals", "value": "yes"}
         - Comparison: {"op": ">=", "value": 18}
         - Existence: {"op": "exists"} (no value needed)
+        - Function-based: {"function": "function_name"} (returns bool)
+        - Function with operator: {"function": "function_name", "op": ">=", "value": 7}
 
         Args:
-            condition: Condition dict with 'op' and optional 'value' keys (question is implicit)
+            condition: Condition dict with 'op' and optional 'value' keys, or 'function' key
             session: Interview session
             implicit_question: Required question name - the question that owns this branch
+            visitor: Optional InteractWalker for branch function access to graph context
 
         Returns:
             True if condition matches, False otherwise
@@ -54,6 +68,129 @@ class QuestionBranchEvaluator:
 
         question_name = implicit_question
 
+        # Check for function-based condition
+        if "function" in condition:
+            return await QuestionBranchEvaluator._evaluate_function_condition(
+                condition, session, question_name, visitor
+            )
+
+        # Legacy operator-based condition evaluation
+        return QuestionBranchEvaluator._evaluate_operator_condition(
+            condition, session, question_name
+        )
+
+    @staticmethod
+    async def _evaluate_function_condition(
+        condition: Dict[str, Any],
+        session: InterviewSession,
+        question_name: str,
+        visitor: Optional["InteractWalker"]
+    ) -> bool:
+        """Evaluate a function-based branch condition.
+
+        Args:
+            condition: Condition dict with 'function' key and optional 'op' and 'value'
+            session: Interview session
+            question_name: Question name for logging
+            visitor: Optional InteractWalker for function access
+
+        Returns:
+            True if condition matches, False otherwise
+        """
+        from ..foundation.decorators import get_branch_function
+
+        function_name = condition.get("function")
+        if not function_name:
+            logger.warning(
+                f"Function-based condition missing 'function' key for question '{question_name}': {condition}"
+            )
+            return False
+
+        # Check if question is answered (unless checking existence)
+        # For function-based conditions, we need the question to be answered
+        # to have meaningful data for the function to evaluate.
+        # This prevents premature function execution during graph traversal.
+        operator = condition.get("op")
+        is_existence_check = operator in ("exists", "is_set", "not_exists", "is_not_set")
+        
+        if not is_existence_check:
+            if question_name not in session.get_answered_questions():
+                logger.debug(
+                    f"Function condition check skipped: question '{question_name}' not answered yet. "
+                    f"Condition: {condition}"
+                )
+                return False
+
+        # Look up function from registry
+        func = get_branch_function(session.interview_type, function_name)
+        if not func:
+            logger.error(
+                f"Branch function '{function_name}' not found for interview type '{session.interview_type}'. "
+                f"Question: '{question_name}'"
+            )
+            return False
+
+        try:
+            # Call function with session and visitor
+            if inspect.iscoroutinefunction(func):
+                result = await func(session, visitor)
+            else:
+                result = func(session, visitor)
+
+            # Hybrid logic: check for operator
+            if "op" in condition:
+                # Function returns value, evaluate with operator
+                expected_value = condition.get("value")
+                operator = condition.get("op")
+                try:
+                    evaluation_result = ConditionOperator.evaluate(operator, result, expected_value)
+                    logger.debug(
+                        f"Function '{function_name}' returned {result!r}, operator '{operator}' "
+                        f"evaluation: {evaluation_result}"
+                    )
+                    return evaluation_result
+                except ValueError as e:
+                    logger.warning(
+                        f"Invalid operator '{operator}' in function condition for '{function_name}': {e}"
+                    )
+                    return False
+            else:
+                # Function returns boolean directly
+                if not isinstance(result, bool):
+                    logger.warning(
+                        f"Branch function '{function_name}' returned {type(result).__name__} "
+                        f"but bool expected when no operator is specified. Converting to bool."
+                    )
+                bool_result = bool(result)
+                logger.debug(
+                    f"Function '{function_name}' returned {result!r} (bool: {bool_result}) "
+                    f"for question '{question_name}'"
+                )
+                return bool_result
+
+        except Exception as e:
+            logger.error(
+                f"Error executing branch function '{function_name}' for question '{question_name}': {e}",
+                exc_info=True
+            )
+            return False
+
+    @staticmethod
+    def _evaluate_operator_condition(
+        condition: Dict[str, Any],
+        session: InterviewSession,
+        question_name: str
+    ) -> bool:
+        """Evaluate a legacy operator-based branch condition.
+
+        Args:
+            condition: Condition dict with 'op' and optional 'value' keys
+            session: Interview session
+            question_name: Question name for logging
+
+        Returns:
+            True if condition matches, False otherwise
+        """
         # Get operator from condition
         operator = condition.get("op")
         if not operator:

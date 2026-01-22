@@ -9,6 +9,7 @@ from jvagent.action.interview import (
     input_validator,
     input_directive_override,
     on_interview_complete,
+    branch_function,
 )
 from jvagent.action.interview.core.session.interview_session import InterviewSession
 from jvagent.action.interview.core.foundation.enums import ValidationStatus
@@ -46,7 +47,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
     # DSPy Integration
     use_dspy: bool = attribute(
         default=True,
-        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)"
+        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)",
     )
 
     # REQUIRED when using InteractRouter: Anchors for intelligent routing
@@ -67,7 +68,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
             # Revision/edit
             "User is revising, editing, or updating report information"
         ],
-        description="Anchor statements for InteractRouter routing"
+        description="Anchor statements for InteractRouter routing",
     )
 
     question_graph: List[Dict[str, Any]] = attribute(
@@ -79,7 +80,6 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "description": "A full description of the incident or grievance being reported. Capture only what happened, not requests or opinions.",
                     "type": "string",
                 },
-                "default_next": "report_location",
                 "required": True
             },
             {
@@ -100,7 +100,13 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "type": "list",
                     "data_input_field": "whatsapp_media",
                 },
-                "default_next": "is_sensitive",
+                "branches": [
+                    {
+                        "condition": {"function": "check_contains_sensitive_info"},
+                        "target": "is_sensitive"
+                    }
+                ],
+                "default_next": "reporting_on_behalf",
                 "required": False
             },
             {
@@ -195,7 +201,8 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "Supports conditional branching via 'branches' and 'default_next'. "
                     "Handlers, validators, and directive overrides can be registered via decorators "
                     "(@input_handler, @input_validator, @input_directive_override) or specified as string "
-                    "references in constraints (input_handler, input_validator)."
+                    "references in constraints (input_handler, input_validator). "
+                    "Branch functions can be registered with @branch_function decorator for complex branching logic."
     )
 
 @input_validator('report_description')
@@ -218,7 +225,10 @@ def validate_report_description(value: str, session: InterviewSession) -> Tuple[
 
     # Check minimum length
     if len(value) < 10:
-        return ValidationStatus.INVALID, "Ask: Please provide a more detailed description of the report"
+        return (
+            ValidationStatus.INVALID,
+            "Ask: Please provide a more detailed description of the report",
+        )
 
     return ValidationStatus.VALID, None
 
@@ -236,11 +246,32 @@ def validate_report_location(value: str, session: InterviewSession) -> Tuple[Val
     """
 
     if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the full address of the incident"
+        return ValidationStatus.INVALID, "Ask: Please provide the location of the report"
+
+    return ValidationStatus.VALID, None
 
 
-    if len(value) < 10:
-        return ValidationStatus.INVALID, "Ask: Please provide the full address of the incident"
+
+@input_validator('is_sensitive')
+def validate_is_sensitive(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    """Validate that the is sensitive is either yes or no.
+
+    Args:
+        value: The is sensitive string to validate
+        session: Interview session (for context)
+
+    Returns:
+        Tuple of (ValidationStatus, optional error message)
+    """
+    if not value or not isinstance(value, str):
+        return ValidationStatus.INVALID, "Ask: Please indicate whether the report is sensitive"
+
+    # Remove extra whitespace
+    value = value.strip()
+
+    # Check for valid options
+    if value not in ["yes", "no"]:
+        return ValidationStatus.INVALID, "Ask: Please indicate whether the report is sensitive"
 
     return ValidationStatus.VALID, None
 
@@ -257,14 +288,20 @@ def validate_reporting_on_behalf(value: str, session: InterviewSession) -> Tuple
         Tuple of (ValidationStatus, optional error message)
     """
     if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please indicate whether you are reporting on behalf of someone else"
+        return (
+            ValidationStatus.INVALID,
+            "Ask: Please indicate whether you are reporting on behalf of someone else",
+        )
 
     # Remove extra whitespace
     value = value.strip()
 
     # Check for valid options
     if value not in ["yes", "no"]:
-        return ValidationStatus.INVALID, "Ask: Please indicate whether you are reporting on behalf of someone else"
+        return (
+            ValidationStatus.INVALID,
+            "Ask: Please indicate whether you are reporting on behalf of someone else",
+        )
 
     return ValidationStatus.VALID, None
 
@@ -294,11 +331,17 @@ def validate_stakeholder_name(value: str, session: InterviewSession) -> Tuple[Va
     # Check that each part has at least 2 characters
     for part in name_parts:
         if len(part) < 2:
-            return ValidationStatus.INVALID, "Tell the user: Each name part should be at least 2 characters long"
+            return (
+                ValidationStatus.INVALID,
+                "Tell the user: Each name part should be at least 2 characters long",
+            )
 
     # Check for valid characters (letters, hyphens, apostrophes)
-    if not re.match(r'^[a-zA-Z\s\-\']+$', value):
-        return ValidationStatus.INVALID, "Tell the user: Name should only contain letters, spaces, hyphens, and apostrophes"
+    if not re.match(r"^[a-zA-Z\s\-\']+$", value):
+        return (
+            ValidationStatus.INVALID,
+            "Tell the user: Name should only contain letters, spaces, hyphens, and apostrophes",
+        )
 
     return ValidationStatus.VALID, None
 
@@ -344,8 +387,11 @@ def validate_stakeholder_phone(value: str, session: InterviewSession) -> Tuple[V
     value = value.strip()
 
     # Check for valid phone number format
-    if not re.match(r'^\d{10}$', value):
-        return ValidationStatus.INVALID, "Tell the user: Please provide a valid 10-digit phone number"
+    if not re.match(r"^\d{10}$", value):
+        return (
+            ValidationStatus.INVALID,
+            "Tell the user: Please provide a valid 10-digit phone number",
+        )
 
     return ValidationStatus.VALID, None
 
@@ -370,16 +416,25 @@ def validate_reporter_name(value: str, session: InterviewSession) -> Tuple[Valid
     # Split by spaces and check for at least two parts (first and last name)
     name_parts = value.split()
     if len(name_parts) < 2:
-        return ValidationStatus.INVALID, "Ask: Please provide both the first and last name of the reporter"
+        return (
+            ValidationStatus.INVALID,
+            "Ask: Please provide both the first and last name of the reporter",
+        )
 
     # Check that each part has at least 2 characters
     for part in name_parts:
         if len(part) < 2:
-            return ValidationStatus.INVALID, "Tell the user: Each name part should be at least 2 characters long"
+            return (
+                ValidationStatus.INVALID,
+                "Tell the user: Each name part should be at least 2 characters long",
+            )
 
     # Check for valid characters (letters, hyphens, apostrophes)
-    if not re.match(r'^[a-zA-Z\s\-\']+$', value):
-        return ValidationStatus.INVALID, "Tell the user: Name should only contain letters, spaces, hyphens, and apostrophes"
+    if not re.match(r"^[a-zA-Z\s\-\']+$", value):
+        return (
+            ValidationStatus.INVALID,
+            "Tell the user: Name should only contain letters, spaces, hyphens, and apostrophes",
+        )
 
     return ValidationStatus.VALID, None
 
@@ -406,6 +461,29 @@ def validate_reporter_address(value: str, session: InterviewSession) -> Tuple[Va
 
     return ValidationStatus.VALID, None
 
+
+
+# Example branch functions demonstrating the branch function feature
+# These can be used in question_graph branches with {"function": "function_name"}
+
+@branch_function('check_contains_sensitive_info')
+def check_contains_sensitive_info(
+    session: InterviewSession,
+    visitor: InteractWalker
+) -> bool:
+    """Check if report contains sensitive keywords.
+    
+    Returns True to branch to is_sensitive question, False to continue normal flow.
+    This is an example of a boolean-returning branch function (no operator needed).
+    """
+    description = session.responses.get('report_description', '').lower()
+    sensitive_keywords = ['abuse', 'assault', 'violence', 'threat', 'harassment']
+    
+    # Use session.context to store analysis for later use
+    has_sensitive = any(keyword in description for keyword in sensitive_keywords)
+    session.context['contains_sensitive_keywords'] = has_sensitive
+    
+    return has_sensitive
 
 
 @on_interview_complete('ReportInterviewInteractAction')
@@ -438,6 +516,7 @@ async def handle_report_completion(
 
     # Log completion (in production, you might send notifications, create records, etc.)
     import logging
+
     logger = logging.getLogger(__name__)
     logger.info(
         f"Report interview completed:\n description: {report_description}\n location: {report_location}\n report_media: {report_media}\n is_sensitive: {is_sensitive}\n reporting_on_behalf: {reporting_on_behalf}\n stakeholder_name: {stakeholder_name}\n stakeholder_address: {stakeholder_address}\n stakeholder_phone: {stakeholder_phone}\n reporter_name: {reporter_name}\n reporter_address: {reporter_address}"
