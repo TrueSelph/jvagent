@@ -248,11 +248,12 @@ class InterviewSession(Node):
             None
         )
     
-    def get_next_questions(self, current_question: str) -> List[str]:
+    async def get_next_questions(self, current_question: str, visitor: Optional[Any] = None) -> List[str]:
         """Get possible next questions based on branches.
         
         Args:
             current_question: Name of current question
+            visitor: Optional InteractWalker for branch function access
             
         Returns:
             List of possible next question names
@@ -266,14 +267,12 @@ class InterviewSession(Node):
         
         # Check branches for matching conditions
         # Question is implicit - condition evaluates against the question that owns this branch
+        from ..graph.question_branch_evaluator import QuestionBranchEvaluator
         for branch in branches:
             condition = branch.get("condition", {})
-            operator = condition.get("op")
-            expected_value = condition.get("value")
             
             # Use QuestionBranchEvaluator for proper evaluation
-            from .question_branch_evaluator import QuestionBranchEvaluator
-            if QuestionBranchEvaluator.matches(condition, self, implicit_question=question_config.get("name")):
+            if await QuestionBranchEvaluator.matches(condition, self, implicit_question=question_config.get("name"), visitor=visitor):
                 target = branch.get("target")
                 if target:
                     next_questions.append(target)

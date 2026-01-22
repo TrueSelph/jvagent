@@ -103,13 +103,18 @@ INTERVIEW_CLASSIFICATION_SIGNATURE = """Classify user intent and extract field v
        - Only use if language explicitly abandons entire interview (e.g., "cancel", "abort", "stop the interview")
     
     2. CONFIRMATION - Only in REVIEW state, positive affirmation WITHOUT providing new values
+       - CRITICAL STATE CHECK: CONFIRMATION can ONLY be used when current_state is "review"
+       - If current_state is NOT "review", then affirmative responses (like "yes", "sure", "ok") to questions should be classified as SUBMISSION, NOT CONFIRMATION
+       - When answering a question in ACTIVE state, it is always SUBMISSION, even if the answer is "yes"
        - "No" in REVIEW state = UPDATE (rejecting confirmation)
        - CRITICAL: Do NOT classify as CONFIRMATION if user provides a specific value that differs from current stored values
-       - CONFIRMATION is ONLY for pure affirmations like "yes", "correct", "looks good", "that's right" WITHOUT any new values
+       - CONFIRMATION is ONLY for pure affirmations like "yes", "correct", "looks good", "that's right" WITHOUT any new values, AND only when current_state is "review"
     
     3. SUBMISSION - Providing answers to unanswered questions
        - CRITICAL PRIORITY: If a field appears in entities_to_extract (unanswered questions), classify as SUBMISSION, NOT UPDATE
        - This applies even if user language suggests "change" or "update" - if the field is unanswered, it's SUBMISSION
+       - CRITICAL STATE RULE: When current_state is "active" and user is answering a question, it is always SUBMISSION, even if the answer is "yes", "sure", "ok", or other affirmative words
+       - Affirmative responses to questions in ACTIVE state are SUBMISSION, not CONFIRMATION (CONFIRMATION is only for REVIEW state)
        - Extract field values from user_input (interpretation already contains values)
        - Includes invalid choices/values - validation system will mark them as INVALID and provide feedback
        - When user provides a value that doesn't match constraints → SUBMISSION
@@ -136,6 +141,14 @@ INTERVIEW_CLASSIFICATION_SIGNATURE = """Classify user intent and extract field v
     - For SUBMISSION: Extract field-value pairs from user_input (interpretation has values)
     - For UPDATE: Use "field" and "value" keys
     - Map values to field names from entities_to_extract
+    - CRITICAL: When SUBMISSION intent is detected, ALWAYS extract at least one field-value pair if there's a question in entities_to_extract that matches the response context
+    
+    HANDLING SIMPLE AFFIRMATIVE RESPONSES (CRITICAL):
+    - When user responds with simple affirmative responses like "Yes", "No", "Sure", "Ok", "Yeah", "Yep", "Nope" in ACTIVE state, extract it as a value for the question that was most recently asked
+    - Use conversation_history to determine which field is being answered - check the most recent AI question/statement to identify the field
+    - For yes/no questions with options ['yes', 'no']: Map "Yes"/"yes"/"Yeah"/"Yep"/"Sure"/"Ok" → "yes" and "No"/"no"/"Nope" → "no"
+    - If the response is ambiguous, use conversation_history to match the response to the most recently asked question in entities_to_extract
+    - Example: If AI asked "Would you like to keep the report private?" and user responds "Yes", extract as {"is_sensitive": "yes"} (assuming is_sensitive is in entities_to_extract)
     
     CONTEXT-AWARE EXTRACTION (CRITICAL):
     - Use conversation_history to resolve fragmentary references to full values
@@ -147,6 +160,7 @@ INTERVIEW_CLASSIFICATION_SIGNATURE = """Classify user intent and extract field v
       * Demonstrative reference ("that option", "this one") → full value from recently mentioned options
       * Temporal reference ("same as before", "like last time") → previously mentioned value from conversation history
       * Partial match (e.g., "John" when "John Smith" was mentioned) → full matching value from context
+      * Simple affirmative ("Yes" to "Would you like to keep it private?") → {"is_sensitive": "yes"} when is_sensitive is in entities_to_extract
     - Extract complete, contextually appropriate entities rather than just literal fragments
     - When conversation_history is available, prioritize resolving fragments to full values over extracting partial fragments
     
@@ -180,13 +194,18 @@ INTENT CLASSIFICATION (priority order):
    - Only use CANCELLATION if language explicitly abandons the entire interview
 
 2. CONFIRMATION - Only in REVIEW state, positive affirmation WITHOUT providing new values
+   - CRITICAL STATE CHECK: CONFIRMATION can ONLY be used when current_state is "review"
+   - If current_state is NOT "review", then affirmative responses (like "yes", "sure", "ok") to questions should be classified as SUBMISSION, NOT CONFIRMATION
+   - When answering a question in ACTIVE state, it is always SUBMISSION, even if the answer is "yes"
    - "No" in REVIEW state = UPDATE (rejecting confirmation)
    - CRITICAL: Do NOT classify as CONFIRMATION if user provides a specific value that differs from current stored values
-   - CONFIRMATION is ONLY for pure affirmations like "yes", "correct", "looks good", "that's right" WITHOUT any new values
+   - CONFIRMATION is ONLY for pure affirmations like "yes", "correct", "looks good", "that's right" WITHOUT any new values, AND only when current_state is "review"
 
 3. SUBMISSION - Providing answers to unanswered questions
    - CRITICAL PRIORITY: If a field appears in entities_to_extract (unanswered questions), classify as SUBMISSION, NOT UPDATE
    - This applies even if user language suggests "change" or "update" - if the field is unanswered, it's SUBMISSION
+   - CRITICAL STATE RULE: When current_state is "active" and user is answering a question, it is always SUBMISSION, even if the answer is "yes", "sure", "ok", or other affirmative words
+   - Affirmative responses to questions in ACTIVE state are SUBMISSION, not CONFIRMATION (CONFIRMATION is only for REVIEW state)
    - Extract field values from user input (interpretation already contains values)
    - Includes invalid choices/values - validation system will mark them as INVALID and provide feedback
    - When user provides a value that doesn't match constraints → SUBMISSION
@@ -212,6 +231,14 @@ EXTRACTION:
 - For SUBMISSION: Extract field-value pairs from user input (interpretation already has values)
 - For UPDATE: Use "field" and "value" keys
 - Map extracted values to field names from entities_to_extract
+- CRITICAL: When SUBMISSION intent is detected, ALWAYS extract at least one field-value pair if there's a question in entities_to_extract that matches the response context
+
+HANDLING SIMPLE AFFIRMATIVE RESPONSES (CRITICAL):
+- When user responds with simple affirmative responses like "Yes", "No", "Sure", "Ok", "Yeah", "Yep", "Nope" in ACTIVE state, extract it as a value for the question that was most recently asked
+- Use conversation history to determine which field is being answered - check the most recent AI question/statement to identify the field
+- For yes/no questions with options ['yes', 'no']: Map "Yes"/"yes"/"Yeah"/"Yep"/"Sure"/"Ok" → "yes" and "No"/"no"/"Nope" → "no"
+- If the response is ambiguous, use conversation history to match the response to the most recently asked question in entities_to_extract
+- Example: If AI asked "Would you like to keep the report private?" and user responds "Yes", extract as {"is_sensitive": "yes"} (assuming is_sensitive is in entities_to_extract)
 
 CONTEXT-AWARE EXTRACTION (CRITICAL):
 - Use conversation history to resolve fragmentary references to full values
@@ -223,6 +250,7 @@ CONTEXT-AWARE EXTRACTION (CRITICAL):
   * Demonstrative reference ("that option", "this one") → full value from recently mentioned options
   * Temporal reference ("same as before", "like last time") → previously mentioned value from conversation history
   * Partial match (e.g., "John" when "John Smith" was mentioned) → full matching value from context
+  * Simple affirmative ("Yes" to "Would you like to keep it private?") → {"is_sensitive": "yes"} when is_sensitive is in entities_to_extract
 - Extract complete, contextually appropriate entities rather than just literal fragments
 - When conversation history is available, prioritize resolving fragments to full values over extracting partial fragments
 

@@ -32,6 +32,11 @@ _pending_input_handlers: Dict[str, Dict[str, Callable]] = {}
 _pending_input_validators: Dict[str, Dict[str, Callable]] = {}
 _pending_input_directive_overrides: Dict[str, Dict[str, Callable]] = {}
 
+# Module-level registry for branch functions
+# Format: {(interview_type, function_name): function}
+_branch_function_registry: Dict[Tuple[str, str], Callable] = {}
+_pending_branch_functions: Dict[str, Dict[str, Callable]] = {}
+
 
 def input_handler(question_name: str, interview_type: Optional[str] = None):
     """Decorator to register an input handler for a specific question.
@@ -303,3 +308,88 @@ def clear_pending_registrations(interview_type: str) -> None:
     _pending_input_handlers.pop(interview_type, None)
     _pending_input_validators.pop(interview_type, None)
     _pending_input_directive_overrides.pop(interview_type, None)
+    _pending_branch_functions.pop(interview_type, None)
+
+
+def branch_function(function_name: str, interview_type: Optional[str] = None):
+    """Decorator to register a branch function for conditional branching.
+
+    Branch functions evaluate complex conditions with full access to session and visitor.
+    They can return bool (direct branching) or any value (for operator evaluation).
+
+    Args:
+        function_name: Unique name for this branch function
+        interview_type: Optional interview type (auto-detected from module if not provided)
+
+    Function Signature:
+        def function_name(session: InterviewSession, visitor: InteractWalker) -> Union[bool, Any]:
+            # Return bool for direct branching, or any value for operator evaluation
+            pass
+
+    Example:
+        @branch_function('check_similarity')
+        async def check_similarity(session: InterviewSession, visitor: InteractWalker) -> bool:
+            description = session.responses.get('report_description', '')
+            # Complex logic with visitor access
+            return similarity_score > 0.8
+    """
+    def decorator(func: Callable) -> Callable:
+        # Store metadata on function
+        func._interview_question_name = function_name  # type: ignore
+        func._interview_handler_type = "branch_function"  # type: ignore
+
+        # Auto-detect interview_type from module
+        determined_type = interview_type
+        try:
+            if not determined_type:
+                module = inspect.getmodule(func)
+                if module:
+                    # Import here to avoid circular dependency
+                    from jvagent.action.interview.interview_interact_action import InterviewInteractAction
+                    # Look for InterviewInteractAction subclasses in the module
+                    for name, obj in vars(module).items():
+                        if (inspect.isclass(obj) and
+                            issubclass(obj, InterviewInteractAction) and
+                            obj is not InterviewInteractAction):
+                            determined_type = obj.__name__
+                            break
+
+            if determined_type:
+                # Register in module-level registry
+                _branch_function_registry[(determined_type, function_name)] = func
+            else:
+                # Store in pending registry if interview_type is provided but class not yet defined
+                if interview_type:
+                    if interview_type not in _pending_branch_functions:
+                        _pending_branch_functions[interview_type] = {}
+                    _pending_branch_functions[interview_type][function_name] = func
+        except Exception as e:
+            logger.warning(f"Error registering branch function '{func.__name__}': {e}")
+
+        return func
+    return decorator
+
+
+def get_branch_function(interview_type: str, function_name: str) -> Optional[Callable]:
+    """Get registered branch function.
+
+    Args:
+        interview_type: Interview type (class name)
+        function_name: Name of the branch function
+
+    Returns:
+        Registered function if found, None otherwise
+    """
+    return _branch_function_registry.get((interview_type, function_name))
+
+
+def get_pending_branch_functions(interview_type: str) -> Dict[str, Callable]:
+    """Get pending branch functions for an interview type.
+
+    Args:
+        interview_type: Interview type (class name)
+
+    Returns:
+        Dictionary of function_name -> function for pending registrations
+    """
+    return _pending_branch_functions.get(interview_type, {})

@@ -53,15 +53,17 @@ class QuestionGraphValidator:
     # Valid state target names
     VALID_STATE_TARGETS = {state.value.upper() for state in InterviewState}
     
-    def __init__(self, question_graph: List[Dict[str, Any]]):
+    def __init__(self, question_graph: List[Dict[str, Any]], interview_type: Optional[str] = None):
         """Initialize validator with question graph.
         
         Args:
             question_graph: List of question configuration dictionaries
+            interview_type: Optional interview type (class name) for validating branch functions
         """
         self.question_graph = question_graph
         self.question_names: Set[str] = set()
         self.report = ValidationReport()
+        self.interview_type = interview_type
     
     async def validate(self) -> ValidationReport:
         """Validate the question graph.
@@ -212,13 +214,60 @@ class QuestionGraphValidator:
         # Question is always implicit from branch context - condition evaluates against question_name
         # No need to check for "question" key in condition
         
-        # Validate operator
+        # Check for function-based condition
+        if "function" in condition:
+            function_name = condition.get("function")
+            if not function_name or not isinstance(function_name, str):
+                self.report.errors.append(
+                    ValidationIssue(
+                        severity="error",
+                        message=f"Question '{question_name}': Condition in {context} has 'function' key but no valid function name",
+                        question_name=question_name
+                    )
+                )
+                return
+            
+            # Validate that function is registered (if interview_type is available)
+            if self.interview_type:
+                from ..foundation.decorators import get_branch_function, get_pending_branch_functions
+                func = get_branch_function(self.interview_type, function_name)
+                if not func:
+                    # Check pending functions
+                    pending = get_pending_branch_functions(self.interview_type)
+                    if function_name not in pending:
+                        self.report.warnings.append(
+                            ValidationIssue(
+                                severity="warning",
+                                message=f"Question '{question_name}': Branch function '{function_name}' not found for interview type '{self.interview_type}'. "
+                                        f"Ensure it's registered with @branch_function decorator.",
+                                question_name=question_name,
+                                context={"function": function_name, "interview_type": self.interview_type}
+                            )
+                        )
+            
+            # If operator is also present, validate it
+            if "op" in condition:
+                operator = condition.get("op")
+                if not ConditionOperator.validate_operator(operator):
+                    self.report.errors.append(
+                        ValidationIssue(
+                            severity="error",
+                            message=f"Question '{question_name}': Condition in {context} has invalid operator '{operator}' for function '{function_name}'",
+                            question_name=question_name,
+                            context={"op": operator, "function": function_name}
+                        )
+                    )
+            
+            # Function-based condition validated
+            return
+        
+        # Legacy operator-based condition validation
         operator = condition.get("op")
         if not operator:
             self.report.errors.append(
                 ValidationIssue(
                     severity="error",
-                    message=f"Question '{question_name}': Condition in {context} must have 'op' field",
+                    message=f"Question '{question_name}': Condition in {context} must have either 'function' or 'op' field",
                     question_name=question_name
                 )
             )

@@ -216,16 +216,18 @@ class QuestionNode(Node):
             pass
         return None
     
-    def condition_matches(
+    async def condition_matches(
         self,
         condition: Dict[str, Any],
-        session: "InterviewSession"
+        session: "InterviewSession",
+        visitor: Optional[Any] = None
     ) -> bool:
         """Check if an edge condition matches the current session state.
         
         Args:
-            condition: Condition dict with 'op' and optional 'value' keys (question is implicit)
+            condition: Condition dict with 'op' and optional 'value' keys, or 'function' key
             session: Interview session
+            visitor: Optional InteractWalker for branch function access
             
         Returns:
             True if condition matches, False otherwise
@@ -234,7 +236,7 @@ class QuestionNode(Node):
         question_name = self.state.get("name", "")
         if not question_name:
             return False
-        return QuestionBranchEvaluator.matches(condition, session, implicit_question=question_name)
+        return await QuestionBranchEvaluator.matches(condition, session, implicit_question=question_name, visitor=visitor)
 
     async def execute(self, walker: Any) -> Optional[str]:
         """Execute question node to check if info is needed and return directive.

@@ -12,6 +12,7 @@ from .core.foundation.decorators import (
     input_validator,
     input_directive_override,
     on_interview_complete,
+    branch_function,
 )
 
 # Import core components
@@ -31,6 +32,7 @@ __all__ = [
     "input_validator",
     "input_directive_override",
     "on_interview_complete",
+    "branch_function",
     "InterviewSession",
     "QuestionNode",
     "QuestionWalker",
