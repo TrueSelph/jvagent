@@ -276,6 +276,16 @@ class InteractAction(Action, ABC):
                     metadata=metadata,
                 )
                 
+                # Set interaction.response for persistence (so ConverseInteractAction can detect it)
+                # This ensures has_response() returns True and prevents ConverseInteractAction from executing
+                if interaction:
+                    response_changed = interaction.set_response(content)
+                    if response_changed:
+                        await interaction.save()
+                        logger.debug(
+                            f"{self.get_class_name()}: Set interaction.response and saved interaction (streaming mode)"
+                        )
+                
                 return final_message
             else:
                 # Non-streaming mode: publish as adhoc and set interaction.response
