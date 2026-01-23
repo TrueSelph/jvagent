@@ -179,7 +179,7 @@ actions:
       enabled: true
       description: "Action for Text-to-Speech integration using multiple providers."
       provider: "elevenlabs"
-      api_key: "sk_f42759c8157acd2966927382f2a6565929930bf27598372d"
+      api_key: ""
       model: "eleven_turbo_v2"
       voice: "Sarah"
 
@@ -188,5 +188,5 @@ actions:
       enabled: true
       description: "Action for Speech-to-Text integration using multiple providers."
       provider: "deepgram"
-      api_key: "b809b7b86bc3d2116ff96ee45e40d6b0d2b3167c"
+      api_key: ""
       model: "nova-2"
