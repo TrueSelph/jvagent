@@ -9,8 +9,8 @@ from jvspatial.core.annotations import attribute
 from jvspatial.core.context import GraphContext
 from jvspatial.db import get_prime_database
 from .whatsapp_adapter import WhatsAppAdapter
-from .whatsapp_modules.wppconnect import WPPConnectAPI
-from .whatsapp_modules.wwebjs_api import WWebJSAPI
+from .modules.wppconnect import WPPConnectAPI
+from .modules.wwebjs_api import WWebJSAPI
 from .webhook_auth import get_or_create_system_user
 
 logger = logging.getLogger(__name__)
@@ -52,8 +52,13 @@ class WhatsAppAction(Action):
     )
 
     stt_action: Optional[str] = attribute(
-        default=None,
+        default="STTAction",
         description="Label or Class used to transcribe voice messages or audio files",
+    )
+
+    tts_action: Optional[str] = attribute(
+        default="TTSAction",
+        description="Label or Class used to convert text to speech",
     )
 
     # action configuration

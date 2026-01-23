@@ -117,7 +117,7 @@ class WhatsAppAdapter(ChannelAdapter):
 
         # Chunk message
         sanitized_message = self.sanitize_message(message.content)
-        chunks = self.chunk_long_message(sanitized_message)
+        chunks = self.chunk_long_message(sanitized_message, max_length=self.action.chunk_length, chunk_length=self.action.chunk_length)
 
         for chunk in chunks:
             await self.action.api().send_message(
@@ -126,7 +126,8 @@ class WhatsAppAdapter(ChannelAdapter):
             )
 
         # logger.warning(f"WhatsAppAdapter: send_to_destination COMPLETED - message_id={message.id}")
-        logger.warning(f"Response:\n\n{message.content}\n\n")
+        # logger.warning(f"Response:\n\n{message.content}\n\n")
+        logger.warning(f"*************************************************")
         return True
 
 

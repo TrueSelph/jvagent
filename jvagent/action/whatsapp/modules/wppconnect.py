@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 import aiohttp
 from dotenv import load_dotenv
 
-from .base_api import BaseWhatsAppAPI
+from .base import BaseWhatsAppAPI
 
 load_dotenv()
 
