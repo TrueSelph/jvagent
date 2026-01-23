@@ -175,21 +175,26 @@ class WhatsAppAdapter(ChannelAdapter):
         current_chunk_length = 0
 
         # Split the message into words while preserving newline characters
+        import re
         words = re.findall(r"\S+\n*|\n+", message)
         words = [word for word in words if word.strip()]  # Filter out empty strings
 
         for word in words:
             word_length = len(word)
+            # Calculate space needed (1 for space separator, except for first word)
+            space_needed = 1 if current_chunk else 0
 
-            if current_chunk_length + word_length + 1 <= chunk_length:
+            if current_chunk_length + word_length + space_needed <= chunk_length:
                 # Add the word to the current chunk
                 if current_chunk:
                     current_chunk += " "
+                    current_chunk_length += 1  # Account for space
                 current_chunk += word
-                current_chunk_length += word_length + 1
+                current_chunk_length += word_length
             else:
                 # If the current chunk is full, add it to the list of chunks
-                final_chunks.append(current_chunk)
+                if current_chunk:  # Only add non-empty chunks
+                    final_chunks.append(current_chunk)
                 current_chunk = word  # Start a new chunk with the current word
                 current_chunk_length = word_length
 

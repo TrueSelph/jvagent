@@ -103,7 +103,7 @@ class BaseWhatsAppAPI(ABC):
         params: Optional[dict] = None,
         json_body: bool = True,
     ) -> dict:
-        """Internal helper for making HTTP requests."""
+        """Internal helper for making HTTP requests with improved error handling."""
         try:
             timeout = aiohttp.ClientTimeout(total=self.timeout)
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -115,20 +115,37 @@ class BaseWhatsAppAPI(ABC):
                     kwargs["data"] = data
 
                 async with session.request(method, url, **kwargs) as response:
-                    response.raise_for_status()
+                    # Check for HTTP errors
+                    if response.status >= 400:
+                        error_text = await response.text()
+                        self.logger.error(
+                            f"HTTP {response.status} error for {method} {url}: {error_text}"
+                        )
+                        return {
+                            "ok": False, 
+                            "error": f"HTTP {response.status}: {error_text}",
+                            "status_code": response.status
+                        }
 
                     if response.content_length and response.content_length > 0:
                         try:
                             return await response.json()
-                        except Exception:
+                        except Exception as e:
+                            self.logger.warning(f"Failed to parse JSON response: {e}")
                             raw_content = await response.read()
                             return {"ok": True, "raw": raw_content}
 
                     return {"ok": True, "no_content": True}
 
+        except aiohttp.ClientTimeout as e:
+            self.logger.error(f"Request timeout for {method} {url}: {str(e)}")
+            return {"ok": False, "error": f"Request timeout: {str(e)}"}
         except aiohttp.ClientError as e:
-            self.logger.error(f"Request error: {str(e)}")
-            return {"ok": False, "error": str(e)}
+            self.logger.error(f"Client error for {method} {url}: {str(e)}")
+            return {"ok": False, "error": f"Client error: {str(e)}"}
+        except Exception as e:
+            self.logger.error(f"Unexpected error for {method} {url}: {str(e)}")
+            return {"ok": False, "error": f"Unexpected error: {str(e)}"}
 
     # Message parsing utilities
     async def parse_inbound_message(self, request: dict) -> Optional[MessagePayload]:

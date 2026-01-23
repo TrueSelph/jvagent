@@ -2,13 +2,20 @@
 
 Text-to-Speech action for jvagent that provides speech synthesis capabilities using multiple providers.
 
+## Overview
+
+The TTS Action converts text to speech using various text-to-speech providers. It follows jvagent action patterns with proper lifecycle hooks, error handling, and API endpoints.
+
 ## Features
 
 - Convert text to speech audio
 - Multiple output formats (bytes, base64, file URL)
 - Voice and model selection
+- Voice and model management
 - Health checking for service availability
 - Modular provider system
+- Async/await architecture
+- Proper error handling and logging
 
 ## Supported Providers
 
@@ -24,8 +31,9 @@ Text-to-Speech action for jvagent that provides speech synthesis capabilities us
 actions:
   - action: jvagent/tts_action
     context:
+      enabled: true
       provider: elevenlabs
-      api_key: your_elevenlabs_api_key
+      api_key: ${ELEVENLABS_API_KEY}
       model: eleven_turbo_v2
       voice: Sarah
 ```
@@ -36,7 +44,7 @@ actions:
 
 ```python
 # Get TTS action
-tts_action = await self.get_action("TTSAction")
+tts_action = await self.get_action(TTSAction)
 
 # Generate speech as bytes
 audio_bytes = await tts_action.invoke("Hello, world!")
@@ -80,6 +88,81 @@ else:
     print(f"TTS service error: {health['message']}")
 ```
 
+## API Endpoints
+
+### POST /actions/{action_id}/tts/synthesize
+Synthesize speech from text.
+
+**Request:**
+```json
+{
+  "text": "Hello, world!",
+  "as_base64": false,
+  "as_url": true
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "audio": "https://example.com/audio.mp3",
+  "format": "url",
+  "provider": "elevenlabs",
+  "model": "eleven_turbo_v2",
+  "voice": "Sarah"
+}
+```
+
+### GET /actions/{action_id}/tts/voices
+Get available voices.
+
+**Response:**
+```json
+{
+  "voices": [
+    {
+      "name": "Sarah",
+      "voice_id": "abc123",
+      "category": "premade"
+    }
+  ],
+  "provider": "elevenlabs",
+  "current_voice": "Sarah"
+}
+```
+
+### GET /actions/{action_id}/tts/models
+Get available models.
+
+**Response:**
+```json
+{
+  "models": [
+    {
+      "name": "Eleven Turbo v2",
+      "model_id": "eleven_turbo_v2",
+      "description": "Fast, high-quality model"
+    }
+  ],
+  "provider": "elevenlabs",
+  "current_model": "eleven_turbo_v2"
+}
+```
+
+### GET /actions/{action_id}/tts/health
+Check TTS service health.
+
+**Response:**
+```json
+{
+  "healthy": true,
+  "provider": "elevenlabs",
+  "model": "eleven_turbo_v2",
+  "voice": "Sarah"
+}
+```
+
 ## API Methods
 
 ### `invoke(text: str, as_base64: bool = False, as_url: bool = False) -> Optional[Union[str, bytes]]`
@@ -99,9 +182,16 @@ Perform health check for the TTS service.
 
 ## Dependencies
 
-- `requests>=2.25.0`
-- `elevenlabs>=1.0.0`
+- `elevenlabs>=1.13.0`
 
 ## Environment Variables
 
-- `ELEVENLABS_API_KEY`: Your ElevenLabs API key (alternative to config)
+- `ELEVENLABS_API_KEY`: Your ElevenLabs API key
+
+## Error Handling
+
+The action includes comprehensive error handling:
+- Graceful degradation when API keys are missing
+- Proper async exception handling
+- Detailed error logging with stack traces
+- Structured error responses for API endpoints

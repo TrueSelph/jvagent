@@ -2,13 +2,20 @@
 
 Speech-to-Text action for jvagent that provides audio transcription capabilities using multiple providers.
 
+## Overview
+
+The STT Action converts audio to text using various speech recognition providers. It follows jvagent action patterns with proper lifecycle hooks, error handling, and API endpoints.
+
 ## Features
 
 - Convert audio from URLs to text
 - Convert base64 encoded audio to text
+- Convert audio file content to text with duration info
 - Support for multiple audio formats (MP3, WAV, etc.)
 - Health checking for service availability
 - Modular provider system
+- Async/await architecture
+- Proper error handling and logging
 
 ## Supported Providers
 
@@ -24,8 +31,9 @@ Speech-to-Text action for jvagent that provides audio transcription capabilities
 actions:
   - action: jvagent/stt_action
     context:
+      enabled: true
       provider: deepgram
-      api_key: your_deepgram_api_key
+      api_key: ${DEEPGRAM_API_KEY}
       model: nova-2
       smart_format: true
 ```
@@ -36,7 +44,7 @@ actions:
 
 ```python
 # Get STT action
-stt_action = await self.get_action("STTAction")
+stt_action = await self.get_action(STTAction)
 
 # Transcribe from URL
 transcript = await stt_action.invoke("https://example.com/audio.mp3")
@@ -44,7 +52,7 @@ transcript = await stt_action.invoke("https://example.com/audio.mp3")
 # Transcribe from base64
 transcript = await stt_action.invoke_base64(audio_base64, "audio/mp3")
 
-# Transcribe from file content
+# Transcribe from file content with duration
 result = await stt_action.invoke_file(audio_bytes, "audio/wav")
 # Returns: {"transcript": "...", "duration": 12.5}
 ```
@@ -57,6 +65,40 @@ if health is True:
     print("STT service is healthy")
 else:
     print(f"STT service error: {health['message']}")
+```
+
+## API Endpoints
+
+### POST /actions/{action_id}/stt/transcribe
+Transcribe audio to text.
+
+**Request:**
+```json
+{
+  "audio_url": "https://example.com/audio.mp3"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "transcript": "Hello world",
+  "provider": "deepgram",
+  "model": "nova-2"
+}
+```
+
+### GET /actions/{action_id}/stt/health
+Check STT service health.
+
+**Response:**
+```json
+{
+  "healthy": true,
+  "provider": "deepgram",
+  "model": "nova-2"
+}
 ```
 
 ## API Methods
@@ -75,9 +117,17 @@ Perform health check for the STT service.
 
 ## Dependencies
 
-- `requests>=2.25.0`
+- `aiohttp>=3.8.0`
 - `deepgram-sdk>=3.0.0`
 
 ## Environment Variables
 
-- `DEEPGRAM_API_KEY`: Your Deepgram API key (alternative to config)
+- `DEEPGRAM_API_KEY`: Your Deepgram API key
+
+## Error Handling
+
+The action includes comprehensive error handling:
+- Graceful degradation when API keys are missing
+- Proper async exception handling
+- Detailed error logging with stack traces
+- Structured error responses for API endpoints

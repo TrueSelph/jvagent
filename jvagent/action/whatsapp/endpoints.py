@@ -3,16 +3,18 @@
 import asyncio
 import logging
 import base64
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import Request
+from fastapi import Request, HTTPException
 
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.core.agent import Agent
 from jvagent.memory.conversation import Conversation
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.api.exceptions import ResourceNotFoundError
+from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError as APIValidationError
+from jvspatial.exceptions import ValidationError, DatabaseError
 
 from .utils.media_manager import MediaManager
 from .whatsapp_action import WhatsAppAction
@@ -28,7 +30,7 @@ _media_batches: Dict[str, Dict[str, Any]] = {}
 
 
 async def _process_media_batch(sender: str) -> None:
-    """Process accumulated media batch for a user."""
+    """Process accumulated media batch for a user with improved error handling."""
     if sender not in _media_batches:
         return
     
@@ -37,7 +39,6 @@ async def _process_media_batch(sender: str) -> None:
     whatsapp_action = batch["action"]
     
     try:
-        
         # Combine all media URLs
         all_media = batch["media_urls"]
         
@@ -51,58 +52,83 @@ async def _process_media_batch(sender: str) -> None:
         
         logger.info(f"Processing batched media for user {sender}: {len(all_media)} items")
         
-        # Get conversation
-        convo_obj = await Conversation.find_one({"context.user_id": sender})
+        # Get conversation with error handling
+        try:
+            convo_obj = await Conversation.find_one({"context.user_id": sender})
+        except DatabaseError as e:
+            logger.error(f"Database error finding conversation for user {sender}: {e}")
+            return
         
-        # Create walker
-        if convo_obj and getattr(convo_obj, "session_id", None):
-            walker = InteractWalker(
-                agent_id=agent_id,
-                utterance=combined_utterance,
-                channel="whatsapp",
-                data=data,
-                session_id=convo_obj.session_id,
-                stream=False,
-            )
-        else:
-            walker = InteractWalker(
-                agent_id=agent_id,
-                utterance=combined_utterance,
-                channel="whatsapp",
-                data=data,
-                user_id=sender,
-                stream=False,
-            )
+        # Create walker with proper error handling
+        try:
+            if convo_obj and getattr(convo_obj, "session_id", None):
+                walker = InteractWalker(
+                    agent_id=agent_id,
+                    utterance=combined_utterance,
+                    channel="whatsapp",
+                    data=data,
+                    session_id=convo_obj.session_id,
+                    stream=False,
+                )
+            else:
+                walker = InteractWalker(
+                    agent_id=agent_id,
+                    utterance=combined_utterance,
+                    channel="whatsapp",
+                    data=data,
+                    user_id=sender,
+                    stream=False,
+                )
+        except ValidationError as e:
+            logger.error(f"Validation error creating walker for user {sender}: {e}")
+            return
         
         # Get agent and spawn walker
-        agent = await Agent.get(agent_id)
-        await walker.spawn(agent)
+        try:
+            agent = await Agent.get(agent_id)
+            if not agent:
+                logger.error(f"Agent {agent_id} not found for media batch processing")
+                return
+                
+            await walker.spawn(agent)
+        except DatabaseError as e:
+            logger.error(f"Database error spawning walker for user {sender}: {e}")
+            return
+        except Exception as e:
+            logger.error(f"Error spawning walker for user {sender}: {e}")
+            return
         
-        # Finalize interaction
+        # Finalize interaction with error handling
         interaction = walker.interaction
         if interaction:
-            if walker.response_bus:
-                await walker.response_bus.finalize_interaction(
-                    interaction_id=interaction.id,
-                    interaction=interaction,
-                    session_id=walker.session_id or "",
-                    channel=walker.channel,
-                )
-            
-            interaction.close_interaction()
-            await interaction.save()
-            
-            # Log interaction
             try:
-                from jvagent.core.app import App
-                app = await App.get()
-                if app:
-                    log_data, message = _build_interaction_log_data(
-                        interaction, app.id, agent_id
+                if walker.response_bus:
+                    await walker.response_bus.finalize_interaction(
+                        interaction_id=interaction.id,
+                        interaction=interaction,
+                        session_id=walker.session_id or "",
+                        channel=walker.channel,
                     )
-                    logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
-            except Exception as log_err:
-                logger.warning(f"Failed to log WhatsApp interaction: {log_err}")
+                
+                interaction.close_interaction()
+                await interaction.save()
+                
+                # Log interaction
+                try:
+                    from jvagent.core.app import App
+                    app = await App.get()
+                    if app:
+                        log_data, message = _build_interaction_log_data(
+                            interaction, app.id, agent_id
+                        )
+                        logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
+                except Exception as log_err:
+                    logger.warning(f"Failed to log WhatsApp interaction: {log_err}")
+                    
+            except DatabaseError as e:
+                logger.error(f"Database error finalizing interaction for user {sender}: {e}")
+            except Exception as e:
+                logger.error(f"Error finalizing interaction for user {sender}: {e}")
     
     except Exception as e:
         logger.error(
@@ -117,62 +143,11 @@ async def _schedule_batch_processing(sender: str, delay: float) -> None:
     await _process_media_batch(sender)
 
 
-@endpoint(
-    "/whatsapp/interact/webhook/{agent_id}",
-    methods=["POST"],
-    webhook=True,
-    webhook_auth="api_key",  # Validates API key from query param or header
-    tags=["WhatsApp"],
-    response=success_response(
-        data={
-            "status": ResponseField(field_type=str, example="received"),
-            "response": ResponseField(field_type=Optional[str], example="Hello!", default=None),
-        }
-    ),
-)
-async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
-    """WhatsApp Interact Webhook.
-
-    Processes incoming WhatsApp messages and triggers an interaction via InteractWalker.
-    Returns immediately with 200 OK and processes the interaction asynchronously.
-    """
-
-    # Validate agent exists
-    agent = await Agent.get(agent_id)
-    if not agent:
-        raise ResourceNotFoundError(
-            message=f"Agent with ID '{agent_id}' not found",
-            details={"agent_id": agent_id},
-        )
-
-    whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
-    if not whatsapp_action:
-        raise ResourceNotFoundError(
-            message="Action with label 'WhatsAppAction' not found",
-            details={"agent_id": agent_id},
-        )
-
+async def _handle_media_message(
+    data, sender: str, agent_id: str, whatsapp_action, utterance: Optional[str]
+) -> Dict[str, Any]:
+    """Handle media message processing with improved error handling and path safety."""
     try:
-        request_data = await request.json()
-        data = await whatsapp_action.api().parse_inbound_message(request_data)
-    except Exception as e:
-        logger.warning(f"Error parsing WhatsApp webhook request: {e}")
-        data = None
-
-    # logger.info(f"Received WhatsApp webhook for agent {agent_id}: {data}")
-
-    logger.info(f"Received WhatsApp webhook for agent {agent_id}: {data}")
-    if not data or data.fromMe:
-        return {"status": "received", "response": "Ignore message"}
-
-    # MessagePayload is a dataclass, access attributes directly
-    utterance = data.body or data.caption
-    utterance = utterance.strip() if utterance else None
-    sender = data.sender
-
-    
-    # Check if this is a media message
-    if data.message_type in ["image", "document", "video", "audio"] and data.media:
         # Trigger typing
         await whatsapp_action.set_typing(sender, value=True, is_group=data.isGroup)
         
@@ -186,6 +161,8 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             
             try:
                 media_bytes = base64.b64decode(media_b64)
+                
+                # Use safe path handling
                 media_url = await media_manager.save_media(
                     user_id=sender,
                     media_bytes=media_bytes,
@@ -194,151 +171,177 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                 )
                 
                 if media_url:
+                    # Construct safe media URL
                     media_url = whatsapp_action.base_url + media_url
                     logger.info(f"Saved media for user {sender}: {media_url}")
                     
                     # Convert MessagePayload to dict for batching
-                    data_dict = {
-                        "message_id": data.message_id,
-                        "event_type": data.event_type,
-                        "message_type": data.message_type,
-                        "author": data.author,
-                        "sender": data.sender,
-                        "receiver": data.receiver,
-                        "caption": data.caption,
-                        "location": data.location,
-                        "fromMe": data.fromMe,
-                        "isGroup": data.isGroup,
-                        "isForwarded": data.isForwarded,
-                        "sender_name": data.sender_name,
-                        "mentionedIds": data.mentionedIds,
-                        "body": data.body,
-                        "media": data.media,
-                        "filename": data.filename,
-                        "mime_type": data.mime_type,
-                        "quoted_message": data.quoted_message,
-                        "contact": data.contact,
-                        "poll_id": data.poll_id,
-                        "selectedOptions": data.selectedOptions,
-                    }
+                    data_dict = _convert_message_payload_to_dict(data)
                     
                     # Handle batching for media messages
-                    if sender in _media_batches:
-                        # Add to existing batch
-                        batch = _media_batches[sender]
-                        batch["media_urls"].append(media_url)
-                        batch["utterances"].append(utterance)
-                        
-                        # Cancel existing timer and start a new one
-                        if batch.get("timer_task"):
-                            batch["timer_task"].cancel()
-                        
-                        batch["timer_task"] = asyncio.create_task(
-                            _schedule_batch_processing(sender, whatsapp_action.media_batch_window)
-                        )
-                        logger.info(f"Added media to existing batch for user {sender}, resetting timer")
-                    else:
-                        # Create new batch
-                        _media_batches[sender] = {
-                            "media_urls": [media_url],
-                            "utterances": [utterance],
-                            "data": data_dict,
-                            "agent_id": agent_id,
-                            "action": action,
-                            "timer_task": None,
-                        }
-                        
-                        # Start timer for batch processing
-                        _media_batches[sender]["timer_task"] = asyncio.create_task(
-                            _schedule_batch_processing(sender, whatsapp_action.media_batch_window)
-                        )
-                        logger.info(
-                            f"Created new media batch for user {sender}, "
-                            f"will process in {whatsapp_action.media_batch_window}s"
-                        )
+                    return _handle_media_batching(
+                        sender, media_url, utterance, data_dict, 
+                        agent_id, whatsapp_action
+                    )
                     
-                    # Return immediately - batch will be processed after timer
-                    return {"status": "received", "response": "media batched"}
-                    
+            except (ValueError, base64.binascii.Error) as e:
+                logger.error(f"Invalid base64 media data for user {sender}: {e}")
+                return {"status": "error", "response": "Invalid media format"}
             except Exception as e:
                 logger.error(f"Error processing media for user {sender}: {e}")
+                return {"status": "error", "response": "Media processing failed"}
+                
+    except Exception as e:
+        logger.error(f"Error handling media message for user {sender}: {e}", exc_info=True)
+        return {"status": "error", "response": "Media handling failed"}
+    
+    return {"status": "ignored", "response": "No media to process"}
 
-    elif data.message_type in ["ptt"] and data.media:
-        # Handle voice messages (PTT)
-        if whatsapp_action.stt_action:
-            try:
-                # Set status to recording (listening)
-                tts_action = await whatsapp_action.get_action(whatsapp_action.tts_action)
-                if tts_action:
-                    await whatsapp_action.set_recording_status(sender, value=True, is_group=data.isGroup)
-                else:
-                    await whatsapp_action.set_typing(sender, value=True, is_group=data.isGroup)
 
-                # Retrieve the STT action
-                stt_action = await whatsapp_action.get_action(whatsapp_action.stt_action)
-                if stt_action:
-                    # Transcribe
-                    transcript = await stt_action.invoke_base64(audio_base64=data.media)
-                    
-                    if transcript:
-                        logger.info(f"Transcribed voice message from {sender}: {transcript}")
-                        utterance = transcript
-                    else:
-                        return {"status": "ignored", "response": "empty transcript"}
-                else:
-                     logger.warning(f"STT action '{whatsapp_action.stt_action}' not found")
-                     return {"status": "ignored", "response": "stt action not found"}
-                     
-            except Exception as e:
-                logger.error(f"Error processing voice message from {sender}: {e}")
-                return {"status": "error", "response": str(e)}
-        else:
-             logger.info(f"No STT action configured for WhatsAppAction, ignoring voice message from {sender}")
-             return {"status": "ignored", "response": "no stt action configured"}
-    elif utterance:
-        # Trigger typing immediately
-        await whatsapp_action.set_typing(sender, value=True, is_group=data.isGroup)
-    else:
-        return {"status": "ignored", "response": "Ignore interaction"}
-
-    logger.warning(f"#################################################")
-    logger.warning(f"Utterance: {utterance}")
-
-    # Return immediately with 200 OK
-    response = {"status": "received"}
-
-    # Process interaction asynchronously in background
-    async def process_interaction():
-
-        """Process the interaction in the background."""
+async def _handle_voice_message(data, sender: str, whatsapp_action) -> Dict[str, Any]:
+    """Handle voice message (PTT) processing with improved error handling."""
+    if not whatsapp_action.stt_action:
+        logger.info(f"No STT action configured for WhatsAppAction, ignoring voice message from {sender}")
+        return {"status": "ignored", "response": "no stt action configured"}
+        
+    try:
+        # Set status to recording (listening)
         try:
-            # Convert MessagePayload to dict for InteractWalker
-            data_dict = {
-                "message_id": data.message_id,
-                "event_type": data.event_type,
-                "message_type": data.message_type,
-                "author": data.author,
-                "sender": data.sender,
-                "receiver": data.receiver,
-                "caption": data.caption,
-                "location": data.location,
-                "fromMe": data.fromMe,
-                "isGroup": data.isGroup,
-                "isForwarded": data.isForwarded,
-                "sender_name": data.sender_name,
-                "mentionedIds": data.mentionedIds,
-                "body": data.body,
-                "media": data.media,
-                "filename": data.filename,
-                "mime_type": data.mime_type,
-                "quoted_message": data.quoted_message,
-                "contact": data.contact,
-                "poll_id": data.poll_id,
-                "selectedOptions": data.selectedOptions,
+            tts_action = await whatsapp_action.get_action(whatsapp_action.tts_action)
+            if tts_action:
+                await whatsapp_action.set_recording_status(sender, value=True, is_group=data.isGroup)
+            else:
+                await whatsapp_action.set_typing(sender, value=True, is_group=data.isGroup)
+        except Exception as e:
+            logger.warning(f"Failed to set recording/typing status: {e}")
+
+        # Retrieve the STT action
+        try:
+            stt_action = await whatsapp_action.get_action(whatsapp_action.stt_action)
+            if not stt_action:
+                logger.warning(f"STT action '{whatsapp_action.stt_action}' not found")
+                return {"status": "ignored", "response": "stt action not found"}
+        except Exception as e:
+            logger.error(f"Error retrieving STT action: {e}")
+            return {"status": "error", "response": "STT action retrieval failed"}
+            
+        # Transcribe with validation
+        try:
+            if not data.media:
+                logger.warning(f"No media data in voice message from {sender}")
+                return {"status": "ignored", "response": "no audio data"}
+                
+            transcript = await stt_action.invoke_base64(audio_base64=data.media)
+            
+            if transcript and transcript.strip():
+                logger.info(f"Transcribed voice message from {sender}: {transcript}")
+                return {"status": "transcribed", "transcript": transcript}
+            else:
+                logger.info(f"Empty transcript for voice message from {sender}")
+                return {"status": "ignored", "response": "empty transcript"}
+                
+        except Exception as e:
+            logger.error(f"Error transcribing voice message from {sender}: {e}")
+            return {"status": "error", "response": "transcription failed"}
+                     
+    except Exception as e:
+        logger.error(f"Error processing voice message from {sender}: {e}", exc_info=True)
+        return {"status": "error", "response": "voice processing failed"}
+
+
+def _convert_message_payload_to_dict(data) -> Dict[str, Any]:
+    """Convert MessagePayload to dict safely."""
+    return {
+        "message_id": data.message_id,
+        "event_type": data.event_type,
+        "message_type": data.message_type,
+        "author": data.author,
+        "sender": data.sender,
+        "receiver": data.receiver,
+        "caption": data.caption,
+        "location": data.location,
+        "fromMe": data.fromMe,
+        "isGroup": data.isGroup,
+        "isForwarded": data.isForwarded,
+        "sender_name": data.sender_name,
+        "mentionedIds": data.mentionedIds,
+        "body": data.body,
+        "media": data.media,
+        "filename": data.filename,
+        "mime_type": data.mime_type,
+        "quoted_message": data.quoted_message,
+        "contact": data.contact,
+        "poll_id": data.poll_id,
+        "selectedOptions": data.selectedOptions,
+    }
+
+
+def _handle_media_batching(
+    sender: str, media_url: str, utterance: Optional[str], 
+    data_dict: Dict[str, Any], agent_id: str, whatsapp_action
+) -> Dict[str, Any]:
+    """Handle media batching logic with improved error handling."""
+    try:
+        # Handle batching for media messages
+        if sender in _media_batches:
+            # Add to existing batch
+            batch = _media_batches[sender]
+            batch["media_urls"].append(media_url)
+            batch["utterances"].append(utterance)
+            
+            # Cancel existing timer and start a new one
+            if batch.get("timer_task"):
+                batch["timer_task"].cancel()
+            
+            batch["timer_task"] = asyncio.create_task(
+                _schedule_batch_processing(sender, whatsapp_action.media_batch_window)
+            )
+            logger.info(f"Added media to existing batch for user {sender}, resetting timer")
+        else:
+            # Create new batch
+            _media_batches[sender] = {
+                "media_urls": [media_url],
+                "utterances": [utterance],
+                "data": data_dict,
+                "agent_id": agent_id,
+                "action": whatsapp_action,
+                "timer_task": None,
             }
+            
+            # Start timer for batch processing
+            _media_batches[sender]["timer_task"] = asyncio.create_task(
+                _schedule_batch_processing(sender, whatsapp_action.media_batch_window)
+            )
+            logger.info(
+                f"Created new media batch for user {sender}, "
+                f"will process in {whatsapp_action.media_batch_window}s"
+            )
+        
+        # Return immediately - batch will be processed after timer
+        return {"status": "received", "response": "media batched"}
+        
+    except Exception as e:
+        logger.error(f"Error handling media batching for user {sender}: {e}", exc_info=True)
+        return {"status": "error", "response": "batching failed"}
 
+
+async def _process_interaction_async(
+    data, utterance: str, sender: str, agent_id: str, agent
+) -> None:
+    """Process the interaction in the background with improved error handling."""
+    try:
+        # Convert MessagePayload to dict for InteractWalker
+        data_dict = _convert_message_payload_to_dict(data)
+
+        # Get conversation with error handling
+        try:
             convo_obj = await Conversation.find_one({"context.user_id": sender})
+        except DatabaseError as e:
+            logger.error(f"Database error finding conversation for user {sender}: {e}")
+            return
 
+        # Create walker with proper error handling
+        try:
             if convo_obj and getattr(convo_obj, "session_id", None):
                 walker = InteractWalker(
                     agent_id=agent_id,
@@ -357,11 +360,24 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                     user_id=sender,
                     stream=False,
                 )
+        except ValidationError as e:
+            logger.error(f"Validation error creating walker for user {sender}: {e}")
+            return
+        except Exception as e:
+            logger.error(f"Error creating walker for user {sender}: {e}")
+            return
+            
+        # Spawn walker with error handling
+        try:
             await walker.spawn(agent)
+        except Exception as e:
+            logger.error(f"Error spawning walker for user {sender}: {e}")
+            return
 
-            # Finalize interaction
-            interaction = walker.interaction
-            if interaction:
+        # Finalize interaction with error handling
+        interaction = walker.interaction
+        if interaction:
+            try:
                 if walker.response_bus:
                     await walker.response_bus.finalize_interaction(
                         interaction_id=interaction.id,
@@ -384,17 +400,126 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                         logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
                 except Exception as log_err:
                     logger.warning(f"Failed to log WhatsApp interaction: {log_err}")
+                    
+            except DatabaseError as e:
+                logger.error(f"Database error finalizing interaction for user {sender}: {e}")
+            except Exception as e:
+                logger.error(f"Error finalizing interaction for user {sender}: {e}")
 
-        except Exception as e:
-            logger.error(
-                f"Error processing WhatsApp interaction for agent {agent_id}: {e}",
-                exc_info=True,
+    except Exception as e:
+        logger.error(
+            f"Error processing WhatsApp interaction for agent {agent_id}: {e}",
+            exc_info=True,
+        )
+
+
+@endpoint(
+    "/whatsapp/interact/webhook/{agent_id}",
+    methods=["POST"],
+    webhook=True,
+    webhook_auth="api_key",  # Validates API key from query param or header
+    tags=["WhatsApp"],
+    response=success_response(
+        data={
+            "status": ResponseField(field_type=str, example="received"),
+            "response": ResponseField(field_type=Optional[str], example="Hello!", default=None),
+        }
+    ),
+)
+async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
+    """WhatsApp Interact Webhook.
+
+    Processes incoming WhatsApp messages and triggers an interaction via InteractWalker.
+    Returns immediately with 200 OK and processes the interaction asynchronously.
+    
+    Args:
+        request: FastAPI request object
+        agent_id: Agent ID from URL path
+        
+    Returns:
+        Dict containing status and optional response message
+        
+    Raises:
+        ResourceNotFoundError: If agent or action not found
+        HTTPException: For validation errors
+    """
+    try:
+        # Validate agent exists
+        agent = await Agent.get(agent_id)
+        if not agent:
+            raise ResourceNotFoundError(
+                message=f"Agent with ID '{agent_id}' not found",
+                details={"agent_id": agent_id},
             )
 
-    # Start background task
-    asyncio.create_task(process_interaction())
+        whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
+        if not whatsapp_action:
+            raise ResourceNotFoundError(
+                message="Action with label 'WhatsAppAction' not found",
+                details={"agent_id": agent_id},
+            )
 
-    return response
+        # Parse request data with error handling
+        try:
+            request_data = await request.json()
+            data = await whatsapp_action.api().parse_inbound_message(request_data)
+        except ValidationError as e:
+            logger.warning(f"Validation error parsing WhatsApp webhook request: {e}")
+            raise HTTPException(status_code=400, detail=f"Invalid request format: {e}")
+        except Exception as e:
+            logger.warning(f"Error parsing WhatsApp webhook request: {e}")
+            data = None
+
+
+        # logger.info(f"Received WhatsApp webhook for agent {agent_id}: {data}")
+        
+        if not data or data.fromMe:
+            return {"status": "received", "response": "Ignore message"}
+
+        # MessagePayload is a dataclass, access attributes directly
+        utterance = data.body or data.caption
+        utterance = utterance.strip() if utterance else None
+        sender = data.sender
+
+        # Validate sender
+        if not sender or "status@broadcast" in data.receiver or sender == data.receiver:
+            return {"status": "ignored", "response": "Sender blocked"}
+        
+        # Check if this is a media message
+        if data.message_type in ["image", "document", "video", "audio"] and data.media:
+            return await _handle_media_message(data, sender, agent_id, whatsapp_action, utterance)
+        elif data.message_type in ["ptt"] and data.media:
+            voice_result = await _handle_voice_message(data, sender, whatsapp_action)
+            utterance = voice_result.get("transcript", "")
+        elif utterance:
+            # Trigger typing immediately
+            try:
+                await whatsapp_action.set_typing(sender, value=True, is_group=data.isGroup)
+            except Exception as e:
+                logger.warning(f"Failed to set typing status: {e}")
+        else:
+            return {"status": "ignored", "response": "Ignore interaction"}
+
+        logger.debug(f"Processing utterance: {utterance}")
+
+        # Return immediately with 200 OK
+        response = {"status": "received"}
+
+        # Process interaction asynchronously in background
+        asyncio.create_task(_process_interaction_async(
+            data, utterance, sender, agent_id, agent
+        ))
+
+        return response
+        
+    except (ResourceNotFoundError, HTTPException):
+        raise
+    except DatabaseError as e:
+        logger.error(f"Database error in WhatsApp webhook: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Database error")
+    except Exception as e:
+        logger.error(f"Unexpected error in WhatsApp webhook: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @endpoint(

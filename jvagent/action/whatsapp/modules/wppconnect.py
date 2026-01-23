@@ -174,9 +174,9 @@ class WPPConnectAPI(BaseWhatsAppAPI):
             dict: Response from the server.
         """
         data = {"phone": phone, "isGroup": is_group, "value": value}
-        return self.send_rest_request("typing", method="POST", data=data)
+        return await self.send_rest_request("typing", method="POST", data=data)
 
-    def set_recording_status(
+    async def set_recording_status(
         self, phone: str, is_group: bool = False, duration: int = 5, value: bool = True
     ) -> dict:
         """
@@ -198,7 +198,7 @@ class WPPConnectAPI(BaseWhatsAppAPI):
             "duration": duration,
             "value": value,
         }
-        return self.send_rest_request("recording", method="POST", data=data)
+        return await self.send_rest_request("recording", method="POST", data=data)
     # ========================================================================
     # MESSAGING
     # ========================================================================
@@ -237,6 +237,28 @@ class WPPConnectAPI(BaseWhatsAppAPI):
     async def send_file(self, phone: str, file_url: str = "", **kwargs) -> dict:
         """POST /send-file"""
         return await self.send_media(phone, "send-file", file_url=file_url, **kwargs)
+
+    async def send_media(
+        self, 
+        phone: str, 
+        endpoint: str, 
+        file_url: str = "", 
+        caption: str = "",
+        filename: str = "",
+        is_group: bool = False,
+        **kwargs
+    ) -> dict:
+        """Generic media sending method."""
+        data = {
+            "phone": phone,
+            "isGroup": is_group,
+            "path": file_url,
+            "caption": caption,
+            "filename": filename,
+        }
+        # Add any additional kwargs
+        data.update(kwargs)
+        return await self.send_rest_request(endpoint, data=data)
 
     async def send_voice(
         self,

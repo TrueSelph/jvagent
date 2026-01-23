@@ -14,5 +14,4 @@ package:
   dependencies:
     jvagent: ~0.0.1
     pip:
-      - requests>=2.25.0
       - elevenlabs>=1.13.0

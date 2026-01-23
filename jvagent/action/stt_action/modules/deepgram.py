@@ -4,7 +4,7 @@ import logging
 import traceback
 from typing import Dict, Optional, Union
 
-import requests
+import aiohttp
 
 from .base import STTModule
 
@@ -39,36 +39,38 @@ class DeepgramSTTModule(STTModule):
         if not self.api_key:
             return None
 
-        transcript = None
         headers = {
             "Authorization": f"Token {self.api_key}",
             "Content-Type": "application/json"
         }
         data = {"url": audio_url}
+        params = {
+            'model': self.model,
+            'smart_format': str(self.smart_format).lower()
+        }
 
         try:
-            response = requests.post(
-                "https://api.deepgram.com/v1/listen",
-                headers=headers,
-                json=data,
-                params={
-                    'model': self.model,
-                    'smart_format': str(self.smart_format).lower()
-                }
-            )
-            response.raise_for_status()
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://api.deepgram.com/v1/listen",
+                    headers=headers,
+                    json=data,
+                    params=params
+                ) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    
+                    if result:
+                        channels = result.get('results', {}).get('channels', [])
+                        if channels:
+                            alternatives = channels[0].get('alternatives', [])
+                            if alternatives:
+                                return alternatives[0].get('transcript', '')
 
-            if result := response.json():
-                transcript = result.get('results', {}).get('channels', [{}])[0].get(
-                    'alternatives', [{}]
-                )[0].get('transcript', '')
-
-        except requests.exceptions.HTTPError as e:
-            self.logger.error(f"HTTP error occurred: {traceback.format_exc()}")
         except Exception as e:
-            self.logger.error(f"An exception occurred: {traceback.format_exc()}")
+            logger.error(f"Deepgram API error: {traceback.format_exc()}")
 
-        return transcript
+        return None
 
     async def invoke_base64(self, audio_base64: str, audio_type: str = "audio/mp3") -> Optional[str]:
         """Convert audio from base64 to text using Deepgram API.
@@ -83,36 +85,38 @@ class DeepgramSTTModule(STTModule):
         if not self.api_key:
             return None
 
-        transcript = None
         headers = {
             "Authorization": f"Token {self.api_key}",
             "Content-Type": audio_type
         }
         data = base64.b64decode(audio_base64)
+        params = {
+            'model': self.model,
+            'smart_format': str(self.smart_format).lower()
+        }
 
         try:
-            response = requests.post(
-                "https://api.deepgram.com/v1/listen",
-                headers=headers,
-                data=data,
-                params={
-                    'model': self.model,
-                    'smart_format': str(self.smart_format).lower()
-                }
-            )
-            response.raise_for_status()
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://api.deepgram.com/v1/listen",
+                    headers=headers,
+                    data=data,
+                    params=params
+                ) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    
+                    if result:
+                        channels = result.get('results', {}).get('channels', [])
+                        if channels:
+                            alternatives = channels[0].get('alternatives', [])
+                            if alternatives:
+                                return alternatives[0].get('transcript', '')
 
-            if result := response.json():
-                transcript = result.get('results', {}).get('channels', [{}])[0].get(
-                    'alternatives', [{}]
-                )[0].get('transcript', '')
-
-        except requests.exceptions.HTTPError as e:
-            self.logger.error(f"HTTP error occurred: {traceback.format_exc()}")
         except Exception as e:
-            self.logger.error(f"An exception occurred: {traceback.format_exc()}")
+            logger.error(f"Deepgram API error: {traceback.format_exc()}")
 
-        return transcript
+        return None
 
     async def invoke_file(self, audio_content: bytes, audio_type: str = "audio/mp3") -> Optional[Dict[str, Union[str, float]]]:
         """Convert audio file content to text using Deepgram API.
@@ -127,37 +131,39 @@ class DeepgramSTTModule(STTModule):
         if not self.api_key:
             return None
 
-        transcript = None
-        duration = 0
         headers = {
             "Authorization": f"Token {self.api_key}",
             "Content-Type": audio_type
         }
+        params = {
+            'model': self.model,
+            'smart_format': str(self.smart_format).lower()
+        }
 
         try:
-            response = requests.post(
-                "https://api.deepgram.com/v1/listen",
-                headers=headers,
-                data=audio_content,
-                params={
-                    'model': self.model,
-                    'smart_format': str(self.smart_format).lower()
-                }
-            )
-            response.raise_for_status()
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://api.deepgram.com/v1/listen",
+                    headers=headers,
+                    data=audio_content,
+                    params=params
+                ) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    
+                    if result:
+                        channels = result.get('results', {}).get('channels', [])
+                        if channels:
+                            alternatives = channels[0].get('alternatives', [])
+                            if alternatives:
+                                transcript = alternatives[0].get('transcript', '')
+                                duration = result.get("metadata", {}).get("duration", 0)
+                                return {"transcript": transcript, "duration": duration}
 
-            if result := response.json():
-                transcript = result.get('results', {}).get('channels', [{}])[0].get(
-                    'alternatives', [{}]
-                )[0].get('transcript', '')
-                duration = result.get("metadata", {}).get("duration", 0)
-
-        except requests.exceptions.HTTPError as e:
-            self.logger.error(f"HTTP error occurred: {traceback.format_exc()}")
         except Exception as e:
-            self.logger.error(f"An exception occurred: {traceback.format_exc()}")
+            logger.error(f"Deepgram API error: {traceback.format_exc()}")
 
-        return {"transcript": transcript, "duration": duration} if transcript is not None else None
+        return None
 
     async def healthcheck(self) -> Union[bool, Dict[str, str]]:
         """Perform health check for Deepgram API.
@@ -168,35 +174,39 @@ class DeepgramSTTModule(STTModule):
         if not self.api_key:
             return {
                 "status": False,
-                "message": "Deepgram API key is not set.",
+                "message": "Deepgram API key is not set",
                 "severity": "error"
             }
         
         if not self.model:
             return {
                 "status": False,
-                "message": "Deepgram model is not set.",
+                "message": "Deepgram model is not set",
                 "severity": "error"
             }
 
         try:
-            url = "https://api.deepgram.com/v1/projects"
             headers = {"Authorization": f"Token {self.api_key}"}
-            response = requests.get(url, headers=headers)
             
-            if response.status_code == 200:
-                return True
-            else:
-                return {
-                    "status": False,
-                    "message": f"Check Deepgram STT configuration: {response.text}",
-                    "severity": "error"
-                }
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    "https://api.deepgram.com/v1/projects",
+                    headers=headers
+                ) as response:
+                    if response.status == 200:
+                        return True
+                    else:
+                        text = await response.text()
+                        return {
+                            "status": False,
+                            "message": f"Deepgram API error: {text}",
+                            "severity": "error"
+                        }
 
         except Exception as e:
-            self.logger.error(f"An exception occurred in healthcheck: {traceback.format_exc()}")
+            logger.error(f"Deepgram healthcheck error: {traceback.format_exc()}")
             return {
                 "status": False,
-                "message": f"Check Deepgram STT configuration: {e}",
+                "message": f"Deepgram API error: {e}",
                 "severity": "error"
             }
