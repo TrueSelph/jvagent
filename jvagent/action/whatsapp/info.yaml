@@ -1,11 +1,11 @@
 package:
-  name: jvagent/whatsapp
+  name: jvagent/whatsapp_action
   author: V75 Inc.
   archetype: WhatsAppAction
   version: 1.0.0
   meta:
-    title: Whatsapp
-    description: WhatsApp implementation using multiple providers
+    title: WhatsApp Integration
+    description: WhatsApp implementation using multiple providers with enhanced security and error handling
     group: jvagent
     type: action
   config:
@@ -15,3 +15,5 @@ package:
     jvagent: ~0.0.1
     pip:
       - filetype>=1.2.0
+      - aiohttp>=3.8.0
+      - python-dotenv>=0.19.0

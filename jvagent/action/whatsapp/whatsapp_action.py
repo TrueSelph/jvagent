@@ -1,5 +1,6 @@
 """WhatsApp Action Implementation."""
 import logging
+from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
 from jvagent.action.base import Action
@@ -8,6 +9,7 @@ from jvspatial.api.auth.models import APIKey
 from jvspatial.core.annotations import attribute
 from jvspatial.core.context import GraphContext
 from jvspatial.db import get_prime_database
+from jvspatial.exceptions import ValidationError, DatabaseError
 from .whatsapp_adapter import WhatsAppAdapter
 from .modules.wppconnect import WPPConnectAPI
 from .modules.wwebjs_api import WWebJSAPI
@@ -21,44 +23,83 @@ class WhatsAppAction(Action):
 
     provider: str = attribute(
         default="wppconnect",
-        description="WhatsApp provider (wppconnect, ultramsg, ts-whatsapp)",
+        description="WhatsApp provider (wppconnect, ultramsg, ts-whatsapp, wwebjs)",
+        pattern=r"^(wppconnect|ultramsg|ts-whatsapp|wwebjs)$"
     )
 
-    api_url: Optional[str] = attribute(default=None, description="WhatsApp API Endpoint URL")
-
-    api_key: Optional[str] = attribute(default=None, description="WhatsApp API Key / Token")
-
-    session: Optional[str] = attribute(default=None, description="WhatsApp session")
-
-    token: Optional[str] = attribute(default=None, description="WhatsApp token")
-
-    base_url: Optional[str] = attribute(
-        default="http://localhost:8000", description="WhatsApp base URL"
+    api_url: Optional[str] = attribute(
+        default=None, 
+        description="WhatsApp API Endpoint URL",
+        pattern=r"^https?://.*"
     )
 
-    webhook_url: Optional[str] = attribute(default=None, description="WhatsApp webhook URL")
+    api_key: Optional[str] = attribute(
+        default=None, 
+        description="WhatsApp API Key / Token",
+        min_length=1
+    )
+
+    session: Optional[str] = attribute(
+        default=None, 
+        description="WhatsApp session",
+        min_length=1,
+        max_length=100
+    )
+
+    token: Optional[str] = attribute(
+        default=None, 
+        description="WhatsApp token",
+        min_length=1
+    )
+
+    base_url: str = attribute(
+        default="http://localhost:8000", 
+        description="WhatsApp base URL",
+        pattern=r"^https?://.*"
+    )
+
+    webhook_url: Optional[str] = attribute(
+        default=None, 
+        description="WhatsApp webhook URL",
+        pattern=r"^https?://.*"
+    )
 
     webhook_api_key_id: Optional[str] = attribute(
-        default=None, description="ID of the API key used for webhook authentication"
+        default=None, 
+        description="ID of the API key used for webhook authentication"
     )
 
-    request_timeout: int = attribute(default=60, description="WhatsApp request timeout in seconds")
+    request_timeout: int = attribute(
+        default=60, 
+        description="WhatsApp request timeout in seconds",
+        ge=1,
+        le=300
+    )
 
-    chunk_length: int = attribute(default=4000, description="WhatsApp chunk length")
+    chunk_length: int = attribute(
+        default=4000, 
+        description="WhatsApp chunk length",
+        ge=100,
+        le=10000
+    )
 
     media_batch_window: float = attribute(
         default=2.5,
-        description="Time window in seconds to batch multiple media messages together"
+        description="Time window in seconds to batch multiple media messages together",
+        ge=0.1,
+        le=30.0
     )
 
     stt_action: Optional[str] = attribute(
         default="STTAction",
         description="Label or Class used to transcribe voice messages or audio files",
+        min_length=1
     )
 
     tts_action: Optional[str] = attribute(
         default="TTSAction",
         description="Label or Class used to convert text to speech",
+        min_length=1
     )
 
     # action configuration
@@ -69,21 +110,33 @@ class WhatsAppAction(Action):
         Creates and initializes the WhatsApp channel adapter for automatic
         message delivery via the response bus.
         """
-        # Initialize typing tracking
-        if not hasattr(self, "_typing_phones"):
-            self._typing_phones = set()
+        try:
+            # Initialize typing tracking
+            if not hasattr(self, "_typing_phones"):
+                self._typing_phones = set()
 
-        # Create WhatsAppAdapter instance
-        adapter = WhatsAppAdapter(action=self)
+            # Validate configuration
+            health_result = await self.healthcheck()
+            if isinstance(health_result, dict) and not health_result.get("healthy", True):
+                raise ValidationError(f"WhatsApp configuration errors: {'; '.join(health_result.get('errors', []))}")
 
-        # Initialize the adapter (gets ResponseBus and registers itself)
-        await adapter.initialize()
+            # Create WhatsAppAdapter instance
+            adapter = WhatsAppAdapter(action=self)
 
-        # Store adapter instance for reference
-        self._channel_adapter = adapter
+            # Initialize the adapter (gets ResponseBus and registers itself)
+            await adapter.initialize()
 
-        # Register session
-        await self.register_session()
+            # Store adapter instance for reference
+            self._channel_adapter = adapter
+
+            # Register session
+            await self.register_session()
+            
+            logger.info(f"WhatsApp action registered successfully for provider: {self.provider}")
+            
+        except Exception as e:
+            logger.error(f"Failed to register WhatsApp action: {e}", exc_info=True)
+            raise ValidationError(f"WhatsApp action registration failed: {e}")
 
     async def on_reload(self) -> None:
         """Called when action is reloaded (e.g., after update).
@@ -168,24 +221,36 @@ class WhatsAppAction(Action):
 
 
     def api(self) -> Union[WPPConnectAPI, WWebJSAPI]:
-        if self.provider == "wppconnect":
-            return WPPConnectAPI(
-                api_url=self.api_url,
-                session=self.session,
-                token=self.token,
-                secret_key=self.api_key,
-                timeout=self.request_timeout,
-            )
-        elif self.provider == "wwebjs":
-            return WWebJSAPI(
-                api_url=self.api_url,
-                session=self.session,
-                token=self.token,
-                secret_key=self.api_key,
-                timeout=self.request_timeout,
-            )
-        else:
-            raise ValueError(f"Unsupported provider: {self.provider}")
+        """Get API instance for the configured provider.
+        
+        Returns:
+            API instance for the configured provider
+            
+        Raises:
+            ValidationError: If provider is unsupported or configuration is invalid
+        """
+        try:
+            if self.provider == "wppconnect":
+                return WPPConnectAPI(
+                    api_url=self.api_url,
+                    session=self.session,
+                    token=self.token,
+                    secret_key=self.api_key,
+                    timeout=self.request_timeout,
+                )
+            elif self.provider == "wwebjs":
+                return WWebJSAPI(
+                    api_url=self.api_url,
+                    session=self.session,
+                    token=self.token,
+                    secret_key=self.api_key,
+                    timeout=self.request_timeout,
+                )
+            else:
+                raise ValidationError(f"Unsupported provider: {self.provider}")
+        except Exception as e:
+            logger.error(f"Failed to create API instance for provider {self.provider}: {e}")
+            raise ValidationError(f"API initialization failed: {e}")
 
     async def get_webhook_url(self, allowed_ip: Optional[str] = None, regenerate: bool = False) -> str:
         """Generate secure webhook URL with API key authentication.
@@ -204,110 +269,126 @@ class WhatsAppAction(Action):
             "http://localhost:8000/api/whatsapp/interact/webhook/{agent_id}?api_key=jv_...")
 
         Raises:
-            Exception: If API key generation fails or agent cannot be retrieved
+            ValidationError: If API key generation fails or agent cannot be retrieved
+            DatabaseError: If database operations fail
         """
-        agent = await self.get_agent()
-        agent_id = str(agent.id)
-        expected_url_base = f"{self.base_url}/api/whatsapp/interact/webhook/{agent_id}"
+        try:
+            agent = await self.get_agent()
+            agent_id = str(agent.id)
+            expected_url_base = f"{self.base_url}/api/whatsapp/interact/webhook/{agent_id}"
 
-        # Check if we can reuse existing webhook_url
-        if not regenerate and self.webhook_url and "?api_key=" in self.webhook_url:
-            # Verify the URL is for the correct agent
-            if self.webhook_url.startswith(expected_url_base):
-                # Check if we need to update IP restrictions
-                if self.webhook_api_key_id:
-                    try:
-                        prime_db = get_prime_database()
-                        context = GraphContext(database=prime_db)
-                        existing_key = await context.get(APIKey, self.webhook_api_key_id)
-                        if existing_key and existing_key.is_active:
-                            # Check if IP restrictions match
-                            if allowed_ip is None:
-                                # No IP restriction requested, check if current key has none
-                                if not existing_key.allowed_ips:
-                                    # Can reuse existing URL
-                                    logger.debug("Reusing existing webhook URL")
+            # Check if we can reuse existing webhook_url
+            if not regenerate and self.webhook_url and "?api_key=" in self.webhook_url:
+                # Verify the URL is for the correct agent
+                if self.webhook_url.startswith(expected_url_base):
+                    # Check if we need to update IP restrictions
+                    if self.webhook_api_key_id:
+                        try:
+                            prime_db = get_prime_database()
+                            context = GraphContext(database=prime_db)
+                            existing_key = await context.get(APIKey, self.webhook_api_key_id)
+                            if existing_key and existing_key.is_active:
+                                # Check if IP restrictions match
+                                if allowed_ip is None:
+                                    # No IP restriction requested, check if current key has none
+                                    if not existing_key.allowed_ips:
+                                        # Can reuse existing URL
+                                        logger.debug("Reusing existing webhook URL")
+                                        return self.webhook_url
+                                elif allowed_ip in existing_key.allowed_ips:
+                                    # IP matches, can reuse
+                                    logger.debug("Reusing existing webhook URL with matching IP")
                                     return self.webhook_url
-                            elif allowed_ip in existing_key.allowed_ips:
-                                # IP matches, can reuse
-                                logger.debug("Reusing existing webhook URL with matching IP")
-                                return self.webhook_url
-                            # IP restriction changed, need to regenerate
-                            logger.debug("IP restriction changed, regenerating API key")
+                                # IP restriction changed, need to regenerate
+                                logger.debug("IP restriction changed, regenerating API key")
+                                regenerate = True
+                            else:
+                                # Key is inactive, need to regenerate
+                                logger.debug("Existing API key is inactive, regenerating")
+                                regenerate = True
+                        except DatabaseError as e:
+                            logger.warning(
+                                f"Database error checking existing API key {self.webhook_api_key_id}: {e}. Regenerating."
+                            )
                             regenerate = True
-                        else:
-                            # Key is inactive, need to regenerate
-                            logger.debug("Existing API key is inactive, regenerating")
+                        except Exception as e:
+                            logger.warning(
+                                f"Error checking existing API key {self.webhook_api_key_id}: {e}. Regenerating."
+                            )
                             regenerate = True
-                    except Exception as e:
-                        logger.warning(
-                            f"Error checking existing API key {self.webhook_api_key_id}: {e}. Regenerating."
-                        )
+                    else:
+                        # No key ID stored, but URL exists - might be from before upgrade
+                        # Regenerate to ensure we have proper key tracking
+                        logger.debug("No API key ID stored, regenerating for proper tracking")
                         regenerate = True
                 else:
-                    # No key ID stored, but URL exists - might be from before upgrade
-                    # Regenerate to ensure we have proper key tracking
-                    logger.debug("No API key ID stored, regenerating for proper tracking")
+                    # Agent ID changed, need to regenerate
+                    logger.debug("Agent ID changed, regenerating webhook URL")
                     regenerate = True
-            else:
-                # Agent ID changed, need to regenerate
-                logger.debug("Agent ID changed, regenerating webhook URL")
-                regenerate = True
 
-        # Get or create system service user
-        system_user_id = await get_or_create_system_user()
+            # Get or create system service user
+            system_user_id = await get_or_create_system_user()
 
-        # Set up API key service
-        prime_db = get_prime_database()
-        context = GraphContext(database=prime_db)
-        api_key_service = APIKeyService(context=context)
+            # Set up API key service
+            prime_db = get_prime_database()
+            context = GraphContext(database=prime_db)
+            api_key_service = APIKeyService(context=context)
 
-        # Revoke old key if regenerating and one exists
-        if regenerate and self.webhook_api_key_id:
-            try:
-                old_key = await context.get(APIKey, self.webhook_api_key_id)
-                if old_key:
-                    old_key.is_active = False
-                    old_key._graph_context = context
-                    await context.save(old_key)
-                    logger.info(f"Revoked old API key: {self.webhook_api_key_id}")
-            except Exception as e:
-                logger.warning(f"Error revoking old API key: {e}")
+            # Revoke old key if regenerating and one exists
+            if regenerate and self.webhook_api_key_id:
+                try:
+                    old_key = await context.get(APIKey, self.webhook_api_key_id)
+                    if old_key:
+                        old_key.is_active = False
+                        old_key._graph_context = context
+                        await context.save(old_key)
+                        logger.info(f"Revoked old API key: {self.webhook_api_key_id}")
+                except DatabaseError as e:
+                    logger.warning(f"Database error revoking old API key: {e}")
+                except Exception as e:
+                    logger.warning(f"Error revoking old API key: {e}")
 
-        # Generate new API key
-        key_name = f"WhatsApp Webhook - {agent.name}"
-        allowed_ips = [allowed_ip] if allowed_ip else []
-        allowed_endpoints = ["/api/whatsapp/interact/webhook/*"]
+            # Generate new API key
+            key_name = f"WhatsApp Webhook - {agent.name}"
+            allowed_ips = [allowed_ip] if allowed_ip else []
+            allowed_endpoints = ["/api/whatsapp/interact/webhook/*"]
 
-        plaintext_key, api_key = await api_key_service.generate_key(
-            user_id=system_user_id,
-            name=key_name,
-            permissions=["webhook:whatsapp"],
-            expires_in_days=None,  # No expiration
-            allowed_ips=allowed_ips,
-            allowed_endpoints=allowed_endpoints,
-            key_prefix="jv_",
-        )
+            plaintext_key, api_key = await api_key_service.generate_key(
+                user_id=system_user_id,
+                name=key_name,
+                permissions=["webhook:whatsapp"],
+                expires_in_days=None,  # No expiration
+                allowed_ips=allowed_ips,
+                allowed_endpoints=allowed_endpoints,
+                key_prefix="jv_",
+            )
 
-        # Store API key ID in action
-        self.webhook_api_key_id = api_key.id
+            # Store API key ID in action
+            self.webhook_api_key_id = api_key.id
 
-        # Construct webhook URL with API key
-        webhook_url = f"{expected_url_base}?api_key={plaintext_key}"
+            # Construct webhook URL with API key
+            webhook_url = f"{expected_url_base}?api_key={plaintext_key}"
 
-        # Store the webhook URL in the action
-        self.webhook_url = webhook_url
-        # Ensure the action has the correct context for saving
-        if not hasattr(self, "_graph_context") or self._graph_context is None:
-            self._graph_context = context
-        await self.save()
+            # Store the webhook URL in the action
+            self.webhook_url = webhook_url
+            # Ensure the action has the correct context for saving
+            if not hasattr(self, "_graph_context") or self._graph_context is None:
+                self._graph_context = context
+            await self.save()
 
-        logger.info(
-            f"Generated new API key for WhatsApp webhook: {api_key.id} "
-            f"(prefix: {api_key.key_prefix})"
-        )
+            logger.info(
+                f"Generated new API key for WhatsApp webhook: {api_key.id} "
+                f"(prefix: {api_key.key_prefix})"
+            )
 
-        return webhook_url
+            return webhook_url
+            
+        except DatabaseError as e:
+            logger.error(f"Database error in get_webhook_url: {e}", exc_info=True)
+            raise
+        except Exception as e:
+            logger.error(f"Failed to generate webhook URL: {e}", exc_info=True)
+            raise ValidationError(f"Webhook URL generation failed: {e}")
 
     async def set_typing(self, phone: str, value: bool = True, is_group: bool = False) -> None:
         """Set or clear typing status for a phone number.
@@ -359,31 +440,90 @@ class WhatsAppAction(Action):
 
 
     async def register_session(self) -> Dict[str, Any]:
-        agent = await self.get_agent()
+        """Register WhatsApp session with proper error handling.
+        
+        Returns:
+            Dict containing session registration result
+            
+        Raises:
+            ValidationError: If session registration fails
+            DatabaseError: If database operations fail
+        """
+        try:
+            agent = await self.get_agent()
 
-        # set agent name as session if not set
-        if not self.session:
-            self.session = agent.name
-            # Save session if it was just set
-            await self.save()
+            # set agent name as session if not set
+            if not self.session:
+                self.session = agent.name
+                # Save session if it was just set
+                await self.save()
 
-        # create webhook url if not set
-        if not self.webhook_url:
-            # Try to close existing session (if endpoint exists)
-            try:
-                await self.api().close_session()
-            except Exception as e:
-                # Ignore errors - endpoint may not exist or session may not be active
-                logger.debug(f"Could not close session (this is normal): {e}")
+            # create webhook url if not set
+            if not self.webhook_url:
+                # Try to close existing session (if endpoint exists)
+                try:
+                    await self.api().close_session()
+                except Exception as e:
+                    # Ignore errors - endpoint may not exist or session may not be active
+                    logger.debug(f"Could not close session (this is normal): {e}")
 
-            # Generate secure webhook URL with API key
-            self.webhook_url = await self.get_webhook_url()
+                # Generate secure webhook URL with API key
+                self.webhook_url = await self.get_webhook_url()
 
-        # register session
-        return await self.api().register_session(
-            webhook_url=self.webhook_url,
-            wait_qr_code=True,
-            auto_register=True,
-        )
+            # register session
+            result = await self.api().register_session(
+                webhook_url=self.webhook_url,
+                wait_qr_code=True,
+                auto_register=True,
+            )
+            
+            logger.info(f"WhatsApp session registered successfully: {self.session}")
+            return result
+            
+        except DatabaseError as e:
+            logger.error(f"Database error during session registration: {e}", exc_info=True)
+            raise
+        except Exception as e:
+            logger.error(f"Failed to register WhatsApp session: {e}", exc_info=True)
+            raise ValidationError(f"Session registration failed: {e}")
+
+    async def healthcheck(self) -> Union[bool, Dict[str, Any]]:
+        """Perform health check for WhatsApp action.
+        
+        Returns:
+            True if healthy, dict with error details if not
+        """
+        errors = []
+        
+        if not self.api_url:
+            errors.append("api_url is required")
+        elif not self.api_url.startswith(("http://", "https://")):
+            errors.append("api_url must be a valid HTTP/HTTPS URL")
+            
+        if not self.provider:
+            errors.append("provider is required")
+        elif self.provider not in ["wppconnect", "wwebjs", "ultramsg"]:
+            errors.append(f"Unsupported provider: {self.provider}")
+            
+        if self.request_timeout <= 0:
+            errors.append("request_timeout must be positive")
+            
+        if self.chunk_length <= 0:
+            errors.append("chunk_length must be positive")
+            
+        if self.media_batch_window <= 0:
+            errors.append("media_batch_window must be positive")
+            
+        if errors:
+            return {"healthy": False, "errors": errors}
+            
+        # Test API connection
+        try:
+            api = self.api()
+            # Basic connectivity test - this will vary by provider
+            # For now, just check if API instance can be created
+            return {"healthy": True, "provider": self.provider, "api_url": self.api_url}
+        except Exception as e:
+            return {"healthy": False, "errors": [f"API connection failed: {e}"]}
 
 
