@@ -1,0 +1,18 @@
+package:
+  name: jvagent/tts_action
+  author: V75 Inc.
+  archetype: TTSAction
+  version: 1.0.0
+  meta:
+    title: Text-to-Speech
+    description: Text-to-speech implementation using multiple providers
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - requests>=2.25.0
+      - elevenlabs>=1.13.0

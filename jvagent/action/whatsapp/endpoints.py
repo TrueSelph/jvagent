@@ -34,7 +34,7 @@ async def _process_media_batch(sender: str) -> None:
     
     batch = _media_batches.pop(sender)
     agent_id = batch["agent_id"]
-    action = batch["action"]
+    whatsapp_action = batch["action"]
     
     try:
         
@@ -145,8 +145,8 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             details={"agent_id": agent_id},
         )
 
-    action = await agent.get_action_by_type("WhatsAppAction")
-    if not action:
+    whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
+    if not whatsapp_action:
         raise ResourceNotFoundError(
             message="Action with label 'WhatsAppAction' not found",
             details={"agent_id": agent_id},
@@ -154,7 +154,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
 
     try:
         request_data = await request.json()
-        data = await action.api().parse_inbound_message(request_data)
+        data = await whatsapp_action.api().parse_inbound_message(request_data)
     except Exception as e:
         logger.warning(f"Error parsing WhatsApp webhook request: {e}")
         data = None
@@ -172,9 +172,9 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
 
     
     # Check if this is a media message
-    if data.message_type in ["image", "document", "video", "audio"]:
+    if data.message_type in ["image", "document", "video", "audio"] and data.media:
         # Trigger typing
-        await action.set_typing(phone=sender, value=True, is_group=data.isGroup)
+        await whatsapp_action.set_typing(sender, value=True, is_group=data.isGroup)
         
         media_manager = MediaManager()
         media_b64 = data.media
@@ -194,7 +194,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                 )
                 
                 if media_url:
-                    media_url = action.base_url + media_url
+                    media_url = whatsapp_action.base_url + media_url
                     logger.info(f"Saved media for user {sender}: {media_url}")
                     
                     # Convert MessagePayload to dict for batching
@@ -234,7 +234,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                             batch["timer_task"].cancel()
                         
                         batch["timer_task"] = asyncio.create_task(
-                            _schedule_batch_processing(sender, action.media_batch_window)
+                            _schedule_batch_processing(sender, whatsapp_action.media_batch_window)
                         )
                         logger.info(f"Added media to existing batch for user {sender}, resetting timer")
                     else:
@@ -250,11 +250,11 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                         
                         # Start timer for batch processing
                         _media_batches[sender]["timer_task"] = asyncio.create_task(
-                            _schedule_batch_processing(sender, action.media_batch_window)
+                            _schedule_batch_processing(sender, whatsapp_action.media_batch_window)
                         )
                         logger.info(
                             f"Created new media batch for user {sender}, "
-                            f"will process in {action.media_batch_window}s"
+                            f"will process in {whatsapp_action.media_batch_window}s"
                         )
                     
                     # Return immediately - batch will be processed after timer
@@ -263,36 +263,30 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             except Exception as e:
                 logger.error(f"Error processing media for user {sender}: {e}")
 
-    elif data.message_type in ["ptt"]:
+    elif data.message_type in ["ptt"] and data.media:
         # Handle voice messages (PTT)
-        if action.stt_action:
+        if whatsapp_action.stt_action:
             try:
                 # Set status to recording (listening)
-                await action.set_recording_status(
-                    phone=sender, value=True, is_group=data.isGroup, duration=10
-                )
-                
+                tts_action = await whatsapp_action.get_action(whatsapp_action.tts_action)
+                if tts_action:
+                    await whatsapp_action.set_recording_status(sender, value=True, is_group=data.isGroup)
+                else:
+                    await whatsapp_action.set_typing(sender, value=True, is_group=data.isGroup)
+
                 # Retrieve the STT action
-                stt_action = await action.get_action(action.stt_action)
+                stt_action = await whatsapp_action.get_action(whatsapp_action.stt_action)
                 if stt_action:
-                    # Decode audio
-                    audio_b64 = data.media
-                    if "," in audio_b64:
-                        audio_b64 = audio_b64.split(",")[1]
-                    
-                    audio_bytes = base64.b64decode(audio_b64)
-                    
                     # Transcribe
-                    transcript = await stt_action.transcribe(audio_bytes)
+                    transcript = await stt_action.invoke_base64(audio_base64=data.media)
                     
                     if transcript:
                         logger.info(f"Transcribed voice message from {sender}: {transcript}")
                         utterance = transcript
                     else:
-                        logger.warning(f"Empty transcript for voice message from {sender}")
                         return {"status": "ignored", "response": "empty transcript"}
                 else:
-                     logger.warning(f"STT action '{action.stt_action}' not found")
+                     logger.warning(f"STT action '{whatsapp_action.stt_action}' not found")
                      return {"status": "ignored", "response": "stt action not found"}
                      
             except Exception as e:
@@ -301,11 +295,11 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         else:
              logger.info(f"No STT action configured for WhatsAppAction, ignoring voice message from {sender}")
              return {"status": "ignored", "response": "no stt action configured"}
-
-        
-    # For non-media messages, process immediately
-    if not utterance:
-        return {"status": "ignored", "response": "no utterance found"}
+    elif utterance:
+        # Trigger typing immediately
+        await whatsapp_action.set_typing(sender, value=True, is_group=data.isGroup)
+    else:
+        return {"status": "ignored", "response": "Ignore interaction"}
 
     logger.warning(f"#################################################")
     logger.warning(f"Utterance: {utterance}")
@@ -318,9 +312,6 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
 
         """Process the interaction in the background."""
         try:
-            # Trigger typing immediately
-            await action.set_typing(phone=sender, value=True, is_group=data.isGroup)
-
             # Convert MessagePayload to dict for InteractWalker
             data_dict = {
                 "message_id": data.message_id,
@@ -441,8 +432,8 @@ async def send_message(
     Returns:
         Dict[str, Any]: Result of the message send operation
     """
-    action = await WhatsAppAction.get(action_id)
-    if not action or not isinstance(action, WhatsAppAction):
+    whatsapp_action = await WhatsAppAction.get(action_id)
+    if not whatsapp_action or not isinstance(whatsapp_action, WhatsAppAction):
         raise ResourceNotFoundError(f"WhatsApp action not found: {action_id}")
 
     if outbox:
@@ -451,7 +442,7 @@ async def send_message(
             "status": "outbox not implemented yet"
         }
     else:
-        result = await action.api().send_message(phone=to, message=message, is_group=is_group, is_newsletter=is_newsletter, message_id=message_id, options=options)
+        result = await whatsapp_action.api().send_message(phone=to, message=message, is_group=is_group, is_newsletter=is_newsletter, message_id=message_id, options=options)
 
     if isinstance(result, dict) and "status" not in result:
         result["status"] = "sent" if result.get("success") or result.get("ok") else "failed"
@@ -491,11 +482,11 @@ async def send_image(
     Returns:
         Dict[str, Any]: Result of the image send operation
     """
-    action = await WhatsAppAction.get(action_id)
-    if not action or not isinstance(action, WhatsAppAction):
+    whatsapp_action = await WhatsAppAction.get(action_id)
+    if not whatsapp_action or not isinstance(whatsapp_action, WhatsAppAction):
         raise ResourceNotFoundError(f"WhatsApp action not found: {action_id}")
 
-    result = await action.api().send_image(
+    result = await whatsapp_action.api().send_image(
         phone=to, 
         file_url=image_url, 
         caption=caption,
@@ -541,11 +532,11 @@ async def send_file(
     Returns:
         Dict[str, Any]: Result of the file send operation
     """
-    action = await WhatsAppAction.get(action_id)
-    if not action or not isinstance(action, WhatsAppAction):
+    whatsapp_action = await WhatsAppAction.get(action_id)
+    if not whatsapp_action or not isinstance(whatsapp_action, WhatsAppAction):
         raise ResourceNotFoundError(f"WhatsApp action not found: {action_id}")
 
-    result = await action.api().send_file(
+    result = await whatsapp_action.api().send_file(
         phone=to, 
         file_url=file_url, 
         caption=caption,
@@ -589,11 +580,11 @@ async def send_voice(
     Returns:
         Dict[str, Any]: Result of the voice send operation
     """
-    action = await WhatsAppAction.get(action_id)
-    if not action or not isinstance(action, WhatsAppAction):
+    whatsapp_action = await WhatsAppAction.get(action_id)
+    if not whatsapp_action or not isinstance(whatsapp_action, WhatsAppAction):
         raise ResourceNotFoundError(f"WhatsApp action not found: {action_id}")
 
-    result = await action.api().send_voice(
+    result = await whatsapp_action.api().send_voice(
         phone=to, 
         file_url=voice_url, 
         is_group=is_group,
@@ -638,11 +629,11 @@ async def send_location(
     Returns:
         Dict[str, Any]: Result of the location send operation
     """
-    action = await WhatsAppAction.get(action_id)
-    if not action or not isinstance(action, WhatsAppAction):
+    whatsapp_action = await WhatsAppAction.get(action_id)
+    if not whatsapp_action or not isinstance(whatsapp_action, WhatsAppAction):
         raise ResourceNotFoundError(f"WhatsApp action not found: {action_id}")
 
-    result = await action.api().send_location(
+    result = await whatsapp_action.api().send_location(
         phone=to, 
         latitude=latitude,
         longitude=longitude,
@@ -686,11 +677,11 @@ async def create_group(
     Returns:
         Dict[str, Any]: Result of the group creation
     """
-    action = await WhatsAppAction.get(action_id)
-    if not action or not isinstance(action, WhatsAppAction):
+    whatsapp_action = await WhatsAppAction.get(action_id)
+    if not whatsapp_action or not isinstance(whatsapp_action, WhatsAppAction):
         raise ResourceNotFoundError(f"WhatsApp action not found: {action_id}")
 
-    result = await action.api().create_group(name=name, participants=participants)
+    result = await whatsapp_action.api().create_group(name=name, participants=participants)
 
     if isinstance(result, dict) and "status" not in result:
         result["status"] = "created" if result.get("success") or result.get("ok") else "failed"
@@ -724,11 +715,11 @@ async def add_group_participant(
     Returns:
         Dict[str, Any]: Result of the operation
     """
-    action = await WhatsAppAction.get(action_id)
-    if not action or not isinstance(action, WhatsAppAction):
+    whatsapp_action = await WhatsAppAction.get(action_id)
+    if not whatsapp_action or not isinstance(whatsapp_action, WhatsAppAction):
         raise ResourceNotFoundError(f"WhatsApp action not found: {action_id}")
 
-    result = await action.api().add_group_participant(group_id=group_id, phone=phone)
+    result = await whatsapp_action.api().add_group_participant(group_id=group_id, phone=phone)
 
     if isinstance(result, dict) and "status" not in result:
         result["status"] = "added" if result.get("success") or result.get("ok") else "failed"
@@ -762,11 +753,11 @@ async def remove_group_participant(
     Returns:
         Dict[str, Any]: Result of the operation
     """
-    action = await WhatsAppAction.get(action_id)
-    if not action or not isinstance(action, WhatsAppAction):
+    whatsapp_action = await WhatsAppAction.get(action_id)
+    if not whatsapp_action or not isinstance(whatsapp_action, WhatsAppAction):
         raise ResourceNotFoundError(f"WhatsApp action not found: {action_id}")
 
-    result = await action.api().remove_group_participant(group_id=group_id, phone=phone)
+    result = await whatsapp_action.api().remove_group_participant(group_id=group_id, phone=phone)
 
     if isinstance(result, dict) and "status" not in result:
         result["status"] = "removed" if result.get("success") or result.get("ok") else "failed"
@@ -798,11 +789,11 @@ async def get_profile_picture(
     Returns:
         Dict[str, Any]: Profile picture URL
     """
-    action = await WhatsAppAction.get(action_id)
-    if not action or not isinstance(action, WhatsAppAction):
+    whatsapp_action = await WhatsAppAction.get(action_id)
+    if not whatsapp_action or not isinstance(whatsapp_action, WhatsAppAction):
         raise ResourceNotFoundError(f"WhatsApp action not found: {action_id}")
 
-    result = await action.api().get_profile_picture(phone=phone)
+    result = await whatsapp_action.api().get_profile_picture(phone=phone)
 
     return result
 
@@ -833,11 +824,11 @@ async def get_session_status(
     Returns:
         Dict[str, Any]: Session status information
     """
-    action = await WhatsAppAction.get(action_id)
-    if not action or not isinstance(action, WhatsAppAction):
+    whatsapp_action = await WhatsAppAction.get(action_id)
+    if not whatsapp_action or not isinstance(whatsapp_action, WhatsAppAction):
         raise ResourceNotFoundError(f"WhatsApp action not found: {action_id}")
 
-    result = await action.api().status()
+    result = await whatsapp_action.api().status()
 
     return result
 
@@ -864,11 +855,11 @@ async def get_qrcode(
     Returns:
         Dict[str, Any]: QR code as base64 image
     """
-    action = await WhatsAppAction.get(action_id)
-    if not action or not isinstance(action, WhatsAppAction):
+    whatsapp_action = await WhatsAppAction.get(action_id)
+    if not whatsapp_action or not isinstance(whatsapp_action, WhatsAppAction):
         raise ResourceNotFoundError(f"WhatsApp action not found: {action_id}")
 
-    result = await action.api().qrcode()
+    result = await whatsapp_action.api().qrcode()
 
     return result
 
@@ -895,11 +886,11 @@ async def get_device_info(
     Returns:
         Dict[str, Any]: Device information
     """
-    action = await WhatsAppAction.get(action_id)
-    if not action or not isinstance(action, WhatsAppAction):
+    whatsapp_action = await WhatsAppAction.get(action_id)
+    if not whatsapp_action or not isinstance(whatsapp_action, WhatsAppAction):
         raise ResourceNotFoundError(f"WhatsApp action not found: {action_id}")
 
-    result = await action.api().get_host_device()
+    result = await whatsapp_action.api().get_host_device()
 
     return result
 
@@ -925,11 +916,11 @@ async def logout(
     Returns:
         Dict[str, Any]: Result of the operation
     """
-    action = await WhatsAppAction.get(action_id)
-    if not action or not isinstance(action, WhatsAppAction):
+    whatsapp_action = await WhatsAppAction.get(action_id)
+    if not whatsapp_action or not isinstance(whatsapp_action, WhatsAppAction):
         raise ResourceNotFoundError(f"WhatsApp action not found: {action_id}")
 
-    result = await action.api().logout()
+    result = await whatsapp_action.api().logout()
 
     if isinstance(result, dict) and "status" not in result:
         result["status"] = "logout" if result.get("success") or result.get("ok") else "failed"
@@ -958,11 +949,11 @@ async def close(
     Returns:
         Dict[str, Any]: Result of the operation
     """
-    action = await WhatsAppAction.get(action_id)
-    if not action or not isinstance(action, WhatsAppAction):
+    whatsapp_action = await WhatsAppAction.get(action_id)
+    if not whatsapp_action or not isinstance(whatsapp_action, WhatsAppAction):
         raise ResourceNotFoundError(f"WhatsApp action not found: {action_id}")
 
-    result = await action.api().close_session()
+    result = await whatsapp_action.api().close_session()
 
     if isinstance(result, dict) and "status" not in result:
         result["status"] = "close" if result.get("success") or result.get("ok") else "failed"

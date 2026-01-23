@@ -9,6 +9,7 @@ from jvagent.action.interview import (
     input_validator,
     input_directive_override,
     on_interview_complete,
+    branch_function,
 )
 from jvagent.action.interview.core.session.interview_session import InterviewSession
 from jvagent.action.interview.core.foundation.enums import ValidationStatus
@@ -56,18 +57,25 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
             # Initial entry
             "User wants to give feedback",
             "User wants to submit feedback",
-            "User wants to comment on a project, service, or completed work",
-
+            "User wants to comment on a project",
+            "User wants to follow up on a report",
+            "User wants to provide feedback on a report they created",
+            "User wants to evaluate service quality or contractor performance",
+            
             # Providing details
             "User is providing feedback details",
-            "User is answering feedback questions",
+            "User is answering feedback questions such as report details and feedback content",
             "User is giving feedback on a report they created",
-
+            
             # Follow-up / update
             "User is providing an update or follow-up related to previously submitted feedback",
-
-            # Revision/edit
-            "User is revising, editing, or updating previously submitted feedback"
+            "User is adding additional comments to existing feedback",
+            "User wants to amend or supplement previously given feedback",
+            
+            # Revision/cancel/edit/confirm
+            "User is revising, canceling, updating or confirming an active feedback.",
+            "User wants to modify feedback that is currently being submitted",
+            "User needs to change ratings or comments in an incomplete feedback form"
         ],
         description="Anchor statements for InteractRouter routing"
     )
@@ -75,14 +83,20 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
     question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {
-                "name": "issue_details",
-                "question": "Please describe the issue or project you are providing feedback on. Include what happened and any relevant details.",
+                "name": "report_details",
+                "question": "Please describe the report or project you are providing feedback on. Include what happened and any relevant details.",
                 "constraints": {
-                    "description": "Detailed context about the issue or project, including background, scope, and impact if applicable.",
+                    "description": "Detailed context about the report or project, including background, scope, and impact if applicable.",
                     "type": "string"
                 },
+                "branches": [
+                    {
+                        "condition": {"function": "find_similar_report"},
+                        "target": "feedback_content"
+                    }
+                ],
                 "default_next": "feedback_content",
-                "required": True
+                "required": False
             },
             {
                 "name": "feedback_content",
@@ -95,35 +109,27 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
             }
         ],
         description="List of question configurations defining the interview graph. Can be overridden in agent.yaml. "
-                    "Supports conditional branching via 'branches' and 'default_next'. "
-                    "Handlers, validators, and directive overrides can be registered via decorators "
-                    "(@input_handler, @input_validator, @input_directive_override) or specified as string "
-                    "references in constraints (input_handler, input_validator)."
     )
 
-# @input_validator('issue_details')
-# def validate_issue_details(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-#     """Validate that the issue description is not empty.
 
-#     Args:
-#         value: The name string to validate
-#         session: Interview session (for context)
+@branch_function('find_similar_report')
+def find_similar_report(
+    session: InterviewSession,
+    visitor: InteractWalker
+) -> bool:
+    """Check if there are any similar reports.
+    Returns id of similar report if found, None otherwise.
+    """
+    session.responses["similar_report"] = "R230580235"
+    # description = session.responses.get('report_description', '').lower()
+    # sensitive_keywords = ['abuse', 'assault', 'violence', 'threat', 'harassment']
+    
+    # # Use session.context to store analysis for later use
+    # has_sensitive = any(keyword in description for keyword in sensitive_keywords)
+    # session.context['contains_sensitive_keywords'] = has_sensitive
+    
+    return True
 
-#     Returns:
-#         Tuple of (ValidationStatus, optional error message)
-#     """
-
-#     if not value or not isinstance(value, str):
-#         return ValidationStatus.INVALID, "Ask: Please provide a issue description"
-
-#     # Remove extra whitespace
-#     value = value.strip()
-
-#     # Check minimum length
-#     if len(value) < 10:
-#         return ValidationStatus.INVALID, "Ask: Please provide a more detailed description of the report"
-
-#     return ValidationStatus.VALID, None
 
 
 @input_validator('feedback_content')
@@ -162,14 +168,15 @@ async def handle_feedback_completion(
         action: The InteractAction instance (use action.respond() to send responses)
     """
     # Extract collected data
-    issue_details = session.responses.get('issue_details', '')
+    report_details = session.responses.get('report_details', '')
     feedback_content = session.responses.get('feedback_content', '')
+    similar_report = session.responses.get('similar_report', '')
 
     # Log completion (in production, you might send notifications, create records, etc.)
     import logging
     logger = logging.getLogger(__name__)
     logger.info(
-        f"Feedback interview completed:\n issue_details: {issue_details}\n feedback_content: {feedback_content}"
+        f"Feedback interview completed:\n report_details: {report_details}\n feedback_content: {feedback_content}\n similar_report: {similar_report}"
     )
 
     # Send completion message

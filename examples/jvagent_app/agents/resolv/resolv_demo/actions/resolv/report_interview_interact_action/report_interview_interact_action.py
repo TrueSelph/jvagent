@@ -57,16 +57,20 @@ class ReportInterviewInteractAction(InterviewInteractAction):
             # Initial entry
             "User wants to create a new report",
             "User is reporting a problem, hazard, or issue",
-
+            "User is initiating a new incident report",
+            "User needs to document a safety concern or infrastructure problem",
+            
             # Providing details
             "User is providing incident report details",
             "User is answering incident report questions",
-
-            # Completion
-            "User is confirming resolution or partial resolution of a report",
-
-            # Revision/edit
-            "User is revising, editing, or updating report information"
+            "User is describing location, severity, or nature of reported issue",
+            "User is uploading photos or evidence for a new report",
+            
+            # Revision/cancel/edit/confirm (ACTIVE reports only)
+            "User is Revising, Canceling, Updating or Confirming an Active Report, not a previously created report.",
+            "User needs to modify details of a report currently being created",
+            "User wants to cancel a report that is in progress",
+            "User is changing information in an incomplete report submission"
         ],
         description="Anchor statements for InteractRouter routing",
     )
@@ -181,7 +185,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                 "name": "reporter_name",
                 "question": "What is the full name of the person submitting the report?",
                 "constraints": {
-                    "description": "The full name of the person submitting the report.",
+                    "description": "The full name of the person submitting the report cannot be the person the report is being filed on behalf of.",
                     "type": "string",
                 },
                 "required": True,
@@ -191,7 +195,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                 "name": "reporter_address",
                 "question": "What is the residential address of the person submitting the report?",
                 "constraints": {
-                    "description": "The home address of the person submitting the report, not the incident location or stakeholder address.",
+                    "description": "The home address of the person submitting the report, not the incident location or the address of the person the report is being filed on behalf of.",
                     "type": "string",
                 },
                 "required": True
