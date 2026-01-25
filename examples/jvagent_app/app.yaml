@@ -128,6 +128,45 @@ config:
   # Paths configuration
   paths:
     agents: ./agents
+  
+  # Performance optimization configuration
+  # These settings can also be overridden via environment variables
+  performance:
+    # Enable request latency profiling (env: JVAGENT_ENABLE_PROFILING)
+    # When enabled, profiles are logged at DEBUG level with latency breakdowns
+    enable_profiling: false
+    
+    # Agent node caching (env: JVAGENT_ENABLE_AGENT_CACHING)
+    # Cache Agent nodes to reduce database lookups
+    enable_agent_caching: true
+    
+    # Agent cache TTL in seconds (env: JVAGENT_AGENT_CACHE_TTL)
+    agent_cache_ttl: 300
+    
+    # Action caching (env: JVAGENT_ENABLE_ACTION_CACHE)
+    # Cache InteractAction instances to reduce database queries during action discovery
+    # Automatically invalidated when actions are registered/deregistered
+    enable_action_cache: true
+    
+    # Action cache TTL in seconds (env: JVAGENT_ACTION_CACHE_TTL)
+    action_cache_ttl: 60
+    
+    # DSPy response caching (env: JVAGENT_ENABLE_DSPY_CACHE)
+    # Disabled by default as it may return stale responses for dynamic queries
+    # Enable for development/testing or when deterministic responses are desired
+    enable_dspy_cache: false
+    
+    # Deferred saves (env: JVSPATIAL_ENABLE_DEFERRED_SAVES)
+    # Batch multiple save() calls into a single database write for entities
+    # that experience rapid updates (e.g., Conversation, Interaction during processing)
+    # When enabled, save() marks entities as dirty; flush() performs the actual write
+    enable_deferred_saves: true
+    
+    # Cache cleanup probability (env: JVAGENT_CACHE_CLEANUP_PROBABILITY)
+    # Probability (0.0-1.0) of running cache cleanup at the end of each request
+    # This serverless-friendly approach replaces background cleanup tasks
+    # Set to 0 to disable cleanup, 1.0 to run on every request
+    cache_cleanup_probability: 0.1
 
 # Agents
 # List of agents (automatically installed when you run jvagent or bootstrap)

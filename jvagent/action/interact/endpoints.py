@@ -30,6 +30,45 @@ logger = logging.getLogger(__name__)
 # Import INTERACTION level to ensure it's registered and available for logging
 from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
 
+# Import profiling utilities
+from jvagent.core.profiling import profiled_request, profile_enabled
+
+
+async def _flush_deferred_saves(interaction, conversation=None) -> bool:
+    """Flush deferred saves for interaction and conversation with error handling.
+    
+    This function disables deferred save mode and flushes accumulated changes
+    for both the interaction and optionally the conversation. Errors are logged
+    but not re-raised to avoid failing the response after interaction completion.
+    
+    Args:
+        interaction: Interaction instance to flush
+        conversation: Optional Conversation instance to flush
+        
+    Returns:
+        True if all flushes succeeded, False if any failed
+    """
+    success = True
+    
+    # Flush interaction
+    try:
+        interaction.disable_deferred_saves()
+        await interaction.flush()
+    except Exception as e:
+        logger.error(f"Failed to flush interaction {interaction.id}: {e}")
+        success = False
+    
+    # Flush conversation if provided
+    if conversation:
+        try:
+            conversation.disable_deferred_saves()
+            await conversation.flush()
+        except Exception as e:
+            logger.error(f"Failed to flush conversation {conversation.id}: {e}")
+            success = False
+    
+    return success
+
 
 def _build_interaction_log_data(interaction, app_id, agent_id=None):
     """Build comprehensive log data dictionary for interaction logging.
@@ -369,101 +408,127 @@ async def interact_endpoint(
     # Record the request for rate limiting
     rate_limiter.record_request(client_ip, agent_id)
 
-    # Validate agent exists
-    agent = await Agent.get(agent_id)
-    if not agent:
-        raise ResourceNotFoundError(
-            message=f"Agent with ID '{agent_id}' not found",
-            details={"agent_id": agent_id},
-        )
-
-    if not utterance or not utterance.strip():
-        raise ValidationError(
-            message="utterance is required and cannot be empty",
-            details={"utterance": utterance},
-        )
-
-    # Create walker
-    walker = InteractWalker(
-        agent_id=agent_id,
-        utterance=utterance.strip(),
-        channel=channel,
-        data=data or {},
-        session_id=session_id,
-        user_id=user_id,
-        stream_mode=stream,
-    )
-
-    try:
-        if stream:
-            # Streaming mode: return SSE response
-            return create_sse_response(
-                _stream_interaction(walker, agent),
-                headers={"X-Session-ID": walker.session_id or ""},
-            )
-        else:
-            # Non-streaming mode: wait for completion and return consolidated response
-            # Spawn walker directly on the Agent node (skips Root -> Agent traversal)
-            # The walker will then traverse to Actions -> InteractActions
-            await walker.spawn(agent)
-
-            # Get report
-            report = await walker.get_report()
-
-            # Get interaction result
-            interaction = walker.interaction
-            if not interaction:
-                raise RuntimeError("Interaction was not created during traversal")
-
-            # Mark interaction as not streamed
-            interaction.streamed = False
+    # Start profiling for this request
+    async with profiled_request() as profile:
+        # Set profile in context for LM calls to record their timing
+        from jvagent.core.profiling import set_current_profile
+        set_current_profile(profile)
+        
+        try:
+            # Validate agent exists (use cache if enabled)
+            async with profile.measure("agent_lookup"):
+                from jvagent.core.cache import get_cached_agent
+                agent = await get_cached_agent(agent_id)
             
-            # Finalize interaction (accumulate streamed data and observability)
-            if walker.response_bus:
-                await walker.response_bus.finalize_interaction(
-                    interaction_id=interaction.id,
-                    interaction=interaction,
-                    session_id=walker.session_id or "",
-                    channel=walker.channel,
+            if not agent:
+                raise ResourceNotFoundError(
+                    message=f"Agent with ID '{agent_id}' not found",
+                    details={"agent_id": agent_id},
                 )
-            
-            # Clear interaction_id from context
-            from jvagent.action.model.context import set_interaction_id
-            set_interaction_id(None)
-            
-            interaction.close_interaction()
-            await interaction.save()
 
-            # Log interaction using INTERACTION level
-            try:
-                from jvagent.core.app import App
-                app = await App.get()
-                if app:
-                    log_data, message = _build_interaction_log_data(interaction, app.id, agent_id)
-                    # Use logger.log() directly to ensure extra parameter is passed correctly
-                    logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
-            except Exception as e:
-                # Log error but don't fail the request
-                logger.warning(f"Failed to log interaction: {e}")
+            if not utterance or not utterance.strip():
+                raise ValidationError(
+                    message="utterance is required and cannot be empty",
+                    details={"utterance": utterance},
+                )
 
-            # Build response with environment-based filtering
-            result = build_interact_response(
-                user_id=walker.user_id or "",
-                session_id=walker.session_id or "",
-                interaction=interaction,
-                report=report,
+            # Create walker
+            walker = InteractWalker(
+                agent_id=agent_id,
+                utterance=utterance.strip(),
+                channel=channel,
+                data=data or {},
+                session_id=session_id,
+                user_id=user_id,
+                stream_mode=stream,
             )
 
-            return result
+            if stream:
+                # Streaming mode: return SSE response
+                # Note: Profiling for streaming is handled in _stream_interaction
+                return create_sse_response(
+                    _stream_interaction(walker, agent),
+                    headers={"X-Session-ID": walker.session_id or ""},
+                )
+            else:
+                # Non-streaming mode: wait for completion and return consolidated response
+                # Spawn walker directly on the Agent node (skips Root -> Agent traversal)
+                # The walker will then traverse to Actions -> InteractActions
+                async with profile.measure("walker_execution"):
+                    await walker.spawn(agent)
 
-    except ValueError as e:
-        raise ValidationError(message=str(e), details={"error": str(e)})
-    except Exception as e:
-        logger.error(f"Error in interact endpoint: {e}", exc_info=True)
-        raise ValidationError(
-            message=f"Interaction failed: {str(e)}",
-            details={"error": str(e)},
-        )
+                # Get report
+                async with profile.measure("get_report"):
+                    report = await walker.get_report()
+
+                # Get interaction result
+                interaction = walker.interaction
+                if not interaction:
+                    raise RuntimeError("Interaction was not created during traversal")
+
+                # Mark interaction as not streamed
+                interaction.streamed = False
+                
+                # Finalize interaction (accumulate streamed data and observability)
+                async with profile.measure("finalize_interaction"):
+                    if walker.response_bus:
+                        await walker.response_bus.finalize_interaction(
+                            interaction_id=interaction.id,
+                            interaction=interaction,
+                            session_id=walker.session_id or "",
+                            channel=walker.channel,
+                        )
+                
+                # Clear interaction_id from context
+                from jvagent.action.model.context import set_interaction_id
+                set_interaction_id(None)
+                
+                interaction.close_interaction()
+                
+                # Flush deferred saves (interaction and conversation) with error handling
+                async with profile.measure("flush_saves"):
+                    await _flush_deferred_saves(interaction, walker.conversation)
+
+                # Log interaction using INTERACTION level
+                try:
+                    from jvagent.core.app import App
+                    app = await App.get()
+                    if app:
+                        log_data, message = _build_interaction_log_data(interaction, app.id, agent_id)
+                        # Use logger.log() directly to ensure extra parameter is passed correctly
+                        logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
+                except Exception as e:
+                    # Log error but don't fail the request
+                    logger.warning(f"Failed to log interaction: {e}")
+
+                # Build response with environment-based filtering
+                async with profile.measure("build_response"):
+                    result = build_interact_response(
+                        user_id=walker.user_id or "",
+                        session_id=walker.session_id or "",
+                        interaction=interaction,
+                        report=report,
+                    )
+
+                return result
+
+        except ValueError as e:
+            raise ValidationError(message=str(e), details={"error": str(e)})
+        except Exception as e:
+            logger.error(f"Error in interact endpoint: {e}", exc_info=True)
+            raise ValidationError(
+                message=f"Interaction failed: {str(e)}",
+                details={"error": str(e)},
+            )
+        finally:
+            # Clear profile context
+            set_current_profile(None)
+            # Request-scoped cache cleanup (probabilistic, serverless-friendly)
+            try:
+                from jvagent.core.cache import maybe_cleanup_on_request
+                await maybe_cleanup_on_request()
+            except Exception:
+                pass  # Cleanup errors should never fail the request
 
 
 async def _stream_interaction(
@@ -478,8 +543,19 @@ async def _stream_interaction(
     Yields:
         SSE-formatted string chunks
     """
+    import time
+    from jvagent.core.profiling import get_or_create_profile, finalize_profile, profile_enabled, set_current_profile
+    
+    # Manual profiling for streaming (context manager doesn't work well with generators)
+    profile = await get_or_create_profile()
+    stream_start_time = time.time()
+    
+    # Set profile in context for LM calls to record their timing
+    set_current_profile(profile)
+    
     try:
         # Start walker in background
+        walker_start = time.time()
         walk_task = asyncio.create_task(walker.spawn(agent))
 
         # Wait for interaction to be created
@@ -497,10 +573,13 @@ async def _stream_interaction(
                 }
             )
             return
+        
+        # Record time to interaction creation
+        profile.record("interaction_created", time.time() - walker_start)
 
         interaction = walker.interaction
         interaction.streamed = True
-        await interaction.save()
+        # Deferred save mode is already enabled, no need to save here
 
         # Send initial message
         yield format_sse_chunk(
@@ -534,7 +613,9 @@ async def _stream_interaction(
                     if walk_task.done() and message_queue.empty():
                         try:
                             await walk_task
+                            profile.record("walker_execution", time.time() - walker_start)
                         except Exception as e:
+                            profile.record("walker_execution", time.time() - walker_start)
                             yield format_sse_chunk(
                                 {"type": "error", "message": f"Walker error: {str(e)}"}
                             )
@@ -566,7 +647,8 @@ async def _stream_interaction(
 
             # Close interaction
             interaction.close_interaction()
-            await interaction.save()
+            # Flush deferred saves (interaction and conversation) with error handling
+            await _flush_deferred_saves(interaction, walker.conversation)
 
             # Log interaction using INTERACTION level
             try:
@@ -583,6 +665,7 @@ async def _stream_interaction(
                 logger.warning(f"Failed to log interaction: {e}")
 
             # Send final consolidated response (filtered for production)
+            report_start = time.time()
             report = await walker.get_report()
             final_response = build_interact_response(
                 user_id=walker.user_id or "",
@@ -590,17 +673,24 @@ async def _stream_interaction(
                 interaction=interaction,
                 report=report,
             )
+            profile.record("build_response", time.time() - report_start)
+            profile.record("total_stream_time", time.time() - stream_start_time)
+            
             yield format_sse_chunk(
                 {
                     "type": "final",
                     **final_response,  # Spread the filtered response
                 }
             )
+            
+            # Log profile summary
+            await finalize_profile(profile.request_id, log=True)
 
             # Note: subscription cleaned up in finally above
         else:
             # No response bus, just wait for walker and send final response
             await walk_task
+            profile.record("walker_execution", time.time() - walker_start)
 
             # Finalize interaction (accumulate streamed data and observability)
             # Even without response bus, we should still finalize if bus becomes available
@@ -622,7 +712,8 @@ async def _stream_interaction(
 
             # Close interaction
             interaction.close_interaction()
-            await interaction.save()
+            # Flush deferred saves (interaction and conversation) with error handling
+            await _flush_deferred_saves(interaction, walker.conversation)
 
             # Log interaction using INTERACTION level
             try:
@@ -638,6 +729,7 @@ async def _stream_interaction(
                 # Log error but don't fail the request
                 logger.warning(f"Failed to log interaction: {e}")
 
+            report_start = time.time()
             report = await walker.get_report()
             final_response = build_interact_response(
                 user_id=walker.user_id or "",
@@ -645,19 +737,38 @@ async def _stream_interaction(
                 interaction=interaction,
                 report=report,
             )
+            profile.record("build_response", time.time() - report_start)
+            profile.record("total_stream_time", time.time() - stream_start_time)
+            
             yield format_sse_chunk(
                 {
                     "type": "final",
                     **final_response,  # Spread the filtered response
                 }
             )
+            
+            # Log profile summary
+            await finalize_profile(profile.request_id, log=True)
 
     except Exception as e:
         logger.error(f"Error in stream_interaction: {e}", exc_info=True)
+        # Still log profile on error
+        profile.record("total_stream_time", time.time() - stream_start_time)
+        profile.record("error", 0)  # Mark that an error occurred
+        await finalize_profile(profile.request_id, log=True)
         yield format_sse_chunk(
             {
                 "type": "error",
                 "message": f"Streaming error: {str(e)}",
             }
         )
+    finally:
+        # Clear profile context
+        set_current_profile(None)
+        # Request-scoped cache cleanup (probabilistic, serverless-friendly)
+        try:
+            from jvagent.core.cache import maybe_cleanup_on_request
+            await maybe_cleanup_on_request()
+        except Exception:
+            pass  # Cleanup errors should never fail the request
 

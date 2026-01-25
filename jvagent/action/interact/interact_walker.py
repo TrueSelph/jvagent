@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from jvspatial.core import Walker, on_visit
 from jvagent.memory.interaction import Interaction
 from jvagent.action.interact.base import InteractAction
+from jvagent.core.cache import get_cached_actions, cache_actions
 
 if TYPE_CHECKING:
     from jvagent.action.actions import Actions
@@ -18,6 +19,9 @@ if TYPE_CHECKING:
     from jvagent.memory.conversation import Conversation
     from jvagent.memory.manager import Memory
     from jvagent.memory.user import User
+else:
+    # Import at runtime for Pydantic model_rebuild
+    from jvagent.memory.conversation import Conversation
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +69,7 @@ class InteractWalker(Walker):
     session_id: Optional[str] = None
     user_id: Optional[str] = None
     interaction: Optional["Interaction"] = None
+    conversation: Optional["Conversation"] = None
     stream_mode: bool = False
     response_bus: Optional[Any] = None
     _current_action: Optional["InteractAction"] = None  # Track current executing action for convenience methods
@@ -182,6 +187,12 @@ class InteractWalker(Walker):
                 self.user_id = resolved_user_id
                 self.session_id = resolved_session_id
                 self.new_user = new_user
+                self.conversation = conversation
+
+                # Enable deferred saves on conversation to batch metadata updates (if enabled)
+                from jvspatial.core.mixins import ENABLE_DEFERRED_SAVES
+                if ENABLE_DEFERRED_SAVES:
+                    conversation.enable_deferred_saves()
 
                 # Create interaction
                 from jvagent.memory.interaction import Interaction
@@ -192,6 +203,10 @@ class InteractWalker(Walker):
                     channel=self.channel,
                     session_id=self.session_id,
                 )
+                
+                # Enable deferred saves to batch all interaction updates (if enabled)
+                if ENABLE_DEFERRED_SAVES:
+                    self.interaction.enable_deferred_saves()
                 
                 # Set interaction_id in context for automatic observability
                 set_interaction_id(self.interaction.id)
@@ -260,12 +275,23 @@ class InteractWalker(Walker):
             f"InteractWalker: Found {len(all_actions)} total actions connected to Actions node: {action_info}"
         )
 
-        # Get all enabled InteractActions (forward direction from Actions node)
-        # Use class type instead of string to match by isinstance() (includes subclasses like InteractRouter)
-        # Filter by enabled=True directly in the query using kwargs
-        enabled_actions: List[InteractAction] = await here.nodes(
-            node=InteractAction, enabled=True
-        )
+        # Try to get enabled InteractActions from cache first
+        cached_actions = await get_cached_actions(self.agent_id, enabled_only=True)
+        
+        if cached_actions is not None:
+            # Cache hit - use cached actions
+            enabled_actions: List[InteractAction] = cached_actions
+            logger.debug(f"InteractWalker: Using {len(enabled_actions)} cached actions for agent {self.agent_id}")
+        else:
+            # Cache miss - query database
+            # Get all enabled InteractActions (forward direction from Actions node)
+            # Use class type instead of string to match by isinstance() (includes subclasses like InteractRouter)
+            # Filter by enabled=True directly in the query using kwargs
+            enabled_actions = await here.nodes(
+                node=InteractAction, enabled=True
+            )
+            # Cache the result for future requests
+            await cache_actions(self.agent_id, enabled_actions, enabled_only=True)
 
         if not enabled_actions:
             # Debug: Check if there are any InteractActions at all (even disabled)
@@ -572,3 +598,7 @@ class InteractWalker(Walker):
             RuntimeError: If called outside of action execution context or no interaction available
         """
         await self.add_parameters([parameter])
+
+
+# Rebuild Pydantic model to resolve forward references
+InteractWalker.model_rebuild()

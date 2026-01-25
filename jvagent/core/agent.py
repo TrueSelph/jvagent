@@ -1,5 +1,6 @@
 """Agent node and CRUD operations."""
 
+import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core import Node
@@ -7,6 +8,8 @@ from jvspatial.core.annotations import attribute
 
 if TYPE_CHECKING:
     from jvagent.action.actions import Actions
+
+logger = logging.getLogger(__name__)
 
 
 class Agent(Node):
@@ -102,5 +105,33 @@ class Agent(Node):
             Memory node if found, None otherwise
         """
         return await self.node(node="Memory")
+
+    async def save(self, *args, **kwargs):
+        """Save the agent and invalidate cache.
+        
+        Overrides Node.save() to invalidate the agent cache after saving,
+        ensuring cached agents reflect the latest state.
+        
+        Args:
+            *args: Positional arguments passed to parent save()
+            **kwargs: Keyword arguments passed to parent save()
+            
+        Returns:
+            Result from parent save()
+            
+        Note:
+            Cache invalidation errors are logged but do not prevent the save
+            from succeeding. This ensures data is persisted even if cache
+            operations fail.
+        """
+        result = await super().save(*args, **kwargs)
+        # Invalidate cache after save to ensure consistency
+        try:
+            from jvagent.core.cache import invalidate_agent_cache
+            await invalidate_agent_cache(self.id)
+        except Exception as e:
+            # Log but don't fail - save already succeeded
+            logger.warning(f"Failed to invalidate agent cache for {self.id}: {e}")
+        return result
 
 

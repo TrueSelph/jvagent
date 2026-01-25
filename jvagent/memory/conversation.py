@@ -5,13 +5,14 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute, compound_index
+from jvspatial.core.mixins import DeferredSaveMixin
 
 if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
 
 
 @compound_index([("context.user_id", 1), ("context.status", 1)], name="user_status")
-class Conversation(Node):
+class Conversation(DeferredSaveMixin, Node):
     """Session-based conversation. session_id can be set or auto-generated.
 
     The Conversation node represents a conversation session belonging to a User.

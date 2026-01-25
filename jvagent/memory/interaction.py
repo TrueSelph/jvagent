@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from jvagent.action.model.base import logger
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute, compound_index
+from jvspatial.core.mixins import DeferredSaveMixin
 
 if TYPE_CHECKING:
     from jvagent.memory.user import User
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
 
 
 @compound_index([("context.conversation_id", 1), ("context.started_at", -1)], name="conv_timestamp")
-class Interaction(Node):
+class Interaction(DeferredSaveMixin, Node):
     """Single exchange within a Conversation.
 
     The Interaction node represents a single user-agent exchange. It is a Node

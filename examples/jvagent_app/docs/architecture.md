@@ -102,10 +102,17 @@ Files are stored via the App node:
 
 The architecture includes several performance optimizations:
 
+**Caching:**
+- Agent node caching to reduce database lookups (configurable TTL)
+- Action instance caching during discovery phase
+- Automatic cache invalidation on agent/action updates
+- Configure via `app.yaml` or environment variables
+
 **Query Optimizations:**
 - Uses `count()` for efficient record counting without loading data
 - Uses `find_one()` for optimized single-record retrieval
 - Uses `node()` for direct single-node graph traversal
+- Batch queries to eliminate N+1 patterns in node traversal
 - Database-level operations instead of client-side filtering
 
 **Indexing:**
@@ -119,6 +126,11 @@ The architecture includes several performance optimizations:
 - Cached reference to last interaction for O(1) access
 - Efficient chain traversal for interaction history
 - Automatic cleanup of old interactions
+
+**Profiling:**
+- Optional request latency profiling for debugging
+- Enable via `JVAGENT_ENABLE_PROFILING=true` or `config.performance.enable_profiling`
+- Profiles logged at DEBUG level with latency breakdowns
 
 ## Security
 

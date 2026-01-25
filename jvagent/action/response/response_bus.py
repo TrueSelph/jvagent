@@ -47,6 +47,9 @@ class ResponseBus:
         """
         self._session_queues: Dict[str, List[ResponseMessage]] = {}
         self._subscribers: Dict[str, List[Callable[[ResponseMessage], Any]]] = {}
+        # O(1) subscriber lookup set: {session_id: {id(callback), ...}}
+        # Used for fast duplicate checking during subscribe()
+        self._subscriber_ids: Dict[str, set] = {}
         self._subscriber_preferences: Dict[Callable[[ResponseMessage], Any], Dict[str, Any]] = {}
         # interaction_id -> in-order ResponseMessage objects published for that interaction
         self._message_buffers: Dict[str, List[ResponseMessage]] = {}
@@ -218,9 +221,14 @@ class ResponseBus:
         """
         if session_id not in self._subscribers:
             self._subscribers[session_id] = []
-        # Prevent duplicate subscriptions for same callback
-        if callback not in self._subscribers[session_id]:
+            self._subscriber_ids[session_id] = set()
+        
+        # Use O(1) set lookup for duplicate check instead of O(n) list search
+        cb_id = id(callback)
+        if cb_id not in self._subscriber_ids[session_id]:
             self._subscribers[session_id].append(callback)
+            self._subscriber_ids[session_id].add(cb_id)
+        
         self._subscriber_preferences[callback] = {"receive_chunks": receive_chunks}
 
     async def unsubscribe(
@@ -235,6 +243,10 @@ class ResponseBus:
         if session_id in self._subscribers:
             try:
                 self._subscribers[session_id].remove(callback)
+                # Also remove from the O(1) lookup set
+                cb_id = id(callback)
+                if session_id in self._subscriber_ids:
+                    self._subscriber_ids[session_id].discard(cb_id)
             except ValueError:
                 pass  # Callback not in list
         
@@ -430,6 +442,9 @@ class ResponseBus:
             for cb in self._subscribers[session_id]:
                 self._subscriber_preferences.pop(cb, None)
             del self._subscribers[session_id]
+        # Clean up subscriber ID set
+        if session_id in self._subscriber_ids:
+            del self._subscriber_ids[session_id]
 
     async def get_all_sessions(self) -> List[str]:
         """Get all active session IDs.

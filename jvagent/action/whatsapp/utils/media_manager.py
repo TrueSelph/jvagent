@@ -2,7 +2,6 @@
 
 import datetime
 import logging
-import os
 from typing import Any, Dict, List, Optional
 
 from jvagent.core.app import App
