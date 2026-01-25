@@ -4,11 +4,8 @@ import base64
 from typing import Dict, List, Optional
 
 import aiohttp
-from dotenv import load_dotenv
 
 from .base import BaseWhatsAppAPI, MessagePayload
-
-load_dotenv()
 
 
 class WWebJSAPI(BaseWhatsAppAPI):

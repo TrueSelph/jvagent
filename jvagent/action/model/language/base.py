@@ -532,6 +532,15 @@ class LanguageModelAction(BaseModelAction, ABC):
         # Update metrics with duration
         result.metrics["duration"] = duration
 
+        # Record to request profile if profiling is enabled
+        try:
+            from jvagent.core.profiling import record_lm_call
+            # Use calling_action_name to identify the LM call source
+            lm_label = f"lm:{calling_action_name or self.__class__.__name__}"
+            record_lm_call(lm_label, duration)
+        except ImportError:
+            pass  # Profiling module not available
+
         # Store result temporarily for observability (to include response in metrics)
         self._last_result = result
         

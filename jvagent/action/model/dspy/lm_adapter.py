@@ -7,6 +7,7 @@ existing model infrastructure with full caching and usage tracking support.
 
 import asyncio
 import logging
+import os
 from typing import Any, Optional
 
 import dspy
@@ -15,6 +16,45 @@ from dspy.clients.base_lm import BaseLM
 from jvagent.action.model.language.base import LanguageModelAction
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# DSPy Caching Configuration
+# ============================================================================
+def _get_dspy_cache_config() -> bool:
+    """Get DSPy cache configuration with app.yaml and environment variable support.
+    
+    Configuration priority:
+    1. Environment variable JVAGENT_ENABLE_DSPY_CACHE (highest)
+    2. app.yaml config.performance.enable_dspy_cache
+    3. Default: false
+    
+    Disabled by default as it may return stale responses for dynamic queries.
+    Enable for development/testing or when deterministic responses are desired.
+    """
+    # Environment variable takes priority
+    env_value = os.getenv("JVAGENT_ENABLE_DSPY_CACHE")
+    if env_value is not None:
+        return env_value.lower() == "true"
+    
+    # Try app.yaml
+    try:
+        from jvagent.core.app_loader import AppLoader
+        from jvagent.core.app_context import get_app_root
+        loader = AppLoader(get_app_root())
+        descriptor = loader.load_app_descriptor()
+        
+        if descriptor and descriptor.config:
+            perf_config = descriptor.config.get("performance", {})
+            if "enable_dspy_cache" in perf_config:
+                return bool(perf_config["enable_dspy_cache"])
+    except Exception:
+        pass
+    
+    return False
+
+
+ENABLE_DSPY_CACHE = _get_dspy_cache_config()
 
 
 class DSPyLM(BaseLM):
@@ -39,7 +79,7 @@ class DSPyLM(BaseLM):
         model: Optional model identifier (overrides model_action.model if provided)
         temperature: Sampling temperature (overrides model_action.temperature if provided)
         max_tokens: Maximum tokens to generate (overrides model_action.max_tokens if provided)
-        cache: Whether to enable DSPy caching (defaults to False, disabled to prevent bootstrap errors)
+        cache: Whether to enable DSPy caching (defaults to JVAGENT_ENABLE_DSPY_CACHE env var)
         **kwargs: Additional arguments passed to BaseLM
     """
     
@@ -50,7 +90,7 @@ class DSPyLM(BaseLM):
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        cache: bool = False,
+        cache: Optional[bool] = None,
         **kwargs
     ):
         """Initialize the adapter with a jvagent LanguageModelAction.
@@ -61,9 +101,13 @@ class DSPyLM(BaseLM):
             model: Optional model identifier to override model_action.model
             temperature: Sampling temperature (overrides model_action.temperature if provided)
             max_tokens: Maximum tokens to generate (overrides model_action.max_tokens if provided)
-            cache: Whether to enable DSPy caching (defaults to False, disabled to prevent bootstrap errors)
+            cache: Whether to enable DSPy caching. If None, defaults to JVAGENT_ENABLE_DSPY_CACHE
+                   environment variable (default: false)
             **kwargs: Additional arguments passed to BaseLM
         """
+        # Use environment variable default if cache not explicitly specified
+        if cache is None:
+            cache = ENABLE_DSPY_CACHE
         # Use provided model override, or fall back to model_action's model identifier
         model_name = model if model is not None else getattr(model_action, "model", "unknown")
         

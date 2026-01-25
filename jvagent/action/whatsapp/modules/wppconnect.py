@@ -4,11 +4,8 @@ import base64
 from typing import Dict, List, Optional
 
 import aiohttp
-from dotenv import load_dotenv
 
 from .base import BaseWhatsAppAPI
-
-load_dotenv()
 
 
 class WPPConnectAPI(BaseWhatsAppAPI):
@@ -135,17 +132,23 @@ class WPPConnectAPI(BaseWhatsAppAPI):
         await self.send_rest_request("logout-session")
 
     async def qrcode(self) -> dict:
-        """GET /qrcode-session (base64 encoded image returned)"""
+        """GET /qrcode-session (base64 encoded image returned)
+        
+        Uses connection pooling for efficient HTTP requests.
+        """
+        from .base import get_connection_pool
+        
         url = f"{self.api_url}/{self.session}/qrcode-session"
         headers = {"Authorization": f"Bearer {self.token}"}
         
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers) as response:
-                    if response.ok:
-                        content = await response.read()
-                        return {"qrcode_base64": base64.b64encode(content).decode("ascii")}
-                    return {"ok": False, "error": await response.text()}
+            pool = await get_connection_pool()
+            session = await pool.get_session(self.api_url, self.timeout)
+            async with session.get(url, headers=headers) as response:
+                if response.ok:
+                    content = await response.read()
+                    return {"qrcode_base64": base64.b64encode(content).decode("ascii")}
+                return {"ok": False, "error": await response.text()}
         except aiohttp.ClientError as e:
             return {"ok": False, "error": str(e)}
 

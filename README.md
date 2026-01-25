@@ -302,6 +302,17 @@ This will:
 - Show detailed information about bootstrap process
 - Display individual agent and action registration
 
+**Example 7: Fresh Start with Purge (Development Only)**
+```bash
+jvagent /path/to/my_jvagent_app --purge
+```
+This will:
+- Delete the `jvagent_db` and `jvagent_logs` directories
+- Start with a completely fresh database
+- Bootstrap the application from scratch
+
+**Note:** The `--purge` flag is only available in development mode (`JVAGENT_ENVIRONMENT=development`, which is the default). It will be blocked in production mode to prevent accidental data loss.
+
 ### Running Without an App Directory
 
 If you run `jvagent` without specifying an app directory (or from a directory without `app.yaml`):
@@ -530,6 +541,15 @@ config:
   interact:
     rate_limit_per_minute: 60  # per IP+agent_id combination
     max_utterance_length: 2000  # maximum characters for utterance input (set to null to disable)
+  
+  # Performance optimization
+  performance:
+    enable_profiling: false      # Enable request latency profiling
+    enable_agent_caching: true   # Cache agent nodes
+    agent_cache_ttl: 300         # Agent cache TTL (seconds)
+    enable_action_cache: true    # Cache action instances during discovery
+    action_cache_ttl: 60         # Action cache TTL (seconds)
+    enable_dspy_cache: false     # Enable DSPy response caching
 
 # Agents (list of namespace/agent_name strings)
 # Agents listed here are automatically installed when you run jvagent or bootstrap
@@ -1262,6 +1282,27 @@ Key environment variables (see `.env.example` for full list):
 - `JVAGENT_ADMIN_USERNAME` - Admin username (default: `admin`)
 - `JVAGENT_ADMIN_PASSWORD` - Admin password (required)
 - `JVAGENT_ADMIN_EMAIL` - Admin email (default: `admin@jvagent.example`)
+
+**Performance Optimization:**
+- `JVAGENT_ENABLE_PROFILING` - Enable request latency profiling (default: `false`)
+- `JVAGENT_ENABLE_AGENT_CACHING` - Enable agent node caching (default: `true`)
+- `JVAGENT_AGENT_CACHE_TTL` - Agent cache TTL in seconds (default: `300`)
+- `JVAGENT_ENABLE_ACTION_CACHE` - Enable action caching during discovery (default: `true`)
+- `JVAGENT_ACTION_CACHE_TTL` - Action cache TTL in seconds (default: `60`)
+- `JVAGENT_ENABLE_DSPY_CACHE` - Enable DSPy response caching (default: `false`)
+- `JVSPATIAL_ENABLE_DEFERRED_SAVES` - Batch entity saves for rapid updates (default: `true`)
+
+These can also be configured in `app.yaml` under `config.performance`:
+```yaml
+config:
+  performance:
+    enable_profiling: false
+    enable_agent_caching: true
+    agent_cache_ttl: 300
+    enable_action_cache: true
+    action_cache_ttl: 60
+    enable_dspy_cache: false
+```
 
 ### Install Development Dependencies
 

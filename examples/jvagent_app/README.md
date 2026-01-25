@@ -377,6 +377,15 @@ The `app.yaml` file includes a comprehensive `config` section with application-l
 - `api.prefix` - API route prefix
 - `api.graph_endpoint_enabled` - Enable graph visualization endpoint
 
+**Performance Configuration:**
+- `performance.enable_profiling` - Enable request latency profiling (default: `false`)
+- `performance.enable_agent_caching` - Enable agent node caching (default: `true`)
+- `performance.agent_cache_ttl` - Agent cache TTL in seconds (default: `300`)
+- `performance.enable_action_cache` - Enable action caching during discovery (default: `true`)
+- `performance.action_cache_ttl` - Action cache TTL in seconds (default: `60`)
+- `performance.enable_dspy_cache` - Enable DSPy response caching (default: `false`)
+- `performance.enable_deferred_saves` - Batch entity saves for rapid updates (default: `true`)
+
 **Note**: Configuration in `app.yaml` can use environment variable placeholders (e.g., `${VAR_NAME}`) which are automatically resolved when the app is loaded.
 
 ### Environment Configuration (.env)
@@ -412,6 +421,9 @@ jvagent /path/to/jvagent_app
 
 # With flags
 jvagent /path/to/jvagent_app --update --debug
+
+# Fresh start (development mode only) - deletes database and logs
+jvagent /path/to/jvagent_app --purge
 
 # Or using Python module
 python -m jvagent /path/to/jvagent_app

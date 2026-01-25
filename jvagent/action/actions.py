@@ -8,6 +8,7 @@ from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
+from jvagent.core.cache import invalidate_action_cache
 
 logger = logging.getLogger(__name__)
 
@@ -214,6 +215,10 @@ class Actions(Node):
                     raise  # Re-raise to be caught by outer handler
 
                 await self.save()
+                
+                # Invalidate action cache for this agent
+                await invalidate_action_cache(action.agent_id)
+                
                 return True
 
             except Exception as e:
@@ -350,6 +355,9 @@ class Actions(Node):
                 # Step 5: Delete the action (this also removes edges)
                 await action.delete()
                 await self.save()
+
+                # Invalidate action cache for this agent
+                await invalidate_action_cache(action.agent_id)
 
                 return True
 

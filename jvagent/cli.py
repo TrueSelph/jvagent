@@ -6,6 +6,7 @@ Command-line interface for the jvagent application.
 import logging
 import os
 import shutil
+import sys
 from typing import Any, List
 
 from dotenv import load_dotenv
@@ -25,6 +26,7 @@ from jvagent.core import Agents
 from jvagent.core.app import App
 from jvagent.core.app_loader import AppLoader
 from jvagent.core.bootstrap_logger import BootstrapLogger
+from jvagent.utils.env import is_development_mode
 
 # Configure logging (will be updated based on --debug flag)
 from jvspatial.logging import configure_standard_logging
@@ -311,6 +313,14 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     if not db_path or db_path.strip() == "":
         db_path = "./jvagent_db"
 
+    # Resolve relative database path against app_root
+    from pathlib import Path
+    app_root_path = Path(app_root).resolve()
+    db_path_obj = Path(db_path)
+    if not db_path_obj.is_absolute():
+        db_path = str(app_root_path / db_path)
+        logger.debug(f"Resolved database path to: {db_path}")
+
     # MongoDB configuration
     mongodb_uri = _get_config_value(
         app_config, "database.uri", "JVSPATIAL_MONGODB_URI", "mongodb://localhost:27017"
@@ -566,6 +576,13 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
             log_db_uri = os.getenv("JVAGENT_LOG_DB_URI") or mongodb_uri
         if log_db_path and log_db_path.strip() == "":
             log_db_path = None
+
+        # Resolve relative log database path against app_root
+        if log_db_path:
+            log_db_path_obj = Path(log_db_path)
+            if not log_db_path_obj.is_absolute():
+                log_db_path = str(app_root_path / log_db_path)
+                logger.debug(f"Resolved log database path to: {log_db_path}")
         if log_dynamodb_table_name and log_dynamodb_table_name.strip() == "":
             log_dynamodb_table_name = None
         if log_dynamodb_region and log_dynamodb_region.strip() == "":
@@ -685,22 +702,58 @@ def disable_register_endpoint(server: Server) -> None:
 def purge_app_data(app_root: str) -> None:
     """Purge application data (database and logs).
 
-    Deletes the jvagent_db and jvagent_logs directories from the app root.
-    This is used when the --purge flag is passed with --update.
+    Reads database configuration from app.yaml and environment variables to determine
+    the actual paths to purge. Resolves relative paths relative to app_root.
 
     Args:
         app_root: Path to the app root directory.
     """
+    from pathlib import Path
+
     if app_root is None:
         app_root = os.getcwd()
 
-    dirs_to_purge = ["jvagent_db", "jvagent_logs"]
+    app_root_path = Path(app_root).resolve()
+
+    # Load app.yaml to get configured database paths
+    app_config = {}
+    try:
+        app_yaml_path = app_root_path / "app.yaml"
+        if app_yaml_path.exists():
+            import yaml
+            from jvagent.core.env_resolver import resolve_env_placeholders
+
+            with open(app_yaml_path, "r", encoding="utf-8") as f:
+                yaml_data = yaml.safe_load(f)
+                if yaml_data and "config" in yaml_data:
+                    app_config = resolve_env_placeholders(yaml_data.get("config", {}))
+    except Exception as e:
+        logger.debug(f"Could not load app.yaml for purge: {e}")
+
+    # Get database path from config (env var > app.yaml > default)
+    db_path = os.getenv("JVSPATIAL_DB_PATH")
+    if not db_path:
+        db_path = _get_config_value(app_config, "database.path", None, "./jvagent_db")
+
+    # Get log database path from config
+    log_db_path = os.getenv("JVAGENT_LOG_DB_PATH")
+    if not log_db_path:
+        log_db_path = _get_config_value(app_config, "logging.database.path", None, "./jvagent_logs")
+
+    # Resolve paths relative to app_root if they are relative
+    paths_to_purge = []
+    for path_str in [db_path, log_db_path]:
+        if path_str:
+            path = Path(path_str)
+            if not path.is_absolute():
+                # Resolve relative path against app_root
+                path = app_root_path / path_str
+            paths_to_purge.append(path.resolve())
 
     logger.warning(f"Purging application data from {app_root}...")
 
-    for dir_name in dirs_to_purge:
-        dir_path = os.path.join(app_root, dir_name)
-        if os.path.exists(dir_path):
+    for dir_path in paths_to_purge:
+        if dir_path.exists():
             try:
                 shutil.rmtree(dir_path)
                 logger.info(f"Deleted directory: {dir_path}")
@@ -745,15 +798,35 @@ def main() -> None:
 
     logger.debug(f"Using app root: {app_root}")
 
+    # Set the global app root for config loading in other modules
+    from jvagent.core.app_context import set_app_root
+    set_app_root(app_root)
+
+    # Reload performance configs now that app root is set
+    from jvagent.core.cache import reload_performance_config
+    from jvagent.core.profiling import reload_profiling_config
+    reload_performance_config()
+    reload_profiling_config()
+
     # Load .env file from app root directory
     load_app_env(app_root=app_root)
 
     # Set database path environment variables BEFORE any database initialization
     # This must happen before any database operations to prevent jvspatial from using defaults
+    from pathlib import Path
+    app_root_path = Path(app_root).resolve()
+
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
     db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
     if not db_path or db_path.strip() == "":
         db_path = "./jvagent_db"
+
+    # Resolve relative database path against app_root
+    db_path_obj = Path(db_path)
+    if not db_path_obj.is_absolute():
+        db_path = str(app_root_path / db_path)
+        logger.debug(f"Resolved database path to: {db_path}")
+
     # Set JVSPATIAL_JSONDB_PATH unconditionally to ensure DatabaseManager uses correct path
     # (DatabaseManager uses JVSPATIAL_JSONDB_PATH, not JVSPATIAL_DB_PATH)
     if db_type == "json":
@@ -776,15 +849,17 @@ def main() -> None:
     if update_flag:
         args = [arg for arg in args if arg not in ["--update", "--migrate"]]
 
-    # Check for --purge flag (only valid with --update)
+    # Check for --purge flag (development mode only)
     purge_flag = "--purge" in args
     if purge_flag:
         args = [arg for arg in args if arg != "--purge"]
 
-        if update_flag:
-            purge_app_data(app_root=app_root)
-        else:
-            logger.warning("The --purge flag is ignored because --update is not specified.")
+        if not is_development_mode():
+            logger.error("The --purge flag is only allowed in development mode.")
+            logger.error("Set JVAGENT_ENVIRONMENT=development or ensure you are not in production mode.")
+            sys.exit(1)
+
+        purge_app_data(app_root=app_root)
 
     # If no arguments or "run" command, start the server
     if not args or args[0] == "run":
@@ -888,7 +963,7 @@ Arguments:
 Flags:
     --update, --migrate        Force update of existing agents and actions from YAML files
                                 By default, existing agents/actions are used as-is
-    --purge                    Delete existing database and logs before starting (requires --update)
+    --purge                    Delete existing database and logs before starting (development mode only)
     --debug                    Enable debug logging (verbose output for troubleshooting)
 
 Environment Variables:
@@ -952,15 +1027,8 @@ def run_server(update_if_exists: bool = False, debug: bool = False, app_root: st
     if app_root is None:
         app_root = os.getcwd()
 
-    # Set database path environment variables BEFORE any database initialization
-    # This must happen before creating the server to prevent jvspatial from using defaults
-    db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
-    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
-    if not db_path or db_path.strip() == "":
-        db_path = "./jvagent_db"
-    # Set JVSPATIAL_JSONDB_PATH unconditionally to ensure DatabaseManager uses correct path
-    if db_type == "json":
-        os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
+    # Note: Database path environment variables are set in create_server_from_config
+    # with proper resolution against app_root
 
     # Install log counter to track warnings and errors during startup
     log_counter = StartupLogCounter()
@@ -1062,27 +1130,26 @@ async def show_status(app_root: str = None) -> None:
     Args:
         app_root: Path to the app root directory. If None, uses current working directory.
     """
-    # Set database path environment variables BEFORE any database initialization
-    db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
-    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
-    if not db_path or db_path.strip() == "":
-        db_path = "./jvagent_db"
-    if db_type == "json":
-        os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
+    from pathlib import Path
     from jvagent.core.app_loader import AppLoader
 
     if app_root is None:
         app_root = os.getcwd()
 
-    # Initialize database context
+    app_root_path = Path(app_root).resolve()
+
+    # Initialize database context with paths resolved against app_root
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
     db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
-    # Ensure db_path is never None or empty
     if not db_path or db_path.strip() == "":
         db_path = "./jvagent_db"
 
-    # Set JVSPATIAL_JSONDB_PATH unconditionally to ensure DatabaseManager uses the correct path
-    # This must be set before any database initialization occurs
+    # Resolve relative database path against app_root
+    db_path_obj = Path(db_path)
+    if not db_path_obj.is_absolute():
+        db_path = str(app_root_path / db_path)
+
+    # Set JVSPATIAL_JSONDB_PATH to ensure DatabaseManager uses the correct path
     if db_type == "json":
         os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
 
@@ -1137,21 +1204,28 @@ async def bootstrap_only(update_if_exists: bool = False, app_root: str = None) -
                          If False (default), use existing agents/actions without overwriting.
         app_root: Path to the app root directory. If None, uses current working directory.
     """
+    from pathlib import Path
+
     if app_root is None:
         app_root = os.getcwd()
+
+    app_root_path = Path(app_root).resolve()
 
     # Load .env file from app root directory
     load_app_env(app_root=app_root)
 
-    # Initialize database context
+    # Initialize database context with paths resolved against app_root
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
     db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
-    # Ensure db_path is never None or empty
     if not db_path or db_path.strip() == "":
         db_path = "./jvagent_db"
 
-    # Set JVSPATIAL_JSONDB_PATH unconditionally to ensure DatabaseManager uses the correct path
-    # This must be set before any database initialization occurs
+    # Resolve relative database path against app_root
+    db_path_obj = Path(db_path)
+    if not db_path_obj.is_absolute():
+        db_path = str(app_root_path / db_path)
+
+    # Set JVSPATIAL_JSONDB_PATH to ensure DatabaseManager uses the correct path
     if db_type == "json":
         os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
 
@@ -1225,9 +1299,10 @@ def handle_agent_command(args: List[str], app_root: str = None) -> None:
 
     command = args[0]
 
-    # Initialize database context
+    # Initialize database context - use JVSPATIAL_JSONDB_PATH which is set by main()
+    # with the path already resolved against app_root
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
-    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
+    db_path = os.getenv("JVSPATIAL_JSONDB_PATH") or os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
 
     from jvspatial.db import set_current_db_path, set_current_db_type
 
@@ -1277,9 +1352,10 @@ def handle_action_command(args: List[str], app_root: str = None) -> None:
 
     command = args[0]
 
-    # Initialize database context
+    # Initialize database context - use JVSPATIAL_JSONDB_PATH which is set by main()
+    # with the path already resolved against app_root
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
-    db_path = os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
+    db_path = os.getenv("JVSPATIAL_JSONDB_PATH") or os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
 
     from jvspatial.db import set_current_db_path, set_current_db_type
 

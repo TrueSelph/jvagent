@@ -61,6 +61,11 @@ class WhatsAppAdapter(ChannelAdapter):
                 f"WhatsAppAdapter: handle_message - should_handle returned False for message_id={message.id}"
             )
             return
+            
+        # Skip if action is not configured
+        if self.action and not self.action.is_configured():
+            logger.debug("WhatsAppAdapter: Skipping message - WhatsApp action is not configured")
+            return
 
         # Trigger typing status for any message type if it's the start of an interaction response
         if message.interaction_id:
@@ -97,16 +102,16 @@ class WhatsAppAdapter(ChannelAdapter):
         Returns:
             True if message was sent successfully, False otherwise
         """
-        api_url = self.action.api_url if self.action else None
-        api_key = self.action.api_key if self.action else None
-
         if not self.action:
             logger.warning("WhatsAppAdapter: Cannot send - no action instance")
             return False
 
-        # TESTING: Comment out actual implementation
-        if not api_url or not api_key:
-            logger.warning("WhatsAppAdapter: Cannot send - api_url or api_key not configured")
+        # Check if action is configured
+        if not self.action.is_configured():
+            logger.debug(
+                "WhatsAppAdapter: Cannot send - WhatsApp action is not configured. "
+                "Set WHATSAPP_API_URL and WHATSAPP_API_KEY environment variables."
+            )
             return False
 
         # Get interaction
