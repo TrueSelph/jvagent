@@ -75,6 +75,16 @@ class Memory(Node):
             await user.save()
             return user
 
+        # User not connected to this Memory node - check if exists globally
+        # This handles orphaned users that exist but lost their edge connection
+        existing_user = await User.find_one({"context.user_id": user_id})
+        if existing_user:
+            # Reconnect the orphaned user to this Memory node
+            await self.connect(existing_user)
+            existing_user.last_seen = datetime.now(timezone.utc)
+            await existing_user.save()
+            return existing_user
+
         if create_if_missing:
             user = await User.create(user_id=user_id)
             await self.connect(user)  # Creates edge: Memory --> User

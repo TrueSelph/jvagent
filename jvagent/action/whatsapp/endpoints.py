@@ -131,7 +131,7 @@ async def create_whatsapp_walker(
                 channel="whatsapp",
                 data=data_dict,
                 session_id=convo_obj.session_id,
-                stream=False,
+                stream=False,  # WhatsApp uses non-streaming mode
             )
         else:
             return InteractWalker(
@@ -140,7 +140,7 @@ async def create_whatsapp_walker(
                 channel="whatsapp",
                 data=data_dict,
                 user_id=sender,
-                stream=False,
+                stream=False,  # WhatsApp uses non-streaming mode
             )
     except ValidationError as e:
         logger.error(f"Validation error creating walker for user {sender}: {e}")
@@ -822,8 +822,8 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         utterance = utterance.strip() if utterance else None
         sender = data.sender
 
-        # Validate sender
-        if not sender or "status@broadcast" in data.receiver or sender == data.receiver:
+        # Validate sender - ignore status@broadcast messages completely
+        if not sender or "status@broadcast" in sender or "status@broadcast" in data.receiver or sender == data.receiver:
             return {"status": "ignored", "response": "Sender blocked"}
         
         # Check if this is a media message

@@ -277,52 +277,88 @@ class BaseWhatsAppAPI(ABC):
         Uses a shared ClientSession from the connection pool manager to
         enable TCP connection reuse across multiple requests, significantly
         improving performance for high-frequency API calls.
+        
+        Includes retry logic with fresh session on connection failures to
+        handle aiohttp/Python 3.12+ compatibility issues.
         """
-        try:
-            # Get shared session from connection pool
-            pool = await get_connection_pool()
-            session = await pool.get_session(self.api_url, self.timeout)
-            
-            kwargs = {"headers": headers, "params": params}
-
-            if json_body and data:
-                kwargs["json"] = data
-            elif data:
-                kwargs["data"] = data
-
-            # Use the pooled session for the request
-            async with session.request(method, url, **kwargs) as response:
-                # Check for HTTP errors
-                if response.status >= 400:
-                    error_text = await response.text()
-                    self.logger.error(
-                        f"HTTP {response.status} error for {method} {url}: {error_text}"
-                    )
-                    return {
-                        "ok": False, 
-                        "error": f"HTTP {response.status}: {error_text}",
-                        "status_code": response.status
-                    }
-
-                if response.content_length and response.content_length > 0:
+        kwargs = {"headers": headers, "params": params}
+        if json_body and data:
+            kwargs["json"] = data
+        elif data:
+            kwargs["data"] = data
+        
+        # Helper to safely make request (catches aiohttp/Python 3.12+ bugs)
+        async def safe_request(sess, meth, req_url, **kw):
+            """Wrapper to catch aiohttp errors that bypass normal exception handling."""
+            try:
+                async with sess.request(meth, req_url, **kw) as resp:
+                    status = resp.status
+                    if status >= 400:
+                        err_text = await resp.text()
+                        return {"ok": False, "error": f"HTTP {status}: {err_text}", "status_code": status}
+                    if resp.content_length and resp.content_length > 0:
+                        try:
+                            return await resp.json()
+                        except:
+                            return {"ok": True, "raw": await resp.read()}
+                    return {"ok": True, "no_content": True}
+            except BaseException as e:
+                # Catch ALL exceptions including TypeError from aiohttp bugs
+                return {"ok": False, "error": str(e), "_exception_type": type(e).__name__}
+        
+        # Try with pooled session first, then retry with fresh session on failure
+        for attempt in range(2):
+            session = None
+            fresh_session = False
+            try:
+                if attempt == 0:
+                    # First attempt: use connection pool
+                    pool = await get_connection_pool()
+                    session = await pool.get_session(self.api_url, self.timeout)
+                else:
+                    # Retry with fresh session (bypasses potential pool issues)
+                    self.logger.debug(f"Retrying {method} {url} with fresh session")
+                    connector = aiohttp.TCPConnector(limit=10, force_close=True)
+                    timeout_obj = aiohttp.ClientTimeout(total=self.timeout)
+                    session = aiohttp.ClientSession(connector=connector, timeout=timeout_obj)
+                    fresh_session = True
+                
+                result = await safe_request(session, method, url, **kwargs)
+                
+                # Check if request succeeded or if it's a handled error
+                if result.get("ok") or result.get("status_code"):
+                    return result
+                
+                # Request failed with an error, check if we should retry
+                error = result.get("error", "Unknown error")
+                exc_type = result.get("_exception_type", "")
+                
+                if exc_type == "TypeError" and "BaseException" in error:
+                    # aiohttp/Python 3.12+ connection bug - retry with fresh session
+                    self.logger.warning(f"Connection issue for {method} {url}, attempt {attempt + 1}")
+                    continue
+                elif attempt == 0:
+                    # First attempt failed, try again with fresh session
+                    self.logger.warning(f"Request failed for {method} {url}: {error}, retrying...")
+                    continue
+                else:
+                    # Second attempt also failed
+                    return result
+                    
+            except BaseException as e:
+                # Catch any exception during session setup
+                self.logger.error(f"Error setting up session for {method} {url}: {e}")
+                if attempt == 1:
+                    return {"ok": False, "error": str(e)}
+            finally:
+                if fresh_session and session:
                     try:
-                        return await response.json()
-                    except Exception as e:
-                        self.logger.warning(f"Failed to parse JSON response: {e}")
-                        raw_content = await response.read()
-                        return {"ok": True, "raw": raw_content}
-
-                return {"ok": True, "no_content": True}
-
-        except aiohttp.ClientTimeout as e:
-            self.logger.error(f"Request timeout for {method} {url}: {str(e)}")
-            return {"ok": False, "error": f"Request timeout: {str(e)}"}
-        except aiohttp.ClientError as e:
-            self.logger.error(f"Client error for {method} {url}: {str(e)}")
-            return {"ok": False, "error": f"Client error: {str(e)}"}
-        except Exception as e:
-            self.logger.error(f"Unexpected error for {method} {url}: {str(e)}")
-            return {"ok": False, "error": f"Unexpected error: {str(e)}"}
+                        await session.close()
+                    except:
+                        pass
+        
+        # Should not reach here, but just in case
+        return {"ok": False, "error": "Request failed after all retries"}
 
     # Message parsing utilities
     async def parse_inbound_message(self, request: dict) -> Optional[MessagePayload]:

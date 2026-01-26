@@ -700,10 +700,10 @@ class PersonaAction(Action):
             channel = interaction.channel or "default"
             channel_formatting = get_channel_directive(channel)
             
-            # Detect streaming mode (same as legacy implementation)
+            # Detect streaming mode - defaults to False if not set
             streaming = bool(
                 visitor
-                and getattr(visitor, "stream_mode", True)
+                and getattr(visitor, "stream", False)
                 and getattr(visitor, "response_bus", None)
                 and getattr(visitor, "session_id", None)
             )
@@ -904,7 +904,7 @@ class PersonaAction(Action):
 
         streaming = bool(
             visitor
-            and getattr(visitor, "stream_mode", True)
+            and getattr(visitor, "stream", False)
             and getattr(visitor, "response_bus", None)
             and getattr(visitor, "session_id", None)
         )
@@ -960,6 +960,17 @@ class PersonaAction(Action):
                 # Only save if response actually changed
                 if response_changed:
                     await interaction.save()
+            
+            # Publish to ResponseBus if available (for non-streaming mode)
+            if response and response_bus and visitor and visitor.session_id and not streaming:
+                logger.debug(f"{self.get_class_name()}: Publishing legacy response to ResponseBus (non-streaming mode, adhoc)")
+                await response_bus.publish_message(
+                    session_id=visitor.session_id,
+                    content=response,
+                    channel=getattr(visitor, "channel", "default"),
+                    message_type="adhoc",
+                    interaction_id=interaction.id,
+                )
 
             # Record PersonaAction execution AFTER response is generated and saved
             interaction.record_action_execution("PersonaAction")

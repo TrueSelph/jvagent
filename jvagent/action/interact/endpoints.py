@@ -440,7 +440,7 @@ async def interact_endpoint(
                 data=data or {},
                 session_id=session_id,
                 user_id=user_id,
-                stream_mode=stream,
+                stream=stream,
             )
 
             if stream:
