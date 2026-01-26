@@ -70,7 +70,7 @@ class InteractWalker(Walker):
     user_id: Optional[str] = None
     interaction: Optional["Interaction"] = None
     conversation: Optional["Conversation"] = None
-    stream_mode: bool = False
+    stream: bool = False
     response_bus: Optional[Any] = None
     _current_action: Optional["InteractAction"] = None  # Track current executing action for convenience methods
     _skip_current_action_record: bool = False  # Allow actions to opt-out of being recorded as executed

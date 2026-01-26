@@ -1,6 +1,7 @@
 """WhatsApp Action Implementation."""
 import asyncio
 import logging
+import os
 import time
 from typing import Any, Dict, Optional, Union
 
@@ -212,7 +213,7 @@ class WhatsAppAction(Action):
 
     base_url: Optional[str] = attribute(
         default=None, 
-        description="Base URL for webhook generation (e.g., https://myapp.example.com)"
+        description="Application base URL for webhook generation (APP_BASE_URL env var, e.g., https://myapp.example.com)"
     )
 
     webhook_url: Optional[str] = attribute(
@@ -260,6 +261,38 @@ class WhatsAppAction(Action):
 
     # action configuration
     
+    def _apply_env_defaults(self) -> None:
+        """Apply environment variable defaults for missing configuration.
+        
+        Sets the following from environment variables if not already configured:
+        - api_url from WHATSAPP_API_URL
+        - api_key from WHATSAPP_API_KEY
+        - base_url from APP_BASE_URL
+        
+        This allows users to set these values once in their .env file
+        instead of configuring them per-action in agent.yaml.
+        """
+        # WhatsApp API URL
+        if not self.api_url or not self.api_url.strip():
+            env_api_url = os.environ.get("WHATSAPP_API_URL", "").strip()
+            if env_api_url:
+                self.api_url = env_api_url
+                logger.debug(f"Using WHATSAPP_API_URL from environment: {env_api_url}")
+        
+        # WhatsApp API Key
+        if not self.api_key or not self.api_key.strip():
+            env_api_key = os.environ.get("WHATSAPP_API_KEY", "").strip()
+            if env_api_key:
+                self.api_key = env_api_key
+                logger.debug("Using WHATSAPP_API_KEY from environment")
+        
+        # Application Base URL
+        if not self.base_url or not self.base_url.strip():
+            env_base_url = os.environ.get("APP_BASE_URL", "").strip()
+            if env_base_url:
+                self.base_url = env_base_url
+                logger.debug(f"Using APP_BASE_URL from environment: {env_base_url}")
+    
     def is_configured(self) -> bool:
         """Check if the WhatsApp action has required configuration.
         
@@ -276,7 +309,7 @@ class WhatsAppAction(Action):
             return False
         if not self.api_key or not self.api_key.strip():
             return False
-        if not self.base_url or not self.base_url.strip():
+        if not self.base_url:
             return False
         
         # Validate URL formats
@@ -303,8 +336,8 @@ class WhatsAppAction(Action):
         if not self.api_key or not self.api_key.strip():
             issues.append("api_key (WHATSAPP_API_KEY) is not configured")
             
-        if not self.base_url or not self.base_url.strip():
-            issues.append("base_url (WHATSAPP_BASE_URL) is not configured - required for webhook generation")
+        if not self.base_url:
+            issues.append("base_url (APP_BASE_URL) is not configured - required for webhook generation")
         elif not self.base_url.startswith(("http://", "https://")):
             issues.append("base_url must be a valid HTTP/HTTPS URL")
             
@@ -315,7 +348,7 @@ class WhatsAppAction(Action):
             "api_url_set": bool(self.api_url and self.api_url.strip()),
             "api_key_set": bool(self.api_key and self.api_key.strip()),
             "session_set": bool(self.session and self.session.strip()),
-            "base_url_set": bool(self.base_url and self.base_url.strip()),
+            "base_url_set": bool(self.base_url),
         }
     
     async def on_register(self) -> None:
@@ -328,6 +361,9 @@ class WhatsAppAction(Action):
         it will log a warning and skip initialization gracefully. The action will
         remain inactive but will not cause errors during agent startup.
         """
+        # Apply environment variable defaults (e.g., APP_BASE_URL)
+        self._apply_env_defaults()
+        
         # Initialize concurrent-safe typing state manager
         if not hasattr(self, "_typing_manager"):
             self._typing_manager = TypingStateManager()
@@ -367,6 +403,16 @@ class WhatsAppAction(Action):
             
             logger.info(f"WhatsApp action registered successfully for provider: {self.provider}")
             
+        except TypeError as e:
+            # Handle aiohttp/Python 3.12+ compatibility issues
+            error_str = str(e)
+            if "BaseException" in error_str:
+                logger.warning(
+                    f"WhatsApp API server ({self.api_url}) is unreachable. "
+                    f"WhatsApp messaging will be unavailable until the server is accessible."
+                )
+            else:
+                logger.error(f"Type error during WhatsApp action registration: {e}", exc_info=True)
         except Exception as e:
             logger.error(f"Failed to register WhatsApp action: {e}", exc_info=True)
             # Don't raise - allow agent to continue without WhatsApp integration
@@ -385,6 +431,9 @@ class WhatsAppAction(Action):
         If the action is not properly configured, it will skip reinitialization
         gracefully.
         """
+        # Apply environment variable defaults (e.g., APP_BASE_URL)
+        self._apply_env_defaults()
+        
         # Initialize concurrent-safe typing state manager if needed
         if not hasattr(self, "_typing_manager"):
             self._typing_manager = TypingStateManager()
@@ -456,6 +505,16 @@ class WhatsAppAction(Action):
         # This ensures the session is registered with the current webhook URL
         try:
             await self.register_session()
+        except TypeError as e:
+            # Handle aiohttp/Python 3.12+ compatibility issues
+            error_str = str(e)
+            if "BaseException" in error_str:
+                logger.warning(
+                    f"WhatsApp API server ({self.api_url}) is unreachable during reload. "
+                    f"Session will be registered when the server becomes available."
+                )
+            else:
+                logger.error(f"Type error re-registering session during reload: {e}", exc_info=True)
         except Exception as e:
             logger.error(
                 f"Error re-registering session during reload: {e}",
@@ -534,10 +593,10 @@ class WhatsAppAction(Action):
                            or agent cannot be retrieved
             DatabaseError: If database operations fail
         """
-        # Check if base_url is configured
+        # Check if base_url is configured (from attribute or APP_BASE_URL env var)
         if not self.base_url or not self.base_url.strip():
             raise ValidationError(
-                "base_url (WHATSAPP_BASE_URL) is required for webhook URL generation. "
+                "base_url (APP_BASE_URL) is required for webhook URL generation. "
                 "Set this to your application's public URL (e.g., https://myapp.example.com)"
             )
             
@@ -780,6 +839,34 @@ class WhatsAppAction(Action):
         except DatabaseError as e:
             logger.error(f"Database error during session registration: {e}", exc_info=True)
             raise
+        except (OSError, ConnectionError, ConnectionRefusedError, ConnectionResetError) as e:
+            # Handle network/connection errors gracefully
+            logger.error(
+                f"Network error during WhatsApp session registration: {e}. "
+                f"Check if the WhatsApp API server ({self.api_url}) is reachable."
+            )
+            return {
+                "status": "ERROR",
+                "message": "Network error: Could not connect to WhatsApp API server",
+                "error": str(e),
+                "api_url": self.api_url,
+            }
+        except TypeError as e:
+            # Handle aiohttp/aiohappyeyeballs compatibility issues with Python 3.12+
+            error_str = str(e)
+            if "BaseException" in error_str:
+                logger.error(
+                    f"Connection failed during WhatsApp session registration. "
+                    f"Check if the WhatsApp API server ({self.api_url}) is reachable."
+                )
+                return {
+                    "status": "ERROR",
+                    "message": "Connection failed: WhatsApp API server unreachable",
+                    "error": "Server unreachable",
+                    "api_url": self.api_url,
+                }
+            logger.error(f"Type error during session registration: {e}", exc_info=True)
+            raise ValidationError(f"Session registration failed: {e}")
         except Exception as e:
             logger.error(f"Failed to register WhatsApp session: {e}", exc_info=True)
             raise ValidationError(f"Session registration failed: {e}")

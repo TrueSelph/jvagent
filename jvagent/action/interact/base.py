@@ -192,12 +192,12 @@ class InteractAction(Action, ABC):
             
             # Publish a full response in streaming mode (auto-detected)
             # Will publish as stream_chunk + final
-            visitor.stream_mode = True
+            visitor.stream = True
             await self.publish(visitor, content="Streaming response...")
             
             # Publish a full response in non-streaming mode (auto-detected)
             # Will publish as adhoc and set interaction.response
-            visitor.stream_mode = False
+            visitor.stream = False
             await self.publish(visitor, content="Non-streaming response...")
             
             # Publish an adhoc status update (explicit message_type for backward compatibility)
@@ -245,7 +245,7 @@ class InteractAction(Action, ABC):
             # Detect streaming mode (same pattern as PersonaAction)
             streaming = bool(
                 visitor
-                and getattr(visitor, "stream_mode", True)
+                and getattr(visitor, "stream", False)
                 and visitor.response_bus
                 and visitor.session_id
             )
@@ -422,8 +422,9 @@ class InteractAction(Action, ABC):
                 logger.debug("InteractAction.respond: PersonaAction not found; skipping response generation")
                 return None
 
-            # PersonaAction.respond supports visitor for streaming via ResponseBus
-            visitor.stream_mode = True
+            # PersonaAction.respond uses visitor.stream to determine streaming behavior
+            # Do NOT override - respect the walker's original stream setting
+            # (e.g., WhatsApp walkers have stream=False for non-streaming responses)
 
             # Call PersonaAction with all history configuration parameters
             # PersonaAction.respond() sets interaction.response immediately after getting the response

@@ -146,8 +146,27 @@ class WWebJSAPI(BaseWhatsAppAPI):
             status_resp = await self.status()
             state = (status_resp.get("state") or status_resp.get("status", "")).upper()
 
-        # Handle connected state
+        # Handle connected state - update webhook for existing session
         if state == "CONNECTED":
+            # Update webhook URL for the existing session
+            if webhook_url:
+                try:
+                    webhook_result = await self.start_session(webhook=webhook_url, wait_qr_code=False)
+                    if not webhook_result.get("ok", True) and webhook_result.get("error"):
+                        self.logger.warning(
+                            f"Could not update webhook for existing session '{self.session}': "
+                            f"{webhook_result.get('error')}"
+                        )
+                    else:
+                        self.logger.info(
+                            f"Updated webhook URL for existing session '{self.session}'"
+                        )
+                except Exception as e:
+                    self.logger.warning(
+                        f"Error updating webhook for existing session '{self.session}': {e}"
+                    )
+            
+            # Return success regardless - session is connected
             device_info = await self.get_host_device()
             return {
                 "status": "CONNECTED",

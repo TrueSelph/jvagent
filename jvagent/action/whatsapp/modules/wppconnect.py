@@ -68,19 +68,35 @@ class WPPConnectAPI(BaseWhatsAppAPI):
             status_resp = await self.status()
             status = status_resp.get("status", "").upper()
 
-        # Handle connected state
+        # Handle connected state - update webhook for existing session
         if status == "CONNECTED":
-            start_res = await self.start_session(webhook=webhook_url, wait_qr_code=wait_qr_code)
-            if start_res.get("status") == "CONNECTED":
-                device_info = await self.get_host_device()
-                return {
-                    "status": "CONNECTED",
-                    "message": "Session is already active and connected.",
-                    "device": device_info,
-                    "session": self.session,
-                    "token": self.token,
-                }
-            return start_res
+            # Update webhook URL for the existing session
+            if webhook_url:
+                try:
+                    start_res = await self.start_session(webhook=webhook_url, wait_qr_code=wait_qr_code)
+                    if start_res.get("status") == "CONNECTED":
+                        self.logger.info(
+                            f"Updated webhook URL for existing session '{self.session}'"
+                        )
+                    elif start_res.get("error") or not start_res.get("ok", True):
+                        self.logger.warning(
+                            f"Could not update webhook for existing session '{self.session}': "
+                            f"{start_res.get('error', 'Unknown error')}"
+                        )
+                except Exception as e:
+                    self.logger.warning(
+                        f"Error updating webhook for existing session '{self.session}': {e}"
+                    )
+            
+            # Return success regardless - session is connected
+            device_info = await self.get_host_device()
+            return {
+                "status": "CONNECTED",
+                "message": "Session is already active and connected.",
+                "device": device_info,
+                "session": self.session,
+                "token": self.token,
+            }
 
         # Handle disconnected states
         if status in {"QRCODE", "DISCONNECTED", "CLOSED", ""} and auto_register:
