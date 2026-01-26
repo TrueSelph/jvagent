@@ -18,16 +18,16 @@ logger = logging.getLogger(__name__)
 
 class RouterModule(dspy.Module):
     """DSPy module for routing user utterances to appropriate InteractActions.
-    
+
     This module uses a DSPy ChainOfThought module with the RouterClassification
     signature to perform routing with concise interpretation. The LLM generates concise
     interpretation (under 80 words) that serves directly as the intent interpretation,
     eliminating the need for a separate interpretation field. This optimization
     reduces latency and token usage.
-    
+
     The module can be optimized using DSPy's teleprompters (BootstrapFewShot, MIPROv2, etc.)
     and evaluated with dspy.Evaluate.
-    
+
     Example:
         >>> router = RouterModule()
         >>> result = await router.aforward(
@@ -38,10 +38,10 @@ class RouterModule(dspy.Module):
         >>> print(result["interpretation"])  # Concise interpretation
         >>> print(result["actions"])  # ["OrderAction"]
     """
-    
+
     def __init__(self, action_instance=None):
         """Initialize the router module with a ChainOfThought module.
-        
+
         Args:
             action_instance: Optional InteractRouter instance. If provided,
                 uses the signature docstring from action_instance.router_classification_signature.
@@ -61,7 +61,10 @@ class RouterModule(dspy.Module):
                 "Concise, shorthanded intent analysis in under 80 words. Capture what the user wants and relevant context. "
                 "CRITICAL FIRST STEP: Check last [EVENT] message in conversation_history for ongoing activities. "
                 "If an action is mentioned in the last [EVENT] message as an ongoing activity (e.g., 'Ongoing Activity: ...'), "
+                "If the word '[EVENT]' is not present in system messages, then there are no events and no ongoing activities. Treat "
                 "prioritize routing to that action. "
+                "If there is no ongoing activity in recent events, only route to actions if the utterance intent clearly matches its anchors. "
+                "If user intent is ambiguous, avoid routing to any actions unless there is an ongoing activity in system messages with [EVENT] tag. "
                 "CRITICAL: Always extract and include specific information from the current utterance and conversation history. "
                 "Extract concrete values: names, emails, IDs, ticket numbers, dates, amounts, and other specific data. "
                 "Scan both the current utterance AND conversation history for pertinent details. "
@@ -76,7 +79,7 @@ class RouterModule(dspy.Module):
             signature_class,
             rationale_field=concise_rationale
         )
-    
+
     def forward(
         self,
         user_utterance: str,
@@ -84,12 +87,12 @@ class RouterModule(dspy.Module):
         conversation_history: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Route utterance to appropriate actions (synchronous).
-        
+
         Args:
             user_utterance: The user's current message
             available_actions: JSON-formatted string of actions and their anchors
             conversation_history: Optional formatted conversation history
-            
+
         Returns:
             Dictionary with keys: interpretation, actions (list), confidence
         """
@@ -101,20 +104,20 @@ class RouterModule(dspy.Module):
             }
             if conversation_history:
                 route_kwargs["conversation_history"] = conversation_history
-            
+
             # Call the DSPy ChainOfThought module
             prediction = self.route(**route_kwargs)
-            
+
             # ChainOfThought adds a 'reasoning' field along with original outputs
             # Use reasoning directly as interpretation (optimization: eliminates separate interpretation generation)
             # Note: Internally DSPy uses 'reasoning', but we label it as 'interpretation' for consistency
             reasoning = str(prediction.reasoning).strip() if hasattr(prediction, 'reasoning') and prediction.reasoning else ""
             if reasoning:
                 logger.debug(f"RouterModule: Interpretation: {reasoning[:200]}...")
-            
+
             # Use reasoning as interpretation (fallback to empty string if not available)
             interpretation = reasoning
-            
+
             # Extract actions - handle both list and string formats
             actions = []
             if prediction.actions:
@@ -141,21 +144,21 @@ class RouterModule(dspy.Module):
                             f"RouterModule: Could not convert actions to list: {prediction.actions}"
                         )
                         actions = []
-            
+
             # Filter out empty strings
             actions = [a for a in actions if a]
-            
+
             # Extract confidence, defaulting to 1.0 if not provided
             confidence = float(prediction.confidence) if prediction.confidence is not None else 1.0
             # Clamp confidence to [0.0, 1.0]
             confidence = max(0.0, min(1.0, confidence))
-            
+
             return {
                 "interpretation": interpretation,
                 "actions": actions,
                 "confidence": confidence,
             }
-            
+
         except Exception as e:
             logger.error(
                 f"RouterModule: Error during routing: {e}",
@@ -167,7 +170,7 @@ class RouterModule(dspy.Module):
                 "actions": [],
                 "confidence": 0.0,
             }
-    
+
     async def aforward(
         self,
         user_utterance: str,
@@ -175,12 +178,12 @@ class RouterModule(dspy.Module):
         conversation_history: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Route utterance to appropriate actions (asynchronous).
-        
+
         Args:
             user_utterance: The user's current message
             available_actions: JSON-formatted string of actions and their anchors
             conversation_history: Optional formatted conversation history
-            
+
         Returns:
             Dictionary with keys: interpretation, actions (list), confidence
         """
@@ -192,20 +195,20 @@ class RouterModule(dspy.Module):
             }
             if conversation_history:
                 route_kwargs["conversation_history"] = conversation_history
-            
+
             # Call the DSPy ChainOfThought module (use acall for async)
             prediction = await self.route.acall(**route_kwargs)
-            
+
             # ChainOfThought adds a 'reasoning' field along with original outputs
             # Use reasoning directly as interpretation (optimization: eliminates separate interpretation generation)
             # Note: Internally DSPy uses 'reasoning', but we label it as 'interpretation' for consistency
             reasoning = str(prediction.reasoning).strip() if hasattr(prediction, 'reasoning') and prediction.reasoning else ""
             if reasoning:
                 logger.debug(f"RouterModule: Interpretation: {reasoning[:200]}...")
-            
+
             # Use reasoning as interpretation (fallback to empty string if not available)
             interpretation = reasoning
-            
+
             actions = []
             if prediction.actions:
                 if isinstance(prediction.actions, list):
@@ -227,18 +230,18 @@ class RouterModule(dspy.Module):
                             f"RouterModule: Could not convert actions to list: {prediction.actions}"
                         )
                         actions = []
-            
+
             actions = [a for a in actions if a]
-            
+
             confidence = float(prediction.confidence) if prediction.confidence is not None else 1.0
             confidence = max(0.0, min(1.0, confidence))
-            
+
             return {
                 "interpretation": interpretation,
                 "actions": actions,
                 "confidence": confidence,
             }
-            
+
         except Exception as e:
             logger.error(
                 f"RouterModule: Error during async routing: {e}",
@@ -249,4 +252,3 @@ class RouterModule(dspy.Module):
                 "actions": [],
                 "confidence": 0.0,
             }
-
