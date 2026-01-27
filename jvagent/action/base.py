@@ -67,6 +67,7 @@ class Action(Node):
         on_register() - Called when action is set up for the first time
         on_reload() - Called when action is reloaded
         post_register() - Called after all actions are registered
+        on_startup() - Called when app starts and action is loaded from database
         on_enable() - Called when action is enabled
         on_disable() - Called when action is disabled (action remains registered)
         on_deregister() - Called when action is deregistered (action is removed)
@@ -193,6 +194,20 @@ class Action(Node):
         Note: Errors in this method are automatically logged by the base system
         when called through enable(). If you override this method, you can add
         additional error handling, but basic error logging is already provided.
+        """
+        pass
+
+    async def on_startup(self) -> None:
+        """Called when app starts and action is loaded from database.
+        
+        Override this method to perform initialization tasks when the action
+        is loaded on app startup. This is useful for re-initializing runtime
+        components like channel adapters that don't persist across restarts.
+        
+        This hook is called for ALL loaded actions, regardless of their
+        enabled state, but actions should check self.enabled if needed.
+        
+        Note: Errors in this method are automatically logged by the base system.
         """
         pass
 

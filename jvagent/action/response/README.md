@@ -6,43 +6,57 @@ This guide documents the channel adapter system for automatically delivering mes
 
 The channel adapter system provides a clean, automatic way to deliver messages published to the response bus to external communication channels. Channel adapters:
 
-- **Auto-discover** when actions are registered
-- **Auto-subscribe** to the response bus
-- **Auto-receive** messages when published for their channel
+- **Auto-register** when actions are registered
+- **Auto-receive** adhoc messages when published for their channel
 - **Zero manual wiring** required
 
 ## Architecture
 
 ### Components
 
-1. **ResponseBus**: Central message bus that manages message publishing and adapter subscriptions
+1. **ResponseBus**: Central message bus that routes adhoc messages directly to registered adapters
 2. **ChannelAdapter**: Base class for all channel adapters
-3. **Action Integration**: Actions create and register adapters in their `on_register()` method
+3. **Action Integration**: Actions create and register adapters in their `on_register()` method (for new registrations) and `on_startup()` method (for app restarts)
 
 ### How It Works
 
+**Initial Registration:**
 ```
 1. Action.on_register() creates ChannelAdapter instance
    ↓
 2. Adapter.initialize() gets ResponseBus and registers itself
    ↓
-3. ResponseBus maintains registry of adapters by channel
+3. ResponseBus stores single adapter per channel (replaces existing if any)
+```
+
+**App Restart:**
+```
+1. App starts and loads actions from database
    ↓
-4. When message is published with channel="whatsapp"
+2. Action.on_startup() is called for all loaded actions
    ↓
-5. ResponseBus automatically subscribes adapter to session (lazy subscription)
+3. Adapter.initialize() re-registers adapter with ResponseBus
    ↓
-6. Adapter.handle_message() is called
+4. Adapter ready to receive messages
+```
+
+**Message Delivery:**
+```
+1. When adhoc message is published with channel="whatsapp"
    ↓
-7. Adapter.send_to_destination() delivers message to external API
+2. ResponseBus directly calls adapter.send(message)
+   ↓
+3. Adapter sends message to external API
 ```
 
 ### Key Features
 
-- **Lazy Auto-Subscription**: Adapters are automatically subscribed to sessions when messages are published for their channel
+- **Single Adapter Per Channel**: Only one adapter per channel is maintained (serverless-friendly)
+- **Direct Routing**: Adapters receive messages directly - no session subscriptions needed
 - **Zero Manual Wiring**: No code in InteractWalker or elsewhere needs to manage adapters
-- **Automatic Discovery**: ResponseBus automatically finds and uses registered adapters
-- **Session Isolation**: Each adapter only receives messages for sessions it's subscribed to
+- **Automatic Discovery**: ResponseBus automatically routes messages to registered adapters
+- **Simple Interface**: Single `send()` method to implement
+- **Serverless-Safe**: Adapters are replaced on registration, preventing orphaned instances
 
 ## Implementing a Channel Adapter
 
@@ -57,60 +71,36 @@ from jvagent.action.response.message import ResponseMessage
 class MyChannelAdapter(ChannelAdapter):
     """Adapter for MyChannel integration."""
     
-    def __init__(
-        self,
-        channel: str = "mychannel",
-        action: Any = None,
-        response_bus: Optional[ResponseBus] = None,
-    ):
+    def __init__(self, action: Any = None):
         """Initialize adapter.
         
         Args:
-            channel: Channel name (e.g., "mychannel")
             action: Your Action instance (for accessing config)
-            response_bus: Optional ResponseBus (auto-set via initialize())
         """
-        super().__init__(channel, response_bus)
+        super().__init__(channel="mychannel")
         self.action = action  # Store action for accessing config
     
-    async def handle_message(self, message: ResponseMessage) -> None:
-        """Handle incoming message from response bus.
+    async def send(self, message: ResponseMessage) -> bool:
+        """Send message to external API.
         
-        This is called automatically when a message is published
+        This method is called by ResponseBus when an adhoc message is published
         for this adapter's channel.
         
         Args:
-            message: ResponseMessage object
-        """
-        # Check if adapter should handle this message
-        if not self.should_handle(message):
-            return
-        
-        # Only handle final and adhoc messages (not stream chunks)
-        if message.message_type in ("adhoc", "final"):
-            success = await self.send_to_destination(message)
-            if success:
-                message.mark_delivered()
-    
-    async def send_to_destination(self, message: ResponseMessage) -> bool:
-        """Send message to external API.
-        
-        Args:
-            message: ResponseMessage to send
+            message: ResponseMessage to send (contains user_id, session_id, content, etc.)
             
         Returns:
             True if sent successfully, False otherwise
         """
-        # Extract recipient from message metadata
-        recipient = message.metadata.get("recipient")
-        if not recipient:
-            logger.warning(f"No recipient in message metadata")
+        # Extract recipient from message.user_id (no database queries needed!)
+        if not message.user_id:
+            logger.error(f"Cannot send message {message.id} - no user_id in message")
             return False
         
         # Send to your external API
         try:
-            # Your API call here
-            # response = await my_api.send(recipient, message.content)
+            # Your API call here using message.user_id
+            # response = await my_api.send(message.user_id, message.content)
             return True
         except Exception as e:
             logger.error(f"Error sending message: {e}", exc_info=True)
@@ -119,7 +109,7 @@ class MyChannelAdapter(ChannelAdapter):
 
 ### Step 2: Integrate with Your Action
 
-In your Action class, create and initialize the adapter in `on_register()`:
+In your Action class, create and initialize the adapter in both `on_register()` and `on_startup()`:
 
 ```python
 from jvagent.action.base import Action
@@ -138,16 +128,32 @@ class MyChannelAction(Action):
         message delivery via the response bus.
         """
         # Create adapter instance with action reference
-        adapter = MyChannelAdapter(
-            channel="mychannel",
-            action=self,  # Pass action instance for config access
-        )
+        adapter = MyChannelAdapter(action=self)
         
         # Initialize the adapter (gets ResponseBus and registers itself)
-        await adapter.initialize()
+        if await adapter.initialize():
+            # Adapter is now stored in ResponseBus registry, no need for private reference
+            pass
+    
+    async def on_startup(self) -> None:
+        """Called when app starts and action is loaded from database.
         
-        # Store adapter instance for reference (optional)
-        self._channel_adapter = adapter
+        Re-initializes the channel adapter when the app restarts.
+        This ensures adapters work correctly after app restarts.
+        """
+        # Only initialize if action is enabled and configured
+        if not self.enabled:
+            return
+        
+        if not self.is_configured():
+            return
+        
+        # Reinitialize adapter (create new instance for clean state)
+        adapter = MyChannelAdapter(action=self)
+        if await adapter.initialize():
+            logger.info(f"MyChannelAdapter initialized on app startup for channel '{adapter.channel}'")
+        else:
+            logger.error("MyChannelAdapter initialization failed on startup. Messages will NOT be delivered.")
 ```
 
 ### Step 3: Publish Messages
@@ -160,8 +166,8 @@ await visitor.response_bus.publish_message(
     session_id=session_id,
     content="Hello, world!",
     channel="mychannel",  # Must match adapter's channel
-    message_type="final",
-    metadata={"recipient": "user@example.com"}
+    message_type="adhoc",  # Only adhoc messages are routed to adapters
+    user_id="user@example.com"  # User identifier (recipient) - required for channel adapters
 )
 ```
 
@@ -177,34 +183,41 @@ class WhatsAppAction(Action):
     api_key: Optional[str] = attribute(default=None)
     
     async def on_register(self) -> None:
-        adapter = WhatsAppAdapter(
-            channel="whatsapp",
-            action=self,
-        )
-        await adapter.initialize()
-        self._channel_adapter = adapter
+        """Called when action is first registered."""
+        adapter = WhatsAppAdapter(action=self)
+        if await adapter.initialize():
+            # Adapter is now stored in ResponseBus registry, no need for private reference
+            pass
+    
+    async def on_startup(self) -> None:
+        """Called when app starts and action is loaded from database.
+        
+        Re-initializes the channel adapter when the app restarts.
+        """
+        if not self.enabled or not self.is_configured():
+            return
+        adapter = WhatsAppAdapter(action=self)
+        if await adapter.initialize():
+            logger.info(f"WhatsAppAdapter initialized on app startup for channel '{adapter.channel}'")
+        else:
+            logger.error("WhatsAppAdapter initialization failed on startup. Messages will NOT be delivered.")
 ```
 
 ### WhatsAppAdapter Implementation
 
 ```python
 class WhatsAppAdapter(ChannelAdapter):
-    def __init__(self, channel: str = "whatsapp", action: Any = None, ...):
-        super().__init__(channel, response_bus)
+    def __init__(self, action: Any = None):
+        super().__init__(channel="whatsapp")
         self.action = action
     
-    async def handle_message(self, message: ResponseMessage) -> None:
-        if not self.should_handle(message):
-            return
+    async def send(self, message: ResponseMessage) -> bool:
+        # Use message.user_id directly (no database queries needed!)
+        if not message.user_id:
+            return False
         
-        if message.message_type in ("adhoc", "final"):
-            success = await self.send_to_destination(message)
-            if success:
-                message.mark_delivered()
-    
-    async def send_to_destination(self, message: ResponseMessage) -> bool:
         # Use self.action.api_url and self.action.api_key
-        # Send to WhatsApp API
+        # Send to WhatsApp API using message.user_id
         ...
 ```
 
@@ -212,91 +225,85 @@ class WhatsAppAdapter(ChannelAdapter):
 
 ### ChannelAdapter Methods
 
-#### `async def initialize() -> None`
+#### `async def initialize() -> bool`
 
 Initializes the adapter by:
 1. Getting ResponseBus instance from App
-2. Subscribing to the response bus
-3. Registering itself with ResponseBus for automatic session subscription
+2. Registering itself with ResponseBus
 
-**Must be called** after instantiation (typically in action's `on_register()`).
+**Must be called** after instantiation. Typically called in:
+- `on_register()` - When action is first registered
+- `on_startup()` - When app restarts and action is loaded from database
 
-#### `async def handle_message(message: ResponseMessage) -> None`
+Returns `True` if initialization succeeded, `False` otherwise.
 
-Called automatically when a message is published for this adapter's channel.
+#### `async def send(message: ResponseMessage) -> bool`
 
-**Must be implemented** by subclasses.
-
-#### `async def send_to_destination(message: ResponseMessage) -> bool`
-
-Sends the message to the external API.
+Sends the message to the external API. This method is called by ResponseBus when an adhoc message is published for this adapter's channel.
 
 **Must be implemented** by subclasses.
 
-#### `def should_handle(message: ResponseMessage) -> bool`
-
-Checks if this adapter should handle the message. Default implementation checks if `message.channel == self.channel`.
-
-Override if you need custom filtering logic.
-
-#### `async def subscribe_to_session(session_id: str, receive_chunks: bool = False) -> None`
-
-Manually subscribe to a specific session. Usually not needed - ResponseBus handles this automatically via lazy subscription.
+Returns `True` if message was sent successfully, `False` otherwise.
 
 ### ResponseBus Methods
 
 #### `async def register_channel_adapter(adapter: ChannelAdapter) -> None`
 
-Registers a channel adapter with the response bus. Called automatically by `adapter.initialize()`.
+Registers a channel adapter with the response bus. Replaces any existing adapter for the same channel (single adapter per channel). This ensures serverless-friendly behavior where adapters are replaced on cold starts. Called automatically by `adapter.initialize()`.
 
 #### `async def publish_message(...) -> ResponseMessage`
 
-Publishes a message to the bus. Automatically:
-- Subscribes adapters for the message's channel to the session (if not already subscribed)
-- Delivers message to all subscribed adapters
+Publishes a message to the bus. For adhoc messages, automatically routes to registered adapters for the message's channel.
+
+**Parameters:**
+- `session_id`: Session identifier (required)
+- `content`: Message content (required)
+- `channel`: Target communication channel (default: "default")
+- `message_type`: Type of message - "adhoc", "stream_chunk", or "final" (default: "adhoc")
+- `interaction_id`: Parent interaction ID (optional)
+- `user_id`: User identifier (recipient) - **required for channel adapters** (optional)
+- `metadata`: Additional metadata (optional)
+- `message_id`: Optional message ID to reuse (optional)
 
 ## Message Types
 
-Channel adapters receive different message types:
+Channel adapters only receive **`adhoc`** messages. ResponseBus routes adhoc messages directly to adapters when published with a matching channel.
 
-- **`adhoc`**: Standalone messages published explicitly
-- **`final`**: Complete responses when an interaction is finalized
-- **`stream_chunk`**: Individual chunks from streaming responses (only if `receive_chunks=True`)
-
-By default, adapters only receive `adhoc` and `final` messages. Set `receive_chunks=True` in `subscribe_to_session()` to also receive stream chunks.
+- **`adhoc`**: Standalone messages published explicitly - routed to channel adapters
+- **`final`**: Complete responses when an interaction is finalized - not routed to adapters
+- **`stream_chunk`**: Individual chunks from streaming responses - not routed to adapters
 
 ## Best Practices
 
 1. **Pass Action Instance**: Always pass your action instance to the adapter so it can access configuration (API keys, URLs, etc.)
 
-2. **Handle Errors Gracefully**: Always wrap API calls in try/except and return `False` on failure
+2. **Don't Store Adapter References**: Don't store adapter references on Action instances. The adapter is stored in ResponseBus and can be accessed via `get_adapter()` helper method if needed.
 
-3. **Check should_handle()**: Always check `should_handle()` in `handle_message()` to ensure the message is for your channel
+3. **Handle Errors Gracefully**: Always wrap API calls in try/except and return `False` on failure
 
-4. **Mark Messages Delivered**: Call `message.mark_delivered()` after successfully sending
+4. **Return Boolean**: Always return `True` on success and `False` on failure from `send()`
 
-5. **Use Metadata**: Store recipient information and other delivery details in `message.metadata` when publishing
+5. **Pass user_id**: Always pass `user_id` parameter when publishing adhoc messages for channel adapters. The user_id is included directly in the ResponseMessage object, eliminating the need for database queries in adapters.
 
-6. **Log Appropriately**: Use appropriate log levels (warning for recoverable errors, error for failures)
+6. **No Database Queries**: Adapters should use `message.user_id` directly - never query the database for recipient information. This ensures low latency and loose coupling.
+
+7. **Log Appropriately**: Use appropriate log levels (warning for recoverable errors, error for failures)
+
+7. **Serverless Considerations**: The single adapter per channel design ensures that adapters are automatically replaced on registration, preventing orphaned instances in serverless environments
 
 ## Troubleshooting
 
 ### Adapter Not Receiving Messages
 
 1. **Check channel name**: Ensure the channel in `publish_message()` matches the adapter's channel
-2. **Verify initialization**: Make sure `adapter.initialize()` was called in `on_register()`
-3. **Check message type**: Adapters only receive `adhoc` and `final` by default (not `stream_chunk`)
-
-### Adapter Not Subscribing to Sessions
-
-This should happen automatically. If not:
-1. Check that `adapter.initialize()` was called successfully
-2. Verify ResponseBus is available (check logs for warnings)
-3. Ensure the adapter was registered (check ResponseBus logs)
+2. **Verify initialization**: Make sure `adapter.initialize()` was called and returned `True` in `on_register()` or `on_startup()`
+3. **Check message type**: Only `adhoc` messages are routed to adapters
+4. **App restart**: If adapter worked before restart but not after, ensure `on_startup()` is implemented to re-initialize the adapter
 
 ### Messages Not Being Delivered
 
-1. **Check `should_handle()`**: Verify the message channel matches
-2. **Check `send_to_destination()`**: Ensure it's returning `True` on success
-3. **Check logs**: Look for error messages in adapter logs
-4. **Verify metadata**: Ensure recipient and other required data is in `message.metadata`
+1. **Check `send()` return value**: Ensure it's returning `True` on success
+2. **Check logs**: Look for error messages in adapter logs
+3. **Verify user_id**: Ensure `user_id` parameter is passed when publishing adhoc messages. Adapters require `message.user_id` to be set.
+4. **Verify initialization**: Check that adapter was successfully initialized
+5. **Check for errors**: ResponseBus now properly awaits adapter.send() and logs errors immediately

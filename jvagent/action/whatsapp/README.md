@@ -91,6 +91,7 @@ This document outlines the security improvements and coding standards compliance
 1. **Action Lifecycle Hooks**:
    ```python
    async def on_register(self) -> None:
+       """Called when action is first registered."""
        try:
            health_result = await self.healthcheck()
            if isinstance(health_result, dict) and not health_result.get("healthy", True):
@@ -98,6 +99,16 @@ This document outlines the security improvements and coding standards compliance
            # ... initialization logic
        except Exception as e:
            raise ValidationError(f"Registration failed: {e}")
+   
+   async def on_startup(self) -> None:
+       """Called when app starts and action is loaded from database.
+       
+       Re-initializes channel adapter to ensure it works after app restarts.
+       """
+       if not self.enabled or not self.is_configured():
+           return
+       adapter = WhatsAppAdapter(action=self)
+       await adapter.initialize()
    ```
 
 2. **Standard Package Structure**:

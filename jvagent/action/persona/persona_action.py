@@ -819,6 +819,7 @@ class PersonaAction(Action):
                         channel=getattr(visitor, "channel", "default"),
                         message_type="stream_chunk",
                         interaction_id=interaction.id,
+                        user_id=interaction.user_id if hasattr(interaction, "user_id") else None,
                     )
                     
                     # Send final to stop streaming indicator
@@ -828,17 +829,25 @@ class PersonaAction(Action):
                         channel=getattr(visitor, "channel", "default"),
                         message_type="final",
                         interaction_id=interaction.id,
+                        user_id=interaction.user_id if hasattr(interaction, "user_id") else None,
                     )
                 else:
                     # For non-streaming: send as 'adhoc' message type
                     # jvchat creates message bubbles from 'adhoc' messages
+                    channel = getattr(visitor, "channel", "default")
+                    if not channel or channel == "default":
+                        logger.warning(
+                            f"{self.get_class_name()}: Visitor channel not set or is 'default', "
+                            f"using channel='{channel}'. This may prevent channel adapters from receiving messages."
+                        )
                     logger.debug(f"{self.get_class_name()}: Publishing DSPy response to ResponseBus (non-streaming mode, adhoc)")
                     await response_bus.publish_message(
                         session_id=visitor.session_id,
                         content=response,
-                        channel=getattr(visitor, "channel", "default"),
+                        channel=channel,
                         message_type="adhoc",
                         interaction_id=interaction.id,
+                        user_id=interaction.user_id if hasattr(interaction, "user_id") else None,
                     )
             
             # Record PersonaAction execution AFTER response is generated and saved
@@ -963,13 +972,20 @@ class PersonaAction(Action):
             
             # Publish to ResponseBus if available (for non-streaming mode)
             if response and response_bus and visitor and visitor.session_id and not streaming:
+                channel = getattr(visitor, "channel", "default")
+                if not channel or channel == "default":
+                    logger.warning(
+                        f"{self.get_class_name()}: Visitor channel not set or is 'default', "
+                        f"using channel='{channel}'. This may prevent channel adapters from receiving messages."
+                    )
                 logger.debug(f"{self.get_class_name()}: Publishing legacy response to ResponseBus (non-streaming mode, adhoc)")
                 await response_bus.publish_message(
                     session_id=visitor.session_id,
                     content=response,
-                    channel=getattr(visitor, "channel", "default"),
+                    channel=channel,
                     message_type="adhoc",
                     interaction_id=interaction.id,
+                    user_id=interaction.user_id if hasattr(interaction, "user_id") else None,
                 )
 
             # Record PersonaAction execution AFTER response is generated and saved

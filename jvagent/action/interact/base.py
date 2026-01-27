@@ -263,6 +263,7 @@ class InteractAction(Action, ABC):
                     channel=channel or visitor.channel,
                     message_type="stream_chunk",
                     interaction_id=interaction.id if interaction else None,
+                    user_id=interaction.user_id if interaction and hasattr(interaction, "user_id") else None,
                     metadata=metadata,
                 )
                 
@@ -273,6 +274,7 @@ class InteractAction(Action, ABC):
                     channel=channel or visitor.channel,
                     message_type="final",
                     interaction_id=interaction.id if interaction else None,
+                    user_id=interaction.user_id if interaction and hasattr(interaction, "user_id") else None,
                     metadata=metadata,
                 )
                 
@@ -299,6 +301,7 @@ class InteractAction(Action, ABC):
                     channel=channel or visitor.channel,
                     message_type="adhoc",
                     interaction_id=interaction.id if interaction else None,
+                    user_id=interaction.user_id if interaction and hasattr(interaction, "user_id") else None,
                     metadata=metadata,
                 )
                 
@@ -324,6 +327,7 @@ class InteractAction(Action, ABC):
                 channel=channel or visitor.channel,
                 message_type=message_type,
                 interaction_id=interaction.id if interaction else None,
+                user_id=interaction.user_id if interaction and hasattr(interaction, "user_id") else None,
                 metadata=metadata,
             )
             

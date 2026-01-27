@@ -656,6 +656,11 @@ async def pre_startup_bootstrap(
         # Bootstrap application graph
         await bootstrap_application_graph(update_if_exists=update_if_exists, app_root=app_root)
 
+        # Initialize all actions by calling their on_startup() hooks
+        # This ensures runtime components like channel adapters are initialized
+        from jvagent.core.startup import run_app_startup
+        await run_app_startup()
+
         # Ensure admin user exists
         admin_exists = await ensure_admin_user()
 
@@ -1242,6 +1247,12 @@ async def bootstrap_only(update_if_exists: bool = False, app_root: str = None) -
 
     try:
         await bootstrap_application_graph(update_if_exists=update_if_exists, app_root=app_root)
+        
+        # Initialize all actions by calling their on_startup() hooks
+        # This ensures runtime components like channel adapters are initialized
+        from jvagent.core.startup import run_app_startup
+        await run_app_startup()
+        
         await ensure_admin_user()
 
         # Display bootstrap summary

@@ -2,13 +2,11 @@
 
 import asyncio
 import logging
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List, Optional
 import re
 
 from jvagent.action.response.channel_adapter import ChannelAdapter
 from jvagent.action.response.message import ResponseMessage
-from jvagent.action.response.response_bus import ResponseBus
-from jvagent.memory import Interaction
 
 logger = logging.getLogger(__name__)
 
@@ -16,12 +14,10 @@ logger = logging.getLogger(__name__)
 class WhatsAppAdapter(ChannelAdapter):
     """WhatsApp channel adapter for response bus.
 
-    This adapter subscribes to the response bus and sends adhoc messages
-    to WhatsApp via the WhatsApp API.
+    This adapter sends adhoc messages to WhatsApp via the WhatsApp API.
     
     WhatsApp uses non-streaming mode (stream=False), so messages are published
-    as complete 'adhoc' messages. The adapter ignores 'final' and 'stream_chunk'
-    messages since WhatsApp doesn't use streaming.
+    as complete 'adhoc' messages. ResponseBus only calls send() for adhoc messages.
 
     This adapter is automatically created and registered by WhatsAppAction
     in its on_register() method. Messages published with channel="whatsapp"
@@ -30,26 +26,18 @@ class WhatsAppAdapter(ChannelAdapter):
     Example usage in action:
         class WhatsAppAction(Action):
             async def on_register(self):
-                adapter = WhatsAppAdapter(channel="whatsapp", action=self)
+                adapter = WhatsAppAdapter(action=self)
                 await adapter.initialize()
-                self._channel_adapter = adapter
+                # Adapter is now stored in ResponseBus registry
     """
 
-    def __init__(
-        self,
-        channel: str = "whatsapp",
-        action: Any = None,
-        response_bus: Optional[ResponseBus] = None,
-    ):
+    def __init__(self, action: Any):
         """Initialize WhatsApp adapter.
 
         Args:
-            channel: Channel name (default: "whatsapp")
             action: WhatsAppAction instance
-            response_bus: Optional ResponseBus instance
         """
-
-        super().__init__(channel, response_bus)
+        super().__init__(channel="whatsapp")
         self.action = action
         # Per-user locks to serialize message sends and ensure ordering
         self._user_locks: Dict[str, asyncio.Lock] = {}
@@ -70,131 +58,155 @@ class WhatsAppAdapter(ChannelAdapter):
             self._user_locks[user_id] = asyncio.Lock()
         return self._user_locks[user_id]
 
-    async def handle_message(self, message: ResponseMessage) -> None:
-        """Handle incoming message from response bus.
-
-        Only handles 'adhoc' messages - ignores 'final' and 'stream_chunk' messages.
-        WhatsApp uses non-streaming mode (stream=False), so complete responses
-        are published as 'adhoc' messages.
-
+    async def _get_channel_metadata_from_interaction(
+        self, interaction_id: str, key: str, default: Any = None
+    ) -> Any:
+        """Retrieve channel metadata from interaction events.
+        
         Args:
-            message: ResponseMessage object
+            interaction_id: Interaction ID to look up
+            key: Metadata key to retrieve (e.g., "isGroup")
+            default: Default value if not found
+            
+        Returns:
+            Metadata value or default
         """
         try:
-            if not self.should_handle(message):
-                return
-                
-            # Skip if action is not configured
-            if self.action and not self.action.is_configured():
-                logger.debug("WhatsAppAdapter: Skipping message - WhatsApp action is not configured")
-                return
-
-            # Only handle adhoc messages - WhatsApp uses non-streaming mode
-            # Ignore 'final' and 'stream_chunk' messages
-            if message.message_type != "adhoc":
-                return
+            from jvagent.memory.interaction import Interaction
+            from jvspatial.db import get_prime_database
+            from jvspatial.core.context import GraphContext
             
-            # Fetch interaction once and reuse
-            interaction = None
-            if message.interaction_id:
-                interaction = await Interaction.get(message.interaction_id)
+            prime_db = get_prime_database()
+            context = GraphContext(database=prime_db)
+            interaction = await context.get(Interaction, interaction_id)
             
-            # Trigger typing status
-            if interaction and interaction.user_id and self.action:
-                try:
-                    await self.action.set_typing(interaction.user_id, value=True)
-                except Exception as e:
-                    logger.debug(f"WhatsAppAdapter: Failed to set typing status: {e}")
-
-            # Send message to WhatsApp
-            success = await self.send_to_destination(message, interaction)
-            
-            # Clear typing status after message is sent
-            if interaction and interaction.user_id and self.action:
-                try:
-                    await self.action.set_typing(interaction.user_id, value=False)
-                except Exception as e:
-                    logger.debug(f"WhatsAppAdapter: Failed to clear typing status: {e}")
-
-            if success:
-                message.mark_delivered()
-            else:
-                logger.warning(f"WhatsAppAdapter: Failed to send message {message.id} to WhatsApp")
-
+            if interaction and interaction.events:
+                # Look for channel metadata event
+                for event in interaction.events:
+                    if isinstance(event, dict) and event.get("content", "").startswith("channel_metadata:whatsapp"):
+                        channel_data = event.get("data", {})
+                        return channel_data.get(key, default)
         except Exception as e:
-            # Catch-all to prevent errors from bubbling up to ResponseBus
-            logger.warning(f"WhatsAppAdapter: Error handling message {message.id}: {e}")
+            logger.debug(f"WhatsAppAdapter: Could not retrieve channel metadata from interaction {interaction_id}: {e}")
+        
+        return default
 
-    async def send_to_destination(
-        self, 
-        message: ResponseMessage, 
-        interaction: Optional[Interaction] = None
-    ) -> bool:
-        """Send message to WhatsApp API.
+    async def send(self, message: ResponseMessage) -> bool:
+        """Send adhoc message to WhatsApp.
+
+        This method is called by ResponseBus when an adhoc message is published
+        for the 'whatsapp' channel.
 
         Args:
-            message: ResponseMessage to send
-            interaction: Optional pre-fetched Interaction (avoids duplicate fetch)
+            message: ResponseMessage object to send
 
         Returns:
             True if message was sent successfully, False otherwise
         """
-        if not self.action:
-            logger.warning("WhatsAppAdapter: Cannot send - no action instance")
-            return False
-
-        # Check if action is configured
-        if not self.action.is_configured():
-            logger.debug(
-                "WhatsAppAdapter: Cannot send - WhatsApp action is not configured. "
+        logger.info(
+            f"WhatsAppAdapter: send() called - message_id={message.id}, "
+            f"session_id={message.session_id}, interaction_id={message.interaction_id}"
+        )
+        
+        if not self.action or not self.action.is_configured():
+            logger.info(
+                "WhatsAppAdapter: Skipping message - WhatsApp action is not configured. "
                 "Set WHATSAPP_API_URL and WHATSAPP_API_KEY environment variables."
             )
             return False
 
-        # Get interaction if not provided
-        if interaction is None:
-            interaction = await Interaction.get(message.interaction_id)
-        if not interaction:
-            logger.warning("WhatsAppAdapter: Cannot send message - no interaction")
+        if not message.user_id:
+            logger.error(
+                f"WhatsAppAdapter: Cannot send message {message.id} - no user_id in message"
+            )
             return False
 
-        # Chunk message
-        sanitized_message = self.sanitize_message(message.content)
-        chunks = self.chunk_long_message(sanitized_message, max_length=self.action.chunk_length, chunk_length=self.action.chunk_length)
+        if not message.content or not message.content.strip():
+            logger.warning(
+                f"WhatsAppAdapter: Skipping empty message {message.id} for user {message.user_id}"
+            )
+            return False
 
-        # Use per-user lock to serialize sends and ensure message ordering
-        user_lock = self._get_user_lock(interaction.user_id)
+        logger.info(
+            f"WhatsAppAdapter: Processing adhoc message {message.id} for user {message.user_id}"
+        )
         
-        async with user_lock:
+        api = self.action.api()
+        sanitized_message = self.sanitize_message(message.content)
+        chunks = self.chunk_long_message(
+            sanitized_message, 
+            max_length=self.action.chunk_length, 
+            chunk_length=self.action.chunk_length
+        )
+
+        # Extract is_group from message metadata or interaction
+        is_group = message.metadata.get("isGroup", False)
+        
+        # If not in metadata, try to get it from the interaction
+        if message.interaction_id and (not is_group or message.metadata.get("isGroup") is None):
+            is_group = await self._get_channel_metadata_from_interaction(message.interaction_id, "isGroup", False)
+        
+        logger.warning(f"WhatsAppAdapter: chunks: {chunks}")
+        
+        if not chunks or all(not chunk.strip() for chunk in chunks):
+            logger.warning(
+                f"WhatsAppAdapter: No valid message chunks to send for user {message.user_id}"
+            )
+            # Clear typing status
             try:
-                for chunk in chunks:
-                    await self.action.api().send_message(
-                        phone=interaction.user_id,
-                        message=chunk,
-                    )
+                await api.set_typing_status(
+                    phone=message.user_id,
+                    value=False,
+                    is_group=is_group
+                )
             except Exception as e:
-                logger.warning(f"WhatsAppAdapter: Failed to send message to WhatsApp: {e}")
-                return False
+                logger.debug(f"WhatsAppAdapter: Failed to clear typing status for {message.user_id}: {e}")
+            return False
 
-            logger.debug(f"WhatsAppAdapter: Message sent successfully to {interaction.user_id}")
-            return True
+        try:
+            for chunk_idx, chunk in enumerate(chunks):
+                send_result = await api.send_message(
+                    phone=message.user_id,
+                    message=chunk,
+                    is_group=is_group,
+                )
+                
+                # Check if send was successful
+                if not send_result.get("ok", True):
+                    error_msg = send_result.get("error", "Unknown error")
+                    logger.error(
+                        f"WhatsAppAdapter: send_message failed for {message.user_id} "
+                        f"(chunk {chunk_idx + 1}/{len(chunks)}): {error_msg}. "
+                        f"Message ID: {message.id}, is_group: {is_group}"
+                    )
+                    return False
+            
+            logger.info(
+                f"WhatsAppAdapter: Message sent successfully to {message.user_id} "
+                f"(is_group: {is_group}, chunks: {len(chunks)})"
+            )
+            success = True
+        except Exception as e:
+            logger.error(
+                f"WhatsAppAdapter: Failed to send message to WhatsApp for user {message.user_id}: {e}. "
+                f"Message ID: {message.id}, Chunks: {len(chunks)}, is_group: {is_group}",
+                exc_info=True
+            )
+            raise
+        finally:
+            # Clear typing status after sending
+            try:
+                await api.set_typing_status(
+                    phone=message.user_id,
+                    value=False,
+                    is_group=is_group
+                )
+            except Exception as e:
+                logger.debug(f"WhatsAppAdapter: Failed to clear typing status for {message.user_id}: {e}")
+
+        return success
 
 
-
-    async def subscribe_to_session(
-        self, session_id: str, receive_chunks: bool = False
-    ) -> None:
-        """Subscribe to messages for a specific session.
-
-        Note: Always subscribes with receive_chunks=True for compatibility with the
-        base ChannelAdapter, even though WhatsApp only processes 'adhoc' messages.
-        Stream chunks and final messages are ignored in handle_message().
-
-        Args:
-            session_id: Session identifier
-            receive_chunks: Ignored for WhatsApp adapter
-        """
-        await super().subscribe_to_session(session_id, receive_chunks=True)
 
     def sanitize_message(self, message: str) -> str:
         """Sanitize message content for WhatsApp formatting.
