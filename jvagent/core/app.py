@@ -137,16 +137,73 @@ class App(Node):
     async def get_response_bus(self) -> Any:
         """Get or initialize the app-scoped ResponseBus instance.
 
+        This method ensures that all calls return the same singleton ResponseBus instance.
+        The ResponseBus is a true singleton (class-level), so even if _response_bus is None,
+        get_instance() will return the existing singleton if one was already created.
+
         Returns:
             ResponseBus singleton instance
         """
-        if self._response_bus:
-            return self._response_bus
-
+        # Always get the singleton instance to ensure we're using the same instance
+        # even if _response_bus was cleared or this App instance was recreated
         from jvagent.action.response.response_bus import ResponseBus
+        response_bus = await ResponseBus.get_instance()
+        
+        # Cache it for faster subsequent access
+        self._response_bus = response_bus
+        return response_bus
 
-        self._response_bus = await ResponseBus.get_instance()
-        return self._response_bus
+    async def initialize_actions(self) -> Dict[str, bool]:
+        """Initialize all actions by calling their on_startup() hooks.
+        
+        This method should be called when the app starts to ensure all actions
+        are properly initialized, including their runtime components like
+        channel adapters.
+        
+        Returns:
+            Dict mapping action IDs to initialization status
+        """
+        import logging
+        from jvagent.core.agent import Agent
+        from jvagent.action.base import Action
+        
+        logger = logging.getLogger(__name__)
+        results = {}
+        
+        try:
+            # Get all agents via App -> Agents -> Agent path
+            # Agents are connected to the Agents node, which is connected to App
+            from jvagent.core.agents import Agents as AgentsNode
+            
+            agents_node = await AgentsNode.get()
+            if not agents_node:
+                return results
+            
+            agents = await agents_node.get_connected_agents()
+            
+            # For each agent, get all actions and call on_startup
+            for agent in agents:
+                actions_manager = await agent.get_actions_manager()
+                if not actions_manager:
+                    continue
+                
+                actions = await actions_manager.get_actions()
+                
+                for action in actions:
+                    try:
+                        await action.on_startup()
+                        results[action.id] = True
+                    except Exception as e:
+                        logger.error(
+                            f"Error in on_startup for {action.label}: {e}",
+                            exc_info=True
+                        )
+                        results[action.id] = False
+            
+            return results
+        except Exception as e:
+            logger.error(f"Error initializing actions: {e}", exc_info=True)
+            return results
 
     # ============================================================================
     # File Storage Operations

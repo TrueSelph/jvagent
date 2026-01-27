@@ -211,11 +211,6 @@ class InteractWalker(Walker):
                 # Set interaction_id in context for automatic observability
                 set_interaction_id(self.interaction.id)
 
-                # Store data on interaction if provided
-                if self.data:
-                    # Store data in interaction context (if supported)
-                    pass  # Interaction may need data attribute
-
                 await self.report(
                     {
                         "interaction_created": {

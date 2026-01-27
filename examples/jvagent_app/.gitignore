@@ -15,7 +15,9 @@ jvdb/
 *.db
 *.sqlite
 *.sqlite3
-jvspatial.logs/
+jvspatial_logs/
+jvagent_logs/
+jvagent_db/
 
 # ============================================================================
 # File Storage

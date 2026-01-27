@@ -23,6 +23,7 @@ class ResponseMessage(Object):
 
     Attributes:
         session_id: Session identifier
+        user_id: User identifier (recipient)
         interaction_id: Parent interaction ID
         message_type: Type of message ("adhoc", "stream_chunk", "final")
         content: Message content
@@ -32,6 +33,9 @@ class ResponseMessage(Object):
         delivered: Whether message was delivered
     """
 
+    user_id: str = attribute(
+        default="", description="User identifier"
+    )
     session_id: str = attribute(
         default="", description="Session identifier"
     )
@@ -96,6 +100,7 @@ class ResponseMessage(Object):
         result: Dict[str, Any] = {
             "id": self.id,
             "session_id": self.session_id,
+            "user_id": self.user_id,
             "interaction_id": self.interaction_id,
             "message_type": self.message_type,
             "content": self.content,

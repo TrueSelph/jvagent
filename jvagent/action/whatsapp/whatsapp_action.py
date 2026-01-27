@@ -1,8 +1,6 @@
 """WhatsApp Action Implementation."""
-import asyncio
 import logging
 import os
-import time
 from typing import Any, Dict, Optional, Union
 
 from jvagent.action.base import Action
@@ -18,159 +16,6 @@ from .modules.wwebjs_api import WWebJSAPI
 from .webhook_auth import get_or_create_system_user
 
 logger = logging.getLogger(__name__)
-
-
-# ============================================================================
-# BACKGROUND TASK UTILITIES
-# ============================================================================
-
-def _handle_task_exception(task: asyncio.Task, name: str) -> None:
-    """Handle exceptions from background tasks."""
-    try:
-        task.result()
-    except asyncio.CancelledError:
-        pass
-    except Exception as e:
-        logger.error(f"Background task '{name}' failed: {e}", exc_info=True)
-
-
-def create_background_task(coro, name: str = "background") -> asyncio.Task:
-    """Create a background task with automatic exception logging."""
-    task = asyncio.create_task(coro)
-    task.add_done_callback(lambda t: _handle_task_exception(t, name))
-    return task
-
-
-# ============================================================================
-# CONCURRENT-SAFE TYPING STATE MANAGER
-# ============================================================================
-# This class provides thread-safe/async-safe typing state management for
-# multiple users accessing the WhatsApp action concurrently.
-#
-# CONFIGURATION RATIONALE:
-# - TYPING_STATE_TTL_SECONDS (30): Typing indicator auto-expiry threshold.
-#   WhatsApp typing indicators naturally disappear after ~25 seconds of inactivity.
-#   30 seconds aligns with this behavior while providing a small buffer.
-#
-# - TYPING_CLEANUP_INTERVAL (60): How often to clean stale typing states (1 min).
-#   Typing states are very small (just timestamps), so less frequent cleanup is
-#   acceptable. 60 seconds provides good memory recovery without overhead.
-#
-# ERROR RECOVERY:
-# - If API call to set typing fails, the local state is cleared to allow retry
-# - Duplicate set_typing calls are deduplicated (returns False if already typing)
-# - TTL-based cleanup prevents memory leaks from abandoned states
-
-# Constants for typing state management
-TYPING_STATE_TTL_SECONDS = 30  # Typing state expires after 30 seconds
-TYPING_CLEANUP_INTERVAL = 60  # Run cleanup every 60 seconds
-
-
-class TypingStateManager:
-    """Thread-safe manager for user typing states.
-    
-    Handles concurrent access from multiple users by using per-user locks.
-    Includes TTL-based cleanup to prevent memory leaks from stale states.
-    
-    Note: This is a class-level singleton since WhatsAppAction instances
-    are shared across users. Each action can have its own manager instance.
-    """
-    
-    def __init__(self):
-        # {phone: timestamp} - tracks when typing was set for each user
-        self._typing_states: Dict[str, float] = {}
-        # Per-user locks to prevent race conditions
-        self._locks: Dict[str, asyncio.Lock] = {}
-        # Global lock for lock creation and cleanup operations
-        self._global_lock = asyncio.Lock()
-        self._last_cleanup = time.time()
-    
-    async def _get_lock(self, phone: str) -> asyncio.Lock:
-        """Get or create a lock for a specific phone number (thread-safe)."""
-        async with self._global_lock:
-            if phone not in self._locks:
-                self._locks[phone] = asyncio.Lock()
-            return self._locks[phone]
-    
-    async def is_typing(self, phone: str) -> bool:
-        """Check if a phone is currently marked as typing (thread-safe)."""
-        lock = await self._get_lock(phone)
-        async with lock:
-            if phone not in self._typing_states:
-                return False
-            # Check if TTL has expired
-            if time.time() - self._typing_states[phone] > TYPING_STATE_TTL_SECONDS:
-                del self._typing_states[phone]
-                return False
-            return True
-    
-    async def set_typing(self, phone: str, value: bool) -> bool:
-        """Set or clear typing state for a phone (thread-safe).
-        
-        Returns:
-            True if state was actually changed, False if it was already in desired state
-        """
-        lock = await self._get_lock(phone)
-        
-        async with lock:
-            current_time = time.time()
-            
-            if value:
-                # Check if already typing (and not expired)
-                if phone in self._typing_states:
-                    if current_time - self._typing_states[phone] < TYPING_STATE_TTL_SECONDS:
-                        return False  # Already typing, no change needed
-                
-                # Set typing state with current timestamp
-                self._typing_states[phone] = current_time
-                return True
-            else:
-                # Clear typing state
-                if phone not in self._typing_states:
-                    return False  # Not typing, no change needed
-                
-                del self._typing_states[phone]
-                return True
-        
-        # Schedule cleanup if needed (outside lock)
-        await self._maybe_schedule_cleanup()
-    
-    async def clear_on_error(self, phone: str) -> None:
-        """Clear typing state on error (thread-safe)."""
-        lock = await self._get_lock(phone)
-        async with lock:
-            if phone in self._typing_states:
-                del self._typing_states[phone]
-    
-    async def _maybe_schedule_cleanup(self) -> None:
-        """Schedule cleanup task if interval has passed."""
-        current_time = time.time()
-        if current_time - self._last_cleanup > TYPING_CLEANUP_INTERVAL:
-            self._last_cleanup = current_time
-            create_background_task(self._cleanup_stale_states(), name="typing_cleanup")
-    
-    async def _cleanup_stale_states(self) -> None:
-        """Remove expired typing states (prevents memory leaks)."""
-        current_time = time.time()
-        stale_phones = []
-        
-        async with self._global_lock:
-            for phone, timestamp in list(self._typing_states.items()):
-                if current_time - timestamp > TYPING_STATE_TTL_SECONDS:
-                    stale_phones.append(phone)
-        
-        for phone in stale_phones:
-            lock = await self._get_lock(phone)
-            async with lock:
-                if phone in self._typing_states:
-                    if current_time - self._typing_states[phone] > TYPING_STATE_TTL_SECONDS:
-                        del self._typing_states[phone]
-        
-        # Clean up locks for phones with no active state
-        async with self._global_lock:
-            stale_locks = [p for p in self._locks if p not in self._typing_states]
-            for phone in stale_locks:
-                del self._locks[phone]
 
 
 class WhatsAppAction(Action):
@@ -364,16 +209,12 @@ class WhatsAppAction(Action):
         # Apply environment variable defaults (e.g., APP_BASE_URL)
         self._apply_env_defaults()
         
-        # Initialize concurrent-safe typing state manager
-        if not hasattr(self, "_typing_manager"):
-            self._typing_manager = TypingStateManager()
-            
         # Check if action is configured
         if not self.is_configured():
             config_status = self.get_configuration_status()
             issues = config_status.get("issues", [])
             logger.warning(
-                f"WhatsApp action not configured, skipping initialization. "
+                f"WhatsApp action not configured, skipping adapter initialization. "
                 f"Missing/invalid: {'; '.join(issues)}. "
                 f"Set the required environment variables to enable WhatsApp integration."
             )
@@ -385,18 +226,9 @@ class WhatsAppAction(Action):
             if isinstance(health_result, dict) and not health_result.get("healthy", True):
                 errors = health_result.get('errors', [])
                 logger.warning(
-                    f"WhatsApp action healthcheck failed, skipping initialization: {'; '.join(errors)}"
+                    f"WhatsApp action healthcheck failed, skipping adapter initialization: {'; '.join(errors)}"
                 )
                 return
-
-            # Create WhatsAppAdapter instance
-            adapter = WhatsAppAdapter(action=self)
-
-            # Initialize the adapter (gets ResponseBus and registers itself)
-            await adapter.initialize()
-
-            # Store adapter instance for reference
-            self._channel_adapter = adapter
 
             # Register session
             await self.register_session()
@@ -408,17 +240,18 @@ class WhatsAppAction(Action):
             error_str = str(e)
             if "BaseException" in error_str:
                 logger.warning(
-                    f"WhatsApp API server ({self.api_url}) is unreachable. "
+                    f"WhatsApp API server ({self.api_url}) is unreachable during adapter initialization. "
                     f"WhatsApp messaging will be unavailable until the server is accessible."
                 )
             else:
-                logger.error(f"Type error during WhatsApp action registration: {e}", exc_info=True)
+                logger.error(
+                    f"Type error during WhatsApp action registration: {e}",
+                    exc_info=True
+                )
         except Exception as e:
-            logger.error(f"Failed to register WhatsApp action: {e}", exc_info=True)
-            # Don't raise - allow agent to continue without WhatsApp integration
-            logger.warning(
-                f"WhatsApp action registration failed but agent will continue. "
-                f"WhatsApp messaging will be unavailable. Error: {e}"
+            logger.error(
+                f"Failed to register WhatsApp action: {e}",
+                exc_info=True
             )
 
     async def on_reload(self) -> None:
@@ -434,10 +267,6 @@ class WhatsAppAction(Action):
         # Apply environment variable defaults (e.g., APP_BASE_URL)
         self._apply_env_defaults()
         
-        # Initialize concurrent-safe typing state manager if needed
-        if not hasattr(self, "_typing_manager"):
-            self._typing_manager = TypingStateManager()
-            
         # Check if action is configured
         if not self.is_configured():
             config_status = self.get_configuration_status()
@@ -447,23 +276,6 @@ class WhatsAppAction(Action):
                 f"Missing/invalid: {'; '.join(issues)}"
             )
             return
-
-        # Reinitialize WhatsAppAdapter if not already initialized
-        if not hasattr(self, "_channel_adapter") or self._channel_adapter is None:
-            adapter = WhatsAppAdapter(action=self)
-            await adapter.initialize()
-            self._channel_adapter = adapter
-        else:
-            # Reinitialize existing adapter to ensure it's properly connected
-            try:
-                await self._channel_adapter.initialize()
-            except Exception as e:
-                logger.warning(
-                    f"Error reinitializing WhatsAppAdapter during reload: {e}. Creating new instance."
-                )
-                adapter = WhatsAppAdapter(action=self)
-                await adapter.initialize()
-                self._channel_adapter = adapter
 
         # Ensure webhook URL is set and valid
         # This is critical as webhook_url might be None after an update
@@ -526,6 +338,52 @@ class WhatsAppAction(Action):
     async def on_enable(self) -> None:
         """Called when action is enabled."""
         pass
+
+    async def on_startup(self) -> None:
+        """Called when app starts and action is loaded.
+        
+        Ensures the WhatsApp channel adapter is properly initialized
+        when the app restarts and loads this action from the database.
+        """
+        # Only initialize if action is enabled and configured
+        if not self.enabled:
+            return
+        
+        if not self.is_configured():
+            return
+        
+        try:
+            # Initialize adapter (create new instance to ensure clean state)
+            adapter = WhatsAppAdapter(action=self)
+            if await adapter.initialize():
+                logger.info(
+                    f"WhatsAppAdapter re-registered with ResponseBus for channel '{adapter.channel}' during reload"
+                )
+            else:
+                logger.error(
+                    "WhatsAppAdapter initialization failed during reload. Messages will NOT be delivered."
+                )
+                return
+        except Exception as e:
+            logger.error(
+                f"Error initializing WhatsAppAdapter on startup: {e}",
+                exc_info=True
+            )
+
+    async def get_adapter(self) -> Optional[WhatsAppAdapter]:
+        """Get WhatsApp adapter from ResponseBus registry.
+        
+        Returns:
+            WhatsAppAdapter instance if registered, None otherwise
+        """
+        from jvagent.core.app import App
+        app = await App.get()
+        if app:
+            response_bus = await app.get_response_bus()
+            if response_bus:
+                return response_bus._channel_adapters.get("whatsapp")
+        return None
+
 
 
 
@@ -723,40 +581,6 @@ class WhatsAppAction(Action):
             logger.error(f"Failed to generate webhook URL: {e}", exc_info=True)
             raise ValidationError(f"Webhook URL generation failed: {e}")
 
-    async def set_typing(self, phone: str, value: bool = True, is_group: bool = False) -> None:
-        """Set or clear typing status for a phone number (concurrent-safe).
-        
-        Uses per-user locks to prevent race conditions when multiple users
-        are being processed concurrently.
-        
-        Args:
-            phone: Phone number
-            value: True to start typing, False to stop
-            is_group: Whether the chat is a group
-        """
-        # Skip if not configured
-        if not self.is_configured():
-            return
-            
-        # Initialize typing manager if it doesn't exist (safety check)
-        if not hasattr(self, "_typing_manager"):
-            self._typing_manager = TypingStateManager()
-
-        # Use thread-safe typing state manager
-        state_changed = await self._typing_manager.set_typing(phone, value)
-        
-        if not state_changed:
-            # State was already in desired state, skip API call
-            return
-
-        try:
-            await self.api().set_typing_status(phone=phone, value=value, is_group=is_group)
-        except Exception as e:
-            logger.warning(f"WhatsAppAction: Failed to set typing status for {phone}: {e}")
-            # If failed to start typing, clear state so we can try again
-            if value:
-                await self._typing_manager.clear_on_error(phone)
-
     async def set_recording_status(
         self, phone: str, value: bool = True, is_group: bool = False, duration: int = 5
     ) -> None:
@@ -890,6 +714,7 @@ class WhatsAppAction(Action):
             }
         
         errors = []
+        warnings = []
         
         # Validate provider
         if not self.provider:
@@ -906,23 +731,56 @@ class WhatsAppAction(Action):
             
         if self.media_batch_window <= 0:
             errors.append("media_batch_window must be positive")
+        
+        # Check adapter initialization (get from ResponseBus registry)
+        from jvagent.core.app import App
+        app = await App.get()
+        adapter = None
+        adapter_initialized = False
+        if app:
+            response_bus = await app.get_response_bus()
+            if response_bus:
+                adapter = response_bus._channel_adapters.get("whatsapp")
+                if adapter:
+                    if not adapter._initialized:
+                        errors.append(
+                            "WhatsAppAdapter exists but is not initialized. "
+                            "Messages will NOT be delivered. Try reloading the action."
+                        )
+                    adapter_initialized = adapter._initialized
             
         if errors:
-            return {"healthy": False, "configured": True, "errors": errors}
+            return {
+                "healthy": False,
+                "configured": True,
+                "errors": errors,
+                "warnings": warnings if warnings else None,
+            }
             
         # Test API connection
         try:
             api = self.api()
             # Basic connectivity test - this will vary by provider
             # For now, just check if API instance can be created
-            return {
+            # adapter_initialized already set above from ResponseBus registry
+            result = {
                 "healthy": True, 
                 "configured": True,
                 "status": "active",
                 "provider": self.provider, 
                 "api_url": self.api_url,
+                "adapter_initialized": adapter_initialized,
             }
+            if warnings:
+                result["warnings"] = warnings
+            return result
         except Exception as e:
-            return {"healthy": False, "configured": True, "errors": [f"API connection failed: {e}"]}
+            # adapter_initialized already set above from ResponseBus registry
+            return {
+                "healthy": False,
+                "configured": True,
+                "errors": [f"API connection failed: {e}"],
+                "adapter_initialized": adapter_initialized,
+            }
 
 

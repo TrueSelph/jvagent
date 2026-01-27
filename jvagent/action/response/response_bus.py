@@ -44,6 +44,7 @@ class ResponseBus:
         """Initialize ResponseBus (app-scoped singleton).
 
         Note: Use get_instance() to obtain the singleton instance.
+        This should only be called once via get_instance().
         """
         self._session_queues: Dict[str, List[ResponseMessage]] = {}
         self._subscribers: Dict[str, List[Callable[[ResponseMessage], Any]]] = {}
@@ -60,8 +61,8 @@ class ResponseBus:
         self._observability_buffers: Dict[str, List[Dict[str, Any]]] = {}  # interaction_id -> events
         self._buffer_timestamps: Dict[str, float] = {}  # interaction_id -> creation time for TTL cleanup
         
-        # Channel adapter registry: maps channel name -> list of adapter instances
-        self._channel_adapters: Dict[str, List[Any]] = {}  # channel -> list of ChannelAdapter instances
+        # Channel adapter registry: maps channel name -> single adapter instance
+        self._channel_adapters: Dict[str, "ChannelAdapter"] = {}  # channel -> single ChannelAdapter instance
         
         # Configuration
         self._max_session_queue_size = 1000  # Bounded storage per session
@@ -71,11 +72,15 @@ class ResponseBus:
     async def get_instance(cls) -> "ResponseBus":
         """Get the singleton ResponseBus instance.
 
+        This ensures only ONE ResponseBus instance exists across the entire application.
+        The instance is created on first access and reused for all subsequent calls.
+
         Returns:
             ResponseBus singleton instance
         """
         if cls._instance is None:
             async with cls._lock:
+                # Double-check pattern to prevent race conditions
                 if cls._instance is None:
                     cls._instance = cls()
         return cls._instance
@@ -87,6 +92,7 @@ class ResponseBus:
         channel: str = "default",
         message_type: str = "adhoc",
         interaction_id: Optional[str] = None,
+        user_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         message_id: Optional[str] = None,
     ) -> ResponseMessage:
@@ -98,6 +104,7 @@ class ResponseBus:
             channel: Target communication channel
             message_type: Type of message ("adhoc", "stream_chunk", "final")
             interaction_id: Parent interaction ID
+            user_id: User identifier (recipient)
             metadata: Additional metadata
             message_id: Optional message ID to reuse (for stream chunks and final messages in same sequence)
 
@@ -128,6 +135,7 @@ class ResponseBus:
         # Create ResponseMessage with specified or auto-generated ID
         message_kwargs = {
             "session_id": session_id,
+            "user_id": user_id or "",
             "interaction_id": interaction_id or "",
             "content": content,
             "channel": channel,
@@ -139,17 +147,25 @@ class ResponseBus:
         
         message = ResponseMessage(**message_kwargs)
 
-        # Auto-subscribe channel adapters for this channel/session (lazy subscription)
-        if channel in self._channel_adapters:
-            for adapter in self._channel_adapters[channel]:
-                if session_id not in adapter._subscribed_sessions:
-                    try:
-                        await adapter.subscribe_to_session(session_id, receive_chunks=False)
-                    except Exception as e:
-                        logger.error(
-                            f"Error auto-subscribing channel adapter {adapter.channel} to session {session_id}: {e}",
-                            exc_info=True,
-                        )
+        # Route adhoc messages directly to channel adapter
+        if message_type == "adhoc" and channel in self._channel_adapters:
+            adapter = self._channel_adapters[channel]
+            try:
+                success = await adapter.send(message)
+                if not success:
+                    logger.warning(
+                        f"Channel adapter '{channel}' failed to send message {message.id}"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"Error sending message via channel adapter '{channel}': {e}",
+                    exc_info=True,
+                )
+        elif message_type == "adhoc":
+            logger.debug(
+                f"No channel adapter registered for channel '{channel}' "
+                f"(registered channels: {list(self._channel_adapters.keys())})"
+            )
 
         # Add to ephemeral session queue (bounded storage)
         if session_id not in self._session_queues:
@@ -202,6 +218,16 @@ class ResponseBus:
         except Exception as e:
             logger.error(
                 f"Error in subscriber callback: {e}",
+                exc_info=True,
+            )
+
+    async def _safe_adapter_send(self, adapter: "ChannelAdapter", message: ResponseMessage) -> None:
+        """Safely invoke adapter.send() with error handling."""
+        try:
+            await adapter.send(message)
+        except Exception as e:
+            logger.error(
+                f"Error sending message via channel adapter '{adapter.channel}': {e}",
                 exc_info=True,
             )
 
@@ -493,11 +519,11 @@ class ResponseBus:
             self._observability_buffers.pop(interaction_id, None)
             self._buffer_timestamps.pop(interaction_id, None)
 
-    async def register_channel_adapter(self, adapter: Any) -> None:
+    async def register_channel_adapter(self, adapter: "ChannelAdapter") -> None:
         """Register a channel adapter with the response bus.
-
-        Channel adapters are automatically subscribed to sessions when messages
-        are published for their channel (lazy subscription).
+        
+        Ensures only ONE adapter per channel. If an adapter already exists for the channel,
+        it is replaced by the new adapter. This prevents duplicate message delivery.
 
         Args:
             adapter: ChannelAdapter instance to register
@@ -507,14 +533,14 @@ class ResponseBus:
             return
         
         channel = adapter.channel
-        if channel not in self._channel_adapters:
-            self._channel_adapters[channel] = []
+        old_adapter = self._channel_adapters.get(channel)
         
-        # Prevent duplicate registrations
-        if adapter not in self._channel_adapters[channel]:
-            self._channel_adapters[channel].append(adapter)
-            logger.debug(f"Registered channel adapter for channel '{channel}'")
+        # Replace any existing adapter for this channel (ensures only one adapter per channel)
+        self._channel_adapters[channel] = adapter
+        
+        if old_adapter and old_adapter is not adapter:
+            logger.info(f"Replaced existing channel adapter for channel '{channel}'")
         else:
-            logger.debug(f"Channel adapter for channel '{channel}' already registered")
+            logger.debug(f"Registered channel adapter for channel '{channel}'")
 
 
