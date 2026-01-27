@@ -1,0 +1,34 @@
+# InteractRouter Action Package Descriptor
+# This file defines the action's package metadata, dependencies, and configuration
+
+package:
+  # Action name in namespace/action_name format
+  name: jvagent/service_directory_interact_action
+
+  # Package author
+  author: jvagent
+
+  # Archetype: The main Action class name (same as the Action Node class)
+  archetype: ServiceDirectoryInteractAction
+
+  # Package version
+  version: 0.0.1
+
+  # Package metadata
+  meta:
+    title: ServiceDirectoryInteractAction
+    description: Finds and connect to services
+    group: jvagent
+    type: interact_action
+
+  # Package configuration
+  config:
+    order:
+      weight: -100
+
+  # Package dependencies
+  dependencies:
+    # jvagent version requirement
+    jvagent: ~0.0.1
+    # Other action dependencies (by namespace/action_name)
+    actions: []
