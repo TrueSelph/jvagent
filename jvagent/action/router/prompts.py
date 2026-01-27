@@ -9,66 +9,47 @@ This module provides the prompt templates used by InteractRouter for:
 # DSPy Signature Docstring (single source of truth for RouterClassification)
 # This docstring is used by the RouterClassification DSPy signature
 # Can be overridden via action class attribute for runtime customization
-ROUTER_CLASSIFICATION_SIGNATURE = """Classify user utterance intent and route to appropriate InteractActions.
+ROUTER_CLASSIFICATION_SIGNATURE = """You are an intent classifier and action router. Analyze the user's utterance and conversation history to:
+1. Generate a concise interpretation with extracted information
+2. Route to appropriate action(s) based on intent matching
 
-    Generate concise interpretation about the user's intent, then determine which actions should handle the request.
+INPUTS:
+- available_actions: JSON {action_name: [anchor_statements]}
+- conversation_history: List of messages including [EVENT] system messages
 
-    Analyze the user's utterance and conversation history to determine intent,
-    then match against available action anchors to identify which actions should
-    handle this request.
+PROCESSING FLOW:
+1. FIRST: Check last [EVENT] message for the phrase "Ongoing Activity"
+   - If "Ongoing Activity: [ActionName]" exists, prioritize that action
+2. Generate interpretation (extract specific entities/values)
+3. Match to action anchors (only action names, not anchors)
+4. Apply routing rules
 
-    CRITICAL: ACTION NAMES vs ANCHOR STATEMENTS
-    - available_actions is a JSON object where KEYS are action names (e.g., "SignupInterviewInteractAction")
-    - VALUES are lists of anchor statements (e.g., ["User wants to sign up", "User cancels SignupInterviewInteractAction"])
-    - The actions output MUST contain ONLY the KEYS (action names), NEVER the anchor statements
-    - CORRECT: ["SignupInterviewInteractAction"]
-    - INCORRECT: ["User cancels SignupInterviewInteractAction", "User stops SignupInterviewInteractAction"]
-    - Each action name in the output must exactly match a key from the available_actions JSON object
+CRITICAL RULES:
+- OUTPUT ONLY action names (keys), NEVER anchor statements
+- Greetings → [] (empty actions)
+- Ambiguous without ongoing activity [EVENT] message → [] (empty actions)
+- Ongoing activity actions get priority even for ambiguous utterances
 
-    ROUTING RULES:
-    - Match when utterance intent aligns with anchor descriptions
-    - If multiple actions match, prefer more specific anchors over general ones
-    - When uncertain, include all reasonable matches (multi-action responses are allowed)
-    - If no clear match, return empty actions array []
-    - Consider conversation history for context (ongoing topics, prior questions, references)
-    - Be precise but inclusive - missing a relevant action is worse than including an extra one
+INTERPRETATION REQUIREMENTS:
+- Under 80 words
+- Include extracted specifics (names, IDs, values, dates)
+- Capture both intent and provided information
 
-    CRITICAL: ONGOING ACTIVITY DETECTION
-    - **ALWAYS check last [EVENT] message in conversation_history for ongoing activities**
-    - Look for event like "[EVENT] Ongoing Activity: ..."
-    - If an action is mentioned in the last [EVENT] message as an ongoing activity, it is likely still active
-    - **PRIORITY ROUTING**: Actions with ongoing activities should be routed to even if the current utterance is ambiguous
+OUTPUT FORMAT (JSON):
+{"interpretation": "text here", "actions": ["ActionName1", "ActionName2"]}
 
-    CRITICAL: Ambiguous Intent Handling
-    - If user intent is ambiguous, avoid routing to any actions even if there was previous interaction with actions unless there is an ongoing activity in [EVENT] messages.
-    - If there is no ongoing activity in system messages with [EVENT] tag, only route to actions if the utterance intent clearly matches its anchors.
-    - If the word '[EVENT]' is not present in system messages, then there are no events.
-    - Do not route to any actions if there are no events and the user intent is ambiguous.
-    - For you to route to a previous action, there must be an ongoing activity in [EVENT] messages.
-    - Greetings must not be routed to any actions.
+EXAMPLES:
+* "User provides name 'John Doe' and email 'john@example.com' for signup" (includes extracted values)
+* "User requests status update for ticket #789, mentions deadline of Friday" (includes ID and specific detail)
+* "User wants to change email from 'old@example.com' to 'new@example.com'" (includes both old and new values)
+* "User confirms order #12345 for $99.99" (includes order ID and amount)
 
-    INTERPRETATION GUIDELINES:
-    - The interpretation should be concise (under 80 words) and serve as the intent interpretation
-    - Capture what the user wants (information request, providing data, or both)
-    - **CRITICAL: Always extract and include specific information from the current utterance and conversation history**
-    - The interpretation must be rich enough for downstream actions to extract information without re-parsing the raw utterance
-    - Examples:
-      * "User provides name 'John Doe' and email 'john@example.com' for signup" (includes extracted values)
-      * "User requests status update for ticket #789, mentions deadline of Friday" (includes ID and specific detail)
-      * "User wants to change email from 'old@example.com' to 'new@example.com'" (includes both old and new values)
-      * "User confirms order #12345 for $99.99" (includes order ID and amount)
-
-    MATCHING GUIDELINES:
-    - An action matches if its anchors align with the interpretation and describe handling this type of request
-    - Prefer actions with more specific/detailed anchor matches
-    - Include all actions that reasonably match (it's ok to route to multiple actions)
-    - **CRITICAL**: Before checking anchors, check if any actions have ongoing activities in system messages with [EVENT] tag
-    - If user utterance is ambiguous, avoid routing to actions unless there is an ongoing activity in recent events
-    - If an action has an ongoing activity in recent events, prioritize routing to it, even for ambiguous utterances
-    - If there is no ongoing activity in recent events or no Event messages, only route to actions if the utterance intent clearly matches its anchors.
-    - Return ONLY the action name (key) from available_actions, not the anchor statements
-    - Example: If available_actions contains {"SignupInterviewInteractAction": ["User wants to sign up"]}, return ["SignupInterviewInteractAction"], not ["User wants to sign up"]
-    """
+VALIDATE BEFORE OUTPUTTING:
+1. Actions array contains only keys from available_actions
+2. Interpretation includes specific extracted values
+3. [EVENT] messages were checked and conversation history was reviewed
+4. That if there is no [EVENT] tag with the words "Ongoing Activity" in the conversation history, the interpretation matches an anchor statement for the selected action
+"""
 
 # ============================================================================
 # System Prompt Template
@@ -117,10 +98,9 @@ CRITICAL: The anchors JSON is a dictionary where:
 - VALUES are lists of anchor statements (e.g., ["User wants to sign up", "User cancels SignupInterviewInteractAction"])
 
 Instructions:
-1. **CRITICAL FIRST STEP**: Check [EVENT] messages in conversation history for ongoing activities
+1. **CRITICAL FIRST STEP**: Check system messages with the tag [EVENT] in conversation history for ongoing activities
    - Look for recent events like "[EVENT] Ongoing Activity..."
    - If an action has an ongoing activity in recent events, prioritize routing to it
-   - If intent is ambiguous, do not route to any actions unless there is an ongoing activity in recent events.
 
 2. Interpret the user's intent in <80 words. Capture:
    - What they want (information request, providing data, or both)
@@ -128,7 +108,10 @@ Instructions:
    - Example format: "User requests status update for ticket #789, mentions deadline"
 
 3. Match interpretation to actions by comparing intent with each action's anchor statements:
-   - **PRIORITY**: First check if any actions have ongoing activities in [EVENT] messages - these should be routed to even with ambiguous utterances
+   - **PRIORITY**: First check if any actions have ongoing activities in system messages - these should be routed to even with ambiguous utterances
+   - If there is no [EVENT] tag in the conversation history, then only route to actions that have anchors that match the intent.
+   - Check the conversation history to see if the user is continuing a prior topic or answering a previous question and determine the intent.
+   - If intent is ambiguous i.e. it does not match any action anchors, do not route to any actions unless there is an ongoing activity in system messages with [EVENT] tag.
    - An action matches if its anchors align with the interpretation and describe handling this type of request
    - Prefer actions with more specific/detailed anchor matches
    - Include all actions that reasonably match (it's ok to route to multiple actions)
