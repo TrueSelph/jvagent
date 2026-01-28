@@ -13,6 +13,7 @@ from jvspatial.exceptions import ValidationError, DatabaseError
 from .whatsapp_adapter import WhatsAppAdapter
 from .modules.wppconnect import WPPConnectAPI
 from .modules.wwebjs_api import WWebJSAPI
+from .modules.ultramsg import UltraMsgAPI
 from .webhook_auth import get_or_create_system_user
 
 logger = logging.getLogger(__name__)
@@ -199,8 +200,9 @@ class WhatsAppAction(Action):
     async def on_register(self) -> None:
         """Called when action is registered.
 
-        Creates and initializes the WhatsApp channel adapter for automatic
-        message delivery via the response bus.
+        Performs initial validation and configuration checks.
+        Session registration happens in on_startup() to ensure
+        it runs on every app restart for consistent behavior.
         
         If the action is not properly configured (missing API URL, API key, etc.),
         it will log a warning and skip initialization gracefully. The action will
@@ -214,52 +216,41 @@ class WhatsAppAction(Action):
             config_status = self.get_configuration_status()
             issues = config_status.get("issues", [])
             logger.warning(
-                f"WhatsApp action not configured, skipping adapter initialization. "
+                f"WhatsApp action not configured. "
                 f"Missing/invalid: {'; '.join(issues)}. "
                 f"Set the required environment variables to enable WhatsApp integration."
             )
             return
-            
+        
+        # Optional: Early healthcheck validation
         try:
-            # Validate configuration
             health_result = await self.healthcheck()
             if isinstance(health_result, dict) and not health_result.get("healthy", True):
                 errors = health_result.get('errors', [])
                 logger.warning(
-                    f"WhatsApp action healthcheck failed, skipping adapter initialization: {'; '.join(errors)}"
-                )
-                return
-
-            # Register session
-            await self.register_session()
-            
-            logger.info(f"WhatsApp action registered successfully for provider: {self.provider}")
-            
-        except TypeError as e:
-            # Handle aiohttp/Python 3.12+ compatibility issues
-            error_str = str(e)
-            if "BaseException" in error_str:
-                logger.warning(
-                    f"WhatsApp API server ({self.api_url}) is unreachable during adapter initialization. "
-                    f"WhatsApp messaging will be unavailable until the server is accessible."
-                )
-            else:
-                logger.error(
-                    f"Type error during WhatsApp action registration: {e}",
-                    exc_info=True
+                    f"WhatsApp action healthcheck failed during registration: {'; '.join(errors)}"
                 )
         except Exception as e:
-            logger.error(
-                f"Failed to register WhatsApp action: {e}",
-                exc_info=True
+            logger.warning(
+                f"Could not perform healthcheck during registration: {e}"
             )
+        
+        logger.info(
+            f"WhatsApp action registered. Session will be initialized on app startup."
+        )
 
     async def on_reload(self) -> None:
         """Called when action is reloaded (e.g., after update).
 
-        Reinitializes the WhatsApp channel adapter and ensures webhook URL
-        and session registration are properly set up. This is critical for
-        actions that were updated via --update flag.
+        Ensures webhook URL and session registration are properly set up
+        immediately after code updates. This is critical for actions that
+        were updated via --update flag, as it ensures the session is
+        re-registered with the current webhook URL without waiting for
+        the next app restart.
+        
+        Note: Session registration also happens in on_startup() for
+        consistency on every app restart. This method provides immediate
+        re-registration after updates.
         
         If the action is not properly configured, it will skip reinitialization
         gracefully.
@@ -313,10 +304,20 @@ class WhatsAppAction(Action):
                 )
                 await self.get_webhook_url(regenerate=True)
 
-        # Re-register session to ensure it's properly configured
-        # This ensures the session is registered with the current webhook URL
+        # Re-register session to ensure it's properly configured immediately after reload
+        # This ensures the session is registered with the current webhook URL without
+        # waiting for the next app restart. Session registration also happens in
+        # on_startup() for consistency, but this provides immediate re-registration.
         try:
-            await self.register_session()
+            registration_result = await self.register_session()
+            
+            # Check if registration actually succeeded
+            if isinstance(registration_result, dict):
+                if registration_result.get("status") == "ERROR" or not registration_result.get("ok", True):
+                    error_msg = registration_result.get("error") or registration_result.get("message", "Unknown error")
+                    logger.error(
+                        f"Session re-registration failed during reload: {error_msg}"
+                    )
         except TypeError as e:
             # Handle aiohttp/Python 3.12+ compatibility issues
             error_str = str(e)
@@ -335,59 +336,94 @@ class WhatsAppAction(Action):
             # Don't raise - allow action to continue even if session registration fails
             # The session can be registered later when needed
 
-    async def on_enable(self) -> None:
-        """Called when action is enabled."""
-        pass
-
     async def on_startup(self) -> None:
         """Called when app starts and action is loaded.
         
-        Ensures the WhatsApp channel adapter is properly initialized
-        when the app restarts and loads this action from the database.
+        Ensures the WhatsApp session is registered and the channel adapter
+        is properly initialized when the app restarts and loads this action
+        from the database. This ensures consistent initialization on every
+        app startup, whether it's the first time or subsequent restarts.
         """
-        # Only initialize if action is enabled and configured
+        # Apply environment variable defaults (e.g., APP_BASE_URL)
+        self._apply_env_defaults()
+        
+        # Check if action is configured
+        if not self.is_configured():
+            config_status = self.get_configuration_status()
+            issues = config_status.get("issues", [])
+            logger.warning(
+                f"WhatsApp action not configured on startup. "
+                f"Missing/invalid: {'; '.join(issues)}. "
+                f"Set the required environment variables to enable WhatsApp integration."
+            )
+            return
+        
+        # Only proceed if enabled
         if not self.enabled:
             return
         
-        if not self.is_configured():
-            return
-        
         try:
+            # Optional: Validate configuration with healthcheck
+            health_result = await self.healthcheck()
+            if isinstance(health_result, dict) and not health_result.get("healthy", True):
+                errors = health_result.get('errors', [])
+                logger.warning(
+                    f"WhatsApp action healthcheck failed on startup: {'; '.join(errors)}. "
+                    f"Continuing with session registration anyway."
+                )
+                # Continue anyway - session registration might still work
+            
+            # Register session (ensures session is registered on every app startup)
+            registration_result = await self.register_session()
+            
+            # Check if registration succeeded
+            if isinstance(registration_result, dict):
+                if registration_result.get("status") == "ERROR" or not registration_result.get("ok", True):
+                    error_msg = registration_result.get("error") or registration_result.get("message", "Unknown error")
+                    logger.error(
+                        f"WhatsApp session registration failed on startup: {error_msg}. "
+                        f"Continuing with adapter initialization anyway."
+                    )
+                    # Continue to adapter initialization even if session registration fails
+                else:
+                    status = registration_result.get("status", "UNKNOWN")
+                    logger.info(
+                        f"WhatsApp session registered successfully on startup: {self.session} (status: {status})"
+                    )
+            
             # Initialize adapter (create new instance to ensure clean state)
             adapter = WhatsAppAdapter(action=self)
             if await adapter.initialize():
                 logger.info(
-                    f"WhatsAppAdapter re-registered with ResponseBus for channel '{adapter.channel}' during reload"
+                    f"WhatsAppAdapter initialized on startup for channel '{adapter.channel}'"
                 )
             else:
                 logger.error(
-                    "WhatsAppAdapter initialization failed during reload. Messages will NOT be delivered."
+                    "WhatsAppAdapter initialization failed on startup. Messages will NOT be delivered."
                 )
                 return
+                
+        except TypeError as e:
+            # Handle aiohttp/Python 3.12+ compatibility issues
+            error_str = str(e)
+            if "BaseException" in error_str:
+                logger.warning(
+                    f"WhatsApp API server ({self.api_url}) is unreachable on startup. "
+                    f"WhatsApp messaging will be unavailable until the server is accessible."
+                )
+            else:
+                logger.error(
+                    f"Type error during WhatsApp action startup: {e}",
+                    exc_info=True
+                )
         except Exception as e:
             logger.error(
-                f"Error initializing WhatsAppAdapter on startup: {e}",
+                f"Error during WhatsApp action startup: {e}",
                 exc_info=True
             )
 
-    async def get_adapter(self) -> Optional[WhatsAppAdapter]:
-        """Get WhatsApp adapter from ResponseBus registry.
-        
-        Returns:
-            WhatsAppAdapter instance if registered, None otherwise
-        """
-        from jvagent.core.app import App
-        app = await App.get()
-        if app:
-            response_bus = await app.get_response_bus()
-            if response_bus:
-                return response_bus._channel_adapters.get("whatsapp")
-        return None
 
-
-
-
-    def api(self) -> Union[WPPConnectAPI, WWebJSAPI]:
+    def api(self) -> Union[WPPConnectAPI, WWebJSAPI, UltraMsgAPI]:
         """Get API instance for the configured provider.
         
         Returns:
@@ -416,6 +452,14 @@ class WhatsAppAction(Action):
                 )
             elif self.provider == "wwebjs":
                 return WWebJSAPI(
+                    api_url=self.api_url,
+                    session=self.session,
+                    token=self.token,
+                    secret_key=self.api_key,
+                    timeout=self.request_timeout,
+                )
+            elif self.provider == "ultramsg":
+                return UltraMsgAPI(
                     api_url=self.api_url,
                     session=self.session,
                     token=self.token,
@@ -640,13 +684,6 @@ class WhatsAppAction(Action):
 
             # create webhook url if not set
             if not self.webhook_url:
-                # Try to close existing session (if endpoint exists)
-                try:
-                    await self.api().close_session()
-                except Exception as e:
-                    # Ignore errors - endpoint may not exist or session may not be active
-                    logger.debug(f"Could not close session (this is normal): {e}")
-
                 # Generate secure webhook URL with API key
                 self.webhook_url = await self.get_webhook_url()
 
@@ -657,7 +694,30 @@ class WhatsAppAction(Action):
                 auto_register=True,
             )
             
-            logger.info(f"WhatsApp session registered successfully: {self.session}")
+            # Ensure result is a dict
+            if not isinstance(result, dict):
+                logger.error(f"register_session returned unexpected type: {type(result)}")
+                return {
+                    "status": "ERROR",
+                    "ok": False,
+                    "error": f"Invalid response type: {type(result)}",
+                    "message": "Session registration returned unexpected response format"
+                }
+            
+            # Check if registration actually succeeded before logging success
+            if result.get("status") == "ERROR" or not result.get("ok", True):
+                error_msg = result.get("error") or result.get("message", "Unknown error")
+                logger.error(
+                    f"WhatsApp session registration failed for '{self.session}': {error_msg}. "
+                    f"Full result: {result}"
+                )
+                return result
+            
+            # Only log success if registration actually succeeded
+            status = result.get("status", "UNKNOWN")
+            logger.info(
+                f"WhatsApp session registered successfully: {self.session} (status: {status})"
+            )
             return result
             
         except DatabaseError as e:
