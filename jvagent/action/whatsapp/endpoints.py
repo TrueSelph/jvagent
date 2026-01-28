@@ -584,7 +584,7 @@ async def logout(
         Dict[str, Any]: Result of the operation
     """
     whatsapp_action = await get_whatsapp_action(action_id)
-    result = await whatsapp_action.api().logout()
+    result = await whatsapp_action.api().logout_session()
     return normalize_result(result, "logout")
 
 

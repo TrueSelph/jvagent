@@ -305,7 +305,9 @@ class BaseWhatsAppAPI(ABC):
                     return {"ok": True, "no_content": True}
             except BaseException as e:
                 # Catch ALL exceptions including TypeError from aiohttp bugs
-                return {"ok": False, "error": str(e), "_exception_type": type(e).__name__}
+                exc_str = str(e) if e else "None"
+                exc_type = type(e).__name__ if e else "None"
+                return {"ok": False, "error": exc_str if exc_str else "Unknown error", "_exception_type": exc_type}
         
         # Try with pooled session first, then retry with fresh session on failure
         for attempt in range(2):
@@ -326,11 +328,15 @@ class BaseWhatsAppAPI(ABC):
                 
                 result = await safe_request(session, method, url, **kwargs)
                 
-                # Check if request succeeded or if it's a handled error
-                if result.get("ok") or result.get("status_code"):
+                # Check if request succeeded at HTTP level
+                # If we got a response (no exception), it's a successful HTTP request
+                # Note: A 200 response with {"success": false} is still a successful HTTP request
+                # The business logic failure (like session_not_found) should be handled by the caller
+                if not result.get("_exception_type"):
+                    # HTTP request succeeded (got a response, even if API indicates business logic failure)
                     return result
                 
-                # Request failed with an error, check if we should retry
+                # Request failed at HTTP level (exception or connection error), check if we should retry
                 error = result.get("error", "Unknown error")
                 exc_type = result.get("_exception_type", "")
                 

@@ -132,18 +132,43 @@ class WWebJSAPI(BaseWhatsAppAPI):
     ) -> dict:
         """Initialize the WWebJS session with optional custom webhook URL."""
         status_resp = await self.status()
+        
+        # Check if status check failed (service is down or unreachable)
+        if not status_resp.get("ok", True) or status_resp.get("error"):
+            error_msg = status_resp.get("error", "Unknown error")
+            return {
+                "status": "ERROR",
+                "ok": False,
+                "message": f"Failed to check session status: {error_msg}",
+                "error": error_msg,
+                "details": status_resp,
+            }
+        
         state = (status_resp.get("state") or status_resp.get("status", "")).upper()
 
         # Create session if needed
         if "error" in status_resp or "Unauthorized" in str(status_resp.get("error", "")):
             create_res = await self.create_session(webhook=webhook_url)
             if not create_res.get("ok"):
+                error_msg = create_res.get("error") or create_res.get("message") or "Unknown error"
                 return {
                     "status": "ERROR",
-                    "message": "Could not create instance.",
+                    "ok": False,
+                    "message": f"Could not create instance: {error_msg}",
+                    "error": error_msg,
                     "details": create_res,
                 }
             status_resp = await self.status()
+            # Check if status check failed after creating session
+            if not status_resp.get("ok", True) or status_resp.get("error"):
+                error_msg = status_resp.get("error", "Unknown error")
+                return {
+                    "status": "ERROR",
+                    "ok": False,
+                    "message": f"Failed to check session status after creation: {error_msg}",
+                    "error": error_msg,
+                    "details": status_resp,
+                }
             state = (status_resp.get("state") or status_resp.get("status", "")).upper()
 
         # Handle connected state - update webhook for existing session
@@ -166,10 +191,24 @@ class WWebJSAPI(BaseWhatsAppAPI):
                         f"Error updating webhook for existing session '{self.session}': {e}"
                     )
             
-            # Return success regardless - session is connected
-            device_info = await self.get_host_device()
+            # Get device info, but handle errors gracefully
+            try:
+                device_info = await self.get_host_device()
+                if not device_info.get("ok", True) and device_info.get("error"):
+                    self.logger.warning(
+                        f"Could not get device info for session '{self.session}': "
+                        f"{device_info.get('error')}"
+                    )
+                    device_info = None
+            except Exception as e:
+                self.logger.warning(
+                    f"Error getting device info for session '{self.session}': {e}"
+                )
+                device_info = None
+            
             return {
                 "status": "CONNECTED",
+                "ok": True,
                 "message": "Session is already active and connected.",
                 "device": device_info,
                 "session": self.session,
@@ -179,14 +218,28 @@ class WWebJSAPI(BaseWhatsAppAPI):
         # Handle disconnected states
         if state in {"QRCODE", "DISCONNECTED", "UNPAIRED", ""} and auto_register:
             start_res = await self.start_session(webhook=webhook_url, wait_qr_code=wait_qr_code)
+            
+            # Check if start_session failed
+            if not start_res.get("ok", True):
+                error_msg = start_res.get("error") or start_res.get("message") or "Unknown error"
+                return {
+                    "status": "ERROR",
+                    "ok": False,
+                    "message": f"Failed to start session: {error_msg}",
+                    "error": error_msg,
+                    "details": start_res,
+                }
+            
             qrcode_b64 = start_res.get("qrcode_base64") if wait_qr_code else None
             
             if not qrcode_b64:
                 qr_resp = await self.qrcode()
-                qrcode_b64 = qr_resp.get("qrcode_base64") or qr_resp.get("qrcode")
+                if qr_resp.get("ok"):
+                    qrcode_b64 = qr_resp.get("qrcode_base64") or qr_resp.get("qrcode")
             
             return {
                 "status": "AWAITING_QR_SCAN",
+                "ok": True,
                 "message": "Session created or started. Awaiting QR Code scan.",
                 "qrcode": qrcode_b64,
                 "session": self.session,
@@ -202,6 +255,7 @@ class WWebJSAPI(BaseWhatsAppAPI):
 
         result = {
             "status": state,
+            "ok": True,
             "message": f"Session status: {state}",
             "details": status_resp,
         }
@@ -214,9 +268,27 @@ class WWebJSAPI(BaseWhatsAppAPI):
         """GET /session/status/{sessionId}"""
         result = await self.send_rest_request(f"session/status/{self.session}", method="GET")
         
+        # Check if the HTTP request failed (connection error, not API business logic)
+        # If result has _exception_type, it's an HTTP-level failure
+        if result.get("_exception_type") or (result.get("ok") is False and result.get("error") and not result.get("message")):
+            # HTTP request failed (service is down or unreachable)
+            error_msg = result.get("error", "Unknown error")
+            return {
+                "ok": False,
+                "error": error_msg,
+                "status": "",
+                "state": "",
+                "message": f"Failed to check session status: {error_msg}",
+            }
+        
         # Normalize status field
         message = result.get("message", "")
         state = result.get("state")
+        
+        # For valid API responses (HTTP succeeded), set ok: True
+        # Only HTTP/connection errors should have ok: False
+        if not result.get("_exception_type"):
+            result["ok"] = True
         
         if message == "session_not_found" or message in ["browser tab closed", "session closed"]:
             result["status"] = ""
