@@ -132,9 +132,9 @@ class WhatsAppAdapter(ChannelAdapter):
         )
         
         api = self.action.api()
-        sanitized_message = self.sanitize_message(message.content)
+        # Message content is already transformed by filters before reaching the adapter
         chunks = self.chunk_long_message(
-            sanitized_message, 
+            message.content, 
             max_length=self.action.chunk_length, 
             chunk_length=self.action.chunk_length
         )
@@ -145,7 +145,6 @@ class WhatsAppAdapter(ChannelAdapter):
         # If not in metadata, try to get it from the interaction
         if message.interaction_id and (not is_group or message.metadata.get("isGroup") is None):
             is_group = await self._get_channel_metadata_from_interaction(message.interaction_id, "isGroup", False)
-        
         
         if not chunks or all(not chunk.strip() for chunk in chunks):
             logger.debug(
@@ -204,28 +203,6 @@ class WhatsAppAdapter(ChannelAdapter):
                 logger.debug(f"WhatsAppAdapter: Failed to clear typing status for {message.user_id}: {e}")
 
         return success
-
-
-
-    def sanitize_message(self, message: str) -> str:
-        """Sanitize message content for WhatsApp formatting.
-        
-        Converts markdown and HTML formatting to WhatsApp-compatible formatting:
-        - ** (bold markdown) -> * (WhatsApp bold)
-        - <br/>, <b>, </b> HTML tags -> WhatsApp equivalents
-        
-        Args:
-            message: Raw message content
-            
-        Returns:
-            Sanitized message with WhatsApp-compatible formatting
-        """
-        return (
-            message.replace("**", "*")
-            .replace("<br/>", "\n")
-            .replace("<b>", "*")
-            .replace("</b>", "*")
-        )
 
     def chunk_long_message(
         self, message: str, max_length: int = 1024, chunk_length: int = 1024

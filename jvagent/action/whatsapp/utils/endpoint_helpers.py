@@ -8,12 +8,14 @@ import base64
 import logging
 from typing import Any, Dict, Optional
 
+
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.core.agent import Agent
 from jvagent.core.app import App
 from jvagent.memory.conversation import Conversation
 from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.exceptions import DatabaseError, ValidationError
+
 
 from ..whatsapp_action import WhatsAppAction
 from .conversation_lock_manager import ConversationLockManager

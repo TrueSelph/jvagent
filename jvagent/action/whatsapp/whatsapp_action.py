@@ -11,6 +11,7 @@ from jvspatial.core.context import GraphContext
 from jvspatial.db import get_prime_database
 from jvspatial.exceptions import ValidationError, DatabaseError
 from .whatsapp_adapter import WhatsAppAdapter
+from .whatsapp_filter import WhatsAppFilter
 from .modules.wppconnect import WPPConnectAPI
 from .modules.wwebjs_api import WWebJSAPI
 from .modules.ultramsg import UltraMsgAPI
@@ -235,6 +236,17 @@ class WhatsAppAction(Action):
                 f"Could not perform healthcheck during registration: {e}"
             )
         
+        # Initialize filter (transforms messages before adapter)
+        filter = WhatsAppFilter(channels=["whatsapp"], priority=100)
+        if await filter.initialize():
+            logger.info(
+                f"WhatsAppFilter initialized for channel 'whatsapp'"
+            )
+        else:
+            logger.warning(
+                "WhatsAppFilter initialization failed. Message transformations will not be applied."
+            )
+        
         logger.info(
             f"WhatsApp action registered. Session will be initialized on app startup."
         )
@@ -390,6 +402,17 @@ class WhatsAppAction(Action):
                     logger.info(
                         f"WhatsApp session registered successfully on startup: {self.session} (status: {status})"
                     )
+            
+            # Initialize filter (transforms messages before adapter)
+            filter = WhatsAppFilter(channels=["whatsapp"], priority=100)
+            if await filter.initialize():
+                logger.info(
+                    f"WhatsAppFilter initialized on startup for channel 'whatsapp'"
+                )
+            else:
+                logger.warning(
+                    "WhatsAppFilter initialization failed on startup. Message transformations will not be applied."
+                )
             
             # Initialize adapter (create new instance to ensure clean state)
             adapter = WhatsAppAdapter(action=self)

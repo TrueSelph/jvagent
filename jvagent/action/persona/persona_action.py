@@ -161,6 +161,11 @@ class PersonaAction(Action):
         and parameters, then makes the language model call with the composed prompt
         and returns the generated response.
 
+        When visitor is provided and has response_bus and session_id, the generated
+        response is delivered via the response bus (streaming: by the model; non-streaming:
+        by a single publish_adhoc) and interaction.response is updated accordingly.
+        When no such visitor is provided, only interaction.response is set and saved.
+
         Args:
             interaction: The active interaction object containing:
                 - utterance: User's input text
@@ -250,7 +255,57 @@ class PersonaAction(Action):
         except Exception as e:
             logger.debug(f"PersonaAction: failed to resolve user display name: {e}")
         return "user"
-    
+
+    async def _pipe_response(
+        self,
+        response: str,
+        interaction: Interaction,
+        visitor: Optional[Any],
+        streaming: bool,
+    ) -> None:
+        """Persist and optionally publish response to the response bus.
+
+        When no response_bus/visitor/session_id: set interaction.response (append if
+        continuing), save. When bus and streaming: no-op (model already published).
+        When bus and non-streaming: call publish_adhoc once with full content.
+        """
+        if not response:
+            return
+        response_bus = getattr(visitor, "response_bus", None) if visitor else None
+        has_bus = bool(response_bus and visitor and getattr(visitor, "session_id", None))
+
+        if not has_bus:
+            current_response = interaction.response or ""
+            response_changed = False
+            # Continuing (append with separator) vs replace/set
+            if current_response and current_response.strip() and current_response != response:
+                response_changed = interaction.set_response(f"{current_response}\n\n{response}")
+            else:
+                response_changed = interaction.set_response(response)
+            if response_changed:
+                await interaction.save()
+            return
+
+        if streaming:
+            return
+
+        channel = getattr(visitor, "channel", "default")
+        if not channel or channel == "default":
+            logger.warning(
+                f"{self.get_class_name()}: Visitor channel not set or is 'default', "
+                f"using channel='{channel}'. This may prevent channel adapters from receiving messages."
+            )
+        await response_bus.publish_adhoc(
+            session_id=visitor.session_id,
+            content=response,
+            channel=channel,
+            stream=False,
+            interaction_id=interaction.id,
+            interaction=interaction,
+            user_id=interaction.user_id if hasattr(interaction, "user_id") else None,
+            streaming_complete=True,
+        )
+
     def _extract_response_from_prediction(self, prediction: Any) -> str:
         """Extract response field from DSPy prediction object.
         
@@ -784,77 +839,14 @@ class PersonaAction(Action):
                     interaction.set_to_executed(directives=applicable_directives)
                 if applicable_parameters:
                     interaction.set_to_executed(parameters=applicable_parameters)
-            
-            # Set interaction.response immediately after getting the complete response
-            # Only save if the response actually changed
-            if response:
-                current_response = interaction.response or ""
-                response_changed = False
-                if current_response and current_response.strip() and current_response != response:
-                    response_changed = interaction.set_response(f"{current_response}\n\n{response}")
-                else:
-                    response_changed = interaction.set_response(response)
-                
-                # Only save if response actually changed
-                if response_changed:
-                    await interaction.save()
-            
-            # Publish to ResponseBus if available (for both streaming and non-streaming)
-            # This ensures jvchat receives the response properly
-            # jvchat expects:
-            # - 'stream_chunk' messages to build content (then 'final' to stop streaming)
-            # - 'adhoc' messages for complete non-streaming responses
-            # - 'final' messages only stop streaming indicator, don't create/update content
-            if response and response_bus and visitor and visitor.session_id:
-                if streaming:
-                    # For streaming: send as stream_chunk, then final to stop streaming
-                    # Since we have the complete response, we'll send it as a single stream_chunk
-                    # then immediately send final to stop streaming
-                    logger.debug(f"{self.get_class_name()}: Publishing DSPy response to ResponseBus (streaming mode)")
-                    
-                    # Send the complete response as a stream_chunk
-                    await response_bus.publish_message(
-                        session_id=visitor.session_id,
-                        content=response,
-                        channel=getattr(visitor, "channel", "default"),
-                        message_type="stream_chunk",
-                        interaction_id=interaction.id,
-                        user_id=interaction.user_id if hasattr(interaction, "user_id") else None,
-                    )
-                    
-                    # Send final to stop streaming indicator
-                    await response_bus.publish_message(
-                        session_id=visitor.session_id,
-                        content="",  # Final messages don't need content
-                        channel=getattr(visitor, "channel", "default"),
-                        message_type="final",
-                        interaction_id=interaction.id,
-                        user_id=interaction.user_id if hasattr(interaction, "user_id") else None,
-                    )
-                else:
-                    # For non-streaming: send as 'adhoc' message type
-                    # jvchat creates message bubbles from 'adhoc' messages
-                    channel = getattr(visitor, "channel", "default")
-                    if not channel or channel == "default":
-                        logger.warning(
-                            f"{self.get_class_name()}: Visitor channel not set or is 'default', "
-                            f"using channel='{channel}'. This may prevent channel adapters from receiving messages."
-                        )
-                    logger.debug(f"{self.get_class_name()}: Publishing DSPy response to ResponseBus (non-streaming mode, adhoc)")
-                    await response_bus.publish_message(
-                        session_id=visitor.session_id,
-                        content=response,
-                        channel=channel,
-                        message_type="adhoc",
-                        interaction_id=interaction.id,
-                        user_id=interaction.user_id if hasattr(interaction, "user_id") else None,
-                    )
-            
+
+            await self._pipe_response(response, interaction, visitor, streaming)
+
             # Record PersonaAction execution AFTER response is generated and saved
             interaction.record_action_execution("PersonaAction")
-            
+
             return response
-            
+
         except Exception as e:
             logger.error(
                 f"{self.get_class_name()}: Failed to generate response via DSPy: {e}",
@@ -956,37 +948,7 @@ class PersonaAction(Action):
                 if applicable_parameters:
                     interaction.set_to_executed(parameters=applicable_parameters)
 
-            # Set interaction.response immediately after getting the complete response
-            # Only save if the response actually changed
-            if response:
-                current_response = interaction.response or ""
-                response_changed = False
-                if current_response and current_response.strip() and current_response != response:
-                    response_changed = interaction.set_response(f"{current_response}\n\n{response}")
-                else:
-                    response_changed = interaction.set_response(response)
-                
-                # Only save if response actually changed
-                if response_changed:
-                    await interaction.save()
-            
-            # Publish to ResponseBus if available (for non-streaming mode)
-            if response and response_bus and visitor and visitor.session_id and not streaming:
-                channel = getattr(visitor, "channel", "default")
-                if not channel or channel == "default":
-                    logger.warning(
-                        f"{self.get_class_name()}: Visitor channel not set or is 'default', "
-                        f"using channel='{channel}'. This may prevent channel adapters from receiving messages."
-                    )
-                logger.debug(f"{self.get_class_name()}: Publishing legacy response to ResponseBus (non-streaming mode, adhoc)")
-                await response_bus.publish_message(
-                    session_id=visitor.session_id,
-                    content=response,
-                    channel=channel,
-                    message_type="adhoc",
-                    interaction_id=interaction.id,
-                    user_id=interaction.user_id if hasattr(interaction, "user_id") else None,
-                )
+            await self._pipe_response(response, interaction, visitor, streaming)
 
             # Record PersonaAction execution AFTER response is generated and saved
             interaction.record_action_execution("PersonaAction")

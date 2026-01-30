@@ -10,33 +10,35 @@ from typing import Any, Dict, List, Optional
 
 import dspy
 
-from jvagent.action.router.dspy.signatures import create_router_classification_signature
+from jvagent.action.router.dspy.signatures import (
+    create_router_classification_signature,
+    INTENT_TYPES,
+)
 from jvagent.action.router.prompts import ROUTER_CLASSIFICATION_SIGNATURE
 
 logger = logging.getLogger(__name__)
 
 
 class RouterModule(dspy.Module):
-    """DSPy module for routing user utterances to appropriate InteractActions.
+    """DSPy module for intent-first routing of user utterances to InteractActions.
 
     This module uses a DSPy ChainOfThought module with the RouterClassification
-    signature to perform routing with concise interpretation. The LLM generates concise
-    interpretation (under 80 words) that serves directly as the intent interpretation,
-    eliminating the need for a separate interpretation field. This optimization
-    reduces latency and token usage.
+    signature to:
+    1. Classify intent type (REQUEST, QUERY, ANSWER, NAVIGATION, CONTINUATION, AMBIGUOUS)
+    2. Apply routing logic based on intent type and ongoing activity context
+    3. Return matched action names with confidence scores
 
-    The module can be optimized using DSPy's teleprompters (BootstrapFewShot, MIPROv2, etc.)
-    and evaluated with dspy.Evaluate.
+    The module can be optimized using DSPy's teleprompters (BootstrapFewShot, MIPROv2, etc.).
 
     Example:
         >>> router = RouterModule()
         >>> result = await router.aforward(
-        ...     user_utterance="What's the status of my order?",
-        ...     available_actions='{"OrderAction": ["User asks about order status"]}',
-        ...     conversation_history="User: I placed an order\nSystem: Order confirmed"
+        ...     user_utterance="I want to check the news",
+        ...     available_actions='{"NewsAction": ["User wants news"]}',
+        ...     conversation_history="[EVENT] Ongoing Activity: SignupInterviewInteractAction"
         ... )
-        >>> print(result["interpretation"])  # Concise interpretation
-        >>> print(result["actions"])  # ["OrderAction"]
+        >>> print(result["intent_type"])  # "REQUEST"
+        >>> print(result["actions"])  # ["NewsAction"] (not the ongoing activity)
     """
 
     def __init__(self, action_instance=None):
@@ -52,33 +54,118 @@ class RouterModule(dspy.Module):
             docstring = action_instance.router_classification_signature
         else:
             docstring = ROUTER_CLASSIFICATION_SIGNATURE
+        
         signature_class = create_router_classification_signature(docstring)
-        # Customize rationale field to produce concise interpretation (< 50 words)
-        # that can be used directly as interpretation
+        
+        # Concise rationale for chain-of-thought reasoning
         concise_rationale = dspy.OutputField(
-            prefix="Brief analysis:",
-            desc=(
-                "Concise, shorthanded intent analysis in under 80 words. Capture what the user wants and relevant context. "
-                "CRITICAL FIRST STEP: Check last system message in conversation_history for [EVENT] ongoing activities. "
-                "If an action is mentioned in the last [EVENT] message as an ongoing activity (e.g., 'Ongoing Activity: ...'), "
-                "prioritize routing to that action. "
-                "If the word '[EVENT]' is not present in system messages, then there are no events and no ongoing activities."
-                "If there is no ongoing activity in recent events, only route to actions if the utterance intent clearly matches its anchors."
-                "If user intent is ambiguous, avoid routing to any actions unless there is an ongoing activity in system messages with [EVENT] tag."
-                "CRITICAL: Always extract and include specific information from the current utterance and conversation history."
-                "Extract concrete values: names, emails, IDs, ticket numbers, dates, amounts, and other specific data."
-                "Scan both the current utterance AND conversation history for pertinent details. "
-                "The interpretation must be rich enough for downstream actions to extract information without re-parsing the raw utterance. "
-                "Examples: 'User provides name \"John Doe\" and email \"john@example.com\" for signup', "
-                "'User requests status for ticket #789, deadline Friday', "
-                "'User confirms order #12345 for $99.99', "
-                "'User responds with \"nope\" during active SignupInterviewInteractAction interview'"
-            )
+            prefix="Analysis:",
+            desc="Brief analysis: 1) What is the user expressing/needing? 2) Is this engaging with an ongoing activity or something else? 3) Which actions match their actual need?"
         )
+        
         self.route = dspy.ChainOfThought(
             signature_class,
             rationale_field=concise_rationale
         )
+
+    def _parse_actions(self, actions_value: Any) -> List[str]:
+        """Parse actions from various formats into a clean list of strings.
+        
+        Args:
+            actions_value: The actions value from prediction (list, string, or other)
+            
+        Returns:
+            List of action name strings
+        """
+        if not actions_value:
+            return []
+            
+        if isinstance(actions_value, list):
+            return [str(a).strip() for a in actions_value if a]
+        
+        if isinstance(actions_value, str):
+            # Try to parse as JSON
+            try:
+                parsed = json.loads(actions_value)
+                if isinstance(parsed, list):
+                    return [str(a).strip() for a in parsed if a]
+                else:
+                    return [str(actions_value).strip()]
+            except (json.JSONDecodeError, ValueError):
+                return [str(actions_value).strip()]
+        
+        # Try to convert to list
+        try:
+            return [str(a).strip() for a in list(actions_value) if a]
+        except (TypeError, ValueError):
+            logger.warning(f"RouterModule: Could not convert actions to list: {actions_value}")
+            return []
+
+    def _parse_intent_type(self, intent_value: Any) -> str:
+        """Parse and validate intent type.
+        
+        Args:
+            intent_value: The intent_type value from prediction
+            
+        Returns:
+            Validated intent type string, defaults to "UNCLEAR" if invalid
+        """
+        if not intent_value:
+            return "UNCLEAR"
+        
+        intent_str = str(intent_value).strip().upper()
+        
+        # Handle common variations
+        if intent_str in INTENT_TYPES:
+            return intent_str
+        
+        # Map common alternatives
+        alternatives = {
+            # REQUEST variations
+            "NEW_REQUEST": "REQUEST",
+            "COMMAND": "REQUEST",
+            "ACTION": "REQUEST",
+            # QUERY variations
+            "QUESTION": "QUERY",
+            "ASK": "QUERY",
+            # RESPONSE variations
+            "ANSWER": "RESPONSE",
+            "REPLY": "RESPONSE",
+            "CONTINUATION": "RESPONSE",
+            # SOCIAL variations
+            "GREETING": "SOCIAL",
+            "THANKS": "SOCIAL",
+            "GRATITUDE": "SOCIAL",
+            "ACKNOWLEDGMENT": "SOCIAL",
+            "SMALLTALK": "SOCIAL",
+            # NAVIGATION variations
+            "CANCEL": "NAVIGATION",
+            "TOPIC_CHANGE": "NAVIGATION",
+            "STOP": "NAVIGATION",
+            # UNCLEAR variations
+            "AMBIGUOUS": "UNCLEAR",
+            "UNKNOWN": "UNCLEAR",
+        }
+        
+        return alternatives.get(intent_str, "UNCLEAR")
+
+    def _parse_confidence(self, confidence_value: Any) -> float:
+        """Parse and clamp confidence value.
+        
+        Args:
+            confidence_value: The confidence value from prediction
+            
+        Returns:
+            Float between 0.0 and 1.0
+        """
+        if confidence_value is None:
+            return 1.0
+        
+        try:
+            confidence = float(confidence_value)
+            return max(0.0, min(1.0, confidence))
+        except (TypeError, ValueError):
+            return 1.0
 
     def forward(
         self,
@@ -94,10 +181,9 @@ class RouterModule(dspy.Module):
             conversation_history: Optional formatted conversation history
 
         Returns:
-            Dictionary with keys: interpretation, actions (list), confidence
+            Dictionary with keys: interpretation, actions (list), intent_type, confidence
         """
         try:
-            # Build kwargs for routing, only include history if provided
             route_kwargs = {
                 "user_utterance": user_utterance,
                 "available_actions": available_actions,
@@ -105,69 +191,36 @@ class RouterModule(dspy.Module):
             if conversation_history:
                 route_kwargs["conversation_history"] = conversation_history
 
-            # Call the DSPy ChainOfThought module
             prediction = self.route(**route_kwargs)
 
-            # ChainOfThought adds a 'reasoning' field along with original outputs
-            # Use reasoning directly as interpretation (optimization: eliminates separate interpretation generation)
-            # Note: Internally DSPy uses 'reasoning', but we label it as 'interpretation' for consistency
-            reasoning = str(prediction.reasoning).strip() if hasattr(prediction, 'reasoning') and prediction.reasoning else ""
-            if reasoning:
-                logger.debug(f"RouterModule: Interpretation: {reasoning[:200]}...")
+            # Extract reasoning as interpretation
+            reasoning = ""
+            if hasattr(prediction, 'reasoning') and prediction.reasoning:
+                reasoning = str(prediction.reasoning).strip()
+                logger.debug(f"RouterModule: Analysis: {reasoning[:200]}...")
 
-            # Use reasoning as interpretation (fallback to empty string if not available)
-            interpretation = reasoning
-
-            # Extract actions - handle both list and string formats
-            actions = []
-            if prediction.actions:
-                if isinstance(prediction.actions, list):
-                    actions = [str(a).strip() for a in prediction.actions if a]
-                elif isinstance(prediction.actions, str):
-                    # Try to parse as JSON if it's a string
-                    try:
-                        parsed = json.loads(prediction.actions)
-                        if isinstance(parsed, list):
-                            actions = [str(a).strip() for a in parsed if a]
-                        else:
-                            # Single action name
-                            actions = [str(prediction.actions).strip()]
-                    except (json.JSONDecodeError, ValueError):
-                        # Treat as single action name
-                        actions = [str(prediction.actions).strip()]
-                else:
-                    # Try to convert to list
-                    try:
-                        actions = [str(a).strip() for a in list(prediction.actions) if a]
-                    except (TypeError, ValueError):
-                        logger.warning(
-                            f"RouterModule: Could not convert actions to list: {prediction.actions}"
-                        )
-                        actions = []
-
-            # Filter out empty strings
-            actions = [a for a in actions if a]
-
-            # Extract confidence, defaulting to 1.0 if not provided
-            confidence = float(prediction.confidence) if prediction.confidence is not None else 1.0
-            # Clamp confidence to [0.0, 1.0]
-            confidence = max(0.0, min(1.0, confidence))
+            # Parse outputs
+            actions = self._parse_actions(prediction.actions)
+            actions = [a for a in actions if a]  # Filter empty strings
+            
+            intent_type = self._parse_intent_type(
+                getattr(prediction, 'intent_type', None)
+            )
+            confidence = self._parse_confidence(prediction.confidence)
 
             return {
-                "interpretation": interpretation,
+                "interpretation": reasoning,
                 "actions": actions,
+                "intent_type": intent_type,
                 "confidence": confidence,
             }
 
         except Exception as e:
-            logger.error(
-                f"RouterModule: Error during routing: {e}",
-                exc_info=True
-            )
-            # Return safe default on error
+            logger.error(f"RouterModule: Error during routing: {e}", exc_info=True)
             return {
                 "interpretation": f"User said: {user_utterance[:50]}",
                 "actions": [],
+                "intent_type": "UNCLEAR",
                 "confidence": 0.0,
             }
 
@@ -185,10 +238,9 @@ class RouterModule(dspy.Module):
             conversation_history: Optional formatted conversation history
 
         Returns:
-            Dictionary with keys: interpretation, actions (list), confidence
+            Dictionary with keys: interpretation, actions (list), intent_type, confidence
         """
         try:
-            # Build kwargs for routing, only include history if provided
             route_kwargs = {
                 "user_utterance": user_utterance,
                 "available_actions": available_actions,
@@ -196,59 +248,35 @@ class RouterModule(dspy.Module):
             if conversation_history:
                 route_kwargs["conversation_history"] = conversation_history
 
-            # Call the DSPy ChainOfThought module (use acall for async)
             prediction = await self.route.acall(**route_kwargs)
 
-            # ChainOfThought adds a 'reasoning' field along with original outputs
-            # Use reasoning directly as interpretation (optimization: eliminates separate interpretation generation)
-            # Note: Internally DSPy uses 'reasoning', but we label it as 'interpretation' for consistency
-            reasoning = str(prediction.reasoning).strip() if hasattr(prediction, 'reasoning') and prediction.reasoning else ""
-            if reasoning:
-                logger.debug(f"RouterModule: Interpretation: {reasoning[:200]}...")
+            # Extract reasoning as interpretation
+            reasoning = ""
+            if hasattr(prediction, 'reasoning') and prediction.reasoning:
+                reasoning = str(prediction.reasoning).strip()
+                logger.debug(f"RouterModule: Analysis: {reasoning[:200]}...")
 
-            # Use reasoning as interpretation (fallback to empty string if not available)
-            interpretation = reasoning
-
-            actions = []
-            if prediction.actions:
-                if isinstance(prediction.actions, list):
-                    actions = [str(a).strip() for a in prediction.actions if a]
-                elif isinstance(prediction.actions, str):
-                    try:
-                        parsed = json.loads(prediction.actions)
-                        if isinstance(parsed, list):
-                            actions = [str(a).strip() for a in parsed if a]
-                        else:
-                            actions = [str(prediction.actions).strip()]
-                    except (json.JSONDecodeError, ValueError):
-                        actions = [str(prediction.actions).strip()]
-                else:
-                    try:
-                        actions = [str(a).strip() for a in list(prediction.actions) if a]
-                    except (TypeError, ValueError):
-                        logger.warning(
-                            f"RouterModule: Could not convert actions to list: {prediction.actions}"
-                        )
-                        actions = []
-
-            actions = [a for a in actions if a]
-
-            confidence = float(prediction.confidence) if prediction.confidence is not None else 1.0
-            confidence = max(0.0, min(1.0, confidence))
+            # Parse outputs
+            actions = self._parse_actions(prediction.actions)
+            actions = [a for a in actions if a]  # Filter empty strings
+            
+            intent_type = self._parse_intent_type(
+                getattr(prediction, 'intent_type', None)
+            )
+            confidence = self._parse_confidence(prediction.confidence)
 
             return {
-                "interpretation": interpretation,
+                "interpretation": reasoning,
                 "actions": actions,
+                "intent_type": intent_type,
                 "confidence": confidence,
             }
 
         except Exception as e:
-            logger.error(
-                f"RouterModule: Error during async routing: {e}",
-                exc_info=True
-            )
+            logger.error(f"RouterModule: Error during async routing: {e}", exc_info=True)
             return {
                 "interpretation": f"User said: {user_utterance[:50]}",
                 "actions": [],
+                "intent_type": "UNCLEAR",
                 "confidence": 0.0,
             }

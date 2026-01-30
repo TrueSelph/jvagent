@@ -356,6 +356,13 @@ class InteractWalker(Walker):
             # Note: 'here' is the node (self from node's perspective), 'self' is the walker (visitor)
             await here.execute(self)
 
+            # Commit any pending streaming adhoc content so interaction.response is saved before next action
+            if self.response_bus and self.interaction:
+                await self.response_bus.commit_pending_adhoc(
+                    self.interaction.id,
+                    self.interaction,
+                )
+
             await self.report(
                 {
                     "action_executed": {
