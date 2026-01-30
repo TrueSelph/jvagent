@@ -71,7 +71,7 @@ class MediaManager:
             )
             extension = validation["extension"]
         except Exception as e:
-            logger.warning(f"Media validation failed for user {user_id}: {e}")
+            logger.debug(f"Media validation failed for user {user_id}: {e}")
             return None
 
         # Generate unique path: whatsapp_media/user_id/timestamp_uuid.ext

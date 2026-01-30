@@ -85,7 +85,7 @@ class MediaBatchManager:
                 
                 # Check max batch size
                 if len(batch["media_urls"]) >= BATCH_MAX_SIZE:
-                    logger.warning(
+                    logger.debug(
                         f"Media batch for user {sender} reached max size ({BATCH_MAX_SIZE}), "
                         f"processing immediately"
                     )
@@ -274,7 +274,7 @@ class MediaBatchManager:
                     stale_senders.append(sender)
         
         for sender in stale_senders:
-            logger.warning(
+            logger.debug(
                 f"Cleaning up stale media batch for user {sender} (exceeded TTL)"
             )
             await self._cleanup_batch(sender)

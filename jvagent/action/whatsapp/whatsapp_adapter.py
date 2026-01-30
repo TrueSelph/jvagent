@@ -122,7 +122,7 @@ class WhatsAppAdapter(ChannelAdapter):
             return False
 
         if not message.content or not message.content.strip():
-            logger.warning(
+            logger.debug(
                 f"WhatsAppAdapter: Skipping empty message {message.id} for user {message.user_id}"
             )
             return False
@@ -146,10 +146,9 @@ class WhatsAppAdapter(ChannelAdapter):
         if message.interaction_id and (not is_group or message.metadata.get("isGroup") is None):
             is_group = await self._get_channel_metadata_from_interaction(message.interaction_id, "isGroup", False)
         
-        logger.warning(f"WhatsAppAdapter: chunks: {chunks}")
         
         if not chunks or all(not chunk.strip() for chunk in chunks):
-            logger.warning(
+            logger.debug(
                 f"WhatsAppAdapter: No valid message chunks to send for user {message.user_id}"
             )
             # Clear typing status

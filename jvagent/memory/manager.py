@@ -155,6 +155,7 @@ class Memory(Node):
         self,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        user_name: Optional[str] = None,
         channel: str = "default",
     ) -> Tuple["User", "Conversation", str, str, bool]:
         """Resolve or create User and Conversation based on provided IDs.
@@ -190,6 +191,11 @@ class Memory(Node):
             user = await self.get_user(new_user_id, create_if_missing=True)
             if not user:
                 raise RuntimeError("Failed to create user")
+            
+            # Set name if provided
+            if user_name:
+                await user.set_name(user_name)
+                
             conversation = await user.create_conversation(channel=channel)
             return user, conversation, new_user_id, conversation.session_id, True
 
@@ -203,6 +209,11 @@ class Memory(Node):
             )
             if not user:
                 raise RuntimeError(f"User for session '{session_id}' not found")
+                
+            # Update name if provided and not set
+            if user_name and (not user.name or user.name == "user"):
+                await user.set_name(user_name)
+                
             return user, conversation, conversation.user_id, session_id, False
 
         # Case 3: user_id only - get/create user, create conversation
@@ -215,6 +226,11 @@ class Memory(Node):
             user = await self.get_user(user_id, create_if_missing=True)
             if not user:
                 raise RuntimeError(f"Failed to get/create user '{user_id}'")
+                
+            # Update name if provided (especially if new user)
+            if user_name and (is_new_user or not user.name or user.name == "user"):
+                await user.set_name(user_name)
+                
             conversation = await user.create_conversation(channel=channel)
             return user, conversation, user_id, conversation.session_id, is_new_user
 
@@ -233,6 +249,11 @@ class Memory(Node):
                 raise ValueError(
                     f"Session '{session_id}' does not belong to user '{user_id}'"
                 )
+                
+            # Update name if provided and not set
+            if user_name and (not user.name or user.name == "user"):
+                await user.set_name(user_name)
+                
             return user, conversation, user_id, session_id, False
 
         raise ValueError("Invalid user_id/session_id combination")

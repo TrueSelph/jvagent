@@ -1,7 +1,7 @@
 # jvagent Application Descriptor
 # This file defines the application metadata, configuration defaults, and lists agents.
 # Agents listed in the 'agents' section are automatically installed when you run jvagent or bootstrap.
-# 
+#
 # In production, this package will be used to bootstrap a running jvagent instance.
 # Runtime-specific settings (paths, secrets) should be configured via .env or environment variables.
 
@@ -43,7 +43,7 @@ config:
     version: 0.0.1
     host: 0.0.0.0
     port: 8000
-  
+
   # Database configuration (defaults - production will override)
   database:
     type: json
@@ -64,42 +64,42 @@ config:
     # Note: For local development, use DynamoDB Local with endpoint_url set to "http://localhost:8000"
     # Note: In AWS Lambda, IAM role credentials are automatically used if access_key_id is not set
     # Note: You can use environment variable placeholders (e.g., ${AWS_ACCESS_KEY_ID}) for sensitive values
-  
+
   # File storage configuration (defaults - production will override)
   file_storage:
     provider: local
     root_dir: ./.files
     enabled: true
-  
+
   # Authentication configuration (defaults - production MUST override secrets)
   auth:
     enabled: true
     jwt_expire_minutes: 60
     # JWT secret should be set via JVSPATIAL_JWT_SECRET environment variable
-  
+
   # Admin user configuration (defaults - production MUST override password)
   admin:
     username: admin
     email: admin@jvagent.example
     # Password should be set via JVAGENT_ADMIN_PASSWORD environment variable
-  
+
   # Interact endpoint configuration
   interact:
-    rate_limit_per_minute: 60  # per IP+agent_id combination
-    max_utterance_length: 2000  # maximum characters for utterance input (set to null to disable)
-  
+    rate_limit_per_minute: 60 # per IP+agent_id combination
+    max_utterance_length: 2000 # maximum characters for utterance input (set to null to disable)
+
   # Logging system configuration
   logging:
     enabled: true
-    levels: INTERACTION,ERROR,CRITICAL  # Comma-separated log levels to capture
-    retention_days: 60  # Log retention period in days (0 = indefinite)
+    levels: INTERACTION,ERROR,CRITICAL # Comma-separated log levels to capture
+    retention_days: 60 # Log retention period in days (0 = indefinite)
     # Logging database configuration
     # If not specified, logging database defaults to same as main database
     database:
       # type: mongodb  # Defaults to same as database.type if not set (uncomment for MongoDB)
       # uri: mongodb://localhost:27017  # Defaults to same as database.uri if not set (uncomment for MongoDB)
-      name: jvagent_logs  # Defaults to jvagent_logs if not set via JVAGENT_LOG_DB_NAME
-      path: ./jvagent_logs  # For JSON/SQLite logging databases
+      name: jvagent_logs # Defaults to jvagent_logs if not set via JVAGENT_LOG_DB_NAME
+      path: ./jvagent_logs # For JSON/SQLite logging databases
       # DynamoDB logging database (uncomment to use DynamoDB for logging)
       # type: dynamodb  # Defaults to same as database.type if not set (uncomment for DynamoDB)
       # table_name: jvagent_logs  # Table name for logging (default: "jvagent_logs")
@@ -109,59 +109,59 @@ config:
       # secret_access_key: ${AWS_SECRET_ACCESS_KEY}  # Optional: AWS secret key (uses IAM role if not set)
       # Note: If not specified, logging database uses same configuration as main database
       # Note: You can use environment variable placeholders (e.g., ${AWS_ACCESS_KEY_ID}) for sensitive values
-  
+
   # CORS configuration
   cors:
     enabled: true
     origins: http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:5173,http://localhost:5173
-  
+
   # Development settings
   development:
     debug: false
-    environment: development  # development or production
-  
+    environment: development # development or production
+
   # API configuration
   api:
     prefix: /api
     graph_endpoint_enabled: true
-  
+
   # Paths configuration
   paths:
     agents: ./agents
-  
+
   # Performance optimization configuration
   # These settings can also be overridden via environment variables
   performance:
     # Enable request latency profiling (env: JVAGENT_ENABLE_PROFILING)
     # When enabled, profiles are logged at DEBUG level with latency breakdowns
     enable_profiling: false
-    
+
     # Agent node caching (env: JVAGENT_ENABLE_AGENT_CACHING)
     # Cache Agent nodes to reduce database lookups
     enable_agent_caching: true
-    
+
     # Agent cache TTL in seconds (env: JVAGENT_AGENT_CACHE_TTL)
     agent_cache_ttl: 300
-    
+
     # Action caching (env: JVAGENT_ENABLE_ACTION_CACHE)
     # Cache InteractAction instances to reduce database queries during action discovery
     # Automatically invalidated when actions are registered/deregistered
     enable_action_cache: true
-    
+
     # Action cache TTL in seconds (env: JVAGENT_ACTION_CACHE_TTL)
     action_cache_ttl: 60
-    
+
     # DSPy response caching (env: JVAGENT_ENABLE_DSPY_CACHE)
     # Disabled by default as it may return stale responses for dynamic queries
     # Enable for development/testing or when deterministic responses are desired
     enable_dspy_cache: false
-    
+
     # Deferred saves (env: JVSPATIAL_ENABLE_DEFERRED_SAVES)
     # Batch multiple save() calls into a single database write for entities
     # that experience rapid updates (e.g., Conversation, Interaction during processing)
     # When enabled, save() marks entities as dirty; flush() performs the actual write
     enable_deferred_saves: true
-    
+
     # Cache cleanup probability (env: JVAGENT_CACHE_CLEANUP_PROBABILITY)
     # Probability (0.0-1.0) of running cache cleanup at the end of each request
     # This serverless-friendly approach replaces background cleanup tasks
@@ -177,7 +177,7 @@ agents:
   # Example agent - will be loaded from agents/jvagent/example_agent/
   # - jvagent/example_agent
   - resolv/resolv_demo
-  
+
   # Add more agents here - they will be installed automatically when you run jvagent
   # - contrib/another_agent
   # - custom/custom_agent

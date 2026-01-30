@@ -342,11 +342,11 @@ class BaseWhatsAppAPI(ABC):
                 
                 if exc_type == "TypeError" and "BaseException" in error:
                     # aiohttp/Python 3.12+ connection bug - retry with fresh session
-                    self.logger.warning(f"Connection issue for {method} {url}, attempt {attempt + 1}")
+                    self.logger.debug(f"Connection issue for {method} {url}, attempt {attempt + 1}")
                     continue
                 elif attempt == 0:
                     # First attempt failed, try again with fresh session
-                    self.logger.warning(f"Request failed for {method} {url}: {error}, retrying...")
+                    self.logger.debug(f"Request failed for {method} {url}: {error}, retrying...")
                     continue
                 else:
                     # Second attempt also failed
