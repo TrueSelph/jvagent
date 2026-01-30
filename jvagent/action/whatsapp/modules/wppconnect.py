@@ -6,7 +6,9 @@ from typing import Dict, List, Optional
 import aiohttp
 
 from .base import BaseWhatsAppAPI
+import logging
 
+logger = logging.getLogger(__name__)
 
 class WPPConnectAPI(BaseWhatsAppAPI):
     """Async class for interacting with the WPPConnect API."""
@@ -73,18 +75,19 @@ class WPPConnectAPI(BaseWhatsAppAPI):
             # Update webhook URL for the existing session
             if webhook_url:
                 try:
+                    await self.close_session()
                     start_res = await self.start_session(webhook=webhook_url, wait_qr_code=wait_qr_code)
                     if start_res.get("status") == "CONNECTED":
-                        self.logger.info(
+                        logger.debug(
                             f"Updated webhook URL for existing session '{self.session}'"
                         )
                     elif start_res.get("error") or not start_res.get("ok", True):
-                        self.logger.warning(
+                        logger.debug(
                             f"Could not update webhook for existing session '{self.session}': "
                             f"{start_res.get('error', 'Unknown error')}"
                         )
                 except Exception as e:
-                    self.logger.warning(
+                    logger.debug(
                         f"Error updating webhook for existing session '{self.session}': {e}"
                     )
             

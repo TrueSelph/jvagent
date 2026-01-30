@@ -3,6 +3,7 @@ import { Login } from './components/Login'
 import { AgentSelector } from './components/AgentSelector'
 import { ChatInterface } from './components/ChatInterface'
 import { GraphViewer } from './components/GraphViewer'
+import { DebugInteractions } from './components/DebugInteractions'
 import { getToken } from './utils/storage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -32,6 +33,14 @@ function App() {
           element={
             <PrivateRoute>
               <GraphViewer />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/debug"
+          element={
+            <PrivateRoute>
+              <DebugInteractions />
             </PrivateRoute>
           }
         />

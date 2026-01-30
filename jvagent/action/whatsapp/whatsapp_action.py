@@ -215,7 +215,7 @@ class WhatsAppAction(Action):
         if not self.is_configured():
             config_status = self.get_configuration_status()
             issues = config_status.get("issues", [])
-            logger.warning(
+            logger.debug(
                 f"WhatsApp action not configured. "
                 f"Missing/invalid: {'; '.join(issues)}. "
                 f"Set the required environment variables to enable WhatsApp integration."
@@ -227,11 +227,11 @@ class WhatsAppAction(Action):
             health_result = await self.healthcheck()
             if isinstance(health_result, dict) and not health_result.get("healthy", True):
                 errors = health_result.get('errors', [])
-                logger.warning(
+                logger.debug(
                     f"WhatsApp action healthcheck failed during registration: {'; '.join(errors)}"
                 )
         except Exception as e:
-            logger.warning(
+            logger.debug(
                 f"Could not perform healthcheck during registration: {e}"
             )
         
@@ -262,7 +262,7 @@ class WhatsAppAction(Action):
         if not self.is_configured():
             config_status = self.get_configuration_status()
             issues = config_status.get("issues", [])
-            logger.warning(
+            logger.debug(
                 f"WhatsApp action not configured, skipping reload. "
                 f"Missing/invalid: {'; '.join(issues)}"
             )
@@ -283,7 +283,7 @@ class WhatsAppAction(Action):
                 
                 # Check if webhook URL is for the correct agent
                 if not self.webhook_url.startswith(expected_url_base):
-                    logger.warning(
+                    logger.debug(
                         f"Webhook URL agent mismatch during reload. Expected {expected_url_base}, "
                         f"got {self.webhook_url}. Regenerating."
                     )
@@ -294,12 +294,12 @@ class WhatsAppAction(Action):
                     context = GraphContext(database=prime_db)
                     existing_key = await context.get(APIKey, self.webhook_api_key_id)
                     if not existing_key or not existing_key.is_active:
-                        logger.warning(
+                        logger.debug(
                             f"API key {self.webhook_api_key_id} is inactive during reload. Regenerating webhook URL."
                         )
                         await self.get_webhook_url(regenerate=True)
             except Exception as e:
-                logger.warning(
+                logger.debug(
                     f"Error verifying webhook URL during reload: {e}. Regenerating webhook URL."
                 )
                 await self.get_webhook_url(regenerate=True)
@@ -322,7 +322,7 @@ class WhatsAppAction(Action):
             # Handle aiohttp/Python 3.12+ compatibility issues
             error_str = str(e)
             if "BaseException" in error_str:
-                logger.warning(
+                logger.debug(
                     f"WhatsApp API server ({self.api_url}) is unreachable during reload. "
                     f"Session will be registered when the server becomes available."
                 )
@@ -351,7 +351,7 @@ class WhatsAppAction(Action):
         if not self.is_configured():
             config_status = self.get_configuration_status()
             issues = config_status.get("issues", [])
-            logger.warning(
+            logger.debug(
                 f"WhatsApp action not configured on startup. "
                 f"Missing/invalid: {'; '.join(issues)}. "
                 f"Set the required environment variables to enable WhatsApp integration."
@@ -367,7 +367,7 @@ class WhatsAppAction(Action):
             health_result = await self.healthcheck()
             if isinstance(health_result, dict) and not health_result.get("healthy", True):
                 errors = health_result.get('errors', [])
-                logger.warning(
+                logger.debug(
                     f"WhatsApp action healthcheck failed on startup: {'; '.join(errors)}. "
                     f"Continuing with session registration anyway."
                 )
@@ -407,7 +407,7 @@ class WhatsAppAction(Action):
             # Handle aiohttp/Python 3.12+ compatibility issues
             error_str = str(e)
             if "BaseException" in error_str:
-                logger.warning(
+                logger.debug(
                     f"WhatsApp API server ({self.api_url}) is unreachable on startup. "
                     f"WhatsApp messaging will be unavailable until the server is accessible."
                 )
@@ -542,12 +542,12 @@ class WhatsAppAction(Action):
                                 logger.debug("Existing API key is inactive, regenerating")
                                 regenerate = True
                         except DatabaseError as e:
-                            logger.warning(
+                            logger.debug(
                                 f"Database error checking existing API key {self.webhook_api_key_id}: {e}. Regenerating."
                             )
                             regenerate = True
                         except Exception as e:
-                            logger.warning(
+                            logger.debug(
                                 f"Error checking existing API key {self.webhook_api_key_id}: {e}. Regenerating."
                             )
                             regenerate = True
@@ -579,9 +579,9 @@ class WhatsAppAction(Action):
                         await context.save(old_key)
                         logger.info(f"Revoked old API key: {self.webhook_api_key_id}")
                 except DatabaseError as e:
-                    logger.warning(f"Database error revoking old API key: {e}")
+                    logger.debug(f"Database error revoking old API key: {e}")
                 except Exception as e:
-                    logger.warning(f"Error revoking old API key: {e}")
+                    logger.debug(f"Error revoking old API key: {e}")
 
             # Generate new API key
             key_name = f"WhatsApp Webhook - {agent.name}"
@@ -645,7 +645,7 @@ class WhatsAppAction(Action):
                 phone=phone, value=value, is_group=is_group, duration=duration
             )
         except Exception as e:
-            logger.warning(
+            logger.debug(
                 f"WhatsAppAction: Failed to set recording status for {phone}: {e}"
             )
 
@@ -663,7 +663,7 @@ class WhatsAppAction(Action):
         # Check if action is configured
         if not self.is_configured():
             config_status = self.get_configuration_status()
-            logger.warning(
+            logger.debug(
                 f"WhatsApp action not configured, cannot register session. "
                 f"Missing: {'; '.join(config_status.get('issues', []))}"
             )

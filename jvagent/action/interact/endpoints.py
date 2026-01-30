@@ -34,40 +34,7 @@ from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
 from jvagent.core.profiling import profiled_request, profile_enabled
 
 
-async def _flush_deferred_saves(interaction, conversation=None) -> bool:
-    """Flush deferred saves for interaction and conversation with error handling.
-    
-    This function disables deferred save mode and flushes accumulated changes
-    for both the interaction and optionally the conversation. Errors are logged
-    but not re-raised to avoid failing the response after interaction completion.
-    
-    Args:
-        interaction: Interaction instance to flush
-        conversation: Optional Conversation instance to flush
-        
-    Returns:
-        True if all flushes succeeded, False if any failed
-    """
-    success = True
-    
-    # Flush interaction
-    try:
-        interaction.disable_deferred_saves()
-        await interaction.flush()
-    except Exception as e:
-        logger.error(f"Failed to flush interaction {interaction.id}: {e}")
-        success = False
-    
-    # Flush conversation if provided
-    if conversation:
-        try:
-            conversation.disable_deferred_saves()
-            await conversation.flush()
-        except Exception as e:
-            logger.error(f"Failed to flush conversation {conversation.id}: {e}")
-            success = False
-    
-    return success
+from jvagent.action.interact.utils import flush_deferred_saves
 
 
 def _build_interaction_log_data(interaction, app_id, agent_id=None):
@@ -487,7 +454,7 @@ async def interact_endpoint(
                 
                 # Flush deferred saves (interaction and conversation) with error handling
                 async with profile.measure("flush_saves"):
-                    await _flush_deferred_saves(interaction, walker.conversation)
+                    await flush_deferred_saves(interaction, walker.conversation)
 
                 # Log interaction using INTERACTION level
                 try:
@@ -648,7 +615,7 @@ async def _stream_interaction(
             # Close interaction
             interaction.close_interaction()
             # Flush deferred saves (interaction and conversation) with error handling
-            await _flush_deferred_saves(interaction, walker.conversation)
+            await flush_deferred_saves(interaction, walker.conversation)
 
             # Log interaction using INTERACTION level
             try:
@@ -713,7 +680,7 @@ async def _stream_interaction(
             # Close interaction
             interaction.close_interaction()
             # Flush deferred saves (interaction and conversation) with error handling
-            await _flush_deferred_saves(interaction, walker.conversation)
+            await flush_deferred_saves(interaction, walker.conversation)
 
             # Log interaction using INTERACTION level
             try:

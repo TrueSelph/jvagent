@@ -19,6 +19,7 @@ from ..whatsapp_action import WhatsAppAction
 from .conversation_lock_manager import ConversationLockManager
 from .media_batch_manager import MediaBatchManager
 from .media_manager import MediaManager
+from jvagent.action.interact.utils import flush_deferred_saves
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +195,9 @@ async def finalize_whatsapp_interaction(
             )
         
         interaction.close_interaction()
-        await interaction.save()
+        
+        # Flush deferred saves (interaction and conversation) with error handling
+        await flush_deferred_saves(interaction, walker.conversation)
         
         # Log interaction
         try:
@@ -208,7 +211,7 @@ async def finalize_whatsapp_interaction(
                 )
                 logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
         except Exception as log_err:
-            logger.warning(f"Failed to log WhatsApp interaction: {log_err}")
+            logger.debug(f"Failed to log WhatsApp interaction: {log_err}")
             
     except DatabaseError as e:
         logger.error(f"Database error finalizing interaction for user {sender}: {e}")
@@ -303,11 +306,11 @@ async def _handle_media_message(
         try:
             typing_result = await whatsapp_action.api().set_typing_status(phone=sender, value=True, is_group=data.isGroup)
             if not typing_result.get("ok", True):
-                logger.warning(
+                logger.debug(
                     f"Failed to set typing status for {sender}: {typing_result.get('error', 'Unknown error')}"
                 )
         except Exception as e:
-            logger.warning(f"Failed to set typing status for {sender}: {e}")
+            logger.debug(f"Failed to set typing status for {sender}: {e}")
         
         media_manager = MediaManager()
         media_b64 = data.media
@@ -380,17 +383,17 @@ async def _handle_voice_message(data: Any, sender: str, whatsapp_action: Any) ->
             else:
                 typing_result = await whatsapp_action.api().set_typing_status(phone=sender, value=True, is_group=data.isGroup)
                 if not typing_result.get("ok", True):
-                    logger.warning(
+                    logger.debug(
                         f"Failed to set typing status for {sender}: {typing_result.get('error', 'Unknown error')}"
                     )
         except Exception as e:
-            logger.warning(f"Failed to set recording/typing status for {sender}: {e}")
+            logger.debug(f"Failed to set recording/typing status for {sender}: {e}")
 
         # Retrieve the STT action
         try:
             stt_action = await whatsapp_action.get_action(whatsapp_action.stt_action)
             if not stt_action:
-                logger.warning(f"STT action '{whatsapp_action.stt_action}' not found")
+                logger.debug(f"STT action '{whatsapp_action.stt_action}' not found")
                 return {"status": "ignored", "response": "stt action not found"}
         except Exception as e:
             logger.error(f"Error retrieving STT action: {e}")
@@ -399,7 +402,7 @@ async def _handle_voice_message(data: Any, sender: str, whatsapp_action: Any) ->
         # Transcribe with validation
         try:
             if not data.media:
-                logger.warning(f"No media data in voice message from {sender}")
+                logger.debug(f"No media data in voice message from {sender}")
                 return {"status": "ignored", "response": "no audio data"}
                 
             transcript = await stt_action.invoke_base64(audio_base64=data.media)

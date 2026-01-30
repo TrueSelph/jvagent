@@ -6,6 +6,9 @@ from typing import Dict, List, Optional
 import aiohttp
 
 from .base import BaseWhatsAppAPI, MessagePayload
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class WWebJSAPI(BaseWhatsAppAPI):
@@ -176,9 +179,10 @@ class WWebJSAPI(BaseWhatsAppAPI):
             # Update webhook URL for the existing session
             if webhook_url:
                 try:
+                    await self.close_session()
                     webhook_result = await self.start_session(webhook=webhook_url, wait_qr_code=False)
                     if not webhook_result.get("ok", True) and webhook_result.get("error"):
-                        self.logger.warning(
+                        self.logger.debug(
                             f"Could not update webhook for existing session '{self.session}': "
                             f"{webhook_result.get('error')}"
                         )
@@ -187,7 +191,7 @@ class WWebJSAPI(BaseWhatsAppAPI):
                             f"Updated webhook URL for existing session '{self.session}'"
                         )
                 except Exception as e:
-                    self.logger.warning(
+                    self.logger.debug(
                         f"Error updating webhook for existing session '{self.session}': {e}"
                     )
             
@@ -195,13 +199,13 @@ class WWebJSAPI(BaseWhatsAppAPI):
             try:
                 device_info = await self.get_host_device()
                 if not device_info.get("ok", True) and device_info.get("error"):
-                    self.logger.warning(
+                    self.logger.debug(
                         f"Could not get device info for session '{self.session}': "
                         f"{device_info.get('error')}"
                     )
                     device_info = None
             except Exception as e:
-                self.logger.warning(
+                self.logger.debug(
                     f"Error getting device info for session '{self.session}': {e}"
                 )
                 device_info = None
@@ -570,7 +574,7 @@ class WWebJSAPI(BaseWhatsAppAPI):
         )
 
         host_device = await self.get_host_device()
-        host_number = host_device.get("response", {}).get("phoneNumber", "").split("@")[0]
+        host_number = host_device.get("sessionInfo", {}).get("me", {}).get("user", "")
 
         response = [
             {
@@ -628,8 +632,8 @@ class WWebJSAPI(BaseWhatsAppAPI):
         return await self.send_rest_request(f"client/getProfilePicUrl/{self.session}", data=data)
 
     async def get_host_device(self) -> dict:
-        """GET /client/getHostDevice/{sessionId}"""
-        return await self.send_rest_request(f"client/getHostDevice/{self.session}", method="GET")
+        """GET /client/getClassInfo/{sessionId}"""
+        return await self.send_rest_request(f"client/getClassInfo/{self.session}", method="GET")
 
     async def health_check(self) -> dict:
         """GET /ping"""

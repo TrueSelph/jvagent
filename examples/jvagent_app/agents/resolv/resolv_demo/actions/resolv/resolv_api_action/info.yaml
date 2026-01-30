@@ -1,0 +1,31 @@
+package:
+  # Action name in namespace/action_name format
+  name: resolv/resolv_api_action
+
+  # Package author
+  author: V75 Inc.
+
+  # Archetype: The main Action class name (same as the Action Node class)
+  archetype: ResolvAPIAction
+
+  # Package version
+  version: 1.0.0
+
+  # Package metadata
+  meta:
+    title: Resolv API Action
+    description: Houses Resolv API credentials and endpoints
+    group: resolv
+    type: action
+
+  # Package configuration
+  config:
+    order:
+      weight: 0
+
+  # Package dependencies
+  dependencies:
+    # jvagent version requirement
+    jvagent: ~0.0.1
+    # Other action dependencies (by namespace/action_name)
+    actions: []

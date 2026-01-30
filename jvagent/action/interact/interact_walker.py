@@ -68,6 +68,7 @@ class InteractWalker(Walker):
     data: Dict[str, Any] = {}
     session_id: Optional[str] = None
     user_id: Optional[str] = None
+    user_name: Optional[str] = None
     interaction: Optional["Interaction"] = None
     conversation: Optional["Conversation"] = None
     stream: bool = False
@@ -181,6 +182,7 @@ class InteractWalker(Walker):
                     await memory.get_session(
                         user_id=self.user_id,
                         session_id=self.session_id,
+                        user_name=self.user_name,
                         channel=self.channel,
                     )
                 )

@@ -74,10 +74,10 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             request_data = await request.json()
             data = await whatsapp_action.api().parse_inbound_message(request_data)
         except ValidationError as e:
-            logger.warning(f"Validation error parsing WhatsApp webhook request: {e}")
+            logger.debug(f"Validation error parsing WhatsApp webhook request: {e}")
             raise HTTPException(status_code=400, detail=f"Invalid request format: {e}")
         except Exception as e:
-            logger.warning(f"Error parsing WhatsApp webhook request: {e}")
+            logger.debug(f"Error parsing WhatsApp webhook request: {e}")
             data = None
 
 
@@ -97,20 +97,23 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         
         # Check if this is a media message
         if data.message_type in ["image", "document", "video", "audio"] and data.media:
-            return await _handle_media_message(data, sender, agent_id, whatsapp_action, utterance)
+            await _handle_media_message(data, sender, agent_id, whatsapp_action, utterance)
         elif data.message_type in ["ptt"] and data.media:
             voice_result = await _handle_voice_message(data, sender, whatsapp_action)
             utterance = voice_result.get("transcript", "")
+        elif data.message_type in ["location"] and data.location:
+            typing_result = await whatsapp_action.api().set_typing_status(phone=sender, value=True, is_group=data.isGroup)
+            utterance = f"Location: {data.location.get('latitude')}, {data.location.get('longitude')}"
         elif utterance:
             # Trigger typing immediately
             try:
                 typing_result = await whatsapp_action.api().set_typing_status(phone=sender, value=True, is_group=data.isGroup)
                 if not typing_result.get("ok", True):
-                    logger.warning(
+                    logger.debug(
                         f"Failed to set typing status for {sender}: {typing_result.get('error', 'Unknown error')}"
                     )
             except Exception as e:
-                logger.warning(f"Failed to set typing status for {sender}: {e}")
+                logger.debug(f"Failed to set typing status for {sender}: {e}")
         else:
             return {"status": "ignored", "response": "Ignore interaction"}
 
@@ -175,7 +178,7 @@ async def send_message(
     whatsapp_action = await get_whatsapp_action(action_id)
 
     if outbox:
-        logger.warning("Outbox not implemented yet")
+        logger.debug("Outbox not implemented yet")
         return {"status": "outbox not implemented yet"}
 
     result = await whatsapp_action.api().send_message(

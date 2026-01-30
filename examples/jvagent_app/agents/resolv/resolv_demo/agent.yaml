@@ -4,7 +4,7 @@ author: V75 Inc.
 jvagent: ~0.0.1
 context:
   alias: Resolv Demo Agent
-  description: An example agent demonstrating jvagent agent configuration
+  description: A demo agent for Resolv
   enabled: true
 actions:
   - action: jvagent/interact_router
@@ -28,10 +28,10 @@ actions:
       embedding_dimensions: 1536
       timeout: 30
 
-  - action: jvagent/intro_interact_action
-    context:
-      enabled: true
-      description: "Introductory interact action for first-time users"
+  # - action: jvagent/intro_interact_action
+  #   context:
+  #     enabled: true
+  #     description: "Introductory interact action for first-time users"
 
   # # TypesenseVectorStore Action - Vector store for semantic search
   # # Core action from jvagent library (jvagent/action/vectorstore/typesense/)
@@ -125,26 +125,66 @@ actions:
       history_limit: 3
       use_dspy: true
 
-  - action: resolv/feedback_interview_interact_action
-    context:
-      enabled: true
-      description: "Feedback Interview action is used to create feedback for incidents and projects."
-      weight: -50
-      # Model Configuration
-      model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4o"
-      model_temperature: 0.1
-      model_max_tokens: 4096
-      use_history: true
-      max_statement_length: 100
-      history_limit: 3
-      use_dspy: true
+  # - action: resolv/feedback_interview_interact_action
+  #   context:
+  #     enabled: true
+  #     description: "Feedback Interview action is used to create feedback for incidents and projects."
+  #     weight: -50
+  #     # Model Configuration
+  #     model_action_type: "OpenAILanguageModelAction"
+  #     model: "gpt-4o"
+  #     model_temperature: 0.1
+  #     model_max_tokens: 4096
+  #     use_history: true
+  #     max_statement_length: 100
+  #     history_limit: 3
+  #     use_dspy: true
 
   - action: jvagent/converse_interact_action
     context:
       enabled: true
       description: "Fallback action for smalltalk and casual conversation"
       weight: 100 # Runs last as a safety net
+
+  - action: resolv/resolv_onboarding_interact_action
+    context:
+      enabled: true
+      description: "Resolv Onboarding action is used to register user and subscribe them to default groups."
+      weight: -100
+      default_groups: ["28"]
+
+  - action: resolv/resolv_api_action
+    context:
+      enabled: true
+      description: "Houses Resolv API credentials and endpoints"
+      user_uuid: "af76d73a-6043-4815-bb33-0732eda03c04"
+      secret_token: "306bb4ca-0e3e-4938-8b6a-09b8903e41d2"
+      api_url: "https://app.resolv-ims.com/api"
+      organization_slug: "mopw-guyana"
+      project_id: "32"
+      agent_identifier: "n:Agent:68a1556ce82af5547f4b4347"
+
+  - action: jvagent/access_control_action
+    context:
+      enabled: true
+      description: "Role-based access control with session tracking and permission validation for secure agent operations"
+      permissions:
+        {
+          "default":
+            {
+              "any":
+                { "deny": [], "allow": [{ "group": "all", "enabled": True }] },
+            },
+          "whatsapp":
+            {
+              "any":
+                {
+                  "deny": [{ "user": "all", "enabled": True }],
+                  "allow": [{ "user": "5926431530", "enabled": True }],
+                },
+            },
+        }
+      session_groups: {}
 
   - action: jvagent/agent_utils
     context:
@@ -156,11 +196,12 @@ actions:
       enabled: true
       description: "WhatsApp provider (wppconnect, ultramsg, wwebjs)"
       # whatsapp configuration
-      provider: "wwebjs"
+      provider: ${WHATSAPP_PROVIDER}
       api_url: ${WHATSAPP_API_URL}
       api_key: ${WHATSAPP_API_KEY}
       session: ${WHATSAPP_SESSION}
       base_url: ${APP_BASE_URL}
+      token: ${WHATSAPP_TOKEN}
 
   - action: jvagent/tts_action
     context:

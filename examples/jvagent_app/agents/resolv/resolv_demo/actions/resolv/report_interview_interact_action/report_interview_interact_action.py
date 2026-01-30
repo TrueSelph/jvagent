@@ -1,6 +1,7 @@
 """Report interview for report submission."""
 
 import re
+import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from jvagent.action.interview import (
@@ -18,6 +19,7 @@ from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.interact.base import InteractAction
 from jvspatial.core.annotations import attribute
 
+logger = logging.getLogger(__name__)
 
 class ReportInterviewInteractAction(InterviewInteractAction):
     """Report Interview action is used to create reports.
@@ -43,6 +45,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
     """
 
     description: str = "Report Interview action is used to create reports."
+    resolv_api_action: str = "ResolvAPIAction"
 
     # DSPy Integration
     use_dspy: bool = attribute(
@@ -54,23 +57,23 @@ class ReportInterviewInteractAction(InterviewInteractAction):
     # Must cover both initial entry and intermediate states (when answering questions)
     anchors: List[str] = attribute(
         default_factory=lambda: [
-            # Initial entry
-            "User wants to create a new report",
-            "User is reporting a problem, hazard, or issue",
-            "User is initiating a new incident report",
-            "User needs to document a safety concern or infrastructure problem",
+            # Initial entry - specific to NEW report creation
+            "User wants to create a new incident report",
+            "User is reporting a new problem, hazard, or safety issue",
+            "User needs to file a new complaint or incident report",
+            "User wants to document a new safety concern or infrastructure problem",
             
-            # Providing details
-            "User is providing incident report details",
-            "User is answering incident report questions",
-            "User is describing location, severity, or nature of reported issue",
-            "User is uploading photos or evidence for a new report",
+            # Providing details - specific to NEW report creation
+            "User is providing details for a new incident report",
+            "User is answering questions about a new incident they want to report",
+            "User is describing location and details of a new incident to report",
+            "User is uploading photos or evidence for a new incident report",
             
             # Revision/cancel/edit/confirm (ACTIVE reports only)
-            "User is Revising, Canceling, Updating or Confirming an Active Report, not a previously created report.",
-            "User needs to modify details of a report currently being created",
-            "User wants to cancel a report that is in progress",
-            "User is changing information in an incomplete report submission"
+            "User is revising, canceling, updating or confirming an active incident report being created",
+            "User needs to modify details of an incident report currently being created",
+            "User wants to cancel an incident report that is in progress",
+            "User is changing information in an incomplete incident report submission"
         ],
         description="Anchor statements for InteractRouter routing",
     )
@@ -78,35 +81,61 @@ class ReportInterviewInteractAction(InterviewInteractAction):
     question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {
-                "name": "report_description",
-                "question": "Describe the incident you'd like to report in a single message.",
+                "name": "incident_description",
+                "question": "Please describe the incident you want to report. Include what happened, when it occurred, and any other relevant details.",
                 "constraints": {
-                    "description": "A full description of the incident or grievance being reported. Capture only what happened, not requests or opinions.",
+                    "description": "A detailed description of the incident being reported, including facts about what happened without opinions or requests.",
                     "type": "string",
                 },
                 "required": True
             },
             {
-                "name": "report_location",
-                "question": "What is the exact address where the incident occurred, or can you share a WhatsApp location pin?",
+                "name": "incident_location",
+                "question": "Where exactly did this incident occur? Please provide the specific address or location details.",
                 "constraints": {
-                    "description": "The precise location of the incident, including street and area name. Ignore vague references such as 'my area' or 'nearby'.",
+                    "description": "The exact location where the incident occurred, including street address, area name, or landmark. Must be specific, not vague references.",
                     "type": "string",
                 },
-                "default_next": "report_media",
+                "branches": [
+                    {
+                        "condition": {"function": "check_for_similar_incidents"},
+                        "target": "continue_report"
+                    }
+                ],
+                "default_next": "incident_media",
                 "required": True
             },
             {
-                "name": "report_media",
-                "question": "Please upload any images of the incident if you have them.",
+                "name": "continue_report",
+                "question": "I found similar incident reports. Would you like to continue creating your new report?",
                 "constraints": {
-                    "description": "Images of the incident uploaded via WhatsApp media.",
+                    "description": "User's decision to continue with their new incident report despite similar existing reports.",
+                    "type": "string",
+                    "options": ["yes", "no"]
+                },
+                "branches": [
+                    {
+                        "condition": {"op": "equals", "value": "yes"},
+                        "target": "incident_media"
+                    },
+                    {
+                        "condition": {"op": "equals", "value": "no"},
+                        "target": "CANCELLED"
+                    }
+                ],
+                "required": True
+            },
+            {
+                "name": "incident_media",
+                "question": "Do you have any photos or videos of the incident you'd like to include? You can upload them now or skip this step.",
+                "constraints": {
+                    "description": "Photos, videos, or other media evidence related to the incident.",
                     "type": "list",
                     "data_input_field": "whatsapp_media",
                 },
                 "branches": [
                     {
-                        "condition": {"function": "check_contains_sensitive_info"},
+                        "condition": {"function": "detect_sensitive_content"},
                         "target": "is_sensitive"
                     }
                 ],
@@ -117,7 +146,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                 "name": "is_sensitive",
                 "question": "I noticed that the report includes sensitive information. Would you like to keep it private?",
                 "constraints": {
-                    "description": "User explicit request to keep the report private or not. eg. 'Would you like to keep it private? yes/no'.",
+                    "description": "User explicit request to keep the report private or not. eg. 'Would you like to keep it private?'.",
                     "type": "string",
                     "options": ["yes", "no"],
                 },
@@ -209,12 +238,30 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "Branch functions can be registered with @branch_function decorator for complex branching logic."
     )
 
-@input_validator('report_description')
-def validate_report_description(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the report description is not empty.
+
+# Override default directive
+@input_directive_override('continue_report')
+async def custom_continue_directive(
+    field_name: str,
+    value: str,
+    session: InterviewSession,
+    interaction: Interaction,
+    visitor: InteractWalker
+) -> Optional[Union[str, Tuple[str, str]]]:
+    """Custom directive after continue_report is answered."""
+    if value == "no":
+        return ("replace", "Thank you for your time. Your report was cancelled.")
+    return None  # Use default directive
+
+
+
+# Validators 
+@input_validator('incident_description')
+def validate_incident_description(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    """Validate incident description has sufficient detail.
 
     Args:
-        value: The name string to validate
+        value: The incident description to validate
         session: Interview session (for context)
 
     Returns:
@@ -222,7 +269,7 @@ def validate_report_description(value: str, session: InterviewSession) -> Tuple[
     """
 
     if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide a description of the report"
+        return ValidationStatus.INVALID, "Ask: Please provide a description of the incident"
 
     # Remove extra whitespace
     value = value.strip()
@@ -231,15 +278,15 @@ def validate_report_description(value: str, session: InterviewSession) -> Tuple[
     if len(value) < 10:
         return (
             ValidationStatus.INVALID,
-            "Ask: Please provide a more detailed description of the report",
+            "Ask: Please provide a more detailed description of what happened",
         )
 
     return ValidationStatus.VALID, None
 
 
-@input_validator('report_location')
-def validate_report_location(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the report location is not empty.
+@input_validator('incident_location')
+def validate_incident_location(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    """Validate incident location is provided and specific.
 
     Args:
         value: The location string to validate
@@ -250,10 +297,15 @@ def validate_report_location(value: str, session: InterviewSession) -> Tuple[Val
     """
 
     if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the location of the report"
+        return ValidationStatus.INVALID, "Ask: Please provide the location where the incident occurred"
+
+    # Remove extra whitespace
+    value = value.strip()
+    
+    if len(value) < 10:
+        return ValidationStatus.INVALID, "Ask: Please provide a more specific location"
 
     return ValidationStatus.VALID, None
-
 
 
 @input_validator('is_sensitive')
@@ -467,27 +519,56 @@ def validate_reporter_address(value: str, session: InterviewSession) -> Tuple[Va
 
 
 
-# Example branch functions demonstrating the branch function feature
-# These can be used in question_graph branches with {"function": "function_name"}
 
-@branch_function('check_contains_sensitive_info')
-def check_contains_sensitive_info(
+# Branch functions
+@branch_function('detect_sensitive_content')
+def detect_sensitive_content(
     session: InterviewSession,
     visitor: InteractWalker
 ) -> bool:
-    """Check if report contains sensitive keywords.
+    """Detect if incident report contains sensitive content requiring privacy protection.
     
-    Returns True to branch to is_sensitive question, False to continue normal flow.
-    This is an example of a boolean-returning branch function (no operator needed).
+    Returns True to branch to privacy question, False to continue normal flow.
+    Checks both description and media for sensitive content indicators.
     """
-    description = session.responses.get('report_description', '').lower()
-    sensitive_keywords = ['abuse', 'assault', 'violence', 'threat', 'harassment']
+    description = session.responses.get('incident_description', '').lower()
+    sensitive_keywords = ['abuse', 'assault', 'violence', 'threat', 'harassment', 'domestic', 'sexual']
     
-    # Use session.context to store analysis for later use
-    has_sensitive = any(keyword in description for keyword in sensitive_keywords)
-    session.context['contains_sensitive_keywords'] = has_sensitive
+    # Check description for sensitive keywords
+    has_sensitive_text = any(keyword in description for keyword in sensitive_keywords)
     
-    return has_sensitive
+    return has_sensitive_text
+
+
+@branch_function('check_for_similar_incidents')
+def check_for_similar_incidents(
+    session: InterviewSession,
+    visitor: InteractWalker
+) -> bool:
+    """Check for similar incident reports in the same location.
+    
+    Returns True if similar incidents found, triggering user confirmation.
+    This helps prevent duplicate reports and informs users of existing issues.
+    """
+    location = session.responses.get('incident_location', '').lower()
+    description = session.responses.get('incident_description', '').lower()
+
+    session.context['matching_reports'] = [
+        {
+            "id": "RL2FG12V", 
+            "title": "Pothole repair completed on Main Street",
+        },
+        {
+            "id": "RL1FG12W", 
+            "title": "Street light installation finished on Oak Avenue",
+        }
+    ]
+    
+    # For demo purposes, always return True to show the flow
+    # In production, this would query a database of existing reports
+    return True
+
+
 
 
 @on_interview_complete('ReportInterviewInteractAction')
@@ -507,9 +588,9 @@ async def handle_report_completion(
         action: The InteractAction instance (use action.respond() to send responses)
     """
     # Extract collected data
-    report_description = session.responses.get('report_description', '')
-    report_location = session.responses.get('report_location', '')
-    report_media = session.responses.get('report_media', '')
+    incident_description = session.responses.get('incident_description', '')
+    incident_location = session.responses.get('incident_location', '')
+    incident_media = session.responses.get('incident_media', '')
     is_sensitive = session.responses.get('is_sensitive', '')
     reporting_on_behalf = session.responses.get('reporting_on_behalf', '')
     stakeholder_name = session.responses.get('stakeholder_name', '')
@@ -518,13 +599,68 @@ async def handle_report_completion(
     reporter_name = session.responses.get('reporter_name', '')
     reporter_address = session.responses.get('reporter_address', '')
 
-    # Log completion (in production, you might send notifications, create records, etc.)
-    import logging
+    # generated data 
+    title = "default title"
+    generated_description = "default generated description"
+    phone_number = "5926431530"
+    priority = "default report category"
+    category_id=1
 
+    logger.info(f"Incident description: {incident_description}")
+    logger.info(f"Incident location: {incident_location}")
+    logger.info(f"Incident media: {incident_media}")
+    logger.info(f"Is sensitive: {is_sensitive}")
+    logger.info(f"Reporting on behalf: {reporting_on_behalf}")
+    logger.info(f"Stakeholder name: {stakeholder_name}")
+    logger.info(f"Stakeholder address: {stakeholder_address}")
+    logger.info(f"Stakeholder phone: {stakeholder_phone}")
+    logger.info(f"Reporter name: {reporter_name}")
+    logger.info(f"Reporter address: {reporter_address}")
+    logger.info(f"Reporter phone: {reporter_phone}")
+    logger.info(f"AI overview: {ai_overview}")
+
+    title = "Incident Report: Construction Safety Violation at 47 Main Street"
+    is_sensitive = True
+    generated_description = "On Monday, 27 January 2026 at approximately 2:15 PM, unsafe working conditions were observed at 47 Main Street. Heavy construction machinery is being operated in close proximity to an unprotected public footpath without installation of safety barriers, warning signs, cones, or flaggers. This violates standard construction safety protocols and creates a high risk of serious injury to passersby, especially vulnerable groups such as children and elderly persons. Immediate intervention and corrective action are strongly recommended to prevent potential accidents and ensure compliance with occupational health and safety regulations."
+    incident_description = "Heavy machinery operating unsafely near public walkway without barriers or signage at construction site."
+    incident_media = []
+    priority = "high"
+    category_id = 28
+    reporting_on_behalf = "yes"
+    stakeholder_name = "John Doe"
+    stakeholder_address = "123 Main St"
+    stakeholder_phone = "5555555555"
+    reporter_name = "Jane Doe"
+    reporter_address = "123 Main St"
+    reporter_phone = "5926431530"
+    ai_overview = "Incident Report R657224 documents a high-priority safety concern at 47 Main Street, where heavy construction equipment is being operated without proper safety barriers or signage near a public walkway. Reported by Jivas AI Agent for contact ID 395 on 28 January 2026. The absence of required protective measures poses a serious risk of injury to pedestrians and workers. Report remains open."
+
+    import logging
     logger = logging.getLogger(__name__)
-    logger.info(
-        f"Report interview completed:\n description: {report_description}\n location: {report_location}\n report_media: {report_media}\n is_sensitive: {is_sensitive}\n reporting_on_behalf: {reporting_on_behalf}\n stakeholder_name: {stakeholder_name}\n stakeholder_address: {stakeholder_address}\n stakeholder_phone: {stakeholder_phone}\n reporter_name: {reporter_name}\n reporter_address: {reporter_address}"
-    )
+
+    # resolv_api_action = await visitor.get_action(self.resolv_api_action)
+    resolv_api_action = await action.get_action("ResolvAPIAction")
+    if resolv_api_action:
+        result = await resolv_api_action.create_issue(
+            title=title,
+            is_anonymous=is_sensitive,
+            description=generated_description,
+            original_description=incident_description,
+            attachments=incident_media,
+            priority=priority,
+            category_id=category_id,
+            reporting_on_behalf=reporting_on_behalf,
+            stakeholder_name=stakeholder_name,
+            stakeholder_address=stakeholder_address,
+            stakeholder_phone=stakeholder_phone,
+            reporter_name=reporter_name,
+            reporter_address=reporter_address,
+            ai_overview=ai_overview
+        )
+        
+        logger.warning("Result: ", result)
+    else:
+        logger.warning("Resolv API action not found")
 
     # Send completion message
     completion_message = (
@@ -534,3 +670,5 @@ async def handle_report_completion(
 
     # Clean up the session after processing
     await session.cleanup()
+
+
