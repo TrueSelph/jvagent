@@ -1,4 +1,5 @@
-"""Action loader for dynamic action discovery and instantiation.
+
+​"""Action loader for dynamic action discovery and instantiation.
 
 This module provides functionality to discover, load, and instantiate actions
 from the filesystem based on their info.yaml descriptors.
@@ -9,6 +10,7 @@ import importlib.util
 import logging
 import os
 import sys
+import types
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Type
 
@@ -282,6 +284,34 @@ class ActionLoader:
         except Exception as e:
             logger.warning(f"Error installing dependencies for {action_name}: {e}")
 
+    def _ensure_namespace_packages(self, module_name: str, action_dir: Path) -> None:
+        """Ensure all parent namespace packages exist for a module path.
+
+        Creates and registers synthetic namespace packages in sys.modules for
+        each level of the module hierarchy. This is required for Lambda and
+        other strict environments where Python's import system expects parent
+        packages to exist.
+
+        Args:
+            module_name: Full module name (e.g., "jvagent.actions.ns.agent.action")
+            action_dir: Directory containing the action (used for __path__)
+        """
+        parts = module_name.split(".")
+
+        # Create namespace packages for all parent levels
+        # e.g., for "jvagent.actions.ns.agent.action":
+        # - jvagent.actions
+        # - jvagent.actions.ns
+        # - jvagent.actions.ns.agent
+        # - jvagent.actions.ns.agent.action_ns (if applicable)
+        for i in range(2, len(parts)):  # Start at 2 to skip "jvagent.actions" becoming just "jvagent"
+            parent_name = ".".join(parts[:i])
+            if parent_name not in sys.modules:
+                parent_module = types.ModuleType(parent_name)
+                parent_module.__package__ = parent_name
+                parent_module.__path__ = [str(action_dir.parent)]  # Approximate path
+                sys.modules[parent_name] = parent_module
+
     def _load_action_module(
         self,
         module_name: str,
@@ -304,6 +334,9 @@ class ActionLoader:
         Returns:
             Action class if successfully loaded, None otherwise
         """
+        # Ensure parent namespace packages exist before loading
+        self._ensure_namespace_packages(module_name, action_dir)
+
         init_file = action_dir / "__init__.py"
         module_file = action_dir / f"{action_name}.py"
 
@@ -575,7 +608,7 @@ class ActionLoader:
                     metadata = ActionMetadata(data, action_dir, namespace=namespace)
                     metadata.is_core_action = True
                     return metadata
-        
+
         # Try local action (from filesystem)
         agents_path = self.base_path / "agents"
         if agents_path.exists() and agents_path.is_dir():
@@ -607,7 +640,7 @@ class ActionLoader:
                             extracted_name = self._extract_action_name(package, action_dir)
                             if extracted_name == action_name:
                                 return ActionMetadata(data, action_dir, namespace=namespace)
-        
+
         return None
 
     def _resolve_action_dependencies(
@@ -759,7 +792,7 @@ class ActionLoader:
 
         This ensures that all Action subclasses are imported before any queries
         that use _collect_class_names() (which relies on __subclasses__()).
-        
+
         Also pre-imports core action packages to ensure their __init__.py files
         (which import endpoints) are executed. This is critical for endpoint discovery.
 
@@ -771,7 +804,7 @@ class ActionLoader:
         agent.yaml configuration, use pre_import_action_modules_for_agents() instead.
         """
         imported_count = 0
-        
+
         # First, scan all agent.yaml files to find required core actions
         agents_path = self.base_path / "agents"
         agent_paths = []
@@ -785,10 +818,10 @@ class ActionLoader:
                         continue
                     agent_name = agent_dir.name
                     agent_paths.append((namespace, agent_name))
-        
+
         # Scan agent.yaml files to find required core actions
         required_core_actions = self._scan_required_core_actions(agent_paths) if agent_paths else None
-        
+
         # Pre-import core action packages (only required ones if agent_paths found)
         core_imported = self._pre_import_core_action_packages(
             required_actions=required_core_actions
@@ -1059,7 +1092,7 @@ class ActionLoader:
             agent_paths: List of (namespace, agent_name) tuples to scan
 
         Returns:
-            Set of all action references in "namespace/action_name" format 
+            Set of all action references in "namespace/action_name" format
             (e.g., "jvagent/interact_router", "contrib/custom_action")
         """
         required_actions = set()
@@ -1295,24 +1328,24 @@ class ActionLoader:
         registry: ActionRegistry,
     ) -> bool:
         """Import action module and its endpoints only if needed.
-        
+
         This triggers:
         - Module import (action_name.py or __init__.py)
         - Endpoint import (via __init__.py: from . import endpoints)
         - Endpoint registration (via @endpoint decorator to deferred registry)
-        
+
         Args:
             action_ref: Action reference in "namespace/action_name" format
             registry: ActionRegistry instance
-            
+
         Returns:
             True if successfully imported, False otherwise
         """
         if "/" not in action_ref:
             return False
-            
+
         namespace, action_name = action_ref.split("/", 1)
-        
+
         if namespace == "jvagent":
             # Core action
             return self._import_core_action_module_conditionally(action_name, registry)
@@ -1328,52 +1361,52 @@ class ActionLoader:
         registry: ActionRegistry,
     ) -> bool:
         """Import core action module conditionally.
-        
+
         Args:
             action_name: Core action name (e.g., "whatsapp", "interact_router")
             registry: ActionRegistry instance
-            
+
         Returns:
             True if successfully imported, False otherwise
         """
         action_ref = f"jvagent/{action_name}"
-        
+
         # Check if already imported
         if action_ref in registry.imported_actions:
             return True
-        
+
         # Check if should be imported
         if not registry.should_import_action(action_ref):
             logger.debug(f"Skipping import of {action_ref} (not in resolved actions)")
             return False
-        
+
         try:
             # Get core action cache
             core_cache = self._build_core_action_cache()
             action_info = core_cache.get(action_name)
-            
+
             if not action_info:
                 logger.debug(f"Core action {action_name} not found in cache")
                 return False
-            
+
             action_dir = action_info["dir"]
             relative_path = action_info["relative_path"]
             data = action_info.get("data")
-            
+
             # Install pip dependencies before importing
             if data:
                 self._ensure_dependencies_installed(data, action_name, action_dir)
-            
+
             # Import parent packages to ensure __init__.py files execute
             # This is critical for endpoint discovery
             path_parts = relative_path.split("/")
             imported_packages = set()
-            
+
             # Import all parent packages (e.g., for "whatsapp" -> "jvagent.action.whatsapp")
             for i in range(len(path_parts)):
                 parent_path = "/".join(path_parts[: i + 1])
                 package_path = f"jvagent.action.{parent_path.replace('/', '.')}"
-                
+
                 # Only import each package once
                 if package_path not in imported_packages:
                     try:
@@ -1385,12 +1418,12 @@ class ActionLoader:
                         logger.debug(f"Could not import core package {package_path}: {e}")
                     except Exception as e:
                         logger.warning(f"Error importing core package {package_path}: {e}")
-            
+
             # Mark as imported
             registry.mark_imported(action_ref)
             logger.debug(f"Successfully imported core action module: {action_ref}")
             return True
-            
+
         except Exception as e:
             logger.warning(f"Error importing core action module {action_ref}: {e}")
             return False
@@ -1597,7 +1630,7 @@ class ActionLoader:
             # This is critical for endpoint discovery - parent package __init__.py files
             # import endpoints.py modules which register endpoints via @endpoint decorators
             module_path_parts = metadata.core_module_path.split(".")
-            
+
             # Import all parent packages (e.g., for "jvagent.action.model.language.openai",
             # import "jvagent", "jvagent.action", "jvagent.action.model", "jvagent.action.model.language")
             for i in range(2, len(module_path_parts)):
@@ -1698,7 +1731,7 @@ class ActionLoader:
                         # 1. hasattr() - for regular class attributes and descriptors
                         # 2. model_fields - for Pydantic fields (including @attribute decorated properties)
                         property_exists = False
-                        
+
                         # Check hasattr first (covers descriptors, @property, regular attributes)
                         if hasattr(action_class, key):
                             property_exists = True
@@ -1709,7 +1742,7 @@ class ActionLoader:
                                 if hasattr(cls, "model_fields") and key in cls.model_fields:
                                     property_exists = True
                                     break
-                        
+
                         if not property_exists:
                             logger.warning(
                                 f"Property '{key}' from agent.yaml context does not exist on "
