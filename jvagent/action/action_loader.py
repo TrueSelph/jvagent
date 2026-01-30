@@ -1,10 +1,3 @@
-
-​"""Action loader for dynamic action discovery and instantiation.
-
-This module provides functionality to discover, load, and instantiate actions
-from the filesystem based on their info.yaml descriptors.
-"""
-
 import importlib
 import importlib.util
 import logging
