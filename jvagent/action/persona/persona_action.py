@@ -265,9 +265,10 @@ class PersonaAction(Action):
     ) -> None:
         """Persist and optionally publish response to the response bus.
 
-        When no response_bus/visitor/session_id: set interaction.response (append if
-        continuing), save. When bus and streaming: no-op (model already published).
-        When bus and non-streaming: call publish_adhoc once with full content.
+        When there is no bus: persist to interaction.response (append if continuing)
+        and save. When there is a bus and streaming: no-op (model already published).
+        When there is a bus and non-streaming: PersonaAction is the sole publisher;
+        call publish_adhoc once (legacy path does not pass bus to the model in this case).
         """
         if not response:
             return
@@ -929,8 +930,8 @@ class PersonaAction(Action):
                 model=self.model,
                 temperature=self.model_temperature,
                 max_tokens=self.model_max_tokens,
-                response_bus=response_bus,
-                interaction=interaction,
+                response_bus=response_bus if streaming else None,
+                interaction=interaction if streaming else None,
                 response_format=response_format,
             )
 
