@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 from ..session.interview_session import InterviewSession
 from ..graph.question_node import QuestionNode
 from ..graph.question_walker import QuestionWalker
-from ..foundation.enums import ValidationStatus, ContextKey
+from ..foundation.enums import ValidationStatus, ContextKey, InterviewState
 from ..utils.session_utils import sort_fields_by_question_order
 from ..foundation.exceptions import QuestionNotFoundError
 
@@ -23,15 +23,15 @@ logger = logging.getLogger(__name__)
 
 class ResponseProcessor:
     """Handles processing and validation of user responses."""
-    
+
     def __init__(self, action: "InterviewInteractAction"):
         """Initialize response processor with action instance.
-        
+
         Args:
             action: InterviewInteractAction instance
         """
         self.action = action
-    
+
     async def handle_update_inline(
         self,
         classification_result: "ClassificationResult",
@@ -114,7 +114,7 @@ class ResponseProcessor:
             session.update_response(field, new_value, old_value)
             await session.save()
             logger.debug(f"{self.action.get_class_name()}: Updated {field} to {new_value}")
-            
+
             # Re-evaluate conditional graph after update (may skip subsequent questions or trigger state transitions)
             from ..graph.question_walker import QuestionWalker
             question_walker = QuestionWalker()
@@ -136,7 +136,7 @@ class ResponseProcessor:
                         override_mode = None
                         if isinstance(override_result, tuple) and len(override_result) == 2:
                             override_mode = override_result[0].lower()  # "append" or "replace"
-                        
+
                         # Get default confirmation directive
                         field_display = field.replace("_", " ").title()
                         default_directive = f"Tell the user: Updated {field_display} to {new_value}."
@@ -182,7 +182,7 @@ class ResponseProcessor:
                 if not feedback_msg.startswith("Tell the user:") and not feedback_msg.startswith("Ask:"):
                     feedback_msg = f"Ask: {feedback_msg}"
                 await self.action._queue_directive(visitor, feedback_msg)
-            
+
             return True  # Update completed
 
         else:  # INVALID
@@ -280,7 +280,7 @@ class ResponseProcessor:
                     session, question_walker, just_answered_field=field
                 )
                 state_after = session.state
-                
+
                 # If state transition occurred, return early to let generate_active_directive handle it
                 if state_before != state_after:
                     session.active_question_key = None
@@ -291,7 +291,7 @@ class ResponseProcessor:
                         f"{state_before.value} -> {state_after.value}"
                     )
                     return
-                
+
                 # Save session if no state transition occurred
                 await session.save()
 
@@ -309,15 +309,15 @@ class ResponseProcessor:
                             override_mode = None
                             if isinstance(override_result, tuple) and len(override_result) == 2:
                                 override_mode = override_result[0].lower()  # "append" or "replace"
-                            
+
                             # Use feedback as default directive if available (for simple string mode)
                             default_directive = feedback if feedback else ""
-                            
+
                             # Process override result - returns (default_directive, custom_directive)
                             default_to_queue, custom_to_queue = self.action._process_directive_override(
                                 override_result, default_directive
                             )
-                            
+
                             # Handle based on explicit mode (not based on which directives are present)
                             if override_mode == "replace":
                                 # Replace mode: only custom directive, no default
@@ -336,7 +336,7 @@ class ResponseProcessor:
                                 await self.action._queue_directive(visitor, default_to_queue)
                     except Exception as e:
                         logger.warning(f"{self.action.get_class_name()}: Directive override raised exception: {e}", exc_info=True)
-                
+
                 # If feedback is provided with VALID status, send it as clarification
                 # This handles cases where the value is acceptable but needs clarification (e.g., "next Tuesday")
                 # Continue processing other fields even if feedback is sent
@@ -376,7 +376,7 @@ class ResponseProcessor:
         if append_mode_overrides:
             # Use existing question_walker (already configured)
             next_question_node = await question_walker.find_next_question(session, self.action)
-            
+
             # Note: State transitions should have already occurred during response processing
             # If state is not ACTIVE, let generate_active_directive handle it
             if session.state != InterviewState.ACTIVE:
@@ -389,7 +389,7 @@ class ResponseProcessor:
                     f"skipping append directives"
                 )
                 return
-            
+
             # Queue next question directive if it exists
             if next_question_node:
                 next_question_directive = await next_question_node.execute(question_walker) or ""
@@ -400,17 +400,17 @@ class ResponseProcessor:
                         session.context = {}
                     session.context[ContextKey.DIRECTIVE_OVERRIDE_APPEND_MODE] = True
                     await session.save()
-            
+
             # ALWAYS queue custom directives (even if no next question)
             for field, custom_directive in append_mode_overrides:
                 await self.action._queue_directive(visitor, custom_directive)
-        
+
         # If replace mode override was used, set flag to prevent normal flow from finding next question
         if replace_mode_used:
             if session.context is None:
                 session.context = {}
             session.context[ContextKey.DIRECTIVE_OVERRIDE_REPLACE_MODE] = True
-        
+
         # Clear active_question_key
         session.active_question_key = None
         await session.save()
