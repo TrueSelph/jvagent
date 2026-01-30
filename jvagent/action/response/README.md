@@ -1,22 +1,83 @@
-# Channel Adapter System
+# Response Bus and Channel Adapter System
 
-This guide documents the channel adapter system for automatically delivering messages from the response bus to external destinations (WhatsApp, web, SMS, etc.).
+This guide documents the ResponseBus and the channel adapter system for delivering messages to external destinations (WhatsApp, web, SMS, etc.).
 
 ## Overview
 
-The channel adapter system provides a clean, automatic way to deliver messages published to the response bus to external communication channels. Channel adapters:
+The ResponseBus is the central service for publishing response content from InteractActions. It manages streaming vs non-streaming delivery, applies channel filters, routes adhoc messages to channel adapters, and keeps interaction.response in sync. Channel adapters:
 
 - **Auto-register** when actions are registered
 - **Auto-receive** adhoc messages when published for their channel
 - **Zero manual wiring** required
 
+## ResponseBus Design
+
+Stream mode is determined by `visitor.stream` and passed through to `publish_adhoc()`. The walker executes actions, commits pending adhoc content after each action, then proceeds to the next action. ResponseBus accumulates streaming chunks and only applies filters/adapters when a complete adhoc message is ready (non-streaming: immediately; streaming: when `streaming_complete=True` or on commit/finalize).
+
+```mermaid
+flowchart TB
+    subgraph Walker [InteractWalker - visitor.stream]
+        W1[Execute action]
+        W2[commit_pending_adhoc]
+        W3[Next action]
+    end
+    
+    subgraph ActionLayer [Action Layer]
+        A1["InteractAction.publish(stream=visitor.stream)"]
+        A2["PersonaAction.respond(stream=visitor.stream)"]
+        A3["Model streaming(stream=visitor.stream)"]
+    end
+    
+    subgraph ResponseBus [ResponseBus.publish_adhoc]
+        SM{stream param?}
+        
+        subgraph StreamingPath [stream=True]
+            S1[Stream chunks to subscribers]
+            S2[Accumulate in buffer]
+            S3[On streaming_complete: filters/adapters]
+            S4[Set interaction.response]
+        end
+        
+        subgraph NonStreamingPath [stream=False]
+            N1[Apply filters immediately]
+            N2[Send to adapter]
+            N3[Append to interaction.response]
+        end
+    end
+    
+    W1 --> A1
+    A1 --> SM
+    A2 --> SM
+    A3 --> SM
+    SM -->|True| S1
+    SM -->|False| N1
+    S1 --> S2
+    S2 --> S3
+    S3 --> S4
+    N1 --> N2
+    N2 --> N3
+    W1 --> W2
+    W2 --> W3
+```
+
+**Key behavior:**
+
+- **Non-streaming (`stream=False`)**: Filters and adapters run immediately; content is appended to `interaction.response`.
+- **Streaming (`stream=True`, `streaming_complete=False`)**: Chunks are sent to subscribers and accumulated; no filters/adapters yet.
+- **Streaming (`stream=True`, `streaming_complete=True`)**: Full content is run through filters/adapters, `interaction.response` is set, and the accumulator is cleared.
+- **Action boundaries**: After each action, the walker calls `commit_pending_adhoc(interaction_id, interaction)` so any accumulated streaming content is finalized (filters/adapters, append to interaction, save) before the next action runs.
+- **Finalize**: `finalize_interaction()` calls `commit_pending_adhoc`, emits an internal final signal to subscribers, then cleans up buffers.
+
+The public API for publishing is `publish_adhoc()`; there is no `publish_message()`.
+
 ## Architecture
 
 ### Components
 
-1. **ResponseBus**: Central message bus that routes adhoc messages directly to registered adapters
-2. **ChannelAdapter**: Base class for all channel adapters
-3. **Action Integration**: Actions create and register adapters in their `on_register()` method (for new registrations) and `on_startup()` method (for app restarts)
+1. **ResponseBus**: Central message bus that routes adhoc messages through filters to registered adapters
+2. **ChannelFilter**: Base class for message transformation filters (execute before adapters)
+3. **ChannelAdapter**: Base class for all channel adapters
+4. **Action Integration**: Actions create and register filters and adapters in their `on_register()` method (for new registrations) and `on_startup()` method (for app restarts)
 
 ### How It Works
 
@@ -44,9 +105,11 @@ The channel adapter system provides a clean, automatic way to deliver messages p
 ```
 1. When adhoc message is published with channel="whatsapp"
    ↓
-2. ResponseBus directly calls adapter.send(message)
+2. ResponseBus applies registered filters (in priority order)
    ↓
-3. Adapter sends message to external API
+3. ResponseBus calls adapter.send(message) with transformed message
+   ↓
+4. Adapter sends message to external API
 ```
 
 ### Key Features
@@ -158,16 +221,19 @@ class MyChannelAction(Action):
 
 ### Step 3: Publish Messages
 
-Messages are automatically delivered to adapters when published with the matching channel:
+Messages are automatically delivered to adapters when published with the matching channel via `publish_adhoc()`:
 
 ```python
 # In an InteractAction or anywhere with access to response_bus
-await visitor.response_bus.publish_message(
+await visitor.response_bus.publish_adhoc(
     session_id=session_id,
     content="Hello, world!",
     channel="mychannel",  # Must match adapter's channel
-    message_type="adhoc",  # Only adhoc messages are routed to adapters
-    user_id="user@example.com"  # User identifier (recipient) - required for channel adapters
+    stream=False,  # Non-streaming: filters/adapters run immediately
+    interaction_id=interaction.id if interaction else None,
+    interaction=interaction,  # Optional: avoids DB lookup for append
+    user_id="user@example.com",  # User identifier (recipient) - required for channel adapters
+    streaming_complete=True,  # Single message; only relevant when stream=True
 )
 ```
 
@@ -218,10 +284,222 @@ class WhatsAppAdapter(ChannelAdapter):
         
         # Use self.action.api_url and self.action.api_key
         # Send to WhatsApp API using message.user_id
+        # Note: message.content is already transformed by filters
         ...
 ```
 
+## Channel Filters
+
+Channel filters transform message content before delivery to channel adapters. Filters execute in a chain, allowing multiple transformations to be applied in sequence based on priority.
+
+### Overview
+
+Channel filters provide a clean separation between content transformation and message delivery:
+
+- **Filters**: Transform message content (markdown, HTML, formatting, etc.)
+- **Adapters**: Deliver messages to external APIs
+
+Filters execute **before** adapters, ensuring transformed content is delivered.
+
+### Key Features
+
+- **Multi-Channel Support**: Single filter can handle multiple channels
+- **Filter Chaining**: Multiple filters can execute in sequence, ordered by priority
+- **In-Place Transformation**: Filters modify `message.content` directly
+- **Priority-Based Execution**: Lower priority numbers execute first
+
+### How It Works
+
+**Filter Registration:**
+```
+1. Action.on_register() creates ChannelFilter instance
+   ↓
+2. Filter.initialize() gets ResponseBus and registers itself
+   ↓
+3. ResponseBus stores filter in priority-sorted list
+```
+
+**Message Transformation:**
+```
+1. Message published with channel="whatsapp"
+   ↓
+2. ResponseBus finds all filters for "whatsapp" channel
+   ↓
+3. Filters execute in priority order (lower first)
+   ↓
+4. Each filter transforms message.content in-place
+   ↓
+5. Transformed message delivered to adapter
+```
+
+### Implementing a Channel Filter
+
+#### Step 1: Create the Filter Class
+
+Create a new filter class that inherits from `ChannelFilter`:
+
+```python
+from jvagent.action.response.channel_filter import ChannelFilter
+from jvagent.action.response.message import ResponseMessage
+
+class MyChannelFilter(ChannelFilter):
+    """Filter for MyChannel message transformation."""
+    
+    def __init__(self, channels: List[str] = None, priority: int = 100):
+        """Initialize filter.
+        
+        Args:
+            channels: List of channel names (defaults to ["mychannel"])
+            priority: Execution order (default 100, lower executes first)
+        """
+        if channels is None:
+            channels = ["mychannel"]
+        super().__init__(channels=channels, priority=priority)
+    
+    async def filter(self, message: ResponseMessage) -> None:
+        """Transform message content in-place.
+        
+        This method is called by ResponseBus before routing to adapters.
+        Modify message.content directly to transform the message.
+        
+        Args:
+            message: ResponseMessage to transform (modified in-place)
+        """
+        if not message.content:
+            return
+        
+        # Apply transformations
+        message.content = message.content.replace("**", "*")
+        # ... more transformations
+```
+
+#### Step 2: Integrate with Your Action
+
+Register the filter in both `on_register()` and `on_startup()`:
+
+```python
+from jvagent.action.base import Action
+from .my_channel_filter import MyChannelFilter
+from .my_channel_adapter import MyChannelAdapter
+
+class MyChannelAction(Action):
+    """Action for MyChannel integration."""
+    
+    async def on_register(self) -> None:
+        """Register filter and adapter."""
+        # Register filter first (transforms messages)
+        filter = MyChannelFilter(channels=["mychannel"], priority=100)
+        await filter.initialize()
+        
+        # Register adapter (sends messages)
+        adapter = MyChannelAdapter(action=self)
+        await adapter.initialize()
+    
+    async def on_startup(self) -> None:
+        """Re-initialize filter and adapter on app restart."""
+        if not self.enabled or not self.is_configured():
+            return
+        
+        # Re-register filter
+        filter = MyChannelFilter(channels=["mychannel"], priority=100)
+        await filter.initialize()
+        
+        # Re-register adapter
+        adapter = MyChannelAdapter(action=self)
+        await adapter.initialize()
+```
+
+### Example: WhatsApp Filter
+
+See `jvagent/action/whatsapp/whatsapp_filter.py` for a complete implementation.
+
+The WhatsAppFilter transforms markdown and HTML to WhatsApp-compatible formatting:
+
+```python
+class WhatsAppFilter(ChannelFilter):
+    def __init__(self, channels: List[str] = None, priority: int = 100):
+        if channels is None:
+            channels = ["whatsapp"]
+        super().__init__(channels=channels, priority=priority)
+    
+    async def filter(self, message: ResponseMessage) -> None:
+        """Transform message for WhatsApp formatting."""
+        if not message.content:
+            return
+        
+        message.content = (
+            message.content.replace("**", "*")      # Markdown bold -> WhatsApp bold
+            .replace("<br/>", "\n")                  # HTML break -> newline
+            .replace("<b>", "*")                      # HTML bold -> WhatsApp bold
+            .replace("</b>", "*")
+        )
+```
+
+### Filter Priority and Chaining
+
+Multiple filters can be registered for the same channel. They execute in priority order:
+
+- **Lower priority executes first**: A filter with `priority=50` executes before `priority=100`
+- **Default priority is 100**: If not specified, filters use priority 100
+- **Chaining**: Each filter receives the message after previous filters have transformed it
+
+Example with multiple filters:
+
+```python
+# Filter 1: Convert markdown (priority 50 - executes first)
+markdown_filter = MarkdownFilter(channels=["whatsapp"], priority=50)
+await markdown_filter.initialize()
+
+# Filter 2: Add channel-specific formatting (priority 100 - executes second)
+formatting_filter = WhatsAppFormattingFilter(channels=["whatsapp"], priority=100)
+await formatting_filter.initialize()
+```
+
+### When to Use Filters vs. Adapters
+
+**Use Filters For:**
+- Content transformation (markdown, HTML, formatting)
+- Channel-specific formatting rules
+- Text replacements and sanitization
+- Adding prefixes/suffixes
+
+**Use Adapters For:**
+- API communication
+- Message delivery logic
+- Chunking long messages (channel-specific)
+- Error handling and retries
+
+**Best Practice**: Keep transformation logic in filters, delivery logic in adapters.
+
 ## API Reference
+
+### ChannelFilter Methods
+
+#### `async def initialize() -> bool`
+
+Initializes the filter by:
+1. Getting ResponseBus instance from App
+2. Registering itself with ResponseBus
+
+**Must be called** after instantiation. Typically called in:
+- `on_register()` - When action is first registered
+- `on_startup()` - When app restarts and action is loaded from database
+
+Returns `True` if initialization succeeded, `False` otherwise.
+
+#### `async def filter(message: ResponseMessage) -> None`
+
+Transforms the message content in-place. This method is called by ResponseBus before routing messages to adapters.
+
+**Must be implemented** by subclasses.
+
+Modifies `message.content` directly. No return value (all transformations are in-place).
+
+#### `def applies_to_channel(channel: str) -> bool`
+
+Checks if this filter applies to a specific channel.
+
+Returns `True` if filter applies to the channel, `False` otherwise.
 
 ### ChannelAdapter Methods
 
@@ -243,41 +521,72 @@ Sends the message to the external API. This method is called by ResponseBus when
 
 **Must be implemented** by subclasses.
 
+**Note**: The message content has already been transformed by filters before reaching the adapter.
+
 Returns `True` if message was sent successfully, `False` otherwise.
 
 ### ResponseBus Methods
+
+#### `async def register_channel_filter(filter: ChannelFilter) -> None`
+
+Registers a channel filter with the response bus. Filters are stored in priority order (lower priority executes first). Multiple filters can be registered for the same channel. Called automatically by `filter.initialize()`.
 
 #### `async def register_channel_adapter(adapter: ChannelAdapter) -> None`
 
 Registers a channel adapter with the response bus. Replaces any existing adapter for the same channel (single adapter per channel). This ensures serverless-friendly behavior where adapters are replaced on cold starts. Called automatically by `adapter.initialize()`.
 
-#### `async def publish_message(...) -> ResponseMessage`
+#### `async def publish_adhoc(...) -> ResponseMessage`
 
-Publishes a message to the bus. For adhoc messages, automatically routes to registered adapters for the message's channel.
+Publishes adhoc content. Stream mode and `streaming_complete` control accumulation and when filters/adapters run.
+
+**Non-streaming (`stream=False`)**: Applies filters, sends to adapter, appends to `interaction.response`, notifies subscribers.
+
+**Streaming (`stream=True`, `streaming_complete=False`)**: Accumulates chunk, emits `stream_chunk` to subscribers only.
+
+**Streaming (`stream=True`, `streaming_complete=True`)**: Joins accumulated chunks, applies filters, sends to adapter, sets `interaction.response`, emits final signal, clears accumulator.
 
 **Parameters:**
 - `session_id`: Session identifier (required)
-- `content`: Message content (required)
-- `channel`: Target communication channel (default: "default")
-- `message_type`: Type of message - "adhoc", "stream_chunk", or "final" (default: "adhoc")
+- `content`: Message content or chunk (required)
+- `channel`: Target channel (required)
+- `stream`: From `visitor.stream`; if True, content may be streamed in chunks (default: False)
 - `interaction_id`: Parent interaction ID (optional)
+- `interaction`: Interaction instance; if provided, avoids DB lookup for append (optional)
 - `user_id`: User identifier (recipient) - **required for channel adapters** (optional)
 - `metadata`: Additional metadata (optional)
-- `message_id`: Optional message ID to reuse (optional)
+- `streaming_complete`: True for last chunk or single message; only relevant when `stream=True` (default: True)
 
-## Message Types
+#### `async def commit_pending_adhoc(interaction_id: str, interaction: Any) -> None`
 
-Channel adapters only receive **`adhoc`** messages. ResponseBus routes adhoc messages directly to adapters when published with a matching channel.
+Commits any pending streaming adhoc content for the interaction. Finalizes accumulated content (filters/adapters), writes to `interaction.response`, and saves. Called by the walker between action transitions so the next action sees persisted response state.
 
-- **`adhoc`**: Standalone messages published explicitly - routed to channel adapters
-- **`final`**: Complete responses when an interaction is finalized - not routed to adapters
-- **`stream_chunk`**: Individual chunks from streaming responses - not routed to adapters
+#### `async def finalize_interaction(interaction_id: str, interaction: Any, session_id: str, channel: str = "default") -> None`
+
+Finalizes an interaction: calls `commit_pending_adhoc`, attaches observability events to the interaction if present, emits an internal final signal to subscribers (no filters/adapters), then cleans up message/observability/adhoc buffers for the interaction.
+
+## Message Types (Internal)
+
+ResponseBus uses these message types internally. Channel filters and adapters only receive **adhoc** content (after accumulation when streaming).
+
+- **`adhoc`**: Full message content delivered to filters and adapters; appended to `interaction.response`
+- **`stream_chunk`**: Streaming chunk sent to subscribers only; not filtered or routed to adapters
+- **`final`**: End-of-stream signal sent to subscribers only; not filtered or routed to adapters
 
 ## Best Practices
 
+### Filters
+
+1. **Transform In-Place**: Always modify `message.content` directly - don't return a new value
+2. **Handle Empty Content**: Check if `message.content` exists before transforming
+3. **Use Appropriate Priority**: Set priority based on transformation order needs (lower = earlier)
+4. **Multi-Channel Support**: Use filter for multiple channels if transformation logic is shared
+5. **Keep Filters Focused**: Each filter should handle a specific transformation concern
+
+### Adapters
+
 1. **Pass Action Instance**: Always pass your action instance to the adapter so it can access configuration (API keys, URLs, etc.)
 
-2. **Don't Store Adapter References**: Don't store adapter references on Action instances. The adapter is stored in ResponseBus and can be accessed via `get_adapter()` helper method if needed.
+2. **Don't Store References**: Don't store adapter or filter references on Action instances. They are stored in ResponseBus.
 
 3. **Handle Errors Gracefully**: Always wrap API calls in try/except and return `False` on failure
 
@@ -289,21 +598,32 @@ Channel adapters only receive **`adhoc`** messages. ResponseBus routes adhoc mes
 
 7. **Log Appropriately**: Use appropriate log levels (warning for recoverable errors, error for failures)
 
-7. **Serverless Considerations**: The single adapter per channel design ensures that adapters are automatically replaced on registration, preventing orphaned instances in serverless environments
+8. **Serverless Considerations**: The single adapter per channel design ensures that adapters are automatically replaced on registration, preventing orphaned instances in serverless environments
+
+9. **Content Already Transformed**: Adapters receive messages that have already been transformed by filters - don't duplicate transformation logic
 
 ## Troubleshooting
 
+### Filter Not Transforming Messages
+
+1. **Check channel name**: Ensure the channel in `publish_adhoc()` matches the filter's channels list
+2. **Verify initialization**: Make sure `filter.initialize()` was called and returned `True` in `on_register()` or `on_startup()`
+3. **Streaming**: Filters run only when a full adhoc message is delivered (non-streaming immediately; streaming when `streaming_complete=True` or on commit)
+4. **Check priority**: Verify filter priority if multiple filters are registered
+5. **App restart**: If filter worked before restart but not after, ensure `on_startup()` is implemented to re-initialize the filter
+
 ### Adapter Not Receiving Messages
 
-1. **Check channel name**: Ensure the channel in `publish_message()` matches the adapter's channel
+1. **Check channel name**: Ensure the channel in `publish_adhoc()` matches the adapter's channel
 2. **Verify initialization**: Make sure `adapter.initialize()` was called and returned `True` in `on_register()` or `on_startup()`
-3. **Check message type**: Only `adhoc` messages are routed to adapters
+3. **Streaming**: Adapters receive only full adhoc content (non-streaming immediately; streaming when `streaming_complete=True` or on commit)
 4. **App restart**: If adapter worked before restart but not after, ensure `on_startup()` is implemented to re-initialize the adapter
 
 ### Messages Not Being Delivered
 
 1. **Check `send()` return value**: Ensure it's returning `True` on success
-2. **Check logs**: Look for error messages in adapter logs
+2. **Check logs**: Look for error messages in adapter and filter logs
 3. **Verify user_id**: Ensure `user_id` parameter is passed when publishing adhoc messages. Adapters require `message.user_id` to be set.
-4. **Verify initialization**: Check that adapter was successfully initialized
-5. **Check for errors**: ResponseBus now properly awaits adapter.send() and logs errors immediately
+4. **Verify initialization**: Check that both filter and adapter were successfully initialized
+5. **Check for errors**: ResponseBus properly awaits filter.filter() and adapter.send() and logs errors immediately
+6. **Check filter transformations**: Verify filters are not removing or corrupting message content

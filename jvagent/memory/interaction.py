@@ -65,7 +65,11 @@ class Interaction(DeferredSaveMixin, Node):
     # Routing (from InteractRouter)
     interpretation: Optional[str] = attribute(
         default=None,
-        description="LLM-generated interpretation of user intent (< 50 words)"
+        description="LLM-generated interpretation of user intent (< 80 words)"
+    )
+    intent_type: Optional[str] = attribute(
+        default=None,
+        description="Classified intent type: REQUEST, QUERY, ANSWER, NAVIGATION, CONTINUATION, or AMBIGUOUS"
     )
     anchors: List[str] = attribute(
         default_factory=list,

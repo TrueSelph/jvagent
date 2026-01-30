@@ -306,8 +306,6 @@ class LanguageModelAction(BaseModelAction, ABC):
         Returns:
             Generated text response
         """
-        import asyncio
-        
         # Validate: if response_bus is provided, interaction is required
         if response_bus and not interaction:
             raise ValueError("interaction is required when response_bus is provided")
@@ -322,7 +320,9 @@ class LanguageModelAction(BaseModelAction, ABC):
             if not session_id:
                 raise ValueError("interaction must have session_id when response_bus is provided")
             
-            # Non-streaming: publish final message and return
+            user_id = getattr(interaction, "user_id", None)
+
+            # Non-streaming: publish adhoc and return
             if not stream:
                 result = await self.query(
                     prompt,
@@ -334,21 +334,19 @@ class LanguageModelAction(BaseModelAction, ABC):
                     **kwargs,
                 )
                 full_text = await result.get_response()
-                
-                # Publish final message to ResponseBus
-                asyncio.create_task(
-                    response_bus.publish_message(
-                        session_id=session_id,
-                        content=full_text,
-                        channel=channel,
-                        message_type="final",
-                        interaction_id=interaction_id,
-                    )
+                await response_bus.publish_adhoc(
+                    session_id=session_id,
+                    content=full_text,
+                    channel=channel,
+                    stream=False,
+                    interaction_id=interaction_id,
+                    interaction=interaction,
+                    user_id=user_id,
+                    streaming_complete=True,
                 )
-                
                 return full_text
-            
-            # Streaming: publish chunks and final message
+
+            # Streaming: publish chunks then flush with streaming_complete=True
             result = await self.query(
                 prompt,
                 stream=True,
@@ -363,34 +361,31 @@ class LanguageModelAction(BaseModelAction, ABC):
             async for chunk in result.iter_stream():
                 if chunk:
                     chunks.append(chunk)
-                    # Publish each chunk to ResponseBus
-                    asyncio.create_task(
-                        response_bus.publish_message(
-                            session_id=session_id,
-                            content=chunk,
-                            channel=channel,
-                            message_type="stream_chunk",
-                            interaction_id=interaction_id,
-                        )
+                    await response_bus.publish_adhoc(
+                        session_id=session_id,
+                        content=chunk,
+                        channel=channel,
+                        stream=True,
+                        interaction_id=interaction_id,
+                        interaction=interaction,
+                        user_id=user_id,
+                        streaming_complete=False,
                     )
 
             full_text = "".join(chunks)
-            
-            # Ensure response is cached in result (for observability)
             if not result.response:
                 result.response = full_text
-            
-            # Publish final message to ResponseBus
-            asyncio.create_task(
-                response_bus.publish_message(
-                    session_id=session_id,
-                    content=full_text,
-                    channel=channel,
-                    message_type="final",
-                    interaction_id=interaction_id,
-                )
+
+            await response_bus.publish_adhoc(
+                session_id=session_id,
+                content="",
+                channel=channel,
+                stream=True,
+                interaction_id=interaction_id,
+                interaction=interaction,
+                user_id=user_id,
+                streaming_complete=True,
             )
-            
             return full_text
         
         # No ResponseBus: just return the response without publishing

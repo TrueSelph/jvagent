@@ -9,6 +9,7 @@ import importlib.util
 import logging
 import os
 import sys
+import types
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Type
 
@@ -282,6 +283,34 @@ class ActionLoader:
         except Exception as e:
             logger.warning(f"Error installing dependencies for {action_name}: {e}")
 
+    def _ensure_namespace_packages(self, module_name: str, action_dir: Path) -> None:
+        """Ensure all parent namespace packages exist for a module path.
+
+        Creates and registers synthetic namespace packages in sys.modules for
+        each level of the module hierarchy. This is required for Lambda and
+        other strict environments where Python's import system expects parent
+        packages to exist.
+
+        Args:
+            module_name: Full module name (e.g., "jvagent.actions.ns.agent.action")
+            action_dir: Directory containing the action (used for __path__)
+        """
+        parts = module_name.split(".")
+
+        # Create namespace packages for all parent levels
+        # e.g., for "jvagent.actions.ns.agent.action":
+        # - jvagent.actions
+        # - jvagent.actions.ns
+        # - jvagent.actions.ns.agent
+        # - jvagent.actions.ns.agent.action_ns (if applicable)
+        for i in range(2, len(parts)):  # Start at 2 to skip "jvagent.actions" becoming just "jvagent"
+            parent_name = ".".join(parts[:i])
+            if parent_name not in sys.modules:
+                parent_module = types.ModuleType(parent_name)
+                parent_module.__package__ = parent_name
+                parent_module.__path__ = [str(action_dir.parent)]  # Approximate path
+                sys.modules[parent_name] = parent_module
+
     def _load_action_module(
         self,
         module_name: str,
@@ -304,6 +333,9 @@ class ActionLoader:
         Returns:
             Action class if successfully loaded, None otherwise
         """
+        # Ensure parent namespace packages exist before loading
+        self._ensure_namespace_packages(module_name, action_dir)
+
         init_file = action_dir / "__init__.py"
         module_file = action_dir / f"{action_name}.py"
 
