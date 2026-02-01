@@ -203,7 +203,8 @@ class TestModelAction:
         assert messages[2]["role"] == "user"
         assert messages[2]["content"] == "How are you?"
 
-    def test_track_usage(self):
+    @pytest.mark.asyncio
+    async def test_track_usage(self):
         """Test usage tracking."""
 
         class MockModelAction(ModelAction):
@@ -218,12 +219,12 @@ class TestModelAction:
         assert action.total_requests == 0
         assert action.total_tokens == 0
 
-        action.track_usage({"total_tokens": 100})
+        await action.track_usage({"total_tokens": 100})
 
         assert action.total_requests == 1
         assert action.total_tokens == 100
 
-        action.track_usage({"total_tokens": 50})
+        await action.track_usage({"total_tokens": 50})
 
         assert action.total_requests == 2
         assert action.total_tokens == 150

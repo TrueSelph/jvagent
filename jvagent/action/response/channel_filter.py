@@ -32,15 +32,17 @@ class ChannelFilter(ABC):
     - filter(): Transform message content in-place
     """
 
-    def __init__(self, channels: List[str], priority: int = 100):
+    def __init__(self, channels: List[str], priority: int = 100, fail_fast: bool = False):
         """Initialize channel filter.
 
         Args:
             channels: List of channel names this filter handles (e.g., ["whatsapp", "web"])
             priority: Execution order (lower numbers execute first, default 100)
+            fail_fast: If True, filter errors halt the chain and skip delivery
         """
         self.channels = channels
         self.priority = priority
+        self.fail_fast = fail_fast
         self.response_bus: Optional[ResponseBus] = None
         self._initialized: bool = False
 

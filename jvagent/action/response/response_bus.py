@@ -24,6 +24,7 @@ class AdhocAccumulator:
     message_id: str = ""
     session_id: str = ""
     interaction_id: str = ""
+    started_at: float = field(default_factory=time.time)
 
 # Forward declaration for type hints
 if TYPE_CHECKING:
@@ -48,9 +49,13 @@ class ResponseBus:
         _subscriber_preferences: Subscription preferences per callback (receive_chunks)
         _message_buffers: Unified buffer for all ResponseMessage objects per interaction_id (in-order)
         _adhoc_accumulation: Streaming adhoc chunks per interaction_id until streaming_complete (AdhocAccumulator)
-        _observability_buffers: Buffers for observability events per interaction_id
         _lock: Async lock for thread-safe operations
     """
+
+    # Cleanup configuration
+    CLEANUP_INTERVAL_SECONDS = 60      # Max once per 60s for lazy cleanup
+    BUFFER_TTL_SECONDS = 3600          # 1 hour TTL for message/observability buffers
+    ACCUMULATOR_TIMEOUT_SECONDS = 120  # 2 min timeout for incomplete streams
 
     _instance: Optional["ResponseBus"] = None
     _lock: asyncio.Lock = asyncio.Lock()
@@ -69,7 +74,6 @@ class ResponseBus:
         self._subscriber_preferences: Dict[Callable[[ResponseMessage], Any], Dict[str, Any]] = {}
         # interaction_id -> in-order ResponseMessage objects published for that interaction
         self._message_buffers: Dict[str, List[ResponseMessage]] = {}
-        self._observability_buffers: Dict[str, List[Dict[str, Any]]] = {}  # interaction_id -> events
         self._buffer_timestamps: Dict[str, float] = {}  # interaction_id -> creation time for TTL cleanup
         
         # Channel adapter registry: maps channel name -> single adapter instance
@@ -84,6 +88,9 @@ class ResponseBus:
         # Configuration
         self._max_session_queue_size = 1000  # Bounded storage per session
         self._buffer_ttl_seconds = 3600  # 1 hour TTL for accumulation/observability buffers
+        
+        # Cleanup state
+        self._last_cleanup_time: float = 0.0
 
     @classmethod
     async def get_instance(cls) -> "ResponseBus":
@@ -101,6 +108,36 @@ class ResponseBus:
                 if cls._instance is None:
                     cls._instance = cls()
         return cls._instance
+
+    def _maybe_cleanup(self) -> None:
+        """Lazy cleanup - evict expired entries only. Runs at most once per CLEANUP_INTERVAL_SECONDS.
+        
+        IMPORTANT: Only evicts by TTL/timeout, never by count. Size-based eviction is unsafe
+        for concurrent users - it could evict an active user's accumulator mid-stream.
+        """
+        now = time.time()
+        if now - self._last_cleanup_time < self.CLEANUP_INTERVAL_SECONDS:
+            return
+        self._last_cleanup_time = now
+        
+        # Evict expired accumulators (incomplete streams older than timeout)
+        expired_acc = [
+            k for k, v in self._adhoc_accumulation.items()
+            if now - v.started_at > self.ACCUMULATOR_TIMEOUT_SECONDS
+        ]
+        for k in expired_acc:
+            logger.debug(f"Evicting expired accumulator for interaction {k}")
+            self._adhoc_accumulation.pop(k, None)
+        
+        # Evict expired buffers (interactions never finalized within TTL)
+        expired_buf = [
+            k for k, ts in self._buffer_timestamps.items()
+            if now - ts > self.BUFFER_TTL_SECONDS
+        ]
+        for k in expired_buf:
+            logger.debug(f"Evicting expired buffers for interaction {k}")
+            self._message_buffers.pop(k, None)
+            self._buffer_timestamps.pop(k, None)
 
     def _get_or_create_accumulator(
         self,
@@ -124,8 +161,10 @@ class ResponseBus:
             )
         return self._adhoc_accumulation[interaction_id]
 
-    def _enqueue_and_notify(self, message: ResponseMessage, session_id: str) -> None:
-        """Add message to session queue, enforce bound, notify subscribers."""
+    async def _enqueue_and_notify(self, message: ResponseMessage, session_id: str) -> None:
+        """Add message to session queue, enforce bound, notify subscribers.
+        Awaits async callbacks so SSE consumer receives messages before walk_task.done() check.
+        """
         if session_id not in self._session_queues:
             self._session_queues[session_id] = []
         queue = self._session_queues[session_id]
@@ -142,7 +181,7 @@ class ResponseBus:
                     if callable(callback):
                         result = callback(message)
                         if asyncio.iscoroutine(result):
-                            asyncio.create_task(self._safe_awaitable(result))
+                            await result
                 except Exception as e:
                     logger.error(
                         f"Error notifying subscriber for session {session_id}: {e}",
@@ -158,7 +197,7 @@ class ResponseBus:
         self._message_buffers[interaction_id].append(message)
         self._buffer_timestamps[interaction_id] = time.time()
 
-    async def publish_adhoc(
+    async def publish(
         self,
         session_id: str,
         content: str,
@@ -176,6 +215,9 @@ class ResponseBus:
         Streaming (stream=True), streaming_complete=False: Accumulate chunk, emit stream_chunk to subscribers.
         Streaming (stream=True), streaming_complete=True: Flush accumulator: filters/adapters on full content,
         set interaction.response, emit final signal, clear accumulator.
+        Simulated streaming: When stream=True with streaming_complete=True and non-empty content (whole content
+        in one shot), content is split using language-model tokenization (see chunking.chunk_text_by_lm_tokens)
+        and emitted as stream_chunks so the client sees token-by-token delivery.
 
         Args:
             session_id: Session identifier
@@ -191,6 +233,9 @@ class ResponseBus:
         Returns:
             Created ResponseMessage (stream_chunk, adhoc, or final depending on path).
         """
+        # Throttled TTL-based cleanup
+        self._maybe_cleanup()
+
         if not stream:
             # Non-streaming: immediate filters, adapter, accumulation, one adhoc message
             message = ResponseMessage(
@@ -202,23 +247,18 @@ class ResponseBus:
                 message_type="adhoc",
                 metadata=metadata or {},
             )
-            await self._apply_channel_filters(message, channel)
-            if channel in self._channel_adapters:
-                await self._safe_adapter_send(self._channel_adapters[channel], message)
-            if (interaction_id or interaction) and message.content:
-                if interaction is not None:
-                    await self._append_to_interaction_response_impl(
-                        interaction=interaction,
-                        message_type="adhoc",
-                        content=message.content,
-                    )
-                else:
-                    await self._append_to_interaction_response(
-                        interaction_id=interaction_id,
-                        message_type="adhoc",
-                        content=message.content,
-                    )
-            self._enqueue_and_notify(message, session_id)
+            filter_ok = await self._apply_channel_filters(message, channel)
+            if filter_ok:
+                if channel in self._channel_adapters:
+                    await self._send_to_adapter(self._channel_adapters[channel], message)
+                if (interaction_id or interaction) and message.content:
+                    if interaction is not None:
+                        await self._append_to_interaction_response_impl(
+                            interaction=interaction,
+                            message_type="adhoc",
+                            content=message.content,
+                        )
+            await self._enqueue_and_notify(message, session_id)
             if interaction_id:
                 self._append_to_message_buffers(interaction_id, message)
             return message
@@ -235,85 +275,149 @@ class ResponseBus:
                 message_type="adhoc",
                 metadata=metadata or {},
             )
-            await self._apply_channel_filters(message, channel)
-            if channel in self._channel_adapters:
-                await self._safe_adapter_send(self._channel_adapters[channel], message)
-            if interaction:
-                await self._append_to_interaction_response_impl(
-                    interaction=interaction,
-                    message_type="adhoc",
-                    content=message.content,
-                )
-            self._enqueue_and_notify(message, session_id)
+            filter_ok = await self._apply_channel_filters(message, channel)
+            if filter_ok:
+                if channel in self._channel_adapters:
+                    await self._send_to_adapter(self._channel_adapters[channel], message)
+                if interaction:
+                    await self._append_to_interaction_response_impl(
+                        interaction=interaction,
+                        message_type="adhoc",
+                        content=message.content,
+                    )
+            await self._enqueue_and_notify(message, session_id)
             return message
 
-        acc = self._get_or_create_accumulator(
-            interaction_id=interaction_id,
-            session_id=session_id,
-            channel=channel,
-            user_id=user_id,
-            metadata=metadata,
-        )
-        acc.chunks.append(content)
+        # Auto-detect whole content in stream mode: one call with stream=True, streaming_complete=True, non-empty content
+        if stream and streaming_complete and content:
+            from jvagent.action.response.chunking import chunk_text_by_lm_tokens
 
-        if not streaming_complete:
-            # Emit chunk to subscribers only
-            chunk_message = ResponseMessage(
+            acc = self._get_or_create_accumulator(
+                interaction_id=interaction_id,
+                session_id=session_id,
+                channel=channel,
+                user_id=user_id,
+                metadata=metadata,
+            )
+            for chunk in chunk_text_by_lm_tokens(content):
+                acc.chunks.append(chunk)
+                chunk_message = ResponseMessage(
+                    id=acc.message_id,
+                    session_id=session_id,
+                    user_id=user_id or "",
+                    interaction_id=interaction_id,
+                    content=chunk,
+                    channel=channel,
+                    message_type="stream_chunk",
+                    metadata=metadata or {},
+                )
+                await self._enqueue_and_notify(chunk_message, session_id)
+                self._append_to_message_buffers(interaction_id, chunk_message)
+
+            full_content = "".join(acc.chunks)
+            flush_message = ResponseMessage(
+                session_id=session_id,
+                user_id=acc.user_id or "",
+                interaction_id=interaction_id,
+                content=full_content,
+                channel=acc.channel,
+                message_type="adhoc",
+                metadata=acc.metadata or {},
+            )
+            filter_ok = await self._apply_channel_filters(flush_message, acc.channel)
+            if filter_ok:
+                if acc.channel in self._channel_adapters:
+                    await self._send_to_adapter(self._channel_adapters[acc.channel], flush_message)
+                if interaction is not None and flush_message.content:
+                    await self._append_to_interaction_response_impl(
+                        interaction=interaction,
+                        message_type="adhoc",
+                        content=flush_message.content,
+                    )
+            self._append_to_message_buffers(interaction_id, flush_message)
+            final_message = ResponseMessage(
                 id=acc.message_id,
                 session_id=session_id,
-                user_id=user_id or "",
+                user_id=acc.user_id or "",
                 interaction_id=interaction_id,
-                content=content,
-                channel=channel,
-                message_type="stream_chunk",
-                metadata=metadata or {},
+                content="",
+                channel=acc.channel,
+                message_type="final",
+                metadata=acc.metadata or {},
             )
-            self._enqueue_and_notify(chunk_message, session_id)
-            self._append_to_message_buffers(interaction_id, chunk_message)
-            return chunk_message
+            await self._enqueue_and_notify(final_message, session_id)
+            self._append_to_message_buffers(interaction_id, final_message)
+            self._adhoc_accumulation.pop(interaction_id, None)
+            return final_message
 
-        # streaming_complete=True: flush accumulator
-        full_content = "".join(acc.chunks)
-        flush_message = ResponseMessage(
-            session_id=session_id,
-            user_id=acc.user_id or "",
-            interaction_id=interaction_id,
-            content=full_content,
-            channel=acc.channel,
-            message_type="adhoc",
-            metadata=acc.metadata or {},
-        )
-        await self._apply_channel_filters(flush_message, acc.channel)
-        if acc.channel in self._channel_adapters:
-            await self._safe_adapter_send(self._channel_adapters[acc.channel], flush_message)
-        if full_content and (interaction or interaction_id):
-            if interaction is not None:
-                await self._append_to_interaction_response_impl(
-                    interaction=interaction,
-                    message_type="adhoc",
-                    content=flush_message.content,
-                )
-            else:
-                await self._append_to_interaction_response(
+        try:
+            acc = self._get_or_create_accumulator(
+                interaction_id=interaction_id,
+                session_id=session_id,
+                channel=channel,
+                user_id=user_id,
+                metadata=metadata,
+            )
+            acc.chunks.append(content)
+
+            if not streaming_complete:
+                # Emit chunk to subscribers only
+                chunk_message = ResponseMessage(
+                    id=acc.message_id,
+                    session_id=session_id,
+                    user_id=user_id or "",
                     interaction_id=interaction_id,
-                    message_type="adhoc",
-                    content=flush_message.content,
+                    content=content,
+                    channel=channel,
+                    message_type="stream_chunk",
+                    metadata=metadata or {},
                 )
-        # Final signal (empty content) for end-of-stream
-        final_message = ResponseMessage(
-            id=acc.message_id,
-            session_id=session_id,
-            user_id=acc.user_id or "",
-            interaction_id=interaction_id,
-            content="",
-            channel=acc.channel,
-            message_type="final",
-            metadata=acc.metadata or {},
-        )
-        self._enqueue_and_notify(final_message, session_id)
-        self._append_to_message_buffers(interaction_id, final_message)
-        self._adhoc_accumulation.pop(interaction_id, None)
-        return final_message
+                await self._enqueue_and_notify(chunk_message, session_id)
+                self._append_to_message_buffers(interaction_id, chunk_message)
+                return chunk_message
+
+            # streaming_complete=True: flush accumulator
+            full_content = "".join(acc.chunks)
+            flush_message = ResponseMessage(
+                session_id=session_id,
+                user_id=acc.user_id or "",
+                interaction_id=interaction_id,
+                content=full_content,
+                channel=acc.channel,
+                message_type="adhoc",
+                metadata=acc.metadata or {},
+            )
+            filter_ok = await self._apply_channel_filters(flush_message, acc.channel)
+            if filter_ok:
+                if acc.channel in self._channel_adapters:
+                    await self._send_to_adapter(self._channel_adapters[acc.channel], flush_message)
+                if full_content and (interaction or interaction_id):
+                    if interaction is not None:
+                        await self._append_to_interaction_response_impl(
+                            interaction=interaction,
+                            message_type="adhoc",
+                            content=flush_message.content,
+                        )
+            # Final signal (empty content) for end-of-stream
+            final_message = ResponseMessage(
+                id=acc.message_id,
+                session_id=session_id,
+                user_id=acc.user_id or "",
+                interaction_id=interaction_id,
+                content="",
+                channel=acc.channel,
+                message_type="final",
+                metadata=acc.metadata or {},
+            )
+            await self._enqueue_and_notify(final_message, session_id)
+            self._append_to_message_buffers(interaction_id, final_message)
+            self._adhoc_accumulation.pop(interaction_id, None)
+            return final_message
+        except Exception as e:
+            # Clean up orphaned accumulator on error
+            if interaction_id:
+                self._adhoc_accumulation.pop(interaction_id, None)
+            raise
 
     async def commit_pending_adhoc(
         self,
@@ -341,15 +445,16 @@ class ResponseBus:
             message_type="adhoc",
             metadata=acc.metadata or {},
         )
-        await self._apply_channel_filters(message, acc.channel)
-        if acc.channel in self._channel_adapters:
-            await self._safe_adapter_send(self._channel_adapters[acc.channel], message)
-        if full_content and interaction:
-            await self._append_to_interaction_response_impl(
-                interaction=interaction,
-                message_type="adhoc",
-                content=message.content,
-            )
+        filter_ok = await self._apply_channel_filters(message, acc.channel)
+        if filter_ok:
+            if acc.channel in self._channel_adapters:
+                await self._send_to_adapter(self._channel_adapters[acc.channel], message)
+            if full_content and interaction:
+                await self._append_to_interaction_response_impl(
+                    interaction=interaction,
+                    message_type="adhoc",
+                    content=message.content,
+                )
         self._adhoc_accumulation.pop(interaction_id, None)
 
     async def _emit_final_signal(
@@ -372,7 +477,7 @@ class ResponseBus:
             message_type="final",
             metadata=metadata or {},
         )
-        self._enqueue_and_notify(final_message, session_id)
+        await self._enqueue_and_notify(final_message, session_id)
 
     async def _safe_awaitable(self, awaitable: Any) -> None:
         """Safely await a coroutine/awaitable with error handling."""
@@ -417,49 +522,24 @@ class ResponseBus:
                     pass
             await interaction.save()
 
-    async def _append_to_interaction_response(
-        self,
-        interaction_id: str,
-        message_type: str,
-        content: str,
-    ) -> None:
-        """Append published content to interaction.response by loading interaction by ID.
-
-        Args:
-            interaction_id: Interaction ID to update
-            message_type: "adhoc" or "stream_chunk"
-            content: Content to append (already filtered)
+    async def _send_to_adapter(self, adapter: "ChannelAdapter", message: ResponseMessage) -> bool:
+        """Send message to adapter with lightweight retry (max 2 attempts).
+        
+        Returns:
+            True if sent successfully, False on permanent failure or exhausted retries.
         """
-        try:
-            from jvagent.memory.interaction import Interaction
-
-            interaction = await Interaction.get(interaction_id)
-            if not interaction:
-                logger.warning(
-                    f"ResponseBus: Interaction not found for id {interaction_id}; "
-                    "cannot append to interaction.response"
-                )
-                return
-
-            await self._append_to_interaction_response_impl(
-                interaction=interaction,
-                message_type=message_type,
-                content=content,
-            )
-        except Exception as e:
-            logger.warning(
-                f"ResponseBus: Could not append to interaction.response for {interaction_id}: {e}"
-            )
-
-    async def _safe_adapter_send(self, adapter: "ChannelAdapter", message: ResponseMessage) -> None:
-        """Safely invoke adapter.send() with error handling."""
-        try:
-            await adapter.send(message)
-        except Exception as e:
-            logger.error(
-                f"Error sending message via channel adapter '{adapter.channel}': {e}",
-                exc_info=True,
-            )
+        for attempt in range(2):
+            try:
+                if await adapter.send(message):
+                    return True
+                return False  # Permanent failure (e.g., invalid recipient)
+            except Exception as e:
+                if attempt == 0:
+                    await asyncio.sleep(0.5)
+                    logger.warning(f"Adapter retry for {adapter.channel}: {e}")
+                else:
+                    logger.error(f"Adapter failed for {adapter.channel}: {e}", exc_info=True)
+        return False
 
     async def subscribe(
         self,
@@ -510,37 +590,6 @@ class ResponseBus:
         if callback in self._subscriber_preferences:
             del self._subscriber_preferences[callback]
 
-    async def publish_observability(
-        self,
-        interaction_id: str,
-        event_type: str,
-        data: Dict[str, Any],
-    ) -> None:
-        """Publish observability event (model calls, embeddings, etc.).
-
-        Only emits when interaction_id is available.
-
-        Args:
-            interaction_id: Interaction ID this event belongs to
-            event_type: Type of event ("model_call", "embedding_call", "action_metric")
-            data: Event data (duration, tokens, model name, provider, cost estimates, etc.)
-        """
-        if not interaction_id:
-            return  # Only emit when interaction_id is available
-        
-        if interaction_id not in self._observability_buffers:
-            self._observability_buffers[interaction_id] = []
-            # Set timestamp if not already set (may have been set by accumulation)
-            if interaction_id not in self._buffer_timestamps:
-                self._buffer_timestamps[interaction_id] = time.time()
-        
-        event = {
-            "event_type": event_type,
-            "data": data,
-            "timestamp": time.time(),
-        }
-        self._observability_buffers[interaction_id].append(event)
-
     async def finalize_interaction(
         self,
         interaction_id: str,
@@ -556,35 +605,28 @@ class ResponseBus:
             session_id: Session ID for publishing final message
             channel: Channel for final message
         """
+        # Commit any pending streaming content
         await self.commit_pending_adhoc(interaction_id, interaction)
 
-        observability_events: List[Dict[str, Any]] = []
-        if interaction_id in self._observability_buffers:
-            observability_events = self._observability_buffers[interaction_id]
-
-        if observability_events and hasattr(interaction, "observability_metrics"):
-            current_metrics = getattr(interaction, "observability_metrics", None)
-            if current_metrics != observability_events:
-                interaction.observability_metrics = observability_events
-                await interaction.save()
-
+        # Emit final signal
         user_id = getattr(interaction, "user_id", None) if interaction else None
         await self._emit_final_signal(
             session_id=session_id,
             channel=channel,
             interaction_id=interaction_id,
             user_id=user_id,
-            metadata={"observability_events": len(observability_events)},
+            metadata={},
         )
 
-        if interaction_id in self._message_buffers:
-            del self._message_buffers[interaction_id]
-        if interaction_id in self._observability_buffers:
-            del self._observability_buffers[interaction_id]
-        if interaction_id in self._buffer_timestamps:
-            del self._buffer_timestamps[interaction_id]
+        # Clean up request-scoped resources (adhoc, message buffers)
+        self._adhoc_accumulation.pop(interaction_id, None)
+        self._message_buffers.pop(interaction_id, None)
 
+        # Clean old session messages
         await self._cleanup_old_session_messages(session_id)
+        
+        # Trigger lazy cleanup (throttled)
+        self._maybe_cleanup()
 
     async def get_messages(self, session_id: str) -> List[ResponseMessage]:
         """Get messages for a session.
@@ -651,13 +693,12 @@ class ResponseBus:
         expired_interaction_ids = [
             interaction_id
             for interaction_id, timestamp in self._buffer_timestamps.items()
-            if current_time - timestamp > self._buffer_ttl_seconds
+            if current_time - timestamp > self.BUFFER_TTL_SECONDS
         ]
         
         for interaction_id in expired_interaction_ids:
             logger.debug(f"Cleaning up expired buffers for interaction {interaction_id}")
             self._message_buffers.pop(interaction_id, None)
-            self._observability_buffers.pop(interaction_id, None)
             self._adhoc_accumulation.pop(interaction_id, None)
             self._buffer_timestamps.pop(interaction_id, None)
 
@@ -710,7 +751,7 @@ class ResponseBus:
             f"(priority: {filter.priority}, total filters: {len(self._channel_filters)})"
         )
 
-    async def _apply_channel_filters(self, message: ResponseMessage, channel: str) -> None:
+    async def _apply_channel_filters(self, message: ResponseMessage, channel: str) -> bool:
         """Apply all registered filters for a channel to the message.
         
         Filters execute in priority order (lower priority first).
@@ -719,6 +760,9 @@ class ResponseBus:
         Args:
             message: ResponseMessage to transform
             channel: Channel name to filter for
+            
+        Returns:
+            False if a fail_fast filter fails, True otherwise
         """
         # Get all filters that apply to this channel, sorted by priority
         applicable_filters = [
@@ -727,7 +771,7 @@ class ResponseBus:
         ]
         
         if not applicable_filters:
-            return
+            return True
         
         # Apply each filter in priority order
         for filter_instance in applicable_filters:
@@ -739,6 +783,9 @@ class ResponseBus:
                     f"for channel '{channel}': {e}",
                     exc_info=True,
                 )
-                # Continue with other filters even if one fails
+                if getattr(filter_instance, 'fail_fast', False):
+                    return False
+        
+        return True
 
 

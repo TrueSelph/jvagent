@@ -80,7 +80,7 @@ class EmbeddingModelAction(BaseModelAction, ABC):
         # Track usage (approximate token count for embeddings)
         # Most embedding APIs don't provide token counts, so we estimate
         estimated_tokens = len(text.split())
-        self.track_usage({"total_tokens": estimated_tokens}, duration)
+        await self.track_usage({"total_tokens": estimated_tokens}, duration)
 
         logger.debug(
             f"Generated embedding: {len(vector)} dimensions, "

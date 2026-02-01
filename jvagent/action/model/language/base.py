@@ -334,7 +334,7 @@ class LanguageModelAction(BaseModelAction, ABC):
                     **kwargs,
                 )
                 full_text = await result.get_response()
-                await response_bus.publish_adhoc(
+                await response_bus.publish(
                     session_id=session_id,
                     content=full_text,
                     channel=channel,
@@ -361,7 +361,7 @@ class LanguageModelAction(BaseModelAction, ABC):
             async for chunk in result.iter_stream():
                 if chunk:
                     chunks.append(chunk)
-                    await response_bus.publish_adhoc(
+                    await response_bus.publish(
                         session_id=session_id,
                         content=chunk,
                         channel=channel,
@@ -376,7 +376,7 @@ class LanguageModelAction(BaseModelAction, ABC):
             if not result.response:
                 result.response = full_text
 
-            await response_bus.publish_adhoc(
+            await response_bus.publish(
                 session_id=session_id,
                 content="",
                 channel=channel,
@@ -557,7 +557,7 @@ class LanguageModelAction(BaseModelAction, ABC):
         # We'll emit after token estimation completes to avoid duplicate entries
         # For non-streaming, emit immediately
         if not (stream and result.is_streaming):
-            self.track_usage(usage_dict, duration)
+            await self.track_usage(usage_dict, duration)
         
         # For streaming results, schedule token estimation after stream completion
         if stream and result.is_streaming:
@@ -616,7 +616,7 @@ class LanguageModelAction(BaseModelAction, ABC):
                                     interaction_id = get_interaction_id()
                                     if interaction_id:
                                         # Track usage with estimated metrics and actual duration
-                                        self.track_usage(estimated_usage, actual_duration)
+                                        await self.track_usage(estimated_usage, actual_duration)
                                 except Exception as e:
                                     logger.debug(f"Failed to emit observability after stream: {e}")
                                     

@@ -163,7 +163,7 @@ class PersonaAction(Action):
 
         When visitor is provided and has response_bus and session_id, the generated
         response is delivered via the response bus (streaming: by the model; non-streaming:
-        by a single publish_adhoc) and interaction.response is updated accordingly.
+        by a single publish) and interaction.response is updated accordingly.
         When no such visitor is provided, only interaction.response is set and saved.
 
         Args:
@@ -268,7 +268,7 @@ class PersonaAction(Action):
         When there is no bus: persist to interaction.response (append if continuing)
         and save. When there is a bus and streaming: no-op (model already published).
         When there is a bus and non-streaming: PersonaAction is the sole publisher;
-        call publish_adhoc once (legacy path does not pass bus to the model in this case).
+        call publish once (legacy path does not pass bus to the model in this case).
         """
         if not response:
             return
@@ -296,7 +296,7 @@ class PersonaAction(Action):
                 f"{self.get_class_name()}: Visitor channel not set or is 'default', "
                 f"using channel='{channel}'. This may prevent channel adapters from receiving messages."
             )
-        await response_bus.publish_adhoc(
+        await response_bus.publish(
             session_id=visitor.session_id,
             content=response,
             channel=channel,

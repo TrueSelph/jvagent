@@ -358,8 +358,8 @@ class TestResponseBusFilterIntegration:
         assert message.content == "original[Working]"
 
     @pytest.mark.asyncio
-    async def test_publish_adhoc_applies_filters(self):
-        """Test that publish_adhoc(stream=False) applies filters before routing to adapter."""
+    async def test_publish_applies_filters(self):
+        """Test that publish(stream=False) applies filters before routing to adapter."""
         bus = ResponseBus()
         filter = WhatsAppFilter(channels=["whatsapp"], priority=100)
         await bus.register_channel_filter(filter)
@@ -368,7 +368,7 @@ class TestResponseBusFilterIntegration:
         mock_adapter.send = AsyncMock(return_value=True)
         bus._channel_adapters["whatsapp"] = mock_adapter
 
-        message = await bus.publish_adhoc(
+        message = await bus.publish(
             session_id="test_session",
             content="**Bold** text",
             channel="whatsapp",
@@ -382,8 +382,8 @@ class TestResponseBusFilterIntegration:
         assert sent_message.content == "*Bold* text"
 
     @pytest.mark.asyncio
-    async def test_publish_adhoc_stream_chunk_no_filter_no_adapter(self):
-        """Test that publish_adhoc(stream=True, streaming_complete=False) does not filter or call adapter."""
+    async def test_publish_stream_chunk_no_filter_no_adapter(self):
+        """Test that publish(stream=True, streaming_complete=False) does not filter or call adapter."""
         bus = ResponseBus()
         filter = WhatsAppFilter(channels=["whatsapp"], priority=100)
         await bus.register_channel_filter(filter)
@@ -392,7 +392,7 @@ class TestResponseBusFilterIntegration:
         mock_adapter.send = AsyncMock(return_value=True)
         bus._channel_adapters["whatsapp"] = mock_adapter
 
-        message = await bus.publish_adhoc(
+        message = await bus.publish(
             session_id="test_session",
             content="**Bold** text",
             channel="whatsapp",
