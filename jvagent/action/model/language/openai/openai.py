@@ -303,7 +303,7 @@ class OpenAILanguageModelAction(LanguageModelAction):
             f"(prompt: ${prompt_cost:.6f}, completion: ${completion_cost:.6f})"
         )
 
-    def track_usage(self, usage: Dict[str, int], duration: Optional[float] = None) -> None:
+    async def track_usage(self, usage: Dict[str, int], duration: Optional[float] = None) -> None:
         """Track usage and estimate cost.
 
         Overrides base implementation to add cost estimation.
@@ -312,5 +312,5 @@ class OpenAILanguageModelAction(LanguageModelAction):
             usage: Usage dict with token counts
             duration: Query duration in seconds (optional)
         """
-        super().track_usage(usage, duration)
+        await super().track_usage(usage, duration)
         self._estimate_cost(usage)

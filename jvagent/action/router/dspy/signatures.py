@@ -9,6 +9,9 @@ from typing import List, Optional, Type
 
 logger = logging.getLogger(__name__)
 
+# Valid intent types for routing
+INTENT_TYPES = ["REQUEST", "QUERY", "RESPONSE", "SOCIAL", "NAVIGATION", "UNCLEAR"]
+
 
 def create_router_classification_signature(docstring: str) -> Type:
     """Factory function to create RouterClassification signature with custom docstring.
@@ -29,21 +32,23 @@ def create_router_classification_signature(docstring: str) -> Type:
         class RouterClassification(dspy.Signature):
             __doc__ = docstring
             
-            # Input fields - context for routing
+            # Input fields
             user_utterance: str = dspy.InputField(
-                desc="The user's current message/utterance to route"
+                desc="The user's current message to classify and route"
             )
             available_actions: str = dspy.InputField(
-                desc="JSON-formatted dictionary where KEYS are action names (e.g., 'SignupInterviewInteractAction') and VALUES are lists of anchor statements (e.g., ['User wants to sign up', 'User cancels SignupInterviewInteractAction']). The keys (action names) are what must be returned in the actions output, NOT the anchor statements. Example format: {\"ActionName1\": [\"anchor1\", \"anchor2\"], \"ActionName2\": [\"anchor3\"]}"
+                desc="JSON dictionary mapping action names (keys) to anchor statements (values). Return ONLY the keys in the actions output."
             )
             conversation_history: Optional[str] = dspy.InputField(
-                desc="Formatted conversation history from previous interactions. Includes user utterances, AI responses, interpretations, and events. Use this to understand context, ongoing topics, prior questions, and system events. Format: chronological list with User/System messages, [INTERPRETATION] prefixes for routing context, and [EVENT] prefixes for system events. CRITICAL: Always check [EVENT] messages for ongoing activities (e.g., '[EVENT] Ongoing Activity: interviewing user as part of {ActionName}'). Actions with ongoing activities in recent events should be prioritized for routing, especially when the current utterance is ambiguous (e.g., 'nope', 'yes', 'ok'). If an action is mentioned in [EVENT] messages as an ongoing activity, route to it even if the utterance doesn't clearly match anchors."
+                desc="Conversation history with user messages, AI responses, and system [EVENT] messages. Check for '[EVENT] Ongoing Activity:' to detect active processes."
             )
             
-            # Output fields - routing result
-            # Note: interpretation is provided by ChainOfThought's reasoning field (labeled as 'interpretation' for consistency)
+            # Output fields
             actions: List[str] = dspy.OutputField(
-                desc="List of action names (dictionary KEYS from available_actions) that should handle this request. CRITICAL: Return ONLY the action names (keys), NEVER the anchor statements (values). Each action name must exactly match a key from the available_actions JSON object. CORRECT: [\"SignupInterviewInteractAction\"]. INCORRECT: [\"User cancels SignupInterviewInteractAction\"]. Return empty list [] if no match. Multiple actions allowed."
+                desc="List of action names (dictionary KEYS from available_actions) to route to. Return [] if no match or ambiguous without ongoing activity."
+            )
+            intent_type: str = dspy.OutputField(
+                desc="What the user is expressing: REQUEST (wants system to do something), QUERY (asking a question), RESPONSE (directly answering assistant's question), SOCIAL (gratitude/greeting/smalltalk), NAVIGATION (topic change/cancel), or UNCLEAR."
             )
             confidence: float = dspy.OutputField(
                 desc="Confidence score between 0.0 and 1.0 for the routing decision"
@@ -53,4 +58,3 @@ def create_router_classification_signature(docstring: str) -> Type:
     except Exception as e:
         logger.error(f"Failed to create RouterClassification signature: {e}", exc_info=True)
         raise
-

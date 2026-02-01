@@ -1,11 +1,14 @@
 """Context variables for model action observability."""
 
 import contextvars
-from typing import Optional
+from typing import Any, Optional, TYPE_CHECKING
 
-# Context variable to track current interaction_id for observability
-current_interaction_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    "current_interaction_id", default=None
+if TYPE_CHECKING:
+    from jvagent.memory.interaction import Interaction
+
+# Context variable to track current interaction for observability
+current_interaction: contextvars.ContextVar[Optional[Any]] = contextvars.ContextVar(
+    "current_interaction", default=None
 )
 
 # Context variable to track the calling action name for observability
@@ -14,22 +17,44 @@ current_action_name: contextvars.ContextVar[Optional[str]] = contextvars.Context
 )
 
 
+def get_interaction() -> Optional[Any]:
+    """Get the current interaction object from context.
+
+    Returns:
+        Interaction object if set in context, None otherwise
+    """
+    return current_interaction.get()
+
+
+def set_interaction(interaction: Optional[Any]) -> None:
+    """Set the current interaction object in context.
+
+    Args:
+        interaction: Interaction object to set
+    """
+    current_interaction.set(interaction)
+
+
 def get_interaction_id() -> Optional[str]:
-    """Get the current interaction ID from context.
+    """Get the current interaction ID from context (legacy compat).
 
     Returns:
         Interaction ID if set in context, None otherwise
     """
-    return current_interaction_id.get()
+    interaction = current_interaction.get()
+    return interaction.id if interaction else None
 
 
 def set_interaction_id(interaction_id: Optional[str]) -> None:
-    """Set the current interaction ID in context.
+    """Set the current interaction ID in context (legacy compat - no-op).
+
+    This is kept for backward compatibility but does nothing.
+    Use set_interaction() instead.
 
     Args:
-        interaction_id: Interaction ID to set
+        interaction_id: Interaction ID (ignored)
     """
-    current_interaction_id.set(interaction_id)
+    pass
 
 
 def get_calling_action_name() -> Optional[str]:

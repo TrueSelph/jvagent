@@ -49,9 +49,12 @@ class ChannelAdapter(ABC):
         2. Register itself with the response bus
 
         This is typically called from an action's on_register() method.
+        Callers may rely on the return value for error handling (e.g., log or skip
+        registration when False).
 
         Returns:
             True if initialization and registration succeeded, False otherwise
+            (e.g., App or ResponseBus not available).
         """
         if self._initialized:
             return True

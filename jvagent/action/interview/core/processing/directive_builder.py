@@ -209,7 +209,16 @@ class DirectiveBuilder:
             session: Interview session
             visitor: InteractWalker
         """
-        # Send cancellation message first
+        # Explicitly add cancellation event BEFORE queue_directive and cleanup
+        # This ensures the event is recorded even if the session is removed
+        # Mark event as added to prevent queue_directive from adding it again
+        cancellation_event = self.action.cancellation_event_message_template.format(
+            class_name=self.action.get_class_name()
+        )
+        await visitor.add_event(cancellation_event)
+        self._event_added = True  # Prevent duplicate event addition in queue_directive
+
+        # Send cancellation message
         await self.queue_directive(
             visitor,
             self.action.cancellation_message_template
