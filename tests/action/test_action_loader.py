@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from jvagent.action.action_loader import ActionLoader, ActionRegistry
+from jvagent.action.action_loader import ActionLoader, ActionRegistry, JvagentActionsImporter
 
 
 @pytest.fixture
@@ -449,3 +449,64 @@ class TestWhatsAppWebhookURL:
         content = test_file.read_text()
         assert "test_get_webhook_url_reuses_existing_url" in content, \
             "Test for reusing existing URL should exist"
+
+
+class TestJvagentActionsImporter:
+    """Tests for JvagentActionsImporter MetaPathFinder and path mapping."""
+
+    def test_find_spec_namespace_packages_and_action_package(self, temp_dir):
+        """JvagentActionsImporter returns correct specs for namespace and action package."""
+        # agents/jvagent/foo/actions/jvagent/bar/ with __init__.py and bar.py
+        action_dir = (
+            temp_dir / "agents" / "jvagent" / "foo" / "actions" / "jvagent" / "bar"
+        )
+        action_dir.mkdir(parents=True)
+        (action_dir / "__init__.py").write_text("from .bar import BarAction\n")
+        (action_dir / "bar.py").write_text("class BarAction: pass\n")
+        (action_dir / "endpoints.py").write_text("# endpoints\n")
+
+        importer = JvagentActionsImporter(temp_dir)
+
+        # Namespace packages (loader=None, submodule_search_locations set)
+        for fullname, expected_path in [
+            ("jvagent.actions.jvagent", temp_dir / "agents" / "jvagent"),
+            (
+                "jvagent.actions.jvagent.foo",
+                temp_dir / "agents" / "jvagent" / "foo" / "actions",
+            ),
+            (
+                "jvagent.actions.jvagent.foo.jvagent",
+                temp_dir / "agents" / "jvagent" / "foo" / "actions" / "jvagent",
+            ),
+        ]:
+            spec = importer.find_spec(fullname, None)
+            assert spec is not None, f"find_spec({fullname!r}) should return a spec"
+            assert spec.submodule_search_locations == [str(expected_path)]
+            assert spec.loader is None
+
+        # Action package
+        fullname = "jvagent.actions.jvagent.foo.jvagent.bar"
+        spec = importer.find_spec(fullname, None)
+        assert spec is not None
+        assert spec.loader is not None
+        assert spec.origin is not None
+        assert str(action_dir) in (spec.submodule_search_locations or [""])[0]
+
+        # Submodule (relative import target)
+        spec = importer.find_spec("jvagent.actions.jvagent.foo.jvagent.bar.endpoints", None)
+        assert spec is not None
+        assert spec.loader is not None
+        assert spec.origin is not None
+
+    def test_find_spec_returns_none_for_non_actions_prefix(self, temp_dir):
+        """JvagentActionsImporter returns None for modules outside jvagent.actions.*."""
+        importer = JvagentActionsImporter(temp_dir)
+        assert importer.find_spec("jvagent.action.base", None) is None
+        assert importer.find_spec("other.module", None) is None
+
+    def test_find_spec_returns_none_when_agents_dir_missing(self, temp_dir):
+        """JvagentActionsImporter returns None when agents directory does not exist."""
+        importer = JvagentActionsImporter(temp_dir)
+        assert not (temp_dir / "agents").exists()
+        spec = importer.find_spec("jvagent.actions.jvagent.foo", None)
+        assert spec is None
