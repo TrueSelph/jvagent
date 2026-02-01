@@ -188,14 +188,6 @@ async def finalize_whatsapp_interaction(
         return
         
     try:
-        if walker.response_bus:
-            await walker.response_bus.finalize_interaction(
-                interaction_id=interaction.id,
-                interaction=interaction,
-                session_id=walker.session_id or "",
-                channel=walker.channel,
-            )
-        
         interaction.close_interaction()
         
         # Flush deferred saves (interaction and conversation) with error handling

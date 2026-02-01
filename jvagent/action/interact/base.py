@@ -160,7 +160,7 @@ class InteractAction(Action, ABC):
         streaming_complete: bool = True,
         stream: Optional[bool] = None,
     ) -> Optional[Any]:
-        """Publish a response directly to the response bus via publish_adhoc.
+        """Publish a response directly to the response bus via publish.
 
         Stream mode defaults to visitor.stream; pass stream=False to publish a complete
         message as a single adhoc (e.g. pre-built summary) so it is appended and enqueued
@@ -175,7 +175,7 @@ class InteractAction(Action, ABC):
             stream: If None, use visitor.stream; if False, publish as non-streaming (single adhoc).
 
         Returns:
-            ResponseMessage from ResponseBus.publish_adhoc, or None if not published.
+            ResponseMessage from ResponseBus.publish, or None if not published.
         """
         if not content:
             logger.error("InteractAction.publish: content is required")
@@ -200,7 +200,7 @@ class InteractAction(Action, ABC):
             return None
 
         use_stream = stream if stream is not None else getattr(visitor, "stream", False)
-        return await visitor.response_bus.publish_adhoc(
+        return await visitor.response_bus.publish(
             session_id=visitor.session_id,
             content=content,
             channel=channel or visitor.channel,

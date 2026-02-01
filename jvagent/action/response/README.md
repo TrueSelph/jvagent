@@ -12,7 +12,7 @@ The ResponseBus is the central service for publishing response content from Inte
 
 ## ResponseBus Design
 
-Stream mode is determined by `visitor.stream` and passed through to `publish_adhoc()`. The walker executes actions, commits pending adhoc content after each action, then proceeds to the next action. ResponseBus accumulates streaming chunks and only applies filters/adapters when a complete adhoc message is ready (non-streaming: immediately; streaming: when `streaming_complete=True` or on commit/finalize).
+Stream mode is determined by `visitor.stream` and passed through to `publish()`. The walker executes actions, commits pending adhoc content after each action, then proceeds to the next action. ResponseBus accumulates streaming chunks and only applies filters/adapters when a complete adhoc message is ready (non-streaming: immediately; streaming: when `streaming_complete=True` or on commit/finalize).
 
 ```mermaid
 flowchart TB
@@ -28,7 +28,7 @@ flowchart TB
         A3["Model streaming(stream=visitor.stream)"]
     end
     
-    subgraph ResponseBus [ResponseBus.publish_adhoc]
+    subgraph ResponseBus [ResponseBus.publish]
         SM{stream param?}
         
         subgraph StreamingPath [stream=True]
@@ -65,10 +65,22 @@ flowchart TB
 - **Non-streaming (`stream=False`)**: Filters and adapters run immediately; content is appended to `interaction.response`.
 - **Streaming (`stream=True`, `streaming_complete=False`)**: Chunks are sent to subscribers and accumulated; no filters/adapters yet.
 - **Streaming (`stream=True`, `streaming_complete=True`)**: Full content is run through filters/adapters, `interaction.response` is set, and the accumulator is cleared.
+- **Simulated streaming**: When the client requests streaming (`stream=True`) but an action publishes whole content in one call (e.g. non-streaming model or cached response), ResponseBus auto-detects this and splits the content using language-model tokenization (`chunking.chunk_text_by_lm_tokens`). Subscribers receive token-sized `stream_chunk` messages so the UX matches real token-by-token streaming; strings with no spaces are split into subword tokens.
 - **Action boundaries**: After each action, the walker calls `commit_pending_adhoc(interaction_id, interaction)` so any accumulated streaming content is finalized (filters/adapters, append to interaction, save) before the next action runs.
 - **Finalize**: `finalize_interaction()` calls `commit_pending_adhoc`, emits an internal final signal to subscribers, then cleans up buffers.
 
-The public API for publishing is `publish_adhoc()`; there is no `publish_message()`.
+The public API for publishing is `publish()`; there is no `publish_message()`.
+
+### Simulated streaming (LM tokenization)
+
+When `stream=True` but content is published as a single whole message (e.g. non-streaming model or cached response), ResponseBus simulates streaming so the client still sees token-by-token delivery. Chunking uses **language-model tokenization** via `jvagent.action.response.chunking.chunk_text_by_lm_tokens()`:
+
+- Uses tiktoken encoding `cl100k_base` (same as GPT-4 / Claude).
+- Yields one token at a time; strings with no spaces are split into subword tokens.
+- No chunk-size settings; boundaries are determined by the tokenizer.
+- If tiktoken is unavailable, falls back to character-by-character so no-space strings still stream.
+
+See `chunking.py` for `chunk_text_by_words()` and `chunk_text_by_chars()` for other use cases.
 
 ## Architecture
 
@@ -221,11 +233,11 @@ class MyChannelAction(Action):
 
 ### Step 3: Publish Messages
 
-Messages are automatically delivered to adapters when published with the matching channel via `publish_adhoc()`:
+Messages are automatically delivered to adapters when published with the matching channel via `publish()`:
 
 ```python
 # In an InteractAction or anywhere with access to response_bus
-await visitor.response_bus.publish_adhoc(
+await visitor.response_bus.publish(
     session_id=session_id,
     content="Hello, world!",
     channel="mychannel",  # Must match adapter's channel
@@ -535,7 +547,7 @@ Registers a channel filter with the response bus. Filters are stored in priority
 
 Registers a channel adapter with the response bus. Replaces any existing adapter for the same channel (single adapter per channel). This ensures serverless-friendly behavior where adapters are replaced on cold starts. Called automatically by `adapter.initialize()`.
 
-#### `async def publish_adhoc(...) -> ResponseMessage`
+#### `async def publish(...) -> ResponseMessage`
 
 Publishes adhoc content. Stream mode and `streaming_complete` control accumulation and when filters/adapters run.
 
@@ -606,7 +618,7 @@ ResponseBus uses these message types internally. Channel filters and adapters on
 
 ### Filter Not Transforming Messages
 
-1. **Check channel name**: Ensure the channel in `publish_adhoc()` matches the filter's channels list
+1. **Check channel name**: Ensure the channel in `publish()` matches the filter's channels list
 2. **Verify initialization**: Make sure `filter.initialize()` was called and returned `True` in `on_register()` or `on_startup()`
 3. **Streaming**: Filters run only when a full adhoc message is delivered (non-streaming immediately; streaming when `streaming_complete=True` or on commit)
 4. **Check priority**: Verify filter priority if multiple filters are registered
@@ -614,7 +626,7 @@ ResponseBus uses these message types internally. Channel filters and adapters on
 
 ### Adapter Not Receiving Messages
 
-1. **Check channel name**: Ensure the channel in `publish_adhoc()` matches the adapter's channel
+1. **Check channel name**: Ensure the channel in `publish()` matches the adapter's channel
 2. **Verify initialization**: Make sure `adapter.initialize()` was called and returned `True` in `on_register()` or `on_startup()`
 3. **Streaming**: Adapters receive only full adhoc content (non-streaming immediately; streaming when `streaming_complete=True` or on commit)
 4. **App restart**: If adapter worked before restart but not after, ensure `on_startup()` is implemented to re-initialize the adapter

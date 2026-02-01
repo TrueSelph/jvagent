@@ -436,19 +436,9 @@ async def interact_endpoint(
                 # Mark interaction as not streamed
                 interaction.streamed = False
                 
-                # Finalize interaction (accumulate streamed data and observability)
-                async with profile.measure("finalize_interaction"):
-                    if walker.response_bus:
-                        await walker.response_bus.finalize_interaction(
-                            interaction_id=interaction.id,
-                            interaction=interaction,
-                            session_id=walker.session_id or "",
-                            channel=walker.channel,
-                        )
-                
-                # Clear interaction_id from context
-                from jvagent.action.model.context import set_interaction_id
-                set_interaction_id(None)
+                # Clear interaction from context
+                from jvagent.action.model.context import set_interaction
+                set_interaction(None)
                 
                 interaction.close_interaction()
                 
@@ -599,18 +589,9 @@ async def _stream_interaction(
                 # Cleanup subscription
                 await walker.response_bus.unsubscribe(walker.session_id, message_callback)
 
-            # Finalize interaction (accumulate streamed data and observability)
-            if walker.response_bus:
-                await walker.response_bus.finalize_interaction(
-                    interaction_id=interaction.id,
-                    interaction=interaction,
-                    session_id=walker.session_id or "",
-                    channel=walker.channel,
-                )
-
-            # Clear interaction_id from context
-            from jvagent.action.model.context import set_interaction_id
-            set_interaction_id(None)
+            # Clear interaction from context
+            from jvagent.action.model.context import set_interaction
+            set_interaction(None)
 
             # Close interaction
             interaction.close_interaction()
@@ -659,23 +640,9 @@ async def _stream_interaction(
             await walk_task
             profile.record("walker_execution", time.time() - walker_start)
 
-            # Finalize interaction (accumulate streamed data and observability)
-            # Even without response bus, we should still finalize if bus becomes available
-            from jvagent.core.app import App
-            app = await App.get()
-            if app:
-                response_bus = await app.get_response_bus()
-                if response_bus:
-                    await response_bus.finalize_interaction(
-                        interaction_id=interaction.id,
-                        interaction=interaction,
-                        session_id=walker.session_id or "",
-                        channel=walker.channel,
-                    )
-
-            # Clear interaction_id from context
-            from jvagent.action.model.context import set_interaction_id
-            set_interaction_id(None)
+            # Clear interaction from context
+            from jvagent.action.model.context import set_interaction
+            set_interaction(None)
 
             # Close interaction
             interaction.close_interaction()

@@ -198,7 +198,7 @@ class InteractWalker(Walker):
 
                 # Create interaction
                 from jvagent.memory.interaction import Interaction
-                from jvagent.action.model.context import set_interaction_id
+                from jvagent.action.model.context import set_interaction
 
                 self.interaction = await conversation.create_interaction(
                     utterance=self.utterance,
@@ -210,8 +210,8 @@ class InteractWalker(Walker):
                 if ENABLE_DEFERRED_SAVES:
                     self.interaction.enable_deferred_saves()
                 
-                # Set interaction_id in context for automatic observability
-                set_interaction_id(self.interaction.id)
+                # Set interaction object in context for automatic observability
+                set_interaction(self.interaction)
 
                 await self.report(
                     {
@@ -235,8 +235,28 @@ class InteractWalker(Walker):
             await self.report({"error": "Agent has no Actions node"})
             return
 
-        # Walk to Actions node
+        # Walk to Actions node (executes all actions)
         await self.visit(actions_node)
+        # Finalize here so programmatic callers get the same behavior as HTTP endpoints
+        await self._finalize()
+
+    async def _finalize(self) -> None:
+        """Finalize the current interaction (attach observability, emit signal, clean buffers).
+
+        Called at end of on_agent() so finalization happens whether the walker is
+        used from an HTTP endpoint or programmatically.
+        """
+        if not self.response_bus or not self.interaction:
+            return
+        try:
+            await self.response_bus.finalize_interaction(
+                interaction_id=self.interaction.id,
+                interaction=self.interaction,
+                session_id=self.session_id or "",
+                channel=self.channel,
+            )
+        except Exception as e:
+            logger.error(f"Failed to finalize interaction: {e}", exc_info=True)
 
     @on_visit("Actions")
     async def on_actions(self, here: Any) -> None:
@@ -356,13 +376,6 @@ class InteractWalker(Walker):
             # Note: 'here' is the node (self from node's perspective), 'self' is the walker (visitor)
             await here.execute(self)
 
-            # Commit any pending streaming adhoc content so interaction.response is saved before next action
-            if self.response_bus and self.interaction:
-                await self.response_bus.commit_pending_adhoc(
-                    self.interaction.id,
-                    self.interaction,
-                )
-
             await self.report(
                 {
                     "action_executed": {
@@ -404,6 +417,16 @@ class InteractWalker(Walker):
             )
             # Continue to next action (don't raise, let walker continue)
         finally:
+            # ALWAYS commit pending adhoc, even on error
+            if self.response_bus and self.interaction:
+                try:
+                    await self.response_bus.commit_pending_adhoc(
+                        self.interaction.id,
+                        self.interaction,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to commit pending adhoc: {e}")
+            
             # Always clear current action and skip flag after execution
             self._current_action = None
             self._skip_current_action_record = False
