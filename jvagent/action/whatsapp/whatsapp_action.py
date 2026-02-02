@@ -392,7 +392,7 @@ class WhatsAppAction(Action):
             if isinstance(registration_result, dict):
                 if registration_result.get("status") == "ERROR" or not registration_result.get("ok", True):
                     error_msg = registration_result.get("error") or registration_result.get("message", "Unknown error")
-                    logger.error(
+                    logger.warning(
                         f"WhatsApp session registration failed on startup: {error_msg}. "
                         f"Continuing with adapter initialization anyway."
                     )
@@ -446,6 +446,52 @@ class WhatsAppAction(Action):
             )
 
 
+    async def ensure_adapter_registered(self) -> bool:
+        """Ensure WhatsApp adapter is registered with ResponseBus (lazy initialization).
+        
+        This method provides Lambda-compatible initialization that works even when 
+        on_startup() hasn't run (e.g., cold start, first request in a container).
+        
+        Returns:
+            True if adapter is registered and initialized, False if action not configured
+        """
+        # Check if action is configured
+        if not self.is_configured():
+            logger.debug("WhatsApp action not configured, cannot register adapter")
+            return False
+        
+        try:
+            from jvagent.core.app import App
+            app = await App.get()
+            if not app:
+                logger.warning("App node not found, cannot register WhatsApp adapter")
+                return False
+            
+            response_bus = await app.get_response_bus()
+            if not response_bus:
+                logger.warning("ResponseBus not available, cannot register WhatsApp adapter")
+                return False
+            
+            # Check if adapter already registered
+            existing_adapter = response_bus._channel_adapters.get("whatsapp")
+            if existing_adapter and existing_adapter._initialized:
+                logger.debug("WhatsApp adapter already registered and initialized")
+                return True
+            
+            # Register adapter (same as on_startup)
+            logger.info("Lazy-registering WhatsApp adapter (Lambda cold start or first use)")
+            adapter = WhatsAppAdapter(action=self)
+            if await adapter.initialize():
+                logger.info("WhatsApp adapter successfully registered via lazy initialization")
+                return True
+            else:
+                logger.error("WhatsApp adapter initialization failed during lazy registration")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error ensuring WhatsApp adapter registration: {e}", exc_info=True)
+            return False
+    
     def api(self) -> Union[WPPConnectAPI, WWebJSAPI, UltraMsgAPI]:
         """Get API instance for the configured provider.
         
@@ -730,7 +776,7 @@ class WhatsAppAction(Action):
             # Check if registration actually succeeded before logging success
             if result.get("status") == "ERROR" or not result.get("ok", True):
                 error_msg = result.get("error") or result.get("message", "Unknown error")
-                logger.error(
+                logger.warning(
                     f"WhatsApp session registration failed for '{self.session}': {error_msg}. "
                     f"Full result: {result}"
                 )

@@ -20,6 +20,13 @@ ERROR RECOVERY:
 - On batch processing error, the batch is cleaned up to prevent retries
 - Timer tasks are cancelled on batch removal to prevent orphaned tasks
 - Per-user locks prevent race conditions during batch operations
+
+LAMBDA COMPATIBILITY:
+- Cleanup runs inline (awaited) during get_or_create_batch rather than via background task.
+  This ensures cleanup completes within the same request and doesn't depend on
+  background tasks that may be frozen when Lambda returns.
+- Batch timer tasks still use create_background_task but are best-effort in Lambda;
+  batches will be processed when next accessed if timer doesn't fire.
 """
 
 import asyncio
@@ -257,14 +264,18 @@ class MediaBatchManager:
                     batch["timer_task"].cancel()
     
     async def _maybe_schedule_cleanup(self) -> None:
-        """Schedule cleanup task if not already running."""
+        """Run inline cleanup of stale batches if enough time has passed.
+        
+        Lambda-compatible: Runs cleanup inline rather than via background task.
+        """
         current_time = time.time()
         if current_time - self._last_cleanup > BATCH_CLEANUP_INTERVAL:
             self._last_cleanup = current_time
-            create_background_task(self._cleanup_stale_batches(), name="batch_cleanup")
+            # Run cleanup inline rather than in background task (Lambda-compatible)
+            await self._cleanup_stale_batches_inline()
     
-    async def _cleanup_stale_batches(self) -> None:
-        """Remove batches that have exceeded TTL (prevents memory leaks)."""
+    async def _cleanup_stale_batches_inline(self) -> None:
+        """Remove batches that have exceeded TTL (inline, Lambda-compatible)."""
         current_time = time.time()
         stale_senders = []
         
@@ -284,3 +295,6 @@ class MediaBatchManager:
             stale_locks = [s for s in self._locks if s not in self._batches]
             for sender in stale_locks:
                 del self._locks[sender]
+        
+        if stale_senders:
+            logger.debug(f"Cleaned up {len(stale_senders)} stale media batches")

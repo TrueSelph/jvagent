@@ -1,6 +1,7 @@
 """WhatsApp Action Endpoints."""
 
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 from fastapi import Request, HTTPException
@@ -40,7 +41,12 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
     """WhatsApp Interact Webhook.
 
     Processes incoming WhatsApp messages and triggers an interaction via InteractWalker.
-    Returns immediately with 200 OK and processes the interaction asynchronously.
+    
+    AWS Lambda compatibility: By default, the webhook awaits the full interaction 
+    (including response generation and WhatsApp send) before returning the HTTP response.
+    This ensures the interaction completes before Lambda freezes the execution context.
+    
+    Set WHATSAPP_WEBHOOK_ASYNC=true to use background task mode (for long-running servers).
     
     Args:
         request: FastAPI request object
@@ -119,16 +125,25 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
 
         logger.debug(f"Processing utterance: {utterance}")
 
-        # Return immediately with 200 OK
-        response = {"status": "received"}
-
-        # Process interaction asynchronously in background
-        create_background_task(
-            _process_interaction_async(data, utterance, sender, agent_id, agent),
-            name=f"whatsapp_interaction_{sender}"
-        )
-
-        return response
+        # Check if webhook should run in async mode (background task)
+        # Default is False (synchronous) for Lambda compatibility
+        use_async_mode = os.environ.get("WHATSAPP_WEBHOOK_ASYNC", "false").lower() == "true"
+        
+        if use_async_mode:
+            # Async mode: Return immediately with 200 OK and process in background
+            # Use this mode only for long-running servers, NOT for AWS Lambda
+            logger.debug(f"Processing interaction asynchronously for {sender}")
+            create_background_task(
+                _process_interaction_async(data, utterance, sender, agent_id, agent),
+                name=f"whatsapp_interaction_{sender}"
+            )
+            return {"status": "received"}
+        else:
+            # Sync mode (default): Await full interaction before returning
+            # This ensures Lambda completes the full flow before freezing
+            logger.debug(f"Processing interaction synchronously for {sender}")
+            await _process_interaction_async(data, utterance, sender, agent_id, agent)
+            return {"status": "received"}
         
     except (ResourceNotFoundError, HTTPException):
         raise
