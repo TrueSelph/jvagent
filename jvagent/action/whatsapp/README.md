@@ -117,12 +117,29 @@ This document outlines the security improvements and coding standards compliance
    async def on_startup(self) -> None:
        """Called when app starts and action is loaded from database.
 
-       Re-initializes channel adapter to ensure it works after app restarts.
+       Initializes filter and adapter. Session registration is performed
+       lazily on first use for Lambda and deployment compatibility.
        """
        if not self.enabled or not self.is_configured():
            return
+       filter = WhatsAppFilter(channels=["whatsapp"], priority=100)
+       await filter.initialize()
        adapter = WhatsAppAdapter(action=self)
        await adapter.initialize()
+   
+   async def ensure_session_registered(self) -> bool:
+       """Lazy session registration (once per process).
+       
+       Called automatically on first webhook to ensure session is registered
+       with the WhatsApp API provider before processing messages.
+       """
+       if self._session_registration_done:
+           return True
+       result = await self.register_session()
+       if result.get("ok", True) and result.get("status") != "ERROR":
+           self._session_registration_done = True
+           return True
+       return False
    ```
 
 2. **Standard Package Structure**:
@@ -150,7 +167,23 @@ This document outlines the security improvements and coding standards compliance
 
 ## Architecture Improvements
 
-### 1. Enhanced Error Handling
+### 1. Lambda and Deployment Compatibility
+
+**Session Registration Strategy**:
+- Session registration is performed **lazily on first use** (e.g., first webhook request)
+- This ensures stability across all deployment scenarios:
+  - **Lambda cold starts**: Session registration happens on first webhook, avoiding dependency on bootstrap order
+  - **Long-running servers**: Session registration happens on first webhook after startup
+  - **Container restarts**: Consistent behavior regardless of when `on_startup()` runs
+- Session is registered at most once per process using an internal guard flag
+- `on_reload()` still performs immediate session registration after configuration updates
+
+**Benefits**:
+- No blocking/failing during app startup if WhatsApp API is unreachable
+- Consistent behavior across Lambda, containers, and traditional servers
+- Faster startup times (no external API dependency during bootstrap)
+
+### 2. Enhanced Error Handling
 
 - Specific exception types for different error conditions
 - Proper logging with structured error information
