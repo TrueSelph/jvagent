@@ -439,6 +439,63 @@ class ActionLoader:
         except Exception as e:
             logger.warning(f"Error installing dependencies for {action_name}: {e}")
 
+    def _ensure_action_parent_packages(self, module_name: str, action_dir: Path) -> None:
+        """Ensure parent packages exist in sys.modules with correct __path__ for relative imports.
+        
+        Does not rely on JvagentActionsImporter (which may fail in Lambda). Creates namespace
+        packages manually using the same path mapping as the finder.
+        
+        Args:
+            module_name: Full module name (e.g., "jvagent.actions.jvagent.iris_ai.jvagent.news_interact_action")
+            action_dir: Directory containing the action (used to derive agents_path)
+        """
+        if not module_name.startswith(_ACTIONS_PREFIX):
+            return
+        rest = module_name[len(_ACTIONS_PREFIX) :]
+        parts = rest.split(".")
+        if len(parts) < 1:
+            return
+        # Derive agents_path: action_dir is .../agents/{agent_ns}/{agent_name}/actions/{action_ns}/{action_name}
+        # Walk up: action_name -> action_ns -> actions -> agent_name -> agent_ns -> agents
+        agents_path = action_dir
+        for _ in range(5):
+            agents_path = agents_path.parent
+        if agents_path.name != "agents":
+            logger.debug(
+                f"Expected 'agents' when walking up from {action_dir}, got {agents_path.name}"
+            )
+            return
+        # jvagent.actions (0 parts)
+        if "jvagent.actions" not in sys.modules:
+            mod = types.ModuleType("jvagent.actions")
+            mod.__path__ = [str(agents_path)]
+            mod.__package__ = "jvagent"
+            sys.modules["jvagent.actions"] = mod
+        # Parents 1..len(parts)-1 (we don't create the full module_name - that's the action we load)
+        for i in range(1, len(parts)):
+            parent_name = _ACTIONS_PREFIX + ".".join(parts[:i])
+            if parent_name in sys.modules:
+                continue
+            if i == 1:
+                dir_path = agents_path / parts[0]
+            elif i == 2:
+                dir_path = agents_path / parts[0] / parts[1] / "actions"
+            elif i == 3:
+                dir_path = agents_path / parts[0] / parts[1] / "actions" / parts[2]
+            else:
+                # Deeper hierarchy (e.g. subpackages under action)
+                dir_path = agents_path / parts[0] / parts[1] / "actions" / parts[2]
+                for j in range(3, i):
+                    dir_path = dir_path / parts[j]
+            if not dir_path.exists() or not dir_path.is_dir():
+                continue
+            mod = types.ModuleType(parent_name)
+            mod.__path__ = [str(dir_path)]
+            mod.__package__ = (
+                "jvagent.actions" if i == 1 else _ACTIONS_PREFIX + ".".join(parts[: i - 1])
+            )
+            sys.modules[parent_name] = mod
+
     def _load_action_module(
         self,
         module_name: str,
@@ -461,7 +518,8 @@ class ActionLoader:
         Returns:
             Action class if successfully loaded, None otherwise
         """
-        # Namespace packages for jvagent.actions.* are created by JvagentActionsImporter.
+        # Ensure parent packages exist in sys.modules (does not rely on MetaPathFinder)
+        self._ensure_action_parent_packages(module_name, action_dir)
 
         init_file = action_dir / "__init__.py"
         module_file = action_dir / f"{action_name}.py"
@@ -470,7 +528,9 @@ class ActionLoader:
         # This ensures __init__.py executes, which imports endpoints
         if init_file.exists():
             try:
-                spec = importlib.util.spec_from_file_location(module_name, init_file)
+                spec = importlib.util.spec_from_file_location(
+                    module_name, init_file, submodule_search_locations=[str(action_dir)]
+                )
 
                 if spec is None or spec.loader is None:
                     logger.debug(f"Could not load spec for package: {init_file}")
@@ -495,7 +555,8 @@ class ActionLoader:
                             # Try getting from the module file if not in package
                             if module_file.exists():
                                 module_spec = importlib.util.spec_from_file_location(
-                                    f"{module_name}.{action_name}", module_file
+                                    f"{module_name}.{action_name}", module_file,
+                                    submodule_search_locations=[str(action_dir)]
                                 )
                                 if module_spec and module_spec.loader:
                                     module = importlib.util.module_from_spec(module_spec)
@@ -522,7 +583,9 @@ class ActionLoader:
             return None
 
         try:
-            spec = importlib.util.spec_from_file_location(module_name, module_file)
+            spec = importlib.util.spec_from_file_location(
+                module_name, module_file, submodule_search_locations=[str(action_dir)]
+            )
 
             if spec is None or spec.loader is None:
                 logger.debug(f"Could not load spec for module: {module_file}")
