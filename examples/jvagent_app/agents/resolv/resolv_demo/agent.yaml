@@ -196,7 +196,7 @@ actions:
       enabled: true
       description: "WhatsApp provider (wppconnect, ultramsg, wwebjs)"
       # whatsapp configuration
-      provider: ${WHATSAPP_PROVIDER}
+      provider: wwebjs
       api_url: ${WHATSAPP_API_URL}
       api_key: ${WHATSAPP_API_KEY}
       session: ${WHATSAPP_SESSION}

@@ -6,7 +6,7 @@ import os
 import sys
 import types
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
 
 import yaml
 
@@ -194,6 +194,9 @@ class ActionRegistry:
 # Format: jvagent.actions.{agent_ns}.{agent_name}.{action_ns}.{action_name}
 _ACTIONS_PREFIX = "jvagent.actions."
 
+# Global base path for the importer, set by ActionLoader.__init__
+_actions_importer_base_path: Optional[Path] = None
+
 
 class JvagentActionsImporter(importlib.abc.MetaPathFinder):
     """Import hook that resolves jvagent.actions.* to the app directory's agents/ tree.
@@ -201,11 +204,18 @@ class JvagentActionsImporter(importlib.abc.MetaPathFinder):
     Used when jvagent is installed as a pip package and the app directory (e.g. iris_ai)
     is the deployment target. Custom actions live under {base_path}/agents/ and are
     exposed as jvagent.actions.{agent_ns}.{agent_name}.{action_ns}.{action_name}.
+    
+    Supports lazy base_path via a callable for early registration.
     """
 
-    def __init__(self, base_path: Path):
-        self._base_path = Path(base_path)
-        self._agents_path = self._base_path / "agents"
+    def __init__(self, base_path: Union[Path, Callable[[], Optional[Path]]]):
+        """Initialize the importer.
+        
+        Args:
+            base_path: Either a Path or a callable returning Optional[Path].
+                      When callable, find_spec will call it to get the current base_path.
+        """
+        self._base_path = base_path
 
     def find_spec(
         self,
@@ -215,10 +225,27 @@ class JvagentActionsImporter(importlib.abc.MetaPathFinder):
     ) -> Optional[importlib.machinery.ModuleSpec]:
         if not fullname.startswith(_ACTIONS_PREFIX):
             return None
-        if not self._agents_path.exists() or not self._agents_path.is_dir():
+        
+        # Resolve base_path (may be a callable for lazy initialization)
+        base_path = self._base_path() if callable(self._base_path) else self._base_path
+        if base_path is None:
+            return None
+        
+        agents_path = base_path / "agents"
+        if not agents_path.exists() or not agents_path.is_dir():
             return None
 
         rest = fullname[len(_ACTIONS_PREFIX) :]
+        
+        # Handle exact "jvagent.actions" (rest is empty string)
+        if rest == "":
+            return importlib.machinery.ModuleSpec(
+                fullname,
+                loader=None,
+                is_package=True,
+                submodule_search_locations=[str(agents_path)],
+            )
+        
         parts = rest.split(".")
         if len(parts) < 1:
             return None
@@ -227,20 +254,20 @@ class JvagentActionsImporter(importlib.abc.MetaPathFinder):
         # parts[0]=agent_ns, parts[1]=agent_name, parts[2]=action_ns, parts[3]=action_name, ...
         if len(parts) == 1:
             # jvagent.actions.{agent_ns}
-            dir_path = self._agents_path / parts[0]
+            dir_path = agents_path / parts[0]
         elif len(parts) == 2:
             # jvagent.actions.{agent_ns}.{agent_name}
-            dir_path = self._agents_path / parts[0] / parts[1] / "actions"
+            dir_path = agents_path / parts[0] / parts[1] / "actions"
         elif len(parts) == 3:
             # jvagent.actions.{agent_ns}.{agent_name}.{action_ns}
-            dir_path = self._agents_path / parts[0] / parts[1] / "actions" / parts[2]
+            dir_path = agents_path / parts[0] / parts[1] / "actions" / parts[2]
         elif len(parts) == 4:
             # jvagent.actions.{agent_ns}.{agent_name}.{action_ns}.{action_name} (action package)
-            dir_path = self._agents_path / parts[0] / parts[1] / "actions" / parts[2] / parts[3]
+            dir_path = agents_path / parts[0] / parts[1] / "actions" / parts[2] / parts[3]
         else:
             # jvagent.actions....{action_name}.{submodule} -> e.g. .endpoints, .prompts
             action_dir = (
-                self._agents_path / parts[0] / parts[1] / "actions" / parts[2] / parts[3]
+                agents_path / parts[0] / parts[1] / "actions" / parts[2] / parts[3]
             )
             submodule = ".".join(parts[4:])
             module_file = action_dir / f"{parts[4]}.py"
@@ -315,8 +342,8 @@ class JvagentActionsImporter(importlib.abc.MetaPathFinder):
         return None
 
 
-# Track registered importers by base_path to avoid duplicate sys.meta_path entries.
-_registered_actions_importers: Dict[Path, JvagentActionsImporter] = {}
+# Global importer instance registered at module load time
+_actions_importer = JvagentActionsImporter(lambda: _actions_importer_base_path)
 
 
 class ActionLoader:
@@ -328,17 +355,14 @@ class ActionLoader:
         Args:
             base_path: Base path to search for actions. If None, uses current directory.
         """
+        global _actions_importer_base_path
+        
         self.base_path = Path(base_path or os.getcwd())
         self._core_action_path: Optional[Path] = None
         self._core_action_cache: Optional[Dict[str, Dict[str, Any]]] = None
 
-        # Register MetaPathFinder so jvagent.actions.* resolves to app's agents/ tree.
-        # Avoid duplicate registration when multiple ActionLoaders use the same base_path.
-        resolved_base = self.base_path.resolve()
-        if resolved_base not in _registered_actions_importers:
-            importer = JvagentActionsImporter(self.base_path)
-            _registered_actions_importers[resolved_base] = importer
-            sys.meta_path.insert(0, importer)
+        # Set the global base path for the importer (registered at module load time)
+        _actions_importer_base_path = self.base_path
 
     # ============================================================================
     # Helper Methods
@@ -2031,3 +2055,10 @@ class ActionLoader:
                 actions.append(action)
 
         return actions
+
+
+# Register the global importer at module load time so it's in sys.meta_path
+# before any jvagent.actions.* imports occur (even if ActionLoader not yet created).
+# The importer uses _actions_importer_base_path which is set when ActionLoader.__init__ runs.
+if _actions_importer not in sys.meta_path:
+    sys.meta_path.insert(0, _actions_importer)
