@@ -89,4 +89,5 @@ jvagent_logs/
 *.egg-info/
 dist/
 build/
+Dockerfile
 
