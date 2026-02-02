@@ -106,6 +106,9 @@ class WhatsAppAction(Action):
         min_length=1
     )
 
+    # Internal state tracking (not persisted)
+    _session_registration_done: bool = False
+
     # action configuration
     
     def _apply_env_defaults(self) -> None:
@@ -202,8 +205,8 @@ class WhatsAppAction(Action):
         """Called when action is registered.
 
         Performs initial validation and configuration checks.
-        Session registration happens in on_startup() to ensure
-        it runs on every app restart for consistent behavior.
+        Session registration is performed lazily on first use (e.g., first webhook)
+        for Lambda and long-running server compatibility.
         
         If the action is not properly configured (missing API URL, API key, etc.),
         it will log a warning and skip initialization gracefully. The action will
@@ -258,11 +261,11 @@ class WhatsAppAction(Action):
         immediately after code updates. This is critical for actions that
         were updated via --update flag, as it ensures the session is
         re-registered with the current webhook URL without waiting for
-        the next app restart.
+        the next request.
         
-        Note: Session registration also happens in on_startup() for
-        consistency on every app restart. This method provides immediate
-        re-registration after updates.
+        Note: Session registration is normally performed lazily on first use
+        (e.g., first webhook). This method provides immediate re-registration
+        after updates.
         
         If the action is not properly configured, it will skip reinitialization
         gracefully.
@@ -318,8 +321,7 @@ class WhatsAppAction(Action):
 
         # Re-register session to ensure it's properly configured immediately after reload
         # This ensures the session is registered with the current webhook URL without
-        # waiting for the next app restart. Session registration also happens in
-        # on_startup() for consistency, but this provides immediate re-registration.
+        # waiting for the next request. Session registration is normally lazy (first use).
         try:
             registration_result = await self.register_session()
             
@@ -330,6 +332,9 @@ class WhatsAppAction(Action):
                     logger.error(
                         f"Session re-registration failed during reload: {error_msg}"
                     )
+                else:
+                    # Mark session as registered to avoid redundant API call on next request
+                    self._session_registration_done = True
         except TypeError as e:
             # Handle aiohttp/Python 3.12+ compatibility issues
             error_str = str(e)
@@ -351,10 +356,11 @@ class WhatsAppAction(Action):
     async def on_startup(self) -> None:
         """Called when app starts and action is loaded.
         
-        Ensures the WhatsApp session is registered and the channel adapter
-        is properly initialized when the app restarts and loads this action
-        from the database. This ensures consistent initialization on every
-        app startup, whether it's the first time or subsequent restarts.
+        Initializes the WhatsApp filter and channel adapter when the app restarts
+        and loads this action from the database. Session registration is performed
+        lazily on first use (e.g., first webhook) for Lambda and long-running
+        server compatibility, avoiding blocking/failing when the WhatsApp API is
+        unreachable during bootstrap.
         """
         # Apply environment variable defaults (e.g., APP_BASE_URL)
         self._apply_env_defaults()
@@ -375,34 +381,6 @@ class WhatsAppAction(Action):
             return
         
         try:
-            # Optional: Validate configuration with healthcheck
-            health_result = await self.healthcheck()
-            if isinstance(health_result, dict) and not health_result.get("healthy", True):
-                errors = health_result.get('errors', [])
-                logger.debug(
-                    f"WhatsApp action healthcheck failed on startup: {'; '.join(errors)}. "
-                    f"Continuing with session registration anyway."
-                )
-                # Continue anyway - session registration might still work
-            
-            # Register session (ensures session is registered on every app startup)
-            registration_result = await self.register_session()
-            
-            # Check if registration succeeded
-            if isinstance(registration_result, dict):
-                if registration_result.get("status") == "ERROR" or not registration_result.get("ok", True):
-                    error_msg = registration_result.get("error") or registration_result.get("message", "Unknown error")
-                    logger.warning(
-                        f"WhatsApp session registration failed on startup: {error_msg}. "
-                        f"Continuing with adapter initialization anyway."
-                    )
-                    # Continue to adapter initialization even if session registration fails
-                else:
-                    status = registration_result.get("status", "UNKNOWN")
-                    logger.info(
-                        f"WhatsApp session registered successfully on startup: {self.session} (status: {status})"
-                    )
-            
             # Initialize filter (transforms messages before adapter)
             filter = WhatsAppFilter(channels=["whatsapp"], priority=100)
             if await filter.initialize():
@@ -426,19 +404,6 @@ class WhatsAppAction(Action):
                 )
                 return
                 
-        except TypeError as e:
-            # Handle aiohttp/Python 3.12+ compatibility issues
-            error_str = str(e)
-            if "BaseException" in error_str:
-                logger.debug(
-                    f"WhatsApp API server ({self.api_url}) is unreachable on startup. "
-                    f"WhatsApp messaging will be unavailable until the server is accessible."
-                )
-            else:
-                logger.error(
-                    f"Type error during WhatsApp action startup: {e}",
-                    exc_info=True
-                )
         except Exception as e:
             logger.error(
                 f"Error during WhatsApp action startup: {e}",
@@ -446,11 +411,72 @@ class WhatsAppAction(Action):
             )
 
 
+    async def ensure_session_registered(self) -> bool:
+        """Ensure WhatsApp session is registered with the API provider (lazy initialization).
+        
+        This method provides Lambda-compatible session registration that works even when
+        on_startup() hasn't run. It registers the session at most once per process using
+        an internal guard flag to avoid redundant API calls.
+        
+        Returns:
+            True if session is registered successfully, False otherwise
+        """
+        # Return early if already registered in this process
+        if self._session_registration_done:
+            logger.debug("WhatsApp session already registered in this process")
+            return True
+        
+        # Check if action is configured
+        if not self.is_configured():
+            logger.debug("WhatsApp action not configured, cannot register session")
+            return False
+        
+        try:
+            # Call register_session
+            registration_result = await self.register_session()
+            
+            # Check if registration succeeded
+            if isinstance(registration_result, dict):
+                if registration_result.get("status") == "ERROR" or not registration_result.get("ok", True):
+                    error_msg = registration_result.get("error") or registration_result.get("message", "Unknown error")
+                    logger.warning(
+                        f"WhatsApp session registration failed (lazy init): {error_msg}"
+                    )
+                    return False
+                else:
+                    # Mark as registered to avoid redundant calls
+                    self._session_registration_done = True
+                    status = registration_result.get("status", "UNKNOWN")
+                    logger.info(
+                        f"WhatsApp session registered successfully (lazy init): {self.session} (status: {status})"
+                    )
+                    return True
+            else:
+                logger.warning(f"WhatsApp session registration returned unexpected type: {type(registration_result)}")
+                return False
+                
+        except TypeError as e:
+            # Handle aiohttp/Python 3.12+ compatibility issues
+            error_str = str(e)
+            if "BaseException" in error_str:
+                logger.warning(
+                    f"WhatsApp API server ({self.api_url}) is unreachable during lazy session registration. "
+                    f"Session will be registered when the server becomes available."
+                )
+            else:
+                logger.error(f"Type error during lazy session registration: {e}", exc_info=True)
+            return False
+        except Exception as e:
+            logger.error(f"Error during lazy session registration: {e}", exc_info=True)
+            return False
+
     async def ensure_adapter_registered(self) -> bool:
         """Ensure WhatsApp adapter is registered with ResponseBus (lazy initialization).
         
         This method provides Lambda-compatible initialization that works even when 
         on_startup() hasn't run (e.g., cold start, first request in a container).
+        It ensures both session registration (with the WhatsApp API provider) and
+        adapter registration (with the ResponseBus) are completed before processing.
         
         Returns:
             True if adapter is registered and initialized, False if action not configured
@@ -459,6 +485,14 @@ class WhatsAppAction(Action):
         if not self.is_configured():
             logger.debug("WhatsApp action not configured, cannot register adapter")
             return False
+        
+        # Ensure session is registered first (lazy, once per process)
+        session_ready = await self.ensure_session_registered()
+        if not session_ready:
+            logger.warning(
+                "WhatsApp session registration failed during lazy initialization. "
+                "Continuing with adapter registration anyway."
+            )
         
         try:
             from jvagent.core.app import App
