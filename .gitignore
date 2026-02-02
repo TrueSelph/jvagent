@@ -90,4 +90,5 @@ jvagent_logs/
 dist/
 build/
 Dockerfile
+Dockerfile.base
 

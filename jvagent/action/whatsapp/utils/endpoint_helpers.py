@@ -425,6 +425,9 @@ async def _process_interaction_async(
     Uses conversation locking to prevent race conditions when multiple
     messages from the same user arrive simultaneously.
     
+    Lambda compatibility: Ensures WhatsApp adapter is registered before processing
+    (lazy initialization for cold starts).
+    
     Args:
         data: MessagePayload object
         utterance: User's message text
@@ -432,6 +435,22 @@ async def _process_interaction_async(
         agent_id: Agent ID
         agent: Agent instance
     """
+    try:
+        # Ensure WhatsApp adapter is registered (lazy init for Lambda cold start)
+        whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
+        if whatsapp_action:
+            adapter_ready = await whatsapp_action.ensure_adapter_registered()
+            if not adapter_ready:
+                logger.warning(
+                    f"WhatsApp adapter not ready for agent {agent_id}. "
+                    "Message processing may fail."
+                )
+        else:
+            logger.warning(f"WhatsAppAction not found for agent {agent_id}")
+    except Exception as e:
+        logger.error(f"Error ensuring adapter registration for agent {agent_id}: {e}")
+        # Continue anyway - adapter might still work if already registered
+    
     try:
         # Convert MessagePayload to dict for InteractWalker
         data_dict = _convert_message_payload_to_dict(data)
