@@ -208,6 +208,7 @@ class ResponseBus:
         user_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         streaming_complete: bool = True,
+        transient: bool = False,
     ) -> ResponseMessage:
         """Publish adhoc content. Stream mode and streaming_complete control accumulation and delivery.
 
@@ -229,6 +230,9 @@ class ResponseBus:
             user_id: User identifier (recipient)
             metadata: Additional metadata
             streaming_complete: True when this is the last chunk (or single message). Only relevant when stream=True.
+            transient: If True, skip appending content to interaction.response.
+                Use for transient messages (e.g., canned responses, typing indicators) that
+                shouldn't be recorded as the interaction's final response. Default: False.
 
         Returns:
             Created ResponseMessage (stream_chunk, adhoc, or final depending on path).
@@ -252,7 +256,7 @@ class ResponseBus:
                 if channel in self._channel_adapters:
                     await self._send_to_adapter(self._channel_adapters[channel], message)
                 if (interaction_id or interaction) and message.content:
-                    if interaction is not None:
+                    if interaction is not None and not transient:
                         await self._append_to_interaction_response_impl(
                             interaction=interaction,
                             message_type="adhoc",
@@ -279,7 +283,7 @@ class ResponseBus:
             if filter_ok:
                 if channel in self._channel_adapters:
                     await self._send_to_adapter(self._channel_adapters[channel], message)
-                if interaction:
+                if interaction and not transient:
                     await self._append_to_interaction_response_impl(
                         interaction=interaction,
                         message_type="adhoc",
@@ -328,7 +332,7 @@ class ResponseBus:
             if filter_ok:
                 if acc.channel in self._channel_adapters:
                     await self._send_to_adapter(self._channel_adapters[acc.channel], flush_message)
-                if interaction is not None and flush_message.content:
+                if interaction is not None and flush_message.content and not transient:
                     await self._append_to_interaction_response_impl(
                         interaction=interaction,
                         message_type="adhoc",
@@ -392,7 +396,7 @@ class ResponseBus:
                 if acc.channel in self._channel_adapters:
                     await self._send_to_adapter(self._channel_adapters[acc.channel], flush_message)
                 if full_content and (interaction or interaction_id):
-                    if interaction is not None:
+                    if interaction is not None and not transient:
                         await self._append_to_interaction_response_impl(
                             interaction=interaction,
                             message_type="adhoc",

@@ -159,6 +159,7 @@ class InteractAction(Action, ABC):
         metadata: Optional[Dict[str, Any]] = None,
         streaming_complete: bool = True,
         stream: Optional[bool] = None,
+        transient: bool = False,
     ) -> Optional[Any]:
         """Publish a response directly to the response bus via publish.
 
@@ -173,6 +174,8 @@ class InteractAction(Action, ABC):
             metadata: Additional metadata for the message
             streaming_complete: True for a single/final chunk; False if more chunks follow (only when stream=True)
             stream: If None, use visitor.stream; if False, publish as non-streaming (single adhoc).
+            transient: If True, skip appending content to interaction.response.
+                Use for transient messages (e.g., canned responses, typing indicators).
 
         Returns:
             ResponseMessage from ResponseBus.publish, or None if not published.
@@ -210,6 +213,7 @@ class InteractAction(Action, ABC):
             user_id=interaction.user_id if hasattr(interaction, "user_id") else None,
             metadata=metadata,
             streaming_complete=streaming_complete,
+            transient=transient,
         )
 
     async def respond(
@@ -225,7 +229,8 @@ class InteractAction(Action, ABC):
         with_interpretation: bool = False,
         with_event: bool = True,
         with_response: bool = True,
-        max_statement_length: Optional[int] = None
+        max_statement_length: Optional[int] = None,
+        transient: bool = False,
     ) -> Optional[str]:
         """Generate a response via PersonaAction with configurable history.
 
@@ -246,6 +251,8 @@ class InteractAction(Action, ABC):
             with_event: Include events in history (default: True)
             with_response: Include AI responses in history (default: True)
             max_statement_length: Truncate utterances/responses to this length (default: None)
+            transient: If True, skip appending response to interaction.response. Use for
+                temporary messages like canned responses or typing indicators (default: False)
             directives: Optional list of directive strings to add to the interaction before
                 generating the response. Each directive will be added with the current action's
                 class name. If provided, these are added in addition to any existing directives.
@@ -326,6 +333,7 @@ class InteractAction(Action, ABC):
                 with_event=with_event,
                 with_response=with_response,
                 max_statement_length=max_statement_length,
+                transient=transient,
             )
 
 

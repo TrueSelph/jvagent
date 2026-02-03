@@ -57,6 +57,11 @@ class Interaction(DeferredSaveMixin, Node):
     channel: str = attribute(default="default", description="Communication channel")
     session_id: str = attribute(default="", description="Session identifier for this interaction")
 
+    canned_response: Optional[str] = attribute(
+        default=None,
+        description="Immediate filler response before full processing (e.g., 'Let me see..', 'One moment..')"
+    )
+    
     # Response
     response: Optional[str] = attribute(
         default=None, description="Agent response text (accumulated from stream chunks and ad hoc messages)"

@@ -108,7 +108,6 @@ actions:
       model: "gpt-4o"
       model_temperature: 0.1
       model_max_tokens: 8192
-      use_dspy: false
 
   - action: resolv/report_interview_interact_action
     context:
