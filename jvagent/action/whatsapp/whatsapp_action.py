@@ -1,4 +1,5 @@
 """WhatsApp Action Implementation."""
+import asyncio
 import logging
 import os
 from typing import Any, Dict, Optional, Union
@@ -356,11 +357,17 @@ class WhatsAppAction(Action):
     async def on_startup(self) -> None:
         """Called when app starts and action is loaded.
         
-        Initializes the WhatsApp filter and channel adapter when the app restarts
-        and loads this action from the database. Session registration is performed
-        lazily on first use (e.g., first webhook) for Lambda and long-running
-        server compatibility, avoiding blocking/failing when the WhatsApp API is
-        unreachable during bootstrap.
+        Initializes the WhatsApp filter and channel adapter, and attempts session
+        registration with a configurable timeout. Session registration is attempted
+        eagerly at startup (with timeout to avoid blocking Lambda cold starts) and
+        lazily on first webhook (for cases where startup registration fails or when
+        the provider already has the webhook URL).
+        
+        Timeout is configurable via WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS env
+        (default: 10 seconds). If startup registration times out or fails, use the
+        POST /api/actions/{action_id}/session/register endpoint to register manually,
+        or rely on lazy registration when the first webhook arrives (if the provider
+        already has the webhook URL).
         """
         # Apply environment variable defaults (e.g., APP_BASE_URL)
         self._apply_env_defaults()
@@ -390,6 +397,65 @@ class WhatsAppAction(Action):
             else:
                 logger.warning(
                     "WhatsAppFilter initialization failed on startup. Message transformations will not be applied."
+                )
+            
+            # Attempt session registration with timeout (eager, for fresh installs)
+            # Get timeout from env (default 10 seconds, clamped to 5-60 range)
+            try:
+                timeout_str = os.environ.get("WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS", "10")
+                timeout_seconds = max(5, min(60, int(timeout_str)))
+            except (ValueError, TypeError):
+                timeout_seconds = 10
+                logger.warning(
+                    f"Invalid WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS value: {timeout_str}. Using default: 10"
+                )
+            
+            try:
+                logger.info(f"Attempting session registration on startup (timeout: {timeout_seconds}s)")
+                registration_result = await asyncio.wait_for(
+                    self.register_session(),
+                    timeout=timeout_seconds
+                )
+                
+                # Check if registration succeeded
+                if isinstance(registration_result, dict):
+                    if registration_result.get("status") == "ERROR" or not registration_result.get("ok", True):
+                        error_msg = registration_result.get("error") or registration_result.get("message", "Unknown error")
+                        logger.warning(
+                            f"WhatsApp session registration failed on startup: {error_msg}. "
+                            f"Use POST /api/actions/{{action_id}}/session/register endpoint or wait for lazy registration."
+                        )
+                    else:
+                        # Mark as registered to avoid redundant calls
+                        self._session_registration_done = True
+                        status = registration_result.get("status", "UNKNOWN")
+                        logger.info(
+                            f"WhatsApp session registered successfully on startup: {self.session} (status: {status})"
+                        )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    f"WhatsApp session registration timed out after {timeout_seconds}s on startup. "
+                    f"For fresh installs on Lambda, call POST /api/actions/{{action_id}}/session/register "
+                    f"after deploy to register the session. Otherwise, lazy registration will occur on first webhook "
+                    f"(if provider already has webhook URL)."
+                )
+            except TypeError as e:
+                # Handle aiohttp/Python 3.12+ compatibility issues
+                error_str = str(e)
+                if "BaseException" in error_str:
+                    logger.warning(
+                        f"WhatsApp API server ({self.api_url}) is unreachable on startup. "
+                        f"For fresh installs, call POST /api/actions/{{action_id}}/session/register after deploy. "
+                        f"Otherwise, lazy registration will occur on first webhook."
+                    )
+                else:
+                    logger.error(f"Type error during session registration on startup: {e}", exc_info=True)
+            except Exception as e:
+                logger.warning(
+                    f"Error during session registration on startup: {e}. "
+                    f"For fresh installs, call POST /api/actions/{{action_id}}/session/register after deploy. "
+                    f"Otherwise, lazy registration will occur on first webhook.",
+                    exc_info=True
                 )
             
             # Initialize adapter (create new instance to ensure clean state)

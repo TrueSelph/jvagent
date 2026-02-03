@@ -169,19 +169,47 @@ This document outlines the security improvements and coding standards compliance
 
 ### 1. Lambda and Deployment Compatibility
 
-**Session Registration Strategy**:
-- Session registration is performed **lazily on first use** (e.g., first webhook request)
-- This ensures stability across all deployment scenarios:
-  - **Lambda cold starts**: Session registration happens on first webhook, avoiding dependency on bootstrap order
-  - **Long-running servers**: Session registration happens on first webhook after startup
-  - **Container restarts**: Consistent behavior regardless of when `on_startup()` runs
-- Session is registered at most once per process using an internal guard flag
-- `on_reload()` still performs immediate session registration after configuration updates
+**Session Registration Strategy** (Three-Tier Approach):
+
+1. **Eager registration at startup** (with timeout):
+   - Session registration is attempted during `on_startup()` with a configurable timeout (default 10 seconds)
+   - Timeout is set via `WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS` environment variable (clamped to 5-60 seconds)
+   - On success: Session is registered and webhooks can start immediately
+   - On timeout/failure: Logs warning and continues with filter/adapter initialization
+   - **Covers**: Fresh installs on long-running servers and Lambda (when bootstrap completes before timeout)
+
+2. **Lazy registration on first use**:
+   - If startup registration didn't complete, session registration happens automatically on the first webhook
+   - Uses internal guard flag to register at most once per process
+   - **Covers**: Lambda warm invocations, restarts when provider already has webhook URL
+
+3. **Manual registration endpoint**:
+   - `POST /api/actions/{action_id}/session/register` endpoint for explicit registration
+   - Requires authentication (same as other action endpoints)
+   - Returns registration result with status, ok flag, and message
+   - **Use cases**:
+     - Fresh install on Lambda where startup registration timed out
+     - Retry registration without restarting the app
+     - Force re-registration after configuration changes
+   - **Example**: `curl -X POST https://your-api.com/api/actions/{action_id}/session/register -H "Authorization: Bearer YOUR_TOKEN"`
 
 **Benefits**:
-- No blocking/failing during app startup if WhatsApp API is unreachable
-- Consistent behavior across Lambda, containers, and traditional servers
-- Faster startup times (no external API dependency during bootstrap)
+- **No chicken-and-egg**: Fresh installs register at startup (or via endpoint if startup timed out)
+- **No Lambda hangs**: Timeout prevents blocking cold starts if WhatsApp API is slow/unreachable
+- **Automatic recovery**: Lazy path handles warm Lambda and restarts
+- **Operational flexibility**: Manual endpoint for retries and troubleshooting
+
+**Deployment Flow**:
+
+For **long-running servers**:
+1. Deploy and start app → `on_startup` runs → session registers (if API is up)
+2. Webhooks start flowing automatically
+
+For **Lambda fresh install**:
+1. Deploy → First invocation runs bootstrap → `on_startup` attempts registration with 10s timeout
+2. If registration succeeds: Done, webhooks will flow
+3. If registration times out: Call `POST /api/actions/{action_id}/session/register` once to register session
+4. Subsequent invocations use lazy registration (provider already has webhook URL)
 
 ### 2. Enhanced Error Handling
 
@@ -234,6 +262,15 @@ WHATSAPP_API_URL=https://api.whatsapp.provider.com
 WHATSAPP_API_KEY=your_api_key
 WHATSAPP_SESSION=your_session_name
 WHATSAPP_TOKEN=your_token
+
+# Application Base URL (for webhook generation)
+APP_BASE_URL=https://your-app.com
+
+# Session Registration Timeout (optional, default: 10 seconds)
+# How long to wait for session registration during startup before timing out
+# Useful for Lambda to avoid blocking cold starts if WhatsApp API is slow
+# Value is clamped to 5-60 seconds range
+WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS=10
 
 # Security Configuration
 JVSPATIAL_JWT_SECRET=your_jwt_secret
