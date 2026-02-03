@@ -43,8 +43,7 @@ class ConverseInteractAction(InteractAction):
 
     directive: str = attribute(
         default=(
-            "Only handle smalltalk and casual conversation; politely decline all knowledge-based, "
-            "capability-based, and factual engagements by stating that you don't have the "
+            "Only handle smalltalk and casual conversation; politely decline answering if enough context is not provided by stating that you don't have the "
             "information or ability to respond at the moment."
         ),
         description="Fallback directive for smalltalk and conservative replies",

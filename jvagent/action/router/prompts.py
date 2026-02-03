@@ -5,139 +5,103 @@ intelligent conversational state analysis and routing.
 """
 
 # =============================================================================
-# DSPy Signature Docstring (single source of truth for RouterClassification)
+# Intent Types - Declarative Categories
 # =============================================================================
 
-ROUTER_CLASSIFICATION_SIGNATURE = """You are an intelligent router for a conversational agent. Your job is to understand the conversational state and determine which action(s), if any, should handle the user's message.
+INTENT_TYPES = [
+    "CONVERSATIONAL",  # Simple exchanges - greetings, smalltalk, social pleasantries
+    "INFORMATIONAL",   # Knowledge/data retrieval - questions, lookups, RAG queries
+    "INTERACTIVE",     # Multi-turn, stateful interactions - interviews, forms, workflows (starting or continuing)
+    "DIRECTIVE",       # Direct action commands - "do X", "send Y", "create Z"
+    "UNCLEAR"          # Cannot determine intent with confidence
+]
 
-CORE PRINCIPLE:
-Understand what the user actually needs right now, then route to the action(s) that can fulfill that need. Do not mechanically route based on presence of ongoing activities.
+# =============================================================================
+# System Prompt
+# =============================================================================
 
-ANALYSIS PROCESS:
+ROUTER_SYSTEM_PROMPT = """You are a routing intelligence for a conversational agent. Analyze user messages and route them to appropriate actions with high accuracy.
 
-1. UNDERSTAND THE USER'S MESSAGE
-   Ask yourself: What is the user expressing or requesting?
-   - Are they making a request? ("I want...", "Can you...", "Help me...")
-   - Are they asking a question? ("What is...", "How do...", "Where...")
-   - Are they providing information in response to a question asked of them?
-   - Are they expressing something social? (greeting, gratitude, acknowledgment, smalltalk)
-   - Are they signaling they want to change topics or stop something?
+CORE PRINCIPLES:
+1. Understand what the user actually needs right now
+2. Route to actions whose anchors genuinely match the user's need
+3. Calibrate confidence based on certainty and ambiguity
 
-2. UNDERSTAND THE CONVERSATIONAL STATE
-   Review the conversation history:
-   - What was the last thing the assistant asked or said?
-   - Is there an ongoing activity (check [EVENT] messages)?
-   - Is the user's message a direct response to something the assistant asked?
+KEY RULES:
+- Ongoing activities do NOT automatically capture all messages
+- Only route to ongoing activity when user is clearly engaging WITH it
+- CONVERSATIONAL intent (greetings, thanks, smalltalk) MUST have empty actions []
+- Lower confidence if ambiguous or uncertain"""
 
-3. DETERMINE USER NEEDS
-   Ask yourself: Does this user need the system to do something specific?
-   - If YES: Identify what they need and match to action anchors
-   - If NO: Consider if this is social/acknowledgment (may route to general conversation or nothing)
+# =============================================================================
+# Routing Prompt
+# =============================================================================
 
-4. EVALUATE ONGOING ACTIVITY RELEVANCE
-   If there is an "[EVENT] Ongoing Activity:" in history:
-   - Is the user DIRECTLY responding to a question from that activity?
-   - Is the user providing information that activity specifically requested?
-   - Or is the user doing something else (new request, smalltalk, gratitude)?
-   
-   CRITICAL: An ongoing activity does NOT automatically capture all messages.
-   Only route to an ongoing activity when the user is clearly engaging WITH that activity.
+ROUTING_PROMPT_TEMPLATE = """INPUTS:
+- User message: {utterance}
+- Available actions: {anchors_json}
+{history_section}
 
-5. MATCH TO ACTION ANCHORS
-   Compare the user's actual need to each action's anchor statements.
-   - Select actions whose anchors describe handling this type of need
-   - If no anchors match and user is just expressing gratitude/acknowledgment, return []
-   - Return ONLY action names (dictionary keys)
+TASK: Analyze and route the user's message to appropriate action(s).
 
-ROUTING GUIDELINES:
+INTENT TYPES:
+- CONVERSATIONAL: Greeting, thanks, smalltalk only; no request, no information given
+- INFORMATIONAL: Question, lookup, knowledge retrieval
+- INTERACTIVE: Multi-turn process (signup, interview, form)—starting or answering/continuing
+- DIRECTIVE: Direct command to perform action
+- UNCLEAR: Cannot determine
 
-| User Expression | Route To |
-|-----------------|----------|
-| New request or question | Match to relevant action anchors |
-| Direct answer to ongoing activity's question | The ongoing activity |
-| Providing info that ongoing activity requested | The ongoing activity |
-| Gratitude, acknowledgment ("thanks", "cool", "ok") | [] unless they also make a request |
-| Greeting or smalltalk | General conversation handler if available, else [] |
-| Topic change / cancellation | Match to anchors or [] |
+RULES:
+1. Match user's need to action anchors
+2. CONVERSATIONAL intent must have empty actions []
+3. Only route to ongoing activity if user is directly engaging with it
+4. Actions must be exact keys from Available actions (e.g., "SignupInterviewInteractAction"), NOT anchor descriptions
+5. If the last assistant turn was a question and the user's message could answer it, use INTERACTIVE (not CONVERSATIONAL)
+6. If context shows an ongoing activity and the user's message relates to it, use INTERACTIVE and route to that action
+7. Lower confidence if ambiguous or uncertain{optional_instructions}
 
-HARD RULE - SOCIAL INTENT:
-If the user is expressing gratitude, acknowledgment, greeting, or smalltalk WITHOUT a specific request:
-- intent_type MUST be SOCIAL
-- actions MUST be [] (empty array)
-- Do NOT route to ongoing activity. "Thanks" after news does NOT mean route to NewsInteractAction.
-- Social expressions do not need any action to handle them.
+OUTPUT (JSON only):
+{{
+  "interpretation": "Brief synopsis of user's request/need",
+  "intent_type": "CONVERSATIONAL|INFORMATIONAL|INTERACTIVE|DIRECTIVE|UNCLEAR",
+  "actions": ["ActionName1"],
+  "confidence": 0.0-1.0{entity_field}{canned_field}
+}}"""
 
-INTERPRETATION REQUIREMENTS:
-- Under 80 words
-- Describe what the user is expressing/requesting
-- Include any extracted values (names, IDs, emails, etc.)
+# =============================================================================
+# History Section Template
+# =============================================================================
 
-OUTPUT FORMAT:
-{
-  "interpretation": "What the user is expressing and any extracted values",
-  "actions": ["ActionName1", "ActionName2"],
-  "intent_type": "REQUEST|QUERY|RESPONSE|SOCIAL|NAVIGATION|UNCLEAR",
-  "confidence": 0.0-1.0
-}
-
-INTENT TYPES (for classification tracking):
-- REQUEST: User wants the system to do something
-- QUERY: User is asking a question
-- RESPONSE: User is directly responding to the assistant's question
-- SOCIAL: Greeting, gratitude, acknowledgment, smalltalk
-- NAVIGATION: Topic change, cancellation, "stop", "nevermind"
-- UNCLEAR: Cannot determine what user needs
+HISTORY_SECTION_TEMPLATE = """- Conversation history:
+{history}
 """
 
 # =============================================================================
-# System Prompt Template
+# Clarification Prompt Template
 # =============================================================================
 
-SYSTEM_PROMPT_TEMPLATE = """You are an intelligent router that understands conversational context and user needs.
+CLARIFICATION_PROMPT_TEMPLATE = """Based on the routing analysis, the user's intent is unclear and requires clarification.
 
-Your job is NOT to mechanically classify messages, but to understand:
-1. What is the user expressing or requesting?
-2. What do they actually need from the system?
-3. Which action(s) can fulfill that need?
+Routing context:
+- User message: {utterance}
+- Interpretation: {interpretation}
+- Intent type: {intent_type}
+- Confidence: {confidence}
+- Issues found: {issues}
 
-Key principle: Ongoing activities only capture messages that are DIRECTLY engaging with that activity (answering its questions, providing requested info). Social expressions, new requests, and unrelated messages should NOT automatically route to ongoing activities."""
+Generate a brief, friendly clarification request that:
+1. Acknowledges what you understood
+2. Asks a specific question to disambiguate
+3. Keeps it conversational and helpful
+
+Output only the clarification message text, nothing else."""
 
 # =============================================================================
-# Routing Prompt Template
+# Default Clarification Messages
 # =============================================================================
 
-ROUTING_PROMPT_TEMPLATE = """Current utterance:
-{utterance}
-
-Available actions and their anchors:
-{anchors_json}
-
-Analyze this message intelligently:
-
-1. What is the user expressing? (request, question, response, gratitude, smalltalk, etc.)
-
-2. What do they actually need from the system right now?
-
-3. If there's an ongoing activity in conversation history:
-   - Is this message DIRECTLY responding to that activity?
-   - Or is it something else (new topic, social expression, unrelated)?
-
-4. Based on their actual need, which action anchors match?
-   - If they're just saying "thanks" or "cool" without a request, return []
-   - Only route to ongoing activity if they're engaging WITH it
-
-HARD RULE: If intent_type is SOCIAL (gratitude, acknowledgment, greeting, smalltalk), actions MUST be [].
-Do NOT route to ongoing activity for social expressions. "Thanks" after news = SOCIAL, actions: [].
-
-Return JSON:
-{{
-    "interpretation": "What user is expressing, any extracted values",
-    "actions": ["ActionName1"],
-    "intent_type": "REQUEST|QUERY|RESPONSE|SOCIAL|NAVIGATION|UNCLEAR",
-    "confidence": 0.0-1.0
-}}
-
-Remember: 
-- actions array contains ONLY action names (dictionary KEYS)
-- Social expressions without requests often need no routing
-- Ongoing activities don't automatically capture all messages"""
+DEFAULT_CLARIFICATION_MESSAGES = [
+    "I want to make sure I understand correctly. Could you tell me a bit more about what you're looking for?",
+    "I'm not quite sure what you need. Could you clarify what you'd like me to help with?",
+    "I'd like to help, but I need a bit more context. What would you like me to do?",
+]
