@@ -100,7 +100,7 @@ class InteractRouter(InteractAction):
 
     # Canned response settings (dynamically generated)
     enable_canned_response: bool = attribute(
-        default=False,
+        default=True,
         description="Toggle dynamic canned response generation on/off"
     )
     canned_response_max_words: int = attribute(
@@ -310,7 +310,7 @@ class InteractRouter(InteractAction):
             optional_instructions += "\n5. Extract mentioned entities as flexible key-value pairs"
         if self.enable_canned_response:
             skip_intents = ", ".join(self.skip_canned_for_intents)
-            optional_instructions += f"\n6. Generate brief canned response: generic acknowledgment only (e.g., 'Hmm.. ok', 'Let me see..', 'One moment..'), NO assumptions or pronouncements. EXCEPT for {skip_intents} intents (use empty string)"
+            optional_instructions += f"\n6. Generate a GENERIC, BRIEF, HUMAN-LIKE canned response for immediate acknowledgment only (e.g. 'Let me see..', 'One moment..', [generate more examples]), NO assumed pronouncements (e.g. I can do that.., etc. ). EXCEPT for {skip_intents} intents (use empty string)"
 
         # Build the complete prompt
         prompt = ROUTING_PROMPT_TEMPLATE.format(
@@ -462,9 +462,30 @@ class InteractRouter(InteractAction):
         if not canned or not canned.strip():
             return
 
-        # Publish immediately (non-streaming for quick delivery)
+        # Set canned_response field directly instead of publishing to response
+        interaction = visitor.interaction
+        if not interaction:
+            logger.warning("InteractRouter: No interaction available for canned response")
+            return
+
+        # Only publish canned response if interaction.response is empty
+        if interaction.response:
+            logger.debug(
+                "InteractRouter: Skipping canned response - interaction already has response"
+            )
+            return
+
         try:
-            await self.publish(visitor, canned.strip())
+            interaction.canned_response = canned.strip()
+            await interaction.save()
+            
+            # Publish canned response with transient=True
+            # This sends to user but keeps interaction.response = None
+            await self.publish(
+                visitor,
+                canned.strip(),
+                transient=True
+            )
             logger.debug(f"InteractRouter: Published canned response: {canned}")
         except Exception as e:
             logger.warning(f"InteractRouter: Failed to publish canned response: {e}")

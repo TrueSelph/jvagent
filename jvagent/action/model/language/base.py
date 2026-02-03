@@ -283,6 +283,7 @@ class LanguageModelAction(BaseModelAction, ABC):
         calling_action_name: Optional[str] = None,
         response_bus: Optional[Any] = None,
         interaction: Optional[Any] = None,
+        transient: bool = False,
         **kwargs: Any,
     ) -> str:
         """Generate text with optional ResponseBus publishing.
@@ -301,6 +302,7 @@ class LanguageModelAction(BaseModelAction, ABC):
             calling_action_name: Optional name of the action calling this method
             response_bus: Optional ResponseBus instance for direct publishing
             interaction: Optional Interaction node (required if response_bus provided)
+            transient: If True, skip appending published content to interaction.response
             **kwargs: Additional parameters (temperature, max_tokens, model, etc.)
 
         Returns:
@@ -343,6 +345,7 @@ class LanguageModelAction(BaseModelAction, ABC):
                     interaction=interaction,
                     user_id=user_id,
                     streaming_complete=True,
+                    transient=transient,
                 )
                 return full_text
 
@@ -370,6 +373,7 @@ class LanguageModelAction(BaseModelAction, ABC):
                         interaction=interaction,
                         user_id=user_id,
                         streaming_complete=False,
+                        transient=transient,
                     )
 
             full_text = "".join(chunks)
@@ -385,6 +389,7 @@ class LanguageModelAction(BaseModelAction, ABC):
                 interaction=interaction,
                 user_id=user_id,
                 streaming_complete=True,
+                transient=transient,
             )
             return full_text
         

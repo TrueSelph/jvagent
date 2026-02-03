@@ -123,7 +123,7 @@ class InterviewInteractAction(InteractAction, ABC):
         "User corrects or updates {interview_type}",
         "User confirms {interview_type}",
         "User skips {interview_type} question",
-        "User declines to answer {interview_type}",
+        "User declines to answer a question from {interview_type}",
         "User answers {interview_type} question",
         "User provides {interview_type} information",
     ]

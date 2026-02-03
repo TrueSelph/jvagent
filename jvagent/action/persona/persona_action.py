@@ -18,7 +18,6 @@ from jvagent.action.persona.prompts import (
     NO_DIRECTIVES_SUB_PROMPT,
     PARAMETERS_SUB_PROMPT,
     SYSTEM_PROMPT_TEMPLATE,
-    PERSONA_RESPONSE_SIGNATURE,
     INTERPRETATION_INSIGHTS_PROMPT,
     REVISION_MECHANISM_PROMPT,
     CONTEXT_EVALUATION_PROMPT,
@@ -88,18 +87,6 @@ class PersonaAction(Action):
         default=False,
         description="Enable structured JSON output with insights, context evaluation, and revisions (default: False for backward compatibility)"
     )
-    
-    # DSPy Integration
-    use_dspy: bool = attribute(
-        default=False,
-        description="Use DSPy module for response generation (enables optimization of directive/parameter following via DSPy teleprompters)"
-    )
-    
-    # DSPy signature docstring (single source of truth, can be overridden in agent.yaml for runtime customization)
-    persona_response_signature: str = attribute(
-        default=PERSONA_RESPONSE_SIGNATURE,
-        description="DSPy signature docstring for PersonaResponse. Can be overridden in agent.yaml for runtime customization. Defaults to PERSONA_RESPONSE_SIGNATURE from prompts.py",
-    )
 
     # Standard collection of configurable parameters
     parameters: List[Dict[str, Any]] = attribute(
@@ -132,12 +119,6 @@ class PersonaAction(Action):
         description="Standard collection of configurable parameters to apply when executing the prompt",
     )
 
-    def __init__(self, *args, **kwargs):
-        """Initialize PersonaAction."""
-        super().__init__(*args, **kwargs)
-        # Cache DSPy module instance for reuse across calls
-        self._dspy_module = None
-
     async def on_register(self) -> None:
         """Initialize when action is registered."""
         await super().on_register()
@@ -154,6 +135,7 @@ class PersonaAction(Action):
         with_event: bool = True,
         with_response: bool = True,
         max_statement_length: Optional[int] = None,
+        transient: bool = False,
     ) -> str:
         """Main utility method for generating a response.
 
@@ -179,6 +161,8 @@ class PersonaAction(Action):
             with_event: Include events in history (default: True)
             with_response: Include AI responses in history (default: True)
             max_statement_length: Truncate utterances/responses to this length (default: None, no truncation)
+            transient: If True, skip appending response to interaction.response. Use for temporary
+                messages like canned responses or typing indicators (default: False)
 
         Returns:
             Generated response string from the language model
@@ -223,27 +207,11 @@ class PersonaAction(Action):
                 "or PersonaAction's own parameters."
             )
 
-        # Use DSPy if enabled
-        if self.use_dspy:
-            return await self._respond_with_dspy(
-                interaction,
-                visitor,
-                applicable_directives,
-                applicable_parameters,
-                use_history,
-                history_limit,
-                with_utterance,
-                with_interpretation,
-                with_event,
-                with_response,
-                max_statement_length,
-            )
-
-        # Legacy implementation
-        return await self._respond_legacy(
+        # Generate response using direct prompt approach
+        return await self._generate_response(
             interaction, visitor, applicable_directives, applicable_parameters,
             use_history, history_limit, with_utterance, with_interpretation,
-            with_event, with_response, max_statement_length
+            with_event, with_response, max_statement_length, transient
         )
 
     async def _get_user_display_name(self, interaction: Interaction) -> str:
@@ -262,13 +230,25 @@ class PersonaAction(Action):
         interaction: Interaction,
         visitor: Optional[Any],
         streaming: bool,
+        transient: bool = False,
     ) -> None:
         """Persist and optionally publish response to the response bus.
+
+        When transient=True, the response is published but NOT appended to
+        interaction.response. This is useful for temporary messages like
+        canned responses or typing indicators.
 
         When there is no bus: persist to interaction.response (append if continuing)
         and save. When there is a bus and streaming: no-op (model already published).
         When there is a bus and non-streaming: PersonaAction is the sole publisher;
-        call publish once (legacy path does not pass bus to the model in this case).
+        call publish once.
+        
+        Args:
+            response: The response content
+            interaction: The interaction object
+            visitor: Optional InteractWalker
+            streaming: Whether streaming mode is active
+            transient: If True, skip appending to interaction.response
         """
         if not response:
             return
@@ -276,15 +256,16 @@ class PersonaAction(Action):
         has_bus = bool(response_bus and visitor and getattr(visitor, "session_id", None))
 
         if not has_bus:
-            current_response = interaction.response or ""
-            response_changed = False
-            # Continuing (append with separator) vs replace/set
-            if current_response and current_response.strip() and current_response != response:
-                response_changed = interaction.set_response(f"{current_response}\n\n{response}")
-            else:
-                response_changed = interaction.set_response(response)
-            if response_changed:
-                await interaction.save()
+            if not transient:
+                current_response = interaction.response or ""
+                response_changed = False
+                # Continuing (append with separator) vs replace/set
+                if current_response and current_response.strip() and current_response != response:
+                    response_changed = interaction.set_response(f"{current_response}\n\n{response}")
+                else:
+                    response_changed = interaction.set_response(response)
+                if response_changed:
+                    await interaction.save()
             return
 
         if streaming:
@@ -305,70 +286,8 @@ class PersonaAction(Action):
             interaction=interaction,
             user_id=interaction.user_id if hasattr(interaction, "user_id") else None,
             streaming_complete=True,
+            transient=transient,
         )
-
-    def _extract_response_from_prediction(self, prediction: Any) -> str:
-        """Extract response field from DSPy prediction object.
-        
-        ChainOfThought returns both 'reasoning' and 'response' fields.
-        This method safely extracts only the 'response' field.
-        
-        Args:
-            prediction: DSPy prediction object (Prediction, dict, or string)
-            
-        Returns:
-            Response string
-        """
-        if isinstance(prediction, str):
-            # If prediction is already a string, use it directly
-            return prediction
-        elif hasattr(prediction, 'response'):
-            # Prediction object with response attribute
-            return prediction.response
-        elif isinstance(prediction, dict) and 'response' in prediction:
-            # Dictionary with response key
-            return prediction['response']
-        elif hasattr(prediction, '__getitem__') and 'response' in prediction:
-            # Object that supports dictionary-like access
-            return prediction['response']
-        else:
-            # Fallback: try to get response from prediction store
-            response = None
-            if hasattr(prediction, 'get'):
-                response = prediction.get('response', None)
-            if response is None:
-                response = getattr(prediction, 'response', None)
-            if response is None:
-                logger.warning(
-                    f"{self.get_class_name()}: Prediction does not contain 'response' field. "
-                    f"Prediction type: {type(prediction)}, "
-                    f"Available fields: {list(prediction.keys()) if hasattr(prediction, 'keys') else 'unknown'}"
-                )
-                # If no response field, use the prediction string representation
-                response = str(prediction)
-            return response
-
-    def _build_interpretation_insights_section(self, interpretation: Optional[str]) -> str:
-        """Build the interpretation/insights section when interpretation is available.
-
-        Args:
-            interpretation: The interaction.interpretation field (set by InteractRouter)
-
-        Returns:
-            Formatted interpretation section, or empty string if no interpretation
-        """
-        if not interpretation or not interpretation.strip():
-            return ""
-        
-        return INTERPRETATION_INSIGHTS_PROMPT.format(interpretation=interpretation)
-
-    def _build_context_evaluation_section(self) -> str:
-        """Build the context evaluation section.
-
-        Returns:
-            Formatted context evaluation section
-        """
-        return CONTEXT_EVALUATION_PROMPT
 
     def _parse_structured_output(self, response: str) -> Optional[str]:
         """Parse structured JSON output to extract final message content.
@@ -437,126 +356,87 @@ class PersonaAction(Action):
     ) -> str:
         """Compose the system prompt using the consolidated template.
 
-        Uses SYSTEM_PROMPT_TEMPLATE with conditional placeholders for all sections:
-        - General Instructions (always included)
-        - Agent Identity & Context (always included)
-        - Task Description (always included)
-        - Interpretation/Insights (conditionally included)
-        - Revision Mechanism (always included)
-        - Prioritization Instructions (always included)
-        - Context Evaluation (always included)
-        - Directives (conditionally included)
-        - Parameters (conditionally included)
-        - Channel Formatting (conditionally included)
-
         Args:
             interaction: The active interaction object
-            applicable_directives: List of unexecuted directives (to avoid duplicate retrieval)
-            applicable_parameters: List of unexecuted parameters (to avoid duplicate retrieval)
+            applicable_directives: List of unexecuted directives
+            applicable_parameters: List of unexecuted parameters
 
         Returns:
             Composed system prompt string
         """
-        # Prepare date/time context
         now = datetime.now()
         date_str = now.strftime("%A, %d %B, %Y")
         time_str = now.strftime("%I:%M %p")
 
-        # Detect continuation mode (multi-call scenario)
-        is_continuation = bool(interaction.response)
-
         # Build continuation guidance if in multi-call mode
         continuation_guidance = ""
-        if is_continuation:
+        if interaction.response:
             from jvagent.memory.conversation import Conversation
             
-            # For continuation, use sensible defaults (truncate_statement will use agent's max_statement_length if available)
-            # Previous response: keep last 2000 chars for context
             previous_response = await Conversation.truncate_statement(
                 interaction.response or "",
-                max_length=2000,  # Override: keep last 2000 chars for continuation context
+                max_length=2000,
                 keep_last=True,
                 interaction=interaction
             )
-            
-            # User utterance: use 500 chars default (truncate_statement will use agent's max_statement_length if available)
             user_utterance = await Conversation.truncate_statement(
                 interaction.utterance or "",
-                max_length=500,  # Override: 500 chars for utterance in continuation
+                max_length=500,
                 interaction=interaction
             )
-            
             continuation_guidance = CONTINUATION_GUIDANCE_PROMPT.format(
                 previous_response=previous_response or "(No previous response)",
                 user_utterance=user_utterance or "(No user utterance)"
             )
 
-        # Prepare agent capabilities
         capabilities_str = (
             "\n".join(f"- {cap}" for cap in self.persona_capabilities)
             if self.persona_capabilities
             else "None specified"
         )
 
-        # Build interpretation/insights section (if interpretation available)
-        interpretation_section = self._build_interpretation_insights_section(interaction.interpretation)
+        interpretation_section = (
+            INTERPRETATION_INSIGHTS_PROMPT.format(interpretation=interaction.interpretation)
+            if interaction.interpretation and interaction.interpretation.strip()
+            else ""
+        )
 
-        # Build revision mechanism section (always included for quality)
-        revision_mechanism = REVISION_MECHANISM_PROMPT
-
-        # Build prioritization instructions section (always included)
-        prioritization_instructions = PRIORITIZATION_INSTRUCTIONS_PROMPT
-
-        # Build context evaluation section (always included)
-        context_evaluation = self._build_context_evaluation_section()
-
-        # Build directives section - consolidate all directives into a single numbered list
-        directives_section = ""
-        directive_count = len(applicable_directives)
-        
+        # Build directives section
         if applicable_directives:
-            # Create a single numbered list of all directives (no action tagging)
             directive_list = "\n".join(
                 f"{i+1}. {d.get('content', str(d))}" 
                 for i, d in enumerate(applicable_directives)
             )
             directives_section = DIRECTIVES_SECTION_PROMPT.format(
                 directive_list=directive_list,
-                directive_count=directive_count
+                directive_count=len(applicable_directives)
             )
         else:
             directives_section = NO_DIRECTIVES_SUB_PROMPT
 
-        # Build parameters section - consolidate all parameters into a single numbered list
-        parameters_section = ""
+        # Build parameters section
         if applicable_parameters:
-            # Create a single numbered list of all parameters (no action tagging)
             parameter_list = "\n".join(
                 format_parameter(p, index=i+1) 
                 for i, p in enumerate(applicable_parameters)
             )
-            parameters_section = PARAMETERS_SUB_PROMPT.format(
-                parameter_list=parameter_list
-            )
+            parameters_section = PARAMETERS_SUB_PROMPT.format(parameter_list=parameter_list)
         else:
             parameters_section = ""
 
         # Build channel formatting section
-        channel_formatting_section = ""
         channel_directive = get_channel_directive(interaction.channel or "default")
-        if channel_directive:
-            channel_formatting_section = f"### CHANNEL FORMATTING\n{channel_directive}"
+        channel_formatting_section = (
+            f"### CHANNEL FORMATTING\n{channel_directive}" if channel_directive else ""
+        )
 
-        # Format all conditional sections
+        # Format conditional sections
         interpretation_section = format_conditional_section(interpretation_section, bool(interpretation_section))
         directives_section = format_conditional_section(directives_section, bool(directives_section))
         parameters_section = format_conditional_section(parameters_section, bool(parameters_section))
         channel_formatting_section = format_conditional_section(channel_formatting_section, bool(channel_formatting_section))
         continuation_guidance = format_conditional_section(continuation_guidance, bool(continuation_guidance))
 
-        # Build and return the final prompt using self.system_prompt (which defaults to SYSTEM_PROMPT_TEMPLATE
-        # but can be overridden by agent-specific configurations)
-        # Fall back to SYSTEM_PROMPT_TEMPLATE if self.system_prompt is empty (shouldn't happen with default)
         prompt_template = self.system_prompt if self.system_prompt else SYSTEM_PROMPT_TEMPLATE
         return prompt_template.format(
             agent_name=self.persona_name,
@@ -566,9 +446,9 @@ class PersonaAction(Action):
             date=date_str,
             time=time_str,
             interpretation_section=interpretation_section,
-            revision_mechanism=revision_mechanism,
-            prioritization_instructions=prioritization_instructions,
-            context_evaluation=context_evaluation,
+            revision_mechanism=REVISION_MECHANISM_PROMPT,
+            prioritization_instructions=PRIORITIZATION_INSTRUCTIONS_PROMPT,
+            context_evaluation=CONTEXT_EVALUATION_PROMPT,
             directives_section=directives_section,
             parameters_section=parameters_section,
             channel_formatting_section=channel_formatting_section,
@@ -653,9 +533,8 @@ class PersonaAction(Action):
             })
 
         return history if history else []
-    
-    
-    async def _respond_with_dspy(
+
+    async def _generate_response(
         self,
         interaction: Interaction,
         visitor: Optional[Any],
@@ -668,12 +547,12 @@ class PersonaAction(Action):
         with_event: bool,
         with_response: bool,
         max_statement_length: Optional[int],
+        transient: bool,
     ) -> str:
-        """DSPy-based response generation with all prompt elements modeled.
+        """Generate response using direct prompt approach.
         
-        This method extracts all elements from the persona prompt and passes them
-        as structured inputs to the DSPy module, enabling optimization of directive
-        and parameter following.
+        Composes the system prompt using _compose_prompt() and makes the language
+        model call via model_action.generate() with system prompt and conversation history.
         
         Args:
             interaction: The active interaction object
@@ -687,200 +566,10 @@ class PersonaAction(Action):
             with_event: Include events in history
             with_response: Include AI responses in history
             max_statement_length: Truncate to this length
+            transient: If True, skip appending response to interaction.response
             
         Returns:
             Generated response string
-        """
-        try:
-            # Import DSPy components
-            import dspy
-            from jvagent.action.model.dspy import DSPyLM
-            from jvagent.action.persona.dspy import PersonaResponseModule
-            
-            # Get model action
-            model_action = await self.get_model_action(required=True)
-            if not model_action:
-                logger.warning(f"{self.get_class_name()}: Could not get model action for DSPy response generation")
-                # Fall back to legacy implementation
-                return await self._respond_legacy(
-                    interaction, visitor, applicable_directives, applicable_parameters,
-                    use_history, history_limit, with_utterance, with_interpretation,
-                    with_event, with_response, max_statement_length
-                )
-            
-            # Prepare date/time
-            now = datetime.now()
-            date_str = now.strftime("%A, %d %B, %Y")
-            time_str = now.strftime("%I:%M %p")
-            
-            # Get user display name
-            user_display_name = await self._get_user_display_name(interaction)
-            
-            # Detect continuation mode
-            is_continuation = bool(interaction.response)
-            previous_response = None
-            original_user_utterance = None
-            
-            if is_continuation:
-                from jvagent.memory.conversation import Conversation
-                previous_response = await Conversation.truncate_statement(
-                    interaction.response or "",
-                    max_length=2000,
-                    keep_last=True,
-                    interaction=interaction
-                )
-                original_user_utterance = await Conversation.truncate_statement(
-                    interaction.utterance or "",
-                    max_length=500,
-                    interaction=interaction
-                )
-            
-            # Get conversation history (for both streaming and non-streaming)
-            conversation_history_list = None
-            conversation_history_str = None
-            if use_history:
-                conversation_history_list = await self._get_conversation_history(
-                    interaction,
-                    history_limit,
-                    with_utterance=with_utterance,
-                    with_response=with_response,
-                    with_interpretation=with_interpretation,
-                    with_event=with_event,
-                    max_statement_length=max_statement_length,
-                )
-                from jvagent.action.model.dspy import format_conversation_history_for_dspy
-                conversation_history_str = format_conversation_history_for_dspy(conversation_history_list)
-            
-            # Get channel formatting
-            from jvagent.action.persona.prompts import get_channel_directive
-            channel = interaction.channel or "default"
-            channel_formatting = get_channel_directive(channel)
-            
-            # Detect streaming mode - defaults to False if not set
-            streaming = bool(
-                visitor
-                and getattr(visitor, "stream", False)
-                and getattr(visitor, "response_bus", None)
-                and getattr(visitor, "session_id", None)
-            )
-            
-            # Get ResponseBus from visitor
-            response_bus = getattr(visitor, "response_bus", None) if visitor else None
-            
-            # Create DSPyLM adapter
-            lm = DSPyLM(
-                model_action=model_action,
-                model_type="chat",
-                model=self.model,
-                temperature=self.model_temperature,
-                max_tokens=self.model_max_tokens,
-            )
-            
-            # Get or create cached module instance with action instance for signature docstring
-            # Note: If signature docstring changes at runtime, module should be recreated
-            if self._dspy_module is None:
-                self._dspy_module = PersonaResponseModule(action_instance=self)
-            
-            module = self._dspy_module
-            
-            # Set LM on module for module-level configuration
-            module.set_lm(lm)
-            
-            # Configure DSPy with explicit adapter and LM
-            from dspy.adapters import ChatAdapter
-            # ChatAdapter defaults to use_json_adapter_fallback=True, so we can use default
-            adapter = ChatAdapter()
-            
-            # Prepare module arguments (used for both streaming and non-streaming)
-            module_kwargs = {
-                        "user_utterance": str(interaction.utterance if with_utterance else ""),
-                        "persona_name": str(self.persona_name or ""),
-                        "persona_description": str(self.persona_description or ""),
-                "persona_capabilities": self.persona_capabilities or [],
-                        "user_display_name": str(user_display_name or ""),
-                        "current_date": str(date_str),
-                        "current_time": str(time_str),
-                "directives": applicable_directives or [],
-                "parameters": applicable_parameters or [],
-                "interpretation": interaction.interpretation if (interaction.interpretation and with_interpretation) else None,
-                "conversation_history": conversation_history_str,
-                "is_continuation": is_continuation,
-                "previous_response": previous_response,
-                "original_user_utterance": original_user_utterance,
-                        "channel": str(channel or "default"),
-                "channel_formatting": channel_formatting,
-            }
-            
-            # Configure DSPy context with adapter and call module
-            # For DSPy, we use the module's acall() method which properly handles
-            # signature formatting through the adapter system. Streaming is handled
-            # at the LM level through DSPyLM, but for now we'll use non-streaming
-            # to avoid async complexity. Streaming can be added later if needed.
-            # Note: DSPy's streamify() can cause async deadlocks, so we use standard acall()
-            if streaming:
-                logger.debug(f"{self.get_class_name()}: DSPy mode - using non-streaming for reliability (streaming support can be added later)")
-            
-            # Configure DSPy context with adapter and call module
-            with dspy.context(lm=lm, adapter=adapter):
-                # Use module's acall method for proper DSPy integration
-                prediction = await module.acall(**module_kwargs)
-                
-                # Extract response from prediction
-                response = self._extract_response_from_prediction(prediction)
-            
-            # Handle structured output if enabled
-            if self.use_structured_output and response:
-                parsed_response = self._parse_structured_output(response)
-                if parsed_response:
-                    response = parsed_response
-            
-            # Mark directives and parameters as executed only if we got a meaningful response
-            if response and response.strip():
-                if applicable_directives:
-                    interaction.set_to_executed(directives=applicable_directives)
-                if applicable_parameters:
-                    interaction.set_to_executed(parameters=applicable_parameters)
-
-            await self._pipe_response(response, interaction, visitor, streaming)
-
-            # Record PersonaAction execution AFTER response is generated and saved
-            interaction.record_action_execution("PersonaAction")
-
-            return response
-
-        except Exception as e:
-            logger.error(
-                f"{self.get_class_name()}: Failed to generate response via DSPy: {e}",
-                exc_info=True
-            )
-            # Fall back to legacy implementation on error
-            logger.warning(
-                f"{self.get_class_name()}: Falling back to legacy implementation. "
-                f"Error type: {type(e).__name__}, Error: {str(e)}"
-            )
-            return await self._respond_legacy(
-                interaction, visitor, applicable_directives, applicable_parameters,
-                use_history, history_limit, with_utterance, with_interpretation,
-                with_event, with_response, max_statement_length
-            )
-    
-    async def _respond_legacy(
-        self,
-        interaction: Interaction,
-        visitor: Optional[Any],
-        applicable_directives: List[Dict[str, Any]],
-        applicable_parameters: List[Dict[str, Any]],
-        use_history: bool,
-        history_limit: int,
-        with_utterance: bool,
-        with_interpretation: bool,
-        with_event: bool,
-        with_response: bool,
-        max_statement_length: Optional[int],
-    ) -> str:
-        """Legacy response generation implementation (extracted from original respond method).
-        
-        This is the original implementation, extracted to avoid code duplication.
         """
         # Get model action (required=True raises error if not found)
         model_action = await self.get_model_action(required=True)
@@ -933,6 +622,7 @@ class PersonaAction(Action):
                 response_bus=response_bus if streaming else None,
                 interaction=interaction if streaming else None,
                 response_format=response_format,
+                transient=transient,
             )
 
             # Parse structured output if enabled
@@ -949,7 +639,7 @@ class PersonaAction(Action):
                 if applicable_parameters:
                     interaction.set_to_executed(parameters=applicable_parameters)
 
-            await self._pipe_response(response, interaction, visitor, streaming)
+            await self._pipe_response(response, interaction, visitor, streaming, transient)
 
             # Record PersonaAction execution AFTER response is generated and saved
             interaction.record_action_execution("PersonaAction")
@@ -957,7 +647,7 @@ class PersonaAction(Action):
             return response
 
         except Exception as e:
-            logger.error(f"Error in PersonaAction.respond (legacy): {e}", exc_info=True)
+            logger.error(f"Error in PersonaAction._generate_response: {e}", exc_info=True)
             raise
 
     async def healthcheck(self) -> bool:

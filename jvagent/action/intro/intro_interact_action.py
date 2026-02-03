@@ -34,7 +34,7 @@ class IntroInteractAction(InteractAction):
 
     directive: str = attribute(
         default=(
-            "Introduce yourself by name and explain your role, then refer the first-time user to read your AI policy at https://platform.trueselph.com/policy. NO CLOSING STATEMENTS OR QUESTIONS."
+            "Introduce yourself and briefly explain your capabilities. Refer the first-time user to read your AI policy at https://platform.trueselph.com/policy. NO CLOSING STATEMENTS OR QUESTIONS."
         ),
         description="Introductory message for first-time users",
     )
@@ -82,17 +82,8 @@ class IntroInteractAction(InteractAction):
                 await visitor.unrecord_action_execution()
                 return
 
-            # Generate response via PersonaAction with directive
-            if self.directive:
-                await self.respond(
-                    visitor,
-                    directives=[self.directive],
-                    parameters=self.parameters if self.parameters else None,
-                    use_history=False,
-                    with_utterance=False
-                )
-
-            logger.info("IntroInteractAction: Added introductory directive for first-time user")
+            # Add the directive via visitor so action_name is set and interaction is saved
+            await visitor.add_directive(self.directive)
 
         except Exception as e:
             logger.error(f"IntroInteractAction: Error during execution: {e}", exc_info=True)
