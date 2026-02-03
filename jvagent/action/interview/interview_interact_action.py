@@ -116,33 +116,16 @@ class InterviewInteractAction(InteractAction, ABC):
     description: str = "Unified orchestrator for interview system"
 
     # Standard anchors that are automatically included for all interview implementations
-    # These cover common interview flow scenarios and ensure proper routing classification
     # Base anchor templates - will be contextualized with class name in _merge_standard_anchors
+    # Covers: cancellation, update, confirmation, decline, submission
     _standard_interview_anchor_templates: List[str] = [
-        # Cancellation (any state)
         "User cancels {interview_type}",
-        "User stops {interview_type}",
-        "User aborts {interview_type}",
-
-        # Update (ACTIVE or REVIEW states)
-        "User changes {interview_type} information",
-        "User corrects {interview_type} answer",
-        "User updates {interview_type} response",
-
-        # Confirmation (REVIEW state)
-        "User confirms {interview_type} information",
-        "User approves {interview_type} summary",
-
-        # Decline (ACTIVE state, non-required fields)
-        "User declines to answer {interview_type} question",
+        "User corrects or updates {interview_type}",
+        "User confirms {interview_type}",
         "User skips {interview_type} question",
-        "User can't provide {interview_type} answer",
-        "User prefers not to answer {interview_type}",
-
-        # Submission (ACTIVE state)
+        "User declines to answer {interview_type}",
         "User answers {interview_type} question",
         "User provides {interview_type} information",
-        "User responds to {interview_type} prompt",
     ]
 
     # Class-level registries for decorator-registered handlers and validators

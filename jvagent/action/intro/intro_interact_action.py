@@ -34,7 +34,7 @@ class IntroInteractAction(InteractAction):
 
     directive: str = attribute(
         default=(
-            "Introduce yourself by name and explain your role, then refer the first-time user to read your AI policy at https://platform.trueselph.com/policy. Do not say anything else."
+            "Introduce yourself by name and explain your role, then refer the first-time user to read your AI policy at https://platform.trueselph.com/policy. NO CLOSING STATEMENTS OR QUESTIONS."
         ),
         description="Introductory message for first-time users",
     )
@@ -45,8 +45,8 @@ class IntroInteractAction(InteractAction):
     )
 
     weight: int = attribute(
-        default=-90,
-        description="Execution weight (runs after InteractRouter but before PersonaAction)",
+        default=-101,
+        description="Execution weight (runs before InteractRouter)",
     )
 
     always_execute: bool = attribute(
