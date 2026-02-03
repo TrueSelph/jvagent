@@ -528,6 +528,52 @@ async def get_session_status(
 
 
 @endpoint(
+    "/actions/{action_id}/session/register",
+    methods=["POST"],
+    auth=True,
+    tags=["WhatsApp"],
+    response=success_response(
+        data={
+            "status": ResponseField(field_type=str, example="CONNECTED"),
+            "ok": ResponseField(field_type=bool, example=True, default=True),
+            "message": ResponseField(field_type=Optional[str], example="Session registered successfully", default=None),
+        }
+    ),
+)
+async def register_session(
+    action_id: str,
+) -> Dict[str, Any]:
+    """Register WhatsApp session with the API provider.
+    
+    This endpoint is used to manually register or re-register a WhatsApp session,
+    particularly useful for:
+    - Fresh installs on Lambda where startup registration timed out or didn't run
+    - Retrying registration without restarting the app
+    - Forcing re-registration after configuration changes
+    
+    The endpoint calls register_session() on the WhatsAppAction, which:
+    - Generates webhook URL if not set
+    - Registers the session with the WhatsApp API provider (WPPConnect, WWebJS, etc.)
+    - Returns session status and registration details
+    
+    Args:
+        action_id: ID of the WhatsApp action
+    
+    Returns:
+        Dict[str, Any]: Registration result with status, ok flag, and message
+    """
+    whatsapp_action = await get_whatsapp_action(action_id)
+    result = await whatsapp_action.register_session()
+    
+    # If registration succeeded, mark as registered to avoid redundant lazy calls
+    if isinstance(result, dict):
+        if result.get("ok", True) and result.get("status") != "ERROR":
+            whatsapp_action._session_registration_done = True
+    
+    return result
+
+
+@endpoint(
     "/actions/{action_id}/qrcode",
     methods=["GET"],
     auth=True,
