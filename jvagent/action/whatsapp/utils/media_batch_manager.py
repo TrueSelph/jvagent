@@ -117,7 +117,7 @@ class MediaBatchManager:
                         self._schedule_batch_processing(sender, whatsapp_action.media_batch_window),
                         name=f"media_batch_timer_{sender}"
                     )
-                    logger.info(
+                    logger.debug(
                         f"Added media to existing batch for user {sender}, "
                         f"batch size: {len(batch['media_urls'])}, resetting timer"
                     )
@@ -133,7 +133,7 @@ class MediaBatchManager:
                     self._schedule_batch_processing(sender, whatsapp_action.media_batch_window),
                     name=f"media_batch_timer_{sender}"
                 )
-                logger.info(
+                logger.debug(
                     f"Created new media batch for user {sender}, "
                     f"will process in {whatsapp_action.media_batch_window}s"
                 )
@@ -213,7 +213,7 @@ class MediaBatchManager:
             data = batch["data"]
             data["whatsapp_media"] = all_media
             
-            logger.info(
+            logger.debug(
                 f"Processing batched media for user {sender}: {len(all_media)} items",
                 extra={
                     "user_id": sender,

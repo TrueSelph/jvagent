@@ -103,13 +103,13 @@ class WhatsAppAdapter(ChannelAdapter):
         Returns:
             True if message was sent successfully, False otherwise
         """
-        logger.info(
+        logger.debug(
             f"WhatsAppAdapter: send() called - message_id={message.id}, "
             f"session_id={message.session_id}, interaction_id={message.interaction_id}"
         )
         
         if not self.action or not self.action.is_configured():
-            logger.info(
+            logger.debug(
                 "WhatsAppAdapter: Skipping message - WhatsApp action is not configured. "
                 "Set WHATSAPP_API_URL and WHATSAPP_API_KEY environment variables."
             )
@@ -127,7 +127,7 @@ class WhatsAppAdapter(ChannelAdapter):
             )
             return False
 
-        logger.info(
+        logger.debug(
             f"WhatsAppAdapter: Processing adhoc message {message.id} for user {message.user_id}"
         )
         
@@ -179,7 +179,7 @@ class WhatsAppAdapter(ChannelAdapter):
                     )
                     return False
             
-            logger.info(
+            logger.debug(
                 f"WhatsAppAdapter: Message sent successfully to {message.user_id} "
                 f"(is_group: {is_group}, chunks: {len(chunks)})"
             )

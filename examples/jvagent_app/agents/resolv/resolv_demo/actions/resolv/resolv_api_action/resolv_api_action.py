@@ -36,7 +36,6 @@ class ResolvAPIAction(Action):
         if self._session is None or self._session.closed:
             timeout = aiohttp.ClientTimeout(total=self.timeout)
             self._session = aiohttp.ClientSession(
-                headers=self._get_headers(),
                 timeout=timeout
             )
         await super().on_enable()
@@ -95,28 +94,29 @@ class ResolvAPIAction(Action):
         if not use_persistent:
             timeout_obj = aiohttp.ClientTimeout(total=effective_timeout)
             session = aiohttp.ClientSession(
-                headers=self._get_headers(),
                 timeout=timeout_obj
             )
+
 
         last_exception = None
         timeout_obj = aiohttp.ClientTimeout(total=effective_timeout)
 
+        # Determine effective headers for this specific request
+        # If headers are provided, use them (caller responsible for full set/auth)
+        # Otherwise, use defaults.
+        request_headers = headers if headers is not None else self._get_headers()
+
         try:
             for attempt in range(effective_retries + 1):
                 try:
-                    # Merge headers if provided
-                    request_headers = {}
-                    if headers:
-                        request_headers.update(headers)
-
+                    
                     async with session.request(
                         method,
                         url,
                         params=params,
                         json=json_data,
                         data=data,
-                        headers=request_headers if request_headers else None,
+                        headers=request_headers,
                         timeout=timeout_obj,
                         **kwargs
                     ) as response:
@@ -133,15 +133,17 @@ class ResolvAPIAction(Action):
                     last_exception = e
                     if attempt == effective_retries:
                         logger.error(f"Request failed after {attempt + 1} attempts: {method} {url} - {e}")
-                        raise Exception(f"Request failed: {url}") from last_exception
+                        break
 
-                    await asyncio.sleep(0.5 * (2 ** attempt))
+                    wait_time = 0.5 * (2 ** attempt)
+                    await asyncio.sleep(wait_time)
         finally:
-            # Crucial: Close temporary session if we created one
             if not use_persistent and session:
                 await session.close()
 
-        raise last_exception
+        if last_exception:
+            raise Exception(f"Request failed: {url}") from last_exception
+        raise Exception(f"Request failed: {url} (Unknown error)")
 
     # Contact Groups API
 
@@ -321,8 +323,11 @@ class ResolvAPIAction(Action):
             "fileUrl": file_url
         }
 
+        headers = self._get_headers()
+        headers.pop("Content-Type", None)
+
         try:
-            res = await self.http_request('POST', endpoint, data=data)
+            res = await self.http_request('POST', endpoint, data=data, headers=headers)
             if res['status'] == 200:
                 return True
             

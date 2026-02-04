@@ -189,7 +189,7 @@ class MediaManager:
                         if created_at < threshold:
                             path = item["path"]
                             await app.delete_file(path)
-                            logger.info(f"Deleted old media: {path} (created {created_at_str})")
+                            logger.debug(f"Deleted old media: {path} (created {created_at_str})")
                     except (ValueError, TypeError):
                         continue
         except Exception as e:

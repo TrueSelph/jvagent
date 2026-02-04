@@ -54,7 +54,7 @@ async def get_or_create_system_user() -> str:
             password=random_password,
         )
         user_response = await auth_service.register_user(user_data)
-        logger.info(f"Created system service user: {user_response.id}")
+        # logger.info(f"Created system service user: {user_response.id}")
         return user_response.id
     except ValueError as e:
         # User might have been created between check and creation

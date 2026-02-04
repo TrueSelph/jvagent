@@ -398,7 +398,7 @@ class App(Node):
                 return metadata["storage_url"]
 
             # Use relative path
-            return f"/storage/{path}"
+            return f"/api/storage/{path}"
         except StorageError:
             return None
         except Exception:

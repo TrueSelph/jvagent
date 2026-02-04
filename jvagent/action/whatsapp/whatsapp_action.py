@@ -16,6 +16,7 @@ from .whatsapp_filter import WhatsAppFilter
 from .modules.wppconnect import WPPConnectAPI
 from .modules.wwebjs_api import WWebJSAPI
 from .modules.ultramsg import UltraMsgAPI
+from .modules.base import is_session_registered, mark_session_registered
 from .webhook_auth import get_or_create_system_user
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,13 @@ class WhatsAppAction(Action):
         le=10000
     )
 
+    utterance_max_length: int = attribute(
+        default=3000,
+        description="Maximum length of utterance text",
+        ge=100,
+        le=10000
+    )
+
     media_batch_window: float = attribute(
         default=2.5,
         description="Time window in seconds to batch multiple media messages together",
@@ -108,7 +116,20 @@ class WhatsAppAction(Action):
     )
 
     # Internal state tracking (not persisted)
-    _session_registration_done: bool = False
+    @property
+    def _session_registration_done(self) -> bool:
+        """Check if this session is already registered in the current process."""
+        if not self.api_url or not self.session:
+            return False
+        # Use a combination of API URL, session name, and webhook URL to ensure
+        # configuration hasn't changed (e.g., ngrok restart).
+        return is_session_registered(self.api_url, self.session, self.webhook_url or "")
+
+    @_session_registration_done.setter
+    def _session_registration_done(self, value: bool) -> None:
+        """Update the registration cache."""
+        if self.api_url and self.session:
+            mark_session_registered(self.api_url, self.session, self.webhook_url or "", value)
 
     # action configuration
     
@@ -243,15 +264,15 @@ class WhatsAppAction(Action):
         # Initialize filter (transforms messages before adapter)
         filter = WhatsAppFilter(channels=["whatsapp"], priority=100)
         if await filter.initialize():
-            logger.info(
+            logger.debug(
                 f"WhatsAppFilter initialized for channel 'whatsapp'"
             )
         else:
-            logger.warning(
+            logger.debug(
                 "WhatsAppFilter initialization failed. Message transformations will not be applied."
             )
         
-        logger.info(
+        logger.debug(
             f"WhatsApp action registered. Session will be initialized on app startup."
         )
 
@@ -287,7 +308,7 @@ class WhatsAppAction(Action):
         # Ensure webhook URL is set and valid
         # This is critical as webhook_url might be None after an update
         if not self.webhook_url:
-            logger.info("Webhook URL not set during reload, generating new one")
+            logger.debug("Webhook URL not set during reload, generating new one")
             # Generate webhook URL (will reuse existing if valid, or create new)
             await self.get_webhook_url(regenerate=False)
         elif self.base_url:
@@ -391,7 +412,7 @@ class WhatsAppAction(Action):
             # Initialize filter (transforms messages before adapter)
             filter = WhatsAppFilter(channels=["whatsapp"], priority=100)
             if await filter.initialize():
-                logger.info(
+                logger.debug(
                     f"WhatsAppFilter initialized on startup for channel 'whatsapp'"
                 )
             else:
@@ -411,7 +432,7 @@ class WhatsAppAction(Action):
                 )
             
             try:
-                logger.info(f"Attempting session registration on startup (timeout: {timeout_seconds}s)")
+                logger.debug(f"Attempting session registration on startup (timeout: {timeout_seconds}s)")
                 registration_result = await asyncio.wait_for(
                     self.register_session(),
                     timeout=timeout_seconds
@@ -429,7 +450,7 @@ class WhatsAppAction(Action):
                         # Mark as registered to avoid redundant calls
                         self._session_registration_done = True
                         status = registration_result.get("status", "UNKNOWN")
-                        logger.info(
+                        logger.debug(
                             f"WhatsApp session registered successfully on startup: {self.session} (status: {status})"
                         )
             except asyncio.TimeoutError:
@@ -461,7 +482,7 @@ class WhatsAppAction(Action):
             # Initialize adapter (create new instance to ensure clean state)
             adapter = WhatsAppAdapter(action=self)
             if await adapter.initialize():
-                logger.info(
+                logger.debug(
                     f"WhatsAppAdapter initialized on startup for channel '{adapter.channel}'"
                 )
             else:
@@ -512,8 +533,9 @@ class WhatsAppAction(Action):
                 else:
                     # Mark as registered to avoid redundant calls
                     self._session_registration_done = True
-                    status = registration_result.get("status", "UNKNOWN")
-                    logger.info(
+                    # Provider result might have 'status' or 'state'
+                    status = (registration_result.get("status") or registration_result.get("state") or "UNKNOWN").upper()
+                    logger.debug(
                         f"WhatsApp session registered successfully (lazy init): {self.session} (status: {status})"
                     )
                     return True
@@ -579,10 +601,10 @@ class WhatsAppAction(Action):
                 return True
             
             # Register adapter (same as on_startup)
-            logger.info("Lazy-registering WhatsApp adapter (Lambda cold start or first use)")
+            logger.debug("Lazy-registering WhatsApp adapter (Lambda cold start or first use)")
             adapter = WhatsAppAdapter(action=self)
             if await adapter.initialize():
-                logger.info("WhatsApp adapter successfully registered via lazy initialization")
+                logger.debug("WhatsApp adapter successfully registered via lazy initialization")
                 return True
             else:
                 logger.error("WhatsApp adapter initialization failed during lazy registration")
@@ -746,7 +768,7 @@ class WhatsAppAction(Action):
                         old_key.is_active = False
                         old_key._graph_context = context
                         await context.save(old_key)
-                        logger.info(f"Revoked old API key: {self.webhook_api_key_id}")
+                        logger.debug(f"Revoked old API key: {self.webhook_api_key_id}")
                 except DatabaseError as e:
                     logger.debug(f"Database error revoking old API key: {e}")
                 except Exception as e:
@@ -780,7 +802,7 @@ class WhatsAppAction(Action):
                 self._graph_context = context
             await self.save()
 
-            logger.info(
+            logger.debug(
                 f"Generated new API key for WhatsApp webhook: {api_key.id} "
                 f"(prefix: {api_key.key_prefix})"
             )
@@ -883,8 +905,10 @@ class WhatsAppAction(Action):
                 return result
             
             # Only log success if registration actually succeeded
-            status = result.get("status", "UNKNOWN")
-            logger.info(
+            self._session_registration_done = True
+            # Provider result might have 'status' or 'state'
+            status = (result.get("status") or result.get("state") or "UNKNOWN").upper()
+            logger.debug(
                 f"WhatsApp session registered successfully: {self.session} (status: {status})"
             )
             return result

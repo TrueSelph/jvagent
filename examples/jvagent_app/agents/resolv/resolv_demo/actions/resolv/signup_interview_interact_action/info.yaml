@@ -1,0 +1,31 @@
+package:
+  # Action name in namespace/action_name format
+  name: resolv/signup_interview_interact_action
+
+  # Package author
+  author: V75 Inc.
+
+  # Archetype: The main Action class name (same as the Action Node class)
+  archetype: SignupInterviewInteractAction
+
+  # Package version
+  version: 1.0.0
+
+  # Package metadata
+  meta:
+    title: Signup Interview Interact Action
+    description: User signup interview for registration and training scheduling
+    group: resolv
+    type: action
+
+  # Package configuration
+  config:
+    order:
+      weight: 0
+
+  # Package dependencies
+  dependencies:
+    # jvagent version requirement
+    jvagent: ~0.0.1
+    # Other action dependencies (by namespace/action_name)
+    actions: []

@@ -76,6 +76,8 @@ config:
     enabled: true
     jwt_expire_minutes: 60
     # JWT secret should be set via JVSPATIAL_JWT_SECRET environment variable
+    exempt_paths:
+      - "/api/storage/*"
 
   # Admin user configuration (defaults - production MUST override password)
   admin:
@@ -175,7 +177,7 @@ config:
 # Note: Agents can only be installed via this list in app.yaml - there is no direct agent installation
 agents:
   # Example agent - will be loaded from agents/jvagent/example_agent/
-  - jvagent/example_agent
+  # - jvagent/example_agent
   - resolv/resolv_demo
 
   # Add more agents here - they will be installed automatically when you run jvagent
