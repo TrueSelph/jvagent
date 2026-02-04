@@ -133,27 +133,7 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
                     "description": "The correct report id from the list of matching reports the user selected. return the report id(not the index) for the report selected.",
                     "type": "int"
                 },
-                "default_next": "feedback_content",
-                "required": False
-            },
-            {
-                "name": "feedback_content",
-                "question": "Please share your feedback.",
-                "constraints": {
-                    "description": "Full details about the feedback the user wants to provide.",
-                    "type": "string"
-                },
                 "default_next": "REVIEW",
-                "required": True
-            },
-            {
-                "name": "feedback_media", # capture media if user provides it, do not ask for media
-                "question": "Do you have any media to upload?",
-                "constraints": {
-                    "description": "Media of feedback uploaded via WhatsApp media.",
-                    "type": "list",
-                    "data_input_field": "whatsapp_media",
-                },
                 "required": False
             }
         ],

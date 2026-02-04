@@ -48,6 +48,11 @@ _pending_branch_functions: Dict[str, Dict[str, Callable]] = {}
 _input_context_provider_registry: Dict[Tuple[str, str], Callable] = {}
 _pending_input_context_providers: Dict[str, Dict[str, Callable]] = {}
 
+# Module-level registry for review value override (one per interview type)
+# Keyed by interview_type. Pending keyed by module __name__ when class not yet defined.
+_input_review_override_registry: Dict[str, Callable] = {}
+_pending_input_review_overrides: Dict[str, Callable] = {}
+
 
 def _detect_interview_type(func: Callable, interview_type: Optional[str] = None) -> Optional[str]:
     """Detect the interview type from the function's module or use provided type.
@@ -276,6 +281,47 @@ def on_interview_complete(interview_type: str):
     return decorator
 
 
+def input_review_override(func: Callable) -> Callable:
+    """Decorator to register a review values override for the interview action in this module.
+
+    No parameters. Applies only to the InterviewInteractAction subclass defined in the same
+    module. The decorated function receives a key-value map of collected interview data
+    (field name to value) for display only; modifications must not alter the session's
+    stored values.
+
+    Handler signature: (session: InterviewSession, data: Dict[str, Any]) -> Dict[str, Any]
+    (sync or async). Omit fields by dropping keys; format by changing values in the
+    returned dict. The session's stored values are never modified.
+
+    Example:
+        @input_review_override
+        def adapt_review(session: InterviewSession, data: Dict[str, Any]) -> Dict[str, Any]:
+            return {k: v for k, v in data.items() if v not in (None, "", "n/a")}
+    """
+    func._interview_question_name = "__review_override__"  # type: ignore
+    func._interview_handler_type = "input_review_override"  # type: ignore
+
+    try:
+        determined_type = _detect_interview_type(func, None)
+        with _registry_lock:
+            if determined_type:
+                _input_review_override_registry[determined_type] = func
+                logger.debug(
+                    f"Registered input_review_override for interview type '{determined_type}'"
+                )
+            else:
+                module = inspect.getmodule(func)
+                if module:
+                    _pending_input_review_overrides[module.__name__] = func
+                    logger.debug(
+                        f"Stored input_review_override in pending registry for module '{module.__name__}'"
+                    )
+    except Exception as e:
+        logger.warning(f"Error registering input_review_override '{func.__name__}': {e}")
+
+    return func
+
+
 # Export registry access functions for InterviewInteractAction
 def get_completion_handler(interview_type: str) -> Optional[Callable]:
     """Get completion handler for an interview type (thread-safe)."""
@@ -299,6 +345,12 @@ def get_input_directive_override(interview_type: str, question_name: str) -> Opt
     """Get input directive override for a question (thread-safe)."""
     with _registry_lock:
         return _input_directive_override_registry.get((interview_type, question_name))
+
+
+def get_input_review_override(interview_type: str) -> Optional[Callable]:
+    """Get input review override for an interview type (thread-safe)."""
+    with _registry_lock:
+        return _input_review_override_registry.get(interview_type)
 
 
 def get_pending_input_handlers(interview_type: str) -> Dict[str, Callable]:
@@ -342,6 +394,12 @@ def flush_module_registrations_for_class(interview_type: str, module: Any) -> No
                     logger.debug(
                         f"Registered input_context_provider '{identifier}' for interview type '{interview_type}' (from module scan)"
                     )
+            elif handler_type == "input_review_override":
+                if interview_type not in _input_review_override_registry:
+                    _input_review_override_registry[interview_type] = obj
+                    logger.debug(
+                        f"Registered input_review_override for interview type '{interview_type}' (from module scan)"
+                    )
             elif handler_type == "branch_function":
                 if (interview_type, identifier) not in _branch_function_registry:
                     _branch_function_registry[(interview_type, identifier)] = obj
@@ -350,14 +408,22 @@ def flush_module_registrations_for_class(interview_type: str, module: Any) -> No
                     )
 
 
-def clear_pending_registrations(interview_type: str) -> None:
-    """Clear pending registrations for an interview type after class is defined (thread-safe)."""
+def clear_pending_registrations(interview_type: str, module_name: Optional[str] = None) -> None:
+    """Clear pending registrations for an interview type after class is defined (thread-safe).
+
+    If module_name is provided, any pending input_review_override for that module is
+    registered under interview_type and then removed from pending.
+    """
     with _registry_lock:
         _pending_input_handlers.pop(interview_type, None)
         _pending_input_validators.pop(interview_type, None)
         _pending_input_directive_overrides.pop(interview_type, None)
         _pending_branch_functions.pop(interview_type, None)
         _pending_input_context_providers.pop(interview_type, None)
+        if module_name is not None and module_name in _pending_input_review_overrides:
+            _input_review_override_registry[interview_type] = _pending_input_review_overrides.pop(
+                module_name
+            )
 
 
 def branch_function(function_name: Optional[str] = None, interview_type: Optional[str] = None):

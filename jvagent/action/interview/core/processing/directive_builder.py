@@ -5,7 +5,7 @@ for better separation of concerns.
 """
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from ..foundation.enums import InterviewState
 from ..session.interview_session import InterviewSession
@@ -33,8 +33,24 @@ class DirectiveBuilder:
         """Reset event tracking flag for new execution."""
         self._event_added = False
     
-    def format_summary(self, session: InterviewSession) -> str:
+    def _build_review_data(self, session: InterviewSession) -> Dict[str, Any]:
+        """Build key-value dict of collected interview data from session (display only)."""
+        data: Dict[str, Any] = {}
+        for question_config in session.question_graph:
+            field_name = question_config.get("name", "")
+            if not field_name:
+                continue
+            value = session.get_response(field_name)
+            if value is None:
+                continue
+            data[field_name] = value
+        return data
+
+    async def format_summary(self, session: InterviewSession) -> str:
         """Format collected responses as a summary.
+
+        If an @input_review_override is registered, it is called with (session, copy of data)
+        so the developer can omit or format values for display only; session storage is never modified.
 
         Args:
             session: Interview session
@@ -42,31 +58,29 @@ class DirectiveBuilder:
         Returns:
             Formatted summary string
         """
-        lines = []
         templates = self.action.config.templates
+        data = self._build_review_data(session)
+
+        override = self.action.get_input_review_override()
+        if override:
+            result = await self.action._call_override_function(
+                override, session, dict(data)
+            )
+            data = result if result is not None else data
+
+        lines: List[str] = []
         if templates.summary_header and templates.summary_header.strip():
             lines.append(templates.summary_header)
-
-        for question_config in session.question_graph:
-            field_name = question_config.get("name", "")
-            if not field_name:
-                continue
-
-            value = session.get_response(field_name)
-            if value is None:
-                continue
-
-            # Format field name nicely
+        for field_name, value in data.items():
             display_name = field_name.replace("_", " ").title()
-            item = templates.summary_item.format(
+            line = templates.summary_item.format(
                 display_name=display_name,
-                value=value
+                value=value,
             )
-            lines.append(item)
-
+            lines.append(line)
         return "\n".join(lines)
 
-    def build_confirmation_directive(self, session: InterviewSession) -> str:
+    async def build_confirmation_directive(self, session: InterviewSession) -> str:
         """Build the complete confirmation directive.
 
         Args:
@@ -75,7 +89,7 @@ class DirectiveBuilder:
         Returns:
             Complete confirmation directive string
         """
-        summary = self.format_summary(session)
+        summary = await self.format_summary(session)
         templates = self.action.config.templates
 
         # Use direct confirmation template

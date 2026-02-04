@@ -52,6 +52,7 @@ from .core.foundation.decorators import (
     get_input_handler as _get_input_handler,
     get_input_validator as _get_input_validator,
     get_input_directive_override as _get_input_directive_override,
+    get_input_review_override as _get_input_review_override,
     get_input_context_provider as _get_input_context_provider,
     get_pending_input_handlers,
     get_pending_input_validators,
@@ -116,6 +117,7 @@ class InterviewInteractAction(InteractAction, ABC):
     _input_handlers: Dict[str, Callable] = {}
     _input_validators: Dict[str, Callable] = {}
     _input_directive_overrides: Dict[str, Callable] = {}
+    _input_review_override: Optional[Callable] = None
     
     # Instance-level handlers
     _classification_handler: Optional[ClassificationHandler] = None
@@ -170,6 +172,7 @@ class InterviewInteractAction(InteractAction, ABC):
         cls._input_handlers = {}
         cls._input_validators = {}
         cls._input_directive_overrides = {}
+        cls._input_review_override = None
 
         # Load validators/handlers/overrides from module-level registry for this class
         class_name = cls.__name__
@@ -197,8 +200,8 @@ class InterviewInteractAction(InteractAction, ABC):
         module = sys.modules.get(cls.__module__)
         flush_module_registrations_for_class(class_name, module)
 
-        # Clear pending registrations for this class
-        clear_pending_registrations(class_name)
+        # Clear pending registrations for this class (module_name for input_review_override)
+        clear_pending_registrations(class_name, cls.__module__)
 
         # Also scan class attributes for decorated functions (class methods)
         for attr_name in dir(cls):
@@ -213,6 +216,8 @@ class InterviewInteractAction(InteractAction, ABC):
                     cls._input_validators[question_name] = attr
                 elif handler_type == "input_directive_override" and question_name:
                     cls._input_directive_overrides[question_name] = attr
+                elif handler_type == "input_review_override":
+                    cls._input_review_override = attr
 
         # Note: We don't merge anchors in __init_subclass__ because we can't reliably
         # extract default values from Field/PrivateAttr descriptors at class definition time.
@@ -297,6 +302,20 @@ class InterviewInteractAction(InteractAction, ABC):
                 # Move to class registry
                 cls._input_directive_overrides[question_name] = override
 
+        return override
+
+    @classmethod
+    def get_input_review_override(cls) -> Optional[Callable]:
+        """Get input review override for this interview action (from decorator registry).
+
+        Returns:
+            The registered override function if found, None otherwise.
+        """
+        override = cls._input_review_override
+        if not override:
+            override = _get_input_review_override(cls.__name__)
+            if override:
+                cls._input_review_override = override
         return override
 
     async def _call_override_function(
@@ -572,7 +591,7 @@ class InterviewInteractAction(InteractAction, ABC):
 
         return question_node
 
-    def _format_summary(self, session: InterviewSession) -> str:
+    async def _format_summary(self, session: InterviewSession) -> str:
         """Format collected responses as a summary.
 
         Delegates to DirectiveBuilder.
@@ -583,9 +602,9 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
             Formatted summary string
         """
-        return self.directive_builder.format_summary(session)
+        return await self.directive_builder.format_summary(session)
 
-    def _build_confirmation_directive(self, session: InterviewSession) -> str:
+    async def _build_confirmation_directive(self, session: InterviewSession) -> str:
         """Build the complete confirmation directive from consolidated template.
 
         Delegates to DirectiveBuilder.
@@ -596,7 +615,7 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
             Complete confirmation directive string
         """
-        return self.directive_builder.build_confirmation_directive(session)
+        return await self.directive_builder.build_confirmation_directive(session)
 
     async def _queue_directive(
         self,
