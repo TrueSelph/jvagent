@@ -872,7 +872,7 @@ class InterviewInteractAction(InteractAction, ABC):
             LanguageModelAction instance or None
         """
         try:
-            model_action_type = self.config.model.action_type
+            model_action_type = self.config.model.model_action_type
             if model_action_type:
                 model_action = await self.get_action(model_action_type)
             else:

@@ -364,8 +364,8 @@ class ClassificationHandler:
                 history=conversation_history,
                 calling_action_name=self.action.get_class_name(),
                 model=self.action.config.model.model,
-                temperature=self.action.config.model.temperature,
-                max_tokens=self.action.config.model.max_tokens,
+                temperature=self.action.config.model.model_temperature,
+                max_tokens=self.action.config.model.model_max_tokens,
                 response_format={"type": "json_object"},
             )
 
@@ -647,8 +647,8 @@ class ClassificationHandler:
                 model_action=model_action,
                 model_type="chat",
                 model=self.action.config.model.model,
-                temperature=self.action.config.model.temperature,
-                max_tokens=self.action.config.model.max_tokens,
+                temperature=self.action.config.model.model_temperature,
+                max_tokens=self.action.config.model.model_max_tokens,
             )
 
             # Configure DSPy with the adapter

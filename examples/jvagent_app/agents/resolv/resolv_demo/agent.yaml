@@ -129,7 +129,7 @@ actions:
   #     enabled: true
   #     description: "Feedback Interview action is used to create feedback for incidents and projects."
   #     weight: -50
-  #     # Model Configuration
+  #   config:
   #     model_action_type: "OpenAILanguageModelAction"
   #     model: "gpt-4o"
   #     model_temperature: 0.1

@@ -48,20 +48,20 @@ class ClassificationConfig:
 class ModelConfig:
     """Configuration for language model settings."""
     
-    action_type: str = "OpenAILanguageModelAction"
+    model_action_type: str = "OpenAILanguageModelAction"
     model: str = "gpt-4o"
-    temperature: float = 0.1
-    max_tokens: int = 4096
+    model_temperature: float = 0.1
+    model_max_tokens: int = 4096
     use_history: bool = True
     max_statement_length: int = 400
     history_limit: int = 5
     
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate model configuration."""
-        if self.temperature < 0 or self.temperature > 2:
-            raise ValueError(f"Temperature must be between 0 and 2, got {self.temperature}")
-        if self.max_tokens < 1:
-            raise ValueError(f"max_tokens must be positive, got {self.max_tokens}")
+        if self.model_temperature < 0 or self.model_temperature > 2:
+            raise ValueError(f"model_temperature must be between 0 and 2, got {self.model_temperature}")
+        if self.model_max_tokens < 1:
+            raise ValueError(f"model_max_tokens must be positive, got {self.model_max_tokens}")
         if self.history_limit < 0:
             raise ValueError(f"history_limit must be non-negative, got {self.history_limit}")
 
@@ -164,21 +164,12 @@ class InterviewConfig:
         Returns:
             InterviewConfig instance
         """
-        # Model config - map YAML keys to ModelConfig attributes
+        # Model config - YAML keys match ModelConfig attribute names
         model_config = ModelConfig()
-        model_key_map = {
-            "model_action_type": "action_type",
-            "model": "model",
-            "model_temperature": "temperature",
-            "model_max_tokens": "max_tokens",
-            "use_history": "use_history",
-            "max_statement_length": "max_statement_length",
-            "history_limit": "history_limit",
-        }
-        for yaml_key, attr_name in model_key_map.items():
-            if yaml_key in config_dict:
-                setattr(model_config, attr_name, config_dict[yaml_key])
-        
+        for key in model_config.__dataclass_fields__.keys():
+            if key in config_dict:
+                setattr(model_config, key, config_dict[key])
+
         # Template config - YAML keys match TemplateConfig attribute names
         template_config = TemplateConfig()
         for key in template_config.__dataclass_fields__.keys():
