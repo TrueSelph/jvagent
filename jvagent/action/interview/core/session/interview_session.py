@@ -40,8 +40,8 @@ class InterviewSession(Node):
         description="Current state machine state"
     )
     
-    # Question schema
-    question_index: List[Dict[str, Any]] = attribute(
+    # Question schema (same structure as action's question_graph)
+    question_graph: List[Dict[str, Any]] = attribute(
         default_factory=list,
         description="List of question configurations (schema)"
     )
@@ -99,14 +99,14 @@ class InterviewSession(Node):
     def get_unanswered_questions(self) -> List[str]:
         """Get list of question keys that haven't been answered."""
         answered = set(self.get_answered_questions())
-        all_questions = [q.get("name", "") for q in self.question_index if q.get("name")]
+        all_questions = [q.get("name", "") for q in self.question_graph if q.get("name")]
         return [q for q in all_questions if q and q not in answered]
     
     def get_required_questions(self) -> List[str]:
         """Get list of required question keys."""
         return [
             q.get("name", "")
-            for q in self.question_index
+            for q in self.question_graph
             if q.get("name") and q.get("required", False)
         ]
     
@@ -244,7 +244,7 @@ class InterviewSession(Node):
             Question configuration dict if found, None otherwise
         """
         return next(
-            (q for q in self.question_index if q.get("name") == name),
+            (q for q in self.question_graph if q.get("name") == name),
             None
         )
     

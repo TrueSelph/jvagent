@@ -9,8 +9,12 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 from ..session.interview_session import InterviewSession
 from ..graph.question_node import QuestionNode
 from ..graph.question_walker import QuestionWalker
-from ..foundation.enums import ValidationStatus, ContextKey, InterviewState
+from ..foundation.enums import ValidationStatus, InterviewState
 from ..utils.session_utils import sort_fields_by_question_order
+from ..utils.constants import (
+    CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE,
+    CONTEXT_KEY_DIRECTIVE_OVERRIDE_APPEND_MODE
+)
 from ..foundation.exceptions import QuestionNotFoundError
 
 if TYPE_CHECKING:
@@ -152,7 +156,7 @@ class ResponseProcessor:
                             # Set flag to prevent normal flow from continuing
                             if session.context is None:
                                 session.context = {}
-                            session.context[ContextKey.DIRECTIVE_OVERRIDE_REPLACE_MODE] = True
+                            session.context[CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE] = True
                             await session.save()
                             return True  # Update completed with replace mode override
                         elif override_mode == "append":
@@ -203,7 +207,7 @@ class ResponseProcessor:
     ) -> None:
         """Process and validate extracted responses using QuestionWalker.
 
-        Processes all extracted responses in question_index order, storing valid ones
+        Processes all extracted responses in question_graph order, storing valid ones
         and tracking the first invalid field. Respects conditional edges between questions.
 
         Args:
@@ -219,7 +223,7 @@ class ResponseProcessor:
         replace_mode_used = False  # Track if any override used replace mode
         append_mode_overrides = []  # Track fields with append mode overrides
 
-        # Sort responses by question_index order for sequential processing
+        # Sort responses by question_graph order for sequential processing
         sorted_fields = sort_fields_by_question_order(list(responses.keys()), session)
 
         for field in sorted_fields:
@@ -398,7 +402,7 @@ class ResponseProcessor:
                     # Set flag to prevent normal flow from queueing next question again
                     if session.context is None:
                         session.context = {}
-                    session.context[ContextKey.DIRECTIVE_OVERRIDE_APPEND_MODE] = True
+                    session.context[CONTEXT_KEY_DIRECTIVE_OVERRIDE_APPEND_MODE] = True
                     await session.save()
 
             # ALWAYS queue custom directives (even if no next question)
@@ -409,7 +413,7 @@ class ResponseProcessor:
         if replace_mode_used:
             if session.context is None:
                 session.context = {}
-            session.context[ContextKey.DIRECTIVE_OVERRIDE_REPLACE_MODE] = True
+            session.context[CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE] = True
 
         # Clear active_question_key
         session.active_question_key = None

@@ -32,7 +32,7 @@ class QuestionNotFoundError(InterviewError):
     """
     def __init__(self, question_name: str):
         self.question_name = question_name
-        super().__init__(f"Question '{question_name}' not found in question_index")
+        super().__init__(f"Question '{question_name}' not found in question_graph")
 
 
 class InvalidStateTransitionError(InterviewError):

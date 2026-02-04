@@ -81,31 +81,6 @@ actions:
       # Embedding Model Configuration
       embedding_model_action_type: "OpenAIEmbeddingModelAction"  # Entity type to find dynamically
 
-  # RetrievalInteractAction - Context retrieval from vector stores
-  # Core action from jvagent library (jvagent/action/retrieval/)
-  - action: jvagent/retrieval_interact_action
-    context:
-      enabled: true
-      description: "Retrieves context from vector stores and adds directives for PersonaAction"
-      # VectorStore Configuration
-      vectorstore_action_type: "TypesenseVectorStore"  # Entity type to find dynamically
-      k: 5  # Number of search results to retrieve
-      weight: -75  # Runs after InteractRouter but before other Interact Actions
-      # Anchors for routing - published to InteractRouter
-      # The entity name (RetrievalInteractAction) is automatically used as the key
-      anchors:
-        - "User requests information from knowledge base"
-        - "User asks a question requiring search"
-        - "User wants to find information"
-      # Optional: Minimum similarity score threshold (0.0-1.0)
-      # min_score_threshold: 0.7
-      # Optional: Customize directive template (default shown for reference)
-      directive: |
-        Context retrieved from knowledge base:
-        {results}
-        Use this context to inform your response to the user's query.
-      collection: "n.Agent.478ee040eb98491c8426c975"
-
   # OpenAI Language Model Action - LLM integration with multimodal support
   # Core action from jvagent library (jvagent/action/model/language/openai/)
   - action: jvagent/openai_lm
@@ -145,37 +120,6 @@ actions:
       model_temperature: 0.1
       model_max_tokens: 8192
 
-  # Example action from the 'jvagent' namespace
-  # Located at: agents/jvagent/example_agent/actions/jvagent/example_action/
-  - action: jvagent/example_action
-    context:
-      enabled: true
-      description: "Customized example action for demonstration"
-      timeout: 60
-      retries: 5
-      api_endpoint: "https://prod.api.example.com"
-
-  # - action: jvagent/example_interact_action
-  #   context:
-  #     enabled: true
-  #     description: "Customized example interact action that knows about JVAgent"
-  #     # Note: timeout and retries are not attributes of ExampleInteractAction
-  #     # Only anchors, weight, collection, and directive_template are configurable
-  #     anchors:
-  #       - "User inquires about jvagent"
-  #       - "User inquires about jvspatial"
-  #       - "User requests information on how to use jvagent"
-  #     # Custom parameters for behavioral guidance
-  #     parameters:
-  #       - condition: "User asks about jvagent"
-  #         response: "Explain jvagent as a modular AI agent framework built on jvspatial."
-  #       - condition: "User asks about jvspatial"
-  #         response: "Explain jvspatial as a powerful async-first application framework for building object-spatial cloud-based apps."
-  #       - condition: "User requests a demonstration"
-  #         response: "Provide a brief demonstration with example outputs."
-  #       - condition: "User asks technical questions"
-  #         response: "Give accurate technical details while keeping explanations accessible."
-
   # Signup Interview Interact Action - Training signup interview flow
   # Local action from: agents/jvagent/example_agent/actions/jvagent/signup_interview_interact_action/
   - action: jvagent/signup_interview_interact_action
@@ -189,41 +133,6 @@ actions:
         # Initial entry - starting training signup
         - "User wants to sign up or register for jvagent training"
         - "User wants to enroll or join jvagent training"
-      # Model Configuration (for unified classification and extraction)
-      # These settings are used by the parent InterviewInteractAction for all LLM calls
-      # The unified classification detects intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE)
-      # and extracts field values in a single LLM call
-      model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
-      model: "gpt-4o-mini"  # Model for unified classification and extraction
-      model_temperature: 0.1  # Temperature for LLM generation
-      model_max_tokens: 4096  # Max tokens for LLM generation
-      use_history: true  # Use conversation history for LLM generation
-      max_statement_length: 100  # Max length of statement to include in history
-      history_limit: 3  # Max number of statements to include in history
-      use_dspy: true
-    # actions:
-    #   - action: jvagent/example_interact_action
-    #     context:
-    #       enabled: true
-    #       description: "Example interact action for handling complex conversations"
-    #       weight: -50
-
-  - action: resolv/report_interview_interact_action
-    context:
-      enabled: true
-      description: "User report interview for creating report"
-      weight: -50  # Runs after InteractRouter
-      # Anchors for InteractRouter routing - REQUIRED when using InteractRouter
-      # Must cover both initial entry and intermediate states (when answering questions)
-      anchors:
-        # Initial entry - starting report
-        - "User wants to report an incident"
-        - "User wants to submit an incident report"
-        # Intermediate state - answering questions
-        - "User is providing or answering report questions"
-        - "User is completing report or providing availability"
-        # Revision/edit - changing previously provided information
-        - "User is revising, editing, or updating incident report information"
       # Model Configuration (for unified classification and extraction)
       # These settings are used by the parent InterviewInteractAction for all LLM calls
       # The unified classification detects intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE)
@@ -257,6 +166,35 @@ actions:
       #   - condition: "User asks about something outside your knowledge or role"
       #     response: "Politely explain that this falls outside your area of knowledge or role, and suggest alternative ways they might find the information they need."
 
+  - action: jvagent/whatsapp_action
+    context:
+      enabled: true
+      description: "WhatsApp provider (wppconnect, ultramsg, wwebjs)"
+      # whatsapp configuration
+      provider: "wwebjs"
+      api_url: ${WHATSAPP_API_URL}
+      api_key: ${WHATSAPP_API_KEY}
+      session: ${WHATSAPP_SESSION}
+      base_url: ${APP_BASE_URL}
+
+  - action: jvagent/tts_action
+    context:
+      enabled: true
+      description: "Action for Text-to-Speech integration using multiple providers."
+      provider: "elevenlabs"
+      api_key: ${TTS_API_KEY}
+      model: "eleven_turbo_v2"
+      voice: "Sarah"
+
+  - action: jvagent/stt_action
+    context:
+      enabled: true
+      description: "Action for Speech-to-Text integration using multiple providers."
+      provider: "deepgram"
+      api_key: ${STT_API_KEY}
+      model: "nova-2"
+
+  
   # Add more action assignments here
   # Actions can be from different namespaces:
   # - action: custom/custom_action

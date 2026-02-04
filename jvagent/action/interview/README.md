@@ -23,10 +23,11 @@ The Interview Action provides a reusable way to collect responses from users in 
 - **Two-Tier Validation**: VALID and INVALID response validation using `ValidationStatus` enum (VALID can include optional feedback messages for clarification)
 - **Custom Handlers & Validators**: Process input and validate responses with custom logic
 - **Branch Functions**: Define custom Python functions for complex branching logic with full access to session data and graph context
+- **Input Context**: Supply questions with extra context via static `input_context` (hardcoded dict) or dynamic `input_context_provider` (decorated function)
 - **Data Input Fields**: Extract values directly from `visitor.data` for file uploads and REST call data (bypasses LLM extraction)
 - **Completion Handlers**: Register completion handlers via `@on_interview_complete` decorator
-- **Question Node Rebuilding**: Automatically rebuilds question nodes when `question_index` changes
-- **agent.yaml Overrides**: Override `question_index` and prompt templates in agent configuration
+- **Question Node Rebuilding**: Automatically rebuilds question nodes when `question_graph` changes
+- **agent.yaml Overrides**: Override `question_graph` and prompt templates in agent configuration
 - **Standard Anchors**: Automatically includes standard anchors for common interview scenarios (cancellation, correction, review confirmation, etc.) - no need to specify them in each implementation
 - **Enhanced UPDATE Handling**: When UPDATE intent has null field, shows summary and prompts for field selection
 
@@ -57,14 +58,30 @@ stateDiagram-v2
 
 ## Architecture
 
+### Module layout
+
+The interview action is split into focused packages under `core/`:
+
+| Package | Responsibility |
+|---------|----------------|
+| **foundation** | Shared types, enums, config dataclasses, prompts, decorators, exceptions. No dependency on other interview packages. |
+| **classification** | Intent classification and extraction (LLM or DSPy). `ClassificationHandler` + strategy-style `IntentHandler` implementations. |
+| **graph** | Question/state graph: `QuestionNode`, `StateNode`, `QuestionWalker`, `QuestionGraphBuilder`, validators, branch evaluation. |
+| **state** | State machine and state-specific directive generation (`StateHandler`, `InterviewStateMachine`). |
+| **processing** | Response validation/storage (`ResponseProcessor`) and directive assembly (`DirectiveBuilder`). |
+| **session** | Session entity and orchestration service (`InterviewSession`, `InterviewService`). |
+| **utils** | Constants, JSON/session helpers, cache utilities. |
+
+Dependency direction: foundation ← utils; classification, graph, state, processing, session depend on foundation (and optionally utils). The action and `InterviewService` orchestrate these; they do not depend on each other’s internals.
+
 ### Core Components
 
 #### 1. InterviewInteractAction (Abstract Base Class)
 The abstract base class that orchestrates the complete interview flow. **Must be extended** to create concrete interview implementations.
 
 **Key Methods:**
-- `on_register()`: Builds question node chain from `question_index`
-- `on_reload()`: Rebuilds question nodes if `question_index` changed
+- `on_register()`: Builds question node chain from `question_graph`
+- `on_reload()`: Rebuilds question nodes if `question_graph` changed
 - `execute()`: Loads/creates session, classifies intent, and generates directives via `InterviewService`
 
 **Service Layer Architecture:**
@@ -72,7 +89,7 @@ The interview system uses a service layer pattern with specialized components:
 - `InterviewService`: Orchestrates classification, state handling, and directive generation
 - `StateHandler`: Generates state-specific directives (ACTIVE, REVIEW, COMPLETED, CANCELLED)
 - `ResponseProcessor`: Processes, validates, and stores user responses
-- `InterviewClassifier`: Handles intent classification and field extraction
+- `ClassificationHandler`: Handles intent classification and field extraction (optional DSPy `InterviewClassifier` when `use_dspy` is enabled)
 - `QuestionGraphBuilder`: Builds QuestionNode and StateNode graph from `question_graph`
 - `InterviewStateMachine`: Manages state transitions with validation
 
@@ -295,7 +312,7 @@ class RegistrationInterviewAction(InterviewInteractAction):
         description="Anchor statements for InteractRouter routing. Standard interview anchors are automatically included."
     )
     
-    question_index: List[Dict[str, Any]] = attribute(
+    question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {
                 "name": "user_name",
@@ -334,7 +351,7 @@ actions:
       - "User is providing registration information"
       - "User is answering registration questions"
       # Note: Standard anchors are automatically merged with these when the action is registered
-    question_index:
+    question_graph:
       - name: user_name
         question: "What's your full name?"
         constraints:
@@ -367,6 +384,8 @@ actions:
   - **input_validator**: String reference to function that validates responses (or use `@input_validator` decorator)
   - **data_input_field**: Key name in `visitor.data` dictionary to extract value from (e.g., "whatsapp_media"). When specified, the field is excluded from LLM extraction and values are extracted directly from `visitor.data`. Useful for file uploads and other data passed via REST calls.
   - **ambiguous_patterns**: Patterns that trigger VALID status with optional feedback message for clarification
+- **input_context**: Optional dictionary of static context data to provide with the question (e.g., available options, metadata). See Context Data section for details.
+- **input_context_provider**: Optional string reference to a registered input context provider function (use `@input_context_provider` decorator). The function returns a dictionary of context data dynamically at runtime. See Context Data section for details.
 - **Branch Functions**: Register custom branch functions using `@branch_function` decorator for complex branching logic (see Branch Functions section below)
 - **required**: Whether the question is required (default: False)
 - **branches**: Optional list of conditional branches (see Tree-Based Questions below). Supports both operator-based conditions (`{"op": "equals", "value": "yes"}`) and function-based conditions (`{"function": "function_name"}` or `{"function": "function_name", "op": ">=", "value": 8}`)
@@ -381,7 +400,7 @@ The interview system supports tree-based question arrangements where the next qu
 Each question can define `branches` with conditions that determine which question to ask next:
 
 ```python
-question_index = [
+question_graph = [
     {
         "name": "user_type",
         "question": "Are you a premium or standard user?",
@@ -477,7 +496,7 @@ from jvagent.action.interview import branch_function
 from jvagent.action.interview.core.session.interview_session import InterviewSession
 from jvagent.action.interact.interact_walker import InteractWalker
 
-@branch_function('check_contains_sensitive_info')
+@branch_function()
 def check_contains_sensitive_info(
     session: InterviewSession,
     visitor: InteractWalker
@@ -573,7 +592,7 @@ question_graph = [
 **Key Behaviors:**
 
 - Branch functions are only evaluated **after** the question is answered (prevents premature execution during graph traversal)
-- Functions have full access to `session.responses`, `session.context`, and `session.question_index`
+- Functions have full access to `session.responses`, `session.context`, and `session.question_graph`
 - Functions can use `visitor` to traverse the graph, access conversation history, or query user data
 - You can mix function-based and operator-based conditions in the same `branches` list
 - Functions can store computed values in `session.context` for later use or inter-function communication
@@ -587,7 +606,7 @@ question_graph = [
 **Example: Complex Branching with Visitor Access**
 
 ```python
-@branch_function('check_duplicate_report')
+@branch_function()
 async def check_duplicate_report(
     session: InterviewSession,
     visitor: InteractWalker
@@ -607,7 +626,7 @@ async def check_duplicate_report(
     
     return False
 
-@branch_function('calculate_risk_score')
+@branch_function()
 async def calculate_risk_score(
     session: InterviewSession,
     visitor: InteractWalker
@@ -670,7 +689,7 @@ You can combine both types of conditions in the same `branches` list:
 Questions without `branches` work as before - they follow linear order or use `default_next`:
 
 ```python
-question_index = [
+question_graph = [
     {
         "name": "question1",
         "question": "First question"
@@ -686,7 +705,7 @@ question_index = [
 #### Example: User Onboarding Flow
 
 ```python
-question_index = [
+question_graph = [
     {
         "name": "account_type",
         "question": "What type of account do you want? (personal/business)",
@@ -725,7 +744,7 @@ from jvagent.action.interview import (
     InterviewInteractAction,
     input_handler,
 )
-from jvagent.action.interview.core.interview_session import InterviewSession
+from jvagent.action.interview.core.session.interview_session import InterviewSession
 from jvagent.memory import Interaction
 
 @input_handler('available_times')
@@ -740,7 +759,7 @@ def normalize_time_expression(
     return normalized_date
 
 class MyInterviewAction(InterviewInteractAction):
-    question_index = [
+    question_graph = [
         {
             "name": "available_times",
             "constraints": {
@@ -751,12 +770,12 @@ class MyInterviewAction(InterviewInteractAction):
 ```
 
 
-**Alternative: String References in question_index**
+**Alternative: String References in question_graph**
 
-You can also specify handlers as string references in `question_index`:
+You can also specify handlers as string references in `question_graph`:
 
 ```python
-question_index = [
+question_graph = [
     {
         "name": "available_times",
         "constraints": {
@@ -798,7 +817,7 @@ def validate_email_domain(value: str, session: InterviewSession) -> Tuple[Valida
     return ValidationStatus.VALID, None
 
 class MyInterviewAction(InterviewInteractAction):
-    question_index = [
+    question_graph = [
         {
             "name": "user_email",
             "constraints": {
@@ -808,12 +827,12 @@ class MyInterviewAction(InterviewInteractAction):
     ]
 ```
 
-**Alternative: String References in question_index**
+**Alternative: String References in question_graph**
 
-You can also specify validators as string references in `question_index`:
+You can also specify validators as string references in `question_graph`:
 
 ```python
-question_index = [
+question_graph = [
     {
         "name": "user_email",
         "constraints": {
@@ -834,7 +853,7 @@ question_index = [
 
 **Resolution Priority:**
 1. Decorator-registered handlers/validators (checked first)
-2. String references in `question_index` constraints (fallback)
+2. String references in `question_graph` constraints (fallback)
 
 Validators can return:
 - `(ValidationStatus, message)`: Status and feedback message
@@ -899,6 +918,210 @@ question_graph = [
 - Pre-processed data that shouldn't be extracted from text
 - Data that comes from external systems rather than user utterances
 
+### Context Data
+
+**`input_context`** and **`input_context_provider`** let you attach extra data to a question so the user sees options, metadata, or personalized choices. Use **`input_context`** when the data is fixed (e.g. a list of locations or timezone). Use **`input_context_provider`** when the data must be computed at runtime (e.g. available slots from an API, options derived from earlier answers). Both are optional; omit them for questions that need no extra context.
+
+**Static Context Data (`input_context`):**
+
+Static context is hardcoded directly in the question configuration:
+
+```python
+question_graph = [
+    {
+        "name": "preferred_location",
+        "question": "Which location would you prefer?",
+        "constraints": {
+            "description": "User's preferred training location",
+            "type": "string",
+        },
+        "input_context": {
+            "available_locations": ["New York", "San Francisco", "Chicago", "Austin"],
+            "timezone": "America/New_York"
+        },
+        "required": True
+    }
+]
+```
+
+**Dynamic Context Data (`input_context_provider`):**
+
+Register a provider with the **`@input_context_provider`** decorator. Use **`@input_context_provider()`** (no argument) to register by the function’s `__name__`, or **`@input_context_provider("custom_name")`** to register under a custom name that you reference in the question’s `input_context_provider` string.
+
+```python
+from jvagent.action.interview import (
+    InterviewInteractAction,
+    input_context_provider,
+)
+from jvagent.action.interview.core.session.interview_session import InterviewSession
+from jvagent.action.interact.interact_walker import InteractWalker
+from typing import Dict, Any
+
+# No name: provider name defaults to the function's __name__ ('get_available_times')
+@input_context_provider()
+async def get_available_times(
+    session: InterviewSession,
+    visitor: InteractWalker
+) -> Dict[str, Any]:
+    """Dynamically fetch available training times.
+    
+    This could query an external calendar API, database, or compute
+    availability based on session data.
+    """
+    # Example: Fetch from external calendar API
+    # available_slots = await calendar_api.get_availability()
+    
+    # For demonstration, return static data
+    return {
+        "available_times": [
+            "Monday 9:00 AM - 11:00 AM",
+            "Tuesday 2:00 PM - 4:00 PM",
+            "Friday 5:00 PM - 7:00 PM"
+        ],
+        "timezone": "EST",
+        "last_updated": "2024-01-15T10:00:00Z"
+    }
+
+class MyInterviewAction(InterviewInteractAction):
+    question_graph = [
+        {
+            "name": "preferred_time",
+            "question": "When would you like to schedule your training?",
+            "input_context_provider": "get_available_times",  # References the decorated function
+            "constraints": {
+                "description": "User's preferred training time",
+                "type": "string",
+            },
+            "required": True
+        }
+    ]
+```
+
+**Function Signature:**
+
+Context data provider functions must accept two parameters:
+- `session: InterviewSession` - Access to session responses, context, and question index
+- `visitor: InteractWalker` - Access to graph traversal, conversation, and user data
+
+Functions can be either sync or async and must return a `Dict[str, Any]`.
+
+**How Context Data is Used:**
+
+1. **Question Directives**: Context data is formatted and included in the question prompt shown to the user
+2. **Classification**: Context helps the LLM understand valid responses for better extraction accuracy
+3. **Validation**: Context can inform validators about valid options
+4. **Input Handlers**: Handlers can access the question config to see context data
+
+**Context Data Format:**
+
+The context data dictionary supports flexible structure:
+
+```python
+{
+    # List of options (most common use case)
+    "available_options": ["Option A", "Option B", "Option C"],
+    
+    # Structured data
+    "time_slots": [
+        {"time": "9:00 AM", "available": True, "spots": 5},
+        {"time": "2:00 PM", "available": False, "spots": 0}
+    ],
+    
+    # Metadata
+    "timezone": "America/New_York",
+    "last_updated": "2024-01-15T10:00:00Z",
+    "note": "Times are in Eastern Standard Time"
+}
+```
+
+**Combining Static and Dynamic Context:**
+
+You can use both `input_context` and `input_context_provider` together. Dynamic context takes precedence:
+
+```python
+{
+    "name": "preferred_time",
+    "question": "When would you like to schedule your training?",
+    "input_context": {
+        "timezone": "EST",  # Static metadata
+    },
+    "input_context_provider": "get_available_times",  # Dynamic times
+    "constraints": {
+        "description": "User's preferred training time",
+        "type": "string",
+    },
+    "required": True
+}
+```
+
+**Example: Personalized Options Based on User Profile:**
+
+```python
+@input_context_provider()
+async def get_personalized_courses(
+    session: InterviewSession,
+    visitor: InteractWalker
+) -> Dict[str, Any]:
+    """Provide course options based on user's skill level."""
+    # Get user's skill level from previous answer
+    skill_level = session.responses.get('skill_level', 'beginner')
+    
+    # Fetch appropriate courses
+    if skill_level == 'beginner':
+        courses = ["Intro to Python", "Web Development Basics", "Git Fundamentals"]
+    elif skill_level == 'intermediate':
+        courses = ["Advanced Python", "React Deep Dive", "System Design"]
+    else:  # advanced
+        courses = ["Machine Learning", "Distributed Systems", "Performance Optimization"]
+    
+    return {
+        "available_courses": courses,
+        "skill_level": skill_level,
+        "note": f"These courses are recommended for {skill_level} level"
+    }
+```
+
+**Example: External API Integration:**
+
+```python
+@input_context_provider()
+async def get_shipping_options(
+    session: InterviewSession,
+    visitor: InteractWalker
+) -> Dict[str, Any]:
+    """Fetch real-time shipping options based on destination."""
+    destination = session.responses.get('shipping_address', '')
+    
+    # Call external shipping API
+    # shipping_api = await get_shipping_api()
+    # options = await shipping_api.get_rates(destination)
+    
+    # Example return
+    return {
+        "shipping_methods": [
+            "Standard (5-7 days) - $5.99",
+            "Express (2-3 days) - $12.99",
+            "Overnight - $24.99"
+        ],
+        "destination": destination,
+        "currency": "USD"
+    }
+```
+
+**Benefits:**
+
+- **Better User Experience**: Users see relevant options without having to guess
+- **Improved Extraction**: LLM has context about valid responses for accurate field extraction
+- **Dynamic Personalization**: Context can adapt based on user's previous responses
+- **External Integration**: Fetch real-time data from APIs, databases, or services
+
+**Notes:**
+
+- Context data providers are called when the question is presented to the user
+- If a provider function fails, the system falls back to static context (if available)
+- Context data is optional - questions without context continue to work as before
+- Context data is included in the classification context to help the LLM extract valid values
+
 ### Directive Overrides
 
 Customize agent responses after a field value is successfully validated and stored using the `@input_directive_override` decorator. This allows you to conditionally replace or append to the default directive based on the stored value.
@@ -912,7 +1135,7 @@ from jvagent.action.interview import (
     InterviewInteractAction,
     input_directive_override,
 )
-from jvagent.action.interview.core.interview_session import InterviewSession
+from jvagent.action.interview.core.session.interview_session import InterviewSession
 from jvagent.memory import Interaction
 from jvagent.action.interact.interact_walker import InteractWalker
 from typing import Optional, Union, Tuple
@@ -934,7 +1157,7 @@ async def custom_email_directive(
     return None
 
 class MyInterviewAction(InterviewInteractAction):
-    question_index = [
+    question_graph = [
         {
             "name": "user_email",
             "constraints": {
@@ -1150,7 +1373,7 @@ async def handle_interview_completion(
 
 class MyInterviewAction(InterviewInteractAction):
     # Handler is automatically found via decorator
-    question_index = [...]
+    question_graph = [...]
 ```
 
 **Note:** Completion handlers are the recommended approach. The system automatically calls registered handlers when the interview transitions to COMPLETED state.
@@ -1193,7 +1416,7 @@ session = await InterviewSession.create(
     agent_id=self.agent_id,
     conversation_id=conversation.id,
     interview_type=self.get_class_name(),  # e.g., "RegistrationInterviewAction"
-    question_index=self.question_index,
+    question_graph=self.question_graph,
     state=InterviewState.ACTIVE,
 )
 await conversation.connect(session)
@@ -1238,11 +1461,11 @@ data = session.extract_data()  # Returns dict with responses and metadata
 
 ## Question Node Rebuilding
 
-When `question_index` changes (via `on_reload()`), question nodes are automatically rebuilt:
+When `question_graph` changes (via `on_reload()`), question nodes are automatically rebuilt:
 
 1. Detects changes by comparing existing node labels with expected labels
 2. Disconnects and deletes old question nodes
-3. Rebuilds question node chain from new `question_index`
+3. Rebuilds question node chain from new `question_graph`
 
 ## Completion Handling
 
@@ -1315,8 +1538,8 @@ Each maintains its own sessions via `interview_type` identification.
 - Check that all required questions are answered before REVIEW
 
 ### Question Nodes Not Rebuilding
-- Ensure `on_reload()` is called when `question_index` changes
-- Check that question names in `question_index` match expected format
+- Ensure `on_reload()` is called when `question_graph` changes
+- Check that question names in `question_graph` match expected format
 
 ### Custom Handlers Not Working
 - Verify handler is callable (for Python code) or importable (for agent.yaml)
@@ -1337,7 +1560,7 @@ class RegistrationInterviewAction(InterviewInteractAction):
     Sessions are identified by interview_type='RegistrationInterviewAction'
     and attached to Conversation nodes for per-user persistence.
     
-    Note: question_index can also be defined in agent.yaml to override this.
+    Note: question_graph can also be defined in agent.yaml to override this.
     """
     
     description: str = "User registration interview flow"
@@ -1359,7 +1582,7 @@ class RegistrationInterviewAction(InterviewInteractAction):
         description="Anchor statements for InteractRouter routing. Standard interview anchors are automatically included."
     )
     
-    question_index: List[Dict[str, Any]] = attribute(
+    question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {
                 "name": "user_name",
@@ -1442,7 +1665,7 @@ class OnboardingInterviewAction(InterviewInteractAction):
     
     description: str = "User onboarding interview flow"
     
-    question_index: List[Dict[str, Any]] = attribute(
+    question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {
                 "name": "comm_pref",
@@ -1548,7 +1771,7 @@ class AppointmentInterviewAction(InterviewInteractAction):
     
     description: str = "Appointment booking interview flow"
     
-    question_index: List[Dict[str, Any]] = attribute(
+    question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {
                 "name": "service_type",
@@ -1603,7 +1826,7 @@ class MyInterviewAction(InterviewInteractAction):
         description="Use DSPy module for classification (enables optimization via DSPy teleprompters)"
     )
     
-    question_index: List[Dict[str, Any]] = attribute(
+    question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             # ... question configurations ...
         ]

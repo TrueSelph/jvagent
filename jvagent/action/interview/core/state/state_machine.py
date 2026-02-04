@@ -118,3 +118,48 @@ class InterviewStateMachine:
             Set of valid target states
         """
         return self.VALID_TRANSITIONS.get(self.session.state, set()).copy()
+    
+    async def safe_transition_to(
+        self,
+        new_state: InterviewState,
+        reason: Optional[str] = None,
+        save_session: bool = True,
+        context: str = ""
+    ) -> bool:
+        """Safely transition to a new state with error handling and optional session save.
+        
+        This method centralizes state transition logic with consistent error handling
+        and logging across the interview module.
+        
+        Args:
+            new_state: Target state
+            reason: Optional reason for transition (for debugging)
+            save_session: Whether to save session after transition (default: True)
+            context: Optional context string for logging (e.g., class name)
+            
+        Returns:
+            True if transition succeeded, False if it failed
+        """
+        try:
+            self.transition_to(new_state, reason=reason)
+            if save_session:
+                await self.session.save()
+            return True
+        except ValueError as e:
+            if context:
+                logger.error(f"{context}: {e}", exc_info=True)
+            else:
+                logger.error(f"State transition error: {e}", exc_info=True)
+            return False
+        except Exception as e:
+            if context:
+                logger.error(
+                    f"{context}: Failed to transition to {new_state.value}: {e}",
+                    exc_info=True
+                )
+            else:
+                logger.error(
+                    f"Failed to transition to {new_state.value}: {e}",
+                    exc_info=True
+                )
+            return False

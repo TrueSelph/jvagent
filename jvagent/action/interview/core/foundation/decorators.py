@@ -4,8 +4,11 @@ This module provides decorators for registering custom handlers, validators,
 directive overrides, and completion handlers for interview actions.
 """
 
+from __future__ import annotations
+
 import inspect
 import logging
+import threading
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
 if TYPE_CHECKING:
@@ -15,6 +18,9 @@ if TYPE_CHECKING:
     from jvagent.memory import Interaction
 
 logger = logging.getLogger(__name__)
+
+# Thread lock for registry access
+_registry_lock = threading.RLock()
 
 # Module-level registry for completion handlers (keyed by interview_type)
 # This is populated when @on_interview_complete decorated functions are defined
@@ -37,6 +43,86 @@ _pending_input_directive_overrides: Dict[str, Dict[str, Callable]] = {}
 _branch_function_registry: Dict[Tuple[str, str], Callable] = {}
 _pending_branch_functions: Dict[str, Dict[str, Callable]] = {}
 
+# Module-level registry for context data provider functions
+# Format: {(interview_type, function_name): function}
+_input_context_provider_registry: Dict[Tuple[str, str], Callable] = {}
+_pending_input_context_providers: Dict[str, Dict[str, Callable]] = {}
+
+
+def _detect_interview_type(func: Callable, interview_type: Optional[str] = None) -> Optional[str]:
+    """Detect the interview type from the function's module or use provided type.
+    
+    Args:
+        func: The function being decorated
+        interview_type: Optional explicitly provided interview type
+        
+    Returns:
+        The determined interview type, or None if not found
+    """
+    if interview_type:
+        return interview_type
+    
+    try:
+        module = inspect.getmodule(func)
+        if module:
+            # Import here to avoid circular dependency
+            from jvagent.action.interview.interview_interact_action import InterviewInteractAction
+            # Look for InterviewInteractAction subclasses in the module
+            for name, obj in vars(module).items():
+                if (inspect.isclass(obj) and
+                    issubclass(obj, InterviewInteractAction) and
+                    obj is not InterviewInteractAction):
+                    return obj.__name__
+    except Exception as e:
+        logger.debug(f"Could not detect interview type for '{func.__name__}': {e}")
+    
+    return None
+
+
+def _register_decorator_function(
+    func: Callable,
+    identifier: str,
+    handler_type: str,
+    interview_type: Optional[str],
+    registry: Dict[Tuple[str, str], Callable],
+    pending_registry: Dict[str, Dict[str, Callable]]
+) -> None:
+    """Common registration logic for all decorators.
+    
+    Thread-safe registration using a module-level lock.
+    
+    Args:
+        func: The function being decorated
+        identifier: Question name or function name
+        handler_type: Type of handler (e.g., 'input_handler', 'input_validator')
+        interview_type: Optional explicitly provided interview type
+        registry: Main registry dictionary
+        pending_registry: Pending registry for functions decorated before class definition
+    """
+    # Store metadata on the function
+    func._interview_question_name = identifier  # type: ignore
+    func._interview_handler_type = handler_type  # type: ignore
+    
+    try:
+        # Determine the interview type
+        determined_type = _detect_interview_type(func, interview_type)
+        
+        with _registry_lock:
+            if determined_type:
+                # Register in module-level registry
+                registry[(determined_type, identifier)] = func
+                logger.debug(f"Registered {handler_type} '{identifier}' for interview type '{determined_type}'")
+            else:
+                # Store in pending registry if interview_type is provided but class not yet defined
+                # Otherwise, rely on class attribute scanning in __init_subclass__
+                if interview_type:
+                    if interview_type not in pending_registry:
+                        pending_registry[interview_type] = {}
+                    pending_registry[interview_type][identifier] = func
+                    logger.debug(f"Stored {handler_type} '{identifier}' in pending registry for '{interview_type}'")
+    except Exception as e:
+        logger.warning(f"Error registering {handler_type} '{func.__name__}': {e}")
+
 
 def input_handler(question_name: str, interview_type: Optional[str] = None):
     """Decorator to register an input handler for a specific question.
@@ -57,40 +143,14 @@ def input_handler(question_name: str, interview_type: Optional[str] = None):
             return normalized_time
     """
     def decorator(func: Callable) -> Callable:
-        # Store the question name on the function for later lookup
-        func._interview_question_name = question_name  # type: ignore
-        func._interview_handler_type = "input_handler"  # type: ignore
-
-        # Try to determine the interview_type from the module where this function is defined
-        # or use the provided interview_type parameter
-        determined_type = interview_type
-        try:
-            if not determined_type:
-                module = inspect.getmodule(func)
-                if module:
-                    # Import here to avoid circular dependency
-                    from jvagent.action.interview.interview_interact_action import InterviewInteractAction
-                    # Look for InterviewInteractAction subclasses in the module
-                    for name, obj in vars(module).items():
-                        if (inspect.isclass(obj) and
-                            issubclass(obj, InterviewInteractAction) and
-                            obj is not InterviewInteractAction):
-                            determined_type = obj.__name__
-                            break
-            
-            if determined_type:
-                # Register in module-level registry
-                _input_handler_registry[(determined_type, question_name)] = func
-            else:
-                # Store in pending registry if interview_type is provided but class not yet defined
-                # Otherwise, rely on class attribute scanning in __init_subclass__
-                if interview_type:
-                    if interview_type not in _pending_input_handlers:
-                        _pending_input_handlers[interview_type] = {}
-                    _pending_input_handlers[interview_type][question_name] = func
-        except Exception as e:
-            logger.warning(f"Error registering handler '{func.__name__}': {e}")
-
+        _register_decorator_function(
+            func,
+            question_name,
+            "input_handler",
+            interview_type,
+            _input_handler_registry,
+            _pending_input_handlers
+        )
         return func
     return decorator
 
@@ -114,40 +174,14 @@ def input_validator(question_name: str, interview_type: Optional[str] = None):
             return ValidationStatus.VALID, None
     """
     def decorator(func: Callable) -> Callable:
-        # Store the question name on the function for later lookup
-        func._interview_question_name = question_name  # type: ignore
-        func._interview_handler_type = "input_validator"  # type: ignore
-
-        # Try to determine the interview_type from the module where this function is defined
-        # or use the provided interview_type parameter
-        determined_type = interview_type
-        try:
-            if not determined_type:
-                module = inspect.getmodule(func)
-                if module:
-                    # Import here to avoid circular dependency
-                    from jvagent.action.interview.interview_interact_action import InterviewInteractAction
-                    # Look for InterviewInteractAction subclasses in the module
-                    for name, obj in vars(module).items():
-                        if (inspect.isclass(obj) and
-                            issubclass(obj, InterviewInteractAction) and
-                            obj is not InterviewInteractAction):
-                            determined_type = obj.__name__
-                            break
-            
-            if determined_type:
-                # Register in module-level registry
-                _input_validator_registry[(determined_type, question_name)] = func
-            else:
-                # Store in pending registry if interview_type is provided but class not yet defined
-                # Otherwise, rely on class attribute scanning in __init_subclass__
-                if interview_type:
-                    if interview_type not in _pending_input_validators:
-                        _pending_input_validators[interview_type] = {}
-                    _pending_input_validators[interview_type][question_name] = func
-        except Exception as e:
-            logger.warning(f"Error registering validator '{func.__name__}': {e}")
-
+        _register_decorator_function(
+            func,
+            question_name,
+            "input_validator",
+            interview_type,
+            _input_validator_registry,
+            _pending_input_validators
+        )
         return func
     return decorator
 
@@ -193,40 +227,14 @@ def input_directive_override(question_name: str, interview_type: Optional[str] =
             return None  # Use default directive
     """
     def decorator(func: Callable) -> Callable:
-        # Store the question name on the function for later lookup
-        func._interview_question_name = question_name  # type: ignore
-        func._interview_handler_type = "input_directive_override"  # type: ignore
-
-        # Try to determine the interview_type from the module where this function is defined
-        # or use the provided interview_type parameter
-        determined_type = interview_type
-        try:
-            if not determined_type:
-                module = inspect.getmodule(func)
-                if module:
-                    # Import here to avoid circular dependency
-                    from jvagent.action.interview.interview_interact_action import InterviewInteractAction
-                    # Look for InterviewInteractAction subclasses in the module
-                    for name, obj in vars(module).items():
-                        if (inspect.isclass(obj) and
-                            issubclass(obj, InterviewInteractAction) and
-                            obj is not InterviewInteractAction):
-                            determined_type = obj.__name__
-                            break
-            
-            if determined_type:
-                # Register in module-level registry
-                _input_directive_override_registry[(determined_type, question_name)] = func
-            else:
-                # Store in pending registry if interview_type is provided but class not yet defined
-                # Otherwise, rely on class attribute scanning in __init_subclass__
-                if interview_type:
-                    if interview_type not in _pending_input_directive_overrides:
-                        _pending_input_directive_overrides[interview_type] = {}
-                    _pending_input_directive_overrides[interview_type][question_name] = func
-        except Exception as e:
-            logger.warning(f"Error registering directive override '{func.__name__}': {e}")
-
+        _register_decorator_function(
+            func,
+            question_name,
+            "input_directive_override",
+            interview_type,
+            _input_directive_override_registry,
+            _pending_input_directive_overrides
+        )
         return func
     return decorator
 
@@ -262,63 +270,104 @@ def on_interview_complete(interview_type: str):
     """
     def decorator(func: Callable) -> Callable:
         # Register the handler in the module-level registry
-        _completion_handlers[interview_type] = func
+        with _registry_lock:
+            _completion_handlers[interview_type] = func
         return func
     return decorator
 
 
 # Export registry access functions for InterviewInteractAction
 def get_completion_handler(interview_type: str) -> Optional[Callable]:
-    """Get completion handler for an interview type."""
-    return _completion_handlers.get(interview_type)
+    """Get completion handler for an interview type (thread-safe)."""
+    with _registry_lock:
+        return _completion_handlers.get(interview_type)
 
 
 def get_input_handler(interview_type: str, question_name: str) -> Optional[Callable]:
-    """Get input handler for a question."""
-    return _input_handler_registry.get((interview_type, question_name))
+    """Get input handler for a question (thread-safe)."""
+    with _registry_lock:
+        return _input_handler_registry.get((interview_type, question_name))
 
 
 def get_input_validator(interview_type: str, question_name: str) -> Optional[Callable]:
-    """Get input validator for a question."""
-    return _input_validator_registry.get((interview_type, question_name))
+    """Get input validator for a question (thread-safe)."""
+    with _registry_lock:
+        return _input_validator_registry.get((interview_type, question_name))
 
 
 def get_input_directive_override(interview_type: str, question_name: str) -> Optional[Callable]:
-    """Get input directive override for a question."""
-    return _input_directive_override_registry.get((interview_type, question_name))
+    """Get input directive override for a question (thread-safe)."""
+    with _registry_lock:
+        return _input_directive_override_registry.get((interview_type, question_name))
 
 
 def get_pending_input_handlers(interview_type: str) -> Dict[str, Callable]:
-    """Get pending input handlers for an interview type."""
-    return _pending_input_handlers.get(interview_type, {})
+    """Get pending input handlers for an interview type (thread-safe)."""
+    with _registry_lock:
+        return _pending_input_handlers.get(interview_type, {}).copy()
 
 
 def get_pending_input_validators(interview_type: str) -> Dict[str, Callable]:
-    """Get pending input validators for an interview type."""
-    return _pending_input_validators.get(interview_type, {})
+    """Get pending input validators for an interview type (thread-safe)."""
+    with _registry_lock:
+        return _pending_input_validators.get(interview_type, {}).copy()
 
 
 def get_pending_input_directive_overrides(interview_type: str) -> Dict[str, Callable]:
-    """Get pending input directive overrides for an interview type."""
-    return _pending_input_directive_overrides.get(interview_type, {})
+    """Get pending input directive overrides for an interview type (thread-safe)."""
+    with _registry_lock:
+        return _pending_input_directive_overrides.get(interview_type, {}).copy()
+
+
+def flush_module_registrations_for_class(interview_type: str, module: Any) -> None:
+    """Register module-level input_context_provider and branch_function from module.
+
+    When these decorators run before the action class is defined, _detect_interview_type
+    returns None so they are not registered. This scans the class's module and registers
+    any such decorated functions under the given interview_type (thread-safe).
+    """
+    if module is None:
+        return
+    with _registry_lock:
+        for _name, obj in vars(module).items():
+            if not callable(obj) or not hasattr(obj, "_interview_handler_type"):
+                continue
+            handler_type = getattr(obj, "_interview_handler_type", None)
+            identifier = getattr(obj, "_interview_question_name", None)
+            if not identifier:
+                continue
+            if handler_type == "input_context_provider":
+                if (interview_type, identifier) not in _input_context_provider_registry:
+                    _input_context_provider_registry[(interview_type, identifier)] = obj
+                    logger.debug(
+                        f"Registered input_context_provider '{identifier}' for interview type '{interview_type}' (from module scan)"
+                    )
+            elif handler_type == "branch_function":
+                if (interview_type, identifier) not in _branch_function_registry:
+                    _branch_function_registry[(interview_type, identifier)] = obj
+                    logger.debug(
+                        f"Registered branch_function '{identifier}' for interview type '{interview_type}' (from module scan)"
+                    )
 
 
 def clear_pending_registrations(interview_type: str) -> None:
-    """Clear pending registrations for an interview type after class is defined."""
-    _pending_input_handlers.pop(interview_type, None)
-    _pending_input_validators.pop(interview_type, None)
-    _pending_input_directive_overrides.pop(interview_type, None)
-    _pending_branch_functions.pop(interview_type, None)
+    """Clear pending registrations for an interview type after class is defined (thread-safe)."""
+    with _registry_lock:
+        _pending_input_handlers.pop(interview_type, None)
+        _pending_input_validators.pop(interview_type, None)
+        _pending_input_directive_overrides.pop(interview_type, None)
+        _pending_branch_functions.pop(interview_type, None)
+        _pending_input_context_providers.pop(interview_type, None)
 
 
-def branch_function(function_name: str, interview_type: Optional[str] = None):
+def branch_function(function_name: Optional[str] = None, interview_type: Optional[str] = None):
     """Decorator to register a branch function for conditional branching.
 
     Branch functions evaluate complex conditions with full access to session and visitor.
     They can return bool (direct branching) or any value (for operator evaluation).
 
     Args:
-        function_name: Unique name for this branch function
+        function_name: Optional unique name for this branch function. If not provided, uses the function's __name__
         interview_type: Optional interview type (auto-detected from module if not provided)
 
     Function Signature:
@@ -326,52 +375,35 @@ def branch_function(function_name: str, interview_type: Optional[str] = None):
             # Return bool for direct branching, or any value for operator evaluation
             pass
 
-    Example:
-        @branch_function('check_similarity')
+    Examples:
+        # Name automatically derived from function name
+        @branch_function()
         async def check_similarity(session: InterviewSession, visitor: InteractWalker) -> bool:
             description = session.responses.get('report_description', '')
-            # Complex logic with visitor access
+            return similarity_score > 0.8
+        
+        # Explicit name (optional, for backward compatibility)
+        @branch_function('check_similarity')
+        async def check_similarity(session: InterviewSession, visitor: InteractWalker) -> bool:
             return similarity_score > 0.8
     """
     def decorator(func: Callable) -> Callable:
-        # Store metadata on function
-        func._interview_question_name = function_name  # type: ignore
-        func._interview_handler_type = "branch_function"  # type: ignore
-
-        # Auto-detect interview_type from module
-        determined_type = interview_type
-        try:
-            if not determined_type:
-                module = inspect.getmodule(func)
-                if module:
-                    # Import here to avoid circular dependency
-                    from jvagent.action.interview.interview_interact_action import InterviewInteractAction
-                    # Look for InterviewInteractAction subclasses in the module
-                    for name, obj in vars(module).items():
-                        if (inspect.isclass(obj) and
-                            issubclass(obj, InterviewInteractAction) and
-                            obj is not InterviewInteractAction):
-                            determined_type = obj.__name__
-                            break
-
-            if determined_type:
-                # Register in module-level registry
-                _branch_function_registry[(determined_type, function_name)] = func
-            else:
-                # Store in pending registry if interview_type is provided but class not yet defined
-                if interview_type:
-                    if interview_type not in _pending_branch_functions:
-                        _pending_branch_functions[interview_type] = {}
-                    _pending_branch_functions[interview_type][function_name] = func
-        except Exception as e:
-            logger.warning(f"Error registering branch function '{func.__name__}': {e}")
-
+        # Use function name if not explicitly provided
+        name = function_name if function_name is not None else func.__name__
+        _register_decorator_function(
+            func,
+            name,
+            "branch_function",
+            interview_type,
+            _branch_function_registry,
+            _pending_branch_functions
+        )
         return func
     return decorator
 
 
 def get_branch_function(interview_type: str, function_name: str) -> Optional[Callable]:
-    """Get registered branch function.
+    """Get registered branch function (thread-safe).
 
     Args:
         interview_type: Interview type (class name)
@@ -380,11 +412,12 @@ def get_branch_function(interview_type: str, function_name: str) -> Optional[Cal
     Returns:
         Registered function if found, None otherwise
     """
-    return _branch_function_registry.get((interview_type, function_name))
+    with _registry_lock:
+        return _branch_function_registry.get((interview_type, function_name))
 
 
 def get_pending_branch_functions(interview_type: str) -> Dict[str, Callable]:
-    """Get pending branch functions for an interview type.
+    """Get pending branch functions for an interview type (thread-safe).
 
     Args:
         interview_type: Interview type (class name)
@@ -392,4 +425,78 @@ def get_pending_branch_functions(interview_type: str) -> Dict[str, Callable]:
     Returns:
         Dictionary of function_name -> function for pending registrations
     """
-    return _pending_branch_functions.get(interview_type, {})
+    with _registry_lock:
+        return _pending_branch_functions.get(interview_type, {}).copy()
+
+
+def input_context_provider(function_name: Optional[str] = None, interview_type: Optional[str] = None):
+    """Decorator to register an input context provider function.
+
+    Input context provider functions supply dynamic context data to questions
+    (e.g., available times, valid options, personalized choices) at the time
+    the question is presented to the user.
+
+    Args:
+        function_name: Optional unique name for this input context provider. If not provided, uses the function's __name__
+        interview_type: Optional interview type (auto-detected from module if not provided)
+
+    Function Signature:
+        async def function_name(session: InterviewSession, visitor: InteractWalker) -> Dict[str, Any]:
+            # Return dictionary of context data to be included in question prompt
+            pass
+
+    Examples:
+        # Name automatically derived from function name (recommended)
+        @input_context_provider()
+        async def get_available_times(session: InterviewSession, visitor: InteractWalker) -> Dict[str, Any]:
+            times = await fetch_calendar_availability()
+            return {
+                "available_times": times,
+                "timezone": "America/New_York"
+            }
+        
+        # Explicit name (optional, for backward compatibility)
+        @input_context_provider('get_available_times')
+        async def get_available_times(session: InterviewSession, visitor: InteractWalker) -> Dict[str, Any]:
+            return {"available_times": times}
+    """
+    def decorator(func: Callable) -> Callable:
+        # Use function name if not explicitly provided
+        name = function_name if function_name is not None else func.__name__
+        _register_decorator_function(
+            func,
+            name,
+            "input_context_provider",
+            interview_type,
+            _input_context_provider_registry,
+            _pending_input_context_providers
+        )
+        return func
+    return decorator
+
+
+def get_input_context_provider(interview_type: str, function_name: str) -> Optional[Callable]:
+    """Get registered input context provider function (thread-safe).
+
+    Args:
+        interview_type: Interview type (class name)
+        function_name: Name of the input context provider function
+
+    Returns:
+        Registered function if found, None otherwise
+    """
+    with _registry_lock:
+        return _input_context_provider_registry.get((interview_type, function_name))
+
+
+def get_pending_input_context_providers(interview_type: str) -> Dict[str, Callable]:
+    """Get pending input context providers for an interview type (thread-safe).
+
+    Args:
+        interview_type: Interview type (class name)
+
+    Returns:
+        Dictionary of function_name -> function for pending registrations
+    """
+    with _registry_lock:
+        return _pending_input_context_providers.get(interview_type, {}).copy()

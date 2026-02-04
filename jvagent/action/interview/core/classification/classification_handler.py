@@ -100,6 +100,74 @@ class ClassificationHandler:
         
         return extracted_values, excluded_fields
     
+    async def _get_context_data_note(
+        self,
+        question_config: Dict[str, Any],
+        session: InterviewSession
+    ) -> str:
+        """Get a note about context data for inclusion in entities_to_extract.
+        
+        This provides the LLM with information about available options or context
+        when extracting values, improving extraction accuracy.
+        
+        Args:
+            question_config: Question configuration dictionary
+            session: Interview session
+            
+        Returns:
+            String note about context data, or empty string if none available
+        """
+        # Check for static input_context
+        context_data = question_config.get("input_context", {})
+        
+        # Check for dynamic input_context_provider
+        provider_name = question_config.get("input_context_provider")
+        if provider_name and session:
+            try:
+                from ..foundation.decorators import get_input_context_provider
+                func = get_input_context_provider(session.interview_type, provider_name)
+                if func:
+                    # Execute provider to get dynamic context (Note: visitor not available here, pass None)
+                    import inspect
+                    if inspect.iscoroutinefunction(func):
+                        dynamic_context = await func(session, None)
+                    else:
+                        dynamic_context = func(session, None)
+                    
+                    if dynamic_context and isinstance(dynamic_context, dict):
+                        # Merge with static context (dynamic takes precedence)
+                        context_data = {**context_data, **dynamic_context}
+            except Exception as e:
+                logger.debug(f"Could not fetch context data from provider '{provider_name}': {e}")
+        
+        if not context_data:
+            return ""
+        
+        # Format context data for LLM - focus on lists of options
+        # Use configurable threshold for compact display
+        classification_config = self.action.config.classification
+        compact_threshold = classification_config.context_list_compact_threshold
+        options_text = classification_config.context_options_text
+        
+        context_notes = []
+        for key, value in context_data.items():
+            if isinstance(value, list) and value:
+                # Format lists compactly
+                if len(value) <= compact_threshold:
+                    items_str = ", ".join(str(v) for v in value)
+                    context_notes.append(f"{key.replace('_', ' ')}: {items_str}")
+                else:
+                    # For long lists, just indicate count
+                    context_notes.append(f"{key.replace('_', ' ')}: {len(value)} {options_text}")
+            elif not isinstance(value, dict):
+                # Simple values
+                context_notes.append(f"{key.replace('_', ' ')}: {value}")
+        
+        if context_notes:
+            return f" [Context: {'; '.join(context_notes)}]"
+        
+        return ""
+    
     async def build_classification_context(
         self,
         session: InterviewSession,
@@ -134,17 +202,17 @@ class ClassificationHandler:
         reachable_set = set(reachable_unanswered) if reachable_unanswered else set()
         
         # Build question map for quick lookup
-        question_map = {q.get("name"): q for q in session.question_index if q.get("name")}
+        question_map = {q.get("name"): q for q in session.question_graph if q.get("name")}
         
         # Handle edge case: if no questions are answered yet, ensure first question is included
         answered_set = set(session.get_answered_questions())
-        if not answered_set and session.question_index:
-            first_question_name = session.question_index[0].get("name")
+        if not answered_set and session.question_graph:
+            first_question_name = session.question_graph[0].get("name")
             if first_question_name and first_question_name not in reachable_set:
                 reachable_set.add(first_question_name)
         
         # Start with reachable questions
-        active_questions = [q for q in session.question_index if q.get("name") in reachable_set]
+        active_questions = [q for q in session.question_graph if q.get("name") in reachable_set]
         
         # Always include the active question if it's unanswered
         # This ensures the current question can be answered even if not yet in reachable list
@@ -185,7 +253,11 @@ class ClassificationHandler:
             required_marker = " [REQUIRED]" if is_required else " [OPTIONAL]"
             # Add note for data_input_field questions to help LLM understand it can accept DECLINE
             data_field_note = " (expects data input, but user may decline)" if is_active_data_field else ""
-            entities_list.append(f"- {key}: {desc}{constraint_part}{required_marker}{data_field_note}")
+            
+            # Add context data if available for this question
+            context_data_note = await self._get_context_data_note(item, session)
+            
+            entities_list.append(f"- {key}: {desc}{constraint_part}{required_marker}{data_field_note}{context_data_note}")
 
         entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
 
@@ -621,16 +693,5 @@ class ClassificationHandler:
         Returns:
             Parsed JSON dictionary
         """
-        import re
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            # Try to extract JSON from text
-            json_match = re.search(r'\{[^{}]*\}', response)
-            if json_match:
-                try:
-                    return json.loads(json_match.group())
-                except json.JSONDecodeError:
-                    pass
-            logger.warning(f"{self.action.get_class_name()}: Failed to extract JSON from response")
-            return {}
+        from ..utils import extract_json
+        return extract_json(response, context=self.action.get_class_name())

@@ -70,11 +70,11 @@ COMPLETION_EVENT_MESSAGE_TEMPLATE = "Completed activity: {class_name}"
 CANCELLATION_EVENT_MESSAGE_TEMPLATE = "interview process cancelled as part of {class_name}"
 
 # Question directive template (for ACTIVE state - question prompting)
-# Consolidated template that handles description, question, and optional instructions
+# Consolidated template that handles description, question, optional context, and optional instructions
+# Context section placeholder will be empty string if no context data provided
 # Instructions placeholder will be empty string if no instructions provided
 QUESTION_DIRECTIVE_TEMPLATE = """Make a request to the user based on the following:
-{question} ({description})
-
+{question} ({description}){context_section}
 {instructions}
 """
 

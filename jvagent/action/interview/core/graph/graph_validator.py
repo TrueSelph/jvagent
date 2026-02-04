@@ -187,6 +187,11 @@ class QuestionGraphValidator:
                     context={"default_next": default_next}
                 )
             )
+        
+        # Validate input_context_provider if present
+        provider_name = question_config.get("input_context_provider")
+        if provider_name:
+            self._validate_input_context_provider(provider_name, question_name)
     
     def _validate_condition(
         self,
@@ -283,6 +288,45 @@ class QuestionGraphValidator:
                 )
             )
     
+    def _validate_input_context_provider(
+        self,
+        provider_name: str,
+        question_name: str
+    ) -> None:
+        """Validate an input_context_provider reference.
+
+        Args:
+            provider_name: Name of the input context provider function
+            question_name: Name of question containing this provider reference
+        """
+        if not provider_name or not isinstance(provider_name, str):
+            self.report.errors.append(
+                ValidationIssue(
+                    severity="error",
+                    message=f"Question '{question_name}': 'input_context_provider' must be a non-empty string",
+                    question_name=question_name
+                )
+            )
+            return
+        
+        # Validate that provider is registered (if interview_type is available)
+        if self.interview_type:
+            from ..foundation.decorators import get_input_context_provider, get_pending_input_context_providers
+            func = get_input_context_provider(self.interview_type, provider_name)
+            if not func:
+                # Check pending providers
+                pending = get_pending_input_context_providers(self.interview_type)
+                if provider_name not in pending:
+                    self.report.warnings.append(
+                        ValidationIssue(
+                            severity="warning",
+                            message=f"Question '{question_name}': Input context provider '{provider_name}' not found for interview type '{self.interview_type}'. "
+                                    f"Ensure it's registered with @input_context_provider decorator.",
+                            question_name=question_name,
+                            context={"provider": provider_name, "interview_type": self.interview_type}
+                        )
+                    )
+    
     def _is_valid_target(self, target: str) -> bool:
         """Check if a target is valid (question name or state name).
         
@@ -338,15 +382,12 @@ class QuestionGraphValidator:
                 # No need to check for referenced question since it's always the current question
                 # This check is no longer needed as conditions always reference the owning question
 
-    def _validate_reachability(self) -> None:
-        """Validate that questions are reachable from the start.
+    def _build_adjacency_list(self) -> Dict[str, List[str]]:
+        """Build adjacency list representation of the question graph.
         
-        Warns about potentially unreachable questions (may be intentional).
+        Returns:
+            Dictionary mapping question names to lists of their target questions
         """
-        if not self.question_graph:
-            return
-        
-        # Build adjacency list
         adjacency: Dict[str, List[str]] = {name: [] for name in self.question_names}
         
         for question_config in self.question_graph:
@@ -376,6 +417,19 @@ class QuestionGraphValidator:
                     # Only add if no explicit default_next
                     if not default_next:
                         adjacency[question_name].append(next_question)
+        
+        return adjacency
+
+    def _validate_reachability(self) -> None:
+        """Validate that questions are reachable from the start.
+        
+        Warns about potentially unreachable questions (may be intentional).
+        """
+        if not self.question_graph:
+            return
+        
+        # Build adjacency list
+        adjacency = self._build_adjacency_list()
         
         # Find unreachable questions using BFS from first question
         if not self.question_names:
@@ -415,32 +469,8 @@ class QuestionGraphValidator:
         
         Cycles are allowed but should have escape conditions to prevent infinite loops.
         """
-        # Build adjacency list (same as in _validate_reachability)
-        adjacency: Dict[str, List[str]] = {name: [] for name in self.question_names}
-        
-        for question_config in self.question_graph:
-            question_name = question_config.get("name", "")
-            if not question_name:
-                continue
-            
-            for branch in question_config.get("branches", []):
-                target = branch.get("target", "")
-                if target and target in self.question_names:
-                    adjacency[question_name].append(target)
-            
-            default_next = question_config.get("default_next")
-            if default_next and default_next in self.question_names:
-                adjacency[question_name].append(default_next)
-            
-            current_idx = next(
-                (i for i, q in enumerate(self.question_graph) if q.get("name") == question_name),
-                -1
-            )
-            if current_idx >= 0 and current_idx + 1 < len(self.question_graph):
-                next_question = self.question_graph[current_idx + 1].get("name")
-                if next_question and next_question in self.question_names:
-                    if not default_next:
-                        adjacency[question_name].append(next_question)
+        # Build adjacency list
+        adjacency = self._build_adjacency_list()
         
         # Detect cycles using DFS
         def has_cycle(node: str, visited: Set[str], rec_stack: Set[str]) -> bool:

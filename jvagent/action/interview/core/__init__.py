@@ -1,7 +1,7 @@
 """Core interview components package."""
 
 # Foundation (most imports depend on these)
-from .foundation.enums import InterviewState, ValidationStatus, Intent, ContextKey
+from .foundation.enums import InterviewState, ValidationStatus, Intent
 from .foundation.exceptions import (
     InterviewError,
     ValidationError,
@@ -11,6 +11,7 @@ from .foundation.exceptions import (
     ClassificationError,
 )
 from .foundation.config import (
+    ClassificationConfig,
     InterviewConfig,
     ModelConfig,
     TemplateConfig,
@@ -54,13 +55,13 @@ __all__ = [
     "InterviewState",
     "ValidationStatus",
     "Intent",
-    "ContextKey",
     "InterviewError",
     "ValidationError",
     "QuestionNotFoundError",
     "InvalidStateTransitionError",
     "SessionNotFoundError",
     "ClassificationError",
+    "ClassificationConfig",
     "InterviewConfig",
     "ModelConfig",
     "TemplateConfig",
