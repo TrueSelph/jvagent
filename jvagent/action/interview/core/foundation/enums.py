@@ -28,20 +28,3 @@ class Intent(str, Enum):
     DECLINE = "DECLINE"
     SUBMISSION = "SUBMISSION"
     NONE = "NONE"
-
-
-# Context keys for session.context dictionary
-# Import from utils for centralized constants
-from ..utils.constants import (
-    CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE,
-    CONTEXT_KEY_DIRECTIVE_OVERRIDE_APPEND_MODE,
-)
-
-class ContextKey:
-    """Constants for session context dictionary keys.
-    
-    Note: Values are imported from utils.constants for centralized management.
-    This class is maintained for backward compatibility.
-    """
-    DIRECTIVE_OVERRIDE_REPLACE_MODE = CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE
-    DIRECTIVE_OVERRIDE_APPEND_MODE = CONTEXT_KEY_DIRECTIVE_OVERRIDE_APPEND_MODE

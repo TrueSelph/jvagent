@@ -12,7 +12,8 @@ from ..graph.question_walker import QuestionWalker
 from ..processing.response_processor import ResponseProcessor
 from .state_machine import InterviewStateMachine
 from ..graph.state_node import StateNode
-from ..foundation.enums import InterviewState, ValidationStatus, Intent, ContextKey
+from ..foundation.enums import InterviewState, ValidationStatus, Intent
+from ..utils.constants import CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE
 from ..utils.session_utils import cleanup_session
 from ..classification.intent_handlers import IntentHandlerRegistry
 
@@ -133,7 +134,6 @@ class StateHandler:
         
         start_from = session.active_question_key if session.active_question_key in session.get_unanswered_questions() else None
         node = await question_walker.find_next_question(session, interview_action=self.action, start_from=start_from)
-        
         # Handle StateNode - execute transition and generate directive
         if isinstance(node, StateNode):
             # Execute state transition
@@ -243,8 +243,7 @@ class StateHandler:
                 
                 # Update completed, show updated summary (REVIEW state specific)
                 # Check if replace mode override was used (already checked in handler)
-                from ..foundation.enums import ContextKey
-                replace_mode_used = (session.context or {}).get(ContextKey.DIRECTIVE_OVERRIDE_REPLACE_MODE, False)
+                replace_mode_used = (session.context or {}).get(CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE, False)
                 if not replace_mode_used:
                     # Show updated summary immediately in same turn
                     directive = self.action.directive_builder.build_confirmation_directive(session)

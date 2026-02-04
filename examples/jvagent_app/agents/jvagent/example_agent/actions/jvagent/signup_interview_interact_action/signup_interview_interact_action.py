@@ -1,7 +1,11 @@
 """Signup interview for user registration and training availability."""
 
+from __future__ import annotations
+
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
 import re
-from typing import Any, Dict, List, Optional, Tuple, Union
+from datetime import datetime
 
 from jvagent.action.interview import (
     InterviewInteractAction,
@@ -9,6 +13,7 @@ from jvagent.action.interview import (
     input_validator,
     input_directive_override,
     on_interview_complete,
+    input_context_provider,
 )
 from jvagent.action.interview.core.session.interview_session import InterviewSession
 from jvagent.action.interview.core.foundation.enums import ValidationStatus
@@ -16,6 +21,42 @@ from jvagent.memory import Interaction
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.interact.base import InteractAction
 from jvspatial.core.annotations import attribute
+
+
+@input_context_provider()
+async def get_available_training_times(
+    session: InterviewSession,
+    visitor: InteractWalker
+) -> Dict[str, Any]:
+    """Provide available training times dynamically.
+    
+    In a real implementation, this could query a calendar API or database
+    to fetch real-time availability. For this example, we return static data.
+    
+    Args:
+        session: Interview session for context
+        visitor: Walker for accessing graph context
+        
+    Returns:
+        Dictionary with available training times and metadata
+    """
+    # Example: In production, you might query an external API:
+    # calendar_api = await get_calendar_api()
+    # available_slots = await calendar_api.get_availability()
+    
+    # For demonstration, return static available times
+    return {
+        "available_times": [
+            "Monday 9:00 AM - 11:00 AM",
+            "Monday 2:00 PM - 4:00 PM",
+            "Wednesday 9:00 AM - 11:00 AM",
+            "Wednesday 2:00 PM - 4:00 PM",
+            "Friday 10:00 AM - 12:00 PM",
+            "Saturday 9:00 AM - 12:00 PM"
+        ],
+        "timezone": "America/New_York",
+        "note": "All times are in Eastern Standard Time"
+    }
 
 
 class SignupInterviewInteractAction(InterviewInteractAction):
@@ -55,13 +96,13 @@ class SignupInterviewInteractAction(InterviewInteractAction):
         default_factory=lambda: [
             # Initial entry - starting training signup
             "User wants to sign up or register for jvagent training",
-            "User wants to enroll or join jvagent training",
-            # Intermediate state - answering questions
-            "User is providing or answering training signup questions",
-            "User is completing training registration or providing availability",
-            # Revision/edit - changing previously provided information
-            "User wants to change, update, or correct their name, email, or availability",
-            "User is revising, editing, or updating training signup information",
+            # "User wants to enroll or join jvagent training",
+            # # Intermediate state - answering questions
+            # "User is providing or answering training signup questions",
+            # "User is completing training registration or providing availability",
+            # # Revision/edit - changing previously provided information
+            # "User wants to change, update, or correct their name, email, or availability",
+            # "User is revising, editing, or updating training signup information",
         ],
         description="Anchor statements for InteractRouter routing"
     )
@@ -81,9 +122,10 @@ class SignupInterviewInteractAction(InterviewInteractAction):
             {
                 "name": "available_times",
                 "question": "What times are you available to train?",
+                "input_context_provider": "get_available_training_times",  # Dynamic context from decorator
                 "constraints": {
                     "description": "The user's available times for jvagent training",
-                    "instructions": "Please specify your preferred training times. Available slots are: Monday 9-11 AM, Monday 2-4 PM, Wednesday 9-11 AM, Wednesday 2-4 PM, Friday 10 AM-12 PM, Saturday 9 AM-12 PM.",
+                    "instructions": "Please specify your preferred training times from the available slots shown above.",
                     "type": "string",
                 },
                 "required": True

@@ -2,7 +2,7 @@
 
 This module provides QuestionWalker, a specialized walker that traverses
 QuestionNodes based on conditional edges, triggers validations/handlers,
-and returns directives to InterviewStateInteractAction.
+and returns directives to InterviewInteractAction.
 """
 
 import logging
@@ -282,7 +282,7 @@ class QuestionWalker(Walker):
         """Find first unanswered question by traversing tree from root.
 
         If session.active_question_key is set (even if answered), continues traversal
-        from that position. Otherwise starts from the first question in question_index.
+        from that position. Otherwise starts from the first question in question_graph.
 
         Args:
             session: Interview session (may contain active_question_key for position)
@@ -292,12 +292,12 @@ class QuestionWalker(Walker):
         Returns:
             Name of first unanswered question, or None if all answered or state target encountered
         """
-        # Start from first question in question_index
-        if not session.question_index:
+        # Start from first question in question_graph
+        if not session.question_graph:
             return None
         
         # Build a map of question names to configs
-        question_map = {q.get("name"): q for q in session.question_index if q.get("name")}
+        question_map = {q.get("name"): q for q in session.question_graph if q.get("name")}
 
         # Determine starting point
         unanswered = set(session.get_unanswered_questions())
@@ -314,7 +314,7 @@ class QuestionWalker(Walker):
                 skip_until = session.active_question_key
         else:
             # Start from first question in tree
-            start_question = session.question_index[0].get("name")
+            start_question = session.question_graph[0].get("name")
 
         if not start_question:
             return None
@@ -382,11 +382,11 @@ class QuestionWalker(Walker):
                     else:
                         # No default_next specified, fall back to sequential flow (next question in list)
                         current_idx = next(
-                            (i for i, q in enumerate(session.question_index) if q.get("name") == question_name),
+                            (i for i, q in enumerate(session.question_graph) if q.get("name") == question_name),
                             -1
                         )
-                        if current_idx >= 0 and current_idx + 1 < len(session.question_index):
-                            next_question = session.question_index[current_idx + 1].get("name")
+                        if current_idx >= 0 and current_idx + 1 < len(session.question_graph):
+                            next_question = session.question_graph[current_idx + 1].get("name")
                             if next_question and next_question not in visited:
                                 to_visit.append(next_question)
             else:
@@ -401,11 +401,11 @@ class QuestionWalker(Walker):
                 else:
                     # Linear flow - find next question in list
                     current_idx = next(
-                        (i for i, q in enumerate(session.question_index) if q.get("name") == question_name),
+                        (i for i, q in enumerate(session.question_graph) if q.get("name") == question_name),
                         -1
                     )
-                    if current_idx >= 0 and current_idx + 1 < len(session.question_index):
-                        next_question = session.question_index[current_idx + 1].get("name")
+                    if current_idx >= 0 and current_idx + 1 < len(session.question_graph):
+                        next_question = session.question_graph[current_idx + 1].get("name")
                         if next_question and next_question not in visited:
                             to_visit.append(next_question)
 
@@ -430,11 +430,11 @@ class QuestionWalker(Walker):
         Returns:
             List of question names that are reachable and unanswered
         """
-        if not session.question_index:
+        if not session.question_graph:
             return []
         
         # Build a map of question names to configs
-        question_map = {q.get("name"): q for q in session.question_index if q.get("name")}
+        question_map = {q.get("name"): q for q in session.question_graph if q.get("name")}
         
         # Determine starting point
         unanswered = set(session.get_unanswered_questions())
@@ -451,7 +451,7 @@ class QuestionWalker(Walker):
                 skip_until = session.active_question_key
         else:
             # Start from first question in tree
-            start_question = session.question_index[0].get("name")
+            start_question = session.question_graph[0].get("name")
         
         if not start_question:
             return []
@@ -517,11 +517,11 @@ class QuestionWalker(Walker):
                     else:
                         # No default_next specified, fall back to sequential flow (next question in list)
                         current_idx = next(
-                            (i for i, q in enumerate(session.question_index) if q.get("name") == question_name),
+                            (i for i, q in enumerate(session.question_graph) if q.get("name") == question_name),
                             -1
                         )
-                        if current_idx >= 0 and current_idx + 1 < len(session.question_index):
-                            next_question = session.question_index[current_idx + 1].get("name")
+                        if current_idx >= 0 and current_idx + 1 < len(session.question_graph):
+                            next_question = session.question_graph[current_idx + 1].get("name")
                             if next_question and next_question not in visited:
                                 to_visit.append(next_question)
             else:
@@ -533,11 +533,11 @@ class QuestionWalker(Walker):
                 else:
                     # Linear flow - find next question in list
                     current_idx = next(
-                        (i for i, q in enumerate(session.question_index) if q.get("name") == question_name),
+                        (i for i, q in enumerate(session.question_graph) if q.get("name") == question_name),
                         -1
                     )
-                    if current_idx >= 0 and current_idx + 1 < len(session.question_index):
-                        next_question = session.question_index[current_idx + 1].get("name")
+                    if current_idx >= 0 and current_idx + 1 < len(session.question_graph):
+                        next_question = session.question_graph[current_idx + 1].get("name")
                         if next_question and next_question not in visited:
                             to_visit.append(next_question)
         
@@ -603,7 +603,7 @@ class QuestionWalker(Walker):
         """Check if a question should be processed given current session state.
 
         A question should be processed if:
-        1. It's in the question_index (exists)
+        1. It's in the question_graph (exists)
         2. It's reachable via conditional edges from answered questions
         3. No conditional edge skips it based on current answers
 
@@ -618,7 +618,7 @@ class QuestionWalker(Walker):
         Returns:
             True if question should be asked, False if skipped by conditionals
         """
-        # Check if question exists in question_index
+        # Check if question exists in question_graph
         question_config = session.get_question_by_name(question_name)
         if not question_config:
             return False
@@ -628,15 +628,15 @@ class QuestionWalker(Walker):
             return False
 
         # Build a map of question names to configs
-        question_map = {q.get("name"): q for q in session.question_index if q.get("name")}
+        question_map = {q.get("name"): q for q in session.question_graph if q.get("name")}
 
-        # Start traversal from first question in question_index
-        if not session.question_index:
+        # Start traversal from first question in question_graph
+        if not session.question_graph:
             return False
 
         # Traverse the graph to see if we can reach this question
         visited = set()
-        to_visit = [session.question_index[0].get("name")]
+        to_visit = [session.question_graph[0].get("name")]
 
         while to_visit:
             current_question = to_visit.pop(0)
@@ -683,11 +683,11 @@ class QuestionWalker(Walker):
                     else:
                         # No default_next specified, fall back to sequential flow (next question in list)
                         current_idx = next(
-                            (i for i, q in enumerate(session.question_index) if q.get("name") == current_question),
+                            (i for i, q in enumerate(session.question_graph) if q.get("name") == current_question),
                             -1
                         )
-                        if current_idx >= 0 and current_idx + 1 < len(session.question_index):
-                            next_question = session.question_index[current_idx + 1].get("name")
+                        if current_idx >= 0 and current_idx + 1 < len(session.question_graph):
+                            next_question = session.question_graph[current_idx + 1].get("name")
                             if next_question and next_question not in visited:
                                 to_visit.append(next_question)
             else:
@@ -701,11 +701,11 @@ class QuestionWalker(Walker):
                 else:
                     # Linear flow - find next question in list
                     current_idx = next(
-                        (i for i, q in enumerate(session.question_index) if q.get("name") == current_question),
+                        (i for i, q in enumerate(session.question_graph) if q.get("name") == current_question),
                         -1
                     )
-                    if current_idx >= 0 and current_idx + 1 < len(session.question_index):
-                        next_question = session.question_index[current_idx + 1].get("name")
+                    if current_idx >= 0 and current_idx + 1 < len(session.question_graph):
+                        next_question = session.question_graph[current_idx + 1].get("name")
                         if next_question and next_question not in visited:
                             to_visit.append(next_question)
 
@@ -784,7 +784,7 @@ class QuestionWalker(Walker):
         """
         # Find question config
         question_config = next(
-            (q for q in session.question_index if q.get("name") == current_question_name),
+            (q for q in session.question_graph if q.get("name") == current_question_name),
             None
         )
 

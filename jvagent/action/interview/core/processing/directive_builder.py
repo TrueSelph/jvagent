@@ -46,7 +46,7 @@ class DirectiveBuilder:
         if self.action.summary_header_template and self.action.summary_header_template.strip():
             lines.append(self.action.summary_header_template)
 
-        for question_config in session.question_index:
+        for question_config in session.question_graph:
             field_name = question_config.get("name", "")
             if not field_name:
                 continue

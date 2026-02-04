@@ -117,25 +117,22 @@ class InterviewService:
         # Handle high-priority intents that cause immediate state transitions
         # CANCELLATION: Highest priority - can occur in any state
         if classification_result.intent == Intent.CANCELLATION and session.state != InterviewState.CANCELLED:
-            try:
-                state_machine.transition_to(InterviewState.CANCELLED, reason="User cancellation")
-                await session.save()
-            except ValueError as e:
-                logger.error(f"{self.action.get_class_name()}: {e}", exc_info=True)
-            except Exception as e:
-                logger.error(f"{self.action.get_class_name()}: Failed to transition to CANCELLED: {e}", exc_info=True)
+            await state_machine.safe_transition_to(
+                InterviewState.CANCELLED,
+                reason="User cancellation",
+                context=self.action.get_class_name()
+            )
 
         # CONFIRMATION: Only valid in REVIEW state - transition to COMPLETED immediately
         if classification_result.intent == Intent.CONFIRMATION and session.state == InterviewState.REVIEW:
-            try:
-                state_machine.transition_to(InterviewState.COMPLETED, reason="User confirmation")
-                await session.save()
+            success = await state_machine.safe_transition_to(
+                InterviewState.COMPLETED,
+                reason="User confirmation",
+                context=self.action.get_class_name()
+            )
+            if success:
                 await self.state_handler.generate_completed_directive(session, visitor)
                 return  # Exit early - completion handled in same turn
-            except ValueError as e:
-                logger.error(f"{self.action.get_class_name()}: {e}", exc_info=True)
-            except Exception as e:
-                logger.error(f"{self.action.get_class_name()}: Failed to transition to COMPLETED: {e}", exc_info=True)
 
         # Route to state-specific handlers (pass state_machine for transitions)
         if session.state == InterviewState.ACTIVE:

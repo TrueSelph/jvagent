@@ -163,7 +163,7 @@ def validate_feedback_content(value: str, session: InterviewSession) -> Tuple[Va
 
 
 # search for report if report_details is provided
-@branch_function('search_for_report')
+@branch_function()
 def search_for_report(
     session: InterviewSession,
     visitor: InteractWalker

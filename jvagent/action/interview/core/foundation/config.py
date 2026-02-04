@@ -32,6 +32,23 @@ from .prompts import (
 
 
 @dataclass
+class ClassificationConfig:
+    """Configuration for classification and context data formatting."""
+    
+    # Context data formatting thresholds
+    context_list_compact_threshold: int = 5  # Max list length to display items inline
+    context_options_text: str = "options available"  # Text to show for long lists
+    
+    # Decline value for required fields
+    decline_value: str = "n/a"
+    
+    def __post_init__(self):
+        """Validate classification configuration."""
+        if self.context_list_compact_threshold < 1:
+            raise ValueError(f"context_list_compact_threshold must be positive, got {self.context_list_compact_threshold}")
+
+
+@dataclass
 class ModelConfig:
     """Configuration for language model settings."""
     
@@ -133,6 +150,7 @@ class InterviewConfig:
     
     model: ModelConfig = field(default_factory=ModelConfig)
     templates: TemplateConfig = field(default_factory=TemplateConfig)
+    classification: ClassificationConfig = field(default_factory=ClassificationConfig)
     use_dspy: bool = False
     
     @classmethod
@@ -183,8 +201,25 @@ class InterviewConfig:
             if config_key in config_dict:
                 setattr(template_config, attr.replace("_template", ""), config_dict[config_key])
         
+        # Extract classification config (top-level or nested under "classification")
+        classification_dict = config_dict.get("classification") or {}
+        if not isinstance(classification_dict, dict):
+            classification_dict = {}
+        classification_config = ClassificationConfig(
+            context_list_compact_threshold=classification_dict.get("context_list_compact_threshold", 5),
+            context_options_text=classification_dict.get("context_options_text", "options available"),
+            decline_value=classification_dict.get("decline_value", "n/a"),
+        )
+        if "context_list_compact_threshold" in config_dict:
+            classification_config.context_list_compact_threshold = config_dict["context_list_compact_threshold"]
+        if "context_options_text" in config_dict:
+            classification_config.context_options_text = config_dict["context_options_text"]
+        if "decline_value" in config_dict:
+            classification_config.decline_value = config_dict["decline_value"]
+
         return cls(
             model=model_config,
             templates=template_config,
+            classification=classification_config,
             use_dspy=config_dict.get("use_dspy", False)
         )

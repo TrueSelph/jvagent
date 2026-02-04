@@ -11,6 +11,10 @@ from typing import TYPE_CHECKING, Any, Optional
 from ..foundation.enums import Intent, InterviewState, ValidationStatus
 from ..session.interview_session import InterviewSession
 from ..processing.response_processor import ResponseProcessor
+from ..utils.constants import (
+    CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE,
+    CONTEXT_KEY_DIRECTIVE_OVERRIDE_APPEND_MODE
+)
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -104,19 +108,12 @@ class CancellationHandler(IntentHandler):
         if not state_machine:
             state_machine = InterviewStateMachine(session)
         
-        try:
-            state_machine.transition_to(InterviewState.CANCELLED, reason="User cancellation")
-            await session.save()
-            return HandlerResult(handled=True, should_continue=False)
-        except ValueError as e:
-            logger.error(f"{self.action.get_class_name()}: {e}", exc_info=True)
-            return HandlerResult(handled=False, should_continue=False)
-        except Exception as e:
-            logger.error(
-                f"{self.action.get_class_name()}: Failed to transition to CANCELLED: {e}",
-                exc_info=True
-            )
-            return HandlerResult(handled=False, should_continue=False)
+        success = await state_machine.safe_transition_to(
+            InterviewState.CANCELLED,
+            reason="User cancellation",
+            context=self.action.get_class_name()
+        )
+        return HandlerResult(handled=success, should_continue=False)
 
 
 class ConfirmationHandler(IntentHandler):
@@ -147,19 +144,12 @@ class ConfirmationHandler(IntentHandler):
         if not state_machine:
             state_machine = InterviewStateMachine(session)
         
-        try:
-            state_machine.transition_to(InterviewState.COMPLETED, reason="User confirmation")
-            await session.save()
-            return HandlerResult(handled=True, should_continue=False)
-        except ValueError as e:
-            logger.error(f"{self.action.get_class_name()}: {e}", exc_info=True)
-            return HandlerResult(handled=False, should_continue=True)
-        except Exception as e:
-            logger.error(
-                f"{self.action.get_class_name()}: Failed to transition to COMPLETED: {e}",
-                exc_info=True
-            )
-            return HandlerResult(handled=False, should_continue=True)
+        success = await state_machine.safe_transition_to(
+            InterviewState.COMPLETED,
+            reason="User confirmation",
+            context=self.action.get_class_name()
+        )
+        return HandlerResult(handled=success, should_continue=not success)
 
 
 class UpdateHandler(IntentHandler):
@@ -224,11 +214,10 @@ class UpdateHandler(IntentHandler):
             return HandlerResult(handled=True, should_continue=False)
         
         # Check if replace mode override was used
-        from ..foundation.enums import ContextKey
-        replace_mode_used = (session.context or {}).get(ContextKey.DIRECTIVE_OVERRIDE_REPLACE_MODE, False)
+        replace_mode_used = (session.context or {}).get(CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE, False)
         if replace_mode_used:
             # Clear the flag
-            session.context.pop(ContextKey.DIRECTIVE_OVERRIDE_REPLACE_MODE, None)
+            session.context.pop(CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE, None)
             await session.save()
             # Don't find next question - replace mode override already handled the response
             return HandlerResult(handled=True, should_continue=False, updated_field=field)
@@ -291,8 +280,9 @@ class DeclineHandler(IntentHandler):
             await self.action.directive_builder.queue_directive(visitor, directive)
             return HandlerResult(handled=True, should_continue=False)
         else:
-            # Non-required field - store "n/a" and continue
-            session.set_response(field, "n/a")
+            # Non-required field - store decline value (configurable) and continue
+            decline_value = self.action.config.classification.decline_value
+            session.set_response(field, decline_value)
             session.set_validation_status(field, ValidationStatus.VALID)
             await session.save()
             
@@ -306,7 +296,7 @@ class DeclineHandler(IntentHandler):
             await self.action._update_reachable_questions(session, question_walker, just_answered_field=field)
             
             logger.debug(
-                f"{self.action.get_class_name()}: Declined non-required field {field}, stored as 'n/a'. "
+                f"{self.action.get_class_name()}: Declined non-required field {field}, stored as '{decline_value}'. "
                 f"Branches re-evaluated to maintain question path integrity."
             )
             return HandlerResult(handled=True, should_continue=True)
@@ -351,7 +341,7 @@ class SubmissionHandler(IntentHandler):
         
         # Check if state transition occurred during response processing
         state_changed = session.state != state_before_processing
-        
+
         if state_changed:
             # State transition occurred via StateNode.execute() during branch evaluation
             return HandlerResult(handled=True, should_continue=False)
@@ -361,20 +351,19 @@ class SubmissionHandler(IntentHandler):
             return HandlerResult(handled=True, should_continue=False)
         
         # Check if replace mode override was used
-        from ..foundation.enums import ContextKey
-        replace_mode_used = (session.context or {}).get(ContextKey.DIRECTIVE_OVERRIDE_REPLACE_MODE, False)
+        replace_mode_used = (session.context or {}).get(CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE, False)
         if replace_mode_used:
             # Clear the flag
-            session.context.pop(ContextKey.DIRECTIVE_OVERRIDE_REPLACE_MODE, None)
+            session.context.pop(CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE, None)
             await session.save()
             # Don't find next question - replace mode override already handled the response
             return HandlerResult(handled=True, should_continue=False)
         
         # Check if append mode override was used
-        append_mode_used = (session.context or {}).get(ContextKey.DIRECTIVE_OVERRIDE_APPEND_MODE, False)
+        append_mode_used = (session.context or {}).get(CONTEXT_KEY_DIRECTIVE_OVERRIDE_APPEND_MODE, False)
         if append_mode_used:
             # Clear the flag
-            session.context.pop(ContextKey.DIRECTIVE_OVERRIDE_APPEND_MODE, None)
+            session.context.pop(CONTEXT_KEY_DIRECTIVE_OVERRIDE_APPEND_MODE, None)
             await session.save()
             # Don't find next question - append mode override already handled it
             return HandlerResult(handled=True, should_continue=False)

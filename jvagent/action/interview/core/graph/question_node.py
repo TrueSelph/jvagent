@@ -4,14 +4,16 @@ This module provides QuestionNode, a node that represents individual interview q
 in the interview process with validation capabilities.
 """
 
+import inspect
 import logging
 import re
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
 
 from .question_branch_evaluator import QuestionBranchEvaluator
+from ..foundation.decorators import get_input_context_provider
 from ..foundation.enums import ValidationStatus
 from ..foundation.exceptions import ValidationError, QuestionNotFoundError
 
@@ -153,7 +155,7 @@ class QuestionNode(Node):
             if action_class:
                 handler = action_class.get_input_handler(question_name)
         
-        # Fallback to question_index string reference
+        # Fallback to question config string reference
         if not handler:
             input_handler_ref = constraints.get("input_handler")
             if input_handler_ref:
@@ -216,6 +218,132 @@ class QuestionNode(Node):
             pass
         return None
     
+    async def get_context_data(
+        self,
+        session: "InterviewSession",
+        visitor: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Get context data for this question (static or dynamic).
+        
+        Context data provides additional information to help the user answer the question,
+        such as available times, valid options, or personalized choices.
+        
+        Args:
+            session: Interview session for context
+            visitor: Optional InteractWalker for accessing graph context
+            
+        Returns:
+            Dictionary of context data to be included in the question prompt
+        """
+        # Start with static input_context from question config
+        static_context = self.state.get("input_context", {})
+        
+        # Check for dynamic input_context_provider
+        provider_name = self.state.get("input_context_provider")
+        if provider_name:
+            try:
+                dynamic_context = await self._execute_context_provider(provider_name, session, visitor)
+                # Merge static and dynamic (dynamic takes precedence)
+                if dynamic_context:
+                    return {**static_context, **dynamic_context}
+            except Exception as e:
+                logger.error(
+                    f"Error executing input data provider '{provider_name}' for question '{self.state.get('name', '')}': {e}",
+                    exc_info=True
+                )
+                # Fall back to static context on error
+        
+        return static_context
+    
+    async def _execute_context_provider(
+        self,
+        provider_name: str,
+        session: "InterviewSession",
+        visitor: Optional[Any]
+    ) -> Dict[str, Any]:
+        """Execute an input data provider function.
+
+        Args:
+            provider_name: Name of the registered input data provider function
+            session: Interview session
+            visitor: Optional InteractWalker
+            
+        Returns:
+            Dictionary of context data from the provider function
+        """
+        # Look up function from registry
+        func = get_input_context_provider(session.interview_type, provider_name)
+        if not func:
+            logger.error(
+                f"Input data provider '{provider_name}' not found for interview type '{session.interview_type}'. "
+                f"Question: '{self.state.get('name', '')}'"
+            )
+            return {}
+        
+        try:
+            # Call function with session and visitor
+            if inspect.iscoroutinefunction(func):
+                result = await func(session, visitor)
+            else:
+                result = func(session, visitor)
+            
+            # Validate result is a dictionary
+            if not isinstance(result, dict):
+                logger.warning(
+                    f"Input data provider '{provider_name}' returned {type(result).__name__} "
+                    f"but dict expected. Question: '{self.state.get('name', '')}'"
+                )
+                return {}
+            
+            logger.debug(
+                f"Input data provider '{provider_name}' returned {len(result)} keys "
+                f"for question '{self.state.get('name', '')}'"
+            )
+            return result
+            
+        except Exception as e:
+            logger.error(
+                f"Error executing input data provider '{provider_name}' for question '{self.state.get('name', '')}': {e}",
+                exc_info=True
+            )
+            return {}
+    
+    def _format_context_data(self, context_data: Dict[str, Any]) -> str:
+        """Format context data for inclusion in the question directive.
+        
+        Args:
+            context_data: Dictionary of context data
+            
+        Returns:
+            Formatted string to include in the directive
+        """
+        if not context_data:
+            return ""
+        
+        lines = []
+        for key, value in context_data.items():
+            # Format key as human-readable label
+            label = key.replace("_", " ").title()
+            
+            # Format value based on type
+            if isinstance(value, list):
+                # Format lists with bullet points
+                if value:
+                    items = "\n  ".join(f"- {item}" for item in value)
+                    lines.append(f"{label}:\n  {items}")
+            elif isinstance(value, dict):
+                # Format nested dicts (basic support)
+                formatted_dict = ", ".join(f"{k}: {v}" for k, v in value.items())
+                lines.append(f"{label}: {formatted_dict}")
+            else:
+                # Simple values
+                lines.append(f"{label}: {value}")
+        
+        if lines:
+            return "\n\nAvailable Context:\n" + "\n".join(lines)
+        
+        return ""
+    
     async def condition_matches(
         self,
         condition: Dict[str, Any],
@@ -271,19 +399,190 @@ class QuestionNode(Node):
         if not directive_template:
             return None
 
+        # Get context data for this question
+        context_data = await self.get_context_data(session, walker)
+        context_section = self._format_context_data(context_data)
+
         # Format instructions - only include if present
         formatted_instructions = ""
         if instructions:
             formatted_instructions = f"\n\nNote: {instructions}"
 
-        # Format directive with optional instructions
+        # Format directive with optional context and instructions
         directive = directive_template.format(
             question=question,
             description=description,
+            context_section=context_section,
             instructions=formatted_instructions,
         )
         
         return directive if directive else None
+
+    def _validate_empty_value(self, value: Any) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
+        """Check if value is empty and validate based on required flag.
+        
+        Args:
+            value: The value to check
+            
+        Returns:
+            Validation result tuple if value is empty, None otherwise
+        """
+        if value is None or (isinstance(value, str) and not value.strip()):
+            if self.state.get("required", False):
+                return ValidationStatus.INVALID, "This field is required.", None
+            return ValidationStatus.VALID, None, None
+        return None
+    
+    def _validate_type(self, value: Any, constraints: Dict[str, Any]) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
+        """Validate value type against expected type constraint.
+        
+        Args:
+            value: The value to validate
+            constraints: Question constraints dictionary
+            
+        Returns:
+            Validation result tuple if type is invalid, None if valid
+        """
+        expected_type = constraints.get("type", "string")
+        if expected_type == "string" and not isinstance(value, str):
+            return ValidationStatus.INVALID, f"Expected a string value, got {type(value).__name__}", None
+        elif expected_type in ("number", "integer"):
+            try:
+                float(value) if expected_type == "number" else int(value)
+            except (ValueError, TypeError):
+                return ValidationStatus.INVALID, f"Expected a {expected_type} value", None
+        return None
+    
+    def _validate_pattern(self, value: Any, constraints: Dict[str, Any]) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
+        """Validate value against regex pattern constraint.
+        
+        Args:
+            value: The value to validate
+            constraints: Question constraints dictionary
+            
+        Returns:
+            Validation result tuple if pattern doesn't match, None if valid
+        """
+        pattern = constraints.get("pattern")
+        if pattern and isinstance(value, str):
+            if not re.match(pattern, value):
+                return ValidationStatus.INVALID, constraints.get("pattern_error", "Value doesn't match required format"), None
+        return None
+    
+    def _validate_email(self, value: Any, constraints: Dict[str, Any]) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
+        """Validate email format.
+        
+        Args:
+            value: The value to validate
+            constraints: Question constraints dictionary
+            
+        Returns:
+            Validation result tuple if email is invalid, None if valid
+        """
+        if constraints.get("format") == "email" and isinstance(value, str):
+            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if not re.match(email_pattern, value):
+                return ValidationStatus.INVALID, "Please provide a valid email address", None
+        return None
+    
+    def _get_custom_validator(self, session: "InterviewSession", constraints: Dict[str, Any]) -> Optional[Callable]:
+        """Get custom validator function from decorator registry or constraints.
+        
+        Args:
+            session: Interview session
+            constraints: Question constraints dictionary
+            
+        Returns:
+            Validator function if found, None otherwise
+        """
+        question_name = self.state.get("name", "")
+        
+        # Try decorator registry first
+        if question_name and session:
+            action_class = self._get_action_class_from_session(session)
+            if action_class:
+                validator = action_class.get_input_validator(question_name)
+                if validator:
+                    return validator
+        
+        # Fallback to string reference in constraints
+        validator_ref = constraints.get("input_validator")
+        if validator_ref:
+            return self._resolve_callable(validator_ref)
+        
+        return None
+    
+    def _execute_custom_validator(
+        self, 
+        validator: Callable, 
+        value: Any, 
+        session: "InterviewSession"
+    ) -> Tuple[ValidationStatus, Optional[str], Optional[Any]]:
+        """Execute custom validator function and handle its result.
+        
+        Args:
+            validator: The validator function to execute
+            value: The value to validate
+            session: Interview session
+            
+        Returns:
+            Validation result tuple
+        """
+        question_name = self.state.get("name", "")
+        
+        try:
+            result = validator(value, session)
+            if isinstance(result, tuple):
+                # Handle different tuple lengths
+                if len(result) == 2:
+                    # (status, message) - no correction
+                    status, message = result
+                    final_status = self._normalize_validation_status(status)
+                    return final_status, message, None
+                elif len(result) == 3:
+                    # (status, message, corrected_value) - with correction
+                    status, message, corrected_value = result
+                    final_status = self._normalize_validation_status(status)
+                    return final_status, message, corrected_value
+                else:
+                    logger.warning(f"Validator '{validator.__name__}' returned unexpected tuple length: {len(result)}")
+                    return ValidationStatus.INVALID, "Invalid validator return format", None
+            elif isinstance(result, bool):
+                final_status = ValidationStatus.VALID if result else ValidationStatus.INVALID
+                return final_status, None, None
+        except ValidationError as e:
+            logger.debug(f"Validator raised ValidationError: {e}")
+            return ValidationStatus.INVALID, e.message, None
+        except Exception as e:
+            logger.error(f"Validator function '{validator.__name__}' raised exception: {e}", exc_info=True)
+            validation_error = ValidationError(
+                question_name or "unknown",
+                f"Validation error: {str(e)}",
+                value
+            )
+            return ValidationStatus.INVALID, validation_error.message, None
+        
+        # If we get here, validator returned unexpected type
+        return ValidationStatus.INVALID, "Validator returned unexpected result type", None
+    
+    def _check_ambiguous_patterns(self, value: Any, constraints: Dict[str, Any]) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
+        """Check for ambiguous patterns that might need clarification.
+        
+        Args:
+            value: The value to check
+            constraints: Question constraints dictionary
+            
+        Returns:
+            Validation result with feedback if ambiguous pattern found, None otherwise
+        """
+        ambiguous_patterns = constraints.get("ambiguous_patterns", [])
+        if isinstance(value, str) and ambiguous_patterns:
+            value_lower = value.lower()
+            for pattern in ambiguous_patterns:
+                if pattern in value_lower:
+                    feedback = constraints.get("ambiguous_feedback", "I'd like to clarify this.")
+                    return ValidationStatus.VALID, feedback, None
+        return None
 
     async def validate_response(
         self, 
@@ -309,103 +608,40 @@ class QuestionNode(Node):
             If corrected_value is provided, it should be used instead of the original value
         """
         # Process input first if it's a string (raw input)
-        # Note: process_input should be idempotent
-        # We pass None for interaction here since we don't have it in validate_response signature
         if isinstance(value, str):
             value = await self.process_input(value, session, interaction=None)
         
         constraints = self.state.get("constraints", {})
-        question_key = self.state.get("name", "")
         
-        # Check if value is empty/None
-        if value is None or (isinstance(value, str) and not value.strip()):
-            if self.state.get("required", False):
-                return ValidationStatus.INVALID, "This field is required.", None
-            return ValidationStatus.VALID, None, None  # Optional field can be empty
+        # Check if value is empty
+        empty_result = self._validate_empty_value(value)
+        if empty_result:
+            return empty_result
         
         # Type validation
-        expected_type = constraints.get("type", "string")
-        if expected_type == "string" and not isinstance(value, str):
-            return ValidationStatus.INVALID, f"Expected a string value, got {type(value).__name__}", None
-        elif expected_type == "number" or expected_type == "integer":
-            try:
-                float(value) if expected_type == "number" else int(value)
-            except (ValueError, TypeError):
-                return ValidationStatus.INVALID, f"Expected a {expected_type} value", None
+        type_result = self._validate_type(value, constraints)
+        if type_result:
+            return type_result
         
-        # Pattern/regex validation
-        pattern = constraints.get("pattern")
-        if pattern and isinstance(value, str):
-            if not re.match(pattern, value):
-                return ValidationStatus.INVALID, constraints.get("pattern_error", "Value doesn't match required format"), None
+        # Pattern validation
+        pattern_result = self._validate_pattern(value, constraints)
+        if pattern_result:
+            return pattern_result
         
         # Email validation
-        if constraints.get("format") == "email" and isinstance(value, str):
-            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-            if not re.match(email_pattern, value):
-                return ValidationStatus.INVALID, "Please provide a valid email address", None
+        email_result = self._validate_email(value, constraints)
+        if email_result:
+            return email_result
         
-        # Custom validation function (if provided)
-        # First, try to get validator from decorator registry (if action class is available)
-        validator = None
-        question_name = self.state.get("name", "")
-        
-        if question_name and session:
-            action_class = self._get_action_class_from_session(session)
-            if action_class:
-                validator = action_class.get_input_validator(question_name)
-        
-        # Fallback to question_index string reference
-        if not validator:
-            validator_ref = constraints.get("input_validator")
-            if validator_ref:
-                validator = self._resolve_callable(validator_ref)
-        
+        # Custom validation function
+        validator = self._get_custom_validator(session, constraints)
         if validator and callable(validator):
-            try:
-                result = validator(value, session)
-                if isinstance(result, tuple):
-                    # Handle different tuple lengths
-                    if len(result) == 2:
-                        # (status, message) - no correction
-                        status, message = result
-                        final_status = self._normalize_validation_status(status)
-                        return final_status, message, None
-                    elif len(result) == 3:
-                        # (status, message, corrected_value) - with correction
-                        status, message, corrected_value = result
-                        final_status = self._normalize_validation_status(status)
-                        return final_status, message, corrected_value
-                    else:
-                        logger.warning(f"Validator '{validator.__name__}' returned unexpected tuple length: {len(result)}")
-                        return ValidationStatus.INVALID, "Invalid validator return format", None
-                elif isinstance(result, bool):
-                    final_status = ValidationStatus.VALID if result else ValidationStatus.INVALID
-                    return final_status, None, None
-            except ValidationError as e:
-                # Re-raise ValidationError as-is
-                logger.debug(f"Validator raised ValidationError: {e}")
-                return ValidationStatus.INVALID, e.message, None
-            except Exception as e:
-                logger.error(f"Validator function '{validator.__name__}' raised exception: {e}", exc_info=True)
-                # Wrap in ValidationError for consistency
-                validation_error = ValidationError(
-                    question_name or "unknown",
-                    f"Validation error: {str(e)}",
-                    value
-                )
-                return ValidationStatus.INVALID, validation_error.message, None
+            return self._execute_custom_validator(validator, value, session)
         
-        # Check for ambiguous values that might need clarification
-        # This is a heuristic - can be customized per question via ambiguous_patterns in constraints
-        # Returns VALID with optional feedback message (not a separate status)
-        ambiguous_patterns = constraints.get("ambiguous_patterns", [])
-        if isinstance(value, str):
-            value_lower = value.lower()
-            for pattern in ambiguous_patterns:
-                if pattern in value_lower:
-                    feedback = constraints.get("ambiguous_feedback", "I'd like to clarify this.")
-                    return ValidationStatus.VALID, feedback, None
+        # Check for ambiguous patterns
+        ambiguous_result = self._check_ambiguous_patterns(value, constraints)
+        if ambiguous_result:
+            return ambiguous_result
         
         # All checks passed
         return ValidationStatus.VALID, None, None

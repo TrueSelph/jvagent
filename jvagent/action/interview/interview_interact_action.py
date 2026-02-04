@@ -17,6 +17,7 @@ import inspect
 import json
 import logging
 import re
+import sys
 from abc import ABC
 from dataclasses import dataclass
 from datetime import datetime
@@ -61,7 +62,7 @@ from .core.foundation.prompts import (
 )
 
 if TYPE_CHECKING:
-    from jvagent.action.interview.core.interview_session import InterviewSession
+    from jvagent.action.interview.core.session.interview_session import InterviewSession
     from jvagent.action.interact.interact_walker import InteractWalker
 
 logger = logging.getLogger(__name__)
@@ -72,11 +73,14 @@ from .core.foundation.decorators import (
     get_input_handler as _get_input_handler,
     get_input_validator as _get_input_validator,
     get_input_directive_override as _get_input_directive_override,
+    get_input_context_provider as _get_input_context_provider,
     get_pending_input_handlers,
     get_pending_input_validators,
     get_pending_input_directive_overrides,
     get_pending_branch_functions,
+    get_pending_input_context_providers,
     clear_pending_registrations,
+    flush_module_registrations_for_class,
 )
 
 
@@ -326,6 +330,12 @@ class InterviewInteractAction(InteractAction, ABC):
         description="Template for insisting user answer a required field when they try to decline. Uses {field_display} and {question} placeholders. Defaults to REQUIRED_FIELD_DECLINE_TEMPLATE from prompts.py",
     )
 
+    @property
+    def config(self) -> InterviewConfig:
+        """Interview config from metadata (always InterviewConfig, not raw dict)."""
+        raw = super().config
+        return InterviewConfig.from_dict(raw if isinstance(raw, dict) else {})
+
     def __init_subclass__(cls, **kwargs):
         """Initialize subclass and collect decorator-registered handlers/validators."""
         super().__init_subclass__(**kwargs)
@@ -356,6 +366,10 @@ class InterviewInteractAction(InteractAction, ABC):
         pending_overrides = get_pending_input_directive_overrides(class_name)
         for question_name, func in pending_overrides.items():
             cls._input_directive_overrides[question_name] = func
+
+        # Register module-level input_context_provider and branch_function (defined before class)
+        module = sys.modules.get(cls.__module__)
+        flush_module_registrations_for_class(class_name, module)
 
         # Clear pending registrations for this class
         clear_pending_registrations(class_name)
@@ -799,11 +813,49 @@ class InterviewInteractAction(InteractAction, ABC):
 
     def _get_question_graph(self) -> List[Dict[str, Any]]:
         """Get question graph.
-        
+
         Returns:
             List of question configuration dictionaries
         """
         return self.question_graph
+
+    async def _get_or_create_session(self, conversation: Any) -> InterviewSession:
+        """Load existing active session or create and attach a new one.
+
+        Ensures a loaded session has question_graph populated (storage may not
+        persist or restore it). Caller must inject the returned session into the
+        visitor.
+
+        Args:
+            conversation: Conversation node to query/attach session to.
+
+        Returns:
+            InterviewSession for this interview type (ACTIVE or not terminal).
+        """
+        interview_type = self.get_class_name()
+        session = await conversation.node(
+            node=[{"InterviewSession": {
+                "state": {"$nin": [InterviewState.COMPLETED.value, InterviewState.CANCELLED.value]}
+            }}],
+            interview_type=interview_type,
+        )
+        if not session:
+            question_graph = self._get_question_graph()
+            session = await InterviewSession.create(
+                agent_id=self.agent_id,
+                conversation_id=conversation.id,
+                interview_type=interview_type,
+                question_graph=question_graph,
+                state=InterviewState.ACTIVE,
+            )
+            session.started_at = datetime.now()
+            await session.save()
+            await conversation.connect(session)
+        else:
+            if not (session.question_graph and len(session.question_graph) > 0):
+                session.question_graph = self._get_question_graph()
+                await session.save()
+        return session
 
     async def on_register(self) -> None:
         """Register the action and build question nodes.
@@ -899,34 +951,8 @@ class InterviewInteractAction(InteractAction, ABC):
             logger.warning(f"{self.get_class_name()}: No conversation available")
             return
 
-        # Get interview type (class name)
-        interview_type = self.get_class_name()
-
-        # Query conversation for active session of this interview type
-        session = await conversation.node(
-            node=[{'InterviewSession': {
-                "state": {"$nin": [InterviewState.COMPLETED.value, InterviewState.CANCELLED.value]}
-            }}],
-            interview_type=interview_type,
-        )
-
-        # Create new session if none exists
-        if not session:
-            question_graph = self._get_question_graph()
-            session = await InterviewSession.create(
-                agent_id=self.agent_id,
-                conversation_id=conversation.id,
-                interview_type=interview_type,
-                question_index=question_graph,  # Session still uses question_index internally for now
-                state=InterviewState.ACTIVE,
-            )
-            session.started_at = datetime.now()
-            await session.save()
-
-            # Attach to conversation
-            await conversation.connect(session)
-
-        # Inject session in visitor for compatibility
+        # Get or create session for this conversation
+        session = await self._get_or_create_session(conversation)
         visitor.interview_session = session
 
         # Get utterance
@@ -1007,18 +1033,8 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
             Parsed JSON dictionary
         """
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            # Try to extract JSON from text
-            json_match = re.search(r'\{[^{}]*\}', response)
-            if json_match:
-                try:
-                    return json.loads(json_match.group())
-                except json.JSONDecodeError:
-                    pass
-            logger.warning(f"{self.get_class_name()}: Failed to extract JSON from response")
-            return {}
+        from .core.utils import extract_json
+        return extract_json(response, context=self.get_class_name())
 
     async def get_model_action(self, required: bool = False):
         """Get the language model action.

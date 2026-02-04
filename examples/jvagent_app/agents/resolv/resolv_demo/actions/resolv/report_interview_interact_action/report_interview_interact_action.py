@@ -90,6 +90,25 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                 "required": True
             },
             {
+                "name": "incident_category",
+                "question": "What type of incident are you reporting?",
+                "input_context": {
+                    "available_categories": [
+                        "Infrastructure (roads, sidewalks, bridges)",
+                        "Safety Hazard (dangerous conditions, broken equipment)",
+                        "Environmental (pollution, illegal dumping, noise)",
+                        "Public Services (sanitation, utilities, street lighting)",
+                        "Other"
+                    ],
+                    "note": "Please select the category that best matches your incident"
+                },
+                "constraints": {
+                    "description": "The category that best describes the type of incident being reported.",
+                    "type": "string",
+                },
+                "required": True
+            },
+            {
                 "name": "incident_location",
                 "question": "Where exactly did this incident occur? Please provide the specific address or location details.",
                 "constraints": {
@@ -521,7 +540,7 @@ def validate_reporter_address(value: str, session: InterviewSession) -> Tuple[Va
 
 
 # Branch functions
-@branch_function('detect_sensitive_content')
+@branch_function()
 def detect_sensitive_content(
     session: InterviewSession,
     visitor: InteractWalker
@@ -540,7 +559,7 @@ def detect_sensitive_content(
     return has_sensitive_text
 
 
-@branch_function('check_for_similar_incidents')
+@branch_function()
 def check_for_similar_incidents(
     session: InterviewSession,
     visitor: InteractWalker
