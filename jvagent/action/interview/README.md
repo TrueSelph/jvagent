@@ -94,7 +94,7 @@ The interview system uses a service layer pattern with specialized components:
 - `InterviewStateMachine`: Manages state transitions with validation
 
 **Unified Classification:**
-The system uses a single unified prompt (`INTERVIEW_PROMPT_TEMPLATE`) that:
+The system uses a single unified prompt (`INTERVIEW_PROMPT`) that:
 - Accepts both utterance and interpretation (when available)
 - Detects intent: CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, or NONE
 - Extracts field values for SUBMISSION intent
@@ -275,6 +275,119 @@ interview/
     ├── __init__.py                 # DSPy package exports
     ├── signatures.py               # DSPy signatures for classification
     └── modules.py                  # DSPy modules (InterviewClassifier)
+```
+
+## Configuration
+
+### Configuration Structure
+
+The interview system uses a hierarchical configuration structure accessed via `action.config`:
+
+```python
+# Access configuration
+config = action.config
+
+# Model configuration
+config.model.action_type      # "OpenAILanguageModelAction"
+config.model.model             # "gpt-4o"
+config.model.temperature       # 0.1
+config.model.max_tokens        # 4096
+config.model.use_history       # True
+config.model.max_statement_length  # 400
+config.model.history_limit     # 5
+
+# Template configuration
+config.templates.summary_header           # Summary header template
+config.templates.summary_item             # Summary item template
+config.templates.review_confirmation      # Review confirmation directive
+config.templates.confirmation_instructions # Default confirmation instructions
+config.templates.confirmation_prompt      # Default confirmation prompt
+config.templates.review_unclear_edit      # Unclear edit directive
+config.templates.review_unclear_general   # Unclear general directive
+config.templates.update_prompt_for_value  # Update prompt template
+config.templates.completion_message       # Completion message
+config.templates.cancellation_message     # Cancellation message
+config.templates.question_directive       # Question directive template
+config.templates.required_field_decline   # Required field decline template
+config.templates.interview_prompt         # Interview classification prompt
+config.templates.interview_classification_signature  # DSPy signature
+
+# State event messages (via helper function)
+config.templates.get_state_event_message("ACTIVE", class_name)
+config.templates.get_state_event_message("REVIEW", class_name)
+config.templates.get_state_event_message("COMPLETED", class_name)
+config.templates.get_state_event_message("CANCELLED", class_name)
+
+# Classification configuration
+config.classification.context_list_compact_threshold  # 5
+config.classification.context_options_text            # "options available"
+config.classification.decline_value                   # "n/a"
+
+# DSPy integration
+config.use_dspy  # False (enable DSPy-based classification)
+```
+
+### Overriding Configuration in agent.yaml
+
+Interview config (model, templates, use_dspy) must go under the action's **`config:`** block, not `context:`. The loader merges `config:` into the action's config dict, which `InterviewConfig.from_dict()` consumes. Use `context:` only for action attributes (e.g. `enabled`, `description`, `weight`, `anchors`, `question_graph`).
+
+```yaml
+actions:
+  - action: jvagent/my_interview_action
+    context:
+      enabled: true
+      description: "My interview flow"
+      weight: -50
+      anchors: ["User wants to ..."]
+    config:
+      # Model (InterviewConfig.model)
+      model_action_type: "OpenAILanguageModelAction"
+      model: "gpt-4o-mini"
+      model_temperature: 0.2
+      model_max_tokens: 2048
+      use_history: true
+      max_statement_length: 400
+      history_limit: 10
+      # DSPy (InterviewConfig.use_dspy)
+      use_dspy: false
+      # Template overrides (InterviewConfig.templates)
+      completion_message: "Tell the user: All set! Your information has been saved."
+      review_confirmation: |
+        Here's a summary of your responses:
+        {summary}
+        
+        {instructions}
+        {prompt}
+      
+      # Classification (InterviewConfig.classification)
+      classification:
+        context_list_compact_threshold: 10
+        decline_value: "skipped"
+```
+
+### Accessing Templates in Code
+
+When extending the interview system, access templates via `self.config.templates`:
+
+```python
+class CustomInterviewAction(InterviewInteractAction):
+    async def custom_method(self, session, visitor):
+        # Access templates
+        templates = self.config.templates
+        
+        # Use template
+        message = templates.completion_message
+        
+        # Format template
+        directive = templates.question_directive.format(
+            question="What is your name?",
+            description="User's full name",
+            context_section="",
+            instructions="Please provide first and last name"
+        )
+        
+        # Get state event message
+        event = templates.get_state_event_message("ACTIVE", self.get_class_name())
 ```
 
 ## Usage
@@ -1237,7 +1350,7 @@ Directive overrides are checked:
 
 ## Unified Classification System
 
-The interview system uses a single unified prompt (`INTERVIEW_PROMPT_TEMPLATE`) that combines intent detection and field extraction in one LLM call. This approach is more efficient and ensures consistency.
+The interview system uses a single unified prompt (`INTERVIEW_PROMPT`) that combines intent detection and field extraction in one LLM call. This approach is more efficient and ensures consistency.
 
 ### Classification Backend Options
 

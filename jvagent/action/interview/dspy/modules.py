@@ -42,12 +42,12 @@ class InterviewClassifier(dspy.Module):
         
         Args:
             action_instance: Optional InterviewInteractAction instance. If provided,
-                uses the signature docstring from action_instance.interview_classification_signature.
+                uses the signature docstring from action_instance.config.templates.interview_classification_signature.
                 If None, uses the default from prompts.py.
         """
         super().__init__()
-        if action_instance and hasattr(action_instance, 'interview_classification_signature'):
-            docstring = action_instance.interview_classification_signature
+        if action_instance:
+            docstring = action_instance.config.templates.interview_classification_signature
         else:
             docstring = INTERVIEW_CLASSIFICATION_SIGNATURE
         signature_class = create_interview_classification_signature(docstring)

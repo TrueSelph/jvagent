@@ -130,7 +130,7 @@ class StateHandler:
         question_walker = QuestionWalker()
         question_walker.interview_session = session
         question_walker.interaction = interaction
-        question_walker.question_directive_template = self.action.question_directive_template
+        question_walker.question_directive_template = self.action.config.templates.question_directive
         
         start_from = session.active_question_key if session.active_question_key in session.get_unanswered_questions() else None
         node = await question_walker.find_next_question(session, interview_action=self.action, start_from=start_from)

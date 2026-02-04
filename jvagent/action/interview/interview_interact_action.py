@@ -39,27 +39,6 @@ from .core.classification.classification_handler import ClassificationHandler, C
 from .core.processing.directive_builder import DirectiveBuilder
 from .core.foundation.exceptions import QuestionNotFoundError
 from .core.foundation.config import InterviewConfig, ModelConfig, TemplateConfig
-from .core.foundation.prompts import (
-    UPDATE_PROMPT_FOR_VALUE_TEMPLATE,
-    REVIEW_SUMMARY_HEADER_TEMPLATE,
-    REVIEW_SUMMARY_ITEM_TEMPLATE,
-    REVIEW_DIRECTIVE_TEMPLATE,
-    REVIEW_CONFIRMATION_CONTENT,
-    REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS,
-    REVIEW_CONFIRMATION_DEFAULT_PROMPT,
-    REVIEW_UNCLEAR_EDIT_CONTENT,
-    REVIEW_UNCLEAR_GENERAL_CONTENT,
-    COMPLETION_MESSAGE_TEMPLATE,
-    CANCELLATION_MESSAGE_TEMPLATE,
-    ACTIVE_EVENT_MESSAGE_TEMPLATE,
-    REVIEW_EVENT_MESSAGE_TEMPLATE,
-    COMPLETION_EVENT_MESSAGE_TEMPLATE,
-    CANCELLATION_EVENT_MESSAGE_TEMPLATE,
-    QUESTION_DIRECTIVE_TEMPLATE,
-    INTERVIEW_PROMPT_TEMPLATE,
-    INTERVIEW_CLASSIFICATION_SIGNATURE,
-    REQUIRED_FIELD_DECLINE_TEMPLATE,
-)
 
 if TYPE_CHECKING:
     from jvagent.action.interview.core.session.interview_session import InterviewSession
@@ -176,159 +155,6 @@ class InterviewInteractAction(InteractAction, ABC):
         ),
     )
 
-    # Model Configuration
-    model_action_type: str = attribute(
-        default="OpenAILanguageModelAction",
-        description="Entity type of the LanguageModelAction to use",
-    )
-
-    model: str = attribute(
-        default="gpt-4o",
-        description="Default model name; use a capable model for best results"
-    )
-
-    model_temperature: float = attribute(
-        default=0.1,
-        description="Temperature for LLM generation"
-    )
-
-    model_max_tokens: int = attribute(
-        default=4096,
-        description="Max tokens for LLM generation"
-    )
-
-    use_history: bool = attribute(
-        default=True,
-        description="Use conversation history for LLM generation"
-    )
-
-    max_statement_length: int = attribute(
-        default=400,
-        description="Max length of statement to include in history"
-    )
-
-    history_limit: int = attribute(
-        default=5,
-        description="Max number of statements to include in history"
-    )
-
-    # DSPy Integration
-    use_dspy: bool = attribute(
-        default=False,
-        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)"
-    )
-
-    # Summary formatting templates (for REVIEW state)
-    summary_header_template: str = attribute(
-        default=REVIEW_SUMMARY_HEADER_TEMPLATE,
-        description="Template for the summary header. Defaults to REVIEW_SUMMARY_HEADER_TEMPLATE from prompts.py",
-    )
-
-    summary_item_template: str = attribute(
-        default=REVIEW_SUMMARY_ITEM_TEMPLATE,
-        description="Template for each summary item. Use {display_name} and {value} placeholders. Defaults to REVIEW_SUMMARY_ITEM_TEMPLATE from prompts.py",
-    )
-
-    # Consolidated review directive template (for REVIEW state)
-    # Single template handling all scenarios: confirmation, unclear edit, unclear general
-    review_directive_template: str = attribute(
-        default=REVIEW_DIRECTIVE_TEMPLATE,
-        description="Consolidated review directive template. Use with REVIEW_CONFIRMATION_CONTENT, REVIEW_UNCLEAR_EDIT_CONTENT, or REVIEW_UNCLEAR_GENERAL_CONTENT. Defaults to REVIEW_DIRECTIVE_TEMPLATE from prompts.py",
-    )
-
-    # Confirmation content template
-    confirmation_content_template: str = attribute(
-        default=REVIEW_CONFIRMATION_CONTENT,
-        description="Confirmation content template with {summary}, {instructions}, {prompt} placeholders. Defaults to REVIEW_CONFIRMATION_CONTENT from prompts.py",
-    )
-
-    # Default values for confirmation content
-    confirmation_instructions: str = attribute(
-        default=REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS,
-        description="Default instructions text for review confirmation. Used in {instructions} placeholder. Defaults to REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS from prompts.py",
-    )
-
-    confirmation_prompt: str = attribute(
-        default=REVIEW_CONFIRMATION_DEFAULT_PROMPT,
-        description="Default prompt text for review confirmation. Used in {prompt} placeholder. Defaults to REVIEW_CONFIRMATION_DEFAULT_PROMPT from prompts.py",
-    )
-
-    # Unclear response content templates
-    unclear_edit_content_template: str = attribute(
-        default=REVIEW_UNCLEAR_EDIT_CONTENT,
-        description="Unclear edit content template with {field_list} placeholder. Defaults to REVIEW_UNCLEAR_EDIT_CONTENT from prompts.py",
-    )
-
-    unclear_general_content_template: str = attribute(
-        default=REVIEW_UNCLEAR_GENERAL_CONTENT,
-        description="Unclear general content template. Defaults to REVIEW_UNCLEAR_GENERAL_CONTENT from prompts.py",
-    )
-
-    # Interview prompt template
-    interview_prompt: str = attribute(
-        default=INTERVIEW_PROMPT_TEMPLATE,
-        description="Interview prompt template that combines intent detection (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION) with response extraction in a single LLM call. Defaults to INTERVIEW_PROMPT_TEMPLATE from prompts.py",
-    )
-
-    # DSPy signature docstring (single source of truth, can be overridden in agent.yaml for runtime customization)
-    interview_classification_signature: str = attribute(
-        default=INTERVIEW_CLASSIFICATION_SIGNATURE,
-        description="DSPy signature docstring for InterviewClassification. Can be overridden in agent.yaml for runtime customization. Defaults to INTERVIEW_CLASSIFICATION_SIGNATURE from prompts.py",
-    )
-
-    # Update prompt template (for prompting user for new value when updating)
-    update_prompt_for_value_template: str = attribute(
-        default=UPDATE_PROMPT_FOR_VALUE_TEMPLATE,
-        description="Template for prompting user for new value when updating a field. Use {field_display} and {current_value} placeholders. Defaults to UPDATE_PROMPT_FOR_VALUE_TEMPLATE from prompts.py",
-    )
-
-    # Completion message template (for COMPLETED state)
-    completion_message_template: str = attribute(
-        default=COMPLETION_MESSAGE_TEMPLATE,
-        description="Message template shown when interview is completed (if no completion handler is registered). Defaults to COMPLETION_MESSAGE_TEMPLATE from prompts.py",
-    )
-
-    # Cancellation message template (for CANCELLED state)
-    cancellation_message_template: str = attribute(
-        default=CANCELLATION_MESSAGE_TEMPLATE,
-        description="Message template shown when interview is cancelled. Defaults to CANCELLATION_MESSAGE_TEMPLATE from prompts.py",
-    )
-
-    # Active event message template (for ACTIVE state)
-    active_event_message_template: str = attribute(
-        default=ACTIVE_EVENT_MESSAGE_TEMPLATE,
-        description="Event message template for active interview state. Use {class_name} placeholder. Defaults to ACTIVE_EVENT_MESSAGE_TEMPLATE from prompts.py",
-    )
-
-    # Review event message template (for REVIEW state)
-    review_event_message_template: str = attribute(
-        default=REVIEW_EVENT_MESSAGE_TEMPLATE,
-        description="Event message template for review interview state. Use {class_name} placeholder. Defaults to REVIEW_EVENT_MESSAGE_TEMPLATE from prompts.py",
-    )
-
-    # Completion event message template (for COMPLETED state)
-    completion_event_message_template: str = attribute(
-        default=COMPLETION_EVENT_MESSAGE_TEMPLATE,
-        description="Event message template for completed interview state. Documents that the interview process has been completed. Use {class_name} placeholder. Defaults to COMPLETION_EVENT_MESSAGE_TEMPLATE from prompts.py",
-    )
-
-    # Cancellation event message template (for CANCELLED state)
-    cancellation_event_message_template: str = attribute(
-        default=CANCELLATION_EVENT_MESSAGE_TEMPLATE,
-        description="Event message template for cancelled interview state. Documents that the interview process has been cancelled. Use {class_name} placeholder. Defaults to CANCELLATION_EVENT_MESSAGE_TEMPLATE from prompts.py",
-    )
-
-    # Question directive template (for ACTIVE state - question prompting)
-    question_directive_template: str = attribute(
-        default=QUESTION_DIRECTIVE_TEMPLATE,
-        description="Consolidated template for formatting question directives. Uses {question}, {description}, and {instructions} placeholders. Instructions are optional and only included if provided. Defaults to QUESTION_DIRECTIVE_TEMPLATE from prompts.py",
-    )
-
-    # Required field decline template (for when user tries to decline a required field)
-    required_field_decline_template: str = attribute(
-        default=REQUIRED_FIELD_DECLINE_TEMPLATE,
-        description="Template for insisting user answer a required field when they try to decline. Uses {field_display} and {question} placeholders. Defaults to REQUIRED_FIELD_DECLINE_TEMPLATE from prompts.py",
-    )
 
     @property
     def config(self) -> InterviewConfig:
@@ -1046,15 +872,16 @@ class InterviewInteractAction(InteractAction, ABC):
             LanguageModelAction instance or None
         """
         try:
-            if self.model_action_type:
-                model_action = await self.get_action(self.model_action_type)
+            model_action_type = self.config.model.action_type
+            if model_action_type:
+                model_action = await self.get_action(model_action_type)
             else:
                 # Fallback to first available LanguageModelAction
                 from jvagent.action.model.language.base import LanguageModelAction
                 model_action = await self.get_action(LanguageModelAction)
 
             if not model_action and required:
-                raise ValueError(f"{self.get_class_name()}: Model action not found (model_action_type={self.model_action_type})")
+                raise ValueError(f"{self.get_class_name()}: Model action not found (model_action_type={model_action_type})")
 
             return model_action
         except Exception as e:

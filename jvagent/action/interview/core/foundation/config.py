@@ -9,25 +9,21 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .prompts import (
-    UPDATE_PROMPT_FOR_VALUE_TEMPLATE,
-    REVIEW_SUMMARY_HEADER_TEMPLATE,
-    REVIEW_SUMMARY_ITEM_TEMPLATE,
-    REVIEW_DIRECTIVE_TEMPLATE,
-    REVIEW_CONFIRMATION_CONTENT,
+    UPDATE_PROMPT_FOR_VALUE,
+    REVIEW_SUMMARY_HEADER,
+    REVIEW_SUMMARY_ITEM,
+    REVIEW_CONFIRMATION_DIRECTIVE,
     REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS,
     REVIEW_CONFIRMATION_DEFAULT_PROMPT,
-    REVIEW_UNCLEAR_EDIT_CONTENT,
-    REVIEW_UNCLEAR_GENERAL_CONTENT,
-    COMPLETION_MESSAGE_TEMPLATE,
-    CANCELLATION_MESSAGE_TEMPLATE,
-    ACTIVE_EVENT_MESSAGE_TEMPLATE,
-    REVIEW_EVENT_MESSAGE_TEMPLATE,
-    COMPLETION_EVENT_MESSAGE_TEMPLATE,
-    CANCELLATION_EVENT_MESSAGE_TEMPLATE,
-    QUESTION_DIRECTIVE_TEMPLATE,
-    INTERVIEW_PROMPT_TEMPLATE,
+    REVIEW_UNCLEAR_EDIT_DIRECTIVE,
+    REVIEW_UNCLEAR_GENERAL_DIRECTIVE,
+    COMPLETION_MESSAGE,
+    CANCELLATION_MESSAGE,
+    QUESTION_DIRECTIVE,
+    INTERVIEW_PROMPT,
     INTERVIEW_CLASSIFICATION_SIGNATURE,
-    REQUIRED_FIELD_DECLINE_TEMPLATE,
+    REQUIRED_FIELD_DECLINE,
+    get_state_event_message,
 )
 
 
@@ -75,38 +71,31 @@ class TemplateConfig:
     """Configuration for prompt templates."""
     
     # Summary formatting
-    summary_header: str = REVIEW_SUMMARY_HEADER_TEMPLATE
-    summary_item: str = REVIEW_SUMMARY_ITEM_TEMPLATE
+    summary_header: str = REVIEW_SUMMARY_HEADER
+    summary_item: str = REVIEW_SUMMARY_ITEM
     
-    # Review directive
-    review_directive: str = REVIEW_DIRECTIVE_TEMPLATE
-    confirmation_content: str = REVIEW_CONFIRMATION_CONTENT
+    # Review directives
+    review_confirmation: str = REVIEW_CONFIRMATION_DIRECTIVE
     confirmation_instructions: str = REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS
     confirmation_prompt: str = REVIEW_CONFIRMATION_DEFAULT_PROMPT
-    unclear_edit_content: str = REVIEW_UNCLEAR_EDIT_CONTENT
-    unclear_general_content: str = REVIEW_UNCLEAR_GENERAL_CONTENT
+    review_unclear_edit: str = REVIEW_UNCLEAR_EDIT_DIRECTIVE
+    review_unclear_general: str = REVIEW_UNCLEAR_GENERAL_DIRECTIVE
     
     # Update prompt
-    update_prompt_for_value: str = UPDATE_PROMPT_FOR_VALUE_TEMPLATE
+    update_prompt_for_value: str = UPDATE_PROMPT_FOR_VALUE
     
     # Completion and cancellation
-    completion_message: str = COMPLETION_MESSAGE_TEMPLATE
-    cancellation_message: str = CANCELLATION_MESSAGE_TEMPLATE
-    
-    # Event messages
-    active_event_message: str = ACTIVE_EVENT_MESSAGE_TEMPLATE
-    review_event_message: str = REVIEW_EVENT_MESSAGE_TEMPLATE
-    completion_event_message: str = COMPLETION_EVENT_MESSAGE_TEMPLATE
-    cancellation_event_message: str = CANCELLATION_EVENT_MESSAGE_TEMPLATE
+    completion_message: str = COMPLETION_MESSAGE
+    cancellation_message: str = CANCELLATION_MESSAGE
     
     # Question directive
-    question_directive: str = QUESTION_DIRECTIVE_TEMPLATE
+    question_directive: str = QUESTION_DIRECTIVE
     
     # Required field decline
-    required_field_decline: str = REQUIRED_FIELD_DECLINE_TEMPLATE
+    required_field_decline: str = REQUIRED_FIELD_DECLINE
     
     # Interview prompt
-    interview_prompt: str = INTERVIEW_PROMPT_TEMPLATE
+    interview_prompt: str = INTERVIEW_PROMPT
     interview_classification_signature: str = INTERVIEW_CLASSIFICATION_SIGNATURE
     
     def __post_init__(self):
@@ -122,8 +111,8 @@ class TemplateConfig:
         # Check key templates for common placeholders
         templates_to_check = {
             "summary_item": ["display_name", "value"],
-            "confirmation_content": ["summary", "instructions", "prompt"],
-            "unclear_edit_content": ["summary", "field_list"],
+            "review_confirmation": ["summary", "instructions", "prompt"],
+            "review_unclear_edit": ["summary", "field_list"],
             "update_prompt_for_value": ["field_display", "current_value"],
             "required_field_decline": ["field_display", "question"],
         }
@@ -139,6 +128,18 @@ class TemplateConfig:
                         logger.debug(
                             f"Template '{template_name}' may be missing placeholder '{{{placeholder}}}'"
                         )
+    
+    def get_state_event_message(self, state: str, class_name: str) -> str:
+        """Get formatted state event message.
+        
+        Args:
+            state: Interview state (ACTIVE, REVIEW, COMPLETED, CANCELLED)
+            class_name: Interview action class name
+            
+        Returns:
+            Formatted event message string
+        """
+        return get_state_event_message(state, class_name)
 
 
 @dataclass
@@ -163,59 +164,38 @@ class InterviewConfig:
         Returns:
             InterviewConfig instance
         """
-        # Extract model config
+        # Model config - map YAML keys to ModelConfig attributes
         model_config = ModelConfig()
-        if "model_action_type" in config_dict:
-            model_config.action_type = config_dict["model_action_type"]
-        if "model" in config_dict:
-            model_config.model = config_dict["model"]
-        if "model_temperature" in config_dict:
-            model_config.temperature = config_dict["model_temperature"]
-        if "model_max_tokens" in config_dict:
-            model_config.max_tokens = config_dict["model_max_tokens"]
-        if "use_history" in config_dict:
-            model_config.use_history = config_dict["use_history"]
-        if "max_statement_length" in config_dict:
-            model_config.max_statement_length = config_dict["max_statement_length"]
-        if "history_limit" in config_dict:
-            model_config.history_limit = config_dict["history_limit"]
+        model_key_map = {
+            "model_action_type": "action_type",
+            "model": "model",
+            "model_temperature": "temperature",
+            "model_max_tokens": "max_tokens",
+            "use_history": "use_history",
+            "max_statement_length": "max_statement_length",
+            "history_limit": "history_limit",
+        }
+        for yaml_key, attr_name in model_key_map.items():
+            if yaml_key in config_dict:
+                setattr(model_config, attr_name, config_dict[yaml_key])
         
-        # Extract template config (can be overridden)
+        # Template config - YAML keys match TemplateConfig attribute names
         template_config = TemplateConfig()
-        template_attrs = [
-            "summary_header_template", "summary_item_template",
-            "review_directive_template", "confirmation_content_template",
-            "confirmation_instructions", "confirmation_prompt",
-            "unclear_edit_content_template", "unclear_general_content_template",
-            "update_prompt_for_value_template", "completion_message_template",
-            "cancellation_message_template", "active_event_message_template",
-            "review_event_message_template", "completion_event_message_template",
-            "cancellation_event_message_template", "question_directive_template",
-            "required_field_decline_template", "interview_prompt",
-            "interview_classification_signature"
-        ]
+        for key in template_config.__dataclass_fields__.keys():
+            if key in config_dict:
+                setattr(template_config, key, config_dict[key])
         
-        for attr in template_attrs:
-            # Map attribute names (remove _template suffix for some)
-            config_key = attr.replace("_template", "")
-            if config_key in config_dict:
-                setattr(template_config, attr.replace("_template", ""), config_dict[config_key])
-        
-        # Extract classification config (top-level or nested under "classification")
-        classification_dict = config_dict.get("classification") or {}
-        if not isinstance(classification_dict, dict):
-            classification_dict = {}
-        classification_config = ClassificationConfig(
-            context_list_compact_threshold=classification_dict.get("context_list_compact_threshold", 5),
-            context_options_text=classification_dict.get("context_options_text", "options available"),
-            decline_value=classification_dict.get("decline_value", "n/a"),
-        )
-        if "context_list_compact_threshold" in config_dict:
-            classification_config.context_list_compact_threshold = config_dict["context_list_compact_threshold"]
-        if "context_options_text" in config_dict:
-            classification_config.context_options_text = config_dict["context_options_text"]
-        if "decline_value" in config_dict:
-            classification_config.decline_value = config_dict["decline_value"]
+        # Classification config - support both nested and top-level keys
+        classification_config = ClassificationConfig()
+        classification_dict = config_dict.get("classification", {})
+        if isinstance(classification_dict, dict):
+            for key in classification_config.__dataclass_fields__.keys():
+                if key in classification_dict:
+                    setattr(classification_config, key, classification_dict[key])
+        # Top-level keys override nested ones
+        for key in classification_config.__dataclass_fields__.keys():
+            if key in config_dict:
+                setattr(classification_config, key, config_dict[key])
 
         return cls(
             model=model_config,

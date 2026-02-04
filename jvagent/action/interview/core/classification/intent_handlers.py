@@ -188,14 +188,9 @@ class UpdateHandler(IntentHandler):
             field_list = ", ".join([f.replace("_", " ") for f in answered_fields])
             summary = self.action.directive_builder.format_summary(session)
             
-            unclear_edit_section = self.action.unclear_edit_content_template.format(
+            directive = self.action.config.templates.review_unclear_edit.format(
                 summary=summary,
                 field_list=field_list
-            )
-            directive = self.action.review_directive_template.format(
-                confirmation_section="",
-                unclear_edit_section=unclear_edit_section,
-                unclear_general_section="",
             )
             await self.action.directive_builder.queue_directive(visitor, directive)
             return HandlerResult(handled=True, should_continue=False)
@@ -267,8 +262,8 @@ class DeclineHandler(IntentHandler):
             field_display = field.replace("_", " ").title()
             question_text = question_config.get("question", field_display) if question_config else field_display
             
-            # Generate directive using required_field_decline_template
-            directive = self.action.required_field_decline_template.format(
+            # Generate directive using required_field_decline template
+            directive = self.action.config.templates.required_field_decline.format(
                 field_display=field_display,
                 question=question_text
             )
@@ -328,7 +323,7 @@ class SubmissionHandler(IntentHandler):
         question_walker = QuestionWalker()
         question_walker.interview_session = session
         question_walker.interaction = interaction
-        question_walker.question_directive_template = self.action.question_directive_template
+        question_walker.question_directive_template = self.action.config.templates.question_directive
         
         response_processor = ResponseProcessor(self.action)
         await response_processor.process_responses_to_questions(
@@ -388,11 +383,7 @@ class NoneHandler(IntentHandler):
         """
         # In REVIEW state, show unclear general content
         if session.state == InterviewState.REVIEW:
-            directive = self.action.review_directive_template.format(
-                confirmation_section="",
-                unclear_edit_section="",
-                unclear_general_section=self.action.unclear_general_content_template,
-            )
+            directive = self.action.config.templates.review_unclear_general
             await self.action.directive_builder.queue_directive(visitor, directive)
             return HandlerResult(handled=True, should_continue=False)
         

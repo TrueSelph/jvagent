@@ -127,23 +127,17 @@ actions:
       enabled: true
       description: "Training signup interview flow for user registration and training scheduling"
       weight: -50  # Runs after InteractRouter
-      # Anchors for InteractRouter routing - REQUIRED when using InteractRouter
-      # Must cover both initial entry and intermediate states (when answering questions)
       anchors:
-        # Initial entry - starting training signup
         - "User wants to sign up or register for jvagent training"
         - "User wants to enroll or join jvagent training"
-      # Model Configuration (for unified classification and extraction)
-      # These settings are used by the parent InterviewInteractAction for all LLM calls
-      # The unified classification detects intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE)
-      # and extracts field values in a single LLM call
-      model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
-      model: "gpt-4o-mini"  # Model for unified classification and extraction
-      model_temperature: 0.1  # Temperature for LLM generation
-      model_max_tokens: 4096  # Max tokens for LLM generation
-      use_history: true  # Use conversation history for LLM generation
-      max_statement_length: 100  # Max length of statement to include in history
-      history_limit: 3  # Max number of statements to include in history
+    config:
+      model_action_type: "OpenAILanguageModelAction"
+      model: "gpt-4o-mini"
+      model_temperature: 0.1
+      model_max_tokens: 4096
+      use_history: true
+      max_statement_length: 100
+      history_limit: 3
       use_dspy: true
 
   - action: jvagent/converse_interact_action
