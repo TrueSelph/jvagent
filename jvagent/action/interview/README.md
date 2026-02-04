@@ -27,7 +27,7 @@ The Interview Action provides a reusable way to collect responses from users in 
 - **Data Input Fields**: Extract values directly from `visitor.data` for file uploads and REST call data (bypasses LLM extraction)
 - **Completion Handlers**: Register completion handlers via `@on_interview_complete` decorator
 - **Question Node Rebuilding**: Automatically rebuilds question nodes when `question_graph` changes
-- **agent.yaml Overrides**: Override `question_graph` and prompt templates in agent configuration
+- **agent.yaml Overrides**: Override `question_graph` in `context:` and model/templates in `config:` (see Configuration)
 - **Standard Anchors**: Automatically includes standard anchors for common interview scenarios (cancellation, correction, review confirmation, etc.) - no need to specify them in each implementation
 - **Enhanced UPDATE Handling**: When UPDATE intent has null field, shows summary and prompts for field selection
 
@@ -281,20 +281,20 @@ interview/
 
 ### Configuration Structure
 
-The interview system uses a hierarchical configuration structure accessed via `action.config`:
+The interview system uses a hierarchical configuration structure accessed via `action.config`. Model-related keys use the **`model_`** prefix (e.g. `model_action_type`, `model_temperature`, `model_max_tokens`).
 
 ```python
 # Access configuration
 config = action.config
 
-# Model configuration
-config.model.action_type      # "OpenAILanguageModelAction"
-config.model.model             # "gpt-4o"
-config.model.temperature       # 0.1
-config.model.max_tokens        # 4096
-config.model.use_history       # True
+# Model configuration (model_ prefix for model-related keys)
+config.model.model_action_type      # "OpenAILanguageModelAction"
+config.model.model                  # "gpt-4o"
+config.model.model_temperature     # 0.1
+config.model.model_max_tokens       # 4096
+config.model.use_history            # True
 config.model.max_statement_length  # 400
-config.model.history_limit     # 5
+config.model.history_limit          # 5
 
 # Template configuration
 config.templates.summary_header           # Summary header template
@@ -331,6 +331,8 @@ config.use_dspy  # False (enable DSPy-based classification)
 
 Interview config (model, templates, use_dspy) must go under the action's **`config:`** block, not `context:`. The loader merges `config:` into the action's config dict, which `InterviewConfig.from_dict()` consumes. Use `context:` only for action attributes (e.g. `enabled`, `description`, `weight`, `anchors`, `question_graph`).
 
+**Model config keys** (under `config:`): use the `model_` prefix for model-related settings — `model_action_type`, `model`, `model_temperature`, `model_max_tokens`. Context/history keys have no prefix: `use_history`, `max_statement_length`, `history_limit`.
+
 ```yaml
 actions:
   - action: jvagent/my_interview_action
@@ -340,7 +342,7 @@ actions:
       weight: -50
       anchors: ["User wants to ..."]
     config:
-      # Model (InterviewConfig.model)
+      # Model (InterviewConfig.model) - model_ prefix for model-related keys
       model_action_type: "OpenAILanguageModelAction"
       model: "gpt-4o-mini"
       model_temperature: 0.2
@@ -348,7 +350,6 @@ actions:
       use_history: true
       max_statement_length: 400
       history_limit: 10
-      # DSPy (InterviewConfig.use_dspy)
       use_dspy: false
       # Template overrides (InterviewConfig.templates)
       completion_message: "Tell the user: All set! Your information has been saved."
