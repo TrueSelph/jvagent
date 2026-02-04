@@ -114,7 +114,7 @@ actions:
       enabled: true
       description: "Report Interview action is used to create reports."
       weight: -50
-      # Model Configuration
+    config:
       model_action_type: "OpenAILanguageModelAction"
       model: "gpt-4o"
       model_temperature: 0.1

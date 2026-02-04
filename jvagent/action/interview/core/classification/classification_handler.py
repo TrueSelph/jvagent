@@ -319,7 +319,7 @@ class ClassificationHandler:
             return ClassificationResult(intent=Intent.NONE)
 
         # Use DSPy if enabled, otherwise use prompt-based implementation
-        if self.action.use_dspy:
+        if self.action.config.use_dspy:
             return await self._classify_with_dspy(session, user_input, interaction, visitor, data_input_values, excluded_fields)
 
         # Unified classification and extraction using single prompt
@@ -327,7 +327,7 @@ class ClassificationHandler:
             # Build context for unified prompt (exclude fields with data_input_field)
             context = await self.build_classification_context(session, excluded_fields=excluded_fields)
 
-            prompt = self.action.interview_prompt.format(
+            prompt = self.action.config.templates.interview_prompt.format(
                 user_input=user_input,
                 current_state=context["current_state"],
                 answered_fields=context["answered_fields"],
@@ -343,15 +343,15 @@ class ClassificationHandler:
 
             # Get conversation history if needed
             conversation_history = None
-            if self.action.use_history:
+            if self.action.config.model.use_history:
                 conversation_history = await self.action._get_conversation_history(
                     interaction,
-                    self.action.history_limit,
+                    self.action.config.model.history_limit,
                     with_utterance=True,
                     with_response=True,
                     with_interpretation=False,
                     with_event=False,
-                    max_statement_length=self.action.max_statement_length,
+                    max_statement_length=self.action.config.model.max_statement_length,
                 )
 
             # Call LLM with unified prompt
@@ -363,9 +363,9 @@ class ClassificationHandler:
                 system=prompt,
                 history=conversation_history,
                 calling_action_name=self.action.get_class_name(),
-                model=self.action.model,
-                temperature=self.action.model_temperature,
-                max_tokens=self.action.model_max_tokens,
+                model=self.action.config.model.model,
+                temperature=self.action.config.model.temperature,
+                max_tokens=self.action.config.model.max_tokens,
                 response_format={"type": "json_object"},
             )
 
@@ -621,15 +621,15 @@ class ClassificationHandler:
             # Get conversation history if needed
             conversation_history = None
             formatted_history = None
-            if self.action.use_history:
+            if self.action.config.model.use_history:
                 conversation_history = await self.action._get_conversation_history(
                     interaction,
-                    self.action.history_limit,
+                    self.action.config.model.history_limit,
                     with_utterance=True,
                     with_response=True,
                     with_interpretation=False,
                     with_event=False,
-                    max_statement_length=self.action.max_statement_length,
+                    max_statement_length=self.action.config.model.max_statement_length,
                 )
                 # Format history for DSPy signature
                 from jvagent.action.model.dspy import format_conversation_history_for_dspy
@@ -646,9 +646,9 @@ class ClassificationHandler:
             lm = DSPyLM(
                 model_action=model_action,
                 model_type="chat",
-                model=self.action.model,
-                temperature=self.action.model_temperature,
-                max_tokens=self.action.model_max_tokens,
+                model=self.action.config.model.model,
+                temperature=self.action.config.model.temperature,
+                max_tokens=self.action.config.model.max_tokens,
             )
 
             # Configure DSPy with the adapter
