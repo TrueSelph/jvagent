@@ -124,20 +124,38 @@ actions:
       history_limit: 3
       use_dspy: true
 
-  # - action: resolv/feedback_interview_interact_action
-  #   context:
-  #     enabled: true
-  #     description: "Feedback Interview action is used to create feedback for incidents and projects."
-  #     weight: -50
-  #   config:
-  #     model_action_type: "OpenAILanguageModelAction"
-  #     model: "gpt-4o"
-  #     model_temperature: 0.1
-  #     model_max_tokens: 4096
-  #     use_history: true
-  #     max_statement_length: 100
-  #     history_limit: 3
-  #     use_dspy: true
+  - action: resolv/feedback_interview_interact_action
+    context:
+      enabled: true
+      description: "Feedback Interview action is used to create feedback for incidents and projects."
+      weight: -50
+    config:
+      model_action_type: "OpenAILanguageModelAction"
+      model: "gpt-4o"
+      model_temperature: 0.1
+      model_max_tokens: 4096
+      use_history: true
+      max_statement_length: 600
+      history_limit: 4
+      use_dspy: true
+
+  - action: resolv/signup_interview_interact_action
+    context:
+      enabled: true
+      description: "Training signup interview flow for user registration and training scheduling"
+      weight: -50 # Runs after InteractRouter
+      anchors:
+        - "User wants to sign up or register for jvagent training"
+        - "User wants to enroll or join jvagent training"
+    config:
+      model_action_type: "OpenAILanguageModelAction"
+      model: "gpt-4o-mini"
+      model_temperature: 0.1
+      model_max_tokens: 4096
+      use_history: true
+      max_statement_length: 100
+      history_limit: 3
+      use_dspy: true
 
   - action: jvagent/converse_interact_action
     context:

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import {
   getToken,
   setToken,
@@ -72,8 +72,14 @@ export function DebugInteractions() {
 
   const adjustHeight = (el: HTMLTextAreaElement | null) => {
     if (!el) return;
+    // Store current scroll position to avoid jump
+    // const currentScroll = window.scrollY;
+
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
+
+    // Restore scroll if needed, but 'auto' can cause layout shift before we restore.
+    // window.scrollTo({ top: currentScroll, behavior: 'auto' });
   };
 
   const preserveScroll = (fn: () => void) => {
@@ -95,22 +101,41 @@ export function DebugInteractions() {
     }
   }, []);
 
+  const lastFocusedInteractionId = useRef<string | null>(null);
+
+  // Effect for initialization when loading a NEW interaction
   useEffect(() => {
-    // Adjust textarea heights whenever a new interaction is selected
-    adjustHeight(userRef.current);
-    adjustHeight(systemRef.current);
-    adjustHeight(historyRef.current);
     // set history editable text
     setHistoryText(
       selectedInteraction && selectedInteraction.data.history
         ? JSON.stringify(selectedInteraction.data.history, null, 2)
         : "",
     );
-    // keep view stable
-    if (selectedInteraction) {
-      setTimeout(() => userRef.current?.focus?.(), 0);
+
+    // Only focus if we switched to a DIFFERENT interaction
+    if (selectedInteraction && selectedInteraction.id) {
+      if (selectedInteraction.id !== lastFocusedInteractionId.current) {
+        lastFocusedInteractionId.current = selectedInteraction.id;
+        setTimeout(() => userRef.current?.focus?.(), 0);
+      }
+    } else {
+      lastFocusedInteractionId.current = null;
     }
-  }, [selectedInteraction]);
+  }, [selectedInteraction?.id]); // Only runs when ID changes (or interaction becomes null)
+
+  // Layout Effect for resizing textareas when content changes
+  // We separate this so it runs synchronously after DOM update, preventing visual jump
+  useLayoutEffect(() => {
+    adjustHeight(userRef.current);
+  }, [selectedInteraction?.data.user_prompt]);
+
+  useLayoutEffect(() => {
+    adjustHeight(systemRef.current);
+  }, [selectedInteraction?.data.system_prompt]);
+
+  useLayoutEffect(() => {
+    adjustHeight(historyRef.current);
+  }, [historyText, selectedInteraction?.data.history]); // Check history text or data
 
   const initializeDebugSession = async (authToken: string) => {
     setLoading(true);
@@ -301,11 +326,9 @@ export function DebugInteractions() {
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center space-x-4">
-            <h1
+            {/* <h1
               className={`text-3xl font-bold ${darkMode ? "text-gray-100" : "text-gray-900"}`}
-            >
-              Debug Interactions
-            </h1>
+            ></h1> */}
 
             <div
               className={`${darkMode ? "bg-gray-800" : "bg-white"} rounded shadow p-2 flex items-center space-x-2`}
@@ -453,6 +476,77 @@ export function DebugInteractions() {
             >
               {darkMode ? "Light" : "Dark"}
             </button>
+            <div className="border-l border-gray-300 h-6 mx-2" />
+            <button
+              type="button"
+              onClick={() => {
+                if (!selectedInteraction) return;
+                const dataToExport = {
+                  interaction: selectedInteraction,
+                  testResult: testResult,
+                };
+                const blob = new Blob([JSON.stringify(dataToExport, null, 2)], {
+                  type: "application/json",
+                });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `interaction_${selectedInteraction.id || "export"}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              }}
+              disabled={!selectedInteraction}
+              className={`px-3 py-1 rounded text-sm disabled:opacity-50 ${darkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-100 hover:bg-gray-200"}`}
+            >
+              Export
+            </button>
+            <label
+              className={`px-3 py-1 rounded text-sm cursor-pointer ${darkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-100 hover:bg-gray-200"}`}
+            >
+              Import
+              <input
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = (event) => {
+                    try {
+                      const content = event.target?.result as string;
+                      const parsed = JSON.parse(content);
+
+                      // Handle both new format (with testResult) and potential legacy format (just interaction)
+                      const interactionData = parsed.interaction || parsed;
+                      const testResultData = parsed.testResult || null;
+
+                      if (interactionData && interactionData.data) {
+                        preserveScroll(() => {
+                          // Detach from parent list
+                          setSelectedParentIndex(null);
+                          setSelectedMetricIndex(null);
+
+                          setSelectedInteraction(interactionData);
+                          setTestResult(testResultData);
+                          setStatusMessage("Imported interaction successfully");
+                        });
+                      } else {
+                        setError("Invalid import file format");
+                      }
+                    } catch (err) {
+                      console.error("Import failed", err);
+                      setError("Failed to parse import file");
+                    }
+                    // Reset input so same file can be selected again if needed
+                    e.target.value = "";
+                  };
+                  reader.readAsText(file);
+                }}
+              />
+            </label>
           </div>
         </div>
 
@@ -470,6 +564,18 @@ export function DebugInteractions() {
             className={`${darkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow p-6`}
           >
             <div className="space-y-6">
+              <div
+                className={`p-4 rounded text-sm bg-red-50 border border-gray-200`}
+              >
+                {selectedInteraction.data.response && (
+                  <div>
+                    <div className="text-gray-700 whitespace-pre-wrap font-mono">
+                      {selectedInteraction.data.response}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   User Prompt
@@ -478,15 +584,12 @@ export function DebugInteractions() {
                   ref={userRef}
                   value={selectedInteraction.data.user_prompt}
                   onChange={(e) => {
-                    preserveScroll(() => {
-                      setSelectedInteraction({
-                        ...selectedInteraction,
-                        data: {
-                          ...selectedInteraction.data,
-                          user_prompt: e.target.value,
-                        },
-                      });
-                      adjustHeight(userRef.current);
+                    setSelectedInteraction({
+                      ...selectedInteraction,
+                      data: {
+                        ...selectedInteraction.data,
+                        user_prompt: e.target.value,
+                      },
                     });
                   }}
                   className={`w-full p-3 border rounded text-sm font-mono ${darkMode ? "bg-blue-900 border-blue-700 text-gray-100" : "bg-blue-50 border-blue-200 text-gray-900"}`}
@@ -502,15 +605,12 @@ export function DebugInteractions() {
                   ref={systemRef}
                   value={selectedInteraction.data.system_prompt}
                   onChange={(e) => {
-                    preserveScroll(() => {
-                      setSelectedInteraction({
-                        ...selectedInteraction,
-                        data: {
-                          ...selectedInteraction.data,
-                          system_prompt: e.target.value,
-                        },
-                      });
-                      adjustHeight(systemRef.current);
+                    setSelectedInteraction({
+                      ...selectedInteraction,
+                      data: {
+                        ...selectedInteraction.data,
+                        system_prompt: e.target.value,
+                      },
                     });
                   }}
                   className={`w-full p-3 border rounded text-sm font-mono ${darkMode ? "bg-yellow-900 border-yellow-700 text-gray-100" : "bg-yellow-50 border-yellow-200 text-gray-900"}`}
@@ -528,7 +628,6 @@ export function DebugInteractions() {
                   value={historyText}
                   onChange={(e) => {
                     setHistoryText(e.target.value);
-                    preserveScroll(() => adjustHeight(historyRef.current));
                   }}
                   onBlur={() => {
                     try {
@@ -607,9 +706,6 @@ export function DebugInteractions() {
                   >
                     {testResult.success ? (
                       <div>
-                        <div className="font-medium text-green-800 mb-2">
-                          Success
-                        </div>
                         <div className="text-green-700 whitespace-pre-wrap font-mono">
                           {testResult.response}
                         </div>

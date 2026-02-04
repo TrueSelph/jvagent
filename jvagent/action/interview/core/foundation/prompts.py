@@ -217,7 +217,7 @@ CRITICAL: Before classifying intent, check if ANY field mentioned by the user ap
 
 {CLASSIFICATION_RULES_CORE}
 
-Return JSON:
+Return the expected JSON only:
 {{{{
   "intent": "CANCELLATION" | "CONFIRMATION" | "UPDATE" | "DECLINE" | "SUBMISSION" | "NONE",
   "confidence": 0.0-1.0,

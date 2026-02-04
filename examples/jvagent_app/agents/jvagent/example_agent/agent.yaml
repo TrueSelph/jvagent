@@ -33,6 +33,11 @@ context:
 # - jvagent/persona (custom ExamplePersonaAction override)
 # - jvagent/example_action (custom action)
 actions:
+  - action: jvagent/agent_utils
+    context:
+      enabled: true
+      description: "Agent Utils action for power user controls"
+
   # InteractRouter Action - Intent-based routing for InteractActions
   # Core action from jvagent library (jvagent/action/router/)
   - action: jvagent/interact_router
@@ -40,8 +45,8 @@ actions:
       enabled: true
       description: "Intent-based routing action that analyzes utterances and routes to appropriate InteractActions"
       # Model Configuration (uses OpenAI model action by entity type)
-      model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
-      history_limit: 3  # Number of previous interactions to include in context
+      model_action_type: "OpenAILanguageModelAction" # Entity type to find dynamically
+      history_limit: 3 # Number of previous interactions to include in context
       # Optional: List of InteractAction entity names that must always execute.
       # When using the InteractAction.always_execute flag, exceptions can be
       # managed declaratively in code instead of being listed here.
@@ -53,11 +58,11 @@ actions:
       enabled: true
       description: "OpenAI embeddings API for generating vector embeddings"
       # API Configuration
-      api_key: ${OPENAI_API_KEY}  # Set in .env or environment
+      api_key: ${OPENAI_API_KEY} # Set in .env or environment
       api_endpoint: "https://api.openai.com/v1"
       # Model Configuration
-      model: text-embedding-3-small  # Default embedding model
-      embedding_dimensions: 1536  # Expected dimensions (0 = auto-detect)
+      model: text-embedding-3-small # Default embedding model
+      embedding_dimensions: 1536 # Expected dimensions (0 = auto-detect)
       timeout: 30
 
   - action: jvagent/intro_interact_action
@@ -75,11 +80,11 @@ actions:
       host: localhost
       port: 8108
       protocol: http
-      api_key: ${TYPESENSE_API_KEY}  # Set in .env or environment
+      api_key: ${TYPESENSE_API_KEY} # Set in .env or environment
       connection_timeout_seconds: 2
-      embedding_dimensions: 1536  # Must match embedding model dimensions
+      embedding_dimensions: 1536 # Must match embedding model dimensions
       # Embedding Model Configuration
-      embedding_model_action_type: "OpenAIEmbeddingModelAction"  # Entity type to find dynamically
+      embedding_model_action_type: "OpenAIEmbeddingModelAction" # Entity type to find dynamically
 
   # OpenAI Language Model Action - LLM integration with multimodal support
   # Core action from jvagent library (jvagent/action/model/language/openai/)
@@ -88,10 +93,10 @@ actions:
       enabled: true
       description: "OpenAI GPT-4o model action with vision support"
       # API Configuration
-      api_key: ${OPENAI_API_KEY}  # Set in .env or environment
+      api_key: ${OPENAI_API_KEY} # Set in .env or environment
       api_endpoint: "https://api.openai.com/v1"
       # Model Configuration
-      model: gpt-4o-mini  # Default model for queries
+      model: gpt-4o-mini # Default model for queries
       temperature: 0.2
       max_tokens: 4096
       timeout: 60
@@ -115,7 +120,7 @@ actions:
         - "Provide streaming and non-streaming responses"
         - "can sign the user up for jvagent training"
       # Model Configuration (uses OpenAI model action by entity type)
-      model_action_type: "OpenAILanguageModelAction"  # Entity type to find dynamically
+      model_action_type: "OpenAILanguageModelAction" # Entity type to find dynamically
       model: "gpt-4o-mini"
       model_temperature: 0.1
       model_max_tokens: 8192
@@ -126,7 +131,7 @@ actions:
     context:
       enabled: true
       description: "Training signup interview flow for user registration and training scheduling"
-      weight: -50  # Runs after InteractRouter
+      weight: -50 # Runs after InteractRouter
       anchors:
         - "User wants to sign up or register for jvagent training"
         - "User wants to enroll or join jvagent training"
@@ -144,7 +149,7 @@ actions:
     context:
       enabled: true
       description: "Fallback action for smalltalk and casual conversation"
-      weight: 100  # Runs last as a safety net
+      weight: 100 # Runs last as a safety net
       # directive: |
       #   Offer a simple, friendly response to smalltalk and casual conversation ONLY.
       #   NEVER attempt to answer knowledge-based or capability based questions without having applicable directives or certainty
@@ -188,7 +193,6 @@ actions:
       api_key: ${STT_API_KEY}
       model: "nova-2"
 
-  
   # Add more action assignments here
   # Actions can be from different namespaces:
   # - action: custom/custom_action

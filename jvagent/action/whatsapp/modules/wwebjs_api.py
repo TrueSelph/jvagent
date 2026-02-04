@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 
 import aiohttp
 
-from .base import BaseWhatsAppAPI, MessagePayload
+from .base import BaseWhatsAppAPI, MessagePayload, is_session_registered, mark_session_registered
 import logging
 
 logger = logging.getLogger(__name__)
@@ -178,22 +178,36 @@ class WWebJSAPI(BaseWhatsAppAPI):
         if state == "CONNECTED":
             # Update webhook URL for the existing session
             if webhook_url:
-                try:
-                    await self.close_session()
-                    webhook_result = await self.start_session(webhook=webhook_url, wait_qr_code=False)
-                    if not webhook_result.get("ok", True) and webhook_result.get("error"):
+                # ONLY update if we haven't already registered this webhook for this session in this process
+                if not is_session_registered(self.api_url, self.session, webhook_url):
+                    try:
                         self.logger.debug(
-                            f"Could not update webhook for existing session '{self.session}': "
-                            f"{webhook_result.get('error')}"
+                            f"Updating webhook for connected session '{self.session}' to: {webhook_url}"
                         )
-                    else:
-                        self.logger.info(
-                            f"Updated webhook URL for existing session '{self.session}'"
+                        await self.close_session()
+                        webhook_result = await self.start_session(webhook=webhook_url, wait_qr_code=False)
+                        if not webhook_result.get("ok", True) and webhook_result.get("error"):
+                            self.logger.debug(
+                                f"Could not update webhook for existing session '{self.session}': "
+                                f"{webhook_result.get('error')}"
+                            )
+                        else:
+                            mark_session_registered(self.api_url, self.session, webhook_url)
+                            self.logger.debug(
+                                f"Updated webhook URL for existing session '{self.session}'"
+                            )
+                    except Exception as e:
+                        self.logger.debug(
+                            f"Error updating webhook for existing session '{self.session}': {e}"
                         )
-                except Exception as e:
+                else:
                     self.logger.debug(
-                        f"Error updating webhook for existing session '{self.session}': {e}"
+                        f"Skipping redundant webhook update for session '{self.session}'"
                     )
+            else:
+                # No webhook URL provided, but we are connected. 
+                # Mark as registered with empty webhook to avoid further checks.
+                mark_session_registered(self.api_url, self.session, "")
             
             # Get device info, but handle errors gracefully
             try:
@@ -222,6 +236,10 @@ class WWebJSAPI(BaseWhatsAppAPI):
         # Handle disconnected states
         if state in {"QRCODE", "DISCONNECTED", "UNPAIRED", ""} and auto_register:
             start_res = await self.start_session(webhook=webhook_url, wait_qr_code=wait_qr_code)
+            
+            # Mark as registered if we successfully started/requested a session
+            if start_res.get("ok", True):
+                mark_session_registered(self.api_url, self.session, webhook_url)
             
             # Check if start_session failed
             if not start_res.get("ok", True):

@@ -125,6 +125,7 @@ async def create_whatsapp_walker(
     utterance: str,
     sender: str,
     data_dict: Dict[str, Any],
+    sender_name: Optional[str] = None,
 ) -> Optional[InteractWalker]:
     """Create an InteractWalker for WhatsApp interactions.
     
@@ -150,6 +151,7 @@ async def create_whatsapp_walker(
                 channel="whatsapp",
                 data=data_dict,
                 session_id=convo_obj.session_id,
+                user_name=sender_name,
                 stream=False,  # WhatsApp uses non-streaming mode
             )
         else:
@@ -159,6 +161,7 @@ async def create_whatsapp_walker(
                 channel="whatsapp",
                 data=data_dict,
                 user_id=sender,
+                user_name=sender_name,
                 stream=False,  # WhatsApp uses non-streaming mode
             )
     except ValidationError as e:
@@ -328,7 +331,7 @@ async def _handle_media_message(
                 if media_url:
                     # Construct safe media URL
                     media_url = whatsapp_action.base_url + media_url
-                    logger.info(f"Saved media for user {sender}: {media_url}")
+                    logger.debug(f"Saved media for user {sender}: {media_url}")
                     
                     # Convert MessagePayload to dict for batching
                     data_dict = _convert_message_payload_to_dict(data)
@@ -365,7 +368,7 @@ async def _handle_voice_message(data: Any, sender: str, whatsapp_action: Any) ->
         Dict with status and optional transcript
     """
     if not whatsapp_action.stt_action:
-        logger.info(f"No STT action configured for WhatsAppAction, ignoring voice message from {sender}")
+        logger.debug(f"No STT action configured for WhatsAppAction, ignoring voice message from {sender}")
         return {"status": "ignored", "response": "no stt action configured"}
         
     try:
@@ -402,10 +405,10 @@ async def _handle_voice_message(data: Any, sender: str, whatsapp_action: Any) ->
             transcript = await stt_action.invoke_base64(audio_base64=data.media)
             
             if transcript and transcript.strip():
-                logger.info(f"Transcribed voice message from {sender}: {transcript}")
+                logger.debug(f"Transcribed voice message from {sender}: {transcript}")
                 return {"status": "transcribed", "transcript": transcript}
             else:
-                logger.info(f"Empty transcript for voice message from {sender}")
+                logger.debug(f"Empty transcript for voice message from {sender}")
                 return {"status": "ignored", "response": "empty transcript"}
                 
         except Exception as e:
@@ -418,7 +421,12 @@ async def _handle_voice_message(data: Any, sender: str, whatsapp_action: Any) ->
 
 
 async def _process_interaction_async(
-    data: Any, utterance: str, sender: str, agent_id: str, agent: Any
+    data: Any,
+    utterance: str,
+    sender: str,
+    agent_id: str,
+    agent: Any,
+    sender_name: Optional[str] = None,
 ) -> None:
     """Process the interaction in the background with improved error handling.
     
@@ -454,9 +462,10 @@ async def _process_interaction_async(
     try:
         # Convert MessagePayload to dict for InteractWalker
         data_dict = _convert_message_payload_to_dict(data)
+        logger.warning("create_whatsapp_walker was called")
 
         # Create walker using helper function
-        walker = await create_whatsapp_walker(agent_id, utterance, sender, data_dict)
+        walker = await create_whatsapp_walker(agent_id, utterance, sender, data_dict, sender_name=sender_name)
         if not walker:
             return
             
