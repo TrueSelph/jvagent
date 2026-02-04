@@ -246,7 +246,7 @@ class StateHandler:
                 replace_mode_used = (session.context or {}).get(CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE, False)
                 if not replace_mode_used:
                     # Show updated summary immediately in same turn
-                    directive = self.action.directive_builder.build_confirmation_directive(session)
+                    directive = await self.action.directive_builder.build_confirmation_directive(session)
                     await self.action.directive_builder.queue_directive(visitor, directive)
             return
 
@@ -266,7 +266,7 @@ class StateHandler:
                 return
 
         # Default: Show summary for review (first entry to REVIEW state)
-        directive = self.action.directive_builder.build_confirmation_directive(session)
+        directive = await self.action.directive_builder.build_confirmation_directive(session)
         await self.action.directive_builder.queue_directive(visitor, directive)
 
     async def generate_completed_directive(

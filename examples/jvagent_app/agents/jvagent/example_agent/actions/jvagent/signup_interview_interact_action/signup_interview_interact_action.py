@@ -9,11 +9,12 @@ from datetime import datetime
 
 from jvagent.action.interview import (
     InterviewInteractAction,
+    input_context_provider,
+    input_directive_override,
+    input_review_override,
     input_handler,
     input_validator,
-    input_directive_override,
     on_interview_complete,
-    input_context_provider,
 )
 from jvagent.action.interview.core.session.interview_session import InterviewSession
 from jvagent.action.interview.core.foundation.enums import ValidationStatus
@@ -57,6 +58,27 @@ async def get_available_training_times(
         "timezone": "America/New_York",
         "note": "All times are in Eastern Standard Time"
     }
+
+
+@input_review_override
+def adapt_signup_review_for_display(
+    session: InterviewSession,
+    data: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Omit or format values shown in the Review state (display only; session unchanged).
+
+    Applies only to SignupInterviewInteractAction in this module. Omits optional
+    phone_number when empty or "n/a".
+    """
+    result: Dict[str, Any] = {}
+    for field_name, value in data.items():
+        if field_name == "phone_number":
+            if value is None or value == "" or (
+                isinstance(value, str) and value.strip().lower() in ("n/a", "na")
+            ):
+                continue
+        result[field_name] = value
+    return result
 
 
 class SignupInterviewInteractAction(InterviewInteractAction):

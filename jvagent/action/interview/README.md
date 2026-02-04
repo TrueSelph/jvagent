@@ -26,6 +26,7 @@ The Interview Action provides a reusable way to collect responses from users in 
 - **Input Context**: Supply questions with extra context via static `input_context` (hardcoded dict) or dynamic `input_context_provider` (decorated function)
 - **Data Input Fields**: Extract values directly from `visitor.data` for file uploads and REST call data (bypasses LLM extraction)
 - **Completion Handlers**: Register completion handlers via `@on_interview_complete` decorator
+- **Review Override**: Customize the list of values shown in the Review state via `@input_review_override` (omit, format, or adapt items before display)
 - **Question Node Rebuilding**: Automatically rebuilds question nodes when `question_graph` changes
 - **agent.yaml Overrides**: Override `question_graph` in `context:` and model/templates in `config:` (see Configuration)
 - **Standard Anchors**: Automatically includes standard anchors for common interview scenarios (cancellation, correction, review confirmation, etc.) - no need to specify them in each implementation
@@ -236,7 +237,7 @@ The final anchors list will include:
 interview/
 ├── __init__.py                    # Package initialization (exports decorators)
 ├── interview_interact_action.py   # Abstract base class (orchestrator)
-├── decorators.py                  # Decorator functions (@input_handler, @input_validator, etc.)
+├── decorators.py                  # Decorator functions (@input_handler, @input_validator, @input_review_override, etc.)
 ├── prompts.py                     # Prompt templates
 ├── info.yaml                      # Action metadata
 ├── README.md                      # This file
@@ -1332,6 +1333,34 @@ async def replace_email_directive(
 **Append Mode Behavior:**
 - **With next question**: Next question directive is queued first, then the custom directive(s)
 - **Without next question**: Only the custom directive(s) are queued (interview may be complete)
+
+### Review Override
+
+Customize the list of values shown in the Review state (before the user confirms) using the `@input_review_override` decorator. The override receives a key-value map of collected interview data (field name to value) and returns a dict used only for rendering the summary. Modifications are **for display only** and do not alter the values stored in the interview session. The decorator has no parameters and applies only to the `InterviewInteractAction` subclass defined in the same module.
+
+**Handler signature:** `(session: InterviewSession, data: Dict[str, Any]) -> Dict[str, Any]` (sync or async). Omit fields by dropping keys from the returned dict; format by changing values. Display name is derived from the key when rendering.
+
+**Example:**
+
+```python
+from jvagent.action.interview import (
+    InterviewInteractAction,
+    input_review_override,
+)
+from jvagent.action.interview.core.session.interview_session import InterviewSession
+from typing import Any, Dict
+
+@input_review_override
+def adapt_review_for_display(
+    session: InterviewSession,
+    data: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Omit optional fields when empty; display only, session unchanged."""
+    return {k: v for k, v in data.items() if v not in (None, "", "n/a")}
+
+class MyInterviewAction(InterviewInteractAction):
+    question_graph = [...]
+```
 - Custom directives are **always** queued in append mode, regardless of whether a next question exists
 
 **When Overrides Are Triggered:**
