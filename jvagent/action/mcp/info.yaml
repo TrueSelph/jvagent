@@ -1,0 +1,20 @@
+# MCP Action Package Descriptor
+# Gateway action that fulfills natural language commands via an MCP server.
+
+package:
+  name: jvagent/mcp
+  author: jvagent
+  archetype: MCPAction
+  version: 0.0.1
+  meta:
+    title: MCP Action
+    description: Gateway action that pairs with a named MCP server; exposes fulfill(natural_language_command) for use by other actions (e.g. InteractActions).
+    group: jvagent
+    type: action
+  config:
+    singleton: false  # Multiple MCPAction instances per agent allowed (one per MCP server).
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []
+    pip:
+      - "mcp>=1.0,<2"
