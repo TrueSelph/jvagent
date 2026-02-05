@@ -845,7 +845,7 @@ actions:
 - **Language Models**: `jvagent/openai_lm`, `jvagent/openrouter_lm`
 - **Embedding Models**: `jvagent/openai_embedding`, `jvagent/openrouter_embedding`, `jvagent/huggingface_embedding`, `jvagent/generic_embedding`
 - **Vector Stores**: `jvagent/typesense_vectorstore`
-- **Other**: `jvagent/persona` (can be overridden locally)
+- **Other**: `jvagent/persona` (can be overridden locally), `jvagent/mcp` (MCP gateway: fulfill NL commands via an MCP server; see [jvagent/action/mcp/README.md](jvagent/action/mcp/README.md))
 
 **Conditional Loading**: Core actions are only loaded if they are explicitly listed in `agent.yaml` or are required as dependencies of a loaded action. This ensures that unused actions remain unloaded and their endpoints are not accessible.
 
@@ -857,6 +857,7 @@ actions:
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md) - Vector store retrieval with simplified API
 - [IntroInteractAction](jvagent/action/intro/README.md) - First-time user welcome messages
 - [InterviewInteractAction](jvagent/action/interview/README.md) - Reusable interview system for stepwise information collection with validation
+- [MCPAction](jvagent/action/mcp/README.md) - Gateway for fulfilling natural language commands via an MCP server
 - [Model Actions](jvagent/action/model/README.md) - Language and embedding model integrations
 
 **System Documentation:**
