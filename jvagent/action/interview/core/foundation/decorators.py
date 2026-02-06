@@ -6,10 +6,12 @@ directive overrides, and completion handlers for interview actions.
 
 from __future__ import annotations
 
+import contextvars
 import inspect
 import logging
 import threading
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Set, Tuple, Union
 
 if TYPE_CHECKING:
     from jvagent.action.interview.core.session.interview_session import InterviewSession
@@ -18,6 +20,60 @@ if TYPE_CHECKING:
     from jvagent.memory import Interaction
 
 logger = logging.getLogger(__name__)
+
+# Thread-safe context variable for tracking response accesses during branch function execution
+# Used by the dependency tracking wrapper to capture which responses were accessed
+_response_access_tracker: contextvars.ContextVar[Optional[Set[str]]] = contextvars.ContextVar(
+    '_response_access_tracker',
+    default=None
+)
+
+
+@contextmanager
+def track_response_access():
+    """Context manager to track which response keys are accessed during execution.
+    
+    Usage:
+        with track_response_access() as tracked:
+            # ... execute code that accesses session.responses ...
+            accessed_keys = tracked.get()  # Returns set of accessed keys
+    
+    Yields:
+        Object with get() method returning set of accessed response keys
+    """
+    accessed = set()
+    token = _response_access_tracker.set(accessed)
+    try:
+        class AccessTracker:
+            def get(self_inner):
+                return accessed
+
+        yield AccessTracker()
+    finally:
+        _response_access_tracker.reset(token)
+
+
+def get_tracked_responses() -> Optional[Set[str]]:
+    """Get the current response access tracker if one is active.
+    
+    Returns:
+        Set of accessed response keys if tracking is active, None otherwise
+    """
+    return _response_access_tracker.get()
+
+
+def record_response_access(key: str) -> None:
+    """Record access to a response key during tracking.
+    
+    Called by instrumented session.responses access to track which keys are read.
+    
+    Args:
+        key: Response key being accessed
+    """
+    tracker = _response_access_tracker.get()
+    if tracker is not None:
+        tracker.add(key)
+
 
 # Thread lock for registry access
 _registry_lock = threading.RLock()
@@ -431,6 +487,9 @@ def branch_function(function_name: Optional[str] = None, interview_type: Optiona
 
     Branch functions evaluate complex conditions with full access to session and visitor.
     They can return bool (direct branching) or any value (for operator evaluation).
+    
+    Functions automatically have dependency tracking enabled: response keys accessed
+    during execution are recorded and used for efficient caching and invalidation.
 
     Args:
         function_name: Optional unique name for this branch function. If not provided, uses the function's __name__
@@ -438,7 +497,8 @@ def branch_function(function_name: Optional[str] = None, interview_type: Optiona
 
     Function Signature:
         def function_name(session: InterviewSession, visitor: InteractWalker) -> Union[bool, Any]:
-            # Return bool for direct branching, or any value for operator evaluation
+            # Return bool for direct branching, or any value (for operator evaluation)
+            # Accessed responses are automatically tracked for cache invalidation
             pass
 
     Examples:
@@ -456,16 +516,101 @@ def branch_function(function_name: Optional[str] = None, interview_type: Optiona
     def decorator(func: Callable) -> Callable:
         # Use function name if not explicitly provided
         name = function_name if function_name is not None else func.__name__
+        
+        # Wrap function with dependency tracking (only if not already wrapped)
+        if not hasattr(func, '_branch_function_wrapped'):
+            wrapped_func = _wrap_branch_function_with_tracking(func)
+            wrapped_func._branch_function_wrapped = True
+            wrapped_func._original_function = func
+        else:
+            wrapped_func = func
+        
         _register_decorator_function(
-            func,
+            wrapped_func,
             name,
             "branch_function",
             interview_type,
             _branch_function_registry,
             _pending_branch_functions
         )
-        return func
+        return wrapped_func
     return decorator
+
+
+def _wrap_branch_function_with_tracking(func: Callable) -> Callable:
+    """Wrap a branch function to automatically track response accesses.
+    
+    Creates a wrapper that instruments session.responses access to record
+    which response keys are read during function execution.
+    
+    Args:
+        func: The branch function to wrap
+        
+    Returns:
+        Wrapped function that tracks response dependencies
+    """
+    if inspect.iscoroutinefunction(func):
+        async def async_wrapper(session: "InterviewSession", visitor: "InteractWalker") -> Any:
+            with track_response_access() as tracker:
+                # Instrument session.responses for this call
+                original_responses = session.responses
+                instrumented = _InstrumentedResponses(original_responses)
+                session.responses = instrumented  # type: ignore
+                
+                try:
+                    result = await func(session, visitor)
+                    # Store accessed keys in context for branch evaluator to retrieve
+                    if not hasattr(session, '_branch_function_accessed_keys'):
+                        session._branch_function_accessed_keys = set()  # type: ignore
+                    session._branch_function_accessed_keys.update(tracker.get())  # type: ignore
+                    return result
+                finally:
+                    session.responses = original_responses
+        
+        return async_wrapper
+    else:
+        def sync_wrapper(session: "InterviewSession", visitor: "InteractWalker") -> Any:
+            with track_response_access() as tracker:
+                # Instrument session.responses for this call
+                original_responses = session.responses
+                instrumented = _InstrumentedResponses(original_responses)
+                session.responses = instrumented  # type: ignore
+                
+                try:
+                    result = func(session, visitor)
+                    # Store accessed keys in context for branch evaluator to retrieve
+                    if not hasattr(session, '_branch_function_accessed_keys'):
+                        session._branch_function_accessed_keys = set()  # type: ignore
+                    session._branch_function_accessed_keys.update(tracker.get())  # type: ignore
+                    return result
+                finally:
+                    session.responses = original_responses
+        
+        return sync_wrapper
+
+
+class _InstrumentedResponses(dict):
+    """Dictionary subclass that tracks access to response keys.
+    
+    When a key is accessed (via get, __getitem__, etc.), records it
+    in the active response access tracker.
+    """
+    
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get with access tracking."""
+        record_response_access(key)
+        return super().get(key, default)
+    
+    def __getitem__(self, key: str) -> Any:
+        """Index access with tracking."""
+        record_response_access(key)
+        return super().__getitem__(key)
+    
+    def __contains__(self, key: Any) -> bool:
+        """Containment check with tracking."""
+        if isinstance(key, str):
+            record_response_access(key)
+        return super().__contains__(key)
 
 
 def get_branch_function(interview_type: str, function_name: str) -> Optional[Callable]:
@@ -480,6 +625,30 @@ def get_branch_function(interview_type: str, function_name: str) -> Optional[Cal
     """
     with _registry_lock:
         return _branch_function_registry.get((interview_type, function_name))
+
+
+def register_branch_function(interview_type: str, function_name: str, func: Callable) -> None:
+    """Register a branch function programmatically (thread-safe).
+
+    This can be used by classes that define branch functions as methods
+    (so the decorator ran at class body execution time) to ensure the
+    module-level registry contains the function under the given
+    interview_type.
+    """
+    with _registry_lock:
+        _branch_function_registry[(interview_type, function_name)] = func
+        logger.debug(
+            f"Registered branch_function '{function_name}' for interview type '{interview_type}' (programmatic)"
+        )
+
+
+def register_input_context_provider(interview_type: str, function_name: str, func: Callable) -> None:
+    """Register an input context provider programmatically (thread-safe)."""
+    with _registry_lock:
+        _input_context_provider_registry[(interview_type, function_name)] = func
+        logger.debug(
+            f"Registered input_context_provider '{function_name}' for interview type '{interview_type}' (programmatic)"
+        )
 
 
 def get_pending_branch_functions(interview_type: str) -> Dict[str, Callable]:

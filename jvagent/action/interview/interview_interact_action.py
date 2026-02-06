@@ -61,6 +61,8 @@ from .core.foundation.decorators import (
     get_pending_input_context_providers,
     clear_pending_registrations,
     flush_module_registrations_for_class,
+    register_branch_function,
+    register_input_context_provider,
 )
 
 
@@ -218,6 +220,18 @@ class InterviewInteractAction(InteractAction, ABC):
                     cls._input_directive_overrides[question_name] = attr
                 elif handler_type == "input_review_override":
                     cls._input_review_override = attr
+                elif handler_type == "branch_function" and question_name:
+                    # Register branch function into module-level registry so it can
+                    # be looked up by QuestionBranchEvaluator using the interview_type.
+                    try:
+                        register_branch_function(class_name, question_name, attr)
+                    except Exception:
+                        logger.exception(f"Failed to register branch_function '{question_name}' for '{class_name}'")
+                elif handler_type == "input_context_provider" and question_name:
+                    try:
+                        register_input_context_provider(class_name, question_name, attr)
+                    except Exception:
+                        logger.exception(f"Failed to register input_context_provider '{question_name}' for '{class_name}'")
 
         # Note: We don't merge anchors in __init_subclass__ because we can't reliably
         # extract default values from Field/PrivateAttr descriptors at class definition time.
@@ -461,12 +475,16 @@ class InterviewInteractAction(InteractAction, ABC):
         self,
         session: InterviewSession,
         question_walker: QuestionWalker,
-        just_answered_field: Optional[str] = None
+        just_answered_field: Optional[str] = None,
+        visitor: Optional["InteractWalker"] = None
     ) -> bool:
         """Re-evaluate branches after storing a response.
 
         If the just-answered field has conditional branches, evaluate them.
         If a branch targets a state node, execute the state transition immediately.
+        
+        Also detects path changes and intelligently prunes responses from
+        questions that are no longer reachable on the new path.
 
         Args:
             session: Interview session
@@ -541,6 +559,56 @@ class InterviewInteractAction(InteractAction, ABC):
                     f"Branch condition NOT matched: {just_answered_field} {condition} "
                     f"(response_value={response_value!r})"
                 )
+
+        # Detect path changes and prune responses from unreachable questions
+        # This handles cases where a branch function result changes due to a response update
+        path_changed = await question_walker.detect_and_prune_altered_path(
+            session,
+            just_answered_field,
+            interview_action=self,
+            visitor=visitor
+        )
+
+        # Retrieve any branch change details saved by QuestionWalker
+        change_details = (session.context or {}).get("_branch_change_details")
+
+        # If path changed, interview was reset to branching point
+        # Return True to skip finding next question (traversal will happen naturally)
+        if path_changed:
+            logger.info(
+                f"InterviewInteractAction: Interview path changed for '{just_answered_field}'. "
+                f"Interview has been reset and will traverse new path."
+            )
+
+            # If caller provided a visitor, queue a user-facing directive explaining the change
+            try:
+                if change_details and visitor:
+                    field_display = just_answered_field.replace("_", " ").title()
+                    pruned = change_details.get("pruned_questions", []) or []
+                    num_pruned = len(pruned)
+                    new_target = change_details.get("new_target")
+                    # Compose message
+                    msg_lines = [f"Tell the user: Updated {field_display}."]
+                    if num_pruned:
+                        msg_lines.append(
+                            f"I cleared {num_pruned} previous answer(s) that are no longer relevant: {', '.join(pruned)}."
+                        )
+                    if new_target and not question_walker._is_state_target(new_target):
+                        next_q_display = new_target.replace("_", " ").title()
+                        msg_lines.append(f"I'll now ask about: {next_q_display}.")
+                    elif new_target and question_walker._is_state_target(new_target):
+                        msg_lines.append(f"This change moved the interview to state: {new_target}.")
+
+                    directive = " ".join(msg_lines)
+                    await self.directive_builder.queue_directive(visitor, directive)
+                    # Clear transient change details so they won't be reused
+                    if session.context and "_branch_change_details" in session.context:
+                        session.context.pop("_branch_change_details", None)
+                        await session.save()
+            except Exception:
+                logger.exception("Failed to queue branch-change directive")
+
+            return True
 
         return False
 

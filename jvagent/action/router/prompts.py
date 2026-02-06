@@ -37,12 +37,16 @@ KEY RULES:
 # Routing Prompt
 # =============================================================================
 
-ROUTING_PROMPT_TEMPLATE = """INPUTS:
-- User message: {utterance}
-- Available actions: {anchors_json}
+ROUTING_PROMPT_TEMPLATE = """CONVERSATION STATE:
 {history_section}
 
-TASK: Analyze and route the user's message to appropriate action(s).
+CURRENT USER MESSAGE:
+{utterance}
+
+AVAILABLE ACTIONS:
+{anchors_json}
+
+TASK: Analyze the current user message in context of the conversation history and route to appropriate action(s).
 
 INTENT TYPES:
 - CONVERSATIONAL: Greeting, thanks, smalltalk only; no request, no information given
@@ -52,13 +56,14 @@ INTENT TYPES:
 - UNCLEAR: Cannot determine
 
 RULES:
-1. Match user's need to action anchors
-2. CONVERSATIONAL intent must have empty actions []
-3. Only route to ongoing activity if user is directly engaging with it
-4. Actions must be exact keys from Available actions (e.g., "SignupInterviewInteractAction"), NOT anchor descriptions
-5. If the last assistant turn was a question and the user's message could answer it, use INTERACTIVE (not CONVERSATIONAL)
-6. If context shows an ongoing activity and the user's message relates to it, use INTERACTIVE and route to that action
-7. Lower confidence if ambiguous or uncertain{optional_instructions}
+1. The conversation history is shown FIRST, with the current user message shown AFTER the ">>> USER RESPONDS NOW <<<" marker
+2. Match the current user's message to action anchors based on their actual need
+3. CONVERSATIONAL intent (greetings, thanks, smalltalk) MUST have empty actions []
+4. Only route to ongoing activity if the current user message is directly engaging with it
+5. Actions must be exact keys from Available actions (e.g., "SignupInterviewInteractAction"), NOT anchor descriptions
+6. If the most recent assistant message in the history was a question, and the current user message appears to answer it, use INTERACTIVE (not CONVERSATIONAL)
+7. If context shows an ongoing activity and the current user message relates to it, use INTERACTIVE and route to that action
+8. Lower confidence if ambiguous or uncertain{optional_instructions}
 
 OUTPUT (JSON only):
 {{
