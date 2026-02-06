@@ -116,6 +116,10 @@ class ResponseProcessor:
             # Update session with audit trail
             old_value = session.get_response(field)
             session.update_response(field, new_value, old_value)
+            
+            # Invalidate caches that depend on this response (smart invalidation)
+            await self._invalidate_dependent_caches(session, field)
+            
             await session.save()
             logger.debug(f"{self.action.get_class_name()}: Updated {field} to {new_value}")
 
@@ -124,7 +128,7 @@ class ResponseProcessor:
             question_walker = QuestionWalker()
             question_walker.interview_session = session
             question_walker.interaction = interaction
-            await self.action._update_reachable_questions(session, question_walker, just_answered_field=field)
+            await self.action._update_reachable_questions(session, question_walker, just_answered_field=field, visitor=visitor)
 
             # Check for directive override after successful update
             override_func = self.action.get_input_directive_override(field)
@@ -414,6 +418,45 @@ class ResponseProcessor:
             if session.context is None:
                 session.context = {}
             session.context[CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE] = True
+
+    async def _invalidate_dependent_caches(
+        self,
+        session: InterviewSession,
+        response_key: str
+    ) -> None:
+        """Invalidate caches that depend on an updated response.
+        
+        When a response is updated, intelligently invalidates:
+        1. Branch function cache entries that depend on this response
+        2. Coordinate with question node cache invalidation
+        
+        This enables efficient re-evaluation: cached branch results are
+        only re-executed if their dependencies have actually changed.
+        
+        Args:
+            session: Interview session
+            response_key: Key of the response that was updated
+        """
+        from ..utils.cache_utils import BranchFunctionCache, QuestionNodeCache
+        
+        # Invalidate branch function cache for branches depending on this response
+        branch_cache = BranchFunctionCache(session)
+        invalidated_branches = branch_cache.invalidate_by_response(response_key)
+        
+        if invalidated_branches:
+            logger.debug(
+                f"{self.action.get_class_name()}: Response update '{response_key}' invalidated "
+                f"{len(invalidated_branches)} branch cache entries: {invalidated_branches}"
+            )
+        
+        # Also invalidate question node cache to ensure fresh question lookup
+        # (though question node cache is less critical since questions don't change structure)
+        question_cache = QuestionNodeCache(session)
+        question_cache.invalidate()
+        
+        logger.debug(
+            f"{self.action.get_class_name()}: Coordinated cache invalidation for response update '{response_key}'"
+        )
 
         # Clear active_question_key
         session.active_question_key = None

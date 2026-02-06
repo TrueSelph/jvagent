@@ -251,458 +251,458 @@ class ReportInterviewInteractAction(InterviewInteractAction):
     )
 
 
-# Override default directive
-@input_directive_override('incident_location')
-async def custom_continue_directive(
-    field_name: str,
-    value: str,
-    session: InterviewSession,
-    interaction: Interaction,
-    visitor: InteractWalker
-) -> Optional[Union[str, Tuple[str, str]]]:
-    """Custom directive after incident_location is answered."""
-    matching_reports = session.context.get("matching_reports")
-    if matching_reports:
-        report_str = ""
-        for report in matching_reports:
-            report_str += f"___\nReport ID: {report['id']}\n{report['description'][:300]}..."
-        
-        return ("replace", f"Let the user know that you found {len(matching_reports)} reports that match their description. and ask them if they want to continue with the interview. {report_str}")
-    return None  # Use default directive
+    # Override default directive
+    @input_directive_override('incident_location')
+    async def custom_continue_directive(
+        field_name: str,
+        value: str,
+        session: InterviewSession,
+        interaction: Interaction,
+        visitor: InteractWalker
+    ) -> Optional[Union[str, Tuple[str, str]]]:
+        """Custom directive after incident_location is answered."""
+        matching_reports = session.context.get("matching_reports")
+        if matching_reports:
+            report_str = ""
+            for report in matching_reports:
+                report_str += f"___\nReport ID: {report['id']}\n{report['description'][:300]}..."
+            
+            return ("replace", f"Let the user know that you found {len(matching_reports)} reports that match their description. and ask them if they want to continue with the interview. {report_str}")
+        return None  # Use default directive
 
 
-@input_directive_override('continue_report')
-async def custom_continue_directive(
-    field_name: str,
-    value: str,
-    session: InterviewSession,
-    interaction: Interaction,
-    visitor: InteractWalker
-) -> Optional[Union[str, Tuple[str, str]]]:
-    """Custom directive after continue_report is answered."""
-    if value == "no":
-        return ("replace", "Thank you for your time. Your report was cancelled.")
-    return None  # Use default directive
+    @input_directive_override('continue_report')
+    async def custom_continue_directive(
+        field_name: str,
+        value: str,
+        session: InterviewSession,
+        interaction: Interaction,
+        visitor: InteractWalker
+    ) -> Optional[Union[str, Tuple[str, str]]]:
+        """Custom directive after continue_report is answered."""
+        if value == "no":
+            return ("replace", "Thank you for your time. Your report was cancelled.")
+        return None  # Use default directive
 
 
 
-# Validators 
-@input_validator('incident_description')
-def validate_incident_description(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate incident description has sufficient detail.
+    # Validators 
+    @input_validator('incident_description')
+    def validate_incident_description(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate incident description has sufficient detail.
 
-    Args:
-        value: The incident description to validate
-        session: Interview session (for context)
+        Args:
+            value: The incident description to validate
+            session: Interview session (for context)
 
-    Returns:
-        Tuple of (ValidationStatus, optional error message)
-    """
+        Returns:
+            Tuple of (ValidationStatus, optional error message)
+        """
 
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide a description of the incident"
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please provide a description of the incident"
 
-    # Remove extra whitespace
-    value = value.strip()
+        # Remove extra whitespace
+        value = value.strip()
 
-    # Check minimum length
-    if len(value) < 10:
-        return (
-            ValidationStatus.INVALID,
-            "Ask: Please provide a more detailed description of what happened",
-        )
-
-    return ValidationStatus.VALID, None
-
-
-@input_validator('incident_location')
-def validate_incident_location(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate incident location is provided and specific.
-
-    Args:
-        value: The location string to validate
-        session: Interview session (for context)
-
-    Returns:
-        Tuple of (ValidationStatus, optional error message)
-    """
-
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the location where the incident occurred"
-
-    # Remove extra whitespace
-    value = value.strip()
-    
-    if len(value) < 10:
-        return ValidationStatus.INVALID, "Ask: Please provide a more specific location"
-
-    return ValidationStatus.VALID, None
-
-
-@input_validator('is_sensitive')
-def validate_is_sensitive(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the is sensitive is either yes or no.
-
-    Args:
-        value: The is sensitive string to validate
-        session: Interview session (for context)
-
-    Returns:
-        Tuple of (ValidationStatus, optional error message)
-    """
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please indicate whether the report is sensitive"
-
-    # Remove extra whitespace
-    value = value.strip()
-
-    # Check for valid options
-    if value not in ["yes", "no"]:
-        return ValidationStatus.INVALID, "Ask: Please indicate whether the report is sensitive"
-
-    return ValidationStatus.VALID, None
-
-
-@input_validator('reporting_on_behalf')
-def validate_reporting_on_behalf(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the reporting on behalf is either yes or no.
-
-    Args:
-        value: The reporting on behalf string to validate
-        session: Interview session (for context)
-
-    Returns:
-        Tuple of (ValidationStatus, optional error message)
-    """
-    if not value or not isinstance(value, str):
-        return (
-            ValidationStatus.INVALID,
-            "Ask: Please indicate whether you are reporting on behalf of someone else",
-        )
-
-    # Remove extra whitespace
-    value = value.strip()
-
-    # Check for valid options
-    if value not in ["yes", "no"]:
-        return (
-            ValidationStatus.INVALID,
-            "Ask: Please indicate whether you are reporting on behalf of someone else",
-        )
-
-    return ValidationStatus.VALID, None
-
-
-@input_validator('stakeholder_name')
-def validate_stakeholder_name(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the stakeholder name is not empty.
-
-    Args:
-        value: The stakeholder name string to validate
-        session: Interview session (for context)
-
-    Returns:
-        Tuple of (ValidationStatus, optional error message)
-    """
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the name of the stakeholder"
-
-    # Remove extra whitespace
-    value = value.strip()
-
-    # Split by spaces and check for at least two parts (first and last name)
-    name_parts = value.split()
-    if len(name_parts) < 2:
-        return ValidationStatus.INVALID, "Ask: Please provide both your first and last name"
-
-    # Check that each part has at least 2 characters
-    for part in name_parts:
-        if len(part) < 2:
+        # Check minimum length
+        if len(value) < 10:
             return (
                 ValidationStatus.INVALID,
-                "Tell the user: Each name part should be at least 2 characters long",
+                "Ask: Please provide a more detailed description of what happened",
             )
 
-    # Check for valid characters (letters, hyphens, apostrophes)
-    if not re.match(r"^[a-zA-Z\s\-\']+$", value):
-        return (
-            ValidationStatus.INVALID,
-            "Tell the user: Name should only contain letters, spaces, hyphens, and apostrophes",
-        )
-
-    return ValidationStatus.VALID, None
+        return ValidationStatus.VALID, None
 
 
-@input_validator('stakeholder_address')
-def validate_stakeholder_address(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the stakeholder address is not empty.
+    @input_validator('incident_location')
+    def validate_incident_location(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate incident location is provided and specific.
 
-    Args:
-        value: The stakeholder address string to validate
-        session: Interview session (for context)
+        Args:
+            value: The location string to validate
+            session: Interview session (for context)
 
-    Returns:
-        Tuple of (ValidationStatus, optional error message)
-    """
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the address of the stakeholder"
+        Returns:
+            Tuple of (ValidationStatus, optional error message)
+        """
 
-    if len(value) < 10:
-        return ValidationStatus.INVALID, "Ask: Please provide the full address of the stakeholder"
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please provide the location where the incident occurred"
 
-    # Remove extra whitespace
-    value = value.strip()
+        # Remove extra whitespace
+        value = value.strip()
+        
+        if len(value) < 10:
+            return ValidationStatus.INVALID, "Ask: Please provide a more specific location"
 
-    return ValidationStatus.VALID, None
-
-
-@input_validator('stakeholder_phone')
-def validate_stakeholder_phone(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the stakeholder phone is not empty.
-
-    Args:
-        value: The stakeholder phone string to validate
-        session: Interview session (for context)
-
-    Returns:
-        Tuple of (ValidationStatus, optional error message)
-    """
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the contact number of the stakeholder"
-
-    # Remove extra whitespace
-    value = value.strip()
-
-    # Check for valid phone number format
-    if not re.match(r"^\d{10}$", value):
-        return (
-            ValidationStatus.INVALID,
-            "Tell the user: Please provide a valid 10-digit phone number",
-        )
-
-    return ValidationStatus.VALID, None
+        return ValidationStatus.VALID, None
 
 
-@input_validator('reporter_name')
-def validate_reporter_name(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the reporter name is not empty.
+    @input_validator('is_sensitive')
+    def validate_is_sensitive(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that the is sensitive is either yes or no.
 
-    Args:
-        value: The reporter name string to validate
-        session: Interview session (for context)
+        Args:
+            value: The is sensitive string to validate
+            session: Interview session (for context)
 
-    Returns:
-        Tuple of (ValidationStatus, optional error message)
-    """
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the name of the reporter"
+        Returns:
+            Tuple of (ValidationStatus, optional error message)
+        """
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please indicate whether the report is sensitive"
 
-    # Remove extra whitespace
-    value = value.strip()
+        # Remove extra whitespace
+        value = value.strip()
 
-    # Split by spaces and check for at least two parts (first and last name)
-    name_parts = value.split()
-    if len(name_parts) < 2:
-        return (
-            ValidationStatus.INVALID,
-            "Ask: Please provide both the first and last name of the reporter",
-        )
+        # Check for valid options
+        if value not in ["yes", "no"]:
+            return ValidationStatus.INVALID, "Ask: Please indicate whether the report is sensitive"
 
-    # Check that each part has at least 2 characters
-    for part in name_parts:
-        if len(part) < 2:
+        return ValidationStatus.VALID, None
+
+
+    @input_validator('reporting_on_behalf')
+    def validate_reporting_on_behalf(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that the reporting on behalf is either yes or no.
+
+        Args:
+            value: The reporting on behalf string to validate
+            session: Interview session (for context)
+
+        Returns:
+            Tuple of (ValidationStatus, optional error message)
+        """
+        if not value or not isinstance(value, str):
             return (
                 ValidationStatus.INVALID,
-                "Tell the user: Each name part should be at least 2 characters long",
+                "Ask: Please indicate whether you are reporting on behalf of someone else",
             )
 
-    # Check for valid characters (letters, hyphens, apostrophes)
-    if not re.match(r"^[a-zA-Z\s\-\']+$", value):
-        return (
-            ValidationStatus.INVALID,
-            "Tell the user: Name should only contain letters, spaces, hyphens, and apostrophes",
-        )
+        # Remove extra whitespace
+        value = value.strip()
 
-    return ValidationStatus.VALID, None
+        # Check for valid options
+        if value not in ["yes", "no"]:
+            return (
+                ValidationStatus.INVALID,
+                "Ask: Please indicate whether you are reporting on behalf of someone else",
+            )
 
-
-@input_validator('reporter_address')
-def validate_reporter_address(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the reporter address is not empty.
-
-    Args:
-        value: The reporter address string to validate
-        session: Interview session (for context)
-
-    Returns:
-        Tuple of (ValidationStatus, optional error message)
-    """
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide your full address"
-
-    if len(value) < 10:
-        return ValidationStatus.INVALID, "Ask: Please provide your full address"
-
-    # Remove extra whitespace
-    value = value.strip()
-
-    return ValidationStatus.VALID, None
+        return ValidationStatus.VALID, None
 
 
+    @input_validator('stakeholder_name')
+    def validate_stakeholder_name(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that the stakeholder name is not empty.
 
-# Branch functions
-@branch_function('detect_sensitive_content')
-def detect_sensitive_content(
-    session: InterviewSession,
-    visitor: InteractWalker
-) -> bool:
-    """Detect if incident report contains sensitive content requiring privacy protection.
-    
-    Returns True to branch to privacy question, False to continue normal flow.
-    Checks both description and media for sensitive content indicators.
-    """
-    description = session.responses.get('incident_description', '').lower()
-    sensitive_keywords = ['abuse', 'assault', 'violence', 'threat', 'harassment', 'domestic', 'sexual']
-    
-    # Check description for sensitive keywords
-    has_sensitive_text = any(keyword in description for keyword in sensitive_keywords)
-    
-    return has_sensitive_text
+        Args:
+            value: The stakeholder name string to validate
+            session: Interview session (for context)
 
+        Returns:
+            Tuple of (ValidationStatus, optional error message)
+        """
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please provide the name of the stakeholder"
 
-@branch_function('check_for_similar_incidents')
-def check_for_similar_incidents(
-    session: InterviewSession,
-    visitor: InteractWalker
-) -> bool:
-    """Check for similar incident reports in the same location.
-    
-    Returns True if similar incidents found, triggering user confirmation.
-    This helps prevent duplicate reports and informs users of existing issues.
-    """
-    location = session.responses.get('incident_location', '').lower()
-    description = session.responses.get('incident_description', '').lower()
+        # Remove extra whitespace
+        value = value.strip()
 
-    session.context['matching_reports'] = [
-        {
-            "id": "RL2FG12V", 
-            "description": "At a residence in South Ruimveldt, a woman is repeatedly being verbally and physically abused by her partner. Neighbours have heard loud shouting, threats such as “ah gon kill you,” and sounds of slapping and objects being thrown late at night. This has been happening for weeks. People hearing the noise and frighten because this man does lose control. The failure to intervene despite obvious warning signs places the victim at high risk of serious injury or death. Urgent protective action is required.",
-        },
-        {
-            "id": "RL1FG12W", 
-            "description": "A deh one house in South Ruimveldt, a woman been gettin cuss out and beat regular by she partner. Neighbours hear plenty loud shouting, serious threats like “ah gon kill you”, an sounds like slap, beat, and tings fling ’bout late night. Dis na one-time thing — dis been goin on fuh weeks now. People round de area frighten because de man does lose control real bad. De fact that nobody ain’t step in yet, even when de signs clear, put de woman life in serious danger. She could get bad hurt or even dead if something ain’t do quick. Immediate action need fuh protect she and stop dis abuse before it turn into something worse.",
-        }
-    ]
-    
-    # For demo purposes, always return True to show the flow
-    # In production, this would query a database of existing reports
-    return True
+        # Split by spaces and check for at least two parts (first and last name)
+        name_parts = value.split()
+        if len(name_parts) < 2:
+            return ValidationStatus.INVALID, "Ask: Please provide both your first and last name"
+
+        # Check that each part has at least 2 characters
+        for part in name_parts:
+            if len(part) < 2:
+                return (
+                    ValidationStatus.INVALID,
+                    "Tell the user: Each name part should be at least 2 characters long",
+                )
+
+        # Check for valid characters (letters, hyphens, apostrophes)
+        if not re.match(r"^[a-zA-Z\s\-\']+$", value):
+            return (
+                ValidationStatus.INVALID,
+                "Tell the user: Name should only contain letters, spaces, hyphens, and apostrophes",
+            )
+
+        return ValidationStatus.VALID, None
 
 
+    @input_validator('stakeholder_address')
+    def validate_stakeholder_address(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that the stakeholder address is not empty.
 
-@on_interview_complete('ReportInterviewInteractAction')
-async def handle_report_completion(
-    session: InterviewSession,
-    visitor: InteractWalker,
-    action: InteractAction
-) -> None:
-    """Handle completion of report interview.
+        Args:
+            value: The stakeholder address string to validate
+            session: Interview session (for context)
 
-    This handler is called when the report interview is completed.
-    Process collected data, trigger downstream actions, or perform cleanup.
+        Returns:
+            Tuple of (ValidationStatus, optional error message)
+        """
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please provide the address of the stakeholder"
 
-    Args:
-        session: The completed interview session with all collected responses
-        visitor: The walker for accessing context and responding
-        action: The InteractAction instance (use action.respond() to send responses)
-    """
-    # Extract collected data
-    incident_description = session.responses.get('incident_description', '')
-    incident_location = session.responses.get('incident_location', '')
-    incident_media = session.responses.get('incident_media', '')
-    is_sensitive = session.responses.get('is_sensitive', '')
-    reporting_on_behalf = session.responses.get('reporting_on_behalf', '')
-    stakeholder_name = session.responses.get('stakeholder_name', '')
-    stakeholder_address = session.responses.get('stakeholder_address', '')
-    stakeholder_phone = session.responses.get('stakeholder_phone', '')
-    reporter_name = session.responses.get('reporter_name', '')
-    reporter_address = session.responses.get('reporter_address', '')
+        if len(value) < 10:
+            return ValidationStatus.INVALID, "Ask: Please provide the full address of the stakeholder"
 
-    # generated data 
-    title = "default title" 
-    generated_description = "default generated description"
-    reporter_phone = visitor.user_id
-    priority = "default report category"
-    category_id=1
-    ai_overview = "Incident Report R657224 documents a high-priority safety concern at 47 Main Street, where heavy construction equipment is being operated without proper safety barriers or signage near a public walkway. Reported by Jivas AI Agent for contact ID 395 on 28 January 2026. The absence of required protective measures poses a serious risk of injury to pedestrians and workers. Report remains open."
+        # Remove extra whitespace
+        value = value.strip()
 
-    import logging
-    logger = logging.getLogger(__name__)
+        return ValidationStatus.VALID, None
 
-    logger.info(f"Incident description: {incident_description}")
-    logger.info(f"Incident location: {incident_location}")
-    logger.info(f"Incident media: {incident_media}")
-    logger.info(f"Is sensitive: {is_sensitive}")
-    logger.info(f"Reporting on behalf: {reporting_on_behalf}")
-    logger.info(f"Stakeholder name: {stakeholder_name}")
-    logger.info(f"Stakeholder address: {stakeholder_address}")
-    logger.info(f"Stakeholder phone: {stakeholder_phone}")
-    logger.info(f"Reporter name: {reporter_name}")
-    logger.info(f"Reporter address: {reporter_address}")
-    logger.info(f"Reporter phone: {reporter_phone}")
-    logger.info(f"AI overview: {ai_overview}")
 
-    
+    @input_validator('stakeholder_phone')
+    def validate_stakeholder_phone(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that the stakeholder phone is not empty.
 
-    title = "Incident Report: Construction Safety Violation at 47 Main Street"
-    is_sensitive = True
-    generated_description = "On Monday, 27 January 2026 at approximately 2:15 PM, unsafe working conditions were observed at 47 Main Street. Heavy construction machinery is being operated in close proximity to an unprotected public footpath without installation of safety barriers, warning signs, cones, or flaggers. This violates standard construction safety protocols and creates a high risk of serious injury to passersby, especially vulnerable groups such as children and elderly persons. Immediate intervention and corrective action are strongly recommended to prevent potential accidents and ensure compliance with occupational health and safety regulations."
-    incident_description = "Heavy machinery operating unsafely near public walkway without barriers or signage at construction site."
-    # incident_media = []
-    priority = "high"
-    category_id = 28
-    reporting_on_behalf = "yes"
-    stakeholder_name = "John Doe"
-    stakeholder_address = "123 Main St"
-    stakeholder_phone = "5555555555"
-    reporter_name = "Jane Doe"
-    reporter_address = "123 Main St"
-    reporter_phone = "5926431530"
-    ai_overview = "Incident Report R657224 documents a high-priority safety concern at 47 Main Street, where heavy construction equipment is being operated without proper safety barriers or signage near a public walkway. Reported by Jivas AI Agent for contact ID 395 on 28 January 2026. The absence of required protective measures poses a serious risk of injury to pedestrians and workers. Report remains open."
-    
-    # resolv_api_action = await visitor.get_action(self.resolv_api_action)
-    resolv_api_action = await action.get_action("ResolvAPIAction")
-    if resolv_api_action:
-        result = await resolv_api_action.submit_report(
-            title=title,
-            is_anonymous=is_sensitive,
-            description=generated_description,
-            original_description=incident_description,
-            attachments=incident_media,
-            priority=priority,
-            category_id=category_id,
-            reporting_on_behalf=reporting_on_behalf,
-            stakeholder_name=stakeholder_name,
-            stakeholder_address=stakeholder_address,
-            stakeholder_phone=stakeholder_phone,
-            reporter_name=reporter_name,
-            reporter_phone=reporter_phone,
-            reporter_address=reporter_address,
-            ai_overview=ai_overview
-        )
+        Args:
+            value: The stakeholder phone string to validate
+            session: Interview session (for context)
+
+        Returns:
+            Tuple of (ValidationStatus, optional error message)
+        """
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please provide the contact number of the stakeholder"
+
+        # Remove extra whitespace
+        value = value.strip()
+
+        # Check for valid phone number format
+        if not re.match(r"^\d{10}$", value):
+            return (
+                ValidationStatus.INVALID,
+                "Tell the user: Please provide a valid 10-digit phone number",
+            )
+
+        return ValidationStatus.VALID, None
+
+
+    @input_validator('reporter_name')
+    def validate_reporter_name(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that the reporter name is not empty.
+
+        Args:
+            value: The reporter name string to validate
+            session: Interview session (for context)
+
+        Returns:
+            Tuple of (ValidationStatus, optional error message)
+        """
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please provide the name of the reporter"
+
+        # Remove extra whitespace
+        value = value.strip()
+
+        # Split by spaces and check for at least two parts (first and last name)
+        name_parts = value.split()
+        if len(name_parts) < 2:
+            return (
+                ValidationStatus.INVALID,
+                "Ask: Please provide both the first and last name of the reporter",
+            )
+
+        # Check that each part has at least 2 characters
+        for part in name_parts:
+            if len(part) < 2:
+                return (
+                    ValidationStatus.INVALID,
+                    "Tell the user: Each name part should be at least 2 characters long",
+                )
+
+        # Check for valid characters (letters, hyphens, apostrophes)
+        if not re.match(r"^[a-zA-Z\s\-\']+$", value):
+            return (
+                ValidationStatus.INVALID,
+                "Tell the user: Name should only contain letters, spaces, hyphens, and apostrophes",
+            )
+
+        return ValidationStatus.VALID, None
+
+
+    @input_validator('reporter_address')
+    def validate_reporter_address(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that the reporter address is not empty.
+
+        Args:
+            value: The reporter address string to validate
+            session: Interview session (for context)
+
+        Returns:
+            Tuple of (ValidationStatus, optional error message)
+        """
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please provide your full address"
+
+        if len(value) < 10:
+            return ValidationStatus.INVALID, "Ask: Please provide your full address"
+
+        # Remove extra whitespace
+        value = value.strip()
+
+        return ValidationStatus.VALID, None
+
+
+
+    # Branch functions
+    @branch_function()
+    def detect_sensitive_content(
+        session: InterviewSession,
+        visitor: InteractWalker
+    ) -> bool:
+        """Detect if incident report contains sensitive content requiring privacy protection.
         
-        logger.warning("Result: ")
-        logger.warning(result)
-    else:
-        logger.warning("Resolv API action not found")
+        Returns True to branch to privacy question, False to continue normal flow.
+        Checks both description and media for sensitive content indicators.
+        """
+        description = session.responses.get('incident_description', '').lower()
+        sensitive_keywords = ['abuse', 'assault', 'violence', 'threat', 'harassment', 'domestic', 'sexual']
+        
+        # Check description for sensitive keywords
+        has_sensitive_text = any(keyword in description for keyword in sensitive_keywords)
+        
+        return has_sensitive_text
 
-    # Send completion message
-    completion_message = (
-        f"Tell the user: Thank you, {reporter_name}! Your report for jvagent training is complete. "
-    )
-    await action.respond(visitor, directives=[completion_message])
 
-    # Clean up the session after processing
-    await session.cleanup()
+    @branch_function()
+    def check_for_similar_incidents(
+        session: InterviewSession,
+        visitor: InteractWalker
+    ) -> bool:
+        """Check for similar incident reports in the same location.
+        
+        Returns True if similar incidents found, triggering user confirmation.
+        This helps prevent duplicate reports and informs users of existing issues.
+        """
+        location = session.responses.get('incident_location', '').lower()
+        description = session.responses.get('incident_description', '').lower()
+
+        session.context['matching_reports'] = [
+            {
+                "id": "RL2FG12V", 
+                "description": "At a residence in South Ruimveldt, a woman is repeatedly being verbally and physically abused by her partner. Neighbours have heard loud shouting, threats such as “ah gon kill you,” and sounds of slapping and objects being thrown late at night. This has been happening for weeks. People hearing the noise and frighten because this man does lose control. The failure to intervene despite obvious warning signs places the victim at high risk of serious injury or death. Urgent protective action is required.",
+            },
+            {
+                "id": "RL1FG12W", 
+                "description": "A deh one house in South Ruimveldt, a woman been gettin cuss out and beat regular by she partner. Neighbours hear plenty loud shouting, serious threats like “ah gon kill you”, an sounds like slap, beat, and tings fling ’bout late night. Dis na one-time thing — dis been goin on fuh weeks now. People round de area frighten because de man does lose control real bad. De fact that nobody ain’t step in yet, even when de signs clear, put de woman life in serious danger. She could get bad hurt or even dead if something ain’t do quick. Immediate action need fuh protect she and stop dis abuse before it turn into something worse.",
+            }
+        ]
+        
+        # For demo purposes, always return True to show the flow
+        # In production, this would query a database of existing reports
+        return True
+
+
+
+    @on_interview_complete('ReportInterviewInteractAction')
+    async def handle_report_completion(
+        session: InterviewSession,
+        visitor: InteractWalker,
+        action: InteractAction
+    ) -> None:
+        """Handle completion of report interview.
+
+        This handler is called when the report interview is completed.
+        Process collected data, trigger downstream actions, or perform cleanup.
+
+        Args:
+            session: The completed interview session with all collected responses
+            visitor: The walker for accessing context and responding
+            action: The InteractAction instance (use action.respond() to send responses)
+        """
+        # Extract collected data
+        incident_description = session.responses.get('incident_description', '')
+        incident_location = session.responses.get('incident_location', '')
+        incident_media = session.responses.get('incident_media', '')
+        is_sensitive = session.responses.get('is_sensitive', '')
+        reporting_on_behalf = session.responses.get('reporting_on_behalf', '')
+        stakeholder_name = session.responses.get('stakeholder_name', '')
+        stakeholder_address = session.responses.get('stakeholder_address', '')
+        stakeholder_phone = session.responses.get('stakeholder_phone', '')
+        reporter_name = session.responses.get('reporter_name', '')
+        reporter_address = session.responses.get('reporter_address', '')
+
+        # generated data 
+        title = "default title" 
+        generated_description = "default generated description"
+        reporter_phone = visitor.user_id
+        priority = "default report category"
+        category_id=1
+        ai_overview = "Incident Report R657224 documents a high-priority safety concern at 47 Main Street, where heavy construction equipment is being operated without proper safety barriers or signage near a public walkway. Reported by Jivas AI Agent for contact ID 395 on 28 January 2026. The absence of required protective measures poses a serious risk of injury to pedestrians and workers. Report remains open."
+
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"Incident description: {incident_description}")
+        logger.info(f"Incident location: {incident_location}")
+        logger.info(f"Incident media: {incident_media}")
+        logger.info(f"Is sensitive: {is_sensitive}")
+        logger.info(f"Reporting on behalf: {reporting_on_behalf}")
+        logger.info(f"Stakeholder name: {stakeholder_name}")
+        logger.info(f"Stakeholder address: {stakeholder_address}")
+        logger.info(f"Stakeholder phone: {stakeholder_phone}")
+        logger.info(f"Reporter name: {reporter_name}")
+        logger.info(f"Reporter address: {reporter_address}")
+        logger.info(f"Reporter phone: {reporter_phone}")
+        logger.info(f"AI overview: {ai_overview}")
+
+        
+
+        title = "Incident Report: Construction Safety Violation at 47 Main Street"
+        is_sensitive = True
+        generated_description = "On Monday, 27 January 2026 at approximately 2:15 PM, unsafe working conditions were observed at 47 Main Street. Heavy construction machinery is being operated in close proximity to an unprotected public footpath without installation of safety barriers, warning signs, cones, or flaggers. This violates standard construction safety protocols and creates a high risk of serious injury to passersby, especially vulnerable groups such as children and elderly persons. Immediate intervention and corrective action are strongly recommended to prevent potential accidents and ensure compliance with occupational health and safety regulations."
+        incident_description = "Heavy machinery operating unsafely near public walkway without barriers or signage at construction site."
+        # incident_media = []
+        priority = "high"
+        category_id = 28
+        reporting_on_behalf = "yes"
+        stakeholder_name = "John Doe"
+        stakeholder_address = "123 Main St"
+        stakeholder_phone = "5555555555"
+        reporter_name = "Jane Doe"
+        reporter_address = "123 Main St"
+        reporter_phone = "5926431530"
+        ai_overview = "Incident Report R657224 documents a high-priority safety concern at 47 Main Street, where heavy construction equipment is being operated without proper safety barriers or signage near a public walkway. Reported by Jivas AI Agent for contact ID 395 on 28 January 2026. The absence of required protective measures poses a serious risk of injury to pedestrians and workers. Report remains open."
+        
+        # resolv_api_action = await visitor.get_action(self.resolv_api_action)
+        resolv_api_action = await action.get_action("ResolvAPIAction")
+        if resolv_api_action:
+            result = await resolv_api_action.submit_report(
+                title=title,
+                is_anonymous=is_sensitive,
+                description=generated_description,
+                original_description=incident_description,
+                attachments=incident_media,
+                priority=priority,
+                category_id=category_id,
+                reporting_on_behalf=reporting_on_behalf,
+                stakeholder_name=stakeholder_name,
+                stakeholder_address=stakeholder_address,
+                stakeholder_phone=stakeholder_phone,
+                reporter_name=reporter_name,
+                reporter_phone=reporter_phone,
+                reporter_address=reporter_address,
+                ai_overview=ai_overview
+            )
+            
+            logger.warning("Result: ")
+            logger.warning(result)
+        else:
+            logger.warning("Resolv API action not found")
+
+        # Send completion message
+        completion_message = (
+            f"Tell the user: Thank you, {reporter_name}! Your report for jvagent training is complete. "
+        )
+        await action.respond(visitor, directives=[completion_message])
+
+        # Clean up the session after processing
+        await session.cleanup()
 
 

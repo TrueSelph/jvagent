@@ -327,19 +327,21 @@ class InteractRouter(InteractAction):
     def _format_history(self, interaction_history: List[Dict[str, Any]]) -> str:
         """Format interaction history for the prompt with context signals.
 
-        Prepends a context line highlighting key signals from the last interaction:
-        - Whether the assistant asked a question
-        - Whether there's an ongoing activity
+        Prepends a context line highlighting key signals from the conversation:
+        - Whether the MOST RECENT assistant message was a question
+        - Any ongoing activity markers
+        
+        Appends a clear transition marker to indicate where the current user message follows.
 
         Handles both formats from conversation.get_interaction_history():
         - formatted=True: list of dicts with 'role' and 'content' (user/assistant/system)
         - formatted=False: list of dicts with 'utterance', 'response', 'events' per interaction
 
         Args:
-            interaction_history: List of interaction history entries
+            interaction_history: List of interaction history entries (chronological order: oldest → newest)
 
         Returns:
-            Formatted history string with context line
+            Formatted history string with context line and transition marker
         """
         if not interaction_history:
             return "(No previous conversation)"
@@ -348,35 +350,46 @@ class InteractRouter(InteractAction):
         first_entry = interaction_history[0] if interaction_history else {}
         is_role_content = isinstance(first_entry, dict) and "role" in first_entry and "content" in first_entry
 
-        # Extract context signals from the last entry
+        # Extract context signals: find the MOST RECENT assistant message (skip system/events)
         context_signals = []
-        last_entry = interaction_history[-1] if interaction_history else None
-
-        if last_entry and isinstance(last_entry, dict):
-            if is_role_content:
-                if last_entry.get("role") == "assistant":
-                    content = last_entry.get("content") or ""
-                    if content.strip().endswith("?"):
-                        context_signals.append("Last assistant asked a question")
-                for e in reversed(interaction_history[-10:]):
-                    if isinstance(e, dict) and (e.get("content") or "").startswith("[EVENT]"):
-                        ev = e["content"]
-                        if "Ongoing Activity:" in ev:
-                            activity_name = ev.replace("[EVENT] ", "").replace("Ongoing Activity:", "").strip()
-                            context_signals.append(f"Ongoing activity: {activity_name}")
-                            break
-            else:
-                if "ai" in last_entry:
-                    ai_msg = last_entry["ai"]
+        last_assistant_msg = None
+        
+        if is_role_content:
+            # Scan backwards through history to find the most recent assistant message
+            for entry in reversed(interaction_history):
+                if isinstance(entry, dict) and entry.get("role") == "assistant":
+                    last_assistant_msg = entry.get("content") or ""
+                    break
+            
+            # Check if the most recent assistant message was a question
+            if last_assistant_msg and last_assistant_msg.strip().endswith("?"):
+                context_signals.append("Most recent assistant message is a question")
+            
+            # Look for ongoing activity markers (most recent one)
+            for e in reversed(interaction_history):
+                if isinstance(e, dict) and (e.get("content") or "").startswith("[EVENT]"):
+                    ev = e["content"]
+                    if "Ongoing Activity:" in ev:
+                        activity_name = ev.replace("[EVENT] ", "").replace("Ongoing Activity:", "").strip()
+                        context_signals.append(f"Ongoing activity: {activity_name}")
+                        break
+        else:
+            # Custom dict format: find most recent assistant message
+            for entry in reversed(interaction_history):
+                if isinstance(entry, dict) and "ai" in entry:
+                    ai_msg = entry["ai"]
                     if ai_msg and ai_msg.strip().endswith("?"):
-                        context_signals.append("Last assistant asked a question")
-                if "events" in last_entry:
-                    for event in last_entry["events"]:
-                        ev_str = event.get("content", event) if isinstance(event, dict) else str(event)
-                        if "Ongoing Activity:" in ev_str:
-                            activity_name = ev_str.replace("[EVENT] ", "").replace("Ongoing Activity:", "").strip()
-                            context_signals.append(f"Ongoing activity: {activity_name}")
-                            break
+                        context_signals.append("Most recent assistant message is a question")
+                        break
+            
+            # Look for ongoing activity in most recent entry
+            if interaction_history and "events" in interaction_history[-1]:
+                for event in interaction_history[-1]["events"]:
+                    ev_str = event.get("content", event) if isinstance(event, dict) else str(event)
+                    if "Ongoing Activity:" in ev_str:
+                        activity_name = ev_str.replace("[EVENT] ", "").replace("Ongoing Activity:", "").strip()
+                        context_signals.append(f"Ongoing activity: {activity_name}")
+                        break
 
         # Build the history lines
         lines = []
@@ -387,10 +400,8 @@ class InteractRouter(InteractAction):
             lines.append(context_line)
             lines.append("")  # Empty line for readability
 
-        # Add the full history
+        # Add the full history (chronological order: oldest to newest)
         for i, entry in enumerate(interaction_history):
-            is_last = (i == len(interaction_history) - 1)
-
             if isinstance(entry, dict):
                 if is_role_content:
                     role = entry.get("role", "")
@@ -398,7 +409,8 @@ class InteractRouter(InteractAction):
                     if role == "user":
                         lines.append(f"User: {content}")
                     elif role == "assistant":
-                        if is_last and content.strip().endswith("?"):
+                        # Mark as question only if it ends with ?
+                        if content.strip().endswith("?"):
                             lines.append(f"Assistant (question): {content}")
                         else:
                             lines.append(f"Assistant: {content}")
@@ -414,13 +426,13 @@ class InteractRouter(InteractAction):
                         lines.append(f"User: {entry['utterance']}")
                     if "ai" in entry:
                         ai_msg = entry["ai"]
-                        if is_last and ai_msg and ai_msg.strip().endswith("?"):
+                        if ai_msg and ai_msg.strip().endswith("?"):
                             lines.append(f"Assistant (question): {ai_msg}")
                         else:
                             lines.append(f"Assistant: {ai_msg}")
                     elif "response" in entry and entry["response"]:
                         resp = entry["response"]
-                        if is_last and resp.strip().endswith("?"):
+                        if resp.strip().endswith("?"):
                             lines.append(f"Assistant (question): {resp}")
                         else:
                             lines.append(f"Assistant: {resp}")
@@ -433,6 +445,13 @@ class InteractRouter(InteractAction):
                                 lines.append(f"[EVENT] {ev_str}")
             elif isinstance(entry, str):
                 lines.append(entry)
+
+        # Add transition marker before current user message
+        if lines:
+            lines.append("")  # Empty line for separation
+            lines.append("---")
+            lines.append(">>> USER RESPONDS NOW <<<")
+            lines.append("---")
 
         return "\n".join(lines) if lines else "(No previous conversation)"
 

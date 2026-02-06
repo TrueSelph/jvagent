@@ -811,3 +811,249 @@ class QuestionWalker(Walker):
                 next_questions.append(default_next)
 
         return next_questions
+    async def detect_and_prune_altered_path(
+        self,
+        session: InterviewSession,
+        just_answered_field: str,
+        interview_action: Optional[Any] = None,
+        visitor: Optional["InteractWalker"] = None
+    ) -> bool:
+        """Detect branch path changes and intelligently prune obsolete responses.
+        
+        When a response is updated, its dependent branch functions are invalidated.
+        This method detects if the branching path has changed and prunes responses
+        from questions that are no longer reachable on the new path. If a path change
+        is detected, the interview is reset to the branching point to allow fresh
+        traversal of the new path.
+        
+        Pruning preserves audit trails in session.context for debugging/undo.
+        
+        Args:
+            session: Interview session
+            just_answered_field: Question that was just answered/updated
+            interview_action: Optional InterviewInteractAction for node lookups
+            visitor: Optional InteractWalker for branch evaluation context
+            
+        Returns:
+            True if path change was detected and interview was reset, False otherwise
+        """
+        from ..utils.cache_utils import BranchFunctionCache
+        
+        if not session.question_graph:
+            return False
+        
+        branch_cache = BranchFunctionCache(session)
+        
+        # Find question in graph
+        question_map = {q.get("name"): q for q in session.question_graph}
+        question_config = question_map.get(just_answered_field)
+        
+        if not question_config:
+            return False
+        
+        # Check if this question has branches
+        branches = question_config.get("branches", [])
+        if not branches:
+            # No branches on this question, no path change possible
+            return False
+        
+        # Get the previous branch path (if recorded)
+        previous_path = branch_cache.get_previous_path(just_answered_field)
+        
+        # Determine the new path
+        new_path = None
+        condition_index = -1
+        is_default = False
+        
+        # Evaluate branches to find new path
+        for idx, branch in enumerate(branches):
+            condition = branch.get("condition", {})
+            if await QuestionBranchEvaluator.matches(
+                condition, session, implicit_question=just_answered_field, visitor=visitor
+            ):
+                new_path = branch.get("target")
+                condition_index = idx
+                is_default = False
+                break
+        
+        # If no branch matched, use default_next
+        if new_path is None:
+            default_next = question_config.get("default_next")
+            if default_next:
+                new_path = default_next
+                condition_index = -1
+                is_default = True
+        
+        # Record new path for future reference
+        if new_path:
+            branch_cache.record_branch_path(just_answered_field, condition_index, new_path, is_default)
+        
+        # If previous path exists and differs from new path, prune responses from old branch
+        if previous_path and new_path and previous_path.get("target") != new_path:
+            logger.info(
+                f"QuestionWalker: Branch path changed for '{just_answered_field}'. "
+                f"Old target: {previous_path['target']}, New target: {new_path}. "
+                f"Pruning responses from unreachable questions and resetting interview."
+            )
+            
+            # Get valid questions on new path via graph traversal
+            valid_questions_on_new_path = await self._get_reachable_questions(
+                session, just_answered_field, new_path, interview_action
+            )
+            
+            # Find and prune responses that are no longer on any valid path
+            answered_questions = session.get_answered_questions()
+            pruned_questions = []
+            for question_name in answered_questions:
+                if question_name not in valid_questions_on_new_path:
+                    # This question is not on the new path, prune its response
+                    old_value = session.responses.get(question_name)
+                    if old_value is not None:
+                        session.responses.pop(question_name, None)
+                        pruned_questions.append(question_name)
+                        # Record pruned response for audit trail
+                        branch_cache.record_pruned_response(
+                            question_name,
+                            old_value,
+                            f"branch_path_change: {previous_path['target']} -> {new_path}"
+                        )
+                        logger.debug(
+                            f"QuestionWalker: Pruned response for '{question_name}' "
+                            f"(value={old_value!r}) due to branch path change"
+                        )
+            
+            # Reset interview to branching point for fresh traversal of new path
+            await self._reset_to_branching_point(
+                session,
+                just_answered_field,
+                new_path,
+                interview_action
+            )
+            
+            # Build detailed change info and save to session.context for callers
+            details = {
+                "branching_question": just_answered_field,
+                "old_target": previous_path.get("target"),
+                "new_target": new_path,
+                "is_default": is_default,
+                "condition_index": condition_index,
+                "pruned_questions": pruned_questions,
+            }
+
+            if session.context is None:
+                session.context = {}
+            session.context["_branch_change_details"] = details
+            await session.save()
+
+            return True
+
+        return False
+    
+    async def _reset_to_branching_point(
+        self,
+        session: InterviewSession,
+        branching_question: str,
+        new_target: str,
+        interview_action: Optional[Any] = None
+    ) -> None:
+        """Reset interview state to branching point and prepare for new path traversal.
+        
+        When a branching path changes due to response update, this method resets the
+        interview's active_question_key to None, forcing a fresh traversal of the new
+        path. This ensures that users are guided through all necessary questions on
+        the new branch.
+        
+        Args:
+            session: Interview session
+            branching_question: Question with the changed branch condition
+            new_target: New target question for the branch
+            interview_action: Optional InterviewInteractAction for state management
+        """
+        # Clear active question to force re-traversal from current position
+        session.active_question_key = None
+        
+        # Record reset in audit trail
+        if "_interview_resets" not in session.context:
+            session.context["_interview_resets"] = []
+        
+        session.context["_interview_resets"].append({
+            "branching_question": branching_question,
+            "new_target": new_target,
+            "timestamp": str(__import__("datetime").datetime.now()),
+            "previous_active_question": None  # Will be set below
+        })
+        
+        # Save session with reset state
+        await session.save()
+        
+        logger.info(
+            f"QuestionWalker: Reset interview to branching point. "
+            f"Branching question: {branching_question}, New target: {new_target}. "
+            f"Interview will traverse new path from current position."
+        )
+    
+    async def _get_reachable_questions(
+        self,
+        session: InterviewSession,
+        from_question: str,
+        to_target: str,
+        interview_action: Optional[Any] = None
+    ) -> set:
+        """Get all questions reachable from a starting question to a target.
+        
+        Performs graph traversal to find all questions in the valid path from
+        from_question to to_target, following conditional branches.
+        
+        Args:
+            session: Interview session
+            from_question: Starting question name
+            to_target: Target question/state name
+            interview_action: Optional InterviewInteractAction for node lookups
+            
+        Returns:
+            Set of question names reachable on the path
+        """
+        reachable = {from_question}
+        to_visit = [to_target] if to_target else []
+        visited = {from_question}
+        
+        if not session.question_graph:
+            return reachable
+        
+        question_map = {q.get("name"): q for q in session.question_graph}
+        
+        while to_visit:
+            current = to_visit.pop(0)
+            
+            # Skip state targets
+            if self._is_state_target(current):
+                continue
+            
+            if current in visited:
+                continue
+            
+            visited.add(current)
+            reachable.add(current)
+            
+            # Get next questions from current
+            current_config = question_map.get(current)
+            if not current_config:
+                continue
+            
+            branches = current_config.get("branches", [])
+            if branches:
+                # For reachability analysis, assume all branches are potentially valid
+                # (we can't determine real conditions without responses)
+                for branch in branches:
+                    target = branch.get("target")
+                    if target and not self._is_state_target(target):
+                        if target not in visited:
+                            to_visit.append(target)
+            
+            # Also follow default_next
+            default_next = current_config.get("default_next")
+            if default_next and not self._is_state_target(default_next):
+                if default_next not in visited:
+                    to_visit.append(default_next)
+        
+        return reachable

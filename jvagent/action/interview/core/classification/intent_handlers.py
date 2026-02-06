@@ -288,7 +288,7 @@ class DeclineHandler(IntentHandler):
             question_walker = QuestionWalker()
             question_walker.interview_session = session
             question_walker.interaction = interaction
-            await self.action._update_reachable_questions(session, question_walker, just_answered_field=field)
+            await self.action._update_reachable_questions(session, question_walker, just_answered_field=field, visitor=visitor)
             
             logger.debug(
                 f"{self.action.get_class_name()}: Declined non-required field {field}, stored as '{decline_value}'. "

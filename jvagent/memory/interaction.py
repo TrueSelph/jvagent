@@ -74,7 +74,7 @@ class Interaction(DeferredSaveMixin, Node):
     )
     intent_type: Optional[str] = attribute(
         default=None,
-        description="Classified intent type: REQUEST, QUERY, ANSWER, NAVIGATION, CONTINUATION, or AMBIGUOUS"
+        description="Classified intent type"
     )
     anchors: List[str] = attribute(
         default_factory=list,
