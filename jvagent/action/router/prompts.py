@@ -62,8 +62,9 @@ RULES:
 4. Only route to ongoing activity if the current user message is directly engaging with it
 5. Actions must be exact keys from Available actions (e.g., "SignupInterviewInteractAction"), NOT anchor descriptions
 6. If the most recent assistant message in the history was a question, and the current user message appears to answer it, use INTERACTIVE (not CONVERSATIONAL)
-7. If context shows an ongoing activity and the current user message relates to it, use INTERACTIVE and route to that action
-8. Lower confidence if ambiguous or uncertain{optional_instructions}
+7. If the user asks a question about the agent's role, capabilities, or purpose, use CONVERSATIONAL
+8. If context shows an ongoing activity and the current user message relates to it, use INTERACTIVE and route to that action
+9. Lower confidence if ambiguous or uncertain {optional_instructions}
 
 OUTPUT (JSON only):
 {{
