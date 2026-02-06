@@ -114,6 +114,10 @@ class PersonaAction(Action):
             {
                 "condition": "The user has diverged from the ongoing activity highlghted in conversation history",
                 "response": "Respond but in closing, remind the user to return to complete the ongoing activity"
+            },
+            {
+                "condition": "You are likely to mention how recent your knowledge cutoff is",
+                "response": "Do not give explicit details about your knowledge cutoff. Instead, respond with a general statement like 'I have access to a wealth of information but I admit I do not know everything"
             }
         ],
         description="Standard collection of configurable parameters to apply when executing the prompt",
@@ -178,7 +182,7 @@ class PersonaAction(Action):
         # Duplicate prevention is handled by interaction.add_parameters()
         persona_action_name = self.get_class_name()
         persona_parameters_to_add = list(self.parameters) if self.parameters is not None else []
-        
+
         if persona_parameters_to_add:
             # Only save if parameters were actually added (not duplicates)
             if interaction.add_parameters(persona_parameters_to_add, persona_action_name):
@@ -242,7 +246,7 @@ class PersonaAction(Action):
         and save. When there is a bus and streaming: no-op (model already published).
         When there is a bus and non-streaming: PersonaAction is the sole publisher;
         call publish once.
-        
+
         Args:
             response: The response content
             interaction: The interaction object
@@ -317,7 +321,7 @@ class PersonaAction(Action):
                 if response_clean.endswith("```"):
                     response_clean = response_clean[:-3]
                 response_clean = response_clean.strip()
-                
+
                 data = json.loads(response_clean)
             else:
                 data = response
@@ -328,13 +332,13 @@ class PersonaAction(Action):
                 last_revision = data["revisions"][-1]
                 if "content" in last_revision:
                     final_content = last_revision["content"]
-                    
+
                     # Log insights and context evaluation if available (for debugging)
                     if "insights" in data:
                         logger.debug(f"PersonaAction insights: {data['insights']}")
                     if "context_evaluation" in data:
                         logger.debug(f"PersonaAction context evaluation: {data['context_evaluation']}")
-                    
+
                     return final_content
 
             # Fallback: if no revisions, return the whole response
@@ -372,7 +376,7 @@ class PersonaAction(Action):
         continuation_guidance = ""
         if interaction.response:
             from jvagent.memory.conversation import Conversation
-            
+
             previous_response = await Conversation.truncate_statement(
                 interaction.response or "",
                 max_length=2000,
@@ -404,7 +408,7 @@ class PersonaAction(Action):
         # Build directives section
         if applicable_directives:
             directive_list = "\n".join(
-                f"{i+1}. {d.get('content', str(d))}" 
+                f"{i+1}. {d.get('content', str(d))}"
                 for i, d in enumerate(applicable_directives)
             )
             directives_section = DIRECTIVES_SECTION_PROMPT.format(
@@ -417,7 +421,7 @@ class PersonaAction(Action):
         # Build parameters section
         if applicable_parameters:
             parameter_list = "\n".join(
-                format_parameter(p, index=i+1) 
+                format_parameter(p, index=i+1)
                 for i, p in enumerate(applicable_parameters)
             )
             parameters_section = PARAMETERS_SUB_PROMPT.format(parameter_list=parameter_list)
@@ -550,10 +554,10 @@ class PersonaAction(Action):
         transient: bool,
     ) -> str:
         """Generate response using direct prompt approach.
-        
+
         Composes the system prompt using _compose_prompt() and makes the language
         model call via model_action.generate() with system prompt and conversation history.
-        
+
         Args:
             interaction: The active interaction object
             visitor: Optional InteractWalker for streaming support
@@ -567,7 +571,7 @@ class PersonaAction(Action):
             with_response: Include AI responses in history
             max_statement_length: Truncate to this length
             transient: If True, skip appending response to interaction.response
-            
+
         Returns:
             Generated response string
         """
@@ -609,7 +613,7 @@ class PersonaAction(Action):
         try:
             # Enable JSON response format if structured output is requested
             response_format = {"type": "json_object"} if self.use_structured_output else None
-            
+
             response = await model_action.generate(
                 prompt=prompt,
                 stream=streaming,
