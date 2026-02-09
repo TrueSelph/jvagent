@@ -40,6 +40,16 @@ class QuestionNode(Node):
     
     description: str = "Interview question node for gathering user information"
     
+    agent_id: str = attribute(
+        default=None,
+        description="ID of the agent this question node belongs to"
+    )
+    
+    interview_type: str = attribute(
+        default=None,
+        description="Type of interview this question belongs to (e.g., 'SignupInterviewInteractAction')"
+    )
+        
     state: Dict[str, Any] = attribute(
         default={},
         description="Question configuration containing 'name', 'question', 'constraints', and 'required'",
@@ -49,6 +59,8 @@ class QuestionNode(Node):
         default_factory=str,
         description="Label for the node (typically the question name)",
     )
+    
+    _interview_action: Optional[Any] = None  # Cached reference to the InterviewInteractAction class for handler
 
     async def on_register(self) -> None:
         """Register the node."""
@@ -151,9 +163,9 @@ class QuestionNode(Node):
         # First, try to get handler from decorator registry (if action class is available)
         handler = None
         if question_name and session:
-            action_class = self._get_action_class_from_session(session)
-            if action_class:
-                handler = action_class.get_input_handler(question_name)
+            action = self._interview_action
+            if action:
+                handler = action.get_input_handler(question_name)
         
         # Fallback to question config string reference
         if not handler:
@@ -178,46 +190,7 @@ class QuestionNode(Node):
         
         # Default: return input as-is
         return raw_input
-    
-    def _get_action_class_from_session(self, session: "InterviewSession") -> Optional[Any]:
-        """Get the InterviewInteractAction class from session's interview_type.
-        
-        Args:
-            session: Interview session with interview_type
             
-        Returns:
-            Action class if found, None otherwise
-        """
-        if not hasattr(session, 'interview_type') or not session.interview_type:
-            return None
-        
-        interview_type = session.interview_type
-        
-        try:
-            # Import the action module and get the class
-            # The interview_type is the class name (e.g., "SignupInterviewInteractAction")
-            # We need to find the module that contains this class
-            import sys
-            import inspect
-            
-            # Search through loaded modules for the class
-            for module_name, module in sys.modules.items():
-                if module is None:
-                    continue
-                try:
-                    if hasattr(module, interview_type):
-                        cls = getattr(module, interview_type)
-                        # Check if it's a subclass of InterviewInteractAction
-                        from jvagent.action.interview.interview_interact_action import InterviewInteractAction
-                        if inspect.isclass(cls) and issubclass(cls, InterviewInteractAction):
-                            return cls
-                except Exception:
-                    continue
-        except Exception as e:
-            logger.error(f"Exception while searching for action class '{interview_type}': {e}", exc_info=True)
-            pass
-        return None
-    
     async def get_context_data(
         self,
         session: "InterviewSession",
@@ -387,15 +360,14 @@ class QuestionNode(Node):
         if session and question_key in session.get_answered_questions():
             return None
 
+        self._interview_action = getattr(walker, 'interview_action', None)
         constraints = self.state.get("constraints", {})
         question = self.state.get("question", "")
         description = constraints.get("description", "")
         instructions = constraints.get("instructions", "")
-
-        # Get template from walker (supplied by InterviewInteractAction)
-        directive_template = getattr(walker, 'question_directive_template', None)
         
         # Return None if template not provided
+        directive_template = self._interview_action.config.templates.question_directive if self._interview_action else None
         if not directive_template:
             return None
 
@@ -499,9 +471,9 @@ class QuestionNode(Node):
         
         # Try decorator registry first
         if question_name and session:
-            action_class = self._get_action_class_from_session(session)
-            if action_class:
-                validator = action_class.get_input_validator(question_name)
+            action = self._interview_action
+            if action:
+                validator = action.get_input_validator(question_name)
                 if validator:
                     return validator
         

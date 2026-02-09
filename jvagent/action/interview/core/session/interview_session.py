@@ -70,10 +70,10 @@ class InterviewSession(Node):
         description="History of updates: [{field, old_value, new_value, timestamp}]"
     )
     
-    # Active question tracking (user-specific state)
-    active_question_key: Optional[str] = attribute(
+    # Target node tracking (user-specific state)
+    target_node: Optional[str] = attribute(
         default=None,
-        description="Currently active question key - tracks position in interview tree. Updated by QuestionWalker as questions are asked/answered. Used for resuming from last position and handling revisions."
+        description="Node ID of the current target node (QuestionNode, StateNode, or InterviewInteractAction). Determines where the walker will spawn on next interaction. Updated after intent classification and during walker traversal."
     )
     
     # Timestamps
@@ -84,6 +84,11 @@ class InterviewSession(Node):
     completed_at: Optional[datetime] = attribute(
         default=None,
         description="Session completion timestamp"
+    )
+    # Last modified timestamp used for caching and pruning decisions
+    last_modified: Optional[datetime] = attribute(
+        default=None,
+        description="Last modified timestamp for session persistence and cache invalidation"
     )
     
     # Reference to conversation
@@ -212,7 +217,7 @@ class InterviewSession(Node):
     
     async def reset(self) -> None:
         """Reset session to initial state, clearing all responses.
-        
+
         Keeps interview_type and conversation_id intact.
         """
         self.state = InterviewState.ACTIVE
@@ -220,9 +225,28 @@ class InterviewSession(Node):
         self.validation_results = {}
         self.context = {}
         self.update_history = []
-        self.active_question_key = None
+        self.target_node = None
         self.completed_at = None
         await self.save()
+
+    async def save(self, *args, **kwargs):
+        """Override save to update last_modified timestamp before persisting."""
+        try:
+            self.last_modified = datetime.now()
+        except Exception:
+            # Best-effort; do not block save on timestamp issues
+            pass
+        # If batching is enabled, mark that changes occurred and defer actual save
+        if getattr(self, "_batching", False):
+            setattr(self, "_batched_changes", True)
+            return None
+
+        # Call Node.save() dynamically to avoid direct import issues
+        try:
+            return await super().save(*args, **kwargs)
+        except Exception:
+            # Some tests or contexts may not have async save behavior; re-raise
+            raise
     
     async def cleanup(self) -> None:
         """Cleanup session data and edges.
@@ -298,4 +322,28 @@ class InterviewSession(Node):
             "completed_at": self.completed_at,
             "validation_results": self.validation_results.copy(),
         }
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def batch_save(self):
+        """Async context manager to batch multiple changes and perform a single save.
+
+        While inside the context, calls to `await session.save()` will be deferred
+        and only a single save will be performed when the context exits (if any
+        changes occurred). This reduces redundant persistence operations.
+        """
+        # Enable batching
+        setattr(self, "_batching", True)
+        setattr(self, "_batched_changes", False)
+        try:
+            yield
+        finally:
+            # Disable batching and flush a single save if changes occurred
+            setattr(self, "_batching", False)
+            if getattr(self, "_batched_changes", False):
+                try:
+                    await super(InterviewSession, self).save()
+                finally:
+                    setattr(self, "_batched_changes", False)
 

@@ -239,7 +239,7 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
     @branch_function()
     def search_for_report(
         session: InterviewSession,
-        visitor: InteractWalker
+        visitor: Optional[InteractWalker] = None
     ) -> bool:
         """Search for completed reports matching the user's description.
         
@@ -264,7 +264,7 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
 
 
     @branch_function()
-    async def can_ask_for_media(session: InterviewSession, visitor: InteractWalker) -> bool:
+    async def can_ask_for_media(session: InterviewSession, visitor: Optional[InteractWalker] = None) -> bool:
         """Check if the user can be asked for media using LLM reasoning."""
         
         import logging

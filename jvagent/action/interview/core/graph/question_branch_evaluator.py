@@ -118,7 +118,7 @@ class QuestionBranchEvaluator:
         is_existence_check = operator in ("exists", "is_set", "not_exists", "is_not_set")
         
         if not is_existence_check:
-            if question_name not in session.get_answered_questions():
+            if question_name not in session.responses:
                 logger.debug(
                     f"Function condition check skipped: question '{question_name}' not answered yet. "
                     f"Condition: {condition}"
@@ -264,6 +264,16 @@ class QuestionBranchEvaluator:
                 )
                 return False
 
+        # Use branch cache to avoid repeated evaluation for the same operator+question
+        from ..utils.cache_utils import BranchFunctionCache
+        branch_cache = BranchFunctionCache(session)
+        cache_key = branch_cache._make_cache_key(question_name, condition)
+        cached_entry = branch_cache.get(cache_key)
+        if cached_entry is not None:
+            cached_result = cached_entry.get("result")
+            logger.debug(f"Branch cache HIT (operator) for question '{question_name}': {cached_result!r}")
+            return bool(cached_result) if operator not in ("exists", "is_set", "not_exists", "is_not_set") else ConditionOperator.evaluate(operator, cached_entry.get('result'))
+
         actual_value = session.responses.get(question_name)
 
         # Handle existence operators (don't require value to be set)
@@ -296,6 +306,11 @@ class QuestionBranchEvaluator:
                 f"Operator '{operator}' evaluation for '{question_name}': "
                 f"actual_value={actual_value!r}, expected_value={expected_value!r}, result={result}"
             )
+            # Cache operator result with dependency on the implicit question
+            try:
+                branch_cache.set(cache_key, result, {question_name})
+            except Exception:
+                logger.debug("Failed to set branch cache for operator condition; continuing without cache")
             return result
         except ValueError as e:
             logger.warning(f"Invalid operator '{operator}' in condition for question '{question_name}': {e}")

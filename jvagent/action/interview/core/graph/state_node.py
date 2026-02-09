@@ -34,6 +34,16 @@ class StateNode(Node):
     
     description: str = "Interview state transition node"
     
+    agent_id: str = attribute(
+        default=None,
+        description="ID of the agent this question belongs to"
+    )
+        
+    interview_type: str = attribute(
+        default=None,
+        description="Type of interview this question belongs to (e.g., 'SignupInterviewInteractAction')"
+    )
+        
     state_type: InterviewState = attribute(
         default=InterviewState.ACTIVE,
         description="The interview state this node represents (REVIEW, COMPLETED, CANCELLED)"

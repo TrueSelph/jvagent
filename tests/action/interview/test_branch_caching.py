@@ -60,6 +60,9 @@ async def test_session_with_dynamic_branches(test_db):
         question_index=question_index,
         state=InterviewState.ACTIVE,
     )
+    # Manually set question_graph from question_index if not set
+    if not session.question_graph:
+        session.question_graph = question_index
     return session
 
 
@@ -316,7 +319,8 @@ class TestResponsePruning:
         for question_name, data in pruned.items():
             assert "value" in data
             assert "reason" in data
-            assert "timestamp" in data
+            assert "pruned_at" in data
+            assert "dependency_snapshot" in data
 
 
 class TestBranchCachingIntegration:
@@ -397,14 +401,16 @@ class TestInterviewReset:
         session = test_session_with_dynamic_branches
         session.responses = {"report_description": "urgent incident with sensitive info"}
         session.active_question_key = "report_description"
+        await session.save()
         
-        # Record initial path
+        # Record initial path (was "is_sensitive")
         branch_cache = BranchFunctionCache(session)
         branch_cache.record_branch_path("report_description", 0, "is_sensitive", False)
+        await session.save()
         
         walker = QuestionWalker()
         
-        # Mock branch evaluator to simulate path change
+        # Mock branch evaluator to simulate path change (all conditions false → default_next)
         with patch.object(
             QuestionBranchEvaluator,
             "matches",
@@ -415,27 +421,29 @@ class TestInterviewReset:
                 session, "report_description"
             )
         
-        # Path changed (was "is_sensitive", now "contact_info")
+        # Path changed (was "is_sensitive", now "contact_info" via default_next)
         assert result is True
     
     @pytest.mark.asyncio
-    async def test_reset_clears_active_question(
+    async def test_reset_sets_active_to_branching_question(
         self, test_session_with_dynamic_branches
     ):
-        """Test that reset clears active_question_key."""
+        """Test that reset sets active_question_key to the branching question for stepwise traversal."""
         from jvagent.action.interview.core.graph.question_walker import QuestionWalker
-        
+
         session = test_session_with_dynamic_branches
         session.active_question_key = "is_sensitive"
-        
+
         walker = QuestionWalker()
         await walker._reset_to_branching_point(
             session,
             "report_description",
             "contact_info"
         )
-        
-        assert session.active_question_key is None
+
+        # After reset, active_question_key should point to the branching question
+        # so walker starts there and takes one step to new_target (stepwise traversal)
+        assert session.active_question_key == "report_description"
     
     @pytest.mark.asyncio
     async def test_reset_records_audit_trail(
@@ -479,10 +487,12 @@ class TestInterviewReset:
             "is_sensitive": "yes",  # This will be pruned if path changes
         }
         session.active_question_key = "is_sensitive"
+        await session.save()
         
         # Record initial path through is_sensitive
         branch_cache = BranchFunctionCache(session)
         branch_cache.record_branch_path("report_description", 0, "is_sensitive", False)
+        await session.save()
         
         walker = QuestionWalker()
         
@@ -499,17 +509,18 @@ class TestInterviewReset:
         
         # Path changed and interview reset
         assert result is True
-        assert session.active_question_key is None
+        # After reset, active_question_key points to the branching question (stepwise traversal)
+        assert session.active_question_key == "report_description"
         
-        # Check that response was pruned if is_sensitive is not on default path
-        pruned = session.context.get("_branch_function_pruned_responses", {})
-        # The is_sensitive response may or may not be pruned depending on graph structure
-        # Check that audit trail exists if pruning occurred
-        if "is_sensitive" not in session.responses and "is_sensitive" not in [
-            q.get("name") for q in session.question_graph if q.get("name")
-        ]:
-            # Response was removed (pruning successful)
-            assert "is_sensitive" not in session.responses
+        # When path changes from is_sensitive to contact_info (default_next),
+        # is_sensitive is no longer on the path and should be pruned
+        assert "is_sensitive" not in session.responses, "is_sensitive should be pruned from old path"
+        assert "report_description" in session.responses, "report_description should remain"
+        
+        # Check that branch change details were recorded
+        change_details = session.context.get("_branch_change_details", {})
+        assert change_details.get("old_target") == "is_sensitive"
+        assert change_details.get("new_target") == "contact_info"
     
     @pytest.mark.asyncio
     async def test_multiple_resets_recorded(

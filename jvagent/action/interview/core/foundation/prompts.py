@@ -153,6 +153,8 @@ CLASSIFICATION_RULES_CORE = """CRITICAL RULE - CHECK THIS FIRST:
     5. DECLINE - User explicitly refuses to answer an optional question (only non-required fields)
        - Only use when user explicitly declines to answer (e.g., "I don't want to answer", "skip this", "I'd rather not provide that", "I'd prefer not to say")
        - Must specify field name (use active question from entities_to_extract)
+       - Check the field's marker in entities_to_extract: only fields marked [OPTIONAL] can be declined
+       - Fields marked [REQUIRED] cannot be declined - classify refusal as NONE and let validation handle it
        - CRITICAL: Invalid choices/values should be SUBMISSION, not DECLINE. If user provides a value that doesn't match constraints, selects an invalid option, or provides wrong type/format, classify as SUBMISSION (validation will handle them as INVALID)
 
     6. NONE - No clear intent
@@ -209,9 +211,8 @@ USER INPUT (contains router interpretation with reasoning):
 
 CONTEXT:
 - Current state: {{current_state}}
-- Answered fields: {{answered_fields}}
+- Answered fields (with current values): {{answered_fields}}
 - Unanswered fields: {{entities_to_extract}}
-- Required fields: {{required_fields_info}}
 
 CRITICAL: Before classifying intent, check if ANY field mentioned by the user appears in "Unanswered fields" above. If it does, classify as SUBMISSION, NOT UPDATE, regardless of the user's language.
 

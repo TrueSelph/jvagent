@@ -2,6 +2,14 @@
 
 This module provides a service layer that coordinates between different
 interview components (classification, state handling, response processing, etc.).
+
+NOTE: The new target-node architecture in InterviewInteractAction.execute()
+handles the main interview flow via QuestionWalker.traverse_from_target().
+This service is now primarily used for:
+- build_question_graph(): Building the QuestionNode/StateNode graph structure
+- classify_and_extract(): Delegating to ClassificationHandler
+
+The generate_directive() method is DEPRECATED - use the walker-based flow instead.
 """
 
 import logging
@@ -10,10 +18,6 @@ from typing import TYPE_CHECKING, Any, Optional
 from ..classification.classification_handler import ClassificationHandler as ClassificationService
 from .interview_session import InterviewSession
 from ..graph.question_graph_builder import QuestionGraphBuilder
-from ..processing.response_processor import ResponseProcessor
-from ..state.state_handlers import StateHandler
-from ..state.state_machine import InterviewStateMachine
-from ..foundation.enums import InterviewState, Intent
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -25,51 +29,36 @@ logger = logging.getLogger(__name__)
 
 class InterviewService:
     """Service class that orchestrates interview components.
-    
+
     This class provides a unified interface for coordinating between
-    classification, state handling, response processing, and question building.
+    classification and question building. The main interview flow is now
+    handled by InterviewInteractAction.execute() using the walker pattern.
     """
-    
+
     def __init__(self, action: "InterviewInteractAction"):
         """Initialize interview service with action instance.
-        
+
         Args:
             action: InterviewInteractAction instance
         """
         self.action = action
         self._classifier = None
-        self._state_handler = None
-        self._response_processor = None
         self._question_builder = None
-    
+
     @property
     def classifier(self) -> ClassificationService:
         """Get or create classification service."""
         if self._classifier is None:
             self._classifier = ClassificationService(self.action)
         return self._classifier
-    
-    @property
-    def state_handler(self) -> StateHandler:
-        """Get or create state handler."""
-        if self._state_handler is None:
-            self._state_handler = StateHandler(self.action)
-        return self._state_handler
-    
-    @property
-    def response_processor(self) -> ResponseProcessor:
-        """Get or create response processor."""
-        if self._response_processor is None:
-            self._response_processor = ResponseProcessor(self.action)
-        return self._response_processor
-    
+
     @property
     def question_builder(self) -> QuestionGraphBuilder:
         """Get or create question graph builder."""
         if self._question_builder is None:
             self._question_builder = QuestionGraphBuilder(self.action)
         return self._question_builder
-    
+
     async def classify_and_extract(
         self,
         session: InterviewSession,
@@ -78,83 +67,20 @@ class InterviewService:
         visitor: "InteractWalker"
     ) -> "ClassificationResult":
         """Classify user intent and extract field values.
-        
+
         Args:
             session: Interview session
             utterance: User's utterance
             interaction: Current interaction
             visitor: InteractWalker
-            
+
         Returns:
             ClassificationResult with intent and extracted data
         """
         return await self.classifier.classify_and_extract(
             session, utterance, interaction, visitor
         )
-    
+
     async def build_question_graph(self) -> None:
         """Build QuestionNode and StateNode graph from question_graph."""
         await self.question_builder.build_question_graph()
-    
-    async def generate_directive(
-        self,
-        session: InterviewSession,
-        classification_result: "ClassificationResult",
-        visitor: "InteractWalker",
-        interaction: "Interaction"
-    ) -> None:
-        """Generate and send directive based on session state and classification result.
-
-        Args:
-            session: Interview session
-            classification_result: Result from classification routine
-            visitor: InteractWalker
-            interaction: Current interaction
-        """
-        # Create state machine for transition management
-        state_machine = InterviewStateMachine(session)
-        
-        # Handle high-priority intents that cause immediate state transitions
-        # CANCELLATION: Highest priority - can occur in any state
-        if classification_result.intent == Intent.CANCELLATION and session.state != InterviewState.CANCELLED:
-            await state_machine.safe_transition_to(
-                InterviewState.CANCELLED,
-                reason="User cancellation",
-                context=self.action.get_class_name()
-            )
-
-        # CONFIRMATION: Only valid in REVIEW state - transition to COMPLETED immediately
-        if classification_result.intent == Intent.CONFIRMATION and session.state == InterviewState.REVIEW:
-            success = await state_machine.safe_transition_to(
-                InterviewState.COMPLETED,
-                reason="User confirmation",
-                context=self.action.get_class_name()
-            )
-            if success:
-                await self.state_handler.generate_completed_directive(session, visitor)
-                return  # Exit early - completion handled in same turn
-
-        # Route to state-specific handlers (pass state_machine for transitions)
-        if session.state == InterviewState.ACTIVE:
-            await self.state_handler.generate_active_directive(session, classification_result, visitor, interaction, state_machine)
-            # Handle cascading transition: ACTIVE -> REVIEW (when all questions answered)
-            if session.state == InterviewState.REVIEW:
-                await self.state_handler.generate_review_directive(session, classification_result, visitor, state_machine)
-                # Handle cascading transition: REVIEW -> COMPLETED (if CONFIRMATION was missed)
-                if session.state == InterviewState.COMPLETED:
-                    await self.state_handler.generate_completed_directive(session, visitor)
-
-        elif session.state == InterviewState.REVIEW:
-            # Handle REVIEW state (UPDATE intent, unclear responses, first-time summary display)
-            await self.state_handler.generate_review_directive(session, classification_result, visitor, state_machine)
-
-        elif session.state == InterviewState.COMPLETED:
-            # Handle already-completed state (e.g., from previous interaction)
-            await self.state_handler.generate_completed_directive(session, visitor)
-
-        elif session.state == InterviewState.CANCELLED:
-            # Handle cancelled state (cleanup and message)
-            await self.state_handler.generate_cancelled_directive(session, visitor)
-
-        else:
-            logger.warning(f"{self.action.get_class_name()}: Unknown session state: {session.state}")
