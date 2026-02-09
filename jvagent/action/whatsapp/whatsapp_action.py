@@ -16,7 +16,6 @@ from .whatsapp_filter import WhatsAppFilter
 from .modules.wppconnect import WPPConnectAPI
 from .modules.wwebjs_api import WWebJSAPI
 from .modules.ultramsg import UltraMsgAPI
-from .modules.base import is_session_registered, mark_session_registered
 from .webhook_auth import get_or_create_system_user
 
 logger = logging.getLogger(__name__)
@@ -116,20 +115,7 @@ class WhatsAppAction(Action):
     )
 
     # Internal state tracking (not persisted)
-    @property
-    def _session_registration_done(self) -> bool:
-        """Check if this session is already registered in the current process."""
-        if not self.api_url or not self.session:
-            return False
-        # Use a combination of API URL, session name, and webhook URL to ensure
-        # configuration hasn't changed (e.g., ngrok restart).
-        return is_session_registered(self.api_url, self.session, self.webhook_url or "")
-
-    @_session_registration_done.setter
-    def _session_registration_done(self, value: bool) -> None:
-        """Update the registration cache."""
-        if self.api_url and self.session:
-            mark_session_registered(self.api_url, self.session, self.webhook_url or "", value)
+    _session_registration_done: bool = False
 
     # action configuration
     
@@ -533,8 +519,7 @@ class WhatsAppAction(Action):
                 else:
                     # Mark as registered to avoid redundant calls
                     self._session_registration_done = True
-                    # Provider result might have 'status' or 'state'
-                    status = (registration_result.get("status") or registration_result.get("state") or "UNKNOWN").upper()
+                    status = registration_result.get("status", "UNKNOWN")
                     logger.debug(
                         f"WhatsApp session registered successfully (lazy init): {self.session} (status: {status})"
                     )
@@ -905,9 +890,7 @@ class WhatsAppAction(Action):
                 return result
             
             # Only log success if registration actually succeeded
-            self._session_registration_done = True
-            # Provider result might have 'status' or 'state'
-            status = (result.get("status") or result.get("state") or "UNKNOWN").upper()
+            status = result.get("status", "UNKNOWN")
             logger.debug(
                 f"WhatsApp session registered successfully: {self.session} (status: {status})"
             )
