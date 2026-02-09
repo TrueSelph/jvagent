@@ -462,7 +462,6 @@ async def _process_interaction_async(
     try:
         # Convert MessagePayload to dict for InteractWalker
         data_dict = _convert_message_payload_to_dict(data)
-        logger.warning("create_whatsapp_walker was called")
 
         # Create walker using helper function
         walker = await create_whatsapp_walker(agent_id, utterance, sender, data_dict, sender_name=sender_name)

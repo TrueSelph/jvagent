@@ -16,24 +16,6 @@ import aiohttp
 import filetype
 
 
-# Global cache to track session registrations across instances in the current process.
-# This prevents redundant, destructive registration calls (like restarting browser sessions)
-# when WhatsAppAction instances are recreated for every message.
-# Key: (api_url, session_name, webhook_url)
-# Value: bool (True if registered)
-_REGISTRATION_CACHE: Dict[tuple, bool] = {}
-
-
-def is_session_registered(api_url: str, session: str, webhook_url: str) -> bool:
-    """Check if the session has already been registered in this process."""
-    return _REGISTRATION_CACHE.get((api_url, session, webhook_url), False)
-
-
-def mark_session_registered(api_url: str, session: str, webhook_url: str, registered: bool = True) -> None:
-    """Mark the session as registered in this process."""
-    _REGISTRATION_CACHE[(api_url, session, webhook_url)] = registered
-
-
 # ============================================================================
 # CONNECTION POOL MANAGER
 # ============================================================================

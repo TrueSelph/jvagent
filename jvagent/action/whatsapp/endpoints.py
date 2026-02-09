@@ -98,6 +98,14 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         sender = data.sender
         sender_name = data.sender_name
 
+          
+        access_control_action = await agent.get_action_by_type("AccessControlAction")
+        if access_control_action:
+            has_access = await access_control_action.has_action_access(session_id=sender, action_label="WhatsAppAction", channel="whatsapp")
+            if not has_access:
+                return {"status": "received", "response": "Access denied"}
+
+
         # Validate sender - ignore status@broadcast messages completely
         if not sender or "status@broadcast" in sender or "status@broadcast" in data.receiver or sender == data.receiver:
             return {"status": "ignored", "response": "Sender blocked"}
@@ -128,7 +136,6 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         if utterance and len(utterance) > whatsapp_action.utterance_max_length:
             return {"status": "ignored", "response": "Utterance too long."}
 
-        logger.warning(f"Processing utterance: {utterance}")
         # Check if webhook should run in async mode (background task)
         # Default is False (synchronous) for Lambda compatibility
         use_async_mode = os.environ.get("WHATSAPP_WEBHOOK_ASYNC", "false").lower() == "true"
