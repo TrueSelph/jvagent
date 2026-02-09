@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 import dspy
 
 from jvagent.action.interview.core.foundation.enums import Intent
-from jvagent.action.interview.interview_interact_action import ClassificationResult
+from jvagent.action.interview.core.classification.classification_handler import ClassificationResult
 from jvagent.action.interview.dspy.signatures import create_interview_classification_signature
 from jvagent.action.interview.core.foundation.prompts import INTERVIEW_CLASSIFICATION_SIGNATURE
 
@@ -59,19 +59,17 @@ class InterviewClassifier(dspy.Module):
         current_state: str,
         answered_fields: str,
         entities_to_extract: str,
-        required_fields_info: str,
         conversation_history: Optional[str] = None,
     ) -> ClassificationResult:
         """Classify intent and extract field values.
-        
+
         Args:
             user_input: User's input (typically with reasoning)
             current_state: Current interview state
-            answered_fields: Previously answered fields with values
-            entities_to_extract: Unanswered fields to extract
-            required_fields_info: List of required field names
+            answered_fields: Previously answered fields with current values
+            entities_to_extract: Unanswered fields to extract (includes [REQUIRED]/[OPTIONAL] markers)
             conversation_history: Optional formatted conversation history for context
-            
+
         Returns:
             ClassificationResult with intent, confidence, and extracted data
         """
@@ -82,7 +80,6 @@ class InterviewClassifier(dspy.Module):
                 "current_state": current_state,
                 "answered_fields": answered_fields,
                 "entities_to_extract": entities_to_extract,
-                "required_fields_info": required_fields_info,
             }
             if conversation_history:
                 classify_kwargs["conversation_history"] = conversation_history
@@ -172,19 +169,17 @@ class InterviewClassifier(dspy.Module):
         current_state: str,
         answered_fields: str,
         entities_to_extract: str,
-        required_fields_info: str,
         conversation_history: Optional[str] = None,
     ) -> ClassificationResult:
         """Async version of forward.
-        
+
         Args:
             user_input: User's input (typically with reasoning)
             current_state: Current interview state
-            answered_fields: Previously answered fields with values
-            entities_to_extract: Unanswered fields to extract
-            required_fields_info: List of required field names
+            answered_fields: Previously answered fields with current values
+            entities_to_extract: Unanswered fields to extract (includes [REQUIRED]/[OPTIONAL] markers)
             conversation_history: Optional formatted conversation history for context
-            
+
         Returns:
             ClassificationResult with intent, confidence, and extracted data
         """
@@ -196,7 +191,6 @@ class InterviewClassifier(dspy.Module):
                 "current_state": current_state,
                 "answered_fields": answered_fields,
                 "entities_to_extract": entities_to_extract,
-                "required_fields_info": required_fields_info,
             }
             if conversation_history:
                 classify_kwargs["conversation_history"] = conversation_history

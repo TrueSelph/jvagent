@@ -127,7 +127,7 @@ class SignupInterviewInteractAction(InterviewInteractAction):
     @input_context_provider()
     async def get_available_training_times(
         session: InterviewSession,
-        visitor: InteractWalker
+        visitor: Optional[InteractWalker] = None
     ) -> Dict[str, Any]:
         """Provide available training times dynamically.
         

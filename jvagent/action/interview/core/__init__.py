@@ -43,8 +43,6 @@ from .graph.state_node import StateNode
 from .state.state_handlers import StateHandler
 from .state.state_machine import InterviewStateMachine
 
-# Processing domain
-from .processing.response_processor import ResponseProcessor
 
 # Session domain
 from .session.interview_session import InterviewSession
@@ -87,8 +85,6 @@ __all__ = [
     "StateNode",
     "StateHandler",
     "InterviewStateMachine",
-    # Processing
-    "ResponseProcessor",
     # Session
     "InterviewSession",
     "InterviewService",

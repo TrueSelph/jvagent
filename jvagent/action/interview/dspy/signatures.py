@@ -37,13 +37,10 @@ def create_interview_classification_signature(docstring: str) -> Type:
                 desc="Current interview state (ACTIVE, REVIEW, COMPLETED, CANCELLED)"
             )
             answered_fields: str = dspy.InputField(
-                desc="Comma-separated list of previously answered field names (minimal context for UPDATE intent)"
+                desc="Previously answered fields with their current values in 'field: value' format, comma-separated. Provides context for UPDATE intent to know what can be changed."
             )
             entities_to_extract: str = dspy.InputField(
-                desc="Unanswered fields to extract, formatted as a list with descriptions, constraints, and [REQUIRED] or [OPTIONAL] markers. CRITICAL: If a field appears in this list, any user response for that field must be classified as SUBMISSION, NOT UPDATE, regardless of the user's language."
-            )
-            required_fields_info: str = dspy.InputField(
-                desc="List of required field names. Use this to determine if a field can be declined (only non-required fields can be declined)"
+                desc="Unanswered fields to extract with [REQUIRED] or [OPTIONAL] markers. CRITICAL: (1) If field appears here, classify as SUBMISSION not UPDATE. (2) For DECLINE intent, only [OPTIONAL] fields can be declined - [REQUIRED] fields cannot be declined."
             )
             conversation_history: Optional[str] = dspy.InputField(
                 desc="Formatted conversation history from previous interactions. CRITICAL: Use this to resolve fragmentary user references (e.g., '9am', 'the first one') to complete values from recent AI responses. When user provides partial values, match them to full options/values mentioned in recent conversation history. Format: chronological list of user utterances and system responses."

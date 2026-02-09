@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from ..foundation.enums import Intent, InterviewState, ValidationStatus
 from ..session.interview_session import InterviewSession
-from ..processing.response_processor import ResponseProcessor
 from ..utils.constants import (
     CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE,
     CONTEXT_KEY_DIRECTIVE_OVERRIDE_APPEND_MODE
@@ -195,28 +194,10 @@ class UpdateHandler(IntentHandler):
             await self.action.directive_builder.queue_directive(visitor, directive)
             return HandlerResult(handled=True, should_continue=False)
         
-        # Handle the update inline (reusing QuestionNode processing/validation)
-        response_processor = ResponseProcessor(self.action)
-        update_completed = await response_processor.handle_update_inline(
-            result,
-            session,
-            visitor,
-            interaction
-        )
-        
-        if not update_completed:
-            # Waiting for value or clarification
-            return HandlerResult(handled=True, should_continue=False)
-        
-        # Check if replace mode override was used
-        replace_mode_used = (session.context or {}).get(CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE, False)
-        if replace_mode_used:
-            # Clear the flag
-            session.context.pop(CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE, None)
-            await session.save()
-            # Don't find next question - replace mode override already handled the response
-            return HandlerResult(handled=True, should_continue=False, updated_field=field)
-        
+        # UPDATE intent is now handled upstream via target-node traversal
+        # by resetting the target node to the first question. Walker traversal
+        # will re-process and validate stored responses without needing inline
+        # handling here.
         return HandlerResult(handled=True, should_continue=True, updated_field=field)
 
 
@@ -315,54 +296,9 @@ class SubmissionHandler(IntentHandler):
         if not result.extracted_data:
             return HandlerResult(handled=False, should_continue=True)
         
-        # Capture state before processing responses
-        state_before_processing = session.state
-        
-        # Validate and store responses
-        from ..graph.question_walker import QuestionWalker
-        question_walker = QuestionWalker()
-        question_walker.interview_session = session
-        question_walker.interaction = interaction
-        question_walker.question_directive_template = self.action.config.templates.question_directive
-        
-        response_processor = ResponseProcessor(self.action)
-        await response_processor.process_responses_to_questions(
-            result.extracted_data,
-            session,
-            visitor,
-            interaction,
-            question_walker
-        )
-        
-        # Check if state transition occurred during response processing
-        state_changed = session.state != state_before_processing
-
-        if state_changed:
-            # State transition occurred via StateNode.execute() during branch evaluation
-            return HandlerResult(handled=True, should_continue=False)
-        
-        # If active_question_key is set to an unanswered field (invalid response), return
-        if session.active_question_key and session.active_question_key in session.get_unanswered_questions():
-            return HandlerResult(handled=True, should_continue=False)
-        
-        # Check if replace mode override was used
-        replace_mode_used = (session.context or {}).get(CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE, False)
-        if replace_mode_used:
-            # Clear the flag
-            session.context.pop(CONTEXT_KEY_DIRECTIVE_OVERRIDE_REPLACE_MODE, None)
-            await session.save()
-            # Don't find next question - replace mode override already handled the response
-            return HandlerResult(handled=True, should_continue=False)
-        
-        # Check if append mode override was used
-        append_mode_used = (session.context or {}).get(CONTEXT_KEY_DIRECTIVE_OVERRIDE_APPEND_MODE, False)
-        if append_mode_used:
-            # Clear the flag
-            session.context.pop(CONTEXT_KEY_DIRECTIVE_OVERRIDE_APPEND_MODE, None)
-            await session.save()
-            # Don't find next question - append mode override already handled it
-            return HandlerResult(handled=True, should_continue=False)
-        
+        # Responses are stored during InterviewInteractAction.execute() before
+        # walker traversal. Submission handler now simply acknowledges the
+        # intent and allows the traversal to determine next directives.
         return HandlerResult(handled=True, should_continue=True)
 
 

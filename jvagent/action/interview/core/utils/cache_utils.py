@@ -279,7 +279,7 @@ class BranchFunctionCache:
             "result": result,
             "dependencies": list(dependencies),
             "dependency_values": dependency_values,
-            "timestamp": self.session.updated_at if hasattr(self.session, 'updated_at') else None
+            "timestamp": self.session.last_modified if hasattr(self.session, 'last_modified') else None
         }
         
         self.session.context[CACHE_KEY_BRANCH_FUNCTIONS] = cache
@@ -384,10 +384,17 @@ class BranchFunctionCache:
             reason: Reason for pruning (e.g., 'branch_path_change')
         """
         pruned = self.session.context.get(CACHE_KEY_PRUNED_RESPONSES, {})
+        # Record a snapshot of relevant dependency values to allow safe restoration
+        try:
+            dependency_snapshot = dict(self.session.responses) if isinstance(self.session.responses, dict) else {}
+        except Exception:
+            dependency_snapshot = {}
+
         pruned[question_name] = {
             "value": old_value,
             "reason": reason,
-            "timestamp": self.session.updated_at if hasattr(self.session, 'updated_at') else None
+            "pruned_at": self.session.last_modified if hasattr(self.session, 'last_modified') else None,
+            "dependency_snapshot": dependency_snapshot,
         }
         self.session.context[CACHE_KEY_PRUNED_RESPONSES] = pruned
         logger.debug(

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Set, Tuple
 
 from ..foundation.enums import Intent, InterviewState
 from ..session.interview_session import InterviewSession
+from ..graph.question_node import QuestionNode
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -173,56 +174,34 @@ class ClassificationHandler:
         session: InterviewSession,
         excluded_fields: Optional[Set[str]] = None
     ) -> Dict[str, str]:
-        """Build minimal context for classification.
-
-        Only includes reachable unanswered questions in entities_to_extract to prevent
-        premature extraction of questions that haven't been asked yet.
+        """Build context for classification.
 
         Args:
             session: Interview session
             excluded_fields: Optional set of field names to exclude from entities_to_extract
 
         Returns:
-            Dictionary with current_state, answered_fields, entities_to_extract, required_fields_info
+            Dictionary with current_state, answered_fields (with values), entities_to_extract
         """
         current_state = session.state.value
 
-        # Format answered fields (minimal - just field names)
+        # Format answered fields with their current values for UPDATE context
         answered_fields = session.get_answered_questions()
-        answered_fields_str = ", ".join(answered_fields) if answered_fields else "None"
+        if answered_fields:
+            answered_pairs = []
+            for field_name in answered_fields:
+                value = session.get_response(field_name)
+                value_str = str(value) if value is not None else "None"
+                # Truncate long values to prevent token bloat
+                if len(value_str) > 100:
+                    value_str = value_str[:97] + "..."
+                answered_pairs.append(f"{field_name}: {value_str}")
+            answered_fields_str = ", ".join(answered_pairs)
+        else:
+            answered_fields_str = "None"
 
-        # Get reachable unanswered questions using QuestionWalker
-        # This prevents premature extraction of questions that haven't been asked yet
-        from ..graph.question_walker import QuestionWalker
-        question_walker = QuestionWalker()
-        question_walker.interview_session = session
-        
-        # Get reachable unanswered questions based on current question path
-        reachable_unanswered = await question_walker.get_reachable_unanswered_questions(session, self.action)
-        reachable_set = set(reachable_unanswered) if reachable_unanswered else set()
-        
-        # Build question map for quick lookup
-        question_map = {q.get("name"): q for q in session.question_graph if q.get("name")}
-        
-        # Handle edge case: if no questions are answered yet, ensure first question is included
-        answered_set = set(session.get_answered_questions())
-        if not answered_set and session.question_graph:
-            first_question_name = session.question_graph[0].get("name")
-            if first_question_name and first_question_name not in reachable_set:
-                reachable_set.add(first_question_name)
-        
-        # Start with reachable questions
-        active_questions = [q for q in session.question_graph if q.get("name") in reachable_set]
-        
-        # Always include the active question if it's unanswered
-        # This ensures the current question can be answered even if not yet in reachable list
-        if session.active_question_key:
-            if (session.active_question_key not in answered_set and 
-                session.active_question_key not in reachable_set):
-                # Active question is not reachable yet but should be included
-                active_question_config = question_map.get(session.active_question_key)
-                if active_question_config:
-                    active_questions.append(active_question_config)
+        # Get all questions from the session
+        active_questions = [q for q in session.question_graph]
 
         excluded_set = excluded_fields or set()
         entities_list = []
@@ -233,18 +212,19 @@ class ClassificationHandler:
             constraints = item.get('constraints', {})
             if not key or not constraints:
                 continue
-            
+
             # Skip fields that should be excluded from LLM extraction
             # EXCEPT when the field is the active question (user is currently being asked this question)
             # This is necessary for proper DECLINE intent classification when user declines to provide data
             is_active_data_field = False
             if key in excluded_set:
-                # Always include the active question for proper DECLINE intent classification
-                if key != session.active_question_key:
+                # Always include the target question for proper DECLINE intent classification
+                target_question_name = None
+                if key != target_question_name:
                     continue
-                # If it's the active question, mark it as a data_input_field for special handling
+                # If it's the target question, mark it as a data_input_field for special handling
                 is_active_data_field = True
-            
+
             desc = constraints.get('description', '')
             other_constraints = {k: v for k, v in constraints.items() if k not in ('description', 'data_input_field')}
             constraint_strs = [f"{k}: {v}" for k, v in other_constraints.items()]
@@ -253,22 +233,18 @@ class ClassificationHandler:
             required_marker = " [REQUIRED]" if is_required else " [OPTIONAL]"
             # Add note for data_input_field questions to help LLM understand it can accept DECLINE
             data_field_note = " (expects data input, but user may decline)" if is_active_data_field else ""
-            
+
             # Add context data if available for this question
             context_data_note = await self._get_context_data_note(item, session)
-            
+
             entities_list.append(f"- {key}: {desc}{constraint_part}{required_marker}{data_field_note}{context_data_note}")
 
         entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
-
-        # Build required fields info (simplified - comma-separated)
-        required_fields_info = ", ".join(sorted(required_fields)) if required_fields else "None"
 
         return {
             "current_state": current_state,
             "answered_fields": answered_fields_str,
             "entities_to_extract": entities_to_extract,
-            "required_fields_info": required_fields_info,
         }
     
     async def classify_and_extract(
@@ -331,8 +307,7 @@ class ClassificationHandler:
                 user_input=user_input,
                 current_state=context["current_state"],
                 answered_fields=context["answered_fields"],
-                entities_to_extract=context["entities_to_extract"],
-                required_fields_info=context["required_fields_info"]
+                entities_to_extract=context["entities_to_extract"]
             )
 
             # Get model action
@@ -662,7 +637,6 @@ class ClassificationHandler:
                     "current_state": context["current_state"],
                     "answered_fields": context["answered_fields"],
                     "entities_to_extract": context["entities_to_extract"],
-                    "required_fields_info": context["required_fields_info"],
                 }
                 if formatted_history:
                     classifier_kwargs["conversation_history"] = formatted_history

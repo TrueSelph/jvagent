@@ -554,7 +554,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
     @branch_function()
     def detect_sensitive_content(
         session: InterviewSession,
-        visitor: InteractWalker
+        visitor: Optional[InteractWalker] = None
     ) -> bool:
         """Detect if incident report contains sensitive content requiring privacy protection.
         
@@ -573,7 +573,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
     @branch_function()
     def check_for_similar_incidents(
         session: InterviewSession,
-        visitor: InteractWalker
+        visitor: Optional[InteractWalker] = None
     ) -> bool:
         """Check for similar incident reports in the same location.
         
@@ -704,5 +704,3 @@ class ReportInterviewInteractAction(InterviewInteractAction):
 
         # Clean up the session after processing
         await session.cleanup()
-
-

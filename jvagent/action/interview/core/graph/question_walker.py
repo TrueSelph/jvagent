@@ -1,26 +1,35 @@
-"""QuestionWalker for traversing QuestionNodes in tree-based interview flows.
+"""QuestionWalker for traversing QuestionNodes using jvspatial walker-node pattern.
 
-This module provides QuestionWalker, a specialized walker that traverses
-QuestionNodes based on conditional edges, triggers validations/handlers,
-and returns directives to InterviewInteractAction.
+This module provides QuestionWalker, a specialized walker that:
+- Uses @on_visit decorators for automatic node dispatch (walker-node pattern)
+- Traverses QuestionNodes based on conditional branch conditions
+- Records branch paths for path-change detection and pruning
+- Handles state transitions via StateNode visits
+- Returns directives to InterviewInteractAction
+
+The walker-node pattern replaces manual traversal with declarative node handling.
+When spawned on a target node, the walker's presence triggers operations via
+@on_visit decorators. The question graph guides the walk path - no explicit
+"find_next_question" logic is needed.
+
+Key Components:
+- @on_visit(QuestionNode): Handle question node visits (prompt or validate)
+- @on_visit(StateNode): Handle state node visits (state transitions)
+- @on_visit(QuestionEdge): Handle edge traversal (branch path recording)
 """
 
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Optional, Tuple, Union
+from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple, Union
 
-from jvspatial.core import Walker
-from jvagent.memory import Interaction
+from pydantic import Field, PrivateAttr
+from jvspatial.core import Walker, on_visit
 
 from .question_branch_evaluator import QuestionBranchEvaluator
-from ..session.interview_session import InterviewSession
 from .question_node import QuestionNode
+from .question_edge import QuestionEdge
 from .state_node import StateNode
 from ..foundation.enums import ValidationStatus, InterviewState
-from ..utils.cache_utils import QuestionNodeCache
-from ..state.state_machine import InterviewStateMachine
 
-if TYPE_CHECKING:
-    from jvagent.action.interact.interact_walker import InteractWalker
 
 logger = logging.getLogger(__name__)
 
@@ -28,1032 +37,394 @@ logger = logging.getLogger(__name__)
 class QuestionWalker(Walker):
     """Walker that traverses QuestionNodes in a tree-based interview flow.
 
-    QuestionWalker is responsible for:
-    - Finding the next unanswered question based on tree traversal and conditions
-    - Processing input via QuestionNode input handlers
-    - Validating responses via QuestionNode validators
-    - Getting directives from QuestionNodes
-    - Respecting conditional branching based on previous answers
+    Implements jvspatial's walker-node pattern for efficient graph traversal using
+    @on_visit decorators and automatic queue management. The walker's presence on
+    a node triggers operations - the question graph guides the walk path.
 
-    Attributes:
+    Architecture (Walker-Node Pattern):
+    ===================================
+    Instead of manual traversal, QuestionWalker uses @on_visit decorators:
+    - @on_visit(QuestionNode): Checks if answered, queues prompt or validates
+    - @on_visit(StateNode): Records terminal state and executes transition
+    - @on_visit(QuestionEdge): Records branch path and visits target node
+
+    The Walker.spawn() starts traversal, run() processes the queue, and
+    @on_visit hooks are automatically dispatched for each visited node/edge.
+
+    Usage:
+    ======
+    walker = QuestionWalker(
+        interview_session=session,
+        interaction=interaction,
+        interact_visitor=interact_walker,
+        interview_action=self
+    )
+    await walker.spawn(target_node)
+    # Directives are now in walker.directives
+
+    Attributes (Walker State):
         interview_session: InterviewSession - Current interview session
-        interaction: Interaction - Current interaction
-        current_question: Optional[QuestionNode] - Currently active question
+        interaction: Interaction - Current interaction (optional)
+        interact_visitor: InteractWalker - Parent walker for branch evaluation
+        interview_action: InterviewInteractAction - For directive building
+        directives: List[str] - Collected directives to return to caller
+        terminal_state: Optional[InterviewState] - State reached if terminal
     """
 
-    interview_session: Optional[InterviewSession] = None
-    interaction: Optional[Interaction] = None
-    current_question: Optional[QuestionNode] = None
-    question_directive_template: Optional[str] = None
-    
-    # State target mapping
+    # Pydantic fields with proper defaults (using Field for mutable types)
+    interview_session: Optional[Any] = None  # InterviewSession
+    interaction: Optional[Any] = None  # Interaction
+    interview_action: Optional[Any] = None  # InterviewInteractAction
+    interact_visitor: Optional[Any] = None  # InteractWalker (parent walker for branch evaluation)
+
+    # Mutable defaults must use Field/PrivateAttr(default_factory=...) to avoid sharing
+    directives: List[str] = Field(default_factory=list)
+    _visited_nodes: Set[str] = PrivateAttr(default_factory=set)
+
+    # Terminal state tracking
+    terminal_state: Optional[InterviewState] = None
+    terminal_state_node: Optional[Any] = None  # StateNode
+
+    # State target mapping (class-level constant)
     STATE_TARGETS: ClassVar[Dict[str, InterviewState]] = {
         "REVIEW": InterviewState.REVIEW,
         "COMPLETED": InterviewState.COMPLETED,
         "CANCELLED": InterviewState.CANCELLED,
     }
     
-    def _is_state_target(self, target: str) -> bool:
-        """Check if a target is a named state target.
-        
-        Args:
-            target: Target string to check
-            
-        Returns:
-            True if target is a state name, False otherwise
-        """
-        return target in self.STATE_TARGETS
-    
     def _get_state_from_target(self, target: str) -> Optional[InterviewState]:
         """Get InterviewState from state target name.
-        
+
         Args:
             target: State target name (e.g., "REVIEW")
-            
+
         Returns:
             InterviewState if target is a valid state, None otherwise
         """
         return self.STATE_TARGETS.get(target)
-    
-    async def _handle_state_target(
-        self,
-        target: str,
-        session: InterviewSession,
-        interview_action: Optional[Any] = None
-    ) -> bool:
-        """Handle a state target (either string or StateNode).
-        
-        If target is a StateNode, executes it to trigger state transition.
-        If target is a string, finds and executes the corresponding StateNode.
-        
-        Args:
-            target: State target name (e.g., "REVIEW") or StateNode
-            session: Interview session
-            interview_action: Optional InterviewInteractAction to search StateNodes from
-            
-        Returns:
-            True if state was handled, False otherwise
-        """
-        # Check if it's a string state target
-        if isinstance(target, str) and self._is_state_target(target):
-            # Try to find StateNode for this target
-            if interview_action:
-                state_nodes = await interview_action.nodes(direction="out", node=StateNode)
-                target_upper = target.upper()
-                for state_node in state_nodes:
-                    logger.debug(
-                        f"Checking StateNode: label={state_node.label}, target={target}, target.upper()={target_upper}"
-                    )
-                    # Compare labels (both should be uppercase)
-                    if state_node.label.upper() == target_upper:
-                        logger.info(
-                            f"Found StateNode for target '{target}', executing state transition to {state_node.state_type.value}"
-                        )
-                        await state_node.execute(session, self)
-                        # StateNode.execute() already saved the session
-                        return True
-                
-                logger.warning(
-                    f"StateNode not found for target '{target}' (checked {len(state_nodes)} state nodes). "
-                    f"Available labels: {[sn.label for sn in state_nodes]}"
-                )
-            
-            # Fallback: transition state directly if StateNode not found
-            # Get the InterviewState from the target string
-            target_state = self._get_state_from_target(target)
-            if target_state:
-                # Use state machine for validated transitions
-                state_machine = InterviewStateMachine(session)
-                try:
-                    state_machine.transition_to(target_state, reason=f"QuestionWalker state target: {target}")
-                    await session.save()
-                    return True
-                except ValueError as e:
-                    logger.error(f"QuestionWalker: Invalid state transition: {e}", exc_info=True)
-                    return False
-            else:
-                # Invalid state target
-                logger.warning(
-                    f"Invalid state target '{target}' - not a recognized state."
-                )
-                return False
-        
-        # Check if target is a StateNode instance
-        if isinstance(target, StateNode):
-            await target.execute(session, self)
-            # StateNode.execute() already saved the session
-            return True
-        
-        return False
 
-    async def find_next_question(
-        self,
-        session: InterviewSession,
-        interview_action: Optional[Any] = None,
-        start_from: Optional[str] = None
-    ) -> Optional[Union[QuestionNode, StateNode]]:
-        """Find next node (question or state) based on tree traversal.
-
-        Traverses the question tree starting from session.active_question_key (if set),
-        or from the first unanswered question, respecting conditional branches.
-        When no unanswered questions exist, follows edges to StateNodes (e.g., REVIEW).
-        Updates session.active_question_key with the found question (if QuestionNode).
+    async def _get_node_by_id(self, node_id: str) -> Optional[Union[QuestionNode, StateNode, Any]]:
+        """Fetch node from graph by ID.
 
         Args:
-            session: Interview session (contains active_question_key for position tracking)
-            interview_action: Optional InterviewStateInteractAction to search question nodes from
-            start_from: Optional question name to start traversal from (overrides session.active_question_key)
+            node_id: The node ID to look up
 
         Returns:
-            Next QuestionNode to ask, StateNode to transition to, or None if graph is incomplete
+            Node instance (QuestionNode, StateNode, or InterviewInteractAction) or None
         """
-        unanswered = session.get_unanswered_questions()
-        
-        # If there are unanswered questions, find the next one
-        if unanswered:
-            # Determine starting point: start_from > session.active_question_key > first unanswered
-            if start_from:
-                current_question_name = start_from
-            elif session.active_question_key and session.active_question_key in unanswered:
-                # Continue from where we left off
-                current_question_name = session.active_question_key
-            else:
-                # Find first unanswered question by traversing tree from root
-                # Note: visitor not available here, but will be passed when needed in branch evaluation
-                current_question_name = await self._find_first_unanswered_in_tree(session, interview_action, visitor=None)
-                if not current_question_name:
-                    # No unanswered questions found in traversal, check for StateNode edges
-                    return await self._find_terminal_state_node(session, interview_action)
+        from jvspatial.core import Node
+        try:
+            return await Node.get(node_id)
+        except Exception as e:
+            logger.warning(f"Failed to get node by ID '{node_id}': {e}")
+            return None
 
-            # Get the question node by name
-            question_node = await self._get_question_node_by_name(
-                current_question_name,
-                session,
-                interview_action
-            )
-            if question_node:
-                # Update session with current question position
-                session.active_question_key = current_question_name
-                await session.save()
-                # Cache in walker for this request only (transient)
-                self.current_question = question_node
-                return question_node
+    # =========================================================================
+    # Helper Methods for on_question_node() - Extracted for clarity
+    # =========================================================================
 
-        # No unanswered questions - check for StateNode edges from current or last question
-        return await self._find_terminal_state_node(session, interview_action)
+    async def _handle_unanswered_question(
+        self, here: QuestionNode, question_name: str
+    ) -> None:
+        """Handle case where no response exists - queue question prompt and return.
 
-    async def _find_terminal_state_node(
-        self,
-        session: InterviewSession,
-        interview_action: Optional[Any] = None
-    ) -> Optional[StateNode]:
-        """Find StateNode edge from current or last answered question.
-        
-        When all questions are answered, this method traverses the graph from the
-        last answered question to find StateNode edges (typically REVIEW).
-        
+        When the walker encounters a question without an extracted value in the session,
+        this method generates the question prompt directive, queues it, and updates
+        the session's target_node for position tracking.
+
         Args:
-            session: Interview session
-            interview_action: Optional InterviewInteractAction to search nodes from
-            
-        Returns:
-            StateNode if found, None otherwise
+            here: The QuestionNode being visited
+            question_name: Name of the question field
         """
-        if not interview_action:
-            return None
-        
-        # Get the last answered question or current active question
-        answered_questions = session.get_answered_questions()
-        if not answered_questions:
-            # No questions answered yet - shouldn't reach here, but handle gracefully
-            return None
-        
-        # Start from the last answered question (most recent)
-        last_question_name = answered_questions[-1] if answered_questions else session.active_question_key
-        
-        # Also check active_question_key if it exists and is answered
-        if session.active_question_key and session.active_question_key in answered_questions:
-            last_question_name = session.active_question_key
-        
-        if not last_question_name:
-            return None
-        
-        # Get the question node
-        question_node = await self._get_question_node_by_name(
-            last_question_name,
-            session,
-            interview_action
+        directive = await here.execute(self)
+        if directive:
+            self.directives.append(directive)
+        self.interview_session.target_node = here.id
+        await self.interview_session.save()
+
+    async def _process_and_validate_response(
+        self, here: QuestionNode, question_name: str
+    ) -> Tuple[bool, Any, Optional[str]]:
+        """Execute handlers and validators on the extracted response.
+
+        Runs the full validation pipeline:
+        1. Execute @input_handler (pre-processing/transformation)
+        2. Execute @input_validator (validation with feedback)
+
+        Args:
+            here: The QuestionNode being visited
+            question_name: Name of the question field
+
+        Returns:
+            Tuple of (is_valid, final_value, feedback):
+            - is_valid: True if validation passed
+            - final_value: The processed/corrected value
+            - feedback: Error message if validation failed, None otherwise
+        """
+        response_value = self.interview_session.responses[question_name]
+
+        # Execute @input_handler if registered (pre-processing)
+        processed_value = await here.process_input(
+            response_value, self.interview_session, self.interaction
         )
-        
-        if not question_node:
-            return None
-        
-        # Check for outgoing StateNode edges
-        state_nodes = await question_node.nodes(direction="out", node=StateNode)
-        
-        # Prefer REVIEW state node if multiple exist
-        for state_node in state_nodes:
-            if state_node.state_type == InterviewState.REVIEW:
-                logger.debug(
-                    f"Found REVIEW StateNode edge from terminal question '{last_question_name}'"
-                )
-                return state_node
-        
-        # Return first StateNode found if no REVIEW
-        if state_nodes:
-            logger.debug(
-                f"Found StateNode '{state_nodes[0].label}' edge from terminal question '{last_question_name}'"
-            )
-            return state_nodes[0]
-        
-        # No StateNode edge found - graph may be incomplete
-        logger.warning(
-            f"No StateNode edge found from terminal question '{last_question_name}'. "
-            f"Graph may be incomplete."
+
+        # Execute @input_validator if registered (validation)
+        validation_status, feedback, corrected_value = await here.validate_response(
+            processed_value, self.interview_session
         )
-        return None
-
-    async def _find_first_unanswered_in_tree(
-        self,
-        session: InterviewSession,
-        interview_action: Optional[Any] = None,
-        visitor: Optional["InteractWalker"] = None
-    ) -> Optional[str]:
-        """Find first unanswered question by traversing tree from root.
-
-        If session.active_question_key is set (even if answered), continues traversal
-        from that position. Otherwise starts from the first question in question_graph.
-
-        Args:
-            session: Interview session (may contain active_question_key for position)
-            interview_action: Optional InterviewInteractAction to get QuestionNodes from
-            
-
-        Returns:
-            Name of first unanswered question, or None if all answered or state target encountered
-        """
-        # Start from first question in question_graph
-        if not session.question_graph:
-            return None
-        
-        # Build a map of question names to configs
-        question_map = {q.get("name"): q for q in session.question_graph if q.get("name")}
-
-        # Determine starting point
-        unanswered = set(session.get_unanswered_questions())
-        start_question = None
-        skip_until = None
-
-        if session.active_question_key:
-            if session.active_question_key in unanswered:
-                # Continue from unanswered active question
-                start_question = session.active_question_key
-            else:
-                # Active question is answered - start traversal from it (skip it and continue)
-                start_question = session.active_question_key
-                skip_until = session.active_question_key
-        else:
-            # Start from first question in tree
-            start_question = session.question_graph[0].get("name")
-
-        if not start_question:
-            return None
-
-        # Traverse tree starting from determined point
-        visited = set()
-        to_visit = [start_question]
-        skip_mode = skip_until is not None
-
-        while to_visit:
-            question_name = to_visit.pop(0)
-            if question_name in visited:
-                continue
-            visited.add(question_name)
-
-            # If we're in skip mode, skip until we reach the active question, then continue normally
-            if skip_mode:
-                if question_name == skip_until:
-                    skip_mode = False
-                # Don't return this question as unanswered, but still process its edges
-                # to determine the next question based on its answer
-            else:
-                # Check if this question is unanswered
-                if question_name not in session.get_answered_questions():
-                    return question_name
-
-            # Get question config
-            question_config = question_map.get(question_name)
-            if not question_config:
-                continue
-            
-            # Check branches to find next questions
-            branches = question_config.get("branches", [])
-            if branches:
-                # Evaluate conditions to find matching branch
-                branch_matched = False
-                for branch in branches:
-                    condition = branch.get("condition", {})
-                    # Question is implicit - condition always evaluates against question_name
-                    if await QuestionBranchEvaluator.matches(condition, session, implicit_question=question_name, visitor=visitor):
-                        target = branch.get("target")
-                        if not target:
-                            continue
-                        
-                        # Check if target is a state target
-                        if self._is_state_target(target):
-                            await self._handle_state_target(target, session, interview_action)
-                            return None
-                        
-                        # Regular question target
-                        if target not in visited:
-                            to_visit.append(target)
-                            branch_matched = True
-                            break
-                
-                # If no branch matched, check default_next or fall back to sequential flow
-                if not branch_matched:
-                    default_next = question_config.get("default_next")
-                    if default_next:
-                        if self._is_state_target(default_next):
-                            await self._handle_state_target(default_next, session, interview_action)
-                            return None
-                        if default_next not in visited:
-                            to_visit.append(default_next)
-                    else:
-                        # No default_next specified, fall back to sequential flow (next question in list)
-                        current_idx = next(
-                            (i for i, q in enumerate(session.question_graph) if q.get("name") == question_name),
-                            -1
-                        )
-                        if current_idx >= 0 and current_idx + 1 < len(session.question_graph):
-                            next_question = session.question_graph[current_idx + 1].get("name")
-                            if next_question and next_question not in visited:
-                                to_visit.append(next_question)
-            else:
-                # No branches, check default_next or next in list
-                default_next = question_config.get("default_next")
-                if default_next:
-                    if self._is_state_target(default_next):
-                        await self._handle_state_target(default_next, session, interview_action)
-                        return None
-                    if default_next not in visited:
-                        to_visit.append(default_next)
-                else:
-                    # Linear flow - find next question in list
-                    current_idx = next(
-                        (i for i, q in enumerate(session.question_graph) if q.get("name") == question_name),
-                        -1
-                    )
-                    if current_idx >= 0 and current_idx + 1 < len(session.question_graph):
-                        next_question = session.question_graph[current_idx + 1].get("name")
-                        if next_question and next_question not in visited:
-                            to_visit.append(next_question)
-
-        return None
-
-    async def get_reachable_unanswered_questions(
-        self,
-        session: InterviewSession,
-        interview_action: Optional[Any] = None,
-        visitor: Optional["InteractWalker"] = None
-    ) -> List[str]:
-        """Get all unanswered questions reachable on the current walk path.
-        
-        Traverses the question graph from current position, following conditional
-        branches based on current responses, and returns all unanswered questions
-        that are reachable on this path.
-        
-        Args:
-            session: Interview session
-            interview_action: Optional InterviewInteractAction to get QuestionNodes from
-            
-        Returns:
-            List of question names that are reachable and unanswered
-        """
-        if not session.question_graph:
-            return []
-        
-        # Build a map of question names to configs
-        question_map = {q.get("name"): q for q in session.question_graph if q.get("name")}
-        
-        # Determine starting point
-        unanswered = set(session.get_unanswered_questions())
-        start_question = None
-        skip_until = None
-        
-        if session.active_question_key:
-            if session.active_question_key in unanswered:
-                # Continue from unanswered active question
-                start_question = session.active_question_key
-            else:
-                # Active question is answered - start traversal from it (skip it and continue)
-                start_question = session.active_question_key
-                skip_until = session.active_question_key
-        else:
-            # Start from first question in tree
-            start_question = session.question_graph[0].get("name")
-        
-        if not start_question:
-            return []
-        
-        # Traverse tree starting from determined point and collect all unanswered questions
-        visited = set()
-        to_visit = [start_question]
-        skip_mode = skip_until is not None
-        reachable_unanswered = []
-        
-        while to_visit:
-            question_name = to_visit.pop(0)
-            if question_name in visited:
-                continue
-            visited.add(question_name)
-            
-            # If we're in skip mode, skip until we reach the active question, then continue normally
-            if skip_mode:
-                if question_name == skip_until:
-                    skip_mode = False
-                # Don't add this question to results, but still process its edges
-                # to determine the next question based on its answer
-            else:
-                # Check if this question is unanswered and add to results
-                if question_name not in session.get_answered_questions():
-                    reachable_unanswered.append(question_name)
-            
-            # Get question config
-            question_config = question_map.get(question_name)
-            if not question_config:
-                continue
-            
-            # Check branches to find next questions
-            branches = question_config.get("branches", [])
-            if branches:
-                # Evaluate conditions to find matching branch
-                branch_matched = False
-                for branch in branches:
-                    condition = branch.get("condition", {})
-                    # Question is implicit - condition always evaluates against question_name
-                    if await QuestionBranchEvaluator.matches(condition, session, implicit_question=question_name, visitor=visitor):
-                        target = branch.get("target")
-                        if not target:
-                            continue
-                        
-                        # Check if target is a state target
-                        if self._is_state_target(target):
-                            # Stop traversal at state targets
-                            continue
-                        
-                        # Regular question target
-                        if target not in visited:
-                            to_visit.append(target)
-                            branch_matched = True
-                            break
-                
-                # If no branch matched, check default_next or fall back to sequential flow
-                if not branch_matched:
-                    default_next = question_config.get("default_next")
-                    if default_next:
-                        if not self._is_state_target(default_next) and default_next not in visited:
-                            to_visit.append(default_next)
-                    else:
-                        # No default_next specified, fall back to sequential flow (next question in list)
-                        current_idx = next(
-                            (i for i, q in enumerate(session.question_graph) if q.get("name") == question_name),
-                            -1
-                        )
-                        if current_idx >= 0 and current_idx + 1 < len(session.question_graph):
-                            next_question = session.question_graph[current_idx + 1].get("name")
-                            if next_question and next_question not in visited:
-                                to_visit.append(next_question)
-            else:
-                # No branches, check default_next or next in list
-                default_next = question_config.get("default_next")
-                if default_next:
-                    if not self._is_state_target(default_next) and default_next not in visited:
-                        to_visit.append(default_next)
-                else:
-                    # Linear flow - find next question in list
-                    current_idx = next(
-                        (i for i, q in enumerate(session.question_graph) if q.get("name") == question_name),
-                        -1
-                    )
-                    if current_idx >= 0 and current_idx + 1 < len(session.question_graph):
-                        next_question = session.question_graph[current_idx + 1].get("name")
-                        if next_question and next_question not in visited:
-                            to_visit.append(next_question)
-        
-        return reachable_unanswered
-
-    async def _get_question_node_by_name(
-        self,
-        question_name: str,
-        session: InterviewSession,
-        interview_action: Optional[Any] = None
-    ) -> Optional[QuestionNode]:
-        """Get QuestionNode by question name.
-
-        Args:
-            question_name: Name of the question
-            session: Interview session
-            interview_action: Optional InterviewStateInteractAction to search from
-
-        Returns:
-            QuestionNode if found, None otherwise
-        """
-        # Use cache utility
-        cache = QuestionNodeCache(session)
-        cached_node = await cache.get_cached_node_by_id(question_name)
-        if cached_node:
-            return cached_node
-        
-        # If we have interview_action, search from there
-        if interview_action:
-            question_nodes = await interview_action.nodes(direction="out", node=QuestionNode)
-            for node in question_nodes:
-                if node.label == question_name:
-                    # Cache the node
-                    cache.set(question_name, node.id)
-                    return node
-
-        # Try from current_question if available
-        if self.current_question:
-            # Try to find from current question's connections
-            connected_nodes = await self.current_question.nodes(direction="out", node=QuestionNode)
-            for node in connected_nodes:
-                if node.label == question_name:
-                    # Cache the node
-                    cache.set(question_name, node.id)
-                    return node
-
-            # Also check incoming connections (bidirectional)
-            connected_nodes = await self.current_question.nodes(direction="in", node=QuestionNode)
-            for node in connected_nodes:
-                if node.label == question_name:
-                    # Cache the node
-                    cache.set(question_name, node.id)
-                    return node
-
-        return None
-
-    async def should_process_question(
-        self,
-        question_name: str,
-        session: InterviewSession,
-        visitor: Optional["InteractWalker"] = None
-    ) -> bool:
-        """Check if a question should be processed given current session state.
-
-        A question should be processed if:
-        1. It's in the question_graph (exists)
-        2. It's reachable via conditional edges from answered questions
-        3. No conditional edge skips it based on current answers
-
-        This method traverses the question graph from the root, evaluating
-        branch conditions based on current session.responses to determine
-        if the target question is on a reachable path.
-
-        Args:
-            question_name: Name of the question to check
-            session: Interview session with current responses
-
-        Returns:
-            True if question should be asked, False if skipped by conditionals
-        """
-        # Check if question exists in question_graph
-        question_config = session.get_question_by_name(question_name)
-        if not question_config:
-            return False
-
-        # If question is already answered, we don't need to process it again
-        if question_name in session.get_answered_questions():
-            return False
-
-        # Build a map of question names to configs
-        question_map = {q.get("name"): q for q in session.question_graph if q.get("name")}
-
-        # Start traversal from first question in question_graph
-        if not session.question_graph:
-            return False
-
-        # Traverse the graph to see if we can reach this question
-        visited = set()
-        to_visit = [session.question_graph[0].get("name")]
-
-        while to_visit:
-            current_question = to_visit.pop(0)
-            if current_question in visited:
-                continue
-            visited.add(current_question)
-
-            # Found the target question - it's reachable
-            if current_question == question_name:
-                return True
-
-            # Get question config
-            current_config = question_map.get(current_question)
-            if not current_config:
-                continue
-
-            # Check branches to find next questions
-            branches = current_config.get("branches", [])
-            if branches:
-                # For branches, we can only evaluate conditions if prerequisite questions are answered
-                # Try to evaluate conditions to find matching branch
-                branch_matched = False
-                for branch in branches:
-                    condition = branch.get("condition", {})
-                    # Question is implicit - condition always evaluates against current_question
-                    if current_question in session.get_answered_questions():
-                        # Condition evaluates against the question that owns the branch
-                        if await QuestionBranchEvaluator.matches(condition, session, implicit_question=current_question, visitor=visitor):
-                            target = branch.get("target")
-                            if target:
-                                # Skip state targets - they don't lead to questions
-                                if not self._is_state_target(target) and target not in visited:
-                                    to_visit.append(target)
-                                branch_matched = True
-                                break
-
-                # If no branch matched, check default_next or fall back to sequential flow
-                if not branch_matched:
-                    default_next = current_config.get("default_next")
-                    if default_next:
-                        # Skip state targets
-                        if not self._is_state_target(default_next) and default_next not in visited:
-                            to_visit.append(default_next)
-                    else:
-                        # No default_next specified, fall back to sequential flow (next question in list)
-                        current_idx = next(
-                            (i for i, q in enumerate(session.question_graph) if q.get("name") == current_question),
-                            -1
-                        )
-                        if current_idx >= 0 and current_idx + 1 < len(session.question_graph):
-                            next_question = session.question_graph[current_idx + 1].get("name")
-                            if next_question and next_question not in visited:
-                                to_visit.append(next_question)
-            else:
-                # No branches, check default_next or next in list
-                # For linear flow, we can continue even if current question is unanswered
-                default_next = current_config.get("default_next")
-                if default_next:
-                    # Skip state targets
-                    if not self._is_state_target(default_next) and default_next not in visited:
-                        to_visit.append(default_next)
-                else:
-                    # Linear flow - find next question in list
-                    current_idx = next(
-                        (i for i, q in enumerate(session.question_graph) if q.get("name") == current_question),
-                        -1
-                    )
-                    if current_idx >= 0 and current_idx + 1 < len(session.question_graph):
-                        next_question = session.question_graph[current_idx + 1].get("name")
-                        if next_question and next_question not in visited:
-                            to_visit.append(next_question)
-
-        # Question not reachable from current state
-        return False
-
-    async def process_and_validate(
-        self,
-        value: Any,
-        question_node: QuestionNode,
-        session: InterviewSession,
-        interaction: Interaction
-    ) -> Tuple[Any, ValidationStatus, Optional[str]]:
-        """Process input and validate response.
-
-        Args:
-            value: Raw input value
-            question_node: QuestionNode to process/validate against
-            session: Interview session
-            interaction: Current interaction
-
-        Returns:
-            Tuple of (processed_value, ValidationStatus, optional feedback message)
-        """
-        # First process the input
-        processed_value = await question_node.process_input(value, session, interaction)
-
-        # Then validate (note: validate_response may call process_input again internally,
-        # but process_input should be idempotent)
-        validation_status, feedback, corrected_value = await question_node.validate_response(processed_value, session)
-
-        # Use corrected value if validator provided one, otherwise use processed value
         final_value = corrected_value if corrected_value is not None else processed_value
 
-        return final_value, validation_status, feedback
+        is_valid = validation_status == ValidationStatus.VALID
+        return is_valid, final_value, feedback
 
-    async def get_directive(
-        self,
-        session: InterviewSession,
-        interview_action: Optional[Any] = None
-    ) -> Optional[str]:
-        """Get directive for the next question.
+    async def _handle_invalid_response(
+        self, here: QuestionNode, question_name: str, feedback: Optional[str]
+    ) -> None:
+        """Queue validator's error directive and disengage.
 
-        Uses session.active_question_key to track position. Updates it when finding next question.
+        When validation fails, this method queues the error directive and updates
+        the session to stay on the current question, allowing the user to correct
+        their input.
 
         Args:
-            session: Interview session (contains active_question_key for position tracking)
-            interview_action: Optional InterviewStateInteractAction to search question nodes from
+            here: The QuestionNode being visited
+            question_name: Name of the question field
+            feedback: Error message from the validator
+        """
+        error_msg = feedback or f"Please provide a valid value for {question_name}."
+        self.directives.append(error_msg)
+        self.current_question_name = question_name
+        self.current_question = here
+        self.interview_session.target_node = here.id
+        await self.interview_session.save()
+
+    async def _handle_valid_response(
+        self, here: QuestionNode, question_name: str, final_value: Any
+    ) -> None:
+        """Update session with processed value.
+
+        After successful validation, this method updates the session response
+        if the value was modified by processing or correction.
+
+        Args:
+            here: The QuestionNode being visited
+            question_name: Name of the question field
+            final_value: The validated/corrected value
+        """
+        # Update with processed/corrected value if changed
+        response_value = self.interview_session.responses[question_name]
+        if final_value != response_value:
+            self.interview_session.set_response(question_name, final_value)
+
+    async def _continue_traversal(self, here: QuestionNode, question_name: str) -> None:
+        """Evaluate branches and visit next node.
+
+        After a valid response, this method evaluates outgoing edges to determine
+        the next node to visit. Conditional edges are evaluated in order by branch_index,
+        and the first matching condition determines the path.
+
+        Args:
+            here: The QuestionNode being visited
+            question_name: Name of the question field (used as implicit question for conditions)
+        """
+        edges = await here.edges(direction="out")
+        conditional_edges = sorted(
+            [e for e in edges if e.condition],
+            key=lambda e: (e.branch_index if e.branch_index is not None else 999)
+        )
+        default_edges = [e for e in edges if not e.condition]
+
+        for edge in conditional_edges:
+            if await QuestionBranchEvaluator.matches(
+                edge.condition,
+                self.interview_session,
+                implicit_question=question_name,
+                visitor=self.interact_visitor
+            ):
+                await self.visit(edge)
+                return
+
+        # No conditional match: use default edge
+        if default_edges:
+            await self.visit(default_edges[0])
+
+    # =========================================================================
+    # Helper Methods for on_state_node() - Extracted for clarity
+    # =========================================================================
+
+    async def _generate_state_directive(self, here: StateNode) -> Optional[str]:
+        """Generate directive based on state type.
+
+        Uses the directive_builder from interview_action to generate
+        state-specific directives (REVIEW, COMPLETED, CANCELLED).
+
+        Args:
+            here: The StateNode being visited
 
         Returns:
-            Directive string if question found, None otherwise
+            Directive string or None if no directive_builder available
         """
-        # Find next unanswered question (updates session.active_question_key)
-        question_node = await self.find_next_question(session, interview_action)
-        if not question_node:
+        if not self.interview_action or not hasattr(self.interview_action, 'directive_builder'):
             return None
 
-        # Execute question node to get directive
-        directive = await question_node.execute(self)
-        return directive
+        builder = self.interview_action.directive_builder
+        if here.state_type == InterviewState.REVIEW:
+            return await builder.build_confirmation_directive(self.interview_session)
+        elif here.state_type == InterviewState.COMPLETED:
+            return await builder.build_completed_directive(self.interview_session)
+        elif here.state_type == InterviewState.CANCELLED:
+            return await builder.build_cancelled_directive(self.interview_session)
+        return None
 
-    async def get_next_questions(
-        self,
-        current_question_name: str,
-        session: InterviewSession,
-        visitor: Optional["InteractWalker"] = None
-    ) -> List[str]:
-        """Get list of possible next questions based on branches.
+    async def _update_target_node(self, here: Union[QuestionNode, StateNode]) -> None:
+        """Update session's target_node and save.
+
+        Updates the session's position tracking to the current node
+        and persists the change.
 
         Args:
-            current_question_name: Name of current question
-            session: Interview session
-
-        Returns:
-            List of possible next question names (excludes state targets)
+            here: The node to set as the target
         """
-        # Find question config
-        question_config = next(
-            (q for q in session.question_graph if q.get("name") == current_question_name),
-            None
+        self.interview_session.target_node = here.id
+        await self.interview_session.save()
+
+    # =========================================================================
+    # End of Helper Methods
+    # =========================================================================
+
+    @on_visit(QuestionNode)
+    async def on_question_node(self, here: QuestionNode) -> None:
+        """Handle visiting a QuestionNode during graph traversal.
+
+        This @on_visit decorator is called automatically by jvspatial's Walker
+        when a QuestionNode is visited during spawn() traversal.
+
+        Traversal Logic:
+        ================
+        1. Check for infinite loops (visited node tracking)
+        2. If no extracted value exists → queue question prompt and return
+        3. If extracted value exists → execute handlers and validators
+           - If invalid → queue error directive and return (disengage)
+           - If valid → update session, handle pruning, continue walking
+
+        Args:
+            here: QuestionNode being visited
+        """
+
+        logger.warning(f"On question node visit: node id={here.id} label={here.label} session responses={self.interview_session.responses if self.interview_session else 'N/A'}")
+        
+        if not self.interview_session:
+            return
+
+        question_name = here.state.get("name", here.label) if hasattr(here, "state") else here.label
+
+        # Prevent infinite loops
+        if here.id in self._visited_nodes:
+            return
+        self._visited_nodes.add(here.id)
+
+        # Branch 1: No extracted value - queue question prompt and return
+        if question_name not in self.interview_session.responses:
+            await self._handle_unanswered_question(here, question_name)
+            return
+
+        # Branch 2: Extracted value exists - process and validate
+        is_valid, final_value, feedback = await self._process_and_validate_response(
+            here, question_name
         )
 
-        if not question_config:
-            return []
+        if not is_valid:
+            # Invalid input - queue error directive and disengage
+            await self._handle_invalid_response(here, question_name, feedback)
+            return
 
-        next_questions = []
+        # Valid input - update session and continue walking
+        await self._handle_valid_response(here, question_name, final_value)
+        await self._continue_traversal(here, question_name)
 
-        # Check branches
-        branches = question_config.get("branches", [])
-        for branch in branches:
-            condition = branch.get("condition", {})
-            # Question is implicit - condition always evaluates against current_question_name
-            if await QuestionBranchEvaluator.matches(condition, session, implicit_question=current_question_name, visitor=visitor):
-                target = branch.get("target")
-                if target and not self._is_state_target(target):
-                    # Only include question targets, not state targets
-                    next_questions.append(target)
+    @on_visit(StateNode)
+    async def on_state_node(self, here: StateNode) -> None:
+        """Handle visiting a StateNode during graph traversal.
 
-        # If no branch matched, check default_next
-        if not next_questions:
-            default_next = question_config.get("default_next")
-            if default_next and not self._is_state_target(default_next):
-                next_questions.append(default_next)
+        This @on_visit decorator is called automatically by jvspatial's Walker
+        when a StateNode is visited during spawn() traversal.
 
-        return next_questions
-    async def detect_and_prune_altered_path(
-        self,
-        session: InterviewSession,
-        just_answered_field: str,
-        interview_action: Optional[Any] = None,
-        visitor: Optional["InteractWalker"] = None
-    ) -> bool:
-        """Detect branch path changes and intelligently prune obsolete responses.
-        
-        When a response is updated, its dependent branch functions are invalidated.
-        This method detects if the branching path has changed and prunes responses
-        from questions that are no longer reachable on the new path. If a path change
-        is detected, the interview is reset to the branching point to allow fresh
-        traversal of the new path.
-        
-        Pruning preserves audit trails in session.context for debugging/undo.
-        
+        Traversal Logic:
+        ================
+        1. Record terminal state for caller reference
+        2. Execute state node's transition code
+        3. Queue state-specific directive
+        4. Update position and return
+
         Args:
-            session: Interview session
-            just_answered_field: Question that was just answered/updated
-            interview_action: Optional InterviewInteractAction for node lookups
-            visitor: Optional InteractWalker for branch evaluation context
-            
-        Returns:
-            True if path change was detected and interview was reset, False otherwise
+            here: StateNode being visited
         """
+        
+        logger.warning(f"On state node visit: node id={here.id} label={here.label} state={here.state_type.value if hasattr(here, 'state_type') else 'N/A'}")    
+        if not self.interview_session:
+            return
+
+        # Record terminal state
+        self.terminal_state = here.state_type
+        self.terminal_state_node = here
+
+        # Execute state transition
+        await here.execute(self.interview_session, self)
+
+        # Queue state directive
+        directive = await self._generate_state_directive(here)
+        if directive:
+            self.directives.append(directive)
+
+        # Update position and return
+        await self._update_target_node(here)
+
+    @on_visit(QuestionEdge)
+    async def on_question_edge(self, here: QuestionEdge) -> None:
+        """Handle visiting a QuestionEdge during graph traversal.
+
+        This @on_visit decorator is called automatically by jvspatial's Walker
+        when a QuestionEdge is visited during spawn() traversal. It records the
+        branch path taken and then visits the target node.
+
+        Args:
+            here: QuestionEdge being visited
+        """
+        if not self.interview_session:
+            return
+
+        # Get source and target nodes from the edge using IDs
+        from jvspatial.core import Node as JVNode
+
+        source_id = here.source
+        target_id = here.target
+
+        if not source_id or not target_id:
+            return
+
+        source = await JVNode.get(source_id)
+        target = await JVNode.get(target_id)
+
+        if not source or not target:
+            return
+
+        # Extract source question name for recording branch path
+        implicit_question = (
+            source.state.get("name", source.label)
+            if hasattr(source, "state")
+            else source.label
+        )
+
+        # Record branch path for path-change detection
         from ..utils.cache_utils import BranchFunctionCache
-        
-        if not session.question_graph:
-            return False
-        
-        branch_cache = BranchFunctionCache(session)
-        
-        # Find question in graph
-        question_map = {q.get("name"): q for q in session.question_graph}
-        question_config = question_map.get(just_answered_field)
-        
-        if not question_config:
-            return False
-        
-        # Check if this question has branches
-        branches = question_config.get("branches", [])
-        if not branches:
-            # No branches on this question, no path change possible
-            return False
-        
-        # Get the previous branch path (if recorded)
-        previous_path = branch_cache.get_previous_path(just_answered_field)
-        
-        # Determine the new path
-        new_path = None
-        condition_index = -1
-        is_default = False
-        
-        # Evaluate branches to find new path
-        for idx, branch in enumerate(branches):
-            condition = branch.get("condition", {})
-            if await QuestionBranchEvaluator.matches(
-                condition, session, implicit_question=just_answered_field, visitor=visitor
-            ):
-                new_path = branch.get("target")
-                condition_index = idx
-                is_default = False
-                break
-        
-        # If no branch matched, use default_next
-        if new_path is None:
-            default_next = question_config.get("default_next")
-            if default_next:
-                new_path = default_next
-                condition_index = -1
-                is_default = True
-        
-        # Record new path for future reference
-        if new_path:
-            branch_cache.record_branch_path(just_answered_field, condition_index, new_path, is_default)
-        
-        # If previous path exists and differs from new path, prune responses from old branch
-        if previous_path and new_path and previous_path.get("target") != new_path:
-            logger.info(
-                f"QuestionWalker: Branch path changed for '{just_answered_field}'. "
-                f"Old target: {previous_path['target']}, New target: {new_path}. "
-                f"Pruning responses from unreachable questions and resetting interview."
-            )
-            
-            # Get valid questions on new path via graph traversal
-            valid_questions_on_new_path = await self._get_reachable_questions(
-                session, just_answered_field, new_path, interview_action
-            )
-            
-            # Find and prune responses that are no longer on any valid path
-            answered_questions = session.get_answered_questions()
-            pruned_questions = []
-            for question_name in answered_questions:
-                if question_name not in valid_questions_on_new_path:
-                    # This question is not on the new path, prune its response
-                    old_value = session.responses.get(question_name)
-                    if old_value is not None:
-                        session.responses.pop(question_name, None)
-                        pruned_questions.append(question_name)
-                        # Record pruned response for audit trail
-                        branch_cache.record_pruned_response(
-                            question_name,
-                            old_value,
-                            f"branch_path_change: {previous_path['target']} -> {new_path}"
-                        )
-                        logger.debug(
-                            f"QuestionWalker: Pruned response for '{question_name}' "
-                            f"(value={old_value!r}) due to branch path change"
-                        )
-            
-            # Reset interview to branching point for fresh traversal of new path
-            await self._reset_to_branching_point(
-                session,
-                just_answered_field,
-                new_path,
-                interview_action
-            )
-            
-            # Build detailed change info and save to session.context for callers
-            details = {
-                "branching_question": just_answered_field,
-                "old_target": previous_path.get("target"),
-                "new_target": new_path,
-                "is_default": is_default,
-                "condition_index": condition_index,
-                "pruned_questions": pruned_questions,
-            }
 
-            if session.context is None:
-                session.context = {}
-            session.context["_branch_change_details"] = details
-            await session.save()
-
-            return True
-
-        return False
-    
-    async def _reset_to_branching_point(
-        self,
-        session: InterviewSession,
-        branching_question: str,
-        new_target: str,
-        interview_action: Optional[Any] = None
-    ) -> None:
-        """Reset interview state to branching point and prepare for new path traversal.
-        
-        When a branching path changes due to response update, this method resets the
-        interview's active_question_key to None, forcing a fresh traversal of the new
-        path. This ensures that users are guided through all necessary questions on
-        the new branch.
-        
-        Args:
-            session: Interview session
-            branching_question: Question with the changed branch condition
-            new_target: New target question for the branch
-            interview_action: Optional InterviewInteractAction for state management
-        """
-        # Clear active question to force re-traversal from current position
-        session.active_question_key = None
-        
-        # Record reset in audit trail
-        if "_interview_resets" not in session.context:
-            session.context["_interview_resets"] = []
-        
-        session.context["_interview_resets"].append({
-            "branching_question": branching_question,
-            "new_target": new_target,
-            "timestamp": str(__import__("datetime").datetime.now()),
-            "previous_active_question": None  # Will be set below
-        })
-        
-        # Save session with reset state
-        await session.save()
-        
-        logger.info(
-            f"QuestionWalker: Reset interview to branching point. "
-            f"Branching question: {branching_question}, New target: {new_target}. "
-            f"Interview will traverse new path from current position."
+        branch_cache = BranchFunctionCache(self.interview_session)
+        branch_cache.record_branch_path(
+            implicit_question,
+            here.branch_index if here.branch_index is not None else -1,
+            target.label,
+            is_default=here.is_default,
         )
-    
-    async def _get_reachable_questions(
-        self,
-        session: InterviewSession,
-        from_question: str,
-        to_target: str,
-        interview_action: Optional[Any] = None
-    ) -> set:
-        """Get all questions reachable from a starting question to a target.
-        
-        Performs graph traversal to find all questions in the valid path from
-        from_question to to_target, following conditional branches.
-        
-        Args:
-            session: Interview session
-            from_question: Starting question name
-            to_target: Target question/state name
-            interview_action: Optional InterviewInteractAction for node lookups
-            
-        Returns:
-            Set of question names reachable on the path
-        """
-        reachable = {from_question}
-        to_visit = [to_target] if to_target else []
-        visited = {from_question}
-        
-        if not session.question_graph:
-            return reachable
-        
-        question_map = {q.get("name"): q for q in session.question_graph}
-        
-        while to_visit:
-            current = to_visit.pop(0)
-            
-            # Skip state targets
-            if self._is_state_target(current):
-                continue
-            
-            if current in visited:
-                continue
-            
-            visited.add(current)
-            reachable.add(current)
-            
-            # Get next questions from current
-            current_config = question_map.get(current)
-            if not current_config:
-                continue
-            
-            branches = current_config.get("branches", [])
-            if branches:
-                # For reachability analysis, assume all branches are potentially valid
-                # (we can't determine real conditions without responses)
-                for branch in branches:
-                    target = branch.get("target")
-                    if target and not self._is_state_target(target):
-                        if target not in visited:
-                            to_visit.append(target)
-            
-            # Also follow default_next
-            default_next = current_config.get("default_next")
-            if default_next and not self._is_state_target(default_next):
-                if default_next not in visited:
-                    to_visit.append(default_next)
-        
-        return reachable
+
+        # Visit the target node
+        await self.visit(target)

@@ -77,37 +77,112 @@ def record_response_access(key: str) -> None:
 
 # Thread lock for registry access
 _registry_lock = threading.RLock()
+# Centralized storage for all module-level registries
+_registries: Dict[str, Any] = {
+    "completion_handlers": {},  # interview_type -> callable
+    "input_handler": {},  # (interview_type, question_name) -> callable
+    "input_validator": {},  # (interview_type, question_name) -> callable
+    "input_directive_override": {},  # (interview_type, question_name) -> callable
+    "pending_input_handlers": {},  # interview_type -> {question_name: callable}
+    "pending_input_validators": {},
+    "pending_input_directive_overrides": {},
+    "branch_function": {},  # (interview_type, name) -> callable
+    "pending_branch_functions": {},
+    "input_context_provider": {},  # (interview_type, name) -> callable
+    "pending_input_context_providers": {},
+    "input_review_override": {},  # interview_type -> callable
+    "pending_input_review_overrides": {},  # module_name -> callable
+}
 
-# Module-level registry for completion handlers (keyed by interview_type)
-# This is populated when @on_interview_complete decorated functions are defined
-_completion_handlers: Dict[str, Callable] = {}
+# Backwards-compatible aliases for existing variable names used across the codebase
+_completion_handlers = _registries["completion_handlers"]
+_input_handler_registry = _registries["input_handler"]
+_input_validator_registry = _registries["input_validator"]
+_input_directive_override_registry = _registries["input_directive_override"]
+_pending_input_handlers = _registries["pending_input_handlers"]
+_pending_input_validators = _registries["pending_input_validators"]
+_pending_input_directive_overrides = _registries["pending_input_directive_overrides"]
+_branch_function_registry = _registries["branch_function"]
+_pending_branch_functions = _registries["pending_branch_functions"]
+_input_context_provider_registry = _registries["input_context_provider"]
+_pending_input_context_providers = _registries["pending_input_context_providers"]
+_input_review_override_registry = _registries["input_review_override"]
+_pending_input_review_overrides = _registries["pending_input_review_overrides"]
 
-# Module-level registries for decorator-registered handlers, validators, and directive overrides
-# Format: {(interview_type, question_name): function}
-_input_handler_registry: Dict[Tuple[str, str], Callable] = {}
-_input_validator_registry: Dict[Tuple[str, str], Callable] = {}
-_input_directive_override_registry: Dict[Tuple[str, str], Callable] = {}
 
-# Pending registrations: functions decorated before their class is defined
-# Format: {interview_type: {question_name: function}}
-_pending_input_handlers: Dict[str, Dict[str, Callable]] = {}
-_pending_input_validators: Dict[str, Dict[str, Callable]] = {}
-_pending_input_directive_overrides: Dict[str, Dict[str, Callable]] = {}
+class RegistryManager:
+    """Thread-safe access helper for centralized registries."""
 
-# Module-level registry for branch functions
-# Format: {(interview_type, function_name): function}
-_branch_function_registry: Dict[Tuple[str, str], Callable] = {}
-_pending_branch_functions: Dict[str, Dict[str, Callable]] = {}
+    @staticmethod
+    def get_completion_handler(interview_type: str):
+        with _registry_lock:
+            return _registries["completion_handlers"].get(interview_type)
 
-# Module-level registry for context data provider functions
-# Format: {(interview_type, function_name): function}
-_input_context_provider_registry: Dict[Tuple[str, str], Callable] = {}
-_pending_input_context_providers: Dict[str, Dict[str, Callable]] = {}
+    @staticmethod
+    def set_completion_handler(interview_type: str, func: Callable):
+        with _registry_lock:
+            _registries["completion_handlers"][interview_type] = func
 
-# Module-level registry for review value override (one per interview type)
-# Keyed by interview_type. Pending keyed by module __name__ when class not yet defined.
-_input_review_override_registry: Dict[str, Callable] = {}
-_pending_input_review_overrides: Dict[str, Callable] = {}
+    @staticmethod
+    def get_input_handler(interview_type: str, question_name: str):
+        with _registry_lock:
+            return _registries["input_handler"].get((interview_type, question_name))
+
+    @staticmethod
+    def set_input_handler(interview_type: str, question_name: str, func: Callable):
+        with _registry_lock:
+            _registries["input_handler"][(interview_type, question_name)] = func
+
+    @staticmethod
+    def get_input_validator(interview_type: str, question_name: str):
+        with _registry_lock:
+            return _registries["input_validator"].get((interview_type, question_name))
+
+    @staticmethod
+    def set_input_validator(interview_type: str, question_name: str, func: Callable):
+        with _registry_lock:
+            _registries["input_validator"][(interview_type, question_name)] = func
+
+    @staticmethod
+    def get_input_directive_override(interview_type: str, question_name: str):
+        with _registry_lock:
+            return _registries["input_directive_override"].get((interview_type, question_name))
+
+    @staticmethod
+    def set_input_directive_override(interview_type: str, question_name: str, func: Callable):
+        with _registry_lock:
+            _registries["input_directive_override"][(interview_type, question_name)] = func
+
+    @staticmethod
+    def get_input_review_override(interview_type: str):
+        with _registry_lock:
+            return _registries["input_review_override"].get(interview_type)
+
+    @staticmethod
+    def set_input_review_override(interview_type: str, func: Callable):
+        with _registry_lock:
+            _registries["input_review_override"][interview_type] = func
+
+    @staticmethod
+    def get_pending(registry_name: str, interview_type: str):
+        with _registry_lock:
+            return _registries.get(registry_name, {}).get(interview_type, {}).copy()
+
+    @staticmethod
+    def set_pending(registry_name: str, interview_type: str, data: Dict[str, Callable]):
+        with _registry_lock:
+            _registries[registry_name][interview_type] = data
+
+    @staticmethod
+    def register_branch_function(interview_type: str, function_name: str, func: Callable):
+        with _registry_lock:
+            _registries["branch_function"][(interview_type, function_name)] = func
+
+    @staticmethod
+    def register_input_context_provider(interview_type: str, function_name: str, func: Callable):
+        with _registry_lock:
+            _registries["input_context_provider"][(interview_type, function_name)] = func
+
 
 
 def _detect_interview_type(func: Callable, interview_type: Optional[str] = None) -> Optional[str]:
@@ -381,50 +456,42 @@ def input_review_override(func: Callable) -> Callable:
 # Export registry access functions for InterviewInteractAction
 def get_completion_handler(interview_type: str) -> Optional[Callable]:
     """Get completion handler for an interview type (thread-safe)."""
-    with _registry_lock:
-        return _completion_handlers.get(interview_type)
+    return RegistryManager.get_completion_handler(interview_type)
 
 
 def get_input_handler(interview_type: str, question_name: str) -> Optional[Callable]:
     """Get input handler for a question (thread-safe)."""
-    with _registry_lock:
-        return _input_handler_registry.get((interview_type, question_name))
+    return RegistryManager.get_input_handler(interview_type, question_name)
 
 
 def get_input_validator(interview_type: str, question_name: str) -> Optional[Callable]:
     """Get input validator for a question (thread-safe)."""
-    with _registry_lock:
-        return _input_validator_registry.get((interview_type, question_name))
+    return RegistryManager.get_input_validator(interview_type, question_name)
 
 
 def get_input_directive_override(interview_type: str, question_name: str) -> Optional[Callable]:
     """Get input directive override for a question (thread-safe)."""
-    with _registry_lock:
-        return _input_directive_override_registry.get((interview_type, question_name))
+    return RegistryManager.get_input_directive_override(interview_type, question_name)
 
 
 def get_input_review_override(interview_type: str) -> Optional[Callable]:
     """Get input review override for an interview type (thread-safe)."""
-    with _registry_lock:
-        return _input_review_override_registry.get(interview_type)
+    return RegistryManager.get_input_review_override(interview_type)
 
 
 def get_pending_input_handlers(interview_type: str) -> Dict[str, Callable]:
     """Get pending input handlers for an interview type (thread-safe)."""
-    with _registry_lock:
-        return _pending_input_handlers.get(interview_type, {}).copy()
+    return RegistryManager.get_pending("pending_input_handlers", interview_type)
 
 
 def get_pending_input_validators(interview_type: str) -> Dict[str, Callable]:
     """Get pending input validators for an interview type (thread-safe)."""
-    with _registry_lock:
-        return _pending_input_validators.get(interview_type, {}).copy()
+    return RegistryManager.get_pending("pending_input_validators", interview_type)
 
 
 def get_pending_input_directive_overrides(interview_type: str) -> Dict[str, Callable]:
     """Get pending input directive overrides for an interview type (thread-safe)."""
-    with _registry_lock:
-        return _pending_input_directive_overrides.get(interview_type, {}).copy()
+    return RegistryManager.get_pending("pending_input_directive_overrides", interview_type)
 
 
 def flush_module_registrations_for_class(interview_type: str, module: Any) -> None:
@@ -551,6 +618,8 @@ def _wrap_branch_function_with_tracking(func: Callable) -> Callable:
     """
     if inspect.iscoroutinefunction(func):
         async def async_wrapper(session: "InterviewSession", visitor: "InteractWalker") -> Any:
+            if visitor is None:
+                raise ValueError("branch function requires a visitor to be provided")
             with track_response_access() as tracker:
                 # Instrument session.responses for this call
                 original_responses = session.responses
@@ -570,6 +639,8 @@ def _wrap_branch_function_with_tracking(func: Callable) -> Callable:
         return async_wrapper
     else:
         def sync_wrapper(session: "InterviewSession", visitor: "InteractWalker") -> Any:
+            if visitor is None:
+                raise ValueError("branch function requires a visitor to be provided")
             with track_response_access() as tracker:
                 # Instrument session.responses for this call
                 original_responses = session.responses
@@ -635,20 +706,18 @@ def register_branch_function(interview_type: str, function_name: str, func: Call
     module-level registry contains the function under the given
     interview_type.
     """
-    with _registry_lock:
-        _branch_function_registry[(interview_type, function_name)] = func
-        logger.debug(
-            f"Registered branch_function '{function_name}' for interview type '{interview_type}' (programmatic)"
-        )
+    RegistryManager.register_branch_function(interview_type, function_name, func)
+    logger.debug(
+        f"Registered branch_function '{function_name}' for interview type '{interview_type}' (programmatic)"
+    )
 
 
 def register_input_context_provider(interview_type: str, function_name: str, func: Callable) -> None:
     """Register an input context provider programmatically (thread-safe)."""
-    with _registry_lock:
-        _input_context_provider_registry[(interview_type, function_name)] = func
-        logger.debug(
-            f"Registered input_context_provider '{function_name}' for interview type '{interview_type}' (programmatic)"
-        )
+    RegistryManager.register_input_context_provider(interview_type, function_name, func)
+    logger.debug(
+        f"Registered input_context_provider '{function_name}' for interview type '{interview_type}' (programmatic)"
+    )
 
 
 def get_pending_branch_functions(interview_type: str) -> Dict[str, Callable]:
