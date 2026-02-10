@@ -98,12 +98,24 @@ class InterviewSession(Node):
     )
     
     def get_answered_questions(self) -> List[str]:
-        """Get list of question keys that have been answered."""
-        return list(self.responses.keys())
-    
+        """Get list of question keys that have been answered.
+
+        Forces a fresh read from the responses dict to avoid any caching issues
+        with jvspatial attributes.
+        """
+        # Access responses dict and create explicit snapshot to bypass any caching
+        responses_dict = dict(self.responses) if self.responses else {}
+        return list(responses_dict.keys())
+
     def get_unanswered_questions(self) -> List[str]:
-        """Get list of question keys that haven't been answered."""
-        answered = set(self.get_answered_questions())
+        """Get list of question keys that haven't been answered.
+
+        Forces a fresh read from the responses dict to avoid any caching issues
+        with jvspatial attributes.
+        """
+        # Access responses dict directly and create explicit snapshot
+        responses_dict = dict(self.responses) if self.responses else {}
+        answered = set(responses_dict.keys())
         all_questions = [q.get("name", "") for q in self.question_graph if q.get("name")]
         return [q for q in all_questions if q and q not in answered]
     

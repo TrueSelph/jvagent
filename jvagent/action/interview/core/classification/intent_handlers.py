@@ -213,69 +213,17 @@ class DeclineHandler(IntentHandler):
         state_machine: Optional[Any] = None
     ) -> HandlerResult:
         """Handle decline intent.
-        
-        Handles user declining to answer optional questions.
+
+        DECLINE is fully handled by QuestionNode during walker traversal:
+        - REQUIRED field: QuestionNode returns decline directive (stays on question)
+        - OPTIONAL field: QuestionNode sets N/A and returns None (walker continues)
+
+        InterviewInteractAction passes the intent via QuestionWalker.current_intent,
+        and QuestionNode.execute() uses it to determine the appropriate action.
+
+        This handler signals intent was recognized and allows traversal to proceed.
         """
-        field = result.field
-        if field and isinstance(field, str):
-            field = field.strip()
-            if field.lower() in ("null", "none", ""):
-                field = None
-        
-        # If field not specified, try to use active question as fallback
-        if not field and session.active_question_key:
-            field = session.active_question_key
-        
-        if not field:
-            # Field not specified and no active question - treat as unclear response
-            logger.warning(
-                f"{self.action.get_class_name()}: DECLINE intent without field specified "
-                f"and no active question"
-            )
-            return HandlerResult(handled=False, should_continue=True)
-        
-        # Check if field is required and if it's a data_input_field question
-        question_config = session.get_question_by_name(field)
-        is_required = question_config.get("required", False) if question_config else False
-        
-        if is_required:
-            # Required field - insist on answer
-            field_display = field.replace("_", " ").title()
-            question_text = question_config.get("question", field_display) if question_config else field_display
-            
-            # Generate directive using required_field_decline template
-            directive = self.action.config.templates.required_field_decline.format(
-                field_display=field_display,
-                question=question_text
-            )
-            
-            # Keep active_question_key pointing to this required field
-            session.active_question_key = field
-            await session.save()
-            
-            await self.action.directive_builder.queue_directive(visitor, directive)
-            return HandlerResult(handled=True, should_continue=False)
-        else:
-            # Non-required field - store decline value (configurable) and continue
-            decline_value = self.action.config.classification.decline_value
-            session.set_response(field, decline_value)
-            session.set_validation_status(field, ValidationStatus.VALID)
-            await session.save()
-            
-            # Re-evaluate branches after storing decline value
-            # This ensures conditional flow respects the declined field
-            # and prevents question path disruption
-            from ..graph.question_walker import QuestionWalker
-            question_walker = QuestionWalker()
-            question_walker.interview_session = session
-            question_walker.interaction = interaction
-            await self.action._update_reachable_questions(session, question_walker, just_answered_field=field, visitor=visitor)
-            
-            logger.debug(
-                f"{self.action.get_class_name()}: Declined non-required field {field}, stored as '{decline_value}'. "
-                f"Branches re-evaluated to maintain question path integrity."
-            )
-            return HandlerResult(handled=True, should_continue=True)
+        return HandlerResult(handled=True, should_continue=True)
 
 
 class SubmissionHandler(IntentHandler):

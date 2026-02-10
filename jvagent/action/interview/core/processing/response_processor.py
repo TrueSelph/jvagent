@@ -18,31 +18,24 @@ async def invalidate_dependent_caches(
 ) -> None:
     """Invalidate caches that depend on an updated response.
 
-    When a response is updated, intelligently invalidates:
-    1. Branch function cache entries that depend on this response
-    2. Coordinate with question node cache invalidation
-
-    This enables efficient re-evaluation: cached branch results are only
-    re-executed if their dependencies have actually changed.
+    When a response is updated, invalidates the branch cache entry for that
+    question (if any) and the question node cache, so re-evaluation uses
+    fresh branch resolution.
 
     Args:
         action: InterviewInteractAction instance for logging context
         session: Interview session
         response_key: Key of the response that was updated
     """
-    from ..utils.cache_utils import BranchFunctionCache, QuestionNodeCache
+    from ..utils.cache_utils import BranchCache, QuestionNodeCache
 
-    branch_cache = BranchFunctionCache(session)
-    invalidated_branches = branch_cache.invalidate_by_response(response_key)
-
-    if invalidated_branches:
-        logger.debug(
-            "%s: Response update '%s' invalidated %d branch cache entries: %s",
-            action.get_class_name(),
-            response_key,
-            len(invalidated_branches),
-            invalidated_branches
-        )
+    branch_cache = BranchCache(session)
+    branch_cache.invalidate(response_key)
+    logger.debug(
+        "%s: Branch cache invalidated for response update '%s'",
+        action.get_class_name(),
+        response_key
+    )
 
     question_cache = QuestionNodeCache(session)
     question_cache.invalidate()
