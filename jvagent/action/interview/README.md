@@ -2019,9 +2019,9 @@ This ensures interview state remains consistent when branching paths change.
 For production monitoring, check cache contents in session.context:
 
 ```python
-# Access cache for debugging
-cache_data = session.context.get('_branch_function_cache', {})
-print(f"Cached entries: {len(cache_data)}")
+# Access cache for debugging (question name -> resolved target)
+cache_data = session.context.get('_branch_cache', {})
+print(f"Cached branch targets: {len(cache_data)}")
 
 pruned_data = session.context.get('_pruned_responses', {})
 if pruned_data:

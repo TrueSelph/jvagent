@@ -116,8 +116,8 @@ async def test_pruning_removes_unreachable_responses():
         
         # Now test the actual pruning via detect_and_prune_altered_path
         # First, we need to set up the branch cache with the old path
-        from jvagent.action.interview.core.utils.cache_utils import BranchFunctionCache
-        cache = BranchFunctionCache(session)
+        from jvagent.action.interview.core.utils.cache_utils import BranchCache
+        cache = BranchCache(session)
         # Record the old path so detect_and_prune can compare
         cache.record_branch_path("q1", 0, "q2", False)  # Branch index 0, target q2
         await session.save()
@@ -246,8 +246,8 @@ async def test_pruning_preserves_pre_branch_answers():
         await session.save()
 
         # Set up branch cache with old path
-        from jvagent.action.interview.core.utils.cache_utils import BranchFunctionCache
-        cache = BranchFunctionCache(session)
+        from jvagent.action.interview.core.utils.cache_utils import BranchCache
+        cache = BranchCache(session)
         cache.record_branch_path("q2", 0, "q3_a", False)
         await session.save()
 

@@ -141,7 +141,7 @@ actions:
 
   - action: resolv/signup_interview_interact_action
     context:
-      enabled: true
+      enabled: false
       description: "Training signup interview flow for user registration and training scheduling"
       weight: -50 # Runs after InteractRouter
       anchors:

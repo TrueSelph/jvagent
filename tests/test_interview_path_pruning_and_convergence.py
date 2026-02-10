@@ -2,7 +2,7 @@ import pytest
 
 from jvagent.action.interview.core.session.interview_session import InterviewSession
 from jvagent.action.interview.core.graph.question_walker import QuestionWalker
-from jvagent.action.interview.core.utils.cache_utils import BranchFunctionCache
+from jvagent.action.interview.core.utils.cache_utils import BranchCache
 
 
 @pytest.mark.asyncio
@@ -25,7 +25,7 @@ async def test_path_change_prunes_unreachable_responses():
     session.responses = {"qA": "b", "qB": "valB", "qD": "valD"}
 
     # Record previous branch path as qA -> qB
-    branch_cache = BranchFunctionCache(session)
+    branch_cache = BranchCache(session)
     branch_cache.record_branch_path("qA", 0, "qB", False)
 
     # Now update qA to take qC path

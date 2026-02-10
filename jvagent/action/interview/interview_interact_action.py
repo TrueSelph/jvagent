@@ -592,8 +592,9 @@ class InterviewInteractAction(InteractAction, ABC):
         - CANCELLATION intent → CancelledStateNode
         - CONFIRMATION in REVIEW state → CompletedStateNode
         - UPDATE intent → First question node (re-evaluate from beginning)
-        - ACTIVE + all questions answered → ReviewStateNode
-        - ACTIVE + DECLINE/NONE → Current question node (re-ask)
+        - ACTIVE + all answered → ReviewStateNode
+        - ACTIVE + DECLINE → Keep current target_node (QuestionNode handles logic)
+        - ACTIVE + NONE → First unanswered (if target not set)
         - ACTIVE + SUBMISSION → Last answered question node
         - REVIEW + other → ReviewStateNode (re-show summary)
         - Fallback → First question node
@@ -601,7 +602,6 @@ class InterviewInteractAction(InteractAction, ABC):
         Args:
             session: Interview session
             intent: Detected user intent
-            classification_result: Full classification result
         """
         current_state = session.state
 
@@ -634,7 +634,15 @@ class InterviewInteractAction(InteractAction, ABC):
                 node = await self._get_state_node(InterviewState.REVIEW)
                 session.target_node = node.id if node else None
                 changed = True
-            elif intent in (Intent.DECLINE, Intent.NONE):
+            elif intent == Intent.DECLINE:
+                # Keep current target_node — QuestionNode handles DECLINE logic
+                # (required: returns decline directive, optional: sets N/A and continues)
+                if not session.target_node:
+                    first_unanswered = unanswered[0]
+                    node = await self._get_question_node(first_unanswered, session)
+                    session.target_node = node.id if node else None
+                    changed = True
+            elif intent == Intent.NONE:
                 if not session.target_node:
                     first_unanswered = unanswered[0]
                     node = await self._get_question_node(first_unanswered, session)
@@ -822,15 +830,15 @@ class InterviewInteractAction(InteractAction, ABC):
             intent = Intent.NONE
 
         # 3. Store extracted responses based on intent
+        # Note: DECLINE is intentionally not handled here - QuestionNode handles
+        # DECLINE logic (N/A for optional, directive for required) during traversal
         if intent == Intent.SUBMISSION and classification_result.extracted_data:
             for field, value in classification_result.extracted_data.items():
                 session.set_response(field, value)
         elif intent == Intent.UPDATE and classification_result.field:
             session.set_response(classification_result.field, classification_result.value)
-        elif intent == Intent.DECLINE and classification_result.field:
-            session.responses.pop(classification_result.field, None)
 
-        # 4. Determine target node based on intent, state
+        # 4. Determine target node based on intent and state
         await self._resolve_target_node(session, intent)
         target_node_id = session.target_node
         try:
@@ -852,7 +860,8 @@ class InterviewInteractAction(InteractAction, ABC):
             interview_session=session,
             interaction=interaction,
             interact_visitor=visitor,
-            interview_action=self
+            interview_action=self,
+            current_intent=intent,
         )
 
         await question_walker.spawn(target_node)

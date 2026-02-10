@@ -84,8 +84,8 @@ async def test_context_variables_lifecycle():
         walker.interview_session = session
 
         # Set up branch cache with old path
-        from jvagent.action.interview.core.utils.cache_utils import BranchFunctionCache
-        cache = BranchFunctionCache(session)
+        from jvagent.action.interview.core.utils.cache_utils import BranchCache
+        cache = BranchCache(session)
         cache.record_branch_path("q1", 0, "q2_a", False)
         await session.save()
 

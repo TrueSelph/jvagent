@@ -15,7 +15,6 @@ When spawned on a target node, the walker's presence triggers operations via
 Key Components:
 - @on_visit(QuestionNode): Handle question node visits (prompt or validate)
 - @on_visit(StateNode): Handle state node visits (state transitions)
-- @on_visit(QuestionEdge): Handle edge traversal (branch path recording)
 """
 
 import logging
@@ -24,9 +23,7 @@ from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple, Union
 from pydantic import Field, PrivateAttr
 from jvspatial.core import Walker, on_visit
 
-from .question_branch_evaluator import QuestionBranchEvaluator
 from .question_node import QuestionNode
-from .question_edge import QuestionEdge
 from .state_node import StateNode
 from ..foundation.enums import ValidationStatus, InterviewState
 
@@ -46,10 +43,9 @@ class QuestionWalker(Walker):
     Instead of manual traversal, QuestionWalker uses @on_visit decorators:
     - @on_visit(QuestionNode): Checks if answered, queues prompt or validates
     - @on_visit(StateNode): Records terminal state and executes transition
-    - @on_visit(QuestionEdge): Records branch path and visits target node
 
     The Walker.spawn() starts traversal, run() processes the queue, and
-    @on_visit hooks are automatically dispatched for each visited node/edge.
+    @on_visit hooks are automatically dispatched for each visited node.
 
     Usage:
     ======
@@ -76,6 +72,7 @@ class QuestionWalker(Walker):
     interaction: Optional[Any] = None  # Interaction
     interview_action: Optional[Any] = None  # InterviewInteractAction
     interact_visitor: Optional[Any] = None  # InteractWalker (parent walker for branch evaluation)
+    current_intent: Optional[Any] = None  # Intent for this turn (e.g. Intent.DECLINE for required-field decline detection)
 
     # Mutable defaults must use Field/PrivateAttr(default_factory=...) to avoid sharing
     directives: List[str] = Field(default_factory=list)
@@ -125,22 +122,40 @@ class QuestionWalker(Walker):
 
     async def _handle_unanswered_question(
         self, here: QuestionNode, question_name: str
-    ) -> None:
-        """Handle case where no response exists - queue question prompt and return.
+    ) -> bool:
+        """Handle case where no response exists - delegate to QuestionNode.
 
-        When the walker encounters a question without an extracted value in the session,
-        this method generates the question prompt directive, queues it, and updates
-        the session's target_node for position tracking.
+        When the walker encounters a question without an extracted value in the
+        session, this method delegates to the QuestionNode to determine the
+        appropriate action. The QuestionNode may:
+        - Return a directive (question prompt, required-field decline message)
+        - Handle the response internally (e.g., set N/A for optional decline)
+          and return None to signal the walker should continue traversal.
 
         Args:
             here: The QuestionNode being visited
             question_name: Name of the question field
+
+        Returns:
+            True if the walker should continue traversal (response handled, no directive),
+            False if the walker should stop (directive queued or awaiting input)
         """
         directive = await here.execute(self)
         if directive:
             self.directives.append(directive)
+            self.interview_session.target_node = here.id
+            await self.interview_session.save()
+            return False
+
+        # No directive returned. Check if QuestionNode handled the response
+        # (e.g., optional DECLINE sets N/A without returning a directive)
+        if question_name in self.interview_session.responses:
+            return True
+
+        # No directive and no response — stay on this question
         self.interview_session.target_node = here.id
         await self.interview_session.save()
+        return False
 
     async def _process_and_validate_response(
         self, here: QuestionNode, question_name: str
@@ -217,36 +232,35 @@ class QuestionWalker(Walker):
             self.interview_session.set_response(question_name, final_value)
 
     async def _continue_traversal(self, here: QuestionNode, question_name: str) -> None:
-        """Evaluate branches and visit next node.
+        """Evaluate outgoing edges and visit the first that returns a target node.
 
-        After a valid response, this method evaluates outgoing edges to determine
-        the next node to visit. Conditional edges are evaluated in order by branch_index,
-        and the first matching condition determines the path.
+        All edges are evaluated in order (by branch_index).
+        The first edge whose evaluate() returns a non-None node is used; the
+        walker visits that target node. Branch path is recorded inside the edge's evaluate().
 
         Args:
             here: The QuestionNode being visited
             question_name: Name of the question field (used as implicit question for conditions)
         """
         edges = await here.edges(direction="out")
-        conditional_edges = sorted(
-            [e for e in edges if e.condition],
-            key=lambda e: (e.branch_index if e.branch_index is not None else 999)
+        # Evaluate conditional edges before default: use (has_condition, branch_index)
+        # so edges with a condition run first (and in branch order), then default edges.
+        ordered = sorted(
+            edges,
+            key=lambda e: (
+                0 if e.condition else 1,
+                e.branch_index if e.branch_index is not None else 999,
+            ),
         )
-        default_edges = [e for e in edges if not e.condition]
-
-        for edge in conditional_edges:
-            if await QuestionBranchEvaluator.matches(
-                edge.condition,
+        for edge in ordered:
+            target = await edge.evaluate(
                 self.interview_session,
-                implicit_question=question_name,
-                visitor=self.interact_visitor
-            ):
-                await self.visit(edge)
+                question_name,
+                self.interact_visitor,
+            )
+            if target is not None:
+                await self.visit(target)
                 return
-
-        # No conditional match: use default edge
-        if default_edges:
-            await self.visit(default_edges[0])
 
     # =========================================================================
     # Helper Methods for on_state_node() - Extracted for clarity
@@ -302,16 +316,18 @@ class QuestionWalker(Walker):
         Traversal Logic:
         ================
         1. Check for infinite loops (visited node tracking)
-        2. If no extracted value exists → queue question prompt and return
+        2. If no extracted value exists → delegate to QuestionNode
+           - If directive returned → queue and stop (e.g., question prompt, decline rejection)
+           - If response handled without directive (e.g., optional DECLINE) → continue walking
         3. If extracted value exists → execute handlers and validators
            - If invalid → queue error directive and return (disengage)
-           - If valid → update session, handle pruning, continue walking
+           - If valid → update session, continue walking
 
         Args:
             here: QuestionNode being visited
         """
 
-        logger.warning(f"On question node visit: node id={here.id} label={here.label} session responses={self.interview_session.responses if self.interview_session else 'N/A'}")
+        logger.warning(f"On question node visit: node id={here.label}")
         
         if not self.interview_session:
             return
@@ -323,9 +339,15 @@ class QuestionWalker(Walker):
             return
         self._visited_nodes.add(here.id)
 
-        # Branch 1: No extracted value - queue question prompt and return
+        # Branch 1: No extracted value - delegate to QuestionNode for inference
         if question_name not in self.interview_session.responses:
-            await self._handle_unanswered_question(here, question_name)
+            should_continue = await self._handle_unanswered_question(here, question_name)
+            if not should_continue:
+                return
+            # QuestionNode handled the response without a directive (e.g. optional DECLINE)
+            # Clear the consumed intent to prevent it from affecting subsequent questions
+            self.current_intent = None
+            await self._continue_traversal(here, question_name)
             return
 
         # Branch 2: Extracted value exists - process and validate
@@ -359,8 +381,9 @@ class QuestionWalker(Walker):
         Args:
             here: StateNode being visited
         """
-        
-        logger.warning(f"On state node visit: node id={here.id} label={here.label} state={here.state_type.value if hasattr(here, 'state_type') else 'N/A'}")    
+
+        logger.warning(f"On state node visit: node id={here.label}")
+
         if not self.interview_session:
             return
 
@@ -378,53 +401,3 @@ class QuestionWalker(Walker):
 
         # Update position and return
         await self._update_target_node(here)
-
-    @on_visit(QuestionEdge)
-    async def on_question_edge(self, here: QuestionEdge) -> None:
-        """Handle visiting a QuestionEdge during graph traversal.
-
-        This @on_visit decorator is called automatically by jvspatial's Walker
-        when a QuestionEdge is visited during spawn() traversal. It records the
-        branch path taken and then visits the target node.
-
-        Args:
-            here: QuestionEdge being visited
-        """
-        if not self.interview_session:
-            return
-
-        # Get source and target nodes from the edge using IDs
-        from jvspatial.core import Node as JVNode
-
-        source_id = here.source
-        target_id = here.target
-
-        if not source_id or not target_id:
-            return
-
-        source = await JVNode.get(source_id)
-        target = await JVNode.get(target_id)
-
-        if not source or not target:
-            return
-
-        # Extract source question name for recording branch path
-        implicit_question = (
-            source.state.get("name", source.label)
-            if hasattr(source, "state")
-            else source.label
-        )
-
-        # Record branch path for path-change detection
-        from ..utils.cache_utils import BranchFunctionCache
-
-        branch_cache = BranchFunctionCache(self.interview_session)
-        branch_cache.record_branch_path(
-            implicit_question,
-            here.branch_index if here.branch_index is not None else -1,
-            target.label,
-            is_default=here.is_default,
-        )
-
-        # Visit the target node
-        await self.visit(target)

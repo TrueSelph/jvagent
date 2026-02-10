@@ -14,7 +14,7 @@ from jvspatial.core.annotations import attribute
 
 from .question_branch_evaluator import QuestionBranchEvaluator
 from ..foundation.decorators import get_input_context_provider
-from ..foundation.enums import ValidationStatus
+from ..foundation.enums import Intent, ValidationStatus
 from ..foundation.exceptions import ValidationError, QuestionNotFoundError
 
 if TYPE_CHECKING:
@@ -62,8 +62,6 @@ class QuestionNode(Node):
     
     _interview_action: Optional[Any] = None  # Cached reference to the InterviewInteractAction class for handler
 
-    async def on_register(self) -> None:
-        """Register the node."""
     
     def _resolve_callable(self, callable_ref: Any) -> Optional[Any]:
         """Resolve a callable reference (function or string) to a callable object.
@@ -317,30 +315,13 @@ class QuestionNode(Node):
         
         return ""
     
-    async def condition_matches(
-        self,
-        condition: Dict[str, Any],
-        session: "InterviewSession",
-        visitor: Optional[Any] = None
-    ) -> bool:
-        """Check if an edge condition matches the current session state.
-        
-        Args:
-            condition: Condition dict with 'op' and optional 'value' keys, or 'function' key
-            session: Interview session
-            visitor: Optional InteractWalker for branch function access
-            
-        Returns:
-            True if condition matches, False otherwise
-        """
-        # Question is implicit - use the question node's label as the implicit question
-        question_name = self.state.get("name", "")
-        if not question_name:
-            return False
-        return await QuestionBranchEvaluator.matches(condition, session, implicit_question=question_name, visitor=visitor)
 
     async def execute(self, walker: Any) -> Optional[str]:
         """Execute question node to check if info is needed and return directive.
+
+        Handles DECLINE intent:
+        - REQUIRED field: returns REQUIRED_FIELD_DECLINE directive
+        - OPTIONAL field: sets "N/A" response and returns None (walker continues)
 
         Args:
             walker: Walker-like object with interview_session attribute
@@ -348,28 +329,52 @@ class QuestionNode(Node):
         Returns:
             Directive string if information is needed, None otherwise
         """
-        logger.debug(f"QuestionNode executed for {self.label}")
-
-        if not self.state.get("name", ""):
-            return None
-
-        # Check if this question has been answered
         question_key = self.state.get("name", "")
-        session = getattr(walker, 'interview_session', None)
-        
-        if session and question_key in session.get_answered_questions():
+        if not question_key:
             return None
 
-        self._interview_action = getattr(walker, 'interview_action', None)
+        session = getattr(walker, 'interview_session', None)
+        if not session:
+            return None
+
+        # Already answered - nothing to do
+        if question_key in session.get_answered_questions():
+            return None
+
+        self._interview_action = getattr(walker, "interview_action", None)
+        current_intent = getattr(walker, "current_intent", None)
+        is_required = self.state.get("required", False)
+
+        # Handle DECLINE intent
+        if current_intent == Intent.DECLINE:
+            if is_required:
+                # REQUIRED: return directive insisting on answer
+                if self._interview_action:
+                    decline_template = self._interview_action.config.templates.required_field_decline
+                    if decline_template:
+                        field_display = question_key.replace("_", " ").title()
+                        question = self.state.get("question", "")
+                        return decline_template.format(
+                            field_display=field_display,
+                            question=question,
+                        )
+            else:
+                # OPTIONAL: set N/A response and return None (let walker continue)
+                session.set_response(question_key, "N/A")
+                return None
+
+        # Normal case - return question directive
+        if not self._interview_action:
+            return None
+
+        directive_template = self._interview_action.config.templates.question_directive
+        if not directive_template:
+            return None
+
         constraints = self.state.get("constraints", {})
         question = self.state.get("question", "")
         description = constraints.get("description", "")
         instructions = constraints.get("instructions", "")
-        
-        # Return None if template not provided
-        directive_template = self._interview_action.config.templates.question_directive if self._interview_action else None
-        if not directive_template:
-            return None
 
         # Get context data for this question
         context_data = await self.get_context_data(session, walker)
@@ -387,7 +392,7 @@ class QuestionNode(Node):
             context_section=context_section,
             instructions=formatted_instructions,
         )
-        
+
         return directive if directive else None
 
     def _validate_empty_value(self, value: Any) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:

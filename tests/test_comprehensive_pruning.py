@@ -107,8 +107,8 @@ async def test_branch_change_triggers_pruning():
         # Should detect path change (need to record previous path first)
         # Since we haven't recorded previous path, it won't detect change
         # Let's manually set previous path info
-        from jvagent.action.interview.core.utils.cache_utils import BranchFunctionCache
-        cache = BranchFunctionCache(session)
+        from jvagent.action.interview.core.utils.cache_utils import BranchCache
+        cache = BranchCache(session)
         cache.record_branch_path("location", 0, "urban_details", False)
         await session.save()
         
