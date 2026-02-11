@@ -16,6 +16,7 @@ from .question_branch_evaluator import QuestionBranchEvaluator
 from ..foundation.decorators import get_input_context_provider
 from ..foundation.enums import Intent, ValidationStatus
 from ..foundation.exceptions import ValidationError, QuestionNotFoundError
+from ..utils.handler_utils import invoke_async_with_optional_context, invoke_with_optional_context
 
 if TYPE_CHECKING:
     from ..session.interview_session import InterviewSession
@@ -140,80 +141,94 @@ class QuestionNode(Node):
         self,
         raw_input: str,
         session: "InterviewSession",
-        interaction: Optional[Any] = None
+        interaction: Optional[Any] = None,
+        visitor: Optional[Any] = None,
+        interview_action: Optional[Any] = None,
     ) -> Any:
         """Process raw user input before validation.
-        
+
         This allows custom handlers to transform or normalize input before
         validation occurs. For example, converting "next Tuesday" to a date.
-        
+
+        Handlers may accept (raw_input, session, interaction) or the extended
+        signature (raw_input, session, interaction, visitor, interview_action).
+        Optional context is passed only when the handler accepts it.
+
         Args:
             raw_input: Raw user input string
             session: Interview session for context
             interaction: Interaction node (optional, for accessing interaction context)
-            
+            visitor: Optional InteractWalker for handler context
+            interview_action: Optional InterviewInteractAction for handler context
+
         Returns:
             Processed value ready for validation
         """
         constraints = self.state.get("constraints", {})
         question_name = self.state.get("name", "")
-        
+
         # First, try to get handler from decorator registry (if action class is available)
         handler = None
         if question_name and session:
-            action = self._interview_action
+            action = self._interview_action or interview_action
             if action:
                 handler = action.get_input_handler(question_name)
-        
+
         # Fallback to question config string reference
         if not handler:
             input_handler_ref = constraints.get("input_handler")
             if input_handler_ref:
                 handler = self._resolve_callable(input_handler_ref)
-        
+
         # Execute handler if found
         if handler and callable(handler):
             try:
-                # Handler must accept (raw_input, session, interaction)
-                # Handler can be sync or async - check and await if needed
-                import inspect
-                if inspect.iscoroutinefunction(handler):
-                    processed = await handler(raw_input, session, interaction)
-                else:
-                    processed = handler(raw_input, session, interaction)
+                processed = await invoke_async_with_optional_context(
+                    handler,
+                    raw_input,
+                    session,
+                    interaction,
+                    visitor=visitor,
+                    interview_action=interview_action or self._interview_action,
+                )
                 return processed
             except Exception as e:
                 logger.warning(f"Input handler raised exception: {e}")
                 return raw_input  # Fallback to raw input
-        
+
         # Default: return input as-is
         return raw_input
             
     async def get_context_data(
         self,
         session: "InterviewSession",
-        visitor: Optional[Any] = None
+        visitor: Optional[Any] = None,
+        interview_action: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Get context data for this question (static or dynamic).
-        
+
         Context data provides additional information to help the user answer the question,
         such as available times, valid options, or personalized choices.
-        
+
         Args:
             session: Interview session for context
             visitor: Optional InteractWalker for accessing graph context
-            
+            interview_action: Optional InterviewInteractAction for provider context
+
         Returns:
             Dictionary of context data to be included in the question prompt
         """
         # Start with static input_context from question config
         static_context = self.state.get("input_context", {})
-        
+
         # Check for dynamic input_context_provider
         provider_name = self.state.get("input_context_provider")
         if provider_name:
             try:
-                dynamic_context = await self._execute_context_provider(provider_name, session, visitor)
+                dynamic_context = await self._execute_context_provider(
+                    provider_name, session, visitor,
+                    interview_action=interview_action or self._interview_action,
+                )
                 # Merge static and dynamic (dynamic takes precedence)
                 if dynamic_context:
                     return {**static_context, **dynamic_context}
@@ -230,15 +245,20 @@ class QuestionNode(Node):
         self,
         provider_name: str,
         session: "InterviewSession",
-        visitor: Optional[Any]
+        visitor: Optional[Any],
+        interview_action: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Execute an input data provider function.
+
+        Providers may accept (session, visitor) or (session, visitor, interview_action).
+        Optional context is passed only when the provider accepts it.
 
         Args:
             provider_name: Name of the registered input data provider function
             session: Interview session
             visitor: Optional InteractWalker
-            
+            interview_action: Optional InterviewInteractAction for provider context
+
         Returns:
             Dictionary of context data from the provider function
         """
@@ -250,13 +270,14 @@ class QuestionNode(Node):
                 f"Question: '{self.state.get('name', '')}'"
             )
             return {}
-        
+
         try:
-            # Call function with session and visitor
-            if inspect.iscoroutinefunction(func):
-                result = await func(session, visitor)
-            else:
-                result = func(session, visitor)
+            result = await invoke_async_with_optional_context(
+                func,
+                session=session,
+                visitor=visitor,
+                interview_action=interview_action,
+            )
             
             # Validate result is a dictionary
             if not isinstance(result, dict):
@@ -377,7 +398,9 @@ class QuestionNode(Node):
         instructions = constraints.get("instructions", "")
 
         # Get context data for this question
-        context_data = await self.get_context_data(session, walker)
+        context_data = await self.get_context_data(
+            session, walker, interview_action=self._interview_action
+        )
         context_section = self._format_context_data(context_data)
 
         # Format instructions - only include if present
@@ -489,26 +512,39 @@ class QuestionNode(Node):
         
         return None
     
-    def _execute_custom_validator(
-        self, 
-        validator: Callable, 
-        value: Any, 
-        session: "InterviewSession"
+    async def _execute_custom_validator(
+        self,
+        validator: Callable,
+        value: Any,
+        session: "InterviewSession",
+        visitor: Optional[Any] = None,
+        interview_action: Optional[Any] = None,
     ) -> Tuple[ValidationStatus, Optional[str], Optional[Any]]:
         """Execute custom validator function and handle its result.
-        
+
+        Validators may accept (value, session) or (value, session, visitor, interview_action).
+        Optional context is passed only when the validator accepts it.
+
         Args:
             validator: The validator function to execute
             value: The value to validate
             session: Interview session
-            
+            visitor: Optional InteractWalker for validator context
+            interview_action: Optional InterviewInteractAction for validator context
+
         Returns:
             Validation result tuple
         """
         question_name = self.state.get("name", "")
-        
+
         try:
-            result = validator(value, session)
+            result = await invoke_async_with_optional_context(
+                validator,
+                value,
+                session,
+                visitor=visitor,
+                interview_action=interview_action or self._interview_action,
+            )
             if isinstance(result, tuple):
                 # Handle different tuple lengths
                 if len(result) == 2:
@@ -562,31 +598,39 @@ class QuestionNode(Node):
         return None
 
     async def validate_response(
-        self, 
-        value: Any, 
-        session: "InterviewSession"
+        self,
+        value: Any,
+        session: "InterviewSession",
+        visitor: Optional[Any] = None,
+        interview_action: Optional[Any] = None,
     ) -> Tuple[ValidationStatus, Optional[str], Optional[Any]]:
         """Validate a response value against this question's constraints.
-        
+
         Enhanced to call process_input() first if value is a string.
-        
+
         Returns (validation_status, feedback_message, corrected_value)
-        
+
         Status can be:
         - VALID: Response meets all constraints, store and continue. May include optional feedback message for clarification.
         - INVALID: Response doesn't meet constraints, needs correction
-        
+
         Args:
             value: The extracted response value (may be raw string)
             session: The interview session for context
-            
+            visitor: Optional InteractWalker for validator context
+            interview_action: Optional InterviewInteractAction for validator context
+
         Returns:
             Tuple of (ValidationStatus, optional feedback message, optional corrected value)
             If corrected_value is provided, it should be used instead of the original value
         """
         # Process input first if it's a string (raw input)
         if isinstance(value, str):
-            value = await self.process_input(value, session, interaction=None)
+            value = await self.process_input(
+                value, session, interaction=None,
+                visitor=visitor,
+                interview_action=interview_action or self._interview_action,
+            )
         
         constraints = self.state.get("constraints", {})
         
@@ -613,7 +657,11 @@ class QuestionNode(Node):
         # Custom validation function
         validator = self._get_custom_validator(session, constraints)
         if validator and callable(validator):
-            return self._execute_custom_validator(validator, value, session)
+            return await self._execute_custom_validator(
+                validator, value, session,
+                visitor=visitor,
+                interview_action=interview_action or self._interview_action,
+            )
         
         # Check for ambiguous patterns
         ambiguous_result = self._check_ambiguous_patterns(value, constraints)

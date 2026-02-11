@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from ..foundation.enums import InterviewState
 from ..session.interview_session import InterviewSession
+from ..utils.handler_utils import invoke_async_with_optional_context
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -46,14 +47,22 @@ class DirectiveBuilder:
             data[field_name] = value
         return data
 
-    async def format_summary(self, session: InterviewSession) -> str:
+    async def format_summary(
+        self,
+        session: InterviewSession,
+        visitor: Optional["InteractWalker"] = None,
+        interview_action: Optional["InterviewInteractAction"] = None,
+    ) -> str:
         """Format collected responses as a summary.
 
         If an @input_review_override is registered, it is called with (session, copy of data)
-        so the developer can omit or format values for display only; session storage is never modified.
+        and optionally (visitor, interview_action) when the override accepts them.
+        Session storage is never modified.
 
         Args:
             session: Interview session
+            visitor: Optional InteractWalker for override context
+            interview_action: Optional InterviewInteractAction for override context
 
         Returns:
             Formatted summary string
@@ -63,8 +72,12 @@ class DirectiveBuilder:
 
         override = self.action.get_input_review_override()
         if override:
-            result = await self.action._call_override_function(
-                override, session, dict(data)
+            result = await invoke_async_with_optional_context(
+                override,
+                session,
+                dict(data),
+                visitor=visitor,
+                interview_action=interview_action or self.action,
             )
             data = result if result is not None else data
 
@@ -80,24 +93,61 @@ class DirectiveBuilder:
             lines.append(line)
         return "\n".join(lines)
 
-    async def build_confirmation_directive(self, session: InterviewSession) -> str:
+    async def build_confirmation_directive(
+        self,
+        session: InterviewSession,
+        visitor: Optional["InteractWalker"] = None,
+        interview_action: Optional["InterviewInteractAction"] = None,
+    ) -> str:
         """Build the complete confirmation directive.
+
+        Calls registered review handler if available, then builds the confirmation directive.
+        The review handler can return a custom prefix to prepend to the review summary.
 
         Args:
             session: Interview session
+            visitor: Optional InteractWalker for review override context
+            interview_action: Optional InterviewInteractAction for review override context
 
         Returns:
             Complete confirmation directive string
         """
-        summary = await self.format_summary(session)
-        templates = self.action.config.templates
+        action = interview_action or self.action
 
-        # Use direct confirmation template
-        return templates.review_confirmation.format(
+        # Call review handler if registered
+        interview_type = session.interview_type
+        review_handler = action.get_review_handler(interview_type)
+        custom_prefix = None
+
+        if review_handler and visitor:
+            try:
+                custom_prefix = await review_handler(session, visitor, action)
+            except Exception as e:
+                logger.error(
+                    f"{action.get_class_name()}: Review handler failed: {e}",
+                    exc_info=True
+                )
+                # Continue with default behavior on error
+
+        summary = await self.format_summary(
+            session,
+            visitor=visitor,
+            interview_action=action,
+        )
+        templates = action.config.templates
+
+        # Build confirmation directive
+        confirmation = templates.review_confirmation.format(
             summary=summary,
             instructions=templates.confirmation_instructions,
             prompt=templates.confirmation_prompt,
         )
+
+        # Prepend custom prefix if provided by review handler
+        if custom_prefix:
+            return f"{custom_prefix}\n\n{confirmation}"
+
+        return confirmation
     
     async def queue_directive(
         self,
@@ -207,7 +257,7 @@ class DirectiveBuilder:
     ) -> None:
         """Generate directive for CANCELLED state.
 
-        Sends cancellation acknowledgment and removes/clears the session.
+        Calls registered cancellation handler and cleans up session.
 
         Args:
             session: Interview session
@@ -223,12 +273,31 @@ class DirectiveBuilder:
         await visitor.add_event(cancellation_event)
         self._event_added = True  # Prevent duplicate event addition in queue_directive
 
-        # Send cancellation message
-        await self.queue_directive(
-            visitor,
-            self.action.config.templates.cancellation_message
-        )
+        # Get cancellation handler for this interview type
+        interview_type = session.interview_type
+        cancelled_handler = self.action.get_cancelled_handler(interview_type)
 
-        # Clean up and remove the session
+        if cancelled_handler:
+            try:
+                await cancelled_handler(session, visitor, self.action)
+                # Cancellation handler is responsible for sending its own message if needed
+            except Exception as e:
+                logger.error(
+                    f"{self.action.get_class_name()}: Cancellation handler failed: {e}",
+                    exc_info=True
+                )
+                # Send generic cancellation message on error
+                await self.queue_directive(
+                    visitor,
+                    self.action.config.templates.cancellation_message
+                )
+        else:
+            # No cancellation handler registered, send generic message
+            await self.queue_directive(
+                visitor,
+                self.action.config.templates.cancellation_message
+            )
+
+        # Clean up and remove the session (always, regardless of handler success/failure)
         from ..utils.session_utils import cleanup_session
         await cleanup_session(session, visitor, self.action.get_class_name())

@@ -122,8 +122,6 @@ actions:
       use_history: true
       max_statement_length: 100
       history_limit: 3
-      use_dspy: true
-
   - action: resolv/feedback_interview_interact_action
     context:
       enabled: true
@@ -137,8 +135,6 @@ actions:
       use_history: true
       max_statement_length: 600
       history_limit: 4
-      use_dspy: true
-
   - action: resolv/signup_interview_interact_action
     context:
       enabled: false
@@ -155,8 +151,6 @@ actions:
       use_history: true
       max_statement_length: 100
       history_limit: 3
-      use_dspy: true
-
   - action: jvagent/converse_interact_action
     context:
       enabled: true

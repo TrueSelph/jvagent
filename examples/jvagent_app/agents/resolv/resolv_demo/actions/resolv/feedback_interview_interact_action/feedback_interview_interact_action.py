@@ -45,12 +45,6 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
 
     description: str = "Feedback Interview action is used to create feedback for incidents and projects."
 
-    # DSPy Integration
-    use_dspy: bool = attribute(
-        default=True,
-        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)"
-    )
-
     # REQUIRED when using InteractRouter: Anchors for intelligent routing
     # Must cover both initial entry and intermediate states (when answering questions)
     anchors: List[str] = attribute(
@@ -212,12 +206,19 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
 
 
     @input_validator('feedback_content')
-    def validate_feedback_content(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    def validate_feedback_content(
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
+    ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate feedback content is detailed and constructive.
 
         Args:
             value: The feedback content string to validate
             session: Interview session (for context)
+            visitor: Walker for context (optional)
+            interview_action: Interview action for context (optional)
 
         Returns:
             Tuple of (ValidationStatus, optional error message)

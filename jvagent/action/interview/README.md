@@ -15,7 +15,6 @@ The Interview Action provides a reusable way to collect responses from users in 
 - **Per-User Session Isolation**: Sessions attached to Conversation nodes for user separation
 - **Type-Based Session Management**: Sessions identified by `interview_type` field (survives action rebuilds)
 - **Unified Classification System**: Single LLM call detects intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE) and extracts field values
-- **DSPy Integration**: Optional DSPy-based classification with typed signatures, optimizable with teleprompters
 - **State-Aware Classification**: Enhanced rules for accurate intent detection (e.g., "no" in REVIEW state = UPDATE, not CONFIRMATION)
 - **Service Layer Architecture**: Modular design with specialized service classes for classification, state handling, and response processing
 - **Logical State Management**: Four distinct states (ACTIVE, REVIEW, COMPLETED, CANCELLED) with clear transitions
@@ -27,7 +26,10 @@ The Interview Action provides a reusable way to collect responses from users in 
 - **Intelligent Response Pruning**: Automatically remove responses from questions no longer reachable when branching paths change
 - **Input Context**: Supply questions with extra context via static `input_context` (hardcoded dict) or dynamic `input_context_provider` (decorated function)
 - **Data Input Fields**: Extract values directly from `visitor.data` for file uploads and REST call data (bypasses LLM extraction)
-- **Completion Handlers**: Register completion handlers via `@on_interview_complete` decorator
+- **State Handlers**: Register handlers for interview state transitions:
+  - `@on_interview_complete`: Process data when interview completes
+  - `@on_interview_review`: Customize review experience before confirmation
+  - `@on_interview_cancelled`: Handle cancellation and cleanup
 - **Review Override**: Customize the list of values shown in the Review state via `@input_review_override` (omit, format, or adapt items before display)
 - **Question Node Rebuilding**: Automatically rebuilds question nodes when `question_graph` changes
 - **agent.yaml Overrides**: Override `question_graph` in `context:` and model/templates in `config:` (see Configuration)
@@ -68,9 +70,9 @@ The interview action is split into focused packages under `core/`:
 | Package | Responsibility |
 |---------|----------------|
 | **foundation** | Shared types, enums, config dataclasses, prompts, decorators, exceptions. No dependency on other interview packages. |
-| **classification** | Intent classification and extraction (LLM or DSPy). `ClassificationHandler` + strategy-style `IntentHandler` implementations. |
+| **classification** | Intent classification and extraction (LLM). `ClassificationHandler` + strategy-style `IntentHandler` implementations. |
 | **graph** | Question/state graph: `QuestionNode`, `StateNode`, `QuestionWalker`, `QuestionGraphBuilder`, validators, branch evaluation. |
-| **state** | State machine and state-specific directive generation (`StateHandler`, `InterviewStateMachine`). |
+| **state** | State machine and state-node directive generation (`InterviewStateMachine`, `StateNode`). |
 | **processing** | Response validation/storage (`ResponseProcessor`) and directive assembly (`DirectiveBuilder`). |
 | **session** | Session entity and orchestration service (`InterviewSession`, `InterviewService`). |
 | **utils** | Constants, JSON/session helpers, cache utilities. |
@@ -90,9 +92,8 @@ The abstract base class that orchestrates the complete interview flow. **Must be
 **Service Layer Architecture:**
 The interview system uses a service layer pattern with specialized components:
 - `InterviewService`: Orchestrates classification, state handling, and directive generation
-- `StateHandler`: Generates state-specific directives (ACTIVE, REVIEW, COMPLETED, CANCELLED)
 - `ResponseProcessor`: Processes, validates, and stores user responses
-- `ClassificationHandler`: Handles intent classification and field extraction (optional DSPy `InterviewClassifier` when `use_dspy` is enabled)
+- `ClassificationHandler`: Handles intent classification and field extraction via prompt-based classification
 - `QuestionGraphBuilder`: Builds QuestionNode and StateNode graph from `question_graph`
 - `InterviewStateMachine`: Manages state transitions with validation
 
@@ -156,10 +157,14 @@ Service layer that orchestrates interview components:
 - Coordinates between classification, state handling, and response processing
 - Provides unified interface for interview operations
 
-#### 8. StateHandler
-Encapsulates state-specific directive generation logic:
-- Generates directives based on current interview state
-- Handles state transitions and flow control
+#### 8. StateNode & State Handlers
+Manages interview state transitions and state-specific behavior:
+- `StateNode`: Represents interview states (REVIEW, COMPLETED, CANCELLED) in the question graph
+- State transition logic via `InterviewStateMachine`
+- Registers and calls state handlers via decorators:
+  - `@on_interview_review`: Customize review experience
+  - `@on_interview_complete`: Process completion data
+  - `@on_interview_cancelled`: Handle cancellation
 
 #### 9. ResponseProcessor
 Consolidates logic for processing, validating, and storing user responses:
@@ -170,7 +175,7 @@ Consolidates logic for processing, validating, and storing user responses:
 #### 10. InterviewClassifier
 Handles intent classification and field extraction:
 - Unified LLM-based classification and extraction
-- Supports both prompt-based and DSPy-based backends
+- Prompt-based classification with chain-of-verification reasoning
 
 #### 11. InteractWalker
 Standard walker used throughout. The interview action receives session via conversation queries.
@@ -259,8 +264,7 @@ interview/
 │   │   └── condition_operators.py # ConditionOperator
 │   ├── state/                      # State management
 │   │   ├── state_machine.py       # InterviewStateMachine (state transitions)
-│   │   ├── state_node.py          # StateNode
-│   │   └── state_handlers.py      # StateHandler (state-specific directives)
+│   │   └── state_node.py          # StateNode
 │   ├── classification/            # Classification & intent
 │   │   ├── classification_handler.py  # ClassificationHandler (intent classification)
 │   │   └── intent_handlers.py     # Intent handlers (strategy pattern)
@@ -274,10 +278,6 @@ interview/
 │       ├── session_utils.py       # Session utilities
 │       ├── cache_utils.py         # Cache utilities
 │       └── constants.py           # Constants
-└── dspy/
-    ├── __init__.py                 # DSPy package exports
-    ├── signatures.py               # DSPy signatures for classification
-    └── modules.py                  # DSPy modules (InterviewClassifier)
 ```
 
 ## Configuration
@@ -313,7 +313,6 @@ config.templates.cancellation_message     # Cancellation message
 config.templates.question_directive       # Question directive template
 config.templates.required_field_decline   # Required field decline template
 config.templates.interview_prompt         # Interview classification prompt
-config.templates.interview_classification_signature  # DSPy signature
 
 # State event messages (via helper function)
 config.templates.get_state_event_message("ACTIVE", class_name)
@@ -326,13 +325,11 @@ config.classification.context_list_compact_threshold  # 5
 config.classification.context_options_text            # "options available"
 config.classification.decline_value                   # "n/a"
 
-# DSPy integration
-config.use_dspy  # False (enable DSPy-based classification)
 ```
 
 ### Overriding Configuration in agent.yaml
 
-Interview config (model, templates, use_dspy) must go under the action's **`config:`** block, not `context:`. The loader merges `config:` into the action's config dict, which `InterviewConfig.from_dict()` consumes. Use `context:` only for action attributes (e.g. `enabled`, `description`, `weight`, `anchors`, `question_graph`).
+Interview config (model, templates) must go under the action's **`config:`** block, not `context:`. The loader merges `config:` into the action's config dict, which `InterviewConfig.from_dict()` consumes. Use `context:` only for action attributes (e.g. `enabled`, `description`, `weight`, `anchors`, `question_graph`).
 
 **Model config keys** (under `config:`): use the `model_` prefix for model-related settings — `model_action_type`, `model`, `model_temperature`, `model_max_tokens`. Context/history keys have no prefix: `use_history`, `max_statement_length`, `history_limit`.
 
@@ -353,7 +350,6 @@ actions:
       use_history: true
       max_statement_length: 400
       history_limit: 10
-      use_dspy: false
       # Template overrides (InterviewConfig.templates)
       completion_message: "Tell the user: All set! Your information has been saved."
       review_confirmation: |
@@ -1074,7 +1070,9 @@ question_graph = [
 
 ### Custom Input Handlers
 
-Process raw input before validation (e.g., normalize time expressions):
+Process raw input before validation (e.g., normalize time expressions).
+
+**Handler context:** All handlers (input handlers, validators, review override, context providers, state handlers like completion/cancellation/review handlers) can optionally accept `visitor` (InteractWalker) and `interview_action` (InterviewInteractAction) for consistent access to the walker and action. These are passed only when the callable's signature accepts them, so existing handlers remain backward compatible.
 
 **Recommended Approach: Use Decorators**
 
@@ -1608,29 +1606,6 @@ Directive overrides are checked:
 
 The interview system uses a single unified prompt (`INTERVIEW_PROMPT`) that combines intent detection and field extraction in one LLM call. This approach is more efficient and ensures consistency.
 
-### Classification Backend Options
-
-The system supports two classification backends:
-
-1. **Prompt-Based Classification** (default): Uses a structured prompt template with JSON response format
-2. **DSPy-Based Classification** (optional): Uses typed DSPy signatures that can be optimized with DSPy teleprompters
-
-Enable DSPy classification by setting `use_dspy=True` in your interview action:
-
-```python
-class MyInterviewAction(InterviewInteractAction):
-    use_dspy: bool = attribute(
-        default=True,
-        description="Use DSPy module for classification"
-    )
-```
-
-**Benefits of DSPy Integration:**
-- Typed signatures for better structure and validation
-- Optimizable with DSPy teleprompters (BootstrapFewShot, MIPROv2, etc.)
-- Evaluable with `dspy.Evaluate` for performance measurement
-- Consistent interface regardless of backend
-
 ### Intent Detection
 
 The system detects intent types using the `Intent` enum with state-aware rules:
@@ -1867,6 +1842,72 @@ async def handle_completion(
 
 The completion handler is called automatically when the interview transitions to COMPLETED state.
 
+## Cancellation Handling
+
+**Use `@on_interview_cancelled` Decorator**
+
+Register a cancellation handler to process events when an interview is cancelled:
+
+```python
+from jvagent.action.interview import (
+    InterviewInteractAction,
+    on_interview_cancelled,
+)
+from jvagent.action.interview.core.interview_session import InterviewSession
+from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.action.interact.base import InteractAction
+
+@on_interview_cancelled('InterviewActionName')
+async def handle_cancellation(
+    session: InterviewSession,
+    visitor: InteractWalker,
+    action: InteractAction
+) -> None:
+    """Handle interview cancellation."""
+    # Log cancellation for analytics
+    logger.info(f"Interview cancelled. Partial responses: {session.responses}")
+    # Clean up any temporary resources
+    await cleanup_temp_resources(session)
+    # Send custom cancellation acknowledgment
+    await action.respond(visitor, directives=["No problem! Feel free to start again anytime."])
+```
+
+The cancellation handler is called automatically when the interview transitions to CANCELLED state (when the user explicitly cancels).
+
+## Review Handling
+
+**Use `@on_interview_review` Decorator**
+
+Register a review handler to customize the review experience before the user confirms their responses:
+
+```python
+from jvagent.action.interview import (
+    InterviewInteractAction,
+    on_interview_review,
+)
+from jvagent.action.interview.core.interview_session import InterviewSession
+from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.action.interact.base import InteractAction
+
+@on_interview_review('InterviewActionName')
+async def handle_review(
+    session: InterviewSession,
+    visitor: InteractWalker,
+    action: InteractAction
+) -> Optional[str]:
+    """Customize review summary with a custom prefix."""
+    # Get user info for personalization
+    user_name = session.responses.get('user_name', 'there')
+    # Return custom prefix to prepend to review summary
+    return f"Great job, {user_name}! Let's review your information:"
+```
+
+The review handler is called automatically when the interview transitions to REVIEW state, before the summary is shown. It can optionally return a custom directive string to prepend to the review summary. If no string is returned (or handler is not registered), the default review summary is shown.
+
+**Handler Return Values:**
+- `str`: Custom message to prepend to the review summary
+- `None`: Use default review summary
+
 ## Multiple Interviews Per Agent
 
 You can run multiple interview types in the same agent:
@@ -1892,8 +1933,7 @@ Each maintains its own sessions via `interview_type` identification.
 4. **Data Processing**: Choose appropriate pattern (A, B, or C) based on complexity
 5. **Session Cleanup**: Clean up sessions after data is processed
 6. **Type Identification**: Always use unique class names for interview types
-7. **DSPy Classification**: Enable `use_dspy=True` for optimizable and evaluable classification
-8. **State-Aware Responses**: Be aware that "no" in REVIEW state means UPDATE (rejecting confirmation), not CONFIRMATION
+7. **State-Aware Responses**: Be aware that "no" in REVIEW state means UPDATE (rejecting confirmation), not CONFIRMATION
 
 ## Troubleshooting
 
@@ -2293,31 +2333,3 @@ class AppointmentInterviewAction(InterviewInteractAction):
 
 See `examples/jvagent_app/agents/jvagent/example_agent/actions/jvagent/signup_interview_interact_action/` for a production example that replaces the original hardcoded questions.
 
-### Example 5: Using DSPy Classification
-
-Enable DSPy-based classification for optimizable and evaluable classification:
-
-```python
-from jvagent.action.interview import InterviewInteractAction
-from jvspatial.core.annotations import attribute
-
-class MyInterviewAction(InterviewInteractAction):
-    """Interview with DSPy classification enabled."""
-    
-    use_dspy: bool = attribute(
-        default=True,
-        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)"
-    )
-    
-    question_graph: List[Dict[str, Any]] = attribute(
-        default_factory=lambda: [
-            # ... question configurations ...
-        ]
-    )
-```
-
-**Benefits:**
-- Typed signatures provide better structure and validation
-- Can be optimized with DSPy teleprompters for improved performance
-- Can be evaluated with `dspy.Evaluate` to measure classification accuracy
-- Same interface as prompt-based classification, just with different backend

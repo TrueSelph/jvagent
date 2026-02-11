@@ -7,7 +7,7 @@ separation of concerns and maintainability.
 import json
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 from ..foundation.enums import Intent, InterviewState
 from ..session.interview_session import InterviewSession
@@ -294,32 +294,15 @@ class ClassificationHandler:
                 return self._build_result_from_data_inputs(data_input_values, session)
             return ClassificationResult(intent=Intent.NONE)
 
-        # Use DSPy if enabled, otherwise use prompt-based implementation
-        if self.action.config.use_dspy:
-            return await self._classify_with_dspy(session, user_input, interaction, visitor, data_input_values, excluded_fields)
-
         # Unified classification and extraction using single prompt
         try:
             # Build context for unified prompt (exclude fields with data_input_field)
             context = await self.build_classification_context(session, excluded_fields=excluded_fields)
 
-            prompt = self.action.config.templates.interview_prompt.format(
-                user_input=user_input,
-                current_state=context["current_state"],
-                answered_fields=context["answered_fields"],
-                entities_to_extract=context["entities_to_extract"]
-            )
-
-            # Get model action
-            model_action = await self.action.get_model_action(required=True)
-            if not model_action:
-                logger.warning(f"{self.action.get_class_name()}: Could not get model action for unified classification")
-                return ClassificationResult(intent=Intent.NONE)
-
-            # Get conversation history if needed
-            conversation_history = None
+            # Get conversation history for prompt (formatted so model sees current question and context)
+            conversation_history_list = None
             if self.action.config.model.use_history:
-                conversation_history = await self.action._get_conversation_history(
+                conversation_history_list = await self.action._get_conversation_history(
                     interaction,
                     self.action.config.model.history_limit,
                     with_utterance=True,
@@ -328,6 +311,26 @@ class ClassificationHandler:
                     with_event=False,
                     max_statement_length=self.action.config.model.max_statement_length,
                 )
+            conversation_history_str = self._format_conversation_history_for_prompt(
+                conversation_history_list
+            )
+
+            prompt = self.action.config.templates.interview_prompt.format(
+                user_input=user_input,
+                current_state=context["current_state"],
+                answered_fields=context["answered_fields"],
+                entities_to_extract=context["entities_to_extract"],
+                conversation_history=conversation_history_str,
+            )
+
+            # Get model action
+            model_action = await self.action.get_model_action(required=True)
+            if not model_action:
+                logger.warning(f"{self.action.get_class_name()}: Could not get model action for unified classification")
+                return ClassificationResult(intent=Intent.NONE)
+
+            # Pass history to generate() for API (model may use as separate messages)
+            conversation_history = conversation_history_list
 
             # Call LLM with unified prompt
             # Use interpretation as primary text when available (already in user_input)
@@ -383,9 +386,13 @@ class ClassificationHandler:
 
             # Handle SUBMISSION intent - extract field values
             if intent == Intent.SUBMISSION:
-                # Extract field values (exclude intent-related keys)
-                intent_keys = {"intent", "confidence", "field", "value"}
-                extracted_data = {k: v for k, v in result.items() if k not in intent_keys}
+                intent_keys = {"intent", "confidence", "field", "value", "reasoning"}
+                # Prefer nested extracted_data if present and is a dict; else use top-level keys
+                raw = result.get("extracted_data")
+                if isinstance(raw, dict):
+                    extracted_data = raw
+                else:
+                    extracted_data = {k: v for k, v in result.items() if k not in intent_keys}
 
                 # Filter out empty/None/whitespace-only values
                 filtered_data = {}
@@ -418,7 +425,29 @@ class ClassificationHandler:
             if data_input_values:
                 return self._build_result_from_data_inputs(data_input_values, session)
             return ClassificationResult(intent=Intent.NONE)
-    
+
+    def _format_conversation_history_for_prompt(
+        self,
+        history: Optional[List[Dict[str, Any]]],
+    ) -> str:
+        """Format conversation history for inclusion in the classification prompt.
+
+        Args:
+            history: List of message dicts with 'role' and 'content' (from get_interaction_history formatted=True).
+
+        Returns:
+            String suitable for the conversation_history prompt placeholder; "(none)" if empty.
+        """
+        if not history:
+            return "(none)"
+        lines = []
+        for msg in history:
+            role = (msg.get("role") or "unknown").strip().lower()
+            content = (msg.get("content") or "").strip()
+            if content:
+                lines.append(f"{role}: {content}")
+        return "\n".join(lines) if lines else "(none)"
+
     def _build_result_from_data_inputs(
         self,
         data_input_values: Dict[str, Any],
@@ -557,107 +586,7 @@ class ClassificationHandler:
                 classification_result.intent = Intent.SUBMISSION.value
         
         return classification_result
-    
-    async def _classify_with_dspy(
-        self,
-        session: InterviewSession,
-        user_input: str,
-        interaction: "Interaction",
-        visitor: "InteractWalker",
-        data_input_values: Dict[str, Any],
-        excluded_fields: Set[str]
-    ) -> ClassificationResult:
-        """DSPy-based classification and extraction routine.
 
-        Uses DSPy modules with typed signatures for classification, enabling
-        optimization via DSPy teleprompters (BootstrapFewShot, MIPROv2, etc.)
-        and evaluation with dspy.Evaluate.
-
-        Args:
-            session: Interview session
-            user_input: User's input (typically with reasoning)
-            interaction: Current interaction
-            visitor: InteractWalker
-            data_input_values: Dictionary of values extracted from visitor.data
-            excluded_fields: Set of field names excluded from LLM extraction
-
-        Returns:
-            ClassificationResult with unified intent and extracted data
-        """
-        try:
-            # Import DSPy components
-            import dspy
-            from jvagent.action.model.dspy import DSPyLM
-            from jvagent.action.interview.dspy import InterviewClassifier
-
-            # Build context for classification (exclude fields with data_input_field)
-            context = await self.build_classification_context(session, excluded_fields=excluded_fields)
-
-            # Get conversation history if needed
-            conversation_history = None
-            formatted_history = None
-            if self.action.config.model.use_history:
-                conversation_history = await self.action._get_conversation_history(
-                    interaction,
-                    self.action.config.model.history_limit,
-                    with_utterance=True,
-                    with_response=True,
-                    with_interpretation=False,
-                    with_event=False,
-                    max_statement_length=self.action.config.model.max_statement_length,
-                )
-                # Format history for DSPy signature
-                from jvagent.action.model.dspy import format_conversation_history_for_dspy
-                formatted_history = format_conversation_history_for_dspy(conversation_history)
-
-            # Get model action
-            model_action = await self.action.get_model_action(required=True)
-            if not model_action:
-                logger.warning(f"{self.action.get_class_name()}: Could not get model action for DSPy classification")
-                return ClassificationResult(intent=Intent.NONE)
-
-            # Create DSPy LM adapter
-            # Pass model, temperature, and max_tokens to allow agent.yaml overrides
-            lm = DSPyLM(
-                model_action=model_action,
-                model_type="chat",
-                model=self.action.config.model.model,
-                temperature=self.action.config.model.model_temperature,
-                max_tokens=self.action.config.model.model_max_tokens,
-            )
-
-            # Configure DSPy with the adapter
-            with dspy.context(lm=lm):
-                # Create classifier instance with action instance for signature docstring
-                classifier = InterviewClassifier(action_instance=self.action)
-
-                # Build kwargs for classifier, include history if available
-                classifier_kwargs = {
-                    "user_input": user_input,
-                    "current_state": context["current_state"],
-                    "answered_fields": context["answered_fields"],
-                    "entities_to_extract": context["entities_to_extract"],
-                }
-                if formatted_history:
-                    classifier_kwargs["conversation_history"] = formatted_history
-
-                # Call classifier with async forward
-                classification_result = await classifier.aforward(**classifier_kwargs)
-
-                # Merge data input values into classification result
-                classification_result = self._merge_data_input_values(
-                    classification_result, data_input_values, session
-                )
-
-                return classification_result
-
-        except Exception as e:
-            logger.error(
-                f"{self.action.get_class_name()}: Failed to classify/extract via DSPy: {e}",
-                exc_info=True
-            )
-            return ClassificationResult(intent=Intent.NONE)
-    
     def _extract_json(self, response: str) -> Dict[str, Any]:
         """Extract JSON from response string.
 

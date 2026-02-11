@@ -48,12 +48,6 @@ class ReportInterviewInteractAction(InterviewInteractAction):
     description: str = "Report Interview action is used to create reports."
     resolv_api_action: str = "ResolvAPIAction"
 
-    # DSPy Integration
-    use_dspy: bool = attribute(
-        default=True,
-        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)",
-    )
-
     # REQUIRED when using InteractRouter: Anchors for intelligent routing
     # Must cover both initial entry and intermediate states (when answering questions)
     anchors: List[str] = attribute(
@@ -258,7 +252,8 @@ class ReportInterviewInteractAction(InterviewInteractAction):
         value: str,
         session: InterviewSession,
         interaction: Interaction,
-        visitor: InteractWalker
+        visitor: InteractWalker,
+        interview_action: Optional[Any] = None,
     ) -> Optional[Union[str, Tuple[str, str]]]:
         """Custom directive after incident_location is answered."""
         matching_reports = session.context.get("matching_reports")
@@ -277,7 +272,8 @@ class ReportInterviewInteractAction(InterviewInteractAction):
         value: str,
         session: InterviewSession,
         interaction: Interaction,
-        visitor: InteractWalker
+        visitor: InteractWalker,
+        interview_action: Optional[Any] = None,
     ) -> Optional[Union[str, Tuple[str, str]]]:
         """Custom directive after continue_report is answered."""
         if value == "no":
@@ -288,12 +284,19 @@ class ReportInterviewInteractAction(InterviewInteractAction):
 
     # Validators 
     @input_validator('incident_description')
-    def validate_incident_description(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    def validate_incident_description(
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
+    ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate incident description has sufficient detail.
 
         Args:
             value: The incident description to validate
             session: Interview session (for context)
+            visitor: Walker for context (optional)
+            interview_action: Interview action for context (optional)
 
         Returns:
             Tuple of (ValidationStatus, optional error message)
@@ -316,12 +319,19 @@ class ReportInterviewInteractAction(InterviewInteractAction):
 
 
     @input_validator('incident_location')
-    def validate_incident_location(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    def validate_incident_location(
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
+    ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate incident location is provided and specific.
 
         Args:
             value: The location string to validate
             session: Interview session (for context)
+            visitor: Walker for context (optional)
+            interview_action: Interview action for context (optional)
 
         Returns:
             Tuple of (ValidationStatus, optional error message)
@@ -340,12 +350,19 @@ class ReportInterviewInteractAction(InterviewInteractAction):
 
 
     @input_validator('is_sensitive')
-    def validate_is_sensitive(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    def validate_is_sensitive(
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
+    ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate that the is sensitive is either yes or no.
 
         Args:
             value: The is sensitive string to validate
             session: Interview session (for context)
+            visitor: Walker for context (optional)
+            interview_action: Interview action for context (optional)
 
         Returns:
             Tuple of (ValidationStatus, optional error message)
@@ -364,12 +381,19 @@ class ReportInterviewInteractAction(InterviewInteractAction):
 
 
     @input_validator('reporting_on_behalf')
-    def validate_reporting_on_behalf(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    def validate_reporting_on_behalf(
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
+    ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate that the reporting on behalf is either yes or no.
 
         Args:
             value: The reporting on behalf string to validate
             session: Interview session (for context)
+            visitor: Walker for context (optional)
+            interview_action: Interview action for context (optional)
 
         Returns:
             Tuple of (ValidationStatus, optional error message)
@@ -394,12 +418,19 @@ class ReportInterviewInteractAction(InterviewInteractAction):
 
 
     @input_validator('stakeholder_name')
-    def validate_stakeholder_name(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    def validate_stakeholder_name(
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
+    ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate that the stakeholder name is not empty.
 
         Args:
             value: The stakeholder name string to validate
             session: Interview session (for context)
+            visitor: Walker for context (optional)
+            interview_action: Interview action for context (optional)
 
         Returns:
             Tuple of (ValidationStatus, optional error message)
@@ -434,12 +465,19 @@ class ReportInterviewInteractAction(InterviewInteractAction):
 
 
     @input_validator('stakeholder_address')
-    def validate_stakeholder_address(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    def validate_stakeholder_address(
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
+    ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate that the stakeholder address is not empty.
 
         Args:
             value: The stakeholder address string to validate
             session: Interview session (for context)
+            visitor: Walker for context (optional)
+            interview_action: Interview action for context (optional)
 
         Returns:
             Tuple of (ValidationStatus, optional error message)
@@ -457,12 +495,19 @@ class ReportInterviewInteractAction(InterviewInteractAction):
 
 
     @input_validator('stakeholder_phone')
-    def validate_stakeholder_phone(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    def validate_stakeholder_phone(
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
+    ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate that the stakeholder phone is not empty.
 
         Args:
             value: The stakeholder phone string to validate
             session: Interview session (for context)
+            visitor: Walker for context (optional)
+            interview_action: Interview action for context (optional)
 
         Returns:
             Tuple of (ValidationStatus, optional error message)
@@ -484,12 +529,19 @@ class ReportInterviewInteractAction(InterviewInteractAction):
 
 
     @input_validator('reporter_name')
-    def validate_reporter_name(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    def validate_reporter_name(
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
+    ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate that the reporter name is not empty.
 
         Args:
             value: The reporter name string to validate
             session: Interview session (for context)
+            visitor: Walker for context (optional)
+            interview_action: Interview action for context (optional)
 
         Returns:
             Tuple of (ValidationStatus, optional error message)

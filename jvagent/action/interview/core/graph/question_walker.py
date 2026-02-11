@@ -180,12 +180,19 @@ class QuestionWalker(Walker):
 
         # Execute @input_handler if registered (pre-processing)
         processed_value = await here.process_input(
-            response_value, self.interview_session, self.interaction
+            response_value,
+            self.interview_session,
+            self.interaction,
+            visitor=self.interact_visitor,
+            interview_action=self.interview_action,
         )
 
         # Execute @input_validator if registered (validation)
         validation_status, feedback, corrected_value = await here.validate_response(
-            processed_value, self.interview_session
+            processed_value,
+            self.interview_session,
+            visitor=self.interact_visitor,
+            interview_action=self.interview_action,
         )
         final_value = corrected_value if corrected_value is not None else processed_value
 
@@ -262,34 +269,6 @@ class QuestionWalker(Walker):
                 await self.visit(target)
                 return
 
-    # =========================================================================
-    # Helper Methods for on_state_node() - Extracted for clarity
-    # =========================================================================
-
-    async def _generate_state_directive(self, here: StateNode) -> Optional[str]:
-        """Generate directive based on state type.
-
-        Uses the directive_builder from interview_action to generate
-        state-specific directives (REVIEW, COMPLETED, CANCELLED).
-
-        Args:
-            here: The StateNode being visited
-
-        Returns:
-            Directive string or None if no directive_builder available
-        """
-        if not self.interview_action or not hasattr(self.interview_action, 'directive_builder'):
-            return None
-
-        builder = self.interview_action.directive_builder
-        if here.state_type == InterviewState.REVIEW:
-            return await builder.build_confirmation_directive(self.interview_session)
-        elif here.state_type == InterviewState.COMPLETED:
-            return await builder.build_completed_directive(self.interview_session)
-        elif here.state_type == InterviewState.CANCELLED:
-            return await builder.build_cancelled_directive(self.interview_session)
-        return None
-
     async def _update_target_node(self, here: Union[QuestionNode, StateNode]) -> None:
         """Update session's target_node and save.
 
@@ -301,10 +280,6 @@ class QuestionWalker(Walker):
         """
         self.interview_session.target_node = here.id
         await self.interview_session.save()
-
-    # =========================================================================
-    # End of Helper Methods
-    # =========================================================================
 
     @on_visit(QuestionNode)
     async def on_question_node(self, here: QuestionNode) -> None:
@@ -371,17 +346,17 @@ class QuestionWalker(Walker):
         This @on_visit decorator is called automatically by jvspatial's Walker
         when a StateNode is visited during spawn() traversal.
 
-        Traversal Logic:
-        ================
+        Follows the same pattern as on_question_node:
         1. Record terminal state for caller reference
-        2. Execute state node's transition code
-        3. Queue state-specific directive
-        4. Update position and return
+        2. Execute state node (handles transition + directive generation)
+           - For REVIEW: returns confirmation directive
+           - For COMPLETED: triggers completion handler, queues to visitor
+           - For CANCELLED: handles cancellation, queues to visitor
+        3. Update position and return
 
         Args:
             here: StateNode being visited
         """
-
         logger.warning(f"On state node visit: node id={here.label}")
 
         if not self.interview_session:
@@ -391,11 +366,8 @@ class QuestionWalker(Walker):
         self.terminal_state = here.state_type
         self.terminal_state_node = here
 
-        # Execute state transition
-        await here.execute(self.interview_session, self)
-
-        # Queue state directive
-        directive = await self._generate_state_directive(here)
+        # Execute state node - handles transition and returns directive
+        directive = await here.execute(self)
         if directive:
             self.directives.append(directive)
 
