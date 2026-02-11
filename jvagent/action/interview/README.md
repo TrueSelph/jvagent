@@ -105,7 +105,15 @@ The system uses a single unified prompt (`INTERVIEW_PROMPT`) that:
 - All in a single LLM call for efficiency and consistency
 
 **Data Input Fields:**
-Fields with `data_input_field` configured are automatically excluded from LLM extraction. Values are extracted directly from `visitor.data` and treated as SUBMISSION intent, bypassing the LLM classification for those specific fields. When the key is absent in `visitor.data`, the current question (first unanswered) is auto-populated with `"N/A"`. This enables file uploads and other binary data to be handled without LLM processing.
+Fields with `data_input_field` configured are automatically excluded from LLM extraction. Values are extracted directly from `visitor.data` and treated as SUBMISSION or UPDATE intent (depending on whether the field already has a value), bypassing the LLM classification for those specific fields. When the key is absent in `visitor.data`, the current question (first unanswered) is auto-populated with `"N/A"`. This enables file uploads and other binary data to be handled without LLM processing.
+
+When `data_input_field` provides data, the system furnishes a complete extraction payload with:
+- **Intent**: SUBMISSION (for new values) or UPDATE (for existing values)
+- **Field name**: The question field being populated
+- **Value**: The extracted value from `visitor.data`
+- **Metadata**: Persisted to the Interaction's `intent_type`, `interpretation`, and `parameters` for downstream consumers (external integrations, logging, analytics)
+
+This ensures the extraction payload structure is consistent whether data comes from LLM extraction or `data_input_field`, allowing the rest of the flow (execute, InterviewWalker, handlers, external systems) to process it uniformly.
 
 #### 2. InterviewSession Node
 Persistent node that stores:
@@ -1339,10 +1347,11 @@ For fields that receive data directly from REST calls (e.g., file uploads, binar
 
 **How It Works:**
 - When `data_input_field` is specified in a question's constraints, the system checks `visitor.data` for a matching key
-- If the key exists, the value is extracted and treated as a SUBMISSION (new data)
+- If the key exists, the value is extracted and treated as SUBMISSION (new data) or UPDATE (if field already has a value)
 - If the key is absent, the field is auto-populated with `"N/A"` for the current question only (first unanswered); other data_input_field questions are not pre-populated
 - The field is automatically excluded from LLM extraction (not included in `entities_to_extract`)
 - Values go through the same validation pipeline (input handlers and validators) as LLM-extracted values
+- **Extraction metadata** (intent, field name, value) is furnished in a ClassificationResult and persisted to the Interaction for downstream consumers
 
 **Example: File Upload via WhatsApp Media**
 
@@ -1379,15 +1388,48 @@ question_graph = [
 
 **Key Behaviors:**
 - **Exclusion from LLM**: Fields with `data_input_field` are not sent to the LLM for extraction
-- **Always SUBMISSION**: Data input values are always treated as SUBMISSION intent, regardless of whether the field already has a value in the session
+- **Intent Detection**: Data input values are treated as SUBMISSION (for new values) or UPDATE (for existing values), matching the behavior of LLM extraction
+- **Extraction Payload**: A complete ClassificationResult is furnished with intent, field name, and value, ensuring consistent structure for downstream flow
+- **Metadata Persistence**: Extraction metadata is persisted to the Interaction's `intent_type`, `interpretation`, and `parameters` for external consumers
 - **Validation Pipeline**: Values still go through `process_input()` and `validate_response()` if handlers/validators are registered
 - **Coexistence**: Works alongside LLM extraction - other fields without `data_input_field` are still extracted by the LLM
+- **Premature Submissions**: If a `data_input_field` value is submitted before its turn in the question graph (e.g., user uploads images before answering earlier questions), the system intelligently starts at the first unanswered question and validates the premature submission when its turn comes, ensuring all questions are collected in order
 
 **Use Cases:**
 - File uploads (images, documents, etc.)
 - Binary data passed via REST calls
 - Pre-processed data that shouldn't be extracted from text
 - Data that comes from external systems rather than user utterances
+
+**Premature Submission Handling:**
+
+When a `data_input_field` value is submitted **before the interview reaches that question** (e.g., user uploads images before answering earlier questions), the system handles it intelligently:
+
+1. The value is stored in the session and added to the validation queue
+2. The target node is set to the **first unanswered question** (not the submitted field)
+3. The walker traverses sequentially, asking each unanswered question in order
+4. When the walker reaches the prematurely-submitted field, it validates it and executes handlers/validators
+5. The walker continues forward to collect remaining questions
+
+**Example:**
+```
+Question Graph: [incident_description, incident_location, incident_media, reporting_on_behalf]
+
+User uploads images BEFORE answering any questions
+→ incident_media stored with value and queued for validation
+→ Walker starts at incident_description (first unanswered)
+→ User answers incident_description
+→ Walker moves to incident_location
+→ User answers incident_location
+→ Walker reaches incident_media → validates the premature submission, runs handlers
+→ Walker continues to reporting_on_behalf
+```
+
+This ensures:
+- All questions are collected in the correct order
+- Premature submissions are validated when their turn comes
+- Branch functions have access to all earlier answers
+- The interview flow remains sequential and predictable
 
 ### Context Data
 

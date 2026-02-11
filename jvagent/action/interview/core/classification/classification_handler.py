@@ -29,6 +29,9 @@ class ClassificationResult:
     """Result of unified classification and extraction routine.
 
     Uses unified intent types: CANCELLATION, CONFIRMATION, UPDATE, DECLINE, SUBMISSION, NONE
+    
+    This structure is used for both LLM-based extraction and data_input_field extraction,
+    ensuring consistent payload shape for downstream consumers.
     """
     intent: str  # "CANCELLATION", "CONFIRMATION", "UPDATE", "DECLINE", "SUBMISSION", "NONE"
     confidence: float = 1.0  # Confidence score for the classification
@@ -39,6 +42,9 @@ class ClassificationResult:
 
     # For SUBMISSION intent - extracted field values (multiple fields)
     extracted_data: Optional[Dict[str, Any]] = None  # Extracted responses for "SUBMISSION" intent
+    
+    # Metadata for tracking extraction source
+    from_data_input_field: bool = False  # True if data_input_field contributed to this result
 
 
 class ClassificationHandler:
@@ -487,6 +493,9 @@ class ClassificationHandler:
     ) -> ClassificationResult:
         """Build ClassificationResult from data input values only.
         
+        Simulates the extraction payload structure that would be produced by LLM extraction,
+        ensuring consistent shape for downstream consumers (execute, InterviewWalker, handlers).
+        
         Checks if fields already have values in the session:
         - If a field has an existing value, treat as UPDATE (set field and value)
         - If a field doesn't have a value, treat as SUBMISSION (add to extracted_data)
@@ -496,7 +505,8 @@ class ClassificationHandler:
             session: Interview session
             
         Returns:
-            ClassificationResult with appropriate intent (UPDATE or SUBMISSION)
+            ClassificationResult with appropriate intent (UPDATE or SUBMISSION) and
+            from_data_input_field=True to indicate source
         """
         if not data_input_values:
             return ClassificationResult(intent=Intent.NONE)
@@ -523,7 +533,8 @@ class ClassificationHandler:
             result = ClassificationResult(
                 intent=Intent.UPDATE.value,
                 field=first_update_field,
-                value=first_update_value
+                value=first_update_value,
+                from_data_input_field=True
             )
             
             # If there are multiple update fields, log a warning
@@ -541,7 +552,8 @@ class ClassificationHandler:
         if submission_fields:
             result = ClassificationResult(
                 intent=Intent.SUBMISSION.value,
-                extracted_data=submission_fields
+                extracted_data=submission_fields,
+                from_data_input_field=True
             )
             return result
         
@@ -556,6 +568,9 @@ class ClassificationHandler:
     ) -> ClassificationResult:
         """Merge data input values into classification result.
         
+        Augments LLM classification result with data_input_field values, ensuring the
+        extraction payload includes both LLM-extracted and directly-provided data.
+        
         Checks if fields already have values in the session:
         - If a field has an existing value, treat as UPDATE (set field and value)
         - If a field doesn't have a value, treat as SUBMISSION (add to extracted_data)
@@ -566,10 +581,14 @@ class ClassificationHandler:
             session: Interview session
             
         Returns:
-            Updated ClassificationResult with data input values merged
+            Updated ClassificationResult with data input values merged and
+            from_data_input_field=True when data_input_field contributes
         """
         if not data_input_values:
             return classification_result
+        
+        # Mark that data_input_field contributed to this result
+        classification_result.from_data_input_field = True
         
         # Separate fields into UPDATE (existing value) and SUBMISSION (no existing value)
         update_fields = {}  # Fields that already have values - treat as UPDATE
