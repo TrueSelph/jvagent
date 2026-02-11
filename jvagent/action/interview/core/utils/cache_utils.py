@@ -215,10 +215,34 @@ class BranchCache:
             self.session.context[CACHE_KEY_BRANCH_CACHE] = cache
             logger.debug(f"Branch cache invalidated for '{question_name}'")
     
+    def invalidate_from(self, question_name: str, question_graph: list) -> None:
+        """Invalidate branch cache for question_name and all downstream questions.
+
+        Uses question_graph ordering to determine 'downstream'.
+
+        Args:
+            question_name: Name of the question to start invalidation from
+            question_graph: List of question config dicts (session.question_graph)
+        """
+        names = [q.get("name") for q in question_graph if q.get("name")]
+        try:
+            start_idx = names.index(question_name)
+        except ValueError:
+            return
+        cache = self.session.context.get(CACHE_KEY_BRANCH_CACHE, {})
+        for name in names[start_idx:]:
+            cache.pop(name, None)
+        self.session.context[CACHE_KEY_BRANCH_CACHE] = cache
+        logger.debug(f"Branch cache invalidated from '{question_name}' onward ({len(names) - start_idx} entries)")
+
     def invalidate_all(self) -> None:
         """Clear the entire branch cache (e.g. on session reset)."""
         self.session.context[CACHE_KEY_BRANCH_CACHE] = {}
         logger.debug("Branch cache cleared")
+
+    def clear_pruned_responses(self) -> None:
+        """Clear the pruned responses audit trail (call at start of each sync run)."""
+        self.session.context[CACHE_KEY_PRUNED_RESPONSES] = {}
     
     def record_branch_path(
         self,

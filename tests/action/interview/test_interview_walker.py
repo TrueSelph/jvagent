@@ -1,12 +1,13 @@
-"""Tests for QuestionWalker traversal logic."""
+"""Tests for InterviewWalker traversal logic."""
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from jvagent.action.interview.core.foundation.enums import InterviewState
+from jvagent.action.interview.core.foundation.enums import Intent, InterviewState
 from jvagent.action.interview.core.session.interview_session import InterviewSession
-from jvagent.action.interview.core.graph.question_walker import QuestionWalker
+from jvagent.action.interview.core.graph.interview_walker import InterviewWalker
 from jvagent.action.interview.core.graph.question_node import QuestionNode
+from jvagent.action.interview.interview_interact_action import InterviewInteractAction
 
 
 @pytest.fixture
@@ -51,13 +52,13 @@ def mock_interview_action():
     return action
 
 
-class TestQuestionWalker:
-    """Test QuestionWalker functionality."""
+class TestInterviewWalker:
+    """Test InterviewWalker functionality."""
     
     @pytest.mark.asyncio
     async def test_find_next_unanswered_question(self, test_session, mock_interview_action):
         """Test finding next unanswered question."""
-        walker = QuestionWalker()
+        walker = InterviewWalker()
         walker.interview_session = test_session
         
         # No questions answered yet
@@ -113,7 +114,7 @@ class TestQuestionWalker:
     @pytest.mark.asyncio
     async def test_state_target_detection(self):
         """Test state target detection."""
-        walker = QuestionWalker()
+        walker = InterviewWalker()
         
         assert walker._is_state_target("REVIEW") is True
         assert walker._is_state_target("COMPLETED") is True
@@ -124,7 +125,7 @@ class TestQuestionWalker:
     @pytest.mark.asyncio
     async def test_get_state_from_target(self):
         """Test getting InterviewState from target string."""
-        walker = QuestionWalker()
+        walker = InterviewWalker()
         
         from jvagent.action.interview.core.foundation.enums import InterviewState
         
@@ -132,3 +133,41 @@ class TestQuestionWalker:
         assert walker._get_state_from_target("COMPLETED") == InterviewState.COMPLETED
         assert walker._get_state_from_target("CANCELLED") == InterviewState.CANCELLED
         assert walker._get_state_from_target("invalid") is None
+
+
+class TestResolveTargetNodeOutOfOrder:
+    """Test that answering a non-current question does not skip preceding questions."""
+
+    @pytest.mark.asyncio
+    async def test_submission_resolves_to_first_question_not_last_answered(self, test_db):
+        """When user answers q3 out of order (q1, q2 unanswered), target is first question so walker prompts q1."""
+        question_graph = [
+            {"name": "q1", "question": "Q1?", "constraints": {"description": "First"}, "required": True},
+            {"name": "q2", "question": "Q2?", "constraints": {"description": "Second"}, "required": True},
+            {"name": "q3", "question": "Q3?", "constraints": {"description": "Third"}, "required": False},
+        ]
+        session = await InterviewSession.create(
+            agent_id="test_agent",
+            conversation_id="test_conv",
+            interview_type="ResolveTargetTestAction",
+            state=InterviewState.ACTIVE,
+        )
+        session.question_graph = question_graph
+        session.responses = {"q3": "out_of_order_answer"}
+        await session.save()
+
+        first_node = MagicMock()
+        first_node.id = "first_question_node_id"
+        q3_node = MagicMock()
+        q3_node.id = "q3_node_id"
+
+        action = MagicMock(spec=InterviewInteractAction)
+        action._get_first_question_node = AsyncMock(return_value=first_node)
+        action._get_question_node = AsyncMock(return_value=q3_node)
+        action.get_state_node = AsyncMock(return_value=None)
+
+        await InterviewInteractAction._resolve_target_node(action, session, Intent.SUBMISSION)
+
+        assert session.target_node == "first_question_node_id"
+        action._get_first_question_node.assert_called_once_with(session)
+        action._get_question_node.assert_not_called()

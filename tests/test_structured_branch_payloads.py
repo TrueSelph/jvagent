@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import Mock
 
-from jvagent.action.interview.core.session.pruning_service import PruningService
+from jvagent.action.interview.core.session.pruning_service import compose_branch_change_payload
 from jvagent.action.interview.core.session.interview_session import InterviewSession
 
 
@@ -34,10 +34,10 @@ async def test_pruning_service_returns_structured_payload():
     mock_walker = Mock()
     mock_walker._is_state_target = Mock(return_value=False)
 
-    payload = PruningService.compose_branch_change_payload(
+    payload = compose_branch_change_payload(
         change_details=change_details,
         session=session,
-        question_walker=mock_walker
+        interview_walker=mock_walker
     )
 
     # Verify structure
@@ -74,10 +74,10 @@ def test_payload_includes_state_target_info():
     mock_walker = Mock()
     mock_walker._is_state_target = Mock(return_value=False)
 
-    payload = PruningService.compose_branch_change_payload(
+    payload = compose_branch_change_payload(
         change_details=change_details_question,
         session=session,
-        question_walker=mock_walker
+        interview_walker=mock_walker
     )
 
     assert payload["is_state_target"] is False, "Should identify question target"
@@ -94,10 +94,10 @@ def test_payload_includes_state_target_info():
 
     mock_walker._is_state_target = Mock(return_value=True)
 
-    payload = PruningService.compose_branch_change_payload(
+    payload = compose_branch_change_payload(
         change_details=change_details_state,
         session=session,
-        question_walker=mock_walker
+        interview_walker=mock_walker
     )
 
     assert payload["is_state_target"] is True, "Should identify state target"

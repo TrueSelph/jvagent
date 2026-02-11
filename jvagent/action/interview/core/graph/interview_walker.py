@@ -1,6 +1,6 @@
-"""QuestionWalker for traversing QuestionNodes using jvspatial walker-node pattern.
+"""InterviewWalker for traversing QuestionNodes using jvspatial walker-node pattern.
 
-This module provides QuestionWalker, a specialized walker that:
+This module provides InterviewWalker, a specialized walker that:
 - Uses @on_visit decorators for automatic node dispatch (walker-node pattern)
 - Traverses QuestionNodes based on conditional branch conditions
 - Records branch paths for path-change detection and pruning
@@ -24,14 +24,14 @@ from pydantic import Field, PrivateAttr
 from jvspatial.core import Walker, on_visit
 
 from .question_node import QuestionNode
+from .post_update_walker import PostUpdateWalker
 from .state_node import StateNode
-from ..foundation.enums import ValidationStatus, InterviewState
-
+from ..foundation.enums import ValidationStatus, InterviewState, Intent
 
 logger = logging.getLogger(__name__)
 
 
-class QuestionWalker(Walker):
+class InterviewWalker(Walker):
     """Walker that traverses QuestionNodes in a tree-based interview flow.
 
     Implements jvspatial's walker-node pattern for efficient graph traversal using
@@ -40,7 +40,7 @@ class QuestionWalker(Walker):
 
     Architecture (Walker-Node Pattern):
     ===================================
-    Instead of manual traversal, QuestionWalker uses @on_visit decorators:
+    Instead of manual traversal, InterviewWalker uses @on_visit decorators:
     - @on_visit(QuestionNode): Checks if answered, queues prompt or validates
     - @on_visit(StateNode): Records terminal state and executes transition
 
@@ -49,7 +49,7 @@ class QuestionWalker(Walker):
 
     Usage:
     ======
-    walker = QuestionWalker(
+    walker = InterviewWalker(
         interview_session=session,
         interaction=interaction,
         interact_visitor=interact_walker,
@@ -67,12 +67,15 @@ class QuestionWalker(Walker):
         terminal_state: Optional[InterviewState] - State reached if terminal
     """
 
-    # Pydantic fields with proper defaults (using Field for mutable types)
+    # Pydantic fields — use Optional[Any] because these types are from other
+    # packages and cannot be imported directly without creating circular imports.
+    # jvspatial Walker is a Pydantic BaseModel, so TYPE_CHECKING forward refs
+    # cannot be used here (Pydantic resolves annotations at runtime).
     interview_session: Optional[Any] = None  # InterviewSession
     interaction: Optional[Any] = None  # Interaction
     interview_action: Optional[Any] = None  # InterviewInteractAction
-    interact_visitor: Optional[Any] = None  # InteractWalker (parent walker for branch evaluation)
-    current_intent: Optional[Any] = None  # Intent for this turn (e.g. Intent.DECLINE for required-field decline detection)
+    interact_visitor: Optional[Any] = None  # InteractWalker
+    current_intent: Optional[Intent] = None  # Intent enum (safe: imported directly)
 
     # Mutable defaults must use Field/PrivateAttr(default_factory=...) to avoid sharing
     directives: List[str] = Field(default_factory=list)
@@ -100,21 +103,71 @@ class QuestionWalker(Walker):
         """
         return self.STATE_TARGETS.get(target)
 
-    async def _get_node_by_id(self, node_id: str) -> Optional[Union[QuestionNode, StateNode, Any]]:
-        """Fetch node from graph by ID.
+    def _is_state_target(self, target: str) -> bool:
+        """Check whether *target* refers to a state node (REVIEW, COMPLETED, CANCELLED).
 
         Args:
-            node_id: The node ID to look up
+            target: Target name string to check.
 
         Returns:
-            Node instance (QuestionNode, StateNode, or InterviewInteractAction) or None
+            True if the name maps to a known InterviewState, False otherwise.
         """
-        from jvspatial.core import Node
-        try:
-            return await Node.get(node_id)
-        except Exception as e:
-            logger.warning(f"Failed to get node by ID '{node_id}': {e}")
+        return target in self.STATE_TARGETS
+
+    async def get_reachable_required_questions(self, session: Any) -> Set[str]:
+        """Compute the set of required questions reachable on the current active path.
+
+        Delegates to PostUpdateWalker for a cache-independent graph traversal,
+        then intersects the reachable set with the session's required questions.
+
+        Args:
+            session: InterviewSession instance.
+
+        Returns:
+            Set of required question names reachable on the active branch path.
+        """
+        from .post_update_walker import PostUpdateWalker
+
+        # Resolve first node from session.question_graph
+        first_node = await self._resolve_first_node(session)
+        reachable = await PostUpdateWalker.sync(
+            session, first_node, self.interact_visitor
+        )
+        required = set(session.get_required_questions())
+        return reachable & required
+
+    async def _resolve_first_node(self, session: Any) -> Optional[QuestionNode]:
+        """Resolve the first QuestionNode from the session's question_graph.
+
+        Uses Node.get to look up the first question by name from the
+        QuestionNodeCache, falling back to a graph query when necessary.
+
+        Args:
+            session: InterviewSession with question_graph populated.
+
+        Returns:
+            First QuestionNode or None.
+        """
+        from ..utils.cache_utils import QuestionNodeCache
+
+        if not session.question_graph:
             return None
+        first_name = session.question_graph[0].get("name")
+        if not first_name:
+            return None
+        cache = QuestionNodeCache(session)
+        node = await cache.get_cached_node_by_id(first_name)
+        if node:
+            return node
+        # Fallback: query graph for the node by label
+        from jvspatial.core import Node as SpatialNode
+        try:
+            results = await SpatialNode.find(label=first_name)
+            if results:
+                return results[0]
+        except Exception:
+            pass
+        return None
 
     # =========================================================================
     # Helper Methods for on_question_node() - Extracted for clarity
@@ -206,7 +259,7 @@ class QuestionWalker(Walker):
 
         When validation fails, this method queues the error directive and updates
         the session to stay on the current question, allowing the user to correct
-        their input.
+        their input. If this was a pending update, restores the old value.
 
         Args:
             here: The QuestionNode being visited
@@ -215,18 +268,24 @@ class QuestionWalker(Walker):
         """
         error_msg = feedback or f"Please provide a valid value for {question_name}."
         self.directives.append(error_msg)
-        self.current_question_name = question_name
-        self.current_question = here
         self.interview_session.target_node = here.id
+
+        # Restore old value if this was a pending update
+        queue = self.interview_session.update_queue
+        entry = next((e for e in queue if e["field"] == question_name), None)
+        if entry and entry.get("old_value") is not None:
+            self.interview_session.set_response(question_name, entry["old_value"])
+
         await self.interview_session.save()
 
     async def _handle_valid_response(
         self, here: QuestionNode, question_name: str, final_value: Any
     ) -> None:
-        """Update session with processed value.
+        """Update session with processed value and pop from update queue.
 
         After successful validation, this method updates the session response
-        if the value was modified by processing or correction.
+        if the value was modified by processing or correction. If this question
+        had a pending update, it is removed from the queue.
 
         Args:
             here: The QuestionNode being visited
@@ -237,6 +296,9 @@ class QuestionWalker(Walker):
         response_value = self.interview_session.responses[question_name]
         if final_value != response_value:
             self.interview_session.set_response(question_name, final_value)
+
+        # Pop from update_queue if this was a pending update
+        self.interview_session.pop_update(question_name)
 
     async def _continue_traversal(self, here: QuestionNode, question_name: str) -> None:
         """Evaluate outgoing edges and visit the first that returns a target node.
@@ -249,16 +311,10 @@ class QuestionWalker(Walker):
             here: The QuestionNode being visited
             question_name: Name of the question field (used as implicit question for conditions)
         """
+        from .question_edge import QuestionEdge
+        
         edges = await here.edges(direction="out")
-        # Evaluate conditional edges before default: use (has_condition, branch_index)
-        # so edges with a condition run first (and in branch order), then default edges.
-        ordered = sorted(
-            edges,
-            key=lambda e: (
-                0 if e.condition else 1,
-                e.branch_index if e.branch_index is not None else 999,
-            ),
-        )
+        ordered = QuestionEdge.sort_by_priority(edges)
         for edge in ordered:
             target = await edge.evaluate(
                 self.interview_session,
@@ -302,7 +358,6 @@ class QuestionWalker(Walker):
             here: QuestionNode being visited
         """
 
-        logger.warning(f"On question node visit: node id={here.label}")
         
         if not self.interview_session:
             return
@@ -326,6 +381,11 @@ class QuestionWalker(Walker):
             return
 
         # Branch 2: Extracted value exists - process and validate
+        # Fast-path: skip re-validation for answered questions not in update queue
+        if not self.interview_session.has_pending_update(question_name):
+            await self._continue_traversal(here, question_name)
+            return
+
         is_valid, final_value, feedback = await self._process_and_validate_response(
             here, question_name
         )
@@ -357,7 +417,6 @@ class QuestionWalker(Walker):
         Args:
             here: StateNode being visited
         """
-        logger.warning(f"On state node visit: node id={here.label}")
 
         if not self.interview_session:
             return
@@ -366,10 +425,23 @@ class QuestionWalker(Walker):
         self.terminal_state = here.state_type
         self.terminal_state_node = here
 
+        # Before REVIEW: prune unreachable responses so review directive lists correct data
+        if here.state_type == InterviewState.REVIEW and self.interview_action:
+            first_node = await self.interview_action._get_first_question_node(
+                self.interview_session
+            )
+            if first_node:
+                await PostUpdateWalker.sync(
+                    self.interview_session, first_node, self.interact_visitor
+                )
+
         # Execute state node - handles transition and returns directive
         directive = await here.execute(self)
         if directive:
             self.directives.append(directive)
 
-        # Update position and return
-        await self._update_target_node(here)
+        # Update position — skip for terminal states (COMPLETED/CANCELLED) where
+        # the session has been removed by cleanup. Calling save() on a deleted
+        # session would re-persist it to the database.
+        if not here.is_terminal():
+            await self._update_target_node(here)

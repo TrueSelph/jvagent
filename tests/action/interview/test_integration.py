@@ -127,26 +127,33 @@ class TestIntegration:
         assert test_session.interview_type == "TestInterviewAction"
     
     @pytest.mark.asyncio
-    async def test_update_response_with_history(self, test_session):
-        """Test updating response with audit trail."""
+    async def test_update_queue_management(self, test_session):
+        """Test update queue helpers."""
         # Set initial response
         test_session.set_response("user_name", "John Doe")
         await test_session.save()
-        
-        # Update response
-        test_session.update_response("user_name", "Jane Doe", "John Doe")
-        await test_session.save()
-        
-        # Check update history
-        assert len(test_session.update_history) == 1
-        update = test_session.update_history[0]
-        assert update["field"] == "user_name"
-        assert update["old_value"] == "John Doe"
-        assert update["new_value"] == "Jane Doe"
-        assert "timestamp" in update
-        
-        # Response should be updated
-        assert test_session.get_response("user_name") == "Jane Doe"
+
+        # Add entry to update queue
+        test_session.update_queue.append({
+            "field": "user_name",
+            "value": "Jane Doe",
+            "old_value": "John Doe",
+        })
+
+        # Check has_pending_update
+        assert test_session.has_pending_update("user_name") is True
+        assert test_session.has_pending_update("nonexistent") is False
+
+        # Pop update
+        entry = test_session.pop_update("user_name")
+        assert entry is not None
+        assert entry["field"] == "user_name"
+        assert entry["value"] == "Jane Doe"
+        assert entry["old_value"] == "John Doe"
+
+        # Queue should be empty now
+        assert test_session.has_pending_update("user_name") is False
+        assert test_session.pop_update("user_name") is None
     
     @pytest.mark.asyncio
     async def test_extract_data(self, test_session):

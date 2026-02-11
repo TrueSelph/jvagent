@@ -113,56 +113,48 @@ def get_state_event_message(state: str, class_name: str) -> str:
 # Classification Prompts - Core Rules (Single Source of Truth)
 # =============================================================================
 
-CLASSIFICATION_RULES_CORE = """Chain of verification: (1) Apply checks below in order. (2) Then extract. (3) Output only the JSON object.
+CLASSIFICATION_RULES_CORE = """Apply checks in order, then extract, then output a single JSON object only.
 
-PRIORITY (check first):
-- If any field the user is referring to is in Unanswered fields → intent is SUBMISSION (not UPDATE), regardless of wording.
+STATE: review → CONFIRMATION = pure affirmation, no new values. active → answering current question = SUBMISSION (including "yes"/"no"); CONFIRMATION invalid.
 
-STATE:
-- current_state "review": CONFIRMATION = pure affirmation, no new values; "no" = UPDATE. Affirmatives with a new value = UPDATE.
-- current_state "active": Answering the current question = SUBMISSION (including "yes"/"no"). CONFIRMATION is invalid in active.
+INTENTS (one only):
+1. CANCELLATION - abandons process ("cancel", "abort", "stop").
+2. CONFIRMATION - only in review; "yes"/"correct"/"looks good" with no new values.
+3. SUBMISSION - answering an unanswered question only. Field must be in Unanswered fields. If the field is in Answered fields or extraction would assign a new value to a field in Answered fields → UPDATE instead. Invalid/wrong-format → SUBMISSION (validation handles). In review, if Unanswered fields exist and the response answers one (including "yes"/"no"), this is SUBMISSION, not UPDATE.
+4. UPDATE - changing an already-answered field. REQUIRES explicit change/update language: phrases like "change … to …", "update …", "actually I prefer …", "make it …", "switch … to …", "no, change …", "I meant …", "let me correct …", or clearly referencing an answered field with a replacement value. An isolated word or bare "yes"/"no" is NEVER an UPDATE — classify as SUBMISSION or DECLINE instead. Field in Answered fields (not in Unanswered); user provides a replacement value alongside update language.
+5. DECLINE - declines to answer (optional or required). Use when: explicit refusal ("I won't answer", "skip", "I'd rather not"); "No" to optional content (photos, attachments); or router "declines to..." / "refuses to...". Not when user answers "no" to a yes/no question (→ SUBMISSION). Field from Unanswered / Recent conversation / "unknown_field".
+6. NONE - last resort only: no clear intent and no viable extractions or deductions. Not for yes/no "no" (→ SUBMISSION) or explicit refusal (→ DECLINE).
 
-INTENTS (choose one):
-1. CANCELLATION – user abandons entire process ("cancel", "abort", "stop").
-2. CONFIRMATION – only in review; "yes"/"correct"/"looks good" with no new values.
-3. SUBMISSION – answering an unanswered question. Field in Unanswered fields → SUBMISSION. Invalid/wrong-format answers still SUBMISSION (validation handles them).
-4. UPDATE – changing an already answered field. Field must be in Answered fields and not in Unanswered fields. In review, "no" or giving a new value = UPDATE.
-5. DECLINE – user declines optional question or optional content. Use when: explicit refusal ("skip", "I'd rather not"); or "No" to optional uploads/content (photos, attachments); or router says "declines to..." / "refuses to...". Only [OPTIONAL] in Unanswered fields; [REQUIRED] refusal = NONE. Field: from Unanswered fields, or from Recent conversation (current question), or "unknown_field".
-6. NONE – no clear intent or refusal of a required field.
+"NO": optional content (photos, attachments) → DECLINE. yes/no question (Unanswered fields or Recent conversation) → SUBMISSION value "no". review with Unanswered fields → SUBMISSION if answering a pending question. If current question (Recent conversation / Unanswered fields) is answerable by yes or no, negatory ("no", "nope", "I don't", etc.) = SUBMISSION value "no", not UPDATE, DECLINE, or NONE.
 
-"NO" DISAMBIGUATION (use Recent conversation and router): "No" to optional content (photos, attachments) → DECLINE. "No" as answer to a yes/no question (e.g. "Is this sensitive?") → SUBMISSION with that field = "no". "No" in review → UPDATE.
+EXTRACTION: All field-related output goes only in "extracted" as a list of one-key objects. SUBMISSION/UPDATE: e.g. [{{"incident_location": "Water Street"}}]. DECLINE: or No extractions: extracted: [].
 
-EXTRACTION:
-- SUBMISSION: Map response to Unanswered fields. Use Recent conversation to identify which question was just asked. "Yes"/"Yeah"/"Sure"/"Ok" → "yes"; "No"/"Nope" → "no". Always output at least one field–value pair when the response clearly answers a listed question. For partials ("the first one", "9am") use Recent conversation to resolve to full values.
-- UPDATE: Set "field" and "value".
-- DECLINE: Set "field" (name from Unanswered fields or Recent conversation, or "unknown_field").
+VALIDATION: Before accepting a SUBMISSION, verify the extracted value genuinely satisfies the field's expected content description. The description after each field name defines what a valid answer looks like. If the user's response is a meta-request (e.g., "I want to make a report"), a greeting, an expression of intent, or otherwise does not contain substantive content matching the field description, do NOT extract it. Classify as NONE instead. A response must provide actual informational content relevant to the field — not just mention the topic.
 
-OUTPUT: Single JSON object. Include "reasoning" (optional one-line) only if helpful. For SUBMISSION put each extracted field as a top-level key with its value (same level as intent, confidence, field, value)."""
+OUTPUT: JSON only. reasoning optional. Output only intent, confidence, and extracted. Do not include "field" or "value" keys."""
 
 # =============================================================================
 # Classification Prompts - Template Variants
 # =============================================================================
 
-# Interview Prompt - Full template with context formatting
-INTERVIEW_PROMPT = f"""Classify intent and extract field values from user input.
+# Interview Prompt - Full template with context formatting (use .format(classification_rules_core=..., ...))
+INTERVIEW_PROMPT = """Classify intent and extract field values from user input.
 
 USER INPUT (router interpretation or raw utterance):
-{{user_input}}
+{user_input}
 
 CONTEXT:
-- Current state: {{current_state}}
-- Answered fields (with current values): {{answered_fields}}
-- Unanswered fields: {{entities_to_extract}}
+- Current state: {current_state}
+- Answered fields (with current values): {answered_fields}
+- Unanswered fields: {entities_to_extract}
 - Recent conversation (use to identify current question and resolve "yes"/"no" and references):
-{{conversation_history}}
+{conversation_history}
 
-{CLASSIFICATION_RULES_CORE}
+{classification_rules_core}
 
-Return a single JSON object only. No markdown or explanation. Required keys: intent, confidence, field (or null), value (or null). For SUBMISSION add one or more top-level keys with field names from Unanswered fields and their extracted values. Optional key: reasoning (one line).
-{{{{
+Return a single JSON object only. No markdown or explanation. Required keys: intent, confidence, extracted (array). Do not include "field" or "value". SUBMISSION/UPDATE: put actual values in extracted as list of one-key objects, e.g. [{{"incident_location": "Water Street"}}]. DECLINE: put [{{"field_name": "N/A"}}]. When no extractions: extracted: []. Optional key: reasoning (one line).
+{{
   "intent": "CANCELLATION" | "CONFIRMATION" | "UPDATE" | "DECLINE" | "SUBMISSION" | "NONE",
   "confidence": 0.0-1.0,
-  "field": "field_name" | null,
-  "value": "value" | null,
-  "<field_name>": "<extracted_value>"
-}}}}"""
+  "extracted": [{{"<field_name>": "<value>"}}] or []
+}}"""

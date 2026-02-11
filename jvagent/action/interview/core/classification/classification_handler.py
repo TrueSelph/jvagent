@@ -20,6 +20,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Keys in LLM response that are metadata, not extracted field values
+EXTRACTION_METADATA_KEYS = frozenset({"intent", "confidence", "field", "value", "reasoning", "extracted"})
+
 
 @dataclass
 class ClassificationResult:
@@ -48,25 +51,59 @@ class ClassificationHandler:
             action: InterviewInteractAction instance
         """
         self.action = action
-    
+
+    def _extract_field_values(self, result: Dict[str, Any], intent: Intent) -> Dict[str, Any]:
+        """Extract field-value pairs from LLM result using the single canonical format.
+
+        LLM returns all field data in result["extracted"]: a list of one-key dicts.
+        SUBMISSION/UPDATE = actual values; DECLINE = value "N/A" (excluded from returned dict).
+
+        Args:
+            result: Raw parsed JSON from LLM response
+            intent: Classified intent (extraction applies to SUBMISSION, UPDATE; DECLINE "N/A" filtered out)
+
+        Returns:
+            Filtered dict of field -> value (excludes empty/None/whitespace-only and "N/A")
+        """
+        raw_list = result.get("extracted")
+        if not isinstance(raw_list, list):
+            return {}
+
+        merged: Dict[str, Any] = {}
+        for item in raw_list:
+            if not isinstance(item, dict) or len(item) != 1:
+                continue
+            field_name, val = next(iter(item.items()))
+            if not isinstance(field_name, str) or not field_name.strip():
+                continue
+            if val is None:
+                continue
+            if isinstance(val, str) and (not val.strip() or val.strip().upper() == "N/A"):
+                continue
+            merged[field_name.strip()] = val
+
+        return merged
+
     def extract_data_input_values(
         self,
         session: InterviewSession,
         visitor: "InteractWalker"
     ) -> Tuple[Dict[str, Any], Set[str]]:
         """Extract values from visitor.data for fields with data_input_field configured.
-        
+
         Scans question_graph for fields with data_input_field in constraints and checks
-        visitor.data dictionary for matching keys. Returns both the extracted values
-        and the set of field names that have data_input_field (for exclusion from LLM).
-        
+        visitor.data for matching keys. When the key is absent, auto-populates with "N/A"
+        only for the current question (first unanswered) to avoid pre-populating future
+        questions. Returns both the extracted values and the set of field names that have
+        data_input_field (for exclusion from LLM).
+
         Args:
             session: Interview session
             visitor: InteractWalker with data property
-            
+
         Returns:
             Tuple of (extracted_values_dict, excluded_field_names_set):
-            - extracted_values_dict: Maps question names to values found in visitor.data
+            - extracted_values_dict: Maps question names to values from visitor.data or "N/A"
             - excluded_field_names_set: Set of question names that have data_input_field
         """
         extracted_values = {}
@@ -78,27 +115,31 @@ class ClassificationHandler:
         # Check visitor.data exists and is a dict
         if not hasattr(visitor, 'data') or not isinstance(visitor.data, dict):
             return extracted_values, excluded_fields
-        
+
+        unanswered = session.get_unanswered_questions()
+        current_question = unanswered[0] if unanswered else None
+
         # Scan question graph for data_input_field entries
         for question_config in question_graph:
             question_name = question_config.get("name")
             if not question_name:
                 continue
-            
+
             constraints = question_config.get("constraints", {})
             data_input_field = constraints.get("data_input_field")
-            
+
             if data_input_field:
                 # This field should be excluded from LLM extraction
                 excluded_fields.add(question_name)
-                
-                # Check if the data_input_field key exists in visitor.data
+
+                # Value from visitor.data key, or "N/A" for current question when key absent
                 if data_input_field in visitor.data:
                     value = visitor.data[data_input_field]
-                    # Only include if value is not None
                     if value is not None:
                         extracted_values[question_name] = value
-        
+                elif question_name == current_question:
+                    extracted_values[question_name] = "N/A"
+
         return extracted_values, excluded_fields
     
     async def _get_context_data_note(
@@ -214,30 +255,22 @@ class ClassificationHandler:
                 continue
 
             # Skip fields that should be excluded from LLM extraction
-            # EXCEPT when the field is the active question (user is currently being asked this question)
-            # This is necessary for proper DECLINE intent classification when user declines to provide data
-            is_active_data_field = False
             if key in excluded_set:
-                # Always include the target question for proper DECLINE intent classification
-                target_question_name = None
-                if key != target_question_name:
-                    continue
-                # If it's the target question, mark it as a data_input_field for special handling
-                is_active_data_field = True
+                continue
 
             desc = constraints.get('description', '')
             other_constraints = {k: v for k, v in constraints.items() if k not in ('description', 'data_input_field')}
             constraint_strs = [f"{k}: {v}" for k, v in other_constraints.items()]
-            constraint_part = f" ({', '.join(constraint_strs)})" if constraint_strs else ""
+            constraints_display = ", ".join(constraint_strs) if constraint_strs else "(none)"
             is_required = key in required_fields
-            required_marker = " [REQUIRED]" if is_required else " [OPTIONAL]"
-            # Add note for data_input_field questions to help LLM understand it can accept DECLINE
-            data_field_note = " (expects data input, but user may decline)" if is_active_data_field else ""
+            required_marker = "[REQUIRED]" if is_required else "[OPTIONAL]"
 
             # Add context data if available for this question
             context_data_note = await self._get_context_data_note(item, session)
 
-            entities_list.append(f"- {key}: {desc}{constraint_part}{required_marker}{data_field_note}{context_data_note}")
+            entities_list.append(
+                f"- {key} {required_marker} — Expected: \"{desc}\" | Constraints: {constraints_display}{context_data_note}"
+            )
 
         entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
 
@@ -315,12 +348,14 @@ class ClassificationHandler:
                 conversation_history_list
             )
 
+            from ..foundation.prompts import CLASSIFICATION_RULES_CORE
             prompt = self.action.config.templates.interview_prompt.format(
                 user_input=user_input,
                 current_state=context["current_state"],
                 answered_fields=context["answered_fields"],
                 entities_to_extract=context["entities_to_extract"],
                 conversation_history=conversation_history_str,
+                classification_rules_core=CLASSIFICATION_RULES_CORE,
             )
 
             # Get model action
@@ -359,6 +394,10 @@ class ClassificationHandler:
                     return self._build_result_from_data_inputs(data_input_values, session)
                 return ClassificationResult(intent=Intent.NONE)
 
+            # Remove field/value from result so they never appear in extraction output (canonical format is intent, confidence, extracted only)
+            result.pop("field", None)
+            result.pop("value", None)
+
             # Extract intent and convert to Intent enum
             intent_str = result.get("intent", Intent.NONE.value).upper()
             try:
@@ -369,41 +408,34 @@ class ClassificationHandler:
                 intent = Intent.NONE
             confidence = result.get("confidence", 1.0)
 
-            # Build ClassificationResult
-            # Normalize field - handle string "null" from JSON
-            field_value = result.get("field")
-            if field_value and isinstance(field_value, str):
-                field_str = field_value.strip().lower()
-                if field_str == "null" or field_str == "none":
-                    field_value = None
-
+            # Build ClassificationResult (LLM always sends field/value null; we derive from extracted)
             classification_result = ClassificationResult(
-                intent=intent.value,  # Store as string value for ClassificationResult
+                intent=intent.value,
                 confidence=confidence,
-                field=field_value,
-                value=result.get("value")
+                field=None,
+                value=None,
             )
 
-            # Handle SUBMISSION intent - extract field values
-            if intent == Intent.SUBMISSION:
-                intent_keys = {"intent", "confidence", "field", "value", "reasoning"}
-                # Prefer nested extracted_data if present and is a dict; else use top-level keys
-                raw = result.get("extracted_data")
-                if isinstance(raw, dict):
-                    extracted_data = raw
-                else:
-                    extracted_data = {k: v for k, v in result.items() if k not in intent_keys}
+            # Extract field values from result["extracted"] (list of one-key dicts; N/A filtered out)
+            extracted_data = self._extract_field_values(result, intent)
+            if extracted_data:
+                classification_result.extracted_data = extracted_data
 
-                # Filter out empty/None/whitespace-only values
-                filtered_data = {}
-                for field, value in extracted_data.items():
-                    if value is not None and isinstance(value, str) and value.strip():
-                        filtered_data[field] = value
-                    elif value is not None and not isinstance(value, str):
-                        filtered_data[field] = value
+            # DECLINE: derive declined field from extracted entry with value "N/A"
+            if intent == Intent.DECLINE:
+                raw_list = result.get("extracted")
+                if isinstance(raw_list, list):
+                    for item in raw_list:
+                        if isinstance(item, dict) and len(item) == 1:
+                            (fname, v) = next(iter(item.items()))
+                            if isinstance(v, str) and v.strip().upper() == "N/A":
+                                classification_result.field = fname.strip() if isinstance(fname, str) else None
+                                break
 
-                if filtered_data:
-                    classification_result.extracted_data = filtered_data
+            # UPDATE: set field/value from single entry for downstream consumers
+            if intent == Intent.UPDATE and extracted_data and len(extracted_data) == 1:
+                classification_result.field = next(iter(extracted_data.keys()))
+                classification_result.value = next(iter(extracted_data.values()))
 
             # Merge data input values into classification result
             # Data input values take precedence and determine SUBMISSION vs UPDATE per field

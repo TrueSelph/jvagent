@@ -1,41 +1,81 @@
-import pytest
+"""Test that pruning correctly handles convergence: responses after a convergence
+point are preserved even when the branch before the convergence changes.
 
+Uses PostUpdateWalker's _prune_session directly.
+"""
+
+import pytest
 from jvagent.action.interview.core.session.interview_session import InterviewSession
-from jvagent.action.interview.core.graph.question_walker import QuestionWalker
+from jvagent.action.interview.core.graph.post_update_walker import PostUpdateWalker
 from jvagent.action.interview.core.utils.cache_utils import BranchCache
 
 
 @pytest.mark.asyncio
 async def test_path_change_prunes_unreachable_responses():
+    """qA branches to qB or qC, both converge at qD.
+
+    Initial path: qA -> qB -> qD
+    Updated path: qA -> qC -> qD
+    Expected: qB pruned, qD preserved (after convergence).
+    """
     session = InterviewSession()
     session.interview_type = "TestInterview"
 
-    # Build question graph: qA branches to qB or qC, both lead to qD (converge)
     session.question_graph = [
         {"name": "qA", "branches": [
             {"condition": {"op": "equals", "value": "b"}, "target": "qB"},
-            {"condition": {"op": "equals", "value": "c"}, "target": "qC"}
+            {"condition": {"op": "equals", "value": "c"}, "target": "qC"},
         ], "default_next": "qD"},
         {"name": "qB", "default_next": "qD"},
         {"name": "qC", "default_next": "qD"},
-        {"name": "qD", "default_next": "REVIEW"}
+        {"name": "qD", "default_next": "REVIEW"},
     ]
 
-    # Initial answers follow path qA->qB->qD
-    session.responses = {"qA": "b", "qB": "valB", "qD": "valD"}
+    # User updated qA from "b" to "c"
+    session.responses = {"qA": "c", "qB": "valB", "qD": "valD"}
+    await session.save()
 
-    # Record previous branch path as qA -> qB
-    branch_cache = BranchCache(session)
-    branch_cache.record_branch_path("qA", 0, "qB", False)
+    # Simulate PostUpdateWalker traversal: new path is qA -> qC -> qD
+    walker = PostUpdateWalker(interview_session=session)
+    walker._reachable = {"qA", "qC", "qD"}
 
-    # Now update qA to take qC path
-    session.responses["qA"] = "c"
+    walker._prune_session()
 
-    # Run detection/prune
-    walker = QuestionWalker()
-    changed = await walker.detect_and_prune_altered_path(session, "qA", interview_action=None, visitor=object())
-    assert changed is True
+    # qB should be pruned (old branch), qD preserved (convergence point)
+    assert "qB" not in session.responses, "qB should be pruned"
+    assert "qD" in session.responses, "qD should remain (convergence)"
+    assert session.responses["qD"] == "valD"
 
-    # qB should be pruned, qD should remain (converged)
-    assert "qB" not in session.responses
-    assert "qD" in session.responses
+    # qA preserved
+    assert "qA" in session.responses
+    assert session.responses["qA"] == "c"
+
+    # Audit trail
+    pruned = BranchCache(session).get_pruned_responses()
+    assert "qB" in pruned
+
+
+@pytest.mark.asyncio
+async def test_update_queue_pruned_for_unreachable():
+    """Entries in update_queue for unreachable questions should be removed."""
+    session = InterviewSession()
+    session.interview_type = "TestInterview"
+    session.question_graph = [
+        {"name": "qA", "default_next": "qB"},
+        {"name": "qB", "default_next": "REVIEW"},
+    ]
+    session.responses = {"qA": "a"}
+    session.update_queue = [
+        {"field": "qA", "value": "a2", "old_value": "a"},
+        {"field": "qX", "value": "x", "old_value": None},  # unreachable
+    ]
+    await session.save()
+
+    walker = PostUpdateWalker(interview_session=session)
+    walker._reachable = {"qA", "qB"}
+
+    walker._prune_session()
+
+    remaining_fields = [e["field"] for e in session.update_queue]
+    assert "qA" in remaining_fields
+    assert "qX" not in remaining_fields, "Unreachable update_queue entry should be removed"

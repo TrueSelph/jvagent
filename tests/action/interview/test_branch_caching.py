@@ -248,177 +248,86 @@ class TestBranchCachingIntegration:
         branch_cache.set("report_description", "contact_info")
         assert branch_cache.get("report_description") == "contact_info"
 
-class TestInterviewReset:
-    """Tests for interview reset on path change."""
-    
+class TestPostUpdatePruning:
+    """Tests for PostUpdateWalker-based pruning on path change."""
+
     @pytest.mark.asyncio
-    async def test_detect_and_prune_returns_false_when_no_path_change(
+    async def test_no_pruning_when_all_reachable(
         self, test_session_with_dynamic_branches
     ):
-        """Test that detect_and_prune_altered_path returns False when path hasn't changed."""
-        from jvagent.action.interview.core.graph.question_walker import QuestionWalker
-        
+        """No responses should be pruned when all answered questions are reachable."""
+        from jvagent.action.interview.core.graph.post_update_walker import PostUpdateWalker
+
         session = test_session_with_dynamic_branches
-        session.responses = {"report_description": "normal incident"}
-        session.active_question_key = "report_description"
-        
-        walker = QuestionWalker()
-        result = await walker.detect_and_prune_altered_path(
-            session, "report_description"
-        )
-        
-        assert result is False
-    
-    @pytest.mark.asyncio
-    async def test_detect_and_prune_returns_true_when_path_changes(
-        self, test_session_with_dynamic_branches
-    ):
-        """Test that detect_and_prune_altered_path returns True when path changes."""
-        from jvagent.action.interview.core.graph.question_walker import QuestionWalker
-        from unittest.mock import AsyncMock, patch
-        
-        session = test_session_with_dynamic_branches
-        session.responses = {"report_description": "urgent incident with sensitive info"}
-        session.active_question_key = "report_description"
+        session.responses = {
+            "report_description": "normal incident",
+            "contact_info": "test@example.com",
+        }
         await session.save()
-        
-        branch_cache = BranchCache(session)
-        branch_cache.record_branch_path("report_description", 0, "is_sensitive", False)
-        await session.save()
-        
-        walker = QuestionWalker()
-        
-        # Mock branch evaluator to simulate path change (all conditions false → default_next)
-        with patch.object(
-            QuestionBranchEvaluator,
-            "matches",
-            new_callable=AsyncMock,
-            return_value=False  # All conditions false, will use default_next
-        ):
-            result = await walker.detect_and_prune_altered_path(
-                session, "report_description"
-            )
-        
-        # Path changed (was "is_sensitive", now "contact_info" via default_next)
-        assert result is True
-    
+
+        walker = PostUpdateWalker(interview_session=session)
+        walker._reachable = {"report_description", "contact_info"}
+
+        walker._prune_session()
+
+        assert "report_description" in session.responses
+        assert "contact_info" in session.responses
+
     @pytest.mark.asyncio
-    async def test_reset_sets_active_to_branching_question(
+    async def test_pruning_removes_old_branch_response(
         self, test_session_with_dynamic_branches
     ):
-        """Test that reset sets active_question_key to the branching question for stepwise traversal."""
-        from jvagent.action.interview.core.graph.question_walker import QuestionWalker
+        """When path switches from is_sensitive to contact_info, is_sensitive is pruned."""
+        from jvagent.action.interview.core.graph.post_update_walker import PostUpdateWalker
 
-        session = test_session_with_dynamic_branches
-        session.active_question_key = "is_sensitive"
-
-        walker = QuestionWalker()
-        await walker._reset_to_branching_point(
-            session,
-            "report_description",
-            "contact_info"
-        )
-
-        # After reset, active_question_key should point to the branching question
-        # so walker starts there and takes one step to new_target (stepwise traversal)
-        assert session.active_question_key == "report_description"
-    
-    @pytest.mark.asyncio
-    async def test_reset_records_audit_trail(
-        self, test_session_with_dynamic_branches
-    ):
-        """Test that reset records audit trail in session context."""
-        from jvagent.action.interview.core.graph.question_walker import QuestionWalker
-        
-        session = test_session_with_dynamic_branches
-        session.active_question_key = "is_sensitive"
-        
-        walker = QuestionWalker()
-        await walker._reset_to_branching_point(
-            session,
-            "report_description",
-            "contact_info"
-        )
-        
-        # Check audit trail
-        assert "_interview_resets" in session.context
-        resets = session.context["_interview_resets"]
-        assert len(resets) > 0
-        
-        last_reset = resets[-1]
-        assert last_reset["branching_question"] == "report_description"
-        assert last_reset["new_target"] == "contact_info"
-        assert "timestamp" in last_reset
-    
-    @pytest.mark.asyncio
-    async def test_prune_responses_and_reset_together(
-        self, test_session_with_dynamic_branches
-    ):
-        """Test that pruning and reset happen together on path change."""
-        from jvagent.action.interview.core.graph.question_walker import QuestionWalker
-        from unittest.mock import AsyncMock, patch
-        
         session = test_session_with_dynamic_branches
         session.responses = {
             "report_description": "urgent incident",
-            "is_sensitive": "yes",  # This will be pruned if path changes
+            "is_sensitive": "yes",
         }
-        session.active_question_key = "is_sensitive"
         await session.save()
-        
-        branch_cache = BranchCache(session)
-        branch_cache.record_branch_path("report_description", 0, "is_sensitive", False)
-        await session.save()
-        
-        walker = QuestionWalker()
-        
-        # Mock branch evaluator to simulate all conditions false (path changes to default_next)
-        with patch.object(
-            QuestionBranchEvaluator,
-            "matches",
-            new_callable=AsyncMock,
-            return_value=False
-        ):
-            result = await walker.detect_and_prune_altered_path(
-                session, "report_description"
-            )
-        
-        # Path changed and interview reset
-        assert result is True
-        # After reset, active_question_key points to the branching question (stepwise traversal)
-        assert session.active_question_key == "report_description"
-        
-        # When path changes from is_sensitive to contact_info (default_next),
-        # is_sensitive is no longer on the path and should be pruned
-        assert "is_sensitive" not in session.responses, "is_sensitive should be pruned from old path"
+
+        # New reachable path: report_description -> contact_info (default_next)
+        walker = PostUpdateWalker(interview_session=session)
+        walker._reachable = {"report_description", "contact_info"}
+
+        walker._prune_session()
+
+        assert "is_sensitive" not in session.responses, "is_sensitive should be pruned"
         assert "report_description" in session.responses, "report_description should remain"
-        
-        # Check that branch change details were recorded
-        change_details = session.context.get("_branch_change_details", {})
-        assert change_details.get("old_target") == "is_sensitive"
-        assert change_details.get("new_target") == "contact_info"
-    
+
     @pytest.mark.asyncio
-    async def test_multiple_resets_recorded(
+    async def test_pruned_response_audit_trail(
         self, test_session_with_dynamic_branches
     ):
-        """Test that multiple resets are recorded in audit trail."""
-        from jvagent.action.interview.core.graph.question_walker import QuestionWalker
-        
+        """Pruned responses are recorded in the BranchCache audit trail."""
+        from jvagent.action.interview.core.graph.post_update_walker import PostUpdateWalker
+
         session = test_session_with_dynamic_branches
-        walker = QuestionWalker()
-        
-        # Perform multiple resets
-        await walker._reset_to_branching_point(
-            session, "report_description", "is_sensitive"
-        )
-        
-        await walker._reset_to_branching_point(
-            session, "report_description", "urgent_escalation"
-        )
-        
-        # Check that both resets were recorded
-        resets = session.context.get("_interview_resets", [])
-        assert len(resets) >= 2
-        assert resets[0]["new_target"] == "is_sensitive"
-        assert resets[1]["new_target"] == "urgent_escalation"
+        session.responses = {
+            "report_description": "test",
+            "is_sensitive": "yes",
+        }
+        await session.save()
+
+        walker = PostUpdateWalker(interview_session=session)
+        walker._reachable = {"report_description", "contact_info"}
+
+        walker._prune_session()
+
+        pruned = BranchCache(session).get_pruned_responses()
+        assert "is_sensitive" in pruned
+        assert pruned["is_sensitive"]["value"] == "yes"
+        assert pruned["is_sensitive"]["reason"] == "branch_path_change"
+
+    @pytest.mark.asyncio
+    async def test_is_state_target_helper(self):
+        """InterviewWalker._is_state_target correctly identifies state targets."""
+        from jvagent.action.interview.core.graph.interview_walker import InterviewWalker
+
+        walker = InterviewWalker()
+        assert walker._is_state_target("REVIEW") is True
+        assert walker._is_state_target("COMPLETED") is True
+        assert walker._is_state_target("CANCELLED") is True
+        assert walker._is_state_target("ACTIVE") is False
+        assert walker._is_state_target("some_question") is False
