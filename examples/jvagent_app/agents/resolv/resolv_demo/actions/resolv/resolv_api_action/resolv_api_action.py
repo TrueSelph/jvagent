@@ -731,7 +731,10 @@ class ResolvAPIAction(Action):
         
         try:
             res = await self.http_request('POST', endpoint, json_data=payload)
-            return res['json'] if res['status'] in [200, 201] else {}
+            if res['status'] in [200, 201]:
+                return res['json']
+            else:
+                raise Exception(f"HTTP Error {res['status']}: {res.get('json', {})}")
         except Exception as e:
             logger.error(f"Error posting project comment: {e}")
             return {}
@@ -753,7 +756,10 @@ class ResolvAPIAction(Action):
 
         try:
             res = await self.http_request('POST', endpoint, json_data=payload)
-            return res['json'] if res['status'] in [200, 201] else {}
+            if res['status'] in [200, 201]:
+                return res['json']
+            else:
+                raise Exception(f"HTTP Error {res['status']}: {res.get('json', {})}")
         except Exception as e:
             logger.error(f"Error posting issue comment: {e}")
             return {}
@@ -832,3 +838,44 @@ class ResolvAPIAction(Action):
         except Exception as e:
             logger.error(f"Error getting channels page: {e}")
             return ""
+    
+    async def submit_comment(
+        self,
+        content: str,
+        report_id: str = "",
+        attachments: list = []
+    ):
+        """
+        Submit a comment to a project or issue.
+
+        Args:
+            project_id: The ID of the project.
+            content: The comment content.
+            report_id: Optional report ID to comment on.
+            attachments: Optional list of attachment URLs.
+
+        Returns:
+            The comment response dictionary.
+        """
+
+        project_id = await self.get_project_id_by_agent_identifier()
+
+        if report_id:
+            result = await self.post_issue_comment(project_id, report_id, content)
+        else:
+            result = await self.post_project_comment(project_id, content)
+
+        # Upload attachments if provided
+        # if attachments and 'id' in list(result.values())[0]:
+            # for attachment_url in attachments:
+            #     await self.upload_file_url(
+            #         file_url=attachment_url,
+            #         entity_id=result.get('id', ''),
+            #         file_type="attachment",
+            #         entity_type="comment"
+            #     )
+
+        return result
+
+    
+    
