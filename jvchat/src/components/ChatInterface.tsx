@@ -15,13 +15,11 @@ import { MessageInput } from "./MessageInput";
 import { WelcomeScreen } from "./WelcomeScreen";
 import { ConversationList } from "./ConversationList";
 import { GraphViewer } from "./GraphViewer";
+import { DebugInteractions } from "./DebugInteractions";
 import {
-  addConversation,
-  updateConversation,
   getMessages,
   deleteMessages,
   getConversations,
-  saveConversations,
   getUserId,
 } from "../utils/storage";
 import { apiClient } from "../config/api";
@@ -56,6 +54,7 @@ export function ChatInterface() {
   const { logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isGraphViewerOpen, setIsGraphViewerOpen] = useState(false);
+  const [isDebugModalOpen, setIsDebugModalOpen] = useState(false);
 
   const handleMobileMenuClose = useCallback(() => {
     setIsMobileMenuOpen(false);
@@ -67,6 +66,14 @@ export function ChatInterface() {
 
   const handleCloseGraphViewer = useCallback(() => {
     setIsGraphViewerOpen(false);
+  }, []);
+
+  const handleToggleDebugModal = useCallback(() => {
+    setIsDebugModalOpen((prev) => !prev);
+  }, []);
+
+  const handleCloseDebugModal = useCallback(() => {
+    setIsDebugModalOpen(false);
   }, []);
 
   // Refresh conversations when agent changes or on mount
@@ -426,7 +433,7 @@ export function ChatInterface() {
 
               {/* Debug interactions button */}
               <button
-                onClick={() => navigate("/debug")}
+                onClick={handleToggleDebugModal}
                 className="flex-shrink-0 text-gray-600 hover:text-gray-900 transition-colors p-2 rounded-lg hover:bg-gray-100"
                 aria-label="Debug"
                 title="Debug"
@@ -498,6 +505,14 @@ export function ChatInterface() {
         {/* Graph Viewer Modal Dialog */}
         {isGraphViewerOpen && (
           <GraphViewer onClose={handleCloseGraphViewer} isEmbedded={true} />
+        )}
+
+        {/* Debug Interactions Modal Dialog */}
+        {isDebugModalOpen && (
+          <DebugInteractions
+            onClose={handleCloseDebugModal}
+            isEmbedded={true}
+          />
         )}
       </div>
     </div>

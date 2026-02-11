@@ -1,10 +1,10 @@
-agent: resolv/resolv_demo
+agent: gdf/arc_ai
 version: 1.0.0
 author: V75 Inc.
 jvagent: ~0.0.1
 context:
-  alias: Resolv Demo Agent
-  description: A demo agent for Resolv
+  alias: GDF ARC AI
+  description: The GDF ARC AI assistant provides daily access codes, answers questions, and offers rankings. Designed to help with specific questions or information needs, ensuring user satisfaction as the top priority.
   enabled: true
 actions:
   - action: jvagent/interact_router
@@ -14,7 +14,7 @@ actions:
       # Model Configuration
       model_action_type: "OpenAILanguageModelAction"
       history_limit: 3
-      model: "gpt-4.1"
+      model: gpt-4.1-mini
 
   - action: jvagent/openai_embedding
     context:
@@ -82,7 +82,7 @@ actions:
       api_key: ${OPENAI_API_KEY}
       api_endpoint: "https://api.openai.com/v1"
       # Model Configuration
-      model: "gpt-4.1"
+      model: gpt-4.1-mini
       temperature: 0.2
       max_tokens: 4096
       timeout: 60
@@ -92,69 +92,89 @@ actions:
       enabled: true
       description: "Persona action with LLM-driven behavioral parameters"
       # Persona Identity
-      persona_name: "Navi"
+      persona_name: "ARC"
       persona_description: |
-        You are a friendly and knowledgeable assistant that helps users
-        understand how the resolv framework works. You provide clear,
+        You are a friendly and knowledgeable assistant offering support for the Guyana Defense Force (GDF) by providing information and assistance with to users. You provide clear,
         concise answers and demonstrate best practices. Keep your responses very short and concise. Do not give any explanation unless asked.
       persona_capabilities:
-        - "Submit report for a project"
-        - "Submit feedback for an incident or project"
-        - "Provide subscription link to opt in and out"
+        - "Provide daily access codes."
+        - "Answer questions about ranks and the Guyana Defense Force."
+        - "Conduct polls."
+        - "Offer information about available and enrolled courses."
+        - "Allow user to subscribe to various news categories."
+        - "Create short passes."
+        - "Supervisors can approve or deny short pass requests."
       # Model Configuration
       model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4.1"
+      model: gpt-4.1-mini
       model_temperature: 0.1
       model_max_tokens: 8192
 
-  - action: resolv/report_interview_interact_action
+  # - action: resolv/report_interview_interact_action
+  #   context:
+  #     enabled: true
+  #     description: "Report Interview action is used to create reports."
+  #     weight: -50
+  #   config:
+  #     model_action_type: "OpenAILanguageModelAction"
+  #     model: gpt-4.1-mini
+  #     model_temperature: 0.1
+  #     model_max_tokens: 4096
+  #     use_history: true
+  #     max_statement_length: 100
+  #     history_limit: 3
+  #     use_dspy: true
+
+  - action: gdf/supervisor_short_pass_interview_interact_action
     context:
       enabled: true
-      description: "Report Interview action is used to create reports."
+      description: "Supervisor Short Pass Interview action is used to approve or deny short pass requests."
       weight: -50
     config:
       model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4.1"
+      model: gpt-4.1-mini
       model_temperature: 0.1
       model_max_tokens: 4096
       use_history: true
       max_statement_length: 100
       history_limit: 3
-  - action: resolv/feedback_interview_interact_action
+      use_dspy: true
+
+  - action: gdf/short_pass_interview_interact_action
     context:
       enabled: true
-      description: "Feedback Interview action is used to create feedback for incidents and projects."
-      weight: -50
+      description: "Short Pass Interview action lets ranks request a short pass."
+      weight: -50 # Runs after InteractRouter
     config:
       model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4.1"
+      model: gpt-4.1-mini
       model_temperature: 0.1
       model_max_tokens: 4096
       use_history: true
       max_statement_length: 100
       history_limit: 3
+      use_dspy: true
+
   - action: jvagent/converse_interact_action
     context:
       enabled: true
       description: "Fallback action for smalltalk and casual conversation"
       weight: 100 # Runs last as a safety net
 
-  - action: resolv/onboarding_interact_action
+  - action: gdf/onboarding_interact_action
     context:
       enabled: true
-      description: "Onboarding action is used to register user and subscribe them to default groups."
+      description: "Onboarding action is used to verify the identity of the ranks."
       weight: -100
 
-  - action: resolv/resolv_api_action
+  - action: gdf/arc_api_action
     context:
       enabled: true
-      description: "Houses Resolv API credentials and endpoints"
-      user_uuid: ${USER_UUID}
-      secret_token: ${SECRET_TOKEN}
-      api_url: ${API_URL}
-      organization_slug: ${ORGANIZATION_SLUG}
-      project_id: ${PROJECT_ID}
-      agent_identifier: ${AGENT_IDENTIFIER}
+      description: "Houses Arc API credentials and endpoints"
+      endpoint: "https://gdf-api-dev.v75inc.dev/api/v1"
+      headers:
+        x-api-key: "secret"
+        Content-Type: "application/json"
 
   - action: jvagent/access_control_action
     context:

@@ -1,4 +1,4 @@
-"""Resolv onboarding interact action."""
+"""Onboarding interact action."""
 
 from typing import List
 from jvagent.action.interact.base import InteractAction
@@ -7,7 +7,7 @@ from jvspatial.core.annotations import attribute
 import logging
 logger = logging.getLogger(__name__)
 
-class ResolvOnboardingInteractAction(InteractAction):
+class OnboardingInteractAction(InteractAction):
     """Detects new users and adds their details to the default subscriber list and/or specified groups by ID on Resolv IS.
     
     This action automatically onboards new users by:

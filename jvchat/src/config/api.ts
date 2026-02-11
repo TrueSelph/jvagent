@@ -17,8 +17,8 @@ class ApiClient {
   private resolvedLoginPath?: string
   private isRefreshing = false
   private failedQueue: Array<{
-    resolve: (value?: any) => void
-    reject: (error?: any) => void
+    resolve: (value?: unknown) => void
+    reject: (error?: unknown) => void
   }> = []
 
   constructor() {
@@ -203,13 +203,13 @@ class ApiClient {
   }
 
   private async _withFallback<T>(fn: (baseURL: string) => Promise<T>): Promise<T> {
-    let lastError: any
+    let lastError: unknown
     for (const baseURL of this.baseUrls) {
       try {
         return await fn(baseURL)
-      } catch (error: any) {
+      } catch (error: unknown) {
         lastError = error
-        console.warn('Request failed for baseURL', baseURL, 'error:', error?.message || error)
+        console.warn('Request failed for baseURL', baseURL, 'error:', (error as Error)?.message || error)
         // Try next baseURL
       }
     }
@@ -224,12 +224,13 @@ class ApiClient {
       }
 
       // Extract login credentials (without serverUrl)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { serverUrl, ...loginCreds } = credentials
 
       // If we already found a working login path, use it directly (single call)
       if (this.resolvedLoginPath) {
         const response = await this._withFallback((baseURL) =>
-          this.client.post<any>(this.resolvedLoginPath!, loginCreds, { baseURL })
+          this.client.post(this.resolvedLoginPath!, loginCreds, { baseURL })
         )
         return this._extractLoginResponse(response)
       }
@@ -241,12 +242,12 @@ class ApiClient {
       for (const baseURL of this.baseUrls) {
         for (const path of loginPaths) {
           try {
-            const response = await this.client.post<any>(path, loginCreds, { baseURL })
+            const response = await this.client.post(path, loginCreds, { baseURL })
             this.resolvedLoginPath = path
             return this._extractLoginResponse(response)
-          } catch (err: any) {
+          } catch (err: unknown) {
             lastError = err
-            if (err.response?.status === 404) {
+            if ((err as AxiosError)?.response?.status === 404) {
               // try next path/base
               continue
             }
@@ -616,13 +617,13 @@ class ApiClient {
     }
   }
 
-  async getGraph(format: string = 'mermaid', includeAttributes: boolean = true): Promise<string> {
+  async getGraph(format: string = 'mermaid', include_attributes: boolean = true): Promise<string> {
     // Endpoint returns plain text (mermaid diagram syntax)
     // Try /api/graph first, fallback to /graph, with baseURL fallbacks
     try {
       const params = {
         format,
-        include_attributes: includeAttributes,
+        include_attributes: include_attributes,
       }
 
       const response = await this._withFallback(async (baseURL) => {
@@ -658,6 +659,48 @@ class ApiClient {
         typeof errorMessage === 'string' ? errorMessage : 'Failed to fetch graph data'
       )
     }
+  }
+
+  async getActions(agentId: string): Promise<any> {
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.get(`/api/agents/${agentId}/actions?page=1&per_page=50&enabled_only=false`, { baseURL })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.get(`/agents/${agentId}/actions?page=1&per_page=50&enabled_only=false`, { baseURL })
+        }
+        throw err
+      }
+    })
+    return response.data
+  }
+
+  async getInteractions(actionId: string): Promise<any> {
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.get(`/api/actions/${actionId}/interactions`, { baseURL })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.get(`/actions/${actionId}/interactions`, { baseURL })
+        }
+        throw err
+      }
+    })
+    return response.data
+  }
+
+  async queryAction(actionId: string, payload: any): Promise<any> {
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.post(`/api/actions/${actionId}/query`, payload, { baseURL })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.post(`/actions/${actionId}/query`, payload, { baseURL })
+        }
+        throw err
+      }
+    })
+    return response.data
   }
 }
 

@@ -11,7 +11,7 @@ from jvspatial.api import endpoint
 from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.api.endpoints.response import ResponseField, success_response
 
-from .resolv_onboarding_interact_action import ResolvOnboardingInteractAction
+from .onboarding_interact_action import OnboardingInteractAction
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
     "/actions/{action_id}/get_contact_groups",
     methods=["GET"],
     auth=True,
-    tags=["ResolvOnboardingInteractAction"],
+    tags=["OnboardingInteractAction"],
     response=success_response(
         data={
             "success": ResponseField(field_type=bool, example=True),
@@ -33,11 +33,11 @@ logger = logging.getLogger(__name__)
 async def endpoint_get_contact_groups(action_id: str) -> dict[str, Any]:
     """Get contact groups."""
     try:
-        action = await ResolvOnboardingInteractAction.get(action_id)
+        action = await OnboardingInteractAction.get(action_id)
         if not action:
             return {
                 "success": False,
-                "message": f"ResolvOnboardingInteractAction with ID '{action_id}' not found",
+                "message": f"OnboardingInteractAction with ID '{action_id}' not found",
                 "details": {"action_id": action_id}
             }
         
@@ -67,7 +67,7 @@ async def endpoint_get_contact_groups(action_id: str) -> dict[str, Any]:
     "/actions/{action_id}/update_default_contact_groups",
     methods=["POST"],
     auth=True,
-    tags=["ResolvOnboardingInteractAction"],
+    tags=["OnboardingInteractAction"],
     response=success_response(
         data={
             "success": ResponseField(field_type=bool, example=True),
@@ -80,11 +80,11 @@ async def endpoint_get_contact_groups(action_id: str) -> dict[str, Any]:
 async def update_default_contact_groups(action_id: str, group: list[str]) -> dict[str, Any]:
     """Update default contact groups."""
     try:
-        action = await ResolvOnboardingInteractAction.get(action_id)
+        action = await OnboardingInteractAction.get(action_id)
         if not action:
             return {
                 "success": False,
-                "message": f"ResolvOnboardingInteractAction with ID '{action_id}' not found",
+                "message": f"OnboardingInteractAction with ID '{action_id}' not found",
                 "details": {"action_id": action_id}
             }
         

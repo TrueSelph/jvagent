@@ -3,7 +3,6 @@ import {
   getConversations,
   addConversation,
   updateConversation,
-  saveConversations,
   removeConversation,
   getUserId,
 } from '../utils/storage'

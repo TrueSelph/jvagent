@@ -1,33 +1,33 @@
-import { useEffect, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import type { Message } from '../types/message'
-import React from 'react'
+import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { Message } from "../types/message";
+import React from "react";
 
 interface MessageListProps {
-  messages: Message[]
-  showThinking?: boolean
-  thinkingText?: string
+  messages: Message[];
+  showThinking?: boolean;
+  thinkingText?: string;
 }
 
 export function MessageList({
   messages,
   showThinking = false,
-  thinkingText = 'Thinking...',
+  thinkingText = "Thinking...",
 }: MessageListProps) {
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const prevLenRef = useRef<number>(0)
-  const [debugMessage, setDebugMessage] = useState<Message | null>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const prevLenRef = useRef<number>(0);
+  const [debugMessage, setDebugMessage] = useState<Message | null>(null);
 
   useEffect(() => {
     // Avoid smooth-scroll on every token append (prevents visible flicker).
-    const behavior = messages.length > prevLenRef.current ? 'smooth' : 'auto'
-    messagesEndRef.current?.scrollIntoView({ behavior })
-    prevLenRef.current = messages.length
-  }, [messages])
+    const behavior = messages.length > prevLenRef.current ? "smooth" : "auto";
+    messagesEndRef.current?.scrollIntoView({ behavior });
+    prevLenRef.current = messages.length;
+  }, [messages]);
 
   if (messages.length === 0) {
-    return null
+    return null;
   }
 
   return (
@@ -37,14 +37,14 @@ export function MessageList({
           <div
             key={message.id}
             className={`flex ${
-              message.role === 'user' ? 'justify-end' : 'justify-start'
+              message.role === "user" ? "justify-end" : "justify-start"
             }`}
           >
             <div
               className={`max-w-[85%] sm:max-w-3xl rounded-lg px-3 sm:px-4 py-2 sm:py-3 relative ${
-                message.role === 'user'
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-200 text-gray-900'
+                message.role === "user"
+                  ? "bg-indigo-600 text-white"
+                  : "bg-gray-200 text-gray-900"
               }`}
             >
               <div className="break-words text-sm sm:text-base">
@@ -53,13 +53,18 @@ export function MessageList({
                     remarkPlugins={[remarkGfm]}
                     components={{
                       // Style code blocks
-                      code: ({ node, inline, className, children, ...props }: any) => {
+                      code: ({
+                        inline,
+                        className,
+                        children,
+                        ...props
+                      }: any) => {
                         return !inline ? (
                           <pre
                             className={`overflow-x-auto rounded p-2 sm:p-3 my-2 ${
-                              message.role === 'user'
-                                ? 'bg-indigo-500/20 text-indigo-100'
-                                : 'bg-gray-800 text-gray-100'
+                              message.role === "user"
+                                ? "bg-indigo-500/20 text-indigo-100"
+                                : "bg-gray-800 text-gray-100"
                             }`}
                             {...props}
                           >
@@ -70,23 +75,23 @@ export function MessageList({
                         ) : (
                           <code
                             className={`px-1 py-0.5 rounded ${
-                              message.role === 'user'
-                                ? 'bg-indigo-500/30 text-indigo-100'
-                                : 'bg-gray-300 text-gray-800'
+                              message.role === "user"
+                                ? "bg-indigo-500/30 text-indigo-100"
+                                : "bg-gray-300 text-gray-800"
                             }`}
                             {...props}
                           >
                             {children}
                           </code>
-                        )
+                        );
                       },
                       // Style blockquotes
                       blockquote: ({ children, ...props }: any) => (
                         <blockquote
                           className={`border-l-4 pl-3 sm:pl-4 my-2 ${
-                            message.role === 'user'
-                              ? 'border-indigo-300 text-indigo-100'
-                              : 'border-gray-400 text-gray-700'
+                            message.role === "user"
+                              ? "border-indigo-300 text-indigo-100"
+                              : "border-gray-400 text-gray-700"
                           }`}
                           {...props}
                         >
@@ -97,9 +102,9 @@ export function MessageList({
                       a: ({ children, ...props }: any) => (
                         <a
                           className={`underline ${
-                            message.role === 'user'
-                              ? 'text-indigo-200 hover:text-indigo-100'
-                              : 'text-indigo-600 hover:text-indigo-700'
+                            message.role === "user"
+                              ? "text-indigo-200 hover:text-indigo-100"
+                              : "text-indigo-600 hover:text-indigo-700"
                           }`}
                           {...props}
                         >
@@ -113,45 +118,61 @@ export function MessageList({
                         </ul>
                       ),
                       ol: ({ children, ...props }: any) => (
-                        <ol className="list-decimal pl-4 sm:pl-6 my-2" {...props}>
+                        <ol
+                          className="list-decimal pl-4 sm:pl-6 my-2"
+                          {...props}
+                        >
                           {children}
                         </ol>
                       ),
                       // Style headings
                       h1: ({ children, ...props }: any) => (
-                        <h1 className="text-lg sm:text-xl font-bold my-2" {...props}>
+                        <h1
+                          className="text-lg sm:text-xl font-bold my-2"
+                          {...props}
+                        >
                           {children}
                         </h1>
                       ),
                       h2: ({ children, ...props }: any) => (
-                        <h2 className="text-base sm:text-lg font-bold my-2" {...props}>
+                        <h2
+                          className="text-base sm:text-lg font-bold my-2"
+                          {...props}
+                        >
                           {children}
                         </h2>
                       ),
                       h3: ({ children, ...props }: any) => (
-                        <h3 className="text-sm sm:text-base font-semibold my-2" {...props}>
+                        <h3
+                          className="text-sm sm:text-base font-semibold my-2"
+                          {...props}
+                        >
                           {children}
                         </h3>
                       ),
                       // Style paragraphs - add cursor to last paragraph when streaming
                       p: ({ children, ...props }: any) => {
                         // Extract text content from children for comparison
-                        const extractText = (node: any): string => {
-                          if (typeof node === 'string') return node
-                          if (typeof node === 'number') return String(node)
-                          if (React.isValidElement(node) && node.props?.children) {
-                            return extractText(node.props.children)
+                        const extractText = (n: any): string => {
+                          if (typeof n === "string") return n;
+                          if (typeof n === "number") return String(n);
+                          if (
+                            React.isValidElement(n) &&
+                            (n.props as any)?.children
+                          ) {
+                            return extractText((n.props as any).children);
                           }
-                          if (Array.isArray(node)) {
-                            return node.map(extractText).join('')
+                          if (Array.isArray(n)) {
+                            return n.map(extractText).join("");
                           }
-                          return ''
-                        }
-                        const childrenText = extractText(children)
+                          return "";
+                        };
+                        const childrenText = extractText(children);
                         // Check if this is the last paragraph by seeing if content ends with this paragraph's text
-                        const isLastParagraph = message.streaming && 
-                          childrenText.trim() && 
-                          message.content.trim().endsWith(childrenText.trim())
+                        const isLastParagraph =
+                          message.streaming &&
+                          childrenText.trim() &&
+                          message.content.trim().endsWith(childrenText.trim());
                         return (
                           <p className="my-1 sm:my-2" {...props}>
                             {children}
@@ -159,7 +180,7 @@ export function MessageList({
                               <span className="inline-block w-0.5 sm:w-1 h-3 sm:h-4 ml-0.5 sm:ml-1 bg-current animate-pulse align-middle" />
                             )}
                           </p>
-                        )
+                        );
                       },
                       // Style tables
                       table: ({ children, ...props }: any) => (
@@ -172,9 +193,9 @@ export function MessageList({
                       th: ({ children, ...props }: any) => (
                         <th
                           className={`border px-2 sm:px-4 py-1 sm:py-2 ${
-                            message.role === 'user'
-                              ? 'bg-indigo-500/30 border-indigo-300'
-                              : 'bg-gray-300 border-gray-400'
+                            message.role === "user"
+                              ? "bg-indigo-500/30 border-indigo-300"
+                              : "bg-gray-300 border-gray-400"
                           }`}
                           {...props}
                         >
@@ -184,9 +205,9 @@ export function MessageList({
                       td: ({ children, ...props }: any) => (
                         <td
                           className={`border px-2 sm:px-4 py-1 sm:py-2 ${
-                            message.role === 'user'
-                              ? 'border-indigo-300'
-                              : 'border-gray-400'
+                            message.role === "user"
+                              ? "border-indigo-300"
+                              : "border-gray-400"
                           }`}
                           {...props}
                         >
@@ -202,7 +223,9 @@ export function MessageList({
               <div className="flex items-center justify-between mt-1 sm:mt-2 gap-2">
                 <div
                   className={`text-xs ${
-                    message.role === 'user' ? 'text-indigo-200' : 'text-gray-500'
+                    message.role === "user"
+                      ? "text-indigo-200"
+                      : "text-gray-500"
                   }`}
                 >
                   {new Date(message.timestamp).toLocaleTimeString()}
@@ -211,36 +234,43 @@ export function MessageList({
                   // Show debug button if:
                   // 1. Message has debugData, OR
                   // 2. Message is the last assistant message for its interactionId
-                  const shouldShowDebug = message.debugData || (
-                    message.role === 'assistant' &&
-                    message.interactionId &&
-                    (() => {
-                      const messagesForInteraction = messages.filter(
-                        m => m.role === 'assistant' && m.interactionId === message.interactionId
-                      )
-                      const lastMessageForInteraction = messagesForInteraction[messagesForInteraction.length - 1]
-                      return lastMessageForInteraction?.id === message.id
-                    })()
-                  )
-                  
+                  const shouldShowDebug =
+                    message.debugData ||
+                    (message.role === "assistant" &&
+                      message.interactionId &&
+                      (() => {
+                        const messagesForInteraction = messages.filter(
+                          (m) =>
+                            m.role === "assistant" &&
+                            m.interactionId === message.interactionId,
+                        );
+                        const lastMessageForInteraction =
+                          messagesForInteraction[
+                            messagesForInteraction.length - 1
+                          ];
+                        return lastMessageForInteraction?.id === message.id;
+                      })());
+
                   return shouldShowDebug ? (
                     <button
                       onClick={() => {
                         // Find the message with debugData for this interaction
                         const debugMessageForInteraction = messages.find(
-                          m => m.interactionId === message.interactionId && m.debugData
-                        )
-                        setDebugMessage(debugMessageForInteraction || message)
+                          (m) =>
+                            m.interactionId === message.interactionId &&
+                            m.debugData,
+                        );
+                        setDebugMessage(debugMessageForInteraction || message);
                       }}
                       className={`text-xs px-2 py-1 rounded touch-manipulation ${
-                        message.role === 'user'
-                          ? 'bg-indigo-500 hover:bg-indigo-400 text-white'
-                          : 'bg-gray-300 hover:bg-gray-400 text-gray-700'
+                        message.role === "user"
+                          ? "bg-indigo-500 hover:bg-indigo-400 text-white"
+                          : "bg-gray-300 hover:bg-gray-400 text-gray-700"
                       }`}
                     >
                       Debug
                     </button>
-                  ) : null
+                  ) : null;
                 })()}
               </div>
             </div>
@@ -292,7 +322,8 @@ export function MessageList({
                 </h4>
                 <div className="bg-gray-50 p-2 sm:p-3 rounded border border-gray-200">
                   <pre className="whitespace-pre-wrap text-xs sm:text-sm text-gray-800">
-                    {debugMessage.debugData?.interaction?.response || debugMessage.content}
+                    {debugMessage.debugData?.interaction?.response ||
+                      debugMessage.content}
                   </pre>
                 </div>
               </div>
@@ -309,7 +340,8 @@ export function MessageList({
                 </div>
               ) : (
                 <div className="text-xs sm:text-sm text-gray-500 italic">
-                  Debug data not available yet. Waiting for final interaction data...
+                  Debug data not available yet. Waiting for final interaction
+                  data...
                 </div>
               )}
             </div>
@@ -317,8 +349,8 @@ export function MessageList({
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(
-                    JSON.stringify(debugMessage.debugData, null, 2)
-                  )
+                    JSON.stringify(debugMessage.debugData, null, 2),
+                  );
                 }}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 touch-manipulation text-sm sm:text-base"
               >
@@ -329,5 +361,5 @@ export function MessageList({
         </div>
       )}
     </>
-  )
+  );
 }
