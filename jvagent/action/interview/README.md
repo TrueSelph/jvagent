@@ -87,15 +87,14 @@ The abstract base class that orchestrates the complete interview flow. **Must be
 **Key Methods:**
 - `on_register()`: Builds question node chain from `question_graph`
 - `on_reload()`: Rebuilds question nodes if `question_graph` changed
-- `execute()`: Loads/creates session, classifies intent, and generates directives via `InterviewService`
+- `execute()`: Loads/creates session, classifies intent, and spawns `InterviewWalker` to traverse the graph
 
-**Service Layer Architecture:**
-The interview system uses a service layer pattern with specialized components:
-- `InterviewService`: Orchestrates classification, state handling, and directive generation
-- `ResponseProcessor`: Processes, validates, and stores user responses
+**Core Components:**
+The interview system uses specialized components following the data-spatial walker-node pattern:
 - `ClassificationHandler`: Handles intent classification and field extraction via prompt-based classification
 - `QuestionGraphBuilder`: Builds QuestionNode and StateNode graph from `question_graph`
-- `InterviewStateMachine`: Manages state transitions with validation
+- `InterviewWalker`: Traverses the question graph using `@on_visit` decorators
+- `StateNode`: Manages state transitions with validation (includes transition rules)
 
 **Unified Classification:**
 The system uses a single unified prompt (`INTERVIEW_PROMPT`) that:
@@ -106,7 +105,7 @@ The system uses a single unified prompt (`INTERVIEW_PROMPT`) that:
 - All in a single LLM call for efficiency and consistency
 
 **Data Input Fields:**
-Fields with `data_input_field` configured are automatically excluded from LLM extraction. Values are extracted directly from `visitor.data` and treated as SUBMISSION intent, bypassing the LLM classification for those specific fields. This enables file uploads and other binary data to be handled without LLM processing.
+Fields with `data_input_field` configured are automatically excluded from LLM extraction. Values are extracted directly from `visitor.data` and treated as SUBMISSION intent, bypassing the LLM classification for those specific fields. When the key is absent in `visitor.data`, the current question (first unanswered) is auto-populated with `"N/A"`. This enables file uploads and other binary data to be handled without LLM processing.
 
 #### 2. InterviewSession Node
 Persistent node that stores:
@@ -132,8 +131,9 @@ Represents individual interview questions with:
 - Required vs optional flags
 - Condition matching for tree traversal
 
-#### 4. QuestionWalker
-Specialized walker that traverses QuestionNodes in a tree-based arrangement:
+#### 4. InterviewWalker
+Specialized walker that traverses QuestionNodes using the walker-node pattern:
+- Uses `@on_visit` decorators for automatic node dispatch
 - Finds next unanswered question based on conditional branches
 - Processes input via QuestionNode handlers
 - Validates responses via QuestionNode validators
@@ -149,36 +149,35 @@ Specialized edge connecting QuestionNodes with optional condition metadata:
 Provides unified condition matching logic for conditional branching:
 - Static utility for evaluating branch conditions
 - Supports both operator-based and function-based conditions
-- Used by QuestionWalker for tree traversal
+- Used by InterviewWalker for tree traversal
 - Ensures functions only execute after questions are answered
 
-#### 7. InterviewService
-Service layer that orchestrates interview components:
-- Coordinates between classification, state handling, and response processing
-- Provides unified interface for interview operations
-
-#### 8. StateNode & State Handlers
+#### 7. StateNode & State Handlers
 Manages interview state transitions and state-specific behavior:
 - `StateNode`: Represents interview states (REVIEW, COMPLETED, CANCELLED) in the question graph
-- State transition logic via `InterviewStateMachine`
+- Includes state transition validation logic (VALID_TRANSITIONS map)
 - Registers and calls state handlers via decorators:
   - `@on_interview_review`: Customize review experience
   - `@on_interview_complete`: Process completion data
   - `@on_interview_cancelled`: Handle cancellation
 
-#### 9. ResponseProcessor
-Consolidates logic for processing, validating, and storing user responses:
-- Processes extracted field values
-- Handles directive overrides (append and replace modes)
-- Manages field validation and storage
+#### 8. PostUpdateWalker
+Specialized walker for computing reachable questions after branch changes:
+- Traverses from first question following active branch paths
+- Collects all reachable question names
+- Used for pruning responses when branch paths change
 
-#### 10. InterviewClassifier
+#### 9. ClassificationHandler
 Handles intent classification and field extraction:
 - Unified LLM-based classification and extraction
 - Prompt-based classification with chain-of-verification reasoning
 
-#### 11. InteractWalker
-Standard walker used throughout. The interview action receives session via conversation queries.
+#### 10. DirectiveBuilder
+Handles directive formatting and generation:
+- Formats review summaries
+- Builds confirmation directives
+- Generates completion and cancellation messages
+- Queues directives to the InteractWalker
 
 ### Standard Anchors
 
@@ -244,8 +243,6 @@ The final anchors list will include:
 interview/
 ├── __init__.py                    # Package initialization (exports decorators)
 ├── interview_interact_action.py   # Abstract base class (orchestrator)
-├── decorators.py                  # Decorator functions (@input_handler, @input_validator, @input_review_override, etc.)
-├── prompts.py                     # Prompt templates
 ├── info.yaml                      # Action metadata
 ├── README.md                      # This file
 ├── core/
@@ -253,30 +250,31 @@ interview/
 │   ├── foundation/                # Core types & configuration
 │   │   ├── enums.py               # InterviewState, ValidationStatus, Intent, ContextKey
 │   │   ├── exceptions.py          # Custom exceptions
-│   │   └── config.py              # Configuration objects
+│   │   ├── config.py              # Configuration objects
+│   │   ├── decorators.py          # Decorator functions for handlers/validators
+│   │   └── prompts.py             # Prompt templates
 │   ├── graph/                     # Question graph domain
 │   │   ├── question_node.py       # QuestionNode
 │   │   ├── question_edge.py       # QuestionEdge with conditions
-│   │   ├── question_walker.py     # QuestionWalker for tree traversal
+│   │   ├── interview_walker.py    # InterviewWalker for graph traversal
+│   │   ├── post_update_walker.py  # PostUpdateWalker for reachability analysis
+│   │   ├── state_node.py          # StateNode (includes transition validation)
 │   │   ├── question_branch_evaluator.py  # QuestionBranchEvaluator (condition matching)
 │   │   ├── question_graph_builder.py  # QuestionGraphBuilder (question graph construction)
 │   │   ├── graph_validator.py     # QuestionGraphValidator
 │   │   └── condition_operators.py # ConditionOperator
-│   ├── state/                      # State management
-│   │   ├── state_machine.py       # InterviewStateMachine (state transitions)
-│   │   └── state_node.py          # StateNode
 │   ├── classification/            # Classification & intent
-│   │   ├── classification_handler.py  # ClassificationHandler (intent classification)
-│   │   └── intent_handlers.py     # Intent handlers (strategy pattern)
-│   ├── processing/                 # Response processing & directives
-│   │   ├── response_processor.py  # ResponseProcessor (response processing)
+│   │   └── classification_handler.py  # ClassificationHandler (intent classification)
+│   ├── processing/                 # Directives
 │   │   └── directive_builder.py  # DirectiveBuilder
-│   ├── session/                    # Session & service orchestration
+│   ├── session/                    # Session management
 │   │   ├── interview_session.py   # InterviewSession Node
-│   │   └── interview_service.py   # InterviewService (orchestration layer)
+│   │   └── pruning_service.py     # Pruning utilities
 │   └── utils/                      # Utilities
 │       ├── session_utils.py       # Session utilities
 │       ├── cache_utils.py         # Cache utilities
+│       ├── handler_utils.py       # Handler invocation utilities
+│       ├── json_utils.py          # JSON parsing utilities
 │       └── constants.py           # Constants
 ```
 
@@ -495,7 +493,7 @@ actions:
   - **pattern**: Regex pattern for validation
   - **input_handler**: String reference to function that processes raw input before validation (or use `@input_handler` decorator)
   - **input_validator**: String reference to function that validates responses (or use `@input_validator` decorator)
-  - **data_input_field**: Key name in `visitor.data` dictionary to extract value from (e.g., "whatsapp_media"). When specified, the field is excluded from LLM extraction and values are extracted directly from `visitor.data`. Useful for file uploads and other data passed via REST calls.
+  - **data_input_field**: Key name in `visitor.data` dictionary to extract value from (e.g., "whatsapp_media"). When specified, the field is excluded from LLM extraction and values are extracted directly from `visitor.data`. When the key is absent, the field is auto-populated with `"N/A"` for the current question only. Useful for file uploads and other data passed via REST calls.
   - **ambiguous_patterns**: Patterns that trigger VALID status with optional feedback message for clarification
 - **input_context**: Optional dictionary of static context data to provide with the question (e.g., available options, metadata). See Context Data section for details.
 - **input_context_provider**: Optional string reference to a registered input context provider function (use `@input_context_provider` decorator). The function returns a dictionary of context data dynamically at runtime. See Context Data section for details.
@@ -1209,6 +1207,7 @@ For fields that receive data directly from REST calls (e.g., file uploads, binar
 **How It Works:**
 - When `data_input_field` is specified in a question's constraints, the system checks `visitor.data` for a matching key
 - If the key exists, the value is extracted and treated as a SUBMISSION (new data)
+- If the key is absent, the field is auto-populated with `"N/A"` for the current question only (first unanswered); other data_input_field questions are not pre-populated
 - The field is automatically excluded from LLM extraction (not included in `entities_to_extract`)
 - Values go through the same validation pipeline (input handlers and validators) as LLM-extracted values
 

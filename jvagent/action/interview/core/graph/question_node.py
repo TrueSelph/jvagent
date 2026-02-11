@@ -4,7 +4,6 @@ This module provides QuestionNode, a node that represents individual interview q
 in the interview process with validation capabilities.
 """
 
-import inspect
 import logging
 import re
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple

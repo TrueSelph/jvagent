@@ -9,7 +9,7 @@ from jvspatial.core.annotations import attribute
 from ..foundation.enums import InterviewState, ValidationStatus
 
 if TYPE_CHECKING:
-    from ..graph.question_walker import QuestionWalker
+    from ..graph.interview_walker import InterviewWalker
 
 
 class InterviewSession(Node):
@@ -64,10 +64,10 @@ class InterviewSession(Node):
         description="Arbitrary context data for storing intermediate processing results, flags, or other state"
     )
     
-    # Update history tracking
-    update_history: List[Dict[str, Any]] = attribute(
+    # Update queue for pending updates (replaces update_history)
+    update_queue: List[Dict[str, Any]] = attribute(
         default_factory=list,
-        description="History of updates: [{field, old_value, new_value, timestamp}]"
+        description="Queue of pending updates: [{field, value, old_value}] in graph order"
     )
     
     # Target node tracking (user-specific state)
@@ -127,22 +127,22 @@ class InterviewSession(Node):
             if q.get("name") and q.get("required", False)
         ]
     
-    async def has_all_required_answers(self, question_walker: Optional["QuestionWalker"] = None) -> bool:
+    async def has_all_required_answers(self, interview_walker: Optional["InterviewWalker"] = None) -> bool:
         """Check if all required questions have been answered.
         
-        If question_walker is provided, only checks required questions that are
+        If interview_walker is provided, only checks required questions that are
         reachable on the current conditional path. Otherwise, checks all required
         questions.
         
         Args:
-            question_walker: Optional QuestionWalker to determine reachable questions
+            interview_walker: Optional InterviewWalker to determine reachable questions
             
         Returns:
             True if all required (and reachable) questions have been answered
         """
-        if question_walker:
+        if interview_walker:
             # Only check required questions on the active conditional path
-            required = await question_walker.get_reachable_required_questions(self)
+            required = await interview_walker.get_reachable_required_questions(self)
         else:
             # Check all required questions
             required = set(self.get_required_questions())
@@ -152,7 +152,7 @@ class InterviewSession(Node):
     
     async def get_required_questions_on_path(
         self,
-        question_walker: "QuestionWalker"
+        interview_walker: "InterviewWalker"
     ) -> List[str]:
         """Get list of required question keys that are reachable on the current conditional path.
         
@@ -160,12 +160,12 @@ class InterviewSession(Node):
         and returns only required questions that are reachable given current responses.
         
         Args:
-            question_walker: QuestionWalker instance to determine reachable questions
+            interview_walker: InterviewWalker instance to determine reachable questions
             
         Returns:
             List of required question names that are reachable on the current path
         """
-        reachable_required = await question_walker.get_reachable_required_questions(self)
+        reachable_required = await interview_walker.get_reachable_required_questions(self)
         return list(reachable_required)
     
     def get_response(self, question_key: str) -> Any:
@@ -176,26 +176,17 @@ class InterviewSession(Node):
         """Set response for a question."""
         self.responses[question_key] = value
     
-    def update_response(self, question_key: str, new_value: Any, old_value: Any = None) -> None:
-        """Update an existing response with audit trail.
-        
-        Args:
-            question_key: Question key to update
-            new_value: New value to set
-            old_value: Old value (if None, will be retrieved from responses)
-        """
-        if old_value is None:
-            old_value = self.responses.get(question_key)
-        
-        self.responses[question_key] = new_value
-        
-        self.update_history.append({
-            "field": question_key,
-            "old_value": old_value,
-            "new_value": new_value,
-            "timestamp": datetime.now()
-        })
-    
+    def pop_update(self, field: str) -> Optional[Dict[str, Any]]:
+        """Remove and return queue entry for field, if present."""
+        for i, entry in enumerate(self.update_queue):
+            if entry["field"] == field:
+                return self.update_queue.pop(i)
+        return None
+
+    def has_pending_update(self, field: str) -> bool:
+        """Check if field has a pending update in the queue."""
+        return any(e["field"] == field for e in self.update_queue)
+
     def can_update_field(self, field: str) -> bool:
         """Check if field is updateable (is it answered?).
         
@@ -236,7 +227,7 @@ class InterviewSession(Node):
         self.responses = {}
         self.validation_results = {}
         self.context = {}
-        self.update_history = []
+        self.update_queue = []
         self.target_node = None
         self.completed_at = None
         await self.save()
@@ -260,15 +251,16 @@ class InterviewSession(Node):
             # Some tests or contexts may not have async save behavior; re-raise
             raise
     
-    async def cleanup(self) -> None:
+    async def cleanup(self, cascade: bool = False) -> None:
         """Cleanup session data and edges.
         
         Call this when session data is no longer needed (typically after
         data has been processed and stored elsewhere).
         
         This removes the session from the graph entirely.
+        Uses cascade=False by default for reliable deletion of session and edges.
         """
-        await self.delete()
+        await self.delete(cascade=cascade)
     
     def get_question_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         """Get question configuration by name.

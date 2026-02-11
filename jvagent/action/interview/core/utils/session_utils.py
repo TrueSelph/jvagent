@@ -7,7 +7,7 @@ import logging
 from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
-    from ..interview_session import InterviewSession
+    from ..session.interview_session import InterviewSession
     from jvagent.action.interact.interact_walker import InteractWalker
 
 logger = logging.getLogger(__name__)
@@ -23,18 +23,39 @@ async def cleanup_session(
     Centralized session cleanup logic extracted from duplicate code.
     Removes session from graph and clears visitor reference.
     
+    Uses session.delete(cascade=False) for direct removal. If that fails,
+    falls back to context.delete() to ensure the session is removed.
+    
     Args:
         session: Interview session to cleanup
         visitor: Optional InteractWalker to clear session reference from
         action_name: Optional action name for logging
     """
+    log_name = action_name or "InterviewAction"
     try:
-        await session.cleanup()
+        # Use cascade=False for simpler, more reliable deletion of session and its edges
+        await session.delete(cascade=False)
         if visitor:
             visitor.interview_session = None
     except Exception as e:
-        log_name = action_name or "InterviewAction"
-        logger.error(f"{log_name}: Failed to cleanup session: {e}", exc_info=True)
+        logger.warning(
+            f"{log_name}: Session delete failed ({e}), attempting direct context delete"
+        )
+        try:
+            context = await session.get_context()
+            # Clear edge_ids to satisfy context.delete's recursion guard
+            if hasattr(session, "edge_ids") and session.edge_ids:
+                session.edge_ids = []
+            await context.delete(session, cascade=False)
+            if visitor:
+                visitor.interview_session = None
+            logger.info(f"{log_name}: Session removed via fallback context delete")
+        except Exception as fallback_e:
+            logger.error(
+                f"{log_name}: Failed to cleanup session: {fallback_e}",
+                exc_info=True,
+            )
+            raise
 
 
 def sort_fields_by_question_order(

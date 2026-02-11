@@ -6,7 +6,7 @@ encapsulates branch condition evaluation and target resolution (object-spatial).
 """
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core import Edge, Node
 from jvspatial.core.annotations import attribute
@@ -49,6 +49,27 @@ class QuestionEdge(Edge):
         default=False,
         description="True for default_next / sequential fallback edges"
     )
+
+    @classmethod
+    def sort_by_priority(cls, edges: List["QuestionEdge"]) -> List["QuestionEdge"]:
+        """Sort edges by priority: conditional edges first (by branch_index), then defaults.
+        
+        This ensures that conditional branches are evaluated before default branches,
+        and within each category, edges are ordered by their branch_index.
+        
+        Args:
+            edges: List of QuestionEdge instances to sort
+            
+        Returns:
+            Sorted list of edges
+        """
+        return sorted(
+            edges,
+            key=lambda e: (
+                0 if e.condition else 1,
+                e.branch_index if e.branch_index is not None else 999,
+            ),
+        )
 
     async def _get_target_node(self) -> Optional[Node]:
         """Resolve this edge's target node ID to a Node instance.

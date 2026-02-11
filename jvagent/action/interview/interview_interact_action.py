@@ -13,15 +13,11 @@ field values in a single LLM call. All state management and directive generation
 is handled within the main InterviewInteractAction class.
 """
 
-import inspect
-import json
 import logging
-import re
 import sys
 from abc import ABC
-from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.memory import Interaction
@@ -29,14 +25,15 @@ from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
 
 from .core.foundation.enums import Intent, InterviewState
-from .core.session.interview_service import InterviewService
 from .core.session.interview_session import InterviewSession
+from .core.classification.classification_handler import ClassificationHandler
+from .core.graph.question_graph_builder import QuestionGraphBuilder
 from .core.graph.question_node import QuestionNode
-from .core.graph.question_walker import QuestionWalker
+from .core.graph.interview_walker import InterviewWalker
 from .core.graph.state_node import StateNode
 from .core.graph.question_edge import QuestionEdge
-from .core.utils.session_utils import cleanup_session, sort_fields_by_question_order
-from .core.utils.cache_utils import QuestionNodeCache
+from .core.utils.session_utils import cleanup_session
+from .core.utils.cache_utils import QuestionNodeCache, BranchCache
 from .core.utils.constants import CACHE_KEY_QUESTION_NODES
 from .core.processing.directive_builder import DirectiveBuilder
 from .core.foundation.exceptions import QuestionNotFoundError
@@ -116,15 +113,23 @@ class InterviewInteractAction(InteractAction, ABC):
     _input_review_override: Optional[Callable] = None
     
     # Instance-level handlers
-    _interview_service: Optional[InterviewService] = None
+    _classifier: Optional[ClassificationHandler] = None
+    _question_builder: Optional[QuestionGraphBuilder] = None
     _directive_builder: Optional[DirectiveBuilder] = None
         
     @property
-    def interview_service(self) -> InterviewService:
-        """Get or create interview service."""
-        if not hasattr(self, '_interview_service') or self._interview_service is None:
-            self._interview_service = InterviewService(self)
-        return self._interview_service
+    def classifier(self) -> ClassificationHandler:
+        """Get or create classification handler."""
+        if self._classifier is None:
+            self._classifier = ClassificationHandler(self)
+        return self._classifier
+    
+    @property
+    def question_builder(self) -> QuestionGraphBuilder:
+        """Get or create question graph builder."""
+        if self._question_builder is None:
+            self._question_builder = QuestionGraphBuilder(self)
+        return self._question_builder
     
     @property
     def directive_builder(self) -> DirectiveBuilder:
@@ -349,89 +354,6 @@ class InterviewInteractAction(InteractAction, ABC):
                 cls._input_review_override = override
         return override
 
-    async def _call_override_function(
-        self,
-        func: Callable,
-        *args: Any,
-        **kwargs: Any
-    ) -> Any:
-        """Call an override function, handling both async and sync functions.
-
-        Args:
-            func: The function to call (may be async or sync)
-            *args: Positional arguments to pass to the function
-            **kwargs: Keyword arguments to pass to the function
-
-        Returns:
-            The result of calling the function
-        """
-        if inspect.iscoroutinefunction(func):
-            return await func(*args, **kwargs)
-        else:
-            return func(*args, **kwargs)
-
-    def _process_directive_override(
-        self,
-        override_result: Optional[Any],
-        default_directive: str
-    ) -> Tuple[Optional[str], Optional[str]]:
-        """Process directive override result and return directives to queue separately.
-
-        When invoking the override callable (from get_input_directive_override), pass
-        (field_name, value, session, interaction, visitor, interview_action) so the
-        handler receives standard context. Use invoke_async_with_optional_context for
-        backward compatibility.
-
-        Args:
-            override_result: Result from directive override function (None, str, or Tuple[str, str])
-            default_directive: Default directive to use if no override or for append mode
-
-        Returns:
-            Tuple of (default_directive_to_queue, custom_directive_to_queue):
-            - (default_directive, None): No override, queue only default
-            - (default_directive, custom_directive): Append mode or simple string - queue both separately
-            - (None, custom_directive): Replace mode - queue only custom
-            - (None, None): Invalid override result
-        """
-        if override_result is None:
-            # No override, use default directive only
-            return (default_directive if default_directive and default_directive.strip() else None, None)
-
-        if isinstance(override_result, str):
-            # Simple string: queue both default and custom directives separately
-            default = default_directive if default_directive and default_directive.strip() else None
-            return (default, override_result)
-
-        if isinstance(override_result, tuple) and len(override_result) == 2:
-            mode, directive = override_result
-            if not isinstance(mode, str) or not isinstance(directive, str):
-                logger.warning(
-                    f"{self.get_class_name()}: Invalid directive override tuple format. "
-                    f"Expected (str, str), got ({type(mode).__name__}, {type(directive).__name__})"
-                )
-                return (None, None)
-
-            mode = mode.lower()
-            if mode == "replace":
-                # Replace mode: queue only custom directive, skip default
-                return (None, directive)
-            elif mode == "append":
-                # Append mode: queue both default and custom directives separately
-                default = default_directive if default_directive and default_directive.strip() else None
-                return (default, directive)
-            else:
-                logger.warning(
-                    f"{self.get_class_name()}: Invalid directive override mode '{mode}'. "
-                    f"Expected 'append' or 'replace'"
-                )
-                return (None, None)
-
-        logger.warning(
-            f"{self.get_class_name()}: Invalid directive override return type. "
-            f"Expected None, str, or Tuple[str, str], got {type(override_result).__name__}"
-        )
-        return (None, None)
-
     def _merge_standard_anchors(self) -> None:
         """Merge standard interview anchors with current anchors attribute.
 
@@ -460,36 +382,6 @@ class InterviewInteractAction(InteractAction, ABC):
 
         # Update the anchors attribute
         self.anchors = merged_anchors
-
-    async def _generate_completed_directive(
-        self,
-        session: InterviewSession,
-        visitor: "InteractWalker"
-    ) -> None:
-        """Generate directive for COMPLETED state.
-
-        Delegates to DirectiveBuilder.
-
-        Args:
-            session: Interview session
-            visitor: InteractWalker
-        """
-        await self.directive_builder.generate_completed_directive(session, visitor)
-
-    async def _generate_cancelled_directive(
-        self,
-        session: InterviewSession,
-        visitor: "InteractWalker"
-    ) -> None:
-        """Generate directive for CANCELLED state.
-
-        Delegates to DirectiveBuilder.
-
-        Args:
-            session: Interview session
-            visitor: InteractWalker
-        """
-        await self.directive_builder.generate_cancelled_directive(session, visitor)
 
     async def _get_question_node(
         self,
@@ -539,8 +431,8 @@ class InterviewInteractAction(InteractAction, ABC):
 
         return question_node
 
-    async def _get_state_node(self, state_type: InterviewState) -> Optional[StateNode]:
-        """Get StateNode by state type.
+    async def get_state_node(self, state_type: InterviewState) -> Optional[StateNode]:
+        """Get StateNode by state type (REVIEW, COMPLETED, CANCELLED).
 
         Args:
             state_type: The InterviewState type to find
@@ -548,48 +440,7 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
             StateNode if found, None otherwise
         """
-        state_node = await self.node(node=StateNode, state_type=state_type)    
-        return state_node
-
-    async def _format_summary(
-        self,
-        session: InterviewSession,
-        visitor: Optional["InteractWalker"] = None,
-    ) -> str:
-        """Format collected responses as a summary.
-
-        Delegates to DirectiveBuilder.
-
-        Args:
-            session: Interview session
-            visitor: Optional InteractWalker for review override context
-
-        Returns:
-            Formatted summary string
-        """
-        return await self.directive_builder.format_summary(
-            session, visitor=visitor, interview_action=self
-        )
-
-    async def _build_confirmation_directive(
-        self,
-        session: InterviewSession,
-        visitor: Optional["InteractWalker"] = None,
-    ) -> str:
-        """Build the complete confirmation directive from consolidated template.
-
-        Delegates to DirectiveBuilder.
-
-        Args:
-            session: Interview session
-            visitor: Optional InteractWalker for review override context
-
-        Returns:
-            Complete confirmation directive string
-        """
-        return await self.directive_builder.build_confirmation_directive(
-            session, visitor=visitor, interview_action=self
-        )
+        return await self.node(node=StateNode, state_type=state_type)
 
     async def _queue_directive(
         self,
@@ -610,7 +461,8 @@ class InterviewInteractAction(InteractAction, ABC):
         """Get first question node via graph topology.
 
         Returns the QuestionNode with no incoming QuestionEdges (entry point).
-        Falls back to first question in YAML config if topology lookup fails.
+        Uses question_graph[0] as primary source of truth (canonical flow order).
+        Falls back to topology lookup if question_graph resolution fails.
 
         Args:
             session: Interview session
@@ -618,13 +470,14 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
             First QuestionNode if found, None otherwise
         """
-        question_node = await self.node(node_class=QuestionNode)
-        
-        # Fallback: first in YAML config
-        if not question_node:
+        if session.question_graph:
             first_name = session.question_graph[0].get("name")
-            return await self._get_question_node(first_name, session)
-        return None
+            if first_name:
+                node = await self._get_question_node(first_name, session)
+                if node:
+                    return node
+        question_node = await self.node(node=QuestionNode)
+        return question_node
 
     async def _resolve_target_node(
         self,
@@ -654,20 +507,27 @@ class InterviewInteractAction(InteractAction, ABC):
 
         # CANCELLATION — always goes to cancelled state
         if intent == Intent.CANCELLATION:
-            node = await self._get_state_node(InterviewState.CANCELLED)
+            node = await self.get_state_node(InterviewState.CANCELLED)
             session.target_node = node.id if node else None
             changed = True
 
         # CONFIRMATION in REVIEW state — goes to completed
         elif intent == Intent.CONFIRMATION and current_state == InterviewState.REVIEW:
-            node = await self._get_state_node(InterviewState.COMPLETED)
+            node = await self.get_state_node(InterviewState.COMPLETED)
             session.target_node = node.id if node else None
             changed = True
 
-        # UPDATE — re-evaluate from beginning (works in both ACTIVE and REVIEW states)
-        elif intent == Intent.UPDATE:
-            first_question = await self._get_first_question_node(session)
-            session.target_node = first_question.id if first_question else None
+        # UPDATE or pending update queue — resolve to earliest queue entry
+        elif intent == Intent.UPDATE or (
+            session.update_queue and intent in (Intent.SUBMISSION, Intent.NONE)
+        ):
+            if session.update_queue:
+                earliest_field = session.update_queue[0]["field"]
+                node = await self._get_question_node(earliest_field, session)
+                session.target_node = node.id if node else None
+            else:
+                first_question = await self._get_first_question_node(session)
+                session.target_node = first_question.id if first_question else None
             session.state = InterviewState.ACTIVE  # Return to ACTIVE if was in REVIEW
             changed = True
 
@@ -676,7 +536,7 @@ class InterviewInteractAction(InteractAction, ABC):
             # Check if all questions answered → REVIEW
             unanswered = session.get_unanswered_questions()
             if not unanswered:
-                node = await self._get_state_node(InterviewState.REVIEW)
+                node = await self.get_state_node(InterviewState.REVIEW)
                 session.target_node = node.id if node else None
                 changed = True
             elif intent == Intent.DECLINE:
@@ -693,20 +553,22 @@ class InterviewInteractAction(InteractAction, ABC):
                     node = await self._get_question_node(first_unanswered, session)
                     session.target_node = node.id if node else None
                     changed = True
+            elif intent == Intent.SUBMISSION:
+                # SUBMISSION: Start from first question to ensure sequential flow.
+                # The walker traverses forward, skipping answered questions and
+                # stopping at the first unanswered (or reaching REVIEW if all answered).
+                first_question = await self._get_first_question_node(session)
+                session.target_node = first_question.id if first_question else None
+                changed = True
             else:
-                answered = list(session.responses.keys())
-                if answered:
-                    last_answered = answered[-1]
-                    node = await self._get_question_node(last_answered, session)
-                    session.target_node = node.id if node else None
-                else:
-                    first_question = await self._get_first_question_node(session)
-                    session.target_node = first_question.id if first_question else None
+                # Other intents: start from first question
+                first_question = await self._get_first_question_node(session)
+                session.target_node = first_question.id if first_question else None
                 changed = True
 
         # Handle REVIEW state (non-CONFIRMATION, non-UPDATE)
         elif current_state == InterviewState.REVIEW:
-            node = await self._get_state_node(InterviewState.REVIEW)
+            node = await self.get_state_node(InterviewState.REVIEW)
             session.target_node = node.id if node else None
             changed = True
 
@@ -797,7 +659,7 @@ class InterviewInteractAction(InteractAction, ABC):
             validation_report.log_issues(self.get_class_name())
 
         # Build QuestionNode and StateNode graph
-        await self.interview_service.build_question_graph()
+        await self.question_builder.build_question_graph()
 
     async def on_reload(self) -> None:
         """Reload the action - rebuild question nodes if question_graph changed."""
@@ -826,7 +688,7 @@ class InterviewInteractAction(InteractAction, ABC):
                 await self.disconnect(node)
                 await node.delete()
             # Rebuild using QuestionGraphBuilder
-            await self.interview_service.build_question_graph()
+            await self.question_builder.build_question_graph()
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute interview action using target-node architecture.
@@ -844,9 +706,6 @@ class InterviewInteractAction(InteractAction, ABC):
 
         Note: Errors are automatically logged by InteractWalker.
         """
-        # Initialize event tracking (event added only once per execution)
-        #self.directive_builder.reset_event_tracking()
-
         interaction = visitor.interaction
         if not interaction:
             logger.warning(f"{self.get_class_name()}: No interaction available")
@@ -866,7 +725,7 @@ class InterviewInteractAction(InteractAction, ABC):
         utterance = visitor.utterance if visitor.utterance else ""
         
         # 2. Classify and extract
-        classification_result = await self.interview_service.classify_and_extract(
+        classification_result = await self.classifier.classify_and_extract(
             session, utterance, interaction, visitor
         )
         try:
@@ -877,11 +736,51 @@ class InterviewInteractAction(InteractAction, ABC):
         # 3. Store extracted responses based on intent
         # Note: DECLINE is intentionally not handled here - QuestionNode handles
         # DECLINE logic (N/A for optional, directive for required) during traversal
+        had_updates = False
         if intent == Intent.SUBMISSION and classification_result.extracted_data:
             for field, value in classification_result.extracted_data.items():
                 session.set_response(field, value)
-        elif intent == Intent.UPDATE and classification_result.field:
-            session.set_response(classification_result.field, classification_result.value)
+        elif intent == Intent.UPDATE:
+            # Collect updates from extracted_data (multi-field) or field/value (single-field)
+            updates = {}
+            if classification_result.extracted_data:
+                updates = classification_result.extracted_data
+            elif classification_result.field:
+                updates = {classification_result.field: classification_result.value}
+
+            if updates:
+                had_updates = True
+                # Build queue entries sorted by graph order
+                graph_order = {
+                    q["name"]: i for i, q in enumerate(session.question_graph) if q.get("name")
+                }
+                sorted_fields = sorted(updates.keys(), key=lambda f: graph_order.get(f, 999))
+
+                queue_entries = []
+                for field in sorted_fields:
+                    old_value = session.get_response(field)
+                    queue_entries.append({"field": field, "value": updates[field], "old_value": old_value})
+                    session.set_response(field, updates[field])
+
+                # Merge with any existing pending queue entries (from previous failed validation)
+                existing_fields = {e["field"] for e in session.update_queue}
+                for entry in queue_entries:
+                    if entry["field"] in existing_fields:
+                        session.update_queue = [
+                            entry if e["field"] == entry["field"] else e
+                            for e in session.update_queue
+                        ]
+                    else:
+                        session.update_queue.append(entry)
+
+                # Re-sort merged queue by graph order
+                session.update_queue.sort(key=lambda e: graph_order.get(e["field"], 999))
+
+                # Invalidate branch cache from earliest update onward
+                if session.update_queue:
+                    BranchCache(session).invalidate_from(
+                        session.update_queue[0]["field"], session.question_graph
+                    )
 
         # 4. Determine target node based on intent and state
         await self._resolve_target_node(session, intent)
@@ -894,14 +793,9 @@ class InterviewInteractAction(InteractAction, ABC):
             )
             raise
         node_label = getattr(target_node, "label", None)
-        logger.warning(
-            f"{self.get_class_name()}: Resolved target node id={target_node_id}"
-            f" label={node_label} intent={intent} state={session.state}"
-        )
+        
 
-        logger.warning(f"{self.get_class_name()}: Spawning QuestionWalker on target node id={target_node_id} label={node_label}")
-
-        question_walker = QuestionWalker(
+        interview_walker = InterviewWalker(
             interview_session=session,
             interaction=interaction,
             interact_visitor=visitor,
@@ -909,14 +803,29 @@ class InterviewInteractAction(InteractAction, ABC):
             current_intent=intent,
         )
 
-        await question_walker.spawn(target_node)
+        await interview_walker.spawn(target_node)
         
-        logger.warning(f"{self.get_class_name()}: Spawned QuestionWalker on target node id={target_node_id} label={node_label} with directives: {question_walker.directives}")
 
-        for directive in question_walker.directives:
+        for directive in interview_walker.directives:
             await self._queue_directive(visitor, directive)
 
-        await session.save()
+        # Post-walk: delegate graph sync and cleanup to PostUpdateWalker when path may have changed.
+        # Skip when we reached REVIEW (on_state_node already ran PostUpdateWalker before building directive).
+        # Skip when session was removed by a terminal state (COMPLETED/CANCELLED).
+        terminal = interview_walker.terminal_state
+        session_removed = terminal in (InterviewState.COMPLETED, InterviewState.CANCELLED)
+
+        if not session_removed:
+            if (had_updates or session.update_queue) and (
+                terminal != InterviewState.REVIEW
+            ):
+                from .core.graph.post_update_walker import PostUpdateWalker
+
+                first_node = await self._get_first_question_node(session)
+                if first_node:
+                    await PostUpdateWalker.sync(session, first_node, visitor)
+
+            await session.save()
 
     async def _get_conversation_history(
         self,
@@ -962,15 +871,3 @@ class InterviewInteractAction(InteractAction, ABC):
         )
 
         return history if history else []
-
-    def _extract_json(self, response: str) -> Dict[str, Any]:
-        """Extract JSON from response string.
-
-        Args:
-            response: Response string
-
-        Returns:
-            Parsed JSON dictionary
-        """
-        from .core.utils import extract_json
-        return extract_json(response, context=self.get_class_name())

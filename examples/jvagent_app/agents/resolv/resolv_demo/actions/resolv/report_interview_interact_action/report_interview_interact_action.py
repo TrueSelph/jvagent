@@ -85,16 +85,6 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                 },
                 "required": True
             },
-            # {
-            #     "name": "user_name",
-            #     "question": "What's your full name?",
-            #     "constraints": {
-            #         "description": "The user's full name",
-            #         "instructions": "The user's full name must include their first and last name.",
-            #         "type": "string",
-            #     },
-            #     "required": True
-            # },
             {
                 "name": "incident_location",
                 "question": "Where exactly did this incident occur? Please provide the specific address or location details.",

@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from jvagent.action.interview.core.session.interview_session import InterviewSession
-from jvagent.action.interview.core.graph.question_walker import QuestionWalker
+from jvagent.action.interview.core.graph.interview_walker import InterviewWalker
 from jvagent.action.interview.core.foundation.enums import InterviewState, ValidationStatus
 from jvagent.memory import Interaction
 
@@ -98,9 +98,9 @@ class TestMultiEntityExtraction:
         
         # Setup mocks
         mock_interview_action._get_question_node = AsyncMock(return_value=mock_question_node)
-        question_walker = QuestionWalker()
-        question_walker.should_process_question = AsyncMock(return_value=True)
-        question_walker.process_and_validate = AsyncMock(
+        interview_walker = InterviewWalker()
+        interview_walker.should_process_question = AsyncMock(return_value=True)
+        interview_walker.process_and_validate = AsyncMock(
             side_effect=[
                 ("Eldon Marks", ValidationStatus.VALID, None),
                 ("Mondays at 9am", ValidationStatus.VALID, None),
@@ -118,7 +118,7 @@ class TestMultiEntityExtraction:
             mock_session,
             visitor,
             interaction,
-            question_walker
+            interview_walker
         )
         
         # Verify all responses were stored
@@ -148,9 +148,9 @@ class TestMultiEntityExtraction:
         
         # Setup mocks
         mock_interview_action._get_question_node = AsyncMock(return_value=mock_question_node)
-        question_walker = QuestionWalker()
-        question_walker.should_process_question = AsyncMock(return_value=True)
-        question_walker.process_and_validate = AsyncMock(
+        interview_walker = InterviewWalker()
+        interview_walker.should_process_question = AsyncMock(return_value=True)
+        interview_walker.process_and_validate = AsyncMock(
             side_effect=[
                 ("Eldon Marks", ValidationStatus.VALID, None),
                 ("", ValidationStatus.INVALID, "This field is required."),
@@ -168,7 +168,7 @@ class TestMultiEntityExtraction:
             mock_session,
             visitor,
             interaction,
-            question_walker
+            interview_walker
         )
         
         # Verify valid responses were stored
@@ -219,9 +219,9 @@ class TestMultiEntityExtraction:
             )
         )
         
-        question_walker = QuestionWalker()
-        question_walker.should_process_question = AsyncMock(return_value=True)
-        question_walker.process_and_validate = AsyncMock(side_effect=track_order)
+        interview_walker = InterviewWalker()
+        interview_walker.should_process_question = AsyncMock(return_value=True)
+        interview_walker.process_and_validate = AsyncMock(side_effect=track_order)
         
         visitor = MagicMock()
         interaction = MagicMock(spec=Interaction)
@@ -233,7 +233,7 @@ class TestMultiEntityExtraction:
             mock_session,
             visitor,
             interaction,
-            question_walker
+            interview_walker
         )
         
         # Verify processing order matches question_index order
@@ -277,7 +277,7 @@ class TestMultiEntityExtraction:
         
         # Setup mocks
         mock_interview_action._get_question_node = AsyncMock(return_value=mock_question_node)
-        question_walker = QuestionWalker()
+        interview_walker = InterviewWalker()
         
         # Mock should_process_question to return False for advanced_topic
         async def should_process(question_name, session):
@@ -286,8 +286,8 @@ class TestMultiEntityExtraction:
                 return session.get_response("training_type") == "advanced"
             return True
         
-        question_walker.should_process_question = AsyncMock(side_effect=should_process)
-        question_walker.process_and_validate = AsyncMock(
+        interview_walker.should_process_question = AsyncMock(side_effect=should_process)
+        interview_walker.process_and_validate = AsyncMock(
             return_value=("value", ValidationStatus.VALID, None)
         )
         
@@ -301,7 +301,7 @@ class TestMultiEntityExtraction:
             mock_session,
             visitor,
             interaction,
-            question_walker
+            interview_walker
         )
         
         # Verify training_type was stored
@@ -311,7 +311,7 @@ class TestMultiEntityExtraction:
         assert mock_session.get_response("advanced_topic") is None
         
         # Verify process_and_validate was only called for training_type
-        assert question_walker.process_and_validate.call_count == 1
+        assert interview_walker.process_and_validate.call_count == 1
 
     @pytest.mark.asyncio
     async def test_valid_with_flag_continues_processing(
@@ -328,9 +328,9 @@ class TestMultiEntityExtraction:
         
         # Setup mocks
         mock_interview_action._get_question_node = AsyncMock(return_value=mock_question_node)
-        question_walker = QuestionWalker()
-        question_walker.should_process_question = AsyncMock(return_value=True)
-        question_walker.process_and_validate = AsyncMock(
+        interview_walker = InterviewWalker()
+        interview_walker.should_process_question = AsyncMock(return_value=True)
+        interview_walker.process_and_validate = AsyncMock(
             side_effect=[
                 ("Eldon Marks", ValidationStatus.VALID, None),
                 ("next Tuesday", ValidationStatus.VALID_WITH_FLAG, "Got it. Let me clarify the specific time."),
@@ -348,7 +348,7 @@ class TestMultiEntityExtraction:
             mock_session,
             visitor,
             interaction,
-            question_walker
+            interview_walker
         )
         
         # Verify all responses were stored (including VALID_WITH_FLAG)
@@ -381,9 +381,9 @@ class TestMultiEntityExtraction:
         
         # Setup mocks
         mock_interview_action._get_question_node = AsyncMock(return_value=mock_question_node)
-        question_walker = QuestionWalker()
-        question_walker.should_process_question = AsyncMock(return_value=True)
-        question_walker.process_and_validate = AsyncMock(
+        interview_walker = InterviewWalker()
+        interview_walker.should_process_question = AsyncMock(return_value=True)
+        interview_walker.process_and_validate = AsyncMock(
             side_effect=[
                 ("Eldon Marks", ValidationStatus.VALID, None),
                 ("", ValidationStatus.INVALID, "This field is required."),
@@ -401,7 +401,7 @@ class TestMultiEntityExtraction:
             mock_session,
             visitor,
             interaction,
-            question_walker
+            interview_walker
         )
         
         # Verify only first valid was stored
