@@ -488,9 +488,10 @@ actions:
 - **constraints**: Validation constraints dictionary
   - **description**: Description of what information is needed
   - **instructions**: Additional instructions for the LLM
-  - **type**: Expected data type ("string", "number", "integer")
-  - **format**: Format specification (e.g., "email")
-  - **pattern**: Regex pattern for validation
+  - **type**: Expected data type ("string", "number", "integer") - automatically validated using standard validators
+  - **format**: Format specification (e.g., "email", "phone", "url") - automatically validated using standard validators
+  - **pattern**: Regex pattern for validation - automatically validated using standard "pattern" validator
+  - **standard_validators**: List of standard validator names to apply (e.g., ["email", "no_disposable_email"])
   - **input_handler**: String reference to function that processes raw input before validation (or use `@input_handler` decorator)
   - **input_validator**: String reference to function that validates responses (or use `@input_validator` decorator)
   - **data_input_field**: Key name in `visitor.data` dictionary to extract value from (e.g., "whatsapp_media"). When specified, the field is excluded from LLM extraction and values are extracted directly from `visitor.data`. When the key is absent, the field is auto-populated with `"N/A"` for the current question only. Useful for file uploads and other data passed via REST calls.
@@ -1199,6 +1200,138 @@ Validators can return:
 
 **Autocorrection Support:**
 Validators can return a corrected value as the third element of the tuple. If provided, the system will store the corrected value instead of the original input. This is useful for fuzzy matching scenarios (e.g., correcting "next tuesday" to a specific date, or matching "morning" to "9:00 AM").
+
+### Standard Validators
+
+The interview system includes a library of reusable standard validators for common field types. Standard validators run **before** custom `@input_validator` decorators, allowing custom validators to add domain-specific logic on top of format validation.
+
+**Built-in Standard Validators:**
+
+- **Type Validators:**
+  - `string`: Validates value is a string
+  - `number`: Validates value is a number (float)
+  - `integer`: Validates value is an integer
+
+- **Format Validators:**
+  - `email`: Validates email address format
+  - `phone`: Validates phone number format (accepts various formats)
+  - `url`: Validates URL format (http, https, ftp)
+
+- **Pattern Validator:**
+  - `pattern`: Validates value matches regex pattern from constraints
+
+- **Domain-Specific Validators:**
+  - `no_disposable_email`: Rejects disposable email providers
+  - `no_test_domain`: Rejects test domains (example.com, test.com, etc.)
+
+**Automatic Application:**
+
+Standard validators are automatically applied based on constraint keys:
+
+```python
+question_graph = [
+    {
+        "name": "user_email",
+        "question": "What is your email?",
+        "constraints": {
+            "type": "string",        # Applies "string" validator
+            "format": "email",       # Applies "email" validator
+            # Both validators run automatically
+        },
+        "required": True
+    }
+]
+```
+
+**Explicit Application:**
+
+Use `standard_validators` list to apply additional validators:
+
+```python
+question_graph = [
+    {
+        "name": "user_email",
+        "question": "What is your email?",
+        "constraints": {
+            "type": "string",
+            "format": "email",
+            "standard_validators": [
+                "no_disposable_email",  # Reject disposable email providers
+                "no_test_domain"        # Reject test domains
+            ]
+        },
+        "required": True
+    }
+]
+```
+
+**Validation Order:**
+
+1. Empty value check (if required)
+2. Standard validators (type, format, pattern, explicit list)
+3. Custom `@input_validator` decorators
+4. Ambiguous pattern checks
+
+**Combining Standard and Custom Validators:**
+
+Standard validators handle format validation, while custom validators add domain-specific rules:
+
+```python
+from jvagent.action.interview import input_validator
+from jvagent.action.interview.core.enums import ValidationStatus
+
+@input_validator('user_email')
+def validate_company_email(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    """Custom validator runs AFTER standard email format validation."""
+    if "@company.com" not in value:
+        return ValidationStatus.INVALID, "Please use your company email address"
+    return ValidationStatus.VALID, None
+
+class MyInterviewAction(InterviewInteractAction):
+    question_graph = [
+        {
+            "name": "user_email",
+            "constraints": {
+                "type": "string",
+                "format": "email",  # Standard email validator runs first
+                # Custom validator runs second (checks company domain)
+            }
+        }
+    ]
+```
+
+**Creating Custom Standard Validators:**
+
+You can extend the standard validator library by registering new validators:
+
+```python
+from jvagent.action.interview.core.foundation.standard_validators import standard_validator
+from jvagent.action.interview.core.foundation.enums import ValidationStatus
+from typing import Any, Dict, Optional, Tuple
+
+@standard_validator("credit_card")
+def validate_credit_card(
+    value: Any, constraints: Dict[str, Any]
+) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
+    """Validate credit card number format."""
+    if not isinstance(value, str):
+        return ValidationStatus.INVALID, "Credit card must be a string", None
+    
+    # Remove spaces and dashes
+    digits = value.replace(" ", "").replace("-", "")
+    
+    if not digits.isdigit() or len(digits) not in (13, 15, 16):
+        return ValidationStatus.INVALID, "Invalid credit card number", None
+    
+    return None  # Valid
+```
+
+**Benefits:**
+
+- **Reusability**: Common validators defined once, used across all interviews
+- **Consistency**: Same validation logic applied uniformly
+- **Extensibility**: Easy to add new standard validators
+- **Clean Separation**: Format validation (standard) vs domain logic (custom)
 
 ### Data Input Fields (Direct Extraction from visitor.data)
 

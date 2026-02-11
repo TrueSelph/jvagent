@@ -27,6 +27,7 @@ from .question_node import QuestionNode
 from .post_update_walker import PostUpdateWalker
 from .state_node import StateNode
 from ..foundation.enums import ValidationStatus, InterviewState, Intent
+from ..utils.handler_utils import invoke_async_with_optional_context
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,8 @@ class InterviewWalker(Walker):
     # Mutable defaults must use Field/PrivateAttr(default_factory=...) to avoid sharing
     directives: List[str] = Field(default_factory=list)
     _visited_nodes: Set[str] = PrivateAttr(default_factory=set)
+    # ("replace"|"append", directive) from @input_directive_override for the previous question
+    _pending_directive_override: Optional[Tuple[str, str]] = PrivateAttr(default=None)
 
     # Terminal state tracking
     terminal_state: Optional[InterviewState] = None
@@ -194,8 +197,19 @@ class InterviewWalker(Walker):
             False if the walker should stop (directive queued or awaiting input)
         """
         directive = await here.execute(self)
-        if directive:
-            self.directives.append(directive)
+        if directive or self._pending_directive_override:
+            # Apply @input_directive_override from previous question if any
+            if self._pending_directive_override:
+                mode, override_directive = self._pending_directive_override
+                self._pending_directive_override = None
+                if mode == "replace":
+                    self.directives.append(override_directive)
+                else:  # append
+                    if directive:
+                        self.directives.append(directive)
+                    self.directives.append(override_directive)
+            elif directive:
+                self.directives.append(directive)
             self.interview_session.target_node = here.id
             await self.interview_session.save()
             return False
@@ -300,6 +314,51 @@ class InterviewWalker(Walker):
         # Pop from update_queue if this was a pending update
         self.interview_session.pop_update(question_name)
 
+    async def _apply_directive_override(
+        self, question_name: str, final_value: Any
+    ) -> None:
+        """Invoke @input_directive_override for the field just stored and cache result.
+
+        If the override returns a directive, stores it in _pending_directive_override
+        for use when the next node would queue a directive. Supports:
+        - None: use default (no override)
+        - str: replace next directive with this string
+        - Tuple[str, str]: ("append"|"replace", directive)
+
+        Args:
+            question_name: Name of the field that was just validated and stored
+            final_value: The value that was stored
+        """
+        if not self.interview_action:
+            return
+        override_func = self.interview_action.get_input_directive_override(question_name)
+        if not override_func or not callable(override_func):
+            return
+        try:
+            result = await invoke_async_with_optional_context(
+                override_func,
+                question_name,
+                final_value,
+                self.interview_session,
+                self.interaction,
+                visitor=self.interact_visitor,
+                interview_action=self.interview_action,
+            )
+        except Exception as e:
+            logger.warning(
+                f"input_directive_override for '{question_name}' raised: {e}",
+                exc_info=True,
+            )
+            return
+        if result is None:
+            return
+        if isinstance(result, str):
+            self._pending_directive_override = ("replace", result)
+        elif isinstance(result, tuple) and len(result) == 2:
+            mode, directive = result
+            if mode in ("append", "replace") and directive:
+                self._pending_directive_override = (mode, directive)
+
     async def _continue_traversal(self, here: QuestionNode, question_name: str) -> None:
         """Evaluate outgoing edges and visit the first that returns a target node.
 
@@ -395,8 +454,9 @@ class InterviewWalker(Walker):
             await self._handle_invalid_response(here, question_name, feedback)
             return
 
-        # Valid input - update session and continue walking
+        # Valid input - update session, apply directive override if any, continue walking
         await self._handle_valid_response(here, question_name, final_value)
+        await self._apply_directive_override(question_name, final_value)
         await self._continue_traversal(here, question_name)
 
     @on_visit(StateNode)
@@ -437,8 +497,18 @@ class InterviewWalker(Walker):
 
         # Execute state node - handles transition and returns directive
         directive = await here.execute(self)
-        if directive:
-            self.directives.append(directive)
+        if directive or self._pending_directive_override:
+            if self._pending_directive_override:
+                mode, override_directive = self._pending_directive_override
+                self._pending_directive_override = None
+                if mode == "replace":
+                    self.directives.append(override_directive)
+                else:  # append
+                    if directive:
+                        self.directives.append(directive)
+                    self.directives.append(override_directive)
+            elif directive:
+                self.directives.append(directive)
 
         # Update position — skip for terminal states (COMPLETED/CANCELLED) where
         # the session has been removed by cleanup. Calling save() on a deleted

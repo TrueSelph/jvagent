@@ -738,8 +738,25 @@ class InterviewInteractAction(InteractAction, ABC):
         # DECLINE logic (N/A for optional, directive for required) during traversal
         had_updates = False
         if intent == Intent.SUBMISSION and classification_result.extracted_data:
-            for field, value in classification_result.extracted_data.items():
+            # Route SUBMISSION values through update_queue to ensure validation pipeline runs
+            # This ensures @input_validator decorators fire for newly submitted values
+            graph_order = {
+                q["name"]: i for i, q in enumerate(session.question_graph) if q.get("name")
+            }
+            sorted_fields = sorted(
+                classification_result.extracted_data.keys(),
+                key=lambda f: graph_order.get(f, 999),
+            )
+            for field in sorted_fields:
+                value = classification_result.extracted_data[field]
+                old_value = session.get_response(field)
                 session.set_response(field, value)
+                session.update_queue.append({
+                    "field": field,
+                    "value": value,
+                    "old_value": old_value,
+                })
+            had_updates = bool(sorted_fields)
         elif intent == Intent.UPDATE:
             # Collect updates from extracted_data (multi-field) or field/value (single-field)
             updates = {}

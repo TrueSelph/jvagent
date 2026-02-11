@@ -15,6 +15,7 @@ from .question_branch_evaluator import QuestionBranchEvaluator
 from ..foundation.decorators import get_input_context_provider
 from ..foundation.enums import Intent, ValidationStatus
 from ..foundation.exceptions import ValidationError, QuestionNotFoundError
+from ..foundation.standard_validators import get_standard_validator
 from ..utils.handler_utils import invoke_async_with_optional_context, invoke_with_optional_context
 
 if TYPE_CHECKING:
@@ -432,64 +433,76 @@ class QuestionNode(Node):
             return ValidationStatus.VALID, None, None
         return None
     
-    def _validate_type(self, value: Any, constraints: Dict[str, Any]) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
-        """Validate value type against expected type constraint.
+    def _run_standard_validators(
+        self, value: Any, constraints: Dict[str, Any]
+    ) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
+        """Run standard validators based on constraints.
+        
+        Checks constraints for:
+        - 'type': string, number, integer (runs type validator)
+        - 'format': email, phone, url (runs format validator)
+        - 'pattern': regex pattern (runs pattern validator)
+        - 'standard_validators': list of validator names to run
+        
+        Returns first INVALID result, or None if all pass.
         
         Args:
             value: The value to validate
             constraints: Question constraints dictionary
             
         Returns:
-            Validation result tuple if type is invalid, None if valid
+            Validation result tuple if any validator fails, None if all pass
         """
+        # Type validation
         expected_type = constraints.get("type", "string")
-        if expected_type == "string" and not isinstance(value, str):
-            return ValidationStatus.INVALID, f"Expected a string value, got {type(value).__name__}", None
-        elif expected_type in ("number", "integer"):
-            try:
-                float(value) if expected_type == "number" else int(value)
-            except (ValueError, TypeError):
-                return ValidationStatus.INVALID, f"Expected a {expected_type} value", None
-        return None
-    
-    def _validate_pattern(self, value: Any, constraints: Dict[str, Any]) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
-        """Validate value against regex pattern constraint.
+        if expected_type in ("string", "number", "integer"):
+            validator = get_standard_validator(expected_type)
+            if validator:
+                result = validator(value, constraints)
+                if result and result[0] == ValidationStatus.INVALID:
+                    return result
         
-        Args:
-            value: The value to validate
-            constraints: Question constraints dictionary
-            
-        Returns:
-            Validation result tuple if pattern doesn't match, None if valid
-        """
-        pattern = constraints.get("pattern")
-        if pattern and isinstance(value, str):
-            if not re.match(pattern, value):
-                return ValidationStatus.INVALID, constraints.get("pattern_error", "Value doesn't match required format"), None
-        return None
-    
-    def _validate_email(self, value: Any, constraints: Dict[str, Any]) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
-        """Validate email format.
+        # Pattern validation (if pattern is specified)
+        if constraints.get("pattern"):
+            validator = get_standard_validator("pattern")
+            if validator:
+                result = validator(value, constraints)
+                if result and result[0] == ValidationStatus.INVALID:
+                    return result
         
-        Args:
-            value: The value to validate
-            constraints: Question constraints dictionary
-            
-        Returns:
-            Validation result tuple if email is invalid, None if valid
-        """
-        if constraints.get("format") == "email" and isinstance(value, str):
-            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-            if not re.match(email_pattern, value):
-                return ValidationStatus.INVALID, "Please provide a valid email address", None
+        # Format validation (email, phone, url, etc.)
+        format_type = constraints.get("format")
+        if format_type:
+            validator = get_standard_validator(format_type)
+            if validator:
+                result = validator(value, constraints)
+                if result and result[0] == ValidationStatus.INVALID:
+                    return result
+        
+        # Additional standard validators from list
+        standard_validators = constraints.get("standard_validators", [])
+        if isinstance(standard_validators, list):
+            for validator_name in standard_validators:
+                validator = get_standard_validator(validator_name)
+                if validator:
+                    result = validator(value, constraints)
+                    if result and result[0] == ValidationStatus.INVALID:
+                        return result
+        
         return None
     
-    def _get_custom_validator(self, session: "InterviewSession", constraints: Dict[str, Any]) -> Optional[Callable]:
+    def _get_custom_validator(
+        self,
+        session: "InterviewSession",
+        constraints: Dict[str, Any],
+        interview_action: Optional[Any] = None,
+    ) -> Optional[Callable]:
         """Get custom validator function from decorator registry or constraints.
         
         Args:
             session: Interview session
             constraints: Question constraints dictionary
+            interview_action: Optional InterviewInteractAction (falls back to self._interview_action)
             
         Returns:
             Validator function if found, None otherwise
@@ -498,7 +511,7 @@ class QuestionNode(Node):
         
         # Try decorator registry first
         if question_name and session:
-            action = self._interview_action
+            action = self._interview_action or interview_action
             if action:
                 validator = action.get_input_validator(question_name)
                 if validator:
@@ -622,15 +635,11 @@ class QuestionNode(Node):
         Returns:
             Tuple of (ValidationStatus, optional feedback message, optional corrected value)
             If corrected_value is provided, it should be used instead of the original value
+
+        Note:
+            Caller (InterviewWalker) is responsible for calling process_input before
+            validate_response. Do not call process_input here to avoid double execution.
         """
-        # Process input first if it's a string (raw input)
-        if isinstance(value, str):
-            value = await self.process_input(
-                value, session, interaction=None,
-                visitor=visitor,
-                interview_action=interview_action or self._interview_action,
-            )
-        
         constraints = self.state.get("constraints", {})
         
         # Check if value is empty
@@ -638,23 +647,13 @@ class QuestionNode(Node):
         if empty_result:
             return empty_result
         
-        # Type validation
-        type_result = self._validate_type(value, constraints)
-        if type_result:
-            return type_result
+        # Run standard validators (type, format, pattern, etc.)
+        standard_result = self._run_standard_validators(value, constraints)
+        if standard_result and standard_result[0] == ValidationStatus.INVALID:
+            return standard_result
         
-        # Pattern validation
-        pattern_result = self._validate_pattern(value, constraints)
-        if pattern_result:
-            return pattern_result
-        
-        # Email validation
-        email_result = self._validate_email(value, constraints)
-        if email_result:
-            return email_result
-        
-        # Custom validation function
-        validator = self._get_custom_validator(session, constraints)
+        # Custom validation function (runs AFTER standard validators)
+        validator = self._get_custom_validator(session, constraints, interview_action=interview_action)
         if validator and callable(validator):
             return await self._execute_custom_validator(
                 validator, value, session,
