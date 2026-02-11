@@ -21,7 +21,6 @@ from .prompts import (
     CANCELLATION_MESSAGE,
     QUESTION_DIRECTIVE,
     INTERVIEW_PROMPT,
-    INTERVIEW_CLASSIFICATION_SIGNATURE,
     REQUIRED_FIELD_DECLINE,
     get_state_event_message,
 )
@@ -96,8 +95,7 @@ class TemplateConfig:
     
     # Interview prompt
     interview_prompt: str = INTERVIEW_PROMPT
-    interview_classification_signature: str = INTERVIEW_CLASSIFICATION_SIGNATURE
-    
+
     def __post_init__(self):
         """Validate template placeholders."""
         self._validate_placeholders()
@@ -152,8 +150,7 @@ class InterviewConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     templates: TemplateConfig = field(default_factory=TemplateConfig)
     classification: ClassificationConfig = field(default_factory=ClassificationConfig)
-    use_dspy: bool = False
-    
+
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> "InterviewConfig":
         """Create config from dictionary (e.g., from agent.yaml).
@@ -192,5 +189,4 @@ class InterviewConfig:
             model=model_config,
             templates=template_config,
             classification=classification_config,
-            use_dspy=config_dict.get("use_dspy", False)
         )

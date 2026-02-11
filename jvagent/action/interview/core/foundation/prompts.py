@@ -19,8 +19,7 @@ Template Categories:
     Classification Prompts: Intent detection and extraction
         - CLASSIFICATION_RULES_CORE: Core classification logic (DRY)
         - INTERVIEW_PROMPT: Full prompt with context formatting
-        - INTERVIEW_CLASSIFICATION_SIGNATURE: DSPy signature wrapper
-    
+
     State Messages: Event tracking
         - STATE_EVENT_MESSAGES: State-specific event messages (dict)
         - get_state_event_message(): Helper to format state messages
@@ -114,116 +113,56 @@ def get_state_event_message(state: str, class_name: str) -> str:
 # Classification Prompts - Core Rules (Single Source of Truth)
 # =============================================================================
 
-CLASSIFICATION_RULES_CORE = """CRITICAL RULE - CHECK THIS FIRST:
-    - If ANY field mentioned by the user appears in entities_to_extract (unanswered questions), classify as SUBMISSION, NOT UPDATE
-    - This rule takes precedence over all other classification logic
-    - Example: If user says "yes" and the target field is in entities_to_extract, it's SUBMISSION even if language suggests update
+CLASSIFICATION_RULES_CORE = """Chain of verification: (1) Apply checks below in order. (2) Then extract. (3) Output only the JSON object.
 
-    INTENT TYPES (priority order):
-    1. CANCELLATION - User explicitly abandons entire process
-       - Only use if language explicitly abandons entire interview (e.g., "cancel", "abort", "stop the interview")
+PRIORITY (check first):
+- If any field the user is referring to is in Unanswered fields → intent is SUBMISSION (not UPDATE), regardless of wording.
 
-    2. CONFIRMATION - Only in REVIEW state, positive affirmation WITHOUT providing new values
-       - CRITICAL STATE CHECK: CONFIRMATION can ONLY be used when current_state is "review"
-       - If current_state is NOT "review", then affirmative responses (like "yes", "sure", "ok") to questions should be classified as SUBMISSION, NOT CONFIRMATION
-       - When answering a question in ACTIVE state, it is always SUBMISSION, even if the answer is "yes"
-       - "No" in REVIEW state = UPDATE (rejecting confirmation)
-       - CRITICAL: Do NOT classify as CONFIRMATION if user provides a specific value that differs from current stored values
-       - CONFIRMATION is ONLY for pure affirmations like "yes", "correct", "looks good", "that's right" WITHOUT any new values, AND only when current_state is "review"
+STATE:
+- current_state "review": CONFIRMATION = pure affirmation, no new values; "no" = UPDATE. Affirmatives with a new value = UPDATE.
+- current_state "active": Answering the current question = SUBMISSION (including "yes"/"no"). CONFIRMATION is invalid in active.
 
-    3. SUBMISSION - Providing answers to unanswered questions
-       - CRITICAL PRIORITY: If a field appears in entities_to_extract (unanswered questions), classify as SUBMISSION, NOT UPDATE
-       - This applies even if user language suggests "change" or "update" - if the field is unanswered, it's SUBMISSION
-       - CRITICAL STATE RULE: When current_state is "active" and user is answering a question, it is always SUBMISSION, even if the answer is "yes", "sure", "ok", or other affirmative words
-       - Affirmative responses to questions in ACTIVE state are SUBMISSION, not CONFIRMATION (CONFIRMATION is only for REVIEW state)
-       - Extract field values from user_input (interpretation already contains values)
-       - Includes invalid choices/values - validation system will mark them as INVALID and provide feedback
-       - When user provides a value that doesn't match constraints → SUBMISSION
-       - When user selects an option that doesn't exist → SUBMISSION
-       - When user provides wrong type/format → SUBMISSION
+INTENTS (choose one):
+1. CANCELLATION – user abandons entire process ("cancel", "abort", "stop").
+2. CONFIRMATION – only in review; "yes"/"correct"/"looks good" with no new values.
+3. SUBMISSION – answering an unanswered question. Field in Unanswered fields → SUBMISSION. Invalid/wrong-format answers still SUBMISSION (validation handles them).
+4. UPDATE – changing an already answered field. Field must be in Answered fields and not in Unanswered fields. In review, "no" or giving a new value = UPDATE.
+5. DECLINE – user declines optional question or optional content. Use when: explicit refusal ("skip", "I'd rather not"); or "No" to optional uploads/content (photos, attachments); or router says "declines to..." / "refuses to...". Only [OPTIONAL] in Unanswered fields; [REQUIRED] refusal = NONE. Field: from Unanswered fields, or from Recent conversation (current question), or "unknown_field".
+6. NONE – no clear intent or refusal of a required field.
 
-    4. UPDATE - Change specific answered field (e.g., "change email", "wrong", "not correct", providing new value)
-       - ONLY use UPDATE if the field is in answered_fields (already answered) AND NOT in entities_to_extract
-       - In REVIEW state, "no" = UPDATE
-       - Identify field name and optionally new value
-       - AFFIRMATIVE WORDS: Words like "Ok", "yes", "sure" before a new value do NOT make it CONFIRMATION - they're just conversational fillers
-       - CRITICAL: In REVIEW state, if user provides a specific value, classify as UPDATE (even if prefixed with "Ok", "yes", etc.)
-       - INTERPRETATION AWARENESS: Even if router interpretation says "confirms", if user provides a value, classify as UPDATE
+"NO" DISAMBIGUATION (use Recent conversation and router): "No" to optional content (photos, attachments) → DECLINE. "No" as answer to a yes/no question (e.g. "Is this sensitive?") → SUBMISSION with that field = "no". "No" in review → UPDATE.
 
-    5. DECLINE - User explicitly refuses to answer an optional question (only non-required fields)
-       - Only use when user explicitly declines to answer (e.g., "I don't want to answer", "skip this", "I'd rather not provide that", "I'd prefer not to say")
-       - Must specify field name (use active question from entities_to_extract)
-       - Check the field's marker in entities_to_extract: only fields marked [OPTIONAL] can be declined
-       - Fields marked [REQUIRED] cannot be declined - classify refusal as NONE and let validation handle it
-       - CRITICAL: Invalid choices/values should be SUBMISSION, not DECLINE. If user provides a value that doesn't match constraints, selects an invalid option, or provides wrong type/format, classify as SUBMISSION (validation will handle them as INVALID)
+EXTRACTION:
+- SUBMISSION: Map response to Unanswered fields. Use Recent conversation to identify which question was just asked. "Yes"/"Yeah"/"Sure"/"Ok" → "yes"; "No"/"Nope" → "no". Always output at least one field–value pair when the response clearly answers a listed question. For partials ("the first one", "9am") use Recent conversation to resolve to full values.
+- UPDATE: Set "field" and "value".
+- DECLINE: Set "field" (name from Unanswered fields or Recent conversation, or "unknown_field").
 
-    6. NONE - No clear intent
-
-    EXTRACTION:
-    - For SUBMISSION: Extract field-value pairs from user_input (interpretation has values)
-    - For UPDATE: Use "field" and "value" keys
-    - Map values to field names from entities_to_extract
-    - CRITICAL: When SUBMISSION intent is detected, ALWAYS extract at least one field-value pair if there's a question in entities_to_extract that matches the response context
-
-    HANDLING SIMPLE AFFIRMATIVE RESPONSES (CRITICAL):
-    - When user responds with simple affirmative responses like "Yes", "No", "Sure", "Ok", "Yeah", "Yep", "Nope" in ACTIVE state, extract it as a value for the question that was most recently asked
-    - Use conversation_history to determine which field is being answered - check the most recent AI question/statement to identify the field
-    - For yes/no questions: Map "Yes"/"yes"/"Yeah"/"Yep"/"Sure"/"Ok" → "yes" and "No"/"no"/"Nope" → "no"
-    - If the question has specific options, map the response to the appropriate option value
-    - If the response is ambiguous, use conversation_history to match the response to the most recently asked question in entities_to_extract
-    - Example: If AI asked "Would you like to keep the report private?" and user responds "Yes", extract as the appropriate field-value pair for the privacy-related field in entities_to_extract
-
-    CONTEXT-AWARE EXTRACTION (CRITICAL):
-    - Use conversation_history to resolve fragmentary references to full values
-    - When user provides partial values, pronouns, or references (e.g., "the first one", "that option", "same as before", "9am"), match them to complete values from recent conversation history
-    - If the AI recently presented options, lists, or specific values, resolve user fragments to the full matching option/value from those recent mentions
-    - Examples of fragment resolution:
-      * Partial value ("9am") → full matching option ("Monday 9:00 AM - 11:00 AM") when that option was recently presented
-      * Ordinal reference ("the first one") → full value from first option/item in recent AI response
-      * Demonstrative reference ("that option", "this one") → full value from recently mentioned options
-      * Temporal reference ("same as before", "like last time") → previously mentioned value from conversation history
-      * Partial match (e.g., "John" when "John Smith" was mentioned) → full matching value from context
-      * Simple affirmative ("Yes" to a yes/no question) → appropriate yes/no value for the target field in entities_to_extract
-    - Extract complete, contextually appropriate entities rather than just literal fragments
-    - When conversation_history is available, prioritize resolving fragments to full values over extracting partial fragments"""
+OUTPUT: Single JSON object. Include "reasoning" (optional one-line) only if helpful. For SUBMISSION put each extracted field as a top-level key with its value (same level as intent, confidence, field, value)."""
 
 # =============================================================================
 # Classification Prompts - Template Variants
 # =============================================================================
 
-# DSPy Signature - Lightweight wrapper around core rules
-INTERVIEW_CLASSIFICATION_SIGNATURE = f"""Classify user intent and extract field values from interview context.
-
-    The user_input contains router interpretation with reasoning and extracted values.
-    Focus on interview-specific state-aware logic and field mapping.
-
-{CLASSIFICATION_RULES_CORE}
-
-    Return JSON with intent, confidence, field (for UPDATE/DECLINE), value (for UPDATE),
-    and extracted_data (for SUBMISSION) as field-value pairs.
-    """
-
 # Interview Prompt - Full template with context formatting
 INTERVIEW_PROMPT = f"""Classify intent and extract field values from user input.
 
-USER INPUT (contains router interpretation with reasoning):
+USER INPUT (router interpretation or raw utterance):
 {{user_input}}
 
 CONTEXT:
 - Current state: {{current_state}}
 - Answered fields (with current values): {{answered_fields}}
 - Unanswered fields: {{entities_to_extract}}
-
-CRITICAL: Before classifying intent, check if ANY field mentioned by the user appears in "Unanswered fields" above. If it does, classify as SUBMISSION, NOT UPDATE, regardless of the user's language.
+- Recent conversation (use to identify current question and resolve "yes"/"no" and references):
+{{conversation_history}}
 
 {CLASSIFICATION_RULES_CORE}
 
-Return the expected JSON only:
+Return a single JSON object only. No markdown or explanation. Required keys: intent, confidence, field (or null), value (or null). For SUBMISSION add one or more top-level keys with field names from Unanswered fields and their extracted values. Optional key: reasoning (one line).
 {{{{
   "intent": "CANCELLATION" | "CONFIRMATION" | "UPDATE" | "DECLINE" | "SUBMISSION" | "NONE",
   "confidence": 0.0-1.0,
   "field": "field_name" | null,
   "value": "value" | null,
-  // For SUBMISSION: include field-value pairs
-  // For DECLINE: field must be specified
+  "<field_name>": "<extracted_value>"
 }}}}"""

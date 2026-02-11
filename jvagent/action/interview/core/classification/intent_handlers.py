@@ -185,7 +185,11 @@ class UpdateHandler(IntentHandler):
                 return HandlerResult(handled=False, should_continue=True)
             
             field_list = ", ".join([f.replace("_", " ") for f in answered_fields])
-            summary = await self.action.directive_builder.format_summary(session)
+            summary = await self.action.directive_builder.format_summary(
+                session,
+                visitor=visitor,
+                interview_action=self.action,
+            )
             
             directive = self.action.config.templates.review_unclear_edit.format(
                 summary=summary,

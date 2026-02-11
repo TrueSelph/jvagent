@@ -52,6 +52,8 @@ logger = logging.getLogger(__name__)
 from .core.foundation.decorators import (
     RegistryManager,
     get_completion_handler as _get_completion_handler,
+    get_cancelled_handler as _get_cancelled_handler,
+    get_review_handler as _get_review_handler,
     get_input_handler as _get_input_handler,
     get_input_validator as _get_input_validator,
     get_input_directive_override as _get_input_directive_override,
@@ -241,6 +243,30 @@ class InterviewInteractAction(InteractAction, ABC):
         """
         return _get_completion_handler(interview_type)
 
+    @staticmethod
+    def get_cancelled_handler(interview_type: str) -> Optional[Callable]:
+        """Get cancellation handler for an interview type.
+
+        Args:
+            interview_type: Class name of the InterviewInteractAction
+
+        Returns:
+            Cancellation handler function if found, None otherwise
+        """
+        return _get_cancelled_handler(interview_type)
+
+    @staticmethod
+    def get_review_handler(interview_type: str) -> Optional[Callable]:
+        """Get review handler for an interview type.
+
+        Args:
+            interview_type: Class name of the InterviewInteractAction
+
+        Returns:
+            Review handler function if found, None otherwise
+        """
+        return _get_review_handler(interview_type)
+
     @classmethod
     def get_input_handler(cls, question_name: str) -> Optional[Callable]:
         """Get input handler for a question by name (from decorator registry).
@@ -350,6 +376,11 @@ class InterviewInteractAction(InteractAction, ABC):
         default_directive: str
     ) -> Tuple[Optional[str], Optional[str]]:
         """Process directive override result and return directives to queue separately.
+
+        When invoking the override callable (from get_input_directive_override), pass
+        (field_name, value, session, interaction, visitor, interview_action) so the
+        handler receives standard context. Use invoke_async_with_optional_context for
+        backward compatibility.
 
         Args:
             override_result: Result from directive override function (None, str, or Tuple[str, str])
@@ -520,31 +551,45 @@ class InterviewInteractAction(InteractAction, ABC):
         state_node = await self.node(node=StateNode, state_type=state_type)    
         return state_node
 
-    async def _format_summary(self, session: InterviewSession) -> str:
+    async def _format_summary(
+        self,
+        session: InterviewSession,
+        visitor: Optional["InteractWalker"] = None,
+    ) -> str:
         """Format collected responses as a summary.
 
         Delegates to DirectiveBuilder.
 
         Args:
             session: Interview session
+            visitor: Optional InteractWalker for review override context
 
         Returns:
             Formatted summary string
         """
-        return await self.directive_builder.format_summary(session)
+        return await self.directive_builder.format_summary(
+            session, visitor=visitor, interview_action=self
+        )
 
-    async def _build_confirmation_directive(self, session: InterviewSession) -> str:
+    async def _build_confirmation_directive(
+        self,
+        session: InterviewSession,
+        visitor: Optional["InteractWalker"] = None,
+    ) -> str:
         """Build the complete confirmation directive from consolidated template.
 
         Delegates to DirectiveBuilder.
 
         Args:
             session: Interview session
+            visitor: Optional InteractWalker for review override context
 
         Returns:
             Complete confirmation directive string
         """
-        return await self.directive_builder.build_confirmation_directive(session)
+        return await self.directive_builder.build_confirmation_directive(
+            session, visitor=visitor, interview_action=self
+        )
 
     async def _queue_directive(
         self,

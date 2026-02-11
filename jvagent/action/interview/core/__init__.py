@@ -40,7 +40,6 @@ from .graph.question_walker import QuestionWalker
 
 # State domain
 from .graph.state_node import StateNode
-from .state.state_handlers import StateHandler
 from .state.state_machine import InterviewStateMachine
 
 
@@ -83,7 +82,6 @@ __all__ = [
     "QuestionWalker",
     # State
     "StateNode",
-    "StateHandler",
     "InterviewStateMachine",
     # Session
     "InterviewSession",
