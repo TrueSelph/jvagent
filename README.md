@@ -1266,9 +1266,9 @@ Key environment variables (see `.env.example` for full list):
 - `JVAGENT_TITLE` - API title
 - `JVAGENT_VERSION` - Application version
 - `JVAGENT_ENVIRONMENT` - Environment mode: `development` or `production` (default: `development`)
-  - In `production` mode: API responses exclude observability metrics, walker reports, and debugging data
+  - In `production` mode: Shorter, secure interact payloads—API responses exclude observability metrics, walker reports, and debugging data (id, utterance, response only)
   - In `development` mode: API responses include full debugging and observability information
-  - Case-insensitive
+  - Case-insensitive. Can also be set via `config.development.environment` in app.yaml (env var takes precedence)
 
 **Database Configuration:**
 - `JVSPATIAL_DB_TYPE` - Database type: `json` or `mongodb` (default: `json`)
@@ -1681,7 +1681,7 @@ docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-jvagent-app:latest
 Then deploy as a container-based Lambda function with:
 - Container image from ECR
 - EFS mount point configured (for `/mnt/venv`)
-- Environment variables configured
+- Environment variables configured (set `JVAGENT_ENVIRONMENT=production` for shorter, secure interact payloads)
 - API Gateway HTTP API trigger
 
 **Local Testing:**

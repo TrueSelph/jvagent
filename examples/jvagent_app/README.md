@@ -371,7 +371,7 @@ The `app.yaml` file includes a comprehensive `config` section with application-l
 
 **Development Settings:**
 - `development.debug` - Enable debug mode
-- `development.environment` - Environment mode (`development` or `production`)
+- `development.environment` - Environment mode (`development` or `production`). Set to `production` for shorter, secure interact payloads (excludes actions, directives, observability metrics, report).
 
 **API Configuration:**
 - `api.prefix` - API route prefix

@@ -42,9 +42,12 @@ class MyTopLevelAction(InteractAction):
 
 ## Interact Endpoint Response Format
 
-The `/agents/{agent_id}/interact` endpoint response format varies based on the `JVAGENT_ENVIRONMENT` setting:
+The `/agents/{agent_id}/interact` endpoint response format varies based on environment mode. Use **production** mode for shorter, more secure payloads (minimal fields only). Configuration:
 
-### Production Mode (`JVAGENT_ENVIRONMENT=production`)
+- **`JVAGENT_ENVIRONMENT`** env var (highest priority)
+- **`config.development.environment`** in app.yaml (fallback)
+
+### Production Mode (shorter, secure payloads)
 
 **Minimal payload** - excludes debugging and observability data:
 
@@ -122,17 +125,25 @@ For streaming responses (`stream=true`), stream chunk messages also respect the 
 
 ### Configuration
 
-Set the environment variable in your `.env` file or deployment configuration:
+For shorter, secure interact payloads in production, set environment mode to `production`:
 
+**Option 1: Environment variable** (`.env` or deployment config)
 ```bash
 # Development (default) - includes all debug data
 JVAGENT_ENVIRONMENT=development
 
-# Production - minimal payload only
+# Production - minimal payload only (recommended for production)
 JVAGENT_ENVIRONMENT=production
 ```
 
-**Note:** The environment variable is case-insensitive. Defaults to `development` if not set.
+**Option 2: app.yaml** (`config.development.environment`)
+```yaml
+config:
+  development:
+    environment: production  # Shorter, secure interact payloads
+```
+
+The environment variable takes precedence over app config. Both are case-insensitive. Defaults to `development` if neither is set.
 
 ## respond() Method
 
