@@ -12,12 +12,12 @@ from jvagent.action.interact.response_builder import (
 from jvagent.utils.env import get_environment_mode, is_production_mode
 
 
+@patch("jvagent.utils.env._get_environment_from_app_config", return_value=None)
 class TestEnvironmentMode:
     """Test environment mode detection functions."""
 
-    def test_get_environment_mode_defaults_to_development(self):
-        """Verify default mode is development."""
-        # Clear environment variable
+    def test_get_environment_mode_defaults_to_development(self, mock_app_config):
+        """Verify default mode is development when env and app config are unset."""
         original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
         try:
             mode = get_environment_mode()
@@ -26,7 +26,7 @@ class TestEnvironmentMode:
             if original:
                 os.environ["JVAGENT_ENVIRONMENT"] = original
 
-    def test_get_environment_mode_production(self):
+    def test_get_environment_mode_production(self, mock_app_config):
         """Verify production mode is detected."""
         original = os.environ.get("JVAGENT_ENVIRONMENT")
         try:
@@ -56,7 +56,7 @@ class TestEnvironmentMode:
             else:
                 os.environ.pop("JVAGENT_ENVIRONMENT", None)
 
-    def test_is_production_mode(self):
+    def test_is_production_mode(self, mock_app_config):
         """Test is_production_mode helper."""
         original = os.environ.get("JVAGENT_ENVIRONMENT")
         try:
@@ -65,6 +65,43 @@ class TestEnvironmentMode:
 
             os.environ["JVAGENT_ENVIRONMENT"] = "development"
             assert is_production_mode() is False
+        finally:
+            if original:
+                os.environ["JVAGENT_ENVIRONMENT"] = original
+            else:
+                os.environ.pop("JVAGENT_ENVIRONMENT", None)
+
+    @patch("jvagent.utils.env._get_environment_from_app_config", return_value="production")
+    def test_get_environment_mode_from_app_config_production(self, mock_app_config):
+        """Verify app config config.development.environment: production yields production mode."""
+        original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
+        try:
+            mode = get_environment_mode()
+            assert mode == "production"
+        finally:
+            if original:
+                os.environ["JVAGENT_ENVIRONMENT"] = original
+
+    @patch("jvagent.utils.env._get_environment_from_app_config", return_value="development")
+    def test_get_environment_mode_from_app_config_development(self, mock_app_config):
+        """Verify app config config.development.environment: development yields development mode."""
+        original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
+        try:
+            mode = get_environment_mode()
+            assert mode == "development"
+        finally:
+            if original:
+                os.environ["JVAGENT_ENVIRONMENT"] = original
+
+    @patch("jvagent.utils.env._get_environment_from_app_config", return_value="production")
+    def test_env_var_overrides_app_config(self, mock_app_config):
+        """Verify JVAGENT_ENVIRONMENT overrides app config when both are set."""
+        original = os.environ.get("JVAGENT_ENVIRONMENT")
+        try:
+            os.environ["JVAGENT_ENVIRONMENT"] = "development"
+            mode = get_environment_mode()
+            assert mode == "development"
+            mock_app_config.assert_not_called()
         finally:
             if original:
                 os.environ["JVAGENT_ENVIRONMENT"] = original

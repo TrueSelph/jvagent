@@ -9,12 +9,11 @@ from jvagent.memory.interaction import Interaction
 def build_interaction_payload(interaction: Interaction) -> Dict[str, Any]:
     """Build interaction payload, filtering debug data in production.
     
-    In production mode, returns minimal payload with only:
-    - id, utterance, response
+    In production mode (JVAGENT_ENVIRONMENT or config.development.environment), returns
+    minimal payload with only: id, utterance, response.
     
-    In development mode, returns full payload with:
-    - id, utterance, response, actions, directives, parameters, 
-      events, observability_metrics, streamed
+    In development mode, returns full payload with: id, utterance, response,
+    actions, directives, parameters, events, observability_metrics, streamed.
     
     Args:
         interaction: Interaction node instance

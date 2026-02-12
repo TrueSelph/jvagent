@@ -246,10 +246,10 @@ _initialize_rate_limiter_from_config()
             "interaction": ResponseField(
                 field_type=Dict[str, Any],
                 description=(
-                    "Interaction details. In production mode (JVAGENT_ENVIRONMENT=production), "
-                    "only includes: id, utterance, response. In development mode, includes: "
-                    "id, utterance, response, actions, directives, parameters, events, "
-                    "observability_metrics, streamed."
+                    "Interaction details. In production mode (JVAGENT_ENVIRONMENT or "
+                    "config.development.environment=production), only includes: id, utterance, "
+                    "response. In development mode, includes: id, utterance, response, actions, "
+                    "directives, parameters, events, observability_metrics, streamed."
                 ),
                 example={
                     "id": "int_123",
@@ -267,7 +267,7 @@ _initialize_rate_limiter_from_config()
                 field_type=Optional[List[Dict[str, Any]]],  # type: ignore[arg-type]
                 description=(
                     "Walker traversal report (development mode only). "
-                    "Excluded when JVAGENT_ENVIRONMENT=production."
+                    "Excluded in production mode."
                 ),
                 example=[
                     {
