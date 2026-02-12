@@ -174,42 +174,6 @@ class InterviewSession(Node):
         reachable_required = await interview_walker.get_reachable_required_questions(self)
         return list(reachable_required)
     
-    async def get_unanswered_questions_on_path(
-        self,
-        interview_walker: "InterviewWalker"
-    ) -> List[str]:
-        """Get list of unanswered question keys that are reachable on the current conditional path.
-        
-        Traverses the question graph from root following active conditional branches
-        and returns only unanswered questions that are reachable given current responses.
-        This is the path-aware version of get_unanswered_questions().
-        
-        Args:
-            interview_walker: InterviewWalker instance to determine reachable questions
-            
-        Returns:
-            List of unanswered question names that are reachable on the current path
-        """
-        from ..graph.post_update_walker import PostUpdateWalker
-        
-        # Get all unanswered questions
-        responses_dict = dict(self.responses) if self.responses else {}
-        answered = set(responses_dict.keys())
-        all_questions = [q.get("name", "") for q in self.question_graph if q.get("name")]
-        unanswered = [q for q in all_questions if q and q not in answered]
-        
-        # Filter to only reachable questions using PostUpdateWalker
-        first_node = await interview_walker._resolve_first_node(self)
-        if not first_node:
-            return unanswered
-        
-        reachable = await PostUpdateWalker.sync(
-            self, first_node, interview_walker.interact_visitor
-        )
-        
-        # Return only unanswered questions that are reachable
-        return [q for q in unanswered if q in reachable]
-    
     def get_response(self, question_key: str) -> Any:
         """Get response for a specific question."""
         return self.responses.get(question_key)
@@ -318,18 +282,12 @@ class InterviewSession(Node):
             None
         )
     
-    async def get_next_questions(
-        self, 
-        current_question: str, 
-        visitor: Optional[Any] = None,
-        interview_action: Optional[Any] = None
-    ) -> List[str]:
+    async def get_next_questions(self, current_question: str, visitor: Optional[Any] = None) -> List[str]:
         """Get possible next questions based on branches.
         
         Args:
             current_question: Name of current question
             visitor: Optional InteractWalker for branch function access
-            interview_action: Optional InterviewInteractAction for branch function context
             
         Returns:
             List of possible next question names
@@ -348,13 +306,7 @@ class InterviewSession(Node):
             condition = branch.get("condition", {})
             
             # Use QuestionBranchEvaluator for proper evaluation
-            if await QuestionBranchEvaluator.matches(
-                condition, 
-                self, 
-                implicit_question=question_config.get("name"), 
-                visitor=visitor,
-                interview_action=interview_action
-            ):
+            if await QuestionBranchEvaluator.matches(condition, self, implicit_question=question_config.get("name"), visitor=visitor):
                 target = branch.get("target")
                 if target:
                     next_questions.append(target)

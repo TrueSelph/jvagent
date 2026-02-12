@@ -1,6 +1,6 @@
 import { useState, FormEvent, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { getConfigAsync, saveConfig, getConfig } from "../config/config";
+import { getConfigAsync, saveConfig } from "../config/config";
 import { saveAuthCreds, cleanupOldStorage } from "../utils/storage";
 
 export function Login() {

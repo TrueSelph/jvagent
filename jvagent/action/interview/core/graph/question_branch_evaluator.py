@@ -35,8 +35,7 @@ class QuestionBranchEvaluator:
         condition: Dict[str, Any],
         session: InterviewSession,
         implicit_question: str,
-        visitor: Optional["InteractWalker"] = None,
-        interview_action: Optional[Any] = None
+        visitor: Optional["InteractWalker"] = None
     ) -> bool:
         """Check if a condition matches the current session state.
 
@@ -55,7 +54,6 @@ class QuestionBranchEvaluator:
             session: Interview session
             implicit_question: Required question name - the question that owns this branch
             visitor: Optional InteractWalker for branch function access to graph context
-            interview_action: Optional InterviewInteractAction for branch function context
 
         Returns:
             True if condition matches, False otherwise
@@ -73,7 +71,7 @@ class QuestionBranchEvaluator:
         # Check for function-based condition
         if "function" in condition:
             return await QuestionBranchEvaluator._evaluate_function_condition(
-                condition, session, question_name, visitor, interview_action
+                condition, session, question_name, visitor
             )
 
         # Legacy operator-based condition evaluation
@@ -86,8 +84,7 @@ class QuestionBranchEvaluator:
         condition: Dict[str, Any],
         session: InterviewSession,
         question_name: str,
-        visitor: Optional["InteractWalker"],
-        interview_action: Optional[Any] = None
+        visitor: Optional["InteractWalker"]
     ) -> bool:
         """Evaluate a function-based branch condition.
 
@@ -96,7 +93,6 @@ class QuestionBranchEvaluator:
             session: Interview session
             question_name: Question name for logging
             visitor: Optional InteractWalker for function access
-            interview_action: Optional InterviewInteractAction for function context
 
         Returns:
             True if condition matches, False otherwise
@@ -130,9 +126,9 @@ class QuestionBranchEvaluator:
 
         try:
             if inspect.iscoroutinefunction(func):
-                result = await func(session, visitor, interview_action)
+                result = await func(session, visitor)
             else:
-                result = func(session, visitor, interview_action)
+                result = func(session, visitor)
 
             if "op" in condition:
                 expected_value = condition.get("value")

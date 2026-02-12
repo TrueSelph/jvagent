@@ -9,6 +9,7 @@ import type {
   AgentsResponse,
   InteractionRequest,
   InteractionResponse,
+  LogsResponse,
 } from '../types/api'
 
 class ApiClient {
@@ -777,6 +778,35 @@ class ApiClient {
       }
     })
     return response.data
+  }
+
+  async getLogs(params: {
+    category?: string
+    agent_id?: string
+    page?: number
+    page_size?: number
+  }): Promise<LogsResponse> {
+    const { category, agent_id, page = 1, page_size = 50 } = params
+    const queryParams: Record<string, string | number> = { page, page_size }
+    if (category) queryParams.category = category
+    if (agent_id) queryParams.agent_id = agent_id
+
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.get('/api/logs', { baseURL, params: queryParams })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.get('/logs', { baseURL, params: queryParams })
+        }
+        throw err
+      }
+    })
+
+    const data = response.data
+    if (data?.success && data?.data) {
+      return data.data as LogsResponse
+    }
+    return data as LogsResponse
   }
 
   async queryAction(actionId: string, payload: any): Promise<any> {

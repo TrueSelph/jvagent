@@ -226,6 +226,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "type": "string",
                 },
                 "required": True,
+                "default_next": "REVIEW",
             },
         ],
         description="List of question configurations defining the interview graph. Can be overridden in agent.yaml. "
@@ -303,10 +304,25 @@ class ReportInterviewInteractAction(InterviewInteractAction):
         # Check description for sensitive keywords
         has_sensitive_text = any(keyword in description for keyword in sensitive_keywords)
 
-        # Check for presence of media
-        has_media = bool(media)
+        # Check for presence of media - handle N/A, skip, empty list, None
+        # Optional questions may be set to "N/A" or similar when skipped
+        has_media = False
+        if media:
+            # Skip common placeholder values for optional questions
+            if isinstance(media, str):
+                media_lower = media.lower().strip()
+                has_media = media_lower not in ["n/a", "na", "skip", "none", ""]
+            elif isinstance(media, list):
+                has_media = len(media) > 0
+            else:
+                has_media = True
 
-        return has_sensitive_text or has_media
+        result = has_sensitive_text or has_media
+        logger.info(
+            f"detect_sensitive_content: has_sensitive_text={has_sensitive_text}, "
+            f"has_media={has_media}, result={result}"
+        )
+        return result
 
     @branch_function("check_for_similar_incidents")
     def check_for_similar_incidents(
@@ -317,7 +333,12 @@ class ReportInterviewInteractAction(InterviewInteractAction):
         Returns True if similar incidents found, triggering user confirmation.
         This helps prevent duplicate reports and informs users of existing issues.
         """
-        matching_reports = session.responses.get("matching_reports", [])
+        matching_reports = session.context.get("matching_reports", [])
+        result = bool(matching_reports)
+        logger.info(
+            f"check_for_similar_incidents: found {len(matching_reports)} reports, "
+            f"result={result}"
+        )
         if matching_reports:
             return True
 
@@ -601,6 +622,10 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                 "Ask: Please provide your full address.",
             )
 
+        logger.info(
+            f"validate_reporter_address: validation passed for reporter_address. "
+            f"This is the terminal question - should transition to REVIEW next."
+        )
         return ValidationStatus.VALID, None
 
 
@@ -613,6 +638,10 @@ def adapt_review(
     interview_action: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Omit or format values shown in the Review state."""
+    logger.info(
+        f"adapt_review called: interview reached REVIEW state. "
+        f"Questions answered: {list(data.keys())}"
+    )
     result: Dict[str, Any] = {}
     result_ending: Dict[str, Any] = {}
     for field_name, value in data.items():

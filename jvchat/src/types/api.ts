@@ -99,3 +99,28 @@ export interface SSEChunk {
   report?: any[]
 }
 
+export interface LogEntry {
+  log_id: string
+  log_level: string
+  status_code: number
+  event_code: string
+  message: string
+  path: string
+  method: string
+  agent_id?: string
+  logged_at: string
+  log_data: Record<string, unknown>
+}
+
+export interface LogsPagination {
+  page: number
+  page_size: number
+  total: number
+  total_pages: number
+}
+
+export interface LogsResponse {
+  logs: LogEntry[]
+  pagination: LogsPagination
+}
+

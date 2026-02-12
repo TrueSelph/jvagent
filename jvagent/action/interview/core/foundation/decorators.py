@@ -722,23 +722,14 @@ def _wrap_branch_function_with_tracking(func: Callable) -> Callable:
     Creates a wrapper that instruments session.responses access to record
     which response keys are read during function execution.
     
-    The wrapper accepts optional interview_action parameter and forwards it
-    to the function if the function signature accepts it.
-    
     Args:
         func: The branch function to wrap
         
     Returns:
         Wrapped function that tracks response dependencies
     """
-    from ..utils.handler_utils import invoke_async_with_optional_context
-    
     if inspect.iscoroutinefunction(func):
-        async def async_wrapper(
-            session: "InterviewSession", 
-            visitor: "InteractWalker",
-            interview_action: Optional[Any] = None
-        ) -> Any:
+        async def async_wrapper(session: "InterviewSession", visitor: "InteractWalker") -> Any:
             if visitor is None:
                 raise ValueError("branch function requires a visitor to be provided")
             with track_response_access() as tracker:
@@ -748,32 +739,18 @@ def _wrap_branch_function_with_tracking(func: Callable) -> Callable:
                 session.responses = instrumented  # type: ignore
                 
                 try:
-                    result = await invoke_async_with_optional_context(
-                        func,
-                        session,
-                        visitor,
-                        visitor=visitor,
-                        interview_action=interview_action,
-                    )
+                    result = await func(session, visitor)
                     # Store accessed keys in context for branch evaluator to retrieve
                     if not hasattr(session, '_branch_function_accessed_keys'):
                         session._branch_function_accessed_keys = set()  # type: ignore
                     session._branch_function_accessed_keys.update(tracker.get())  # type: ignore
                     return result
                 finally:
-                    # Propagate writes made during execution back to original
-                    for key, value in instrumented.items():
-                        if key not in original_responses or original_responses[key] != value:
-                            original_responses[key] = value
                     session.responses = original_responses
         
         return async_wrapper
     else:
-        def sync_wrapper(
-            session: "InterviewSession", 
-            visitor: "InteractWalker",
-            interview_action: Optional[Any] = None
-        ) -> Any:
+        def sync_wrapper(session: "InterviewSession", visitor: "InteractWalker") -> Any:
             if visitor is None:
                 raise ValueError("branch function requires a visitor to be provided")
             with track_response_access() as tracker:
@@ -783,24 +760,13 @@ def _wrap_branch_function_with_tracking(func: Callable) -> Callable:
                 session.responses = instrumented  # type: ignore
                 
                 try:
-                    from ..utils.handler_utils import invoke_with_optional_context
-                    result = invoke_with_optional_context(
-                        func,
-                        session,
-                        visitor,
-                        visitor=visitor,
-                        interview_action=interview_action,
-                    )
+                    result = func(session, visitor)
                     # Store accessed keys in context for branch evaluator to retrieve
                     if not hasattr(session, '_branch_function_accessed_keys'):
                         session._branch_function_accessed_keys = set()  # type: ignore
                     session._branch_function_accessed_keys.update(tracker.get())  # type: ignore
                     return result
                 finally:
-                    # Propagate writes made during execution back to original
-                    for key, value in instrumented.items():
-                        if key not in original_responses or original_responses[key] != value:
-                            original_responses[key] = value
                     session.responses = original_responses
         
         return sync_wrapper

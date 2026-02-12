@@ -121,13 +121,7 @@ class DirectiveBuilder:
 
         if review_handler and visitor:
             try:
-                custom_prefix = await invoke_async_with_optional_context(
-                    review_handler,
-                    session,
-                    visitor,
-                    visitor=visitor,
-                    interview_action=action,
-                )
+                custom_prefix = await review_handler(session, visitor, action)
             except Exception as e:
                 logger.error(
                     f"{action.get_class_name()}: Review handler failed: {e}",
@@ -233,13 +227,7 @@ class DirectiveBuilder:
 
         if completion_handler:
             try:
-                await invoke_async_with_optional_context(
-                    completion_handler,
-                    session,
-                    visitor,
-                    visitor=visitor,
-                    interview_action=self.action,
-                )
+                await completion_handler(session, visitor, self.action)
                 # Completion handler is responsible for sending its own message if needed
             except Exception as e:
                 logger.error(
@@ -291,13 +279,7 @@ class DirectiveBuilder:
 
         if cancelled_handler:
             try:
-                await invoke_async_with_optional_context(
-                    cancelled_handler,
-                    session,
-                    visitor,
-                    visitor=visitor,
-                    interview_action=self.action,
-                )
+                await cancelled_handler(session, visitor, self.action)
                 # Cancellation handler is responsible for sending its own message if needed
             except Exception as e:
                 logger.error(
