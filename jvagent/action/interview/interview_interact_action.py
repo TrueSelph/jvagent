@@ -699,6 +699,7 @@ class InterviewInteractAction(InteractAction, ABC):
                 interview_type=interview_type,
                 question_graph=question_graph,
                 state=InterviewState.ACTIVE,
+                auto_confirm=self.config.auto_confirm,
             )
             session.started_at = datetime.now()
             await session.save()

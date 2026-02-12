@@ -143,6 +143,7 @@ actions:
       use_history: true
       max_statement_length: 100
       history_limit: 3
+      auto_confirm: true
   - action: jvagent/converse_interact_action
     context:
       enabled: true

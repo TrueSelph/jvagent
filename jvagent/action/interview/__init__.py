@@ -13,6 +13,8 @@ from .core.foundation.decorators import (
     input_directive_override,
     input_review_override,
     on_interview_complete,
+    on_interview_cancelled,
+    on_interview_review,
     branch_function,
     input_context_provider,
 )
@@ -35,6 +37,8 @@ __all__ = [
     "input_directive_override",
     "input_review_override",
     "on_interview_complete",
+    "on_interview_cancelled",
+    "on_interview_review",
     "branch_function",
     "input_context_provider",
     "InterviewSession",

@@ -97,6 +97,12 @@ class InterviewSession(Node):
         description="Reference to parent conversation"
     )
     
+    # Auto-confirm flag for skipping REVIEW confirmation prompt
+    auto_confirm: bool = attribute(
+        default=False,
+        description="When True, skip REVIEW confirmation prompt and proceed directly to COMPLETED"
+    )
+    
     def get_answered_questions(self) -> List[str]:
         """Get list of question keys that have been answered.
 
