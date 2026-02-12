@@ -19,6 +19,13 @@ export function DebugInteractions({
 }: DebugInteractionsProps) {
   const [parentInteractions, setParentInteractions] = useState<any[]>([]);
   const [modelAction, setModelAction] = useState<any>(null);
+  const [pagination, setPagination] = useState<{
+    page: number;
+    page_size: number;
+    total: number;
+    total_pages: number;
+  } | null>(null);
+  const [targetAgentId, setTargetAgentId] = useState<string | null>(null);
   const [selectedInteraction, setSelectedInteraction] = useState<any>(null);
   const [selectedParentIndex, setSelectedParentIndex] = useState<number | null>(
     null,
@@ -27,6 +34,7 @@ export function DebugInteractions({
     null,
   );
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +120,37 @@ export function DebugInteractions({
     [],
   );
 
+  const loadMore = useCallback(async () => {
+    if (!targetAgentId || !pagination || pagination.page >= pagination.total_pages) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const nextPage = pagination.page + 1;
+      const logsResponse = await apiClient.getLogs({
+        category: "INTERACTION",
+        agent_id: targetAgentId,
+        page: nextPage,
+        page_size: 50,
+      });
+      setPagination(logsResponse.pagination);
+      const newParents = (logsResponse.logs || [])
+        .map((log: any) => {
+          const interactionData = log.log_data?.interaction_data || {};
+          const metrics = interactionData.observability_metrics || [];
+          const utterance = interactionData.utterance;
+          const conversationHistory =
+            interactionData.conversation_history || [];
+          return { id: log.log_id, utterance, metrics, conversationHistory };
+        })
+        .filter((p: any) => p.metrics && p.metrics.length > 0);
+      setParentInteractions((prev) => [...prev, ...newParents]);
+    } catch (err: any) {
+      setError(err.message || "Failed to load more logs");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [targetAgentId, pagination]);
+
   const initializeDebugSession = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -161,40 +200,39 @@ export function DebugInteractions({
 
       if (!targetAgent) throw new Error("No agents found");
 
-      const actionsData = await apiClient.getActions(targetAgent.id);
-      const actions = actionsData.actions;
+      setTargetAgentId(targetAgent.id);
 
-      const utilsAction = actions.find(
-        (a: any) => a.context?.label === "agent_utils",
-      );
+      const actionsData = await apiClient.getActions(targetAgent.id);
+      const actions = actionsData.actions || [];
       const modelActionItem = actions.find(
         (a: any) => a.context?.label === "openai_lm",
       );
+      setModelAction(modelActionItem || null);
 
-      if (!utilsAction) throw new Error("Could not find 'agent_utils' action");
-      if (!modelActionItem)
-        throw new Error("Could not find 'openai_lm' action");
+      const logsResponse = await apiClient.getLogs({
+        category: "INTERACTION",
+        agent_id: targetAgent.id,
+        page: 1,
+        page_size: 50,
+      });
 
-      setModelAction(modelActionItem);
+      setPagination(logsResponse.pagination);
 
-      const interactData = await apiClient.getInteractions(utilsAction.id);
-
-      const parents = interactData.interactions
-        .filter((i: any) => i.context?.log_level === "INTERACTION")
-        .map((i: any) => {
+      const parents = (logsResponse.logs || [])
+        .map((log: any) => {
+          const interactionData = log.log_data?.interaction_data || {};
           const metrics =
-            i.context?.log_data?.interaction_data?.observability_metrics || [];
-          const utterance = i.context?.log_data?.interaction_data?.utterance;
+            interactionData.observability_metrics || [];
+          const utterance = interactionData.utterance;
           const conversationHistory =
-            i.context?.log_data?.interaction_data?.conversation_history || [];
-          return { id: i.id, utterance, metrics, conversationHistory };
+            interactionData.conversation_history || [];
+          return { id: log.log_id, utterance, metrics, conversationHistory };
         })
         .filter((p: any) => p.metrics && p.metrics.length > 0);
 
       setParentInteractions(parents);
 
       if (parents.length > 0) {
-        // Automatically select the latest interaction (first item as API returns newest first)
         const latestParentIdx = 0;
         const latestMetricIdx = parents[latestParentIdx].metrics.length - 1;
         selectInteraction(latestParentIdx, latestMetricIdx, parents);
@@ -202,18 +240,20 @@ export function DebugInteractions({
     } catch (err: any) {
       console.error(err);
 
-      // Provide more helpful error messages
       if (err.code === "ERR_NETWORK" || err.message === "Network Error") {
         setError(
           "Cannot connect to server. Please check if the jvagent server is running and CORS is enabled.",
         );
       } else {
-        setError(err.message || "Failed to load interactions");
+        setError(err.message || "Failed to load interaction logs");
       }
     } finally {
       setLoading(false);
     }
   }, [selectInteraction]);
+
+  const hasMorePages =
+    pagination && pagination.page < pagination.total_pages;
 
   useEffect(() => {
     initializeDebugSession();
@@ -404,83 +444,125 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
     return str.length > length ? str.substring(0, length) + "..." : str;
   };
 
+  const effectiveDarkMode = isEmbedded ? false : darkMode;
+
+  useEffect(() => {
+    if (!isEmbedded || !onClose) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [isEmbedded, onClose]);
+
+  const headerButtons = (
+    <div className="flex items-center gap-2">
+      {!isEmbedded && (
+        <button
+          onClick={() => setDarkMode(!effectiveDarkMode)}
+          className={`px-3 py-1.5 rounded text-sm ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`}
+        >
+          {effectiveDarkMode ? "☀️ Light" : "🌙 Dark"}
+        </button>
+      )}
+      <button
+        onClick={initializeDebugSession}
+        disabled={loading}
+        className={isEmbedded
+          ? "px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+          : `px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`}
+        title="Refresh"
+      >
+        {isEmbedded ? (
+          <>
+            <svg className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span className="hidden sm:inline">Refresh</span>
+          </>
+        ) : (
+          "🔄 Refresh"
+        )}
+      </button>
+      <button
+        onClick={handleExport}
+        disabled={!selectedInteraction}
+        className={isEmbedded
+          ? "px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          : `px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`}
+        title="Export"
+      >
+        {isEmbedded ? "Export" : "📤 Export"}
+      </button>
+      <label
+        className={isEmbedded
+          ? "px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 cursor-pointer transition-colors"
+          : `px-3 py-1.5 rounded text-sm cursor-pointer ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`}
+      >
+        {isEmbedded ? "Import" : "📥 Import"}
+        <input type="file" accept=".json" className="hidden" onChange={handleImport} />
+      </label>
+      {isEmbedded && onClose && (
+        <button
+          onClick={onClose}
+          className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+          title="Close"
+          aria-label="Close debug interactions"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+
   const content = (
     <div
-      className={`${isEmbedded ? "bg-white rounded-lg shadow-xl w-full h-full max-w-[95vw] max-h-[95vh] flex flex-col" : `min-h-screen p-6 ${darkMode ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-gray-900"}`}`}
+      className={`${isEmbedded ? "bg-white rounded-lg shadow-xl w-full h-full max-w-[95vw] max-h-[95vh] flex flex-col" : `min-h-screen p-6 ${effectiveDarkMode ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-gray-900"}`}`}
       onClick={(e) => isEmbedded && e.stopPropagation()}
     >
-      <div
-        ref={scrollContainerRef}
-        className={`${isEmbedded ? "flex-1 overflow-y-auto p-6" : "max-w-full mx-auto"}`}
-      >
-        {/* Header */}
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Debug Interactions</h1>
+      {/* Header - matches GraphViewer when embedded */}
+      <div className={isEmbedded
+        ? "flex-shrink-0 border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center justify-between"
+        : "flex justify-between items-center mb-6"
+      }>
+        <h2 className={isEmbedded ? "text-xl sm:text-2xl font-semibold text-gray-900" : "text-2xl font-bold"}>
+          {isEmbedded ? "Debug Interactions" : "Debug Interactions"}
+        </h2>
+        {headerButtons}
+      </div>
 
-          <div className="flex items-center space-x-2">
-            {!isEmbedded && (
-              <button
-                onClick={() => setDarkMode(!darkMode)}
-                className={`px-3 py-1.5 rounded text-sm ${darkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${darkMode ? "border-gray-600" : "border-gray-300"}`}
-              >
-                {darkMode ? "☀️ Light" : "🌙 Dark"}
-              </button>
-            )}
-
-            <button
-              onClick={initializeDebugSession}
-              disabled={loading}
-              className={`px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed ${darkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${darkMode ? "border-gray-600" : "border-gray-300"}`}
-              title="Refresh Interactions"
-            >
-              🔄 Refresh
-            </button>
-
-            <button
-              onClick={handleExport}
-              disabled={!selectedInteraction}
-              className={`px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed ${darkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${darkMode ? "border-gray-600" : "border-gray-300"}`}
-            >
-              📤 Export
-            </button>
-
-            <label
-              className={`px-3 py-1.5 rounded text-sm cursor-pointer ${darkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${darkMode ? "border-gray-600" : "border-gray-300"}`}
-            >
-              📥 Import
-              <input
-                type="file"
-                accept=".json"
-                className="hidden"
-                onChange={handleImport}
-              />
-            </label>
-
-            {isEmbedded && onClose && (
-              <button
-                onClick={onClose}
-                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-                title="Close"
-              >
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            )}
+      <div ref={!isEmbedded ? scrollContainerRef : undefined} className={isEmbedded ? "flex-1 overflow-hidden relative" : "max-w-full mx-auto"}>
+        {isEmbedded && loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto" />
+              <p className="mt-4 text-gray-600">Loading interactions...</p>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Error Display */}
+        {isEmbedded && error && !loading && parentInteractions.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white p-4">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md w-full">
+              <h3 className="text-lg font-semibold text-red-800 mb-2">Error Loading Interactions</h3>
+              <p className="text-red-700 mb-4">{error}</p>
+              <button
+                onClick={() => { setError(null); initializeDebugSession(); }}
+                className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div
+          ref={isEmbedded ? scrollContainerRef : undefined}
+          className={isEmbedded && (loading || (error && parentInteractions.length === 0)) ? "hidden" : (isEmbedded ? "h-full overflow-y-auto p-4 sm:p-6" : "")}
+        >
+        {/* Error Display - inline for transient errors or when not embedded */}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-4 flex justify-between items-center">
             <span>{error}</span>
@@ -496,7 +578,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
         {/* Interaction Selector */}
         {!loading && parentInteractions.length > 0 && (
           <div
-            className={`${darkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow p-4 mb-6 border border-gray-100`}
+            className={`${effectiveDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow-sm p-4 mb-6 border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"}`}
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -504,7 +586,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                   Interaction
                 </label>
                 <select
-                  className={`w-full p-2 border rounded text-sm ${darkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                  className={`w-full p-2 border rounded text-sm ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
                   value={selectedParentIndex ?? ""}
                   onChange={(e) =>
                     selectInteraction(
@@ -528,7 +610,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                   Response
                 </label>
                 <select
-                  className={`w-full p-2 border rounded text-sm ${darkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                  className={`w-full p-2 border rounded text-sm ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
                   value={selectedMetricIndex ?? ""}
                   onChange={(e) =>
                     selectInteraction(
@@ -554,13 +636,24 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                 </select>
               </div>
             </div>
+            {hasMorePages && (
+              <div className="mt-4 flex justify-center">
+                <button
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className={`px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${isEmbedded ? "text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200" : `rounded ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-100 hover:bg-gray-200"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`}`}
+                >
+                  {loadingMore ? "Loading..." : "Load more"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Loading State */}
-        {loading && (
+        {/* Loading State - non-embedded only; embedded uses overlay */}
+        {!isEmbedded && loading && (
           <div
-            className={`${darkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow p-12 text-center`}
+            className={`${effectiveDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow-sm p-12 text-center border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"}`}
           >
             <div className="text-lg">Loading interactions...</div>
           </div>
@@ -569,7 +662,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
         {/* Main Content */}
         {!loading && selectedInteraction && (
           <div
-            className={`${darkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow p-6 border border-gray-100`}
+            className={`${effectiveDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow-sm p-6 border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"}`}
           >
             <div className="space-y-6">
               {/* Original Response */}
@@ -579,7 +672,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     Original Response
                   </label>
                   <div
-                    className={`p-4 rounded text-sm border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-red-50 border-red-200"}`}
+                    className={`p-4 rounded text-sm border ${effectiveDarkMode ? "bg-gray-900 border-gray-700" : "bg-red-50 border-red-200"}`}
                   >
                     <pre className="whitespace-pre-wrap font-mono text-xs">
                       {selectedInteraction.data.response}
@@ -604,7 +697,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                       },
                     });
                   }}
-                  className={`w-full p-3 border rounded text-sm font-mono ${darkMode ? "bg-blue-900 border-blue-700 text-gray-100" : "bg-blue-50 border-blue-200 text-gray-900"}`}
+                  className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-blue-900 border-blue-700 text-gray-100" : "bg-blue-50 border-blue-200 text-gray-900"}`}
                   style={{ overflow: "hidden" }}
                 />
               </div>
@@ -625,7 +718,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                       },
                     });
                   }}
-                  className={`w-full p-3 border rounded text-sm font-mono ${darkMode ? "bg-yellow-900 border-yellow-700 text-gray-100" : "bg-yellow-50 border-yellow-200 text-gray-900"}`}
+                  className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-yellow-900 border-yellow-700 text-gray-100" : "bg-yellow-50 border-yellow-200 text-gray-900"}`}
                   style={{ overflow: "hidden" }}
                 />
               </div>
@@ -653,7 +746,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                         console.error("Invalid JSON for history:", err);
                       }
                     }}
-                    className={`w-full p-3 border rounded text-sm font-mono ${darkMode ? "bg-gray-900 border-gray-700 text-gray-100" : "bg-gray-100 border-gray-200 text-gray-900"}`}
+                    className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-gray-900 border-gray-700 text-gray-100" : "bg-gray-100 border-gray-200 text-gray-900"}`}
                     style={{ overflow: "hidden" }}
                   />
                 </div>
@@ -673,7 +766,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                       },
                     })
                   }
-                  className={`w-full p-2 border rounded text-sm font-mono ${darkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                  className={`w-full p-2 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
                 />
               </div>
               {/* Test Button */}
@@ -681,7 +774,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                 <button
                   onClick={handleTest}
                   disabled={testing || !modelAction}
-                  className="px-6 py-2 bg-blue-600 text-white rounded font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {testing ? "Testing..." : "🧪 Run Test"}
                 </button>
@@ -693,17 +786,17 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     Test Result
                   </label>
                   <div
-                    className={`p-4 rounded text-sm border ${testResult.success ? (darkMode ? "bg-green-900 border-green-700" : "bg-green-50 border-green-200") : darkMode ? "bg-red-900 border-red-700" : "bg-red-50 border-red-200"}`}
+                    className={`p-4 rounded text-sm border ${testResult.success ? (effectiveDarkMode ? "bg-green-900 border-green-700" : "bg-green-50 border-green-200") : effectiveDarkMode ? "bg-red-900 border-red-700" : "bg-red-50 border-red-200"}`}
                   >
                     {testResult.success ? (
                       <pre
-                        className={`whitespace-pre-wrap font-mono text-xs ${darkMode ? "text-green-100" : "text-green-700"}`}
+                        className={`whitespace-pre-wrap font-mono text-xs ${effectiveDarkMode ? "text-green-100" : "text-green-700"}`}
                       >
                         {testResult.response}
                       </pre>
                     ) : (
                       <div
-                        className={darkMode ? "text-red-100" : "text-red-700"}
+                        className={effectiveDarkMode ? "text-red-100" : "text-red-700"}
                       >
                         <div className="font-medium mb-2">Error</div>
                         <div>{testResult.error}</div>
@@ -719,7 +812,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     Original Response
                   </label>
                   <div
-                    className={`p-4 rounded text-sm border ${darkMode ? "bg-gray-900 border-gray-700" : "bg-red-50 border-red-200"}`}
+                    className={`p-4 rounded text-sm border ${effectiveDarkMode ? "bg-gray-900 border-gray-700" : "bg-red-50 border-red-200"}`}
                   >
                     <pre className="whitespace-pre-wrap font-mono text-xs">
                       {selectedInteraction.data.response}
@@ -734,9 +827,9 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
         {/* Improve Prompt Section */}
         {!loading && selectedInteraction && (
           <div
-            className={`${darkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow p-6 border border-gray-100 mt-6`}
+            className={`${effectiveDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow-sm p-6 border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"} mt-6`}
           >
-            <h2 className="text-xl font-bold mb-4">Improve Prompt</h2>
+            <h2 className="text-xl font-semibold mb-4">Improve Prompt</h2>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-2">
@@ -747,7 +840,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                   value={improveInstruction}
                   onChange={(e) => setImproveInstruction(e.target.value)}
                   placeholder="Describe how you want to improve the prompts..."
-                  className={`w-full p-3 border rounded text-sm ${darkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                  className={`w-full p-3 border rounded text-sm ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
                   style={{ overflow: "hidden" }}
                 />
               </div>
@@ -759,14 +852,14 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                   type="text"
                   value={improveModel}
                   onChange={(e) => setImproveModel(e.target.value)}
-                  className={`w-full p-2 border rounded text-sm font-mono ${darkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                  className={`w-full p-2 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
                 />
               </div>
               <div className="flex justify-end">
                 <button
                   onClick={handleImprovePrompt}
                   disabled={improving || !modelAction || !improveInstruction}
-                  className="px-6 py-2 bg-purple-600 text-white rounded font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-6 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {improving ? "Improving..." : "✨ Improve Prompt"}
                 </button>
@@ -780,7 +873,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     ref={improveResultRef}
                     value={improveResult}
                     onChange={(e) => setImproveResult(e.target.value)}
-                    className={`w-full p-3 border rounded text-sm font-mono ${darkMode ? "bg-purple-900 border-purple-700 text-gray-100" : "bg-purple-50 border-purple-200 text-gray-900"}`}
+                    className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-purple-900 border-purple-700 text-gray-100" : "bg-purple-50 border-purple-200 text-gray-900"}`}
                     style={{ overflow: "hidden" }}
                   />
                 </div>
@@ -794,12 +887,13 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
           !selectedInteraction &&
           parentInteractions.length === 0 && (
             <div
-              className={`${darkMode ? "bg-gray-800 text-gray-400" : "bg-white text-gray-500"} rounded-lg shadow p-12 text-center`}
+              className={`${effectiveDarkMode ? "bg-gray-800 text-gray-400" : "bg-white text-gray-500"} rounded-lg shadow-sm p-12 text-center border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"}`}
             >
-              No interactions available. Please check your connection and try
-              refreshing the page.
+              No interaction logs available. Ensure database logging is enabled
+              with INTERACTION level, then try refreshing.
             </div>
           )}
+        </div>
       </div>
     </div>
   );

@@ -60,6 +60,10 @@ class PersonaAction(Action):
     persona_capabilities: List[str] = attribute(
         default_factory=list, description="List of agent capabilities"
     )
+    phonetic_substitutions: Dict[str, str] = attribute(
+        default_factory=dict,
+        description="Map of original -> phonetic replacement for voice channel (e.g. essequibo: esseequibbo)"
+    )
 
     # Model Configuration
     model_action_type: str = attribute(
@@ -428,7 +432,11 @@ class PersonaAction(Action):
             parameters_section = ""
 
         # Build channel formatting section
-        channel_directive = get_channel_directive(interaction.channel or "default")
+        channel = interaction.channel or "default"
+        channel_directive = get_channel_directive(
+            channel,
+            phonetic_substitutions=self.phonetic_substitutions if channel == "voice" else None
+        )
         channel_formatting_section = (
             f"### CHANNEL FORMATTING\n{channel_directive}" if channel_directive else ""
         )

@@ -6,7 +6,7 @@ This module provides the prompt templates used by PersonaAction:
 - Parameters sub-prompt
 """
 
-from typing import Optional
+from typing import Dict, Optional
 
 # ============================================================================
 # System Prompt Template (Master)
@@ -210,11 +210,12 @@ def format_conditional_section(content: str, condition: bool = True) -> str:
     return content.strip()
 
 
-def get_channel_directive(channel: str) -> str:
+def get_channel_directive(channel: str, phonetic_substitutions: Optional[Dict[str, str]] = None) -> str:
     """Get the formatting directive for a specific channel.
 
     Args:
         channel: Communication channel name
+        phonetic_substitutions: Optional dict of original -> phonetic replacement for voice channel
 
     Returns:
         Channel-specific formatting directive, or empty string if not defined
@@ -303,4 +304,29 @@ def get_channel_directive(channel: str) -> str:
             "- Style: Use markdown formatting appropriately to enhance readability"
         ),
     }
+    
+    # Handle voice channel with dynamic phonetic substitutions
+    if channel == "voice":
+        voice_directive = (
+            "Format for Voice (Text-to-Speech):\n"
+            "- Keep replies concise and natural for speaking\n"
+            "- No hyperlinks, URLs, or markdown formatting\n"
+            "- No symbols that don't vocalize (avoid *, #, bullets, etc.)\n"
+            "- Use plain text only, suitable for TTS engines\n"
+            "- Speak naturally as if in conversation"
+        )
+        
+        # Add phonetic substitutions if provided
+        if phonetic_substitutions:
+            substitutions_list = "\n".join(
+                f"  - '{original}' -> '{phonetic}'"
+                for original, phonetic in phonetic_substitutions.items()
+            )
+            voice_directive += (
+                f"\n\nPhonetic substitutions (apply these when the terms appear):\n"
+                f"{substitutions_list}"
+            )
+        
+        return voice_directive
+    
     return CHANNEL_FORMAT_DIRECTIVES.get(channel, "")

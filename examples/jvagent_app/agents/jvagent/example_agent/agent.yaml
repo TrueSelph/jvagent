@@ -119,6 +119,13 @@ actions:
         - "Process user interactions with behavioral parameters"
         - "Provide streaming and non-streaming responses"
         - "can sign the user up for jvagent training"
+      # Voice Channel Configuration (Optional)
+      # Phonetic substitutions for text-to-speech when channel="voice"
+      # Maps original terms to phonetic replacements for proper pronunciation
+      # phonetic_substitutions:
+      #   essequibo: "esseequibbo"
+      #   API: "A P I"
+      #   jvagent: "jay-vee agent"
       # Model Configuration (uses OpenAI model action by entity type)
       model_action_type: "OpenAILanguageModelAction" # Entity type to find dynamically
       model: "gpt-4o-mini"

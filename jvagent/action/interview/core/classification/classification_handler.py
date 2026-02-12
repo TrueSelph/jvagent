@@ -130,7 +130,7 @@ class ClassificationHandler:
         # Default to normalized for structured fields
         return "normalized"
 
-    async def extract_data_input_values(
+    def extract_data_input_values(
         self,
         session: InterviewSession,
         visitor: "InteractWalker"
@@ -162,14 +162,7 @@ class ClassificationHandler:
         if not hasattr(visitor, 'data') or not isinstance(visitor.data, dict):
             return extracted_values, excluded_fields
 
-        # Use path-aware method to get only reachable unanswered questions
-        from ..graph.interview_walker import InterviewWalker
-        temp_walker = InterviewWalker(
-            interview_session=session,
-            interact_visitor=visitor,
-            interview_action=self.action,
-        )
-        unanswered = await session.get_unanswered_questions_on_path(temp_walker)
+        unanswered = session.get_unanswered_questions()
         current_question = unanswered[0] if unanswered else None
 
         # Scan question graph for data_input_field entries
@@ -266,15 +259,13 @@ class ClassificationHandler:
     async def build_classification_context(
         self,
         session: InterviewSession,
-        excluded_fields: Optional[Set[str]] = None,
-        visitor: Optional["InteractWalker"] = None
+        excluded_fields: Optional[Set[str]] = None
     ) -> Dict[str, str]:
         """Build context for classification.
 
         Args:
             session: Interview session
             excluded_fields: Optional set of field names to exclude from entities_to_extract
-            visitor: Optional InteractWalker for path-aware question filtering
 
         Returns:
             Dictionary with current_state, answered_fields (with values), entities_to_extract
@@ -378,17 +369,7 @@ class ClassificationHandler:
         entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
 
         # Get current question (first unanswered) for context
-        # Use path-aware method if visitor available to only consider reachable questions
-        if visitor:
-            from ..graph.interview_walker import InterviewWalker
-            temp_walker = InterviewWalker(
-                interview_session=session,
-                interact_visitor=visitor,
-                interview_action=self.action,
-            )
-            unanswered = await session.get_unanswered_questions_on_path(temp_walker)
-        else:
-            unanswered = session.get_unanswered_questions()
+        unanswered = session.get_unanswered_questions()
         current_question = unanswered[0] if unanswered else "None (all questions answered)"
 
         return {
@@ -424,7 +405,7 @@ class ClassificationHandler:
             return ClassificationResult(intent=Intent.NONE)
 
         # Extract data input values from visitor.data before LLM classification
-        data_input_values, excluded_fields = await self.extract_data_input_values(session, visitor)
+        data_input_values, excluded_fields = self.extract_data_input_values(session, visitor)
         
         # Build user input - prioritize interpretation when available
         interpretation_available = interaction.interpretation and interaction.interpretation.strip()
@@ -448,7 +429,7 @@ class ClassificationHandler:
         # Unified classification and extraction using single prompt
         try:
             # Build context for unified prompt (exclude fields with data_input_field)
-            context = await self.build_classification_context(session, excluded_fields=excluded_fields, visitor=visitor)
+            context = await self.build_classification_context(session, excluded_fields=excluded_fields)
 
             # Get conversation history for model API (passed as separate messages, not embedded in prompt)
             conversation_history_list = None

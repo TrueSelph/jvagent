@@ -91,7 +91,6 @@ class QuestionEdge(Edge):
         session: "InterviewSession",
         implicit_question: str,
         visitor: Optional[Any] = None,
-        interview_action: Optional[Any] = None,
     ) -> Optional[Node]:
         """Evaluate this edge: return the target node if the branch holds or edge is simple.
 
@@ -105,7 +104,6 @@ class QuestionEdge(Edge):
             session: Interview session for condition evaluation
             implicit_question: Question name that owns this branch (implicit from context)
             visitor: Optional InteractWalker for branch function access
-            interview_action: Optional InterviewInteractAction for branch function context
 
         Returns:
             Target Node if this edge should be taken, None otherwise
@@ -130,7 +128,6 @@ class QuestionEdge(Edge):
             session,
             implicit_question=implicit_question,
             visitor=visitor,
-            interview_action=interview_action,
         ):
             return None
         self.record_branch_path(session, implicit_question, target)
