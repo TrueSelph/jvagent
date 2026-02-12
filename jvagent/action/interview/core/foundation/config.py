@@ -37,10 +37,19 @@ class ClassificationConfig:
     # Decline value for required fields
     decline_value: str = "n/a"
     
+    # Structured reasoning controls (new prompt architecture)
+    require_structured_reasoning: bool = True  # Require structured reasoning object in LLM response
+    include_few_shot_examples: bool = True  # Include few-shot examples in classification prompt
+    max_examples: int = 5  # Maximum number of examples to include (when include_few_shot_examples=True)
+    enable_reference_resolution: bool = True  # Enable reference resolution section in prompt
+    enable_composition: bool = True  # Enable multi-turn value composition section in prompt
+    
     def __post_init__(self):
         """Validate classification configuration."""
         if self.context_list_compact_threshold < 1:
             raise ValueError(f"context_list_compact_threshold must be positive, got {self.context_list_compact_threshold}")
+        if self.max_examples < 0:
+            raise ValueError(f"max_examples must be non-negative, got {self.max_examples}")
 
 
 @dataclass

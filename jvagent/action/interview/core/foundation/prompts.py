@@ -110,28 +110,290 @@ def get_state_event_message(state: str, class_name: str) -> str:
 
 
 # =============================================================================
-# Classification Prompts - Core Rules (Single Source of Truth)
+# Classification Prompts - Composed Sections for Structured Reasoning
 # =============================================================================
 
-CLASSIFICATION_RULES_CORE = """Apply checks in order, then extract, then output a single JSON object only.
+CLASSIFICATION_REASONING_INSTRUCTIONS = """REASONING PROCESS (required structured output):
+You must follow this step-by-step reasoning process before classifying and extracting. Output your reasoning in the "reasoning" object.
 
-STATE: review → CONFIRMATION = pure affirmation, no new values. active → answering current question = SUBMISSION (including "yes"/"no"); CONFIRMATION invalid.
+1. USER SAID: Identify exactly what the user said and the current interview state.
+2. REFERENCES: Check if the user's response contains references (e.g., "the second option", "Wednesday afternoon", "that one") that need resolution against conversation history or context data.
+3. COMPOSITION: Check if the user's current response is a partial value that should be composed with a previous fragment from conversation history (e.g., "Smith" following "John" for full_name).
+4. INTENT: Determine the user's intent based on state and response content.
+5. EXTRACTION: Extract values using the appropriate mode (verbatim, normalized, or select) based on field type.
+6. VERIFICATION: Verify the extracted value genuinely satisfies the field's expected content description."""
 
-INTENTS (one only):
-1. CANCELLATION - abandons process ("cancel", "abort", "stop").
-2. CONFIRMATION - only in review; "yes"/"correct"/"looks good" with no new values.
-3. SUBMISSION - answering an unanswered question only. Field must be in Unanswered fields. If the field is in Answered fields or extraction would assign a new value to a field in Answered fields → UPDATE instead. Invalid/wrong-format → SUBMISSION (validation handles). In review, if Unanswered fields exist and the response answers one (including "yes"/"no"), this is SUBMISSION, not UPDATE.
-4. UPDATE - changing an already-answered field. REQUIRES explicit change/update language: phrases like "change … to …", "update …", "actually I prefer …", "make it …", "switch … to …", "no, change …", "I meant …", "let me correct …", or clearly referencing an answered field with a replacement value. An isolated word or bare "yes"/"no" is NEVER an UPDATE — classify as SUBMISSION or DECLINE instead. Field in Answered fields (not in Unanswered); user provides a replacement value alongside update language.
-5. DECLINE - declines to answer (optional or required). Use when: explicit refusal ("I won't answer", "skip", "I'd rather not"); "No" to optional content (photos, attachments); or router "declines to..." / "refuses to...". Not when user answers "no" to a yes/no question (→ SUBMISSION). Field from Unanswered / Recent conversation / "unknown_field".
-6. NONE - last resort only: no clear intent and no viable extractions or deductions. Not for yes/no "no" (→ SUBMISSION) or explicit refusal (→ DECLINE).
+CLASSIFICATION_INTENT_RULES = """INTENT CLASSIFICATION (choose exactly one):
 
-"NO": optional content (photos, attachments) → DECLINE. yes/no question (Unanswered fields or Recent conversation) → SUBMISSION value "no". review with Unanswered fields → SUBMISSION if answering a pending question. If current question (Recent conversation / Unanswered fields) is answerable by yes or no, negatory ("no", "nope", "I don't", etc.) = SUBMISSION value "no", not UPDATE, DECLINE, or NONE.
+1. CANCELLATION
+   - User abandons the interview process
+   - Patterns: "cancel", "abort", "stop", "never mind", "forget it"
+   - Valid in any state
 
-EXTRACTION: All field-related output goes only in "extracted" as a list of one-key objects. SUBMISSION/UPDATE: e.g. [{{"incident_location": "Water Street"}}]. DECLINE: or No extractions: extracted: [].
+2. CONFIRMATION (REVIEW STATE ONLY)
+   - Pure affirmation with NO new field values
+   - User confirms reviewed responses are correct
+   - Expanded patterns: "yes", "correct", "looks good", "that's right", "yep", "yeah", "all correct", 
+     "everything is correct", "looks fine", "looks fine to me", "that's fine", "confirmed", 
+     "all good", "perfect", "exactly", "that's all correct"
+   - CRITICAL: In active state, "yes"/"no" are SUBMISSION (answers to question), NOT CONFIRMATION
+   - CRITICAL: If user provides ANY new value, it's UPDATE or SUBMISSION, not CONFIRMATION
 
-VALIDATION: Before accepting a SUBMISSION, verify the extracted value genuinely satisfies the field's expected content description. The description after each field name defines what a valid answer looks like. If the user's response is a meta-request (e.g., "I want to make a report"), a greeting, an expression of intent, or otherwise does not contain substantive content matching the field description, do NOT extract it. Classify as NONE instead. A response must provide actual informational content relevant to the field — not just mention the topic.
+3. SUBMISSION
+   - User answers an UNANSWERED question
+   - Field MUST be in Unanswered fields list
+   - Includes "yes"/"no" when answering a yes/no question in active state
+   - If field is in Answered fields → UPDATE instead
+   - Invalid format is still SUBMISSION (validation layer handles it)
 
-OUTPUT: JSON only. reasoning optional. Output only intent, confidence, and extracted. Do not include "field" or "value" keys."""
+4. UPDATE
+   - User changes an ALREADY-ANSWERED field
+   - REQUIRES explicit change language: "change ... to...", "update...", "actually I prefer...", 
+     "make it...", "switch to...", "no, change...", "I meant...", "let me correct...", 
+     "replace with...", "should be..."
+   - Field must be in Answered fields (not Unanswered)
+   - Bare values or "yes"/"no" are NEVER UPDATE → classify as SUBMISSION or DECLINE
+
+5. DECLINE
+   - User explicitly refuses to answer (optional or required field)
+   - Patterns: "I won't answer", "skip", "I'd rather not", "no thanks", "I prefer not to"
+   - "No" to optional content (photos, attachments) → DECLINE
+   - NOT for "no" as answer to yes/no question → SUBMISSION
+
+6. NONE
+   - Last resort only when no clear intent and no viable extractions
+   - Meta-requests (e.g., "I want to make a report"), greetings, or off-topic content
+   - NOT for "no" to yes/no question → SUBMISSION
+   - NOT for explicit refusal → DECLINE"""
+
+CLASSIFICATION_EXTRACTION_RULES = """EXTRACTION MODES (field-type aware):
+
+The Unanswered fields list includes extraction mode hints in brackets. Use these modes:
+
+1. [verbatim] MODE
+   - For fields with "description", "narrative", "details", "incident", "explain" in their description
+   - Preserve the user's FULL response exactly as stated
+   - Do NOT summarize, truncate, normalize, or paraphrase
+   - Capture multi-sentence responses completely
+   - Example: incident_description expects full narrative → extract entire user statement verbatim
+
+2. [normalized] MODE
+   - For structured fields: email, phone, name, address, date
+   - Normalize formatting (trim whitespace, fix casing) but preserve semantic content
+   - Example: "  john@EXAMPLE.com  " → "john@example.com"
+
+3. [select] MODE
+   - For fields with "Options:" in their Unanswered fields entry
+   - Match user's response to closest valid option from the list
+   - Handle partial matches and references (see Reference Resolution)"""
+
+CLASSIFICATION_REFERENCE_RESOLUTION = """REFERENCE RESOLUTION:
+
+When the user's response contains a reference rather than a literal value, resolve it BEFORE extracting:
+
+1. ORDINAL REFERENCES
+   - "the first one", "the second option", "option 3", "number 2"
+   - Resolve against the most recent list of options in conversation history or Options: in Unanswered fields
+   - Example: If Options: "Monday 9AM, Monday 2PM, Wednesday 9AM" and user says "the second one" → extract "Monday 2PM"
+
+2. TEMPORAL REFERENCES
+   - "Wednesday afternoon", "the morning one", "the 2pm slot"
+   - Resolve against available times/slots in context or Options
+   - Example: If Options include time slots and user says "Wednesday afternoon" → match to specific Wednesday PM slot
+
+3. ANAPHORIC REFERENCES
+   - "that one", "same as before", "the one I mentioned", "it"
+   - Resolve from conversation history
+   - Look back at what the user or assistant most recently mentioned
+
+4. COMPOSITION WITH HISTORY
+   - If user's current response is a fragment, check if prior turn contains another fragment for same field
+   - Example: [Previous turn] Assistant asks "What's your full name?", User says "John"
+            [Current turn] Assistant re-asks, User says "Smith" → compose to "John Smith"
+   - Only compose when field is still unanswered (in Unanswered fields)"""
+
+CLASSIFICATION_COMPOSITION_RULES = """MULTI-TURN VALUE COMPOSITION:
+
+When a user provides partial values across multiple turns:
+
+1. CHECK CONVERSATION HISTORY
+   - Look at the numbered conversation history turns
+   - Identify if the user previously provided a partial value for the current unanswered field
+
+2. COMPOSITION CONDITIONS
+   - Field must be in Unanswered fields (still not satisfied)
+   - Previous turn shows assistant re-asking the same question
+   - Previous turn shows user provided partial response
+   - Current response is also partial but complementary
+
+3. COMPOSE THE VALUE
+   - Combine the fragments into a complete value
+   - Example: "John" (turn 2) + "Smith" (turn 4) → "John Smith"
+   - Example: "123 Main" (turn 2) + "Street, Boston" (turn 4) → "123 Main Street, Boston"
+
+4. DO NOT COMPOSE IF
+   - Field is already answered (in Answered fields)
+   - Previous value was for a different field
+   - Current response is complete by itself"""
+
+CLASSIFICATION_VERIFICATION = """VERIFICATION CHECKLIST (Chain of Verification):
+
+Before finalizing your classification and extraction, verify:
+
+1. VALUE MATCH: Does the extracted value genuinely match the field's expected content description?
+   - Not just mentions the topic, but provides actual informational content
+   - Example: "I want to report an incident" does NOT satisfy "incident_description" (it's meta-request)
+   - Example: "There was a pothole on Main Street" DOES satisfy "incident_description"
+
+2. INTENT CONSISTENCY: Is the intent consistent with the current state?
+   - CONFIRMATION only valid in review state
+   - CONFIRMATION requires NO new field values
+   - SUBMISSION only for unanswered fields
+   - UPDATE only for answered fields with explicit change language
+
+3. REFERENCES RESOLVED: Did I resolve all references?
+   - Ordinal, temporal, anaphoric references converted to literal values
+
+4. CORRECT FIELD: Am I extracting for the right field?
+   - SUBMISSION: field in Unanswered fields
+   - UPDATE: field in Answered fields
+
+5. NO DISAMBIGUATION: For "no" responses:
+   - Is it answering a yes/no question? → SUBMISSION with value "no"
+   - Is it declining optional content? → DECLINE
+   - Is it refusing in review? → depends on context"""
+
+CLASSIFICATION_OUTPUT_FORMAT = """OUTPUT FORMAT:
+
+Return a single JSON object with structured reasoning:
+
+{
+  "reasoning": {
+    "user_said": "Brief summary of user's response and current state",
+    "references_resolved": "Any references resolved (or 'none')",
+    "composition_applied": "Any multi-turn composition applied (or 'none')",
+    "intent_rationale": "Why this intent was chosen",
+    "extraction_mode": "verbatim/normalized/select (or 'none' if no extraction)",
+    "verification": "Verification check results"
+  },
+  "intent": "CANCELLATION|CONFIRMATION|UPDATE|DECLINE|SUBMISSION|NONE",
+  "confidence": 0.0-1.0,
+  "extracted": [{"field_name": "value"}] or []
+}
+
+CRITICAL:
+- ALL field data goes in "extracted" as list of one-key objects
+- Do NOT include "field" or "value" keys at top level
+- DECLINE with identified field: [{"field_name": "N/A"}]
+- No extractions: extracted: []
+- reasoning object is REQUIRED (not optional)"""
+
+CLASSIFICATION_EXAMPLES = """EXAMPLES:
+
+Example 1 - Long-form verbatim extraction:
+User: "There's a huge pothole on Water Street near the intersection with Oak. It's been there for weeks and caused two flat tires that I know of. The hole is about 2 feet wide and 8 inches deep."
+Unanswered fields: incident_description [verbatim] — Expected: "Detailed description..."
+{
+  "reasoning": {
+    "user_said": "User provided detailed incident description in active state",
+    "references_resolved": "none",
+    "composition_applied": "none",
+    "intent_rationale": "Answering unanswered question (incident_description)",
+    "extraction_mode": "verbatim",
+    "verification": "Full narrative provided, matches field description exactly"
+  },
+  "intent": "SUBMISSION",
+  "confidence": 0.95,
+  "extracted": [{"incident_description": "There's a huge pothole on Water Street near the intersection with Oak. It's been there for weeks and caused two flat tires that I know of. The hole is about 2 feet wide and 8 inches deep."}]
+}
+
+Example 2 - Multi-turn composition:
+Conversation: [1] assistant: What's your full name? [2] user: John [3] assistant: Please provide both first and last name. [4] user: Smith
+Unanswered fields: user_name [normalized] — Expected: "Full name"
+{
+  "reasoning": {
+    "user_said": "User provided last name only ('Smith') in active state",
+    "references_resolved": "none",
+    "composition_applied": "Composed 'John' (turn 2) with 'Smith' (turn 4) for user_name",
+    "intent_rationale": "Completing partial answer for unanswered field user_name",
+    "extraction_mode": "normalized",
+    "verification": "Combined fragments form valid full name"
+  },
+  "intent": "SUBMISSION",
+  "confidence": 0.9,
+  "extracted": [{"user_name": "John Smith"}]
+}
+
+Example 3 - Reference resolution:
+Conversation: [1] assistant: Available times: Monday 9AM-11AM, Monday 2PM-4PM, Wednesday 9AM-11AM [2] user: the second option
+Unanswered fields: available_times [select] — Options: Monday 9AM-11AM, Monday 2PM-4PM, Wednesday 9AM-11AM
+{
+  "reasoning": {
+    "user_said": "User selected using ordinal reference ('the second option')",
+    "references_resolved": "Resolved 'the second option' to 'Monday 2PM-4PM' from Options list",
+    "composition_applied": "none",
+    "intent_rationale": "Answering unanswered question with resolved reference",
+    "extraction_mode": "select",
+    "verification": "Resolved reference matches valid option"
+  },
+  "intent": "SUBMISSION",
+  "confidence": 0.95,
+  "extracted": [{"available_times": "Monday 2PM-4PM"}]
+}
+
+Example 4 - CONFIRMATION in review:
+State: review, User: "yep that all looks good"
+Answered fields: user_name, email, phone
+{
+  "reasoning": {
+    "user_said": "User affirmed review with 'yep that all looks good'",
+    "references_resolved": "none",
+    "composition_applied": "none",
+    "intent_rationale": "Pure affirmation in review state with no new values provided",
+    "extraction_mode": "none",
+    "verification": "No new field values, state is review, affirmation pattern matched"
+  },
+  "intent": "CONFIRMATION",
+  "confidence": 0.95,
+  "extracted": []
+}
+
+Example 5 - 'no' disambiguation:
+Conversation: [1] assistant: Are you submitting on behalf of someone else? [2] user: no
+Unanswered fields: reporting_on_behalf [normalized] — Expected: "yes or no"
+{
+  "reasoning": {
+    "user_said": "User answered 'no' to yes/no question in active state",
+    "references_resolved": "none",
+    "composition_applied": "none",
+    "intent_rationale": "Answering yes/no question with 'no' value, not declining",
+    "extraction_mode": "normalized",
+    "verification": "Direct answer to yes/no question, satisfies field description"
+  },
+  "intent": "SUBMISSION",
+  "confidence": 0.95,
+  "extracted": [{"reporting_on_behalf": "no"}]
+}"""
+
+# Composed classification rules (built dynamically via build_classification_rules())
+# Legacy constant kept for backward compatibility - use build_classification_rules() instead
+CLASSIFICATION_RULES_CORE_LEGACY = """CLASSIFICATION AND EXTRACTION INSTRUCTIONS
+
+{reasoning_instructions}
+
+{intent_rules}
+
+{extraction_rules}
+
+{reference_resolution}
+
+{composition_rules}
+
+{verification}
+
+{output_format}
+
+{examples}"""
 
 # =============================================================================
 # Classification Prompts - Template Variants
@@ -147,14 +409,76 @@ CONTEXT:
 - Current state: {current_state}
 - Answered fields (with current values): {answered_fields}
 - Unanswered fields: {entities_to_extract}
-- Recent conversation (use to identify current question and resolve "yes"/"no" and references):
-{conversation_history}
+- Use the conversation history in the preceding messages to identify the current question, resolve "yes"/"no" and references, and for multi-turn composition.
 
 {classification_rules_core}
 
-Return a single JSON object only. No markdown or explanation. Required keys: intent, confidence, extracted (array). Do not include "field" or "value". SUBMISSION/UPDATE: put actual values in extracted as list of one-key objects, e.g. [{{"incident_location": "Water Street"}}]. DECLINE: put [{{"field_name": "N/A"}}]. When no extractions: extracted: []. Optional key: reasoning (one line).
+Return a single JSON object only. No markdown or explanation. Required keys: intent, confidence, extracted (array), reasoning (object). Do not include "field" or "value" at top level. SUBMISSION/UPDATE: put actual values in extracted as list of one-key objects, e.g. [{{"incident_location": "Water Street"}}]. DECLINE: put [{{"field_name": "N/A"}}]. When no extractions: extracted: []. Reasoning object is required.
 {{
+  "reasoning": {{
+    "user_said": "...",
+    "references_resolved": "...",
+    "composition_applied": "...",
+    "intent_rationale": "...",
+    "extraction_mode": "...",
+    "verification": "..."
+  }},
   "intent": "CANCELLATION" | "CONFIRMATION" | "UPDATE" | "DECLINE" | "SUBMISSION" | "NONE",
   "confidence": 0.0-1.0,
   "extracted": [{{"<field_name>": "<value>"}}] or []
 }}"""
+
+
+def build_classification_rules(
+    include_reasoning: bool = True,
+    include_examples: bool = True,
+    include_reference_resolution: bool = True,
+    include_composition: bool = True,
+    max_examples: int = 5
+) -> str:
+    """Build classification rules prompt from composed sections.
+    
+    This builder allows conditional inclusion of sections to manage token budget
+    and customize behavior based on configuration.
+    
+    Args:
+        include_reasoning: Include reasoning instructions section
+        include_examples: Include few-shot examples section
+        include_reference_resolution: Include reference resolution section
+        include_composition: Include multi-turn composition section
+        max_examples: Maximum number of examples to include (if include_examples=True)
+        
+    Returns:
+        Composed classification rules string ready for use in INTERVIEW_PROMPT
+    """
+    sections = []
+    
+    # Always include intent and extraction rules (core functionality)
+    sections.append(CLASSIFICATION_INTENT_RULES)
+    sections.append(CLASSIFICATION_EXTRACTION_RULES)
+    
+    # Optional: Reasoning instructions
+    if include_reasoning:
+        sections.insert(0, CLASSIFICATION_REASONING_INSTRUCTIONS)
+    
+    # Optional: Reference resolution
+    if include_reference_resolution:
+        sections.append(CLASSIFICATION_REFERENCE_RESOLUTION)
+    
+    # Optional: Multi-turn composition
+    if include_composition:
+        sections.append(CLASSIFICATION_COMPOSITION_RULES)
+    
+    # Always include verification (best practice)
+    sections.append(CLASSIFICATION_VERIFICATION)
+    
+    # Always include output format
+    sections.append(CLASSIFICATION_OUTPUT_FORMAT)
+    
+    # Optional: Examples (token-expensive but improves accuracy)
+    if include_examples:
+        # Could implement max_examples limiting here by parsing CLASSIFICATION_EXAMPLES
+        # For now, include all examples when enabled
+        sections.append(CLASSIFICATION_EXAMPLES)
+    
+    return "\n\n".join(sections)
