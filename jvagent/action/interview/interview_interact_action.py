@@ -543,7 +543,8 @@ class InterviewInteractAction(InteractAction, ABC):
     async def _resolve_target_node(
         self,
         session: InterviewSession,
-        intent: Intent
+        intent: Intent,
+        visitor: Optional["InteractWalker"] = None
     ) -> None:
         """Determine and set session.target_node based on intent, state, and interview progress.
 
@@ -561,6 +562,7 @@ class InterviewInteractAction(InteractAction, ABC):
         Args:
             session: Interview session
             intent: Detected user intent
+            visitor: Optional InteractWalker for path-aware question filtering
         """
         current_state = session.state
 
@@ -588,7 +590,16 @@ class InterviewInteractAction(InteractAction, ABC):
                 # If there are unanswered questions BEFORE the earliest queued field,
                 # start from the first question to collect them before reaching the queue entry.
                 # This handles premature data_input_field submissions.
-                unanswered = session.get_unanswered_questions()
+                # Use path-aware method if visitor available to only consider reachable questions
+                if visitor:
+                    temp_walker = InterviewWalker(
+                        interview_session=session,
+                        interact_visitor=visitor,
+                        interview_action=self,
+                    )
+                    unanswered = await session.get_unanswered_questions_on_path(temp_walker)
+                else:
+                    unanswered = session.get_unanswered_questions()
                 if unanswered:
                     graph_order = {
                         q["name"]: i for i, q in enumerate(session.question_graph) if q.get("name")
@@ -616,7 +627,16 @@ class InterviewInteractAction(InteractAction, ABC):
         # Handle ACTIVE state intents
         elif current_state == InterviewState.ACTIVE:
             # Check if all questions answered → REVIEW
-            unanswered = session.get_unanswered_questions()
+            # Use path-aware method if visitor available to only consider reachable questions
+            if visitor:
+                temp_walker = InterviewWalker(
+                    interview_session=session,
+                    interact_visitor=visitor,
+                    interview_action=self,
+                )
+                unanswered = await session.get_unanswered_questions_on_path(temp_walker)
+            else:
+                unanswered = session.get_unanswered_questions()
             if not unanswered:
                 node = await self.get_state_node(InterviewState.REVIEW)
                 session.target_node = node.id if node else None
@@ -886,7 +906,7 @@ class InterviewInteractAction(InteractAction, ABC):
                     )
 
         # 4. Determine target node based on intent and state
-        await self._resolve_target_node(session, intent)
+        await self._resolve_target_node(session, intent, visitor)
         target_node_id = session.target_node
         try:
             target_node = await Node.get(target_node_id)
