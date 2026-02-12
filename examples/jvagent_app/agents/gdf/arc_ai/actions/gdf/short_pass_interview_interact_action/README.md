@@ -1,56 +1,39 @@
-# Feedback Interview InteractAction
+# Short Pass Interview InteractAction
 
-add this structure in the readme for pass type
-Is under_confinement == "yes"?
-┌───────────────┐
-YES │ │ NO
-▼ ▼
-pass_type = Is overseas_travel == "yes"?
-"CONFINEMENT" ┌───────────────┐
-YES │ │ NO
-▼ ▼
-pass_type = pass_type =
-"OVERSEAS" "TRADITIONAL"
-Structured interview action for submitting feedback on existing reports or projects in the Resolv Incident Management System.
+Structured interview action for ranks to request short passes in the ARC AI System.
 
 ## Overview
 
-The Feedback Interview InteractAction guides users through collecting feedback on completed work or existing reports. It features report matching, media attachment support, and seamless integration with the Resolv API.
+The Short Pass Interview InteractAction guides users through the process of requesting a short pass. It handles different types of passes (Traditional, Overseas, and Confinement) and integrates with the ARC API for submission.
 
 ## Features
 
-- **Report Matching**: Automatically matches user descriptions to existing reports
-- **Media Attachment Support**: Accepts photos and videos as feedback evidence
-- **Conditional Branching**: Dynamic flow based on media availability
-- **Custom Validation**: Field-level validation with user-friendly error messages
-- **Custom Directives**: Shows matching reports for user selection
-- **DSPy Integration**: Optimized classification and extraction using DSPy teleprompters
-- **Flexible Feedback**: Supports feedback on both reports and projects
+- **Dynamic Pass Categorization**: Automatically determines pass type (Traditional, Overseas, or Confinement) based on user responses.
+- **Supervisor Auto-Lookup**: Attempts to retrieve supervisor details from the rank's profile.
+- **Conditional Branching**: Adjusts questions based on travel plans and confinement status.
+- **Custom Validation**: Ensures dates, contact numbers, and addresses are properly formatted.
+- **DSPy Integration**: Optimized classification and extraction using DSPy.
 
 ## Architecture
 
 Inherits from `InterviewInteractAction` and uses a unified classification and extraction approach that detects user intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE) and extracts field values in a single LLM call.
 
-**Session Management**: Sessions are identified by `interview_type='FeedbackInterviewInteractAction'` and attached to Conversation nodes for per-user persistence.
+**Session Management**: Sessions are identified by `interview_type='ShortPassInterviewInteractAction'` and attached to Conversation nodes for per-user persistence.
 
 ## Configuration
 
 ### Agent Configuration (agent.yaml)
 
 ```yaml
-- action: resolv/feedback_interview_interact_action
+- action: gdf/short_pass_interview_interact_action
   context:
     enabled: true
-    description: "Feedback Interview action is used to create feedback for incidents and projects."
-    weight: -50 # Runs before fallback actions
+    description: "Short Pass Interview action allows ranks to request a short pass."
+    weight: -10
   config:
     model_action_type: "OpenAILanguageModelAction"
     model: "gpt-4.1-mini"
     model_temperature: 0.1
-    model_max_tokens: 4096
-    use_history: true
-    max_statement_length: 100
-    history_limit: 3
     use_dspy: true
 ```
 
@@ -58,78 +41,82 @@ Inherits from `InterviewInteractAction` and uses a unified classification and ex
 
 The action publishes anchors for InteractRouter routing:
 
-- "User wants to provide feedback on a completed report or project"
-- "User is giving feedback about work that was done"
-- "User is providing an update on a previously reported issue"
-- "User is sharing photos or evidence of completed work for feedback"
-- "User is providing an update or follow-up on previously submitted feedback"
-- "User is currently creating feedback and providing an incident that took place"
-- "User is providing additional details about an incident likely related to ongoing feedback or report"
+- "User is requesting a short pass"
+- "User needs to file a new short pass request"
+- "User is providing details for a new short pass request"
 
 ## Interview Flow
 
 ### Question Graph
 
-1. **feedback_content** (required)
-   - Full details about the feedback
-   - Minimum 10 characters
-   - Validation: Must be actual feedback content, not a request
-   - Branches to media question if applicable
+1. **start_date** (required)
+   - Proposed start date of the short pass.
+   - Validation: Ensures a non-empty string.
 
-2. **feedback_media** (conditional)
-   - Photos or videos related to feedback
-   - Accepts multiple files
-   - Optional field
+2. **end_date** (optional)
+   - Proposed end date of the short pass.
+   - Validation: Ensures a non-empty string.
 
-3. **report_details** (required)
-   - Description to match existing reports
-   - Used for report lookup
-   - Triggers report matching
+3. **overseas_travel** (required)
+   - Indicates if traveling overseas.
+   - Branches to `overseas_address` if "yes", otherwise to `under_confinement`.
 
-4. **selected_report_id** (required)
-   - ID of the report to attach feedback to
-   - Validation: Must be a valid report ID from matching results
+4. **overseas_address** (conditional)
+   - Full address for overseas travel.
+   - Required if `overseas_travel` is "yes".
+
+5. **overseas_contact_number** (conditional)
+   - Contact number for overseas travel.
+   - Required if `overseas_travel` is "yes".
+
+6. **under_confinement** (required)
+   - Indicates if currently under base confinement.
+
+7. **reason_for_pass** (required)
+   - Comprehensive reason for the request.
+   - Branches to `supervisor_name` if supervisor details are missing from profile.
+
+8. **supervisor_name** (conditional)
+   - Name of the rank's supervisor.
+
+9. **supervisor_phone_number** (conditional)
+   - Contact number of the supervisor.
 
 ## Custom Components
 
 ### Validators
 
-- `validate_feedback_content`: Ensures sufficient detail (min 10 chars), proper whitespace handling
-- `validate_selected_report_id`: Validates report ID exists in matching results
+- `validate_start_date` / `validate_end_date`: Checks for valid strings.
+- `validate_overseas_travel`: Ensures "yes" or "no" input.
+- `validate_overseas_address`: Requires a detailed address (min 5 words).
+- `validate_overseas_contact_number`: Validates 10-digit phone number format.
+- `validate_supervisor_name`: Ensures full name is provided.
 
-### Directive Overrides
+### Context Providers
 
-- `custom_report_details_directive`: Shows matching reports with IDs and descriptions for user selection
+- `get_current_date`: Provides the current date for resolving relative date mentions (e.g., "next Monday").
 
 ### Branch Functions
 
-- `can_ask_for_media`: Determines if media question should be asked based on feedback type
+- `can_ask_for_supervisor_name`: Checks rank profile to see if supervisor info is already known.
 
 ### Review Override
 
-- `adapt_feedback_review_for_display`: Formats data for review state, omits empty fields and formats media links
+- `adapt_review`: Formats the summary data for the Review state, omitting empty fields and appending supervisor details.
 
 ## Completion Handler
 
-The `handle_feedback_completion` function processes the collected data:
+The `handle_interview_completion` function processes the collected data:
 
-1. Extracts all interview responses
-2. Formats media files for upload
-3. Calls ResolvAPIAction to submit feedback
-4. Sends confirmation message to user
-5. Cleans up interview session
+1. Determines the final `pass_type`.
+2. Formats all data for the final submission.
+3. Calls `ArcAPIAction` to submit the request.
+4. Generates a reference number (for demo purposes).
+5. Sends a confirmation message to the user.
 
 ## API Integration
 
-Integrates with `ResolvAPIAction` to submit feedback to the Resolv IMS:
-
-```python
-result = await resolv_api_action.submit_feedback(
-    report_id=selected_report_id,
-    feedback_content=feedback_content,
-    media_files=feedback_media
-)
-```
+Integrates with `ArcAPIAction` for submission and profile lookup.
 
 ## Usage
 
@@ -137,126 +124,72 @@ result = await resolv_api_action.submit_feedback(
 
 User utterances matching the anchors will trigger the interview:
 
-- "I want to give feedback on my report"
-- "The pothole on Main Street has been fixed"
-- "I have an update on the construction issue"
+- "I need to apply for a short pass"
+- "Can I request a pass for this weekend?"
+- "I'm going overseas next week and need a short pass"
 
 ### Example Interaction
 
 ```
-User: I want to give feedback on the pothole I reported
-Agent: Please share your feedback.
+User: I want to request a short pass
+Agent: What is the proposed start date of your short pass?
 
-User: The pothole has been fixed and the road is smooth now
-Agent: Do you have any media to upload along with your feedback?
+User: Next Friday
+Agent: What's the proposed end date of your short pass?
 
-User: [uploads photo]
-Agent: Can you describe the report you want to give feedback on?
+User: Sunday
+Agent: Will you be traveling overseas during this short pass?
 
-User: The pothole on Main Street near the traffic light
-Agent: I found 3 matching reports:
-       Report ID: 223 - Large pothole on Main Street...
-       Report ID: 224 - Road damage near traffic light...
-       Report ID: 225 - Pothole causing vehicle damage...
-       Which report would you like to give feedback on?
+User: No
+Agent: Are you currently under base confinement?
 
-User: 223
+User: No
+Agent: What's the reason you're requesting the short pass?
+
+User: Family emergency
 Agent: [Review summary] Is this information correct?
 
 User: Yes
-Agent: Thank you! Your feedback has been submitted for report 223.
+Agent: Thank you for your short pass submission! Your reference number for follow-up is: 95.
 ```
 
 ## Validation Rules
 
-- **Feedback Content**: Minimum 10 characters, must be actual feedback (not a request)
-- **Report ID**: Must exist in the matching reports list
-- **Media Files**: Optional, accepts multiple files
-
-## Report Matching
-
-The action uses the `report_details` field to search for matching reports:
-
-- Queries Resolv API for reports matching the description
-- Presents top matches to the user with IDs and descriptions
-- User selects the correct report by ID
-- Validates selected ID against matching results
+- **Dates**: Must be valid parsable date strings.
+- **Contact Numbers**: Must be exactly 10 digits.
+- **Overseas Address**: Must be comprehensive (at least 5 parts).
 
 ## Dependencies
 
-- `jvagent/openai_lm` - Language model for classification and extraction
-- `resolv/resolv_api_action` - API integration for feedback submission
+- `jvagent/openai_lm` - Language model integration.
+- `gdf/arc_api_action` - API integration for short pass submission.
 
 ## File Structure
 
 ```
-feedback_interview_interact_action/
-├── __init__.py                                # Package initialization
-├── feedback_interview_interact_action.py      # Main action implementation
-├── endpoints.py                               # API endpoints
-├── info.yaml                                  # Action metadata
-└── README.md                                  # This file
+short_pass_interview_interact_action/
+├── __init__.py
+├── short_pass_interview_interact_action.py
+├── info.yaml
+└── README.md
 ```
 
 ## Customization
 
 ### Adding New Questions
 
-Add to the `question_graph` list:
+Modify the `question_graph` in the action class or override it in `agent.yaml`.
 
-```python
-{
-    "name": "new_field",
-    "question": "Your question here?",
-    "constraints": {
-        "description": "Field description",
-        "type": "string"
-    },
-    "required": True
-}
-```
+### Customizing Validation
 
-### Adding Custom Validators
-
-Use the `@input_validator` decorator:
-
-```python
-@input_validator('field_name')
-def validate_field(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-    if not value:
-        return ValidationStatus.INVALID, "Ask: Please provide a value"
-    return ValidationStatus.VALID, None
-```
-
-### Modifying Report Matching
-
-Update the `custom_report_details_directive` function to customize how matching reports are displayed:
-
-```python
-@input_directive_override
-async def custom_report_details_directive(...):
-    matching_reports = session.context.get("matching_reports")
-    # Customize display format
-    return ("replace", f"Custom message with {len(matching_reports)} reports")
-```
-
-## Known Issues
-
-See [TARGETED_ACTION Updates](../../../../../../../jvsproject/README.md) for recent fixes:
-
-- Fixed grammatical error in validation message ("their feedback" → "your feedback")
-- Enhanced validation with minimum length check and proper whitespace handling
-- Added endpoints.py for standard API pattern
-- Fixed import issues and branch function implementation
+Update the `@input_validator` methods within the `ShortPassInterviewInteractAction` class.
 
 ## Testing
 
 Test scenarios:
 
-- Basic feedback submission with all required fields
-- Report matching with various descriptions
-- Media attachment upload
-- Validation error handling for all fields
-- Cancellation at various stages
-- Review and correction of entered data
-- Report ID validation with valid and invalid IDs
+- Traditional pass request (local, not confined).
+- Overseas pass request (requires address and contact).
+- Confinement status check.
+- Validation for invalid phone numbers or short addresses.
+- Multi-turn corrections during the Review state.

@@ -1,47 +1,39 @@
-# Feedback Interview InteractAction
+# Supervisor Short Pass Interview InteractAction
 
-pass_type = pass_type =
-"OVERSEAS" "TRADITIONAL"
-Structured interview action for submitting feedback on existing reports or projects in the Resolv Incident Management System.
+Structured interview action for supervisors to review and approve/deny short pass requests in the ARC AI System.
 
 ## Overview
 
-The Feedback Interview InteractAction guides users through collecting feedback on completed work or existing reports. It features report matching, media attachment support, and seamless integration with the Resolv API.
+The Supervisor Short Pass Interview InteractAction guides supervisors through the process of reviewing a rank's short pass request. It allows supervisors to provide a decision (approval or denial) and feedback, which is then recorded via the ARC API.
 
 ## Features
 
-- **Report Matching**: Automatically matches user descriptions to existing reports
-- **Media Attachment Support**: Accepts photos and videos as feedback evidence
-- **Conditional Branching**: Dynamic flow based on media availability
-- **Custom Validation**: Field-level validation with user-friendly error messages
-- **Custom Directives**: Shows matching reports for user selection
-- **DSPy Integration**: Optimized classification and extraction using DSPy teleprompters
-- **Flexible Feedback**: Supports feedback on both reports and projects
+- **Reference Number Extraction**: Automatically detects short pass reference numbers from quoted messages.
+- **Decision Tracking**: Captures and validates approval or denial decisions.
+- **Feedback Collection**: Ensures supervisors provide remarks for their decision.
+- **API Integration**: Updates the short pass status in the ARC AI System.
+- **DSPy Integration**: Optimized classification and extraction using DSPy.
 
 ## Architecture
 
 Inherits from `InterviewInteractAction` and uses a unified classification and extraction approach that detects user intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE) and extracts field values in a single LLM call.
 
-**Session Management**: Sessions are identified by `interview_type='FeedbackInterviewInteractAction'` and attached to Conversation nodes for per-user persistence.
+**Session Management**: Sessions are identified by `interview_type='SupervisorShortPassInterviewInteractAction'` and attached to Conversation nodes for per-user persistence.
 
 ## Configuration
 
 ### Agent Configuration (agent.yaml)
 
 ```yaml
-- action: resolv/feedback_interview_interact_action
+- action: gdf/supervisor_short_pass_interview_interact_action
   context:
     enabled: true
-    description: "Feedback Interview action is used to create feedback for incidents and projects."
-    weight: -50 # Runs before fallback actions
+    description: "Allows supervisors to review and approve/deny short pass requests."
+    weight: -10
   config:
     model_action_type: "OpenAILanguageModelAction"
     model: "gpt-4.1-mini"
     model_temperature: 0.1
-    model_max_tokens: 4096
-    use_history: true
-    max_statement_length: 100
-    history_limit: 3
     use_dspy: true
 ```
 
@@ -49,205 +41,116 @@ Inherits from `InterviewInteractAction` and uses a unified classification and ex
 
 The action publishes anchors for InteractRouter routing:
 
-- "User wants to provide feedback on a completed report or project"
-- "User is giving feedback about work that was done"
-- "User is providing an update on a previously reported issue"
-- "User is sharing photos or evidence of completed work for feedback"
-- "User is providing an update or follow-up on previously submitted feedback"
-- "User is currently creating feedback and providing an incident that took place"
-- "User is providing additional details about an incident likely related to ongoing feedback or report"
+- "Supervisor wants to review a short pass request"
+- "Supervisor is approving or denying a short pass"
+- "Supervisor is providing remarks on a short pass"
 
 ## Interview Flow
 
 ### Question Graph
 
-1. **feedback_content** (required)
-   - Full details about the feedback
-   - Minimum 10 characters
-   - Validation: Must be actual feedback content, not a request
-   - Branches to media question if applicable
+1. **short_pass_reference_number** (required)
+   - The reference ID for the short pass being reviewed.
+   - Automatically skipped if the number is found in a quoted message.
 
-2. **feedback_media** (conditional)
-   - Photos or videos related to feedback
-   - Accepts multiple files
-   - Optional field
+2. **approval_status** (required)
+   - The supervisor's decision (either 'approved' or 'denied').
+   - Validation: Must be one of the two allowed values.
 
-3. **report_details** (required)
-   - Description to match existing reports
-   - Used for report lookup
-   - Triggers report matching
-
-4. **selected_report_id** (required)
-   - ID of the report to attach feedback to
-   - Validation: Must be a valid report ID from matching results
+3. **supervisor_feedback** (required)
+   - Remarks or feedback explaining the decision.
+   - Validation: Minimum length of 5 characters.
 
 ## Custom Components
 
 ### Validators
 
-- `validate_feedback_content`: Ensures sufficient detail (min 10 chars), proper whitespace handling
-- `validate_selected_report_id`: Validates report ID exists in matching results
-
-### Directive Overrides
-
-- `custom_report_details_directive`: Shows matching reports with IDs and descriptions for user selection
+- `validate_short_pass_reference_number`: Verifies the ID exists in the ARC AI System.
+- `validate_approval_status`: Ensures the decision is clear ('approved' or 'denied').
+- `validate_supervisor_feedback`: Ensures remarks are provided with sufficient detail.
 
 ### Branch Functions
 
-- `can_ask_for_media`: Determines if media question should be asked based on feedback type
+- `skip_ref_if_known`: Extracts the reference number from the conversation context or quoted messages to streamline the interaction.
 
 ### Review Override
 
-- `adapt_feedback_review_for_display`: Formats data for review state, omits empty fields and formats media links
+- `adapt_review`: Formats the summary data for the Review state, ensuring the reference number is displayed.
 
 ## Completion Handler
 
-The `handle_feedback_completion` function processes the collected data:
+The `handle_interview_completion` function processes the supervisor's input:
 
-1. Extracts all interview responses
-2. Formats media files for upload
-3. Calls ResolvAPIAction to submit feedback
-4. Sends confirmation message to user
-5. Cleans up interview session
+1. Retrieves the final decision and feedback.
+2. Calls `ArcAPIAction` to update the short pass status.
+3. Sends a confirmation message to the supervisor.
 
 ## API Integration
 
-Integrates with `ResolvAPIAction` to submit feedback to the Resolv IMS:
-
-```python
-result = await resolv_api_action.submit_feedback(
-    report_id=selected_report_id,
-    feedback_content=feedback_content,
-    media_files=feedback_media
-)
-```
+Integrates with `ArcAPIAction` for short pass lookup and status updates.
 
 ## Usage
 
 ### Starting the Interview
 
-User utterances matching the anchors will trigger the interview:
+Supervisors can trigger the review by responding to a short pass notification or using matching utterances:
 
-- "I want to give feedback on my report"
-- "The pothole on Main Street has been fixed"
-- "I have an update on the construction issue"
+- "I want to approve short pass 95"
+- "Deny the request for rank 15264"
+- "Reviewing the short pass request now"
 
 ### Example Interaction
 
 ```
-User: I want to give feedback on the pothole I reported
-Agent: Please share your feedback.
+User: I want to review short pass 95
+Agent: Do you approve or deny this short pass request?
 
-User: The pothole has been fixed and the road is smooth now
-Agent: Do you have any media to upload along with your feedback?
+User: Approved
+Agent: Please provide your feedback or remarks regarding this decision.
 
-User: [uploads photo]
-Agent: Can you describe the report you want to give feedback on?
-
-User: The pothole on Main Street near the traffic light
-Agent: I found 3 matching reports:
-       Report ID: 223 - Large pothole on Main Street...
-       Report ID: 224 - Road damage near traffic light...
-       Report ID: 225 - Pothole causing vehicle damage...
-       Which report would you like to give feedback on?
-
-User: 223
+User: All clear for travel
 Agent: [Review summary] Is this information correct?
 
 User: Yes
-Agent: Thank you! Your feedback has been submitted for report 223.
+Agent: Your decision to approved the short pass request (95) has been processed successfully.
 ```
 
 ## Validation Rules
 
-- **Feedback Content**: Minimum 10 characters, must be actual feedback (not a request)
-- **Report ID**: Must exist in the matching reports list
-- **Media Files**: Optional, accepts multiple files
-
-## Report Matching
-
-The action uses the `report_details` field to search for matching reports:
-
-- Queries Resolv API for reports matching the description
-- Presents top matches to the user with IDs and descriptions
-- User selects the correct report by ID
-- Validates selected ID against matching results
+- **Approval Status**: Must be EXACTLY 'approved' or 'denied'.
+- **Feedback**: Must be at least 5 characters long.
 
 ## Dependencies
 
-- `jvagent/openai_lm` - Language model for classification and extraction
-- `resolv/resolv_api_action` - API integration for feedback submission
+- `jvagent/openai_lm` - Language model integration.
+- `gdf/arc_api_action` - API integration for short pass management.
 
 ## File Structure
 
 ```
-feedback_interview_interact_action/
-├── __init__.py                                # Package initialization
-├── feedback_interview_interact_action.py      # Main action implementation
-├── endpoints.py                               # API endpoints
-├── info.yaml                                  # Action metadata
-└── README.md                                  # This file
+supervisor_short_pass_interview_interact_action/
+├── __init__.py
+├── supervisor_short_pass_interview_interact_action.py
+├── info.yaml
+└── README.md
 ```
 
 ## Customization
 
 ### Adding New Questions
 
-Add to the `question_graph` list:
+Modify the `question_graph` in the action class or override it in `agent.yaml`.
 
-```python
-{
-    "name": "new_field",
-    "question": "Your question here?",
-    "constraints": {
-        "description": "Field description",
-        "type": "string"
-    },
-    "required": True
-}
-```
+### Customizing Validation
 
-### Adding Custom Validators
-
-Use the `@input_validator` decorator:
-
-```python
-@input_validator('field_name')
-def validate_field(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
-    if not value:
-        return ValidationStatus.INVALID, "Ask: Please provide a value"
-    return ValidationStatus.VALID, None
-```
-
-### Modifying Report Matching
-
-Update the `custom_report_details_directive` function to customize how matching reports are displayed:
-
-```python
-@input_directive_override
-async def custom_report_details_directive(...):
-    matching_reports = session.context.get("matching_reports")
-    # Customize display format
-    return ("replace", f"Custom message with {len(matching_reports)} reports")
-```
-
-## Known Issues
-
-See [TARGETED_ACTION Updates](../../../../../../../jvsproject/README.md) for recent fixes:
-
-- Fixed grammatical error in validation message ("their feedback" → "your feedback")
-- Enhanced validation with minimum length check and proper whitespace handling
-- Added endpoints.py for standard API pattern
-- Fixed import issues and branch function implementation
+Update the `@input_validator` methods within the `SupervisorShortPassInterviewInteractAction` class.
 
 ## Testing
 
 Test scenarios:
 
-- Basic feedback submission with all required fields
-- Report matching with various descriptions
-- Media attachment upload
-- Validation error handling for all fields
-- Cancellation at various stages
-- Review and correction of entered data
-- Report ID validation with valid and invalid IDs
+- Direct approval of a short pass request.
+- Denial of a request with specific feedback.
+- Auto-extraction of reference numbers from quoted messages.
+- Validation for empty feedback or invalid approval status.
+- Session cleanup after submission.

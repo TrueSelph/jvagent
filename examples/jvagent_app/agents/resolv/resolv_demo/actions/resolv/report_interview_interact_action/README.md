@@ -8,14 +8,14 @@ The Report Interview InteractAction guides users through a multi-step interview 
 
 ## Features
 
-- **Multi-step Interview Flow**: Collects incident details, location, media, and reporter information
+- **Multi-step Interview Flow**: Collects incident details, location, media, and reporter or stakeholder information
 - **Conditional Branching**: Dynamic flow based on user responses (sensitive content, reporting on behalf)
-- **Similar Report Detection**: Checks for existing reports at the same location
-- **Media Attachment Support**: Accepts photos and videos as evidence
-- **Privacy Protection**: Sensitive reports can be marked as anonymous
+- **Similar Report Detection**: Checks for existing reports at the same location to prevent duplication
+- **Media Attachment Support**: Accepts photos and videos as incident evidence
+- **Privacy Protection**: Allows sensitive reports to be marked for anonymous submission
 - **Custom Validation**: Field-level validation with user-friendly error messages
-- **Custom Directives**: Context-aware guidance throughout the interview
-- **DSPy Integration**: Optimized classification and extraction using DSPy teleprompters
+- **Custom Directives**: Provides context-aware guidance and matching report information
+- **API Integration**: Seamlessly submits reports to the Resolv IMS via the Resolv API
 
 ## Architecture
 
@@ -32,26 +32,26 @@ Inherits from `InterviewInteractAction` and uses a unified classification and ex
   context:
     enabled: true
     description: "Report Interview action is used to create reports."
-    weight: -50  # Runs before fallback actions
+    weight: -50 # Runs before fallback actions
   config:
     model_action_type: "OpenAILanguageModelAction"
-    model: "gpt-4.1-mini"
+    model: "gpt-4o-mini"
     model_temperature: 0.1
     model_max_tokens: 4096
     use_history: true
     max_statement_length: 100
     history_limit: 3
-    use_dspy: true
 ```
 
 ### Routing Anchors
 
 The action publishes anchors for InteractRouter routing:
+
 - "User is reporting a new problem, hazard, or safety issue"
 - "User needs to file a new complaint or incident report"
 - "User is providing details for a new incident report"
 - "User is uploading photos or evidence for a new incident report"
-- "User is revising, canceling, updating or confirming an active incident report being created"
+- "User is revising, canceling, updating, or confirming an active incident report being created"
 
 ## Interview Flow
 
@@ -60,98 +60,80 @@ The action publishes anchors for InteractRouter routing:
 1. **incident_description** (required)
    - Detailed description of the incident
    - Minimum 10 characters
-   - Validation: Must include sufficient detail
+   - Validation: Ensures sufficient detail is provided
 
 2. **incident_location** (required)
-   - Exact location where incident occurred
+   - Specific address or landmark where the incident occurred
    - Minimum 10 characters
-   - Triggers similar report check
-   - Validation: Must be specific, not vague
+   - Triggers similar report check and matching display
 
 3. **continue_report** (conditional)
-   - Shown if similar reports found
+   - Shown if similar reports are detected at the location
    - Options: yes/no
-   - Branches to CANCELLED if "no"
+   - Branches to CANCELLED if the user decides not to proceed
 
 4. **incident_media** (optional)
-   - Photos or videos of the incident
+   - Photos or videos related to the incident
    - Accepts multiple files
-   - Triggers sensitive content detection
+   - Triggers sensitive content detection logic
 
 5. **is_sensitive** (conditional)
-   - Shown if sensitive content detected
+   - Shown if sensitive content is detected in the description or media
    - Options: yes/no
    - Marks report as anonymous if "yes"
 
 6. **reporting_on_behalf** (required)
-   - Whether reporting for someone else
+   - Whether the user is filing for themselves or someone else
    - Options: yes/no
-   - Branches to stakeholder questions if "yes"
+   - Branches to stakeholder details if "yes"
 
-7. **stakeholder_name** (conditional)
-   - Full name of person being reported for
-   - Validation: First and last name required
+7. **stakeholder_name/address/phone** (conditional)
+   - Full details of the person the report concerns
+   - Only asked if reporting on behalf of another individual
 
-8. **stakeholder_address** (conditional)
-   - Residential address of stakeholder
-   - Minimum 10 characters
-
-9. **stakeholder_phone** (conditional)
-   - Contact number of stakeholder
-   - Validation: 10-digit phone number
-
-10. **reporter_name** (required)
-    - Full name of person submitting report
-    - Validation: Cannot match stakeholder name
-    - Must include first and last name
-
-11. **reporter_address** (required)
-    - Residential address of reporter
-    - Validation: Cannot match incident location or stakeholder address
-    - Minimum 10 characters
+8. **reporter_name/address** (required)
+   - Full details of the person submitting the report
+   - Validated against stakeholder information to ensure distinction
 
 ## Custom Components
 
 ### Validators
 
 - `validate_incident_description`: Ensures sufficient detail (min 10 chars)
-- `validate_incident_location`: Validates specific location (min 10 chars)
-- `validate_is_sensitive`: Validates yes/no response
-- `validate_reporting_on_behalf`: Validates yes/no response
-- `validate_stakeholder_name`: Validates full name format
-- `validate_stakeholder_address`: Validates address length
-- `validate_stakeholder_phone`: Validates 10-digit phone format
-- `validate_reporter_name`: Validates full name, checks against stakeholder
-- `validate_reporter_address`: Validates address, checks against incident location
+- `validate_incident_location`: Validates specific location details
+- `validate_is_sensitive`: Ensures valid yes/no response for privacy
+- `validate_reporting_on_behalf`: Validates filing status
+- `validate_stakeholder_*`: Validates stakeholder name, address, and 10-digit phone
+- `validate_reporter_*`: Validates reporter name and residential address
 
 ### Directive Overrides
 
-- `custom_location_directive`: Shows matching reports after location is provided
-- `custom_continue_directive`: Provides cancellation confirmation message
+- `custom_location_directive`: Displays matching reports with IDs and descriptions for user awareness
+- `custom_continue_directive`: Provides a clear cancellation message if the user stops the report
 
 ### Branch Functions
 
-- `detect_sensitive_content`: Checks for sensitive keywords or media presence
-- `check_for_similar_incidents`: Queries for existing reports at same location
+- `detect_sensitive_content`: Detects sensitive keywords or the presence of media
+- `check_for_similar_incidents`: (Mocked) Queries for existing reports at the same location
 
 ### Review Override
 
-- `adapt_feedback_review_for_display`: Formats data for review state, omits empty fields
+- `adapt_review`: Formats collected data for the final review state, handling empty fields and media links
 
 ## Completion Handler
 
-The `handle_report_completion` function processes the collected data:
+The `handle_interview_completion` function processes the collected data:
 
-1. Extracts all interview responses
-2. Determines if report should be anonymous
-3. Generates report metadata (title, priority, category)
-4. Calls ResolvAPIAction to submit report
-5. Sends confirmation message to user
-6. Cleans up interview session
+1. Extracts all collected responses from the session
+2. Determines anonymity based on the sensitivity response
+3. Generates the final report payload
+4. Calls `ResolvAPIAction` to submit the report
+5. Sends a personalized confirmation message to the user
+6. Cleans up the interview session
 
 ## API Integration
 
-Integrates with `ResolvAPIAction` to submit reports to the Resolv IMS:
+Integrates with `ResolvAPIAction` to create reports:
 
 ```python
 result = await resolv_api_action.submit_report(
@@ -177,59 +159,57 @@ result = await resolv_api_action.submit_report(
 
 ### Starting the Interview
 
-User utterances matching the anchors will trigger the interview:
-- "I want to report a pothole on Main Street"
-- "There's a safety hazard at the construction site"
-- "I need to file a complaint about noise"
+User utterances matching the anchors will trigger the flow:
+
+- "I need to report a dangerous pothole"
+- "There is an issue at my residential complex"
+- "I want to file a new incident report"
 
 ### Example Interaction
 
 ```
-User: I want to report a pothole on Main Street
-Agent: Please describe the incident you want to report...
+User: I want to report a broken street light on Oak Street
+Agent: Please provide a description of the incident.
 
-User: There's a large pothole causing damage to vehicles
+User: The light has been out for three days and it's dangerous at night.
 Agent: Where exactly did this incident occur?
 
-User: Main Street near the traffic light
-Agent: I found 2 reports that match your description...
+User: 123 Oak Street, near the park entrance.
+Agent: [Optional: Similar reports found...] Do you have any photos or videos?
 
-User: Yes, continue
-Agent: Do you have any photos or videos?
+User: No, skip that.
+Agent: Are you submitting this on behalf of someone else?
 
-User: [uploads photo]
-Agent: Are you submitting this report on behalf of someone else?
+User: No.
+Agent: What is your full name?
 
-User: No
-Agent: What is the full name of the person submitting the report?
-
-User: John Smith
+User: Alice Johnson
 Agent: What is your residential address?
 
-User: 123 Oak Street
-Agent: [Review summary] Is this information correct?
+User: 456 Pine Ave
+Agent: [Review Summary] Is this information correct?
 
 User: Yes
-Agent: Thank you, John Smith! Your report has been submitted.
+Agent: Thank you, Alice Johnson! Your report has been submitted.
 ```
 
 ## Validation Rules
 
-- **Names**: Must include first and last name, only letters/spaces/hyphens/apostrophes
+- **Names**: Must include first and last name, minimum 2 characters per part
 - **Addresses**: Minimum 10 characters
-- **Phone Numbers**: 10 digits
-- **Descriptions**: Minimum 10 characters with sufficient detail
-- **Yes/No Fields**: Must be exactly "yes" or "no"
+- **Phone Numbers**: Exactly 10 digits
+- **Descriptions**: Minimum 10 characters with specific detail
+- **Binary Choices**: Must be exactly "yes" or "no"
 
 ## Privacy Features
 
-- Sensitive content detection based on keywords (abuse, assault, violence, etc.)
-- Anonymous reporting option for sensitive incidents
-- Privacy-aware logging (sensitive reports are redacted in logs)
+- Automated detection of sensitive keywords (abuse, violence, etc.)
+- Conditional privacy question based on content sensitivity
+- Redaction of sensitive details in standard report overviews
 
 ## Dependencies
 
-- `jvagent/openai_lm` - Language model for classification and extraction
+- `jvagent/openai_lm` - Language model for intent classification and extraction
 - `resolv/resolv_api_action` - API integration for report submission
 
 ## File Structure
@@ -246,14 +226,14 @@ report_interview_interact_action/
 
 ### Adding New Questions
 
-Add to the `question_graph` list:
+Add a new configuration to the `question_graph` attribute:
 
 ```python
 {
-    "name": "new_field",
-    "question": "Your question here?",
+    "name": "new_detail",
+    "question": "Please provide [detail]?",
     "constraints": {
-        "description": "Field description",
+        "description": "Description for LLM",
         "type": "string"
     },
     "required": True
@@ -262,43 +242,23 @@ Add to the `question_graph` list:
 
 ### Adding Custom Validators
 
-Use the `@input_validator` decorator:
+Use the `@input_validator` decorator on a class method:
 
 ```python
 @input_validator('field_name')
-def validate_field(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+def validate_field(self, value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
     if not value:
-        return ValidationStatus.INVALID, "Ask: Please provide a value"
+        return ValidationStatus.INVALID, "Ask: Please provide a value."
     return ValidationStatus.VALID, None
 ```
 
-### Adding Branch Functions
-
-Use the `@branch_function` decorator:
-
-```python
-@branch_function('check_condition')
-def check_condition(session: InterviewSession, visitor: InteractWalker) -> bool:
-    # Return True to take the branch, False to continue
-    return session.responses.get('field') == 'value'
-```
-
-## Known Issues
-
-See [TARGETED_ACTION Updates](../../../../../../../jvsproject/README.md) for recent fixes:
-- Fixed directive passing issue with function name collisions
-- Fixed validation message consistency
-- Enhanced phone validation to accept formatted numbers
-- Improved privacy protection for sensitive reports
-
 ## Testing
 
-Test scenarios:
-- Basic report submission with all required fields
-- Conditional flow when reporting on behalf of someone
-- Similar report detection and user confirmation
-- Sensitive content detection and privacy option
-- Media attachment upload
-- Validation error handling for all fields
-- Cancellation at various stages
-- Review and correction of entered data
+Recommended test scenarios:
+
+- Full report submission with all fields provided
+- Reporting on behalf of someone else (checking conditional branches)
+- Sensitivity detection triggering (using keywords like "assault")
+- Validation failure handling for names, phones, and addresses
+- Cancellation flow when similar reports are found
+- End-to-end review and confirmation process

@@ -6,6 +6,7 @@ import {
   useCallback,
 } from "react";
 import { apiClient } from "../config/api";
+import { getAuthCreds, getSelectedAgent } from "../utils/storage";
 
 interface DebugInteractionsProps {
   onClose?: () => void;
@@ -32,10 +33,16 @@ export function DebugInteractions({
   const [darkMode, setDarkMode] = useState(false);
   const [historyText, setHistoryText] = useState("");
   const [showHistory, setShowHistory] = useState(false);
+  const [improveInstruction, setImproveInstruction] = useState("");
+  const [improveModel, setImproveModel] = useState("gpt-4o");
+  const [improving, setImproving] = useState(false);
+  const [improveResult, setImproveResult] = useState("");
 
   const userRef = useRef<HTMLTextAreaElement>(null);
   const systemRef = useRef<HTMLTextAreaElement>(null);
   const historyRef = useRef<HTMLTextAreaElement>(null);
+  const improveInstructionRef = useRef<HTMLTextAreaElement>(null);
+  const improveResultRef = useRef<HTMLTextAreaElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lastFocusedInteractionId = useRef<string | null>(null);
 
@@ -109,13 +116,48 @@ export function DebugInteractions({
     setLoading(true);
     setError(null);
 
+    let agentsData;
     try {
-      const agentsData = await apiClient.getAgents();
+      // First attempt to get agents to check if token is valid
+      agentsData = await apiClient.getAgents();
+    } catch (error) {
+      console.log(
+        "Token invalid or expired, attempting auto-login fallback...",
+      );
+      try {
+        const authCreds = getAuthCreds();
+        if (authCreds) {
+          const loginResponse = await apiClient.login({
+            email: authCreds.email,
+            password: authCreds.password,
+            serverUrl: authCreds.serverUrl,
+          });
+
+          // Save the new token
+          apiClient.setToken(loginResponse);
+
+          // Retry fetching agents after successful login
+          agentsData = await apiClient.getAgents();
+        } else {
+          throw new Error("No authentication credentials found");
+        }
+      } catch (loginError: any) {
+        console.error("Auto-login failed:", loginError);
+        setError(loginError.message || "Authentication failed");
+        setLoading(false);
+        return;
+      }
+    }
+
+    try {
       if (!agentsData || !agentsData.agents) throw new Error("No agents found");
 
-      const targetAgent =
-        agentsData.agents.find((a: any) => a.context?.name === "resolv_demo") ||
-        agentsData.agents[0];
+      const selectedAgentName = getSelectedAgent();
+      const targetAgent = selectedAgentName
+        ? agentsData.agents.find(
+            (a: any) => a.context?.name === selectedAgentName,
+          )
+        : agentsData.agents[0];
 
       if (!targetAgent) throw new Error("No agents found");
 
@@ -159,7 +201,15 @@ export function DebugInteractions({
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.message);
+
+      // Provide more helpful error messages
+      if (err.code === "ERR_NETWORK" || err.message === "Network Error") {
+        setError(
+          "Cannot connect to server. Please check if the jvagent server is running and CORS is enabled.",
+        );
+      } else {
+        setError(err.message || "Failed to load interactions");
+      }
     } finally {
       setLoading(false);
     }
@@ -193,17 +243,25 @@ export function DebugInteractions({
 
   useLayoutEffect(() => {
     adjustHeight(userRef.current);
-  }, [selectedInteraction?.data.user_prompt]);
+  }, [selectedInteraction?.data.user_prompt, loading]);
 
   useLayoutEffect(() => {
     adjustHeight(systemRef.current);
-  }, [selectedInteraction?.data.system_prompt]);
+  }, [selectedInteraction?.data.system_prompt, loading]);
 
   useLayoutEffect(() => {
     if (showHistory) {
       adjustHeight(historyRef.current);
     }
-  }, [historyText, showHistory]);
+  }, [historyText, showHistory, loading]);
+
+  useLayoutEffect(() => {
+    adjustHeight(improveInstructionRef.current);
+  }, [improveInstruction, loading]);
+
+  useLayoutEffect(() => {
+    adjustHeight(improveResultRef.current);
+  }, [improveResult, loading]);
 
   const handleTest = async () => {
     if (!selectedInteraction || !modelAction) return;
@@ -238,6 +296,49 @@ export function DebugInteractions({
       );
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleImprovePrompt = async () => {
+    if (!selectedInteraction || !modelAction || !improveInstruction) return;
+
+    preserveScroll(() => {
+      setImproving(true);
+      setImproveResult("");
+    });
+
+    try {
+      const improvePayload = {
+        prompt: `Given the following context, improve the prompts based on the instruction.
+
+User Prompt:
+${selectedInteraction.data.user_prompt}
+
+System Prompt:
+${selectedInteraction.data.system_prompt}
+
+Conversation History:
+${JSON.stringify(selectedInteraction.data.history || [], null, 2)}
+
+RESULT:
+${selectedInteraction.data.response}
+
+Improvement Instruction:
+${improveInstruction}
+
+Provide improvement instruction on how to improve the prompt. Return a raw markdown.`,
+        system:
+          "You are a prompt engineering expert. Analyze the given prompts and improve them based on the instruction.",
+        model: improveModel,
+        history: [],
+      };
+
+      const data = await apiClient.queryAction(modelAction.id, improvePayload);
+      preserveScroll(() => setImproveResult(data.response || ""));
+    } catch (error: any) {
+      preserveScroll(() => setImproveResult(`Error: ${error.message}`));
+    } finally {
+      setImproving(false);
     }
   };
 
@@ -624,6 +725,64 @@ export function DebugInteractions({
                       {selectedInteraction.data.response}
                     </pre>
                   </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Improve Prompt Section */}
+        {!loading && selectedInteraction && (
+          <div
+            className={`${darkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow p-6 border border-gray-100 mt-6`}
+          >
+            <h2 className="text-xl font-bold mb-4">Improve Prompt</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Improvement Instruction
+                </label>
+                <textarea
+                  ref={improveInstructionRef}
+                  value={improveInstruction}
+                  onChange={(e) => setImproveInstruction(e.target.value)}
+                  placeholder="Describe how you want to improve the prompts..."
+                  className={`w-full p-3 border rounded text-sm ${darkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                  style={{ overflow: "hidden" }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Model for Improvement
+                </label>
+                <input
+                  type="text"
+                  value={improveModel}
+                  onChange={(e) => setImproveModel(e.target.value)}
+                  className={`w-full p-2 border rounded text-sm font-mono ${darkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                />
+              </div>
+              <div className="flex justify-end">
+                <button
+                  onClick={handleImprovePrompt}
+                  disabled={improving || !modelAction || !improveInstruction}
+                  className="px-6 py-2 bg-purple-600 text-white rounded font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {improving ? "Improving..." : "✨ Improve Prompt"}
+                </button>
+              </div>
+              {improveResult && (
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Improvement Result
+                  </label>
+                  <textarea
+                    ref={improveResultRef}
+                    value={improveResult}
+                    onChange={(e) => setImproveResult(e.target.value)}
+                    className={`w-full p-3 border rounded text-sm font-mono ${darkMode ? "bg-purple-900 border-purple-700 text-gray-100" : "bg-purple-50 border-purple-200 text-gray-900"}`}
+                    style={{ overflow: "hidden" }}
+                  />
                 </div>
               )}
             </div>

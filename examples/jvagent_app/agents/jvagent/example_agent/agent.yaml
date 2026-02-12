@@ -137,13 +137,13 @@ actions:
         - "User wants to enroll or join jvagent training"
     config:
       model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4o-mini"
+      model: "gpt-4.1-mini"
       model_temperature: 0.1
       model_max_tokens: 4096
       use_history: true
       max_statement_length: 100
       history_limit: 3
-      auto_confirm: true
+      auto_confirm: false
   - action: jvagent/converse_interact_action
     context:
       enabled: true
