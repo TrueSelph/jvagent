@@ -120,6 +120,8 @@ config:
   # Development settings
   development:
     debug: false
+    # environment: production → shorter, secure interact payloads (id, utterance, response only).
+    # environment: development → full payload with actions, directives, observability, report.
     environment: development # development or production
 
   # API configuration
