@@ -14,6 +14,7 @@ The Interview Action provides a reusable way to collect responses from users in 
 - **Multiple Interviews Per Agent**: Run registration, onboarding, and other interviews simultaneously
 - **Per-User Session Isolation**: Sessions attached to Conversation nodes for user separation
 - **Type-Based Session Management**: Sessions identified by `interview_type` field (survives action rebuilds)
+- **Auto-Confirm Mode**: Skip REVIEW confirmation prompt and proceed directly to COMPLETED (configurable via `auto_confirm` in config)
 - **Unified Classification System**: Single LLM call detects intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE) and extracts field values
 - **State-Aware Classification**: Enhanced rules for accurate intent detection (e.g., "no" in REVIEW state = UPDATE, not CONFIRMATION)
 - **Service Layer Architecture**: Modular design with specialized service classes for classification, state handling, and response processing
@@ -45,19 +46,25 @@ stateDiagram-v2
     [*] --> InterviewInteractAction
     InterviewInteractAction --> ACTIVE: Start
     ACTIVE --> REVIEW: All questions answered
-    REVIEW --> COMPLETED: User confirms
+    REVIEW --> COMPLETED: User confirms (or auto_confirm)
     REVIEW --> ACTIVE: User edits
     ACTIVE --> CANCELLED: User cancels
     REVIEW --> CANCELLED: User cancels
     COMPLETED --> [*]
     CANCELLED --> [*]
+    
+    note right of REVIEW
+        With auto_confirm=true,
+        REVIEW→COMPLETED happens
+        automatically (no user input)
+    end note
 ```
 
 ### State Descriptions
 
 - **InterviewInteractAction**: Entry point - manages sessions and orchestrates the interview flow
 - **ACTIVE**: Actively asking questions and collecting responses. Transitions to REVIEW when all questions are answered.
-- **REVIEW**: Presenting summary for user confirmation. Transitions to COMPLETED on confirmation or back to ACTIVE on updates.
+- **REVIEW**: Presenting summary for user confirmation. Transitions to COMPLETED on confirmation or back to ACTIVE on updates. With `auto_confirm=true`, automatically transitions to COMPLETED without showing the confirmation prompt.
 - **COMPLETED**: Interview successfully completed (with optional data processing via completion handlers)
 - **CANCELLED**: Interview cancelled by user. Session is cleaned up and removed.
 
@@ -336,6 +343,9 @@ config.classification.max_examples                    # 5
 config.classification.enable_reference_resolution     # True
 config.classification.enable_composition              # True
 
+# Auto-confirm configuration
+config.auto_confirm  # False (default) - Skip REVIEW confirmation prompt when True
+
 ```
 
 ### Overriding Configuration in agent.yaml
@@ -379,6 +389,9 @@ actions:
         max_examples: 5
         enable_reference_resolution: true
         enable_composition: true
+      
+      # Auto-confirm (InterviewConfig.auto_confirm)
+      auto_confirm: true  # Skip REVIEW confirmation prompt, go directly to COMPLETED
 ```
 
 ### Accessing Templates in Code
@@ -405,6 +418,60 @@ class CustomInterviewAction(InterviewInteractAction):
         # Get state event message
         event = templates.get_state_event_message("ACTIVE", self.get_class_name())
 ```
+
+### Auto-Confirm Mode
+
+Auto-confirm mode allows interviews to skip the REVIEW confirmation prompt and proceed directly to COMPLETED. This is useful for:
+- Data collection flows where user confirmation is not required
+- Automated data ingestion via REST APIs or file uploads
+- Simplified user experiences where review is optional
+
+#### How It Works
+
+When `auto_confirm` is set to `True`:
+
+1. **Configuration**: Set `auto_confirm: true` in `config:` section of `agent.yaml`
+2. **Session Creation**: New sessions inherit the `auto_confirm` flag from config
+3. **ACTIVE State**: Questions are collected normally
+4. **REVIEW State**: When all questions are answered and the walker visits the REVIEW node:
+   - REVIEW performs the ACTIVE → REVIEW state transition
+   - REVIEW returns `None` (no confirmation directive)
+   - The Interview Walker follows the REVIEW → COMPLETED edge
+   - COMPLETED node performs the REVIEW → COMPLETED transition
+   - Completion handler runs and session is cleaned up
+5. **User Experience**: The user never sees a confirmation prompt; the interview completes immediately after the last question
+
+#### Configuration Example
+
+```yaml
+actions:
+  - action: jvagent/data_collection_interview
+    context:
+      enabled: true
+      description: "Automated data collection flow"
+    config:
+      auto_confirm: true  # Skip REVIEW confirmation
+      model: "gpt-4o-mini"
+```
+
+#### State Transition Flow
+
+**Without auto_confirm (default):**
+```
+ACTIVE → REVIEW (shows confirmation) → wait for user → COMPLETED
+```
+
+**With auto_confirm:**
+```
+ACTIVE → REVIEW (no directive) → COMPLETED (automatic)
+```
+
+#### Important Notes
+
+- **Existing sessions**: Sessions created before enabling `auto_confirm` default to `False` (normal confirmation behavior)
+- **Graph edge**: The REVIEW → COMPLETED edge is always created in the question graph, regardless of `auto_confirm` setting. When `auto_confirm` is `False`, the edge is inert (unused).
+- **Completion handlers**: `@on_interview_complete` handlers still run normally when auto_confirm is enabled
+- **No user input**: With auto_confirm, the session never waits in REVIEW state for user input
 
 ## Usage
 

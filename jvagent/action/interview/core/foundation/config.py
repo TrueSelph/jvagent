@@ -159,6 +159,7 @@ class InterviewConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     templates: TemplateConfig = field(default_factory=TemplateConfig)
     classification: ClassificationConfig = field(default_factory=ClassificationConfig)
+    auto_confirm: bool = False  # Skip confirmation prompt in REVIEW state
 
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> "InterviewConfig":
@@ -194,8 +195,12 @@ class InterviewConfig:
             if key in config_dict:
                 setattr(classification_config, key, config_dict[key])
 
+        # Auto-confirm config - top-level key
+        auto_confirm = config_dict.get("auto_confirm", False)
+
         return cls(
             model=model_config,
             templates=template_config,
             classification=classification_config,
+            auto_confirm=auto_confirm,
         )

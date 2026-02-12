@@ -384,6 +384,46 @@ class InterviewWalker(Walker):
                 await self.visit(target)
                 return
 
+    async def _continue_traversal_from_state(self, here: StateNode) -> bool:
+        """Evaluate outgoing edges from a StateNode and visit the first valid target.
+
+        Used when a StateNode returns no directive (e.g., REVIEW with auto_confirm).
+        Allows the walker to traverse from StateNode to StateNode (e.g., REVIEW -> COMPLETED).
+
+        Args:
+            here: The StateNode being visited
+
+        Returns:
+            True if traversal continued to a target node, False if no edge found
+        """
+        from .question_edge import QuestionEdge
+        
+        edges = await here.edges(direction="out")
+        if not edges:
+            logger.warning(
+                f"StateNode {here.label} returned no directive but has no outgoing edges. "
+                f"Session will remain on {here.label}."
+            )
+            return False
+        
+        ordered = QuestionEdge.sort_by_priority(edges)
+        for edge in ordered:
+            # For StateNode edges, use the node's label as implicit_question
+            target = await edge.evaluate(
+                self.interview_session,
+                here.label,
+                self.interact_visitor,
+            )
+            if target is not None:
+                await self.visit(target)
+                return True
+        
+        logger.warning(
+            f"StateNode {here.label} has outgoing edges but none evaluated to a valid target. "
+            f"Session will remain on {here.label}."
+        )
+        return False
+
     async def _update_target_node(self, here: Union[QuestionNode, StateNode]) -> None:
         """Update session's target_node and save.
 
@@ -497,6 +537,7 @@ class InterviewWalker(Walker):
 
         # Execute state node - handles transition and returns directive
         directive = await here.execute(self)
+        directive_queued = False
         if directive or self._pending_directive_override:
             if self._pending_directive_override:
                 mode, override_directive = self._pending_directive_override
@@ -509,9 +550,17 @@ class InterviewWalker(Walker):
                     self.directives.append(override_directive)
             elif directive:
                 self.directives.append(directive)
+            directive_queued = True
 
         # Update position — skip for terminal states (COMPLETED/CANCELLED) where
         # the session has been removed by cleanup. Calling save() on a deleted
         # session would re-persist it to the database.
         if not here.is_terminal():
-            await self._update_target_node(here)
+            if not directive_queued:
+                # No directive (e.g., auto_confirm) — follow outgoing edges
+                continued = await self._continue_traversal_from_state(here)
+                if not continued:
+                    # No edge found, fall back to updating target_node
+                    await self._update_target_node(here)
+            else:
+                await self._update_target_node(here)

@@ -181,6 +181,11 @@ class StateNode(Node):
         visitor = walker.interact_visitor
 
         if self.state_type == InterviewState.REVIEW:
+            # Check auto_confirm flag - if set, skip confirmation prompt
+            if getattr(session, "auto_confirm", False):
+                # Return None to allow walker to follow REVIEW->COMPLETED edge
+                return None
+            
             return await self.build_confirmation_directive(
                 session, visitor=visitor, interview_action=interview_action
             )

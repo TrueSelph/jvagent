@@ -188,3 +188,16 @@ class QuestionGraphBuilder:
                             branch_index=-1,
                             is_default=True
                         )
+        
+        # Add REVIEW -> COMPLETED edge for auto_confirm traversal
+        # This edge is always created regardless of auto_confirm config.
+        # When auto_confirm is False, the edge is inert (REVIEW returns a directive).
+        # When auto_confirm is True, the walker follows it to COMPLETED.
+        completed_state_node = state_node_map.get(InterviewState.COMPLETED.value.upper())
+        if review_state_node and completed_state_node:
+            await review_state_node.connect(
+                completed_state_node,
+                edge=QuestionEdge,
+                branch_index=-1,
+                is_default=True
+            )
