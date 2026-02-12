@@ -379,6 +379,7 @@ class InterviewWalker(Walker):
                 self.interview_session,
                 question_name,
                 self.interact_visitor,
+                self.interview_action,
             )
             if target is not None:
                 await self.visit(target)
@@ -413,6 +414,7 @@ class InterviewWalker(Walker):
                 self.interview_session,
                 here.label,
                 self.interact_visitor,
+                self.interview_action,
             )
             if target is not None:
                 await self.visit(target)
