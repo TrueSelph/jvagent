@@ -8,7 +8,6 @@ from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
-from jvagent.core.cache import invalidate_action_cache
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +216,7 @@ class Actions(Node):
                 await self.save()
                 
                 # Invalidate action cache for this agent
+                from jvagent.core.cache import invalidate_action_cache
                 await invalidate_action_cache(action.agent_id)
                 
                 return True
@@ -357,6 +357,7 @@ class Actions(Node):
                 await self.save()
 
                 # Invalidate action cache for this agent
+                from jvagent.core.cache import invalidate_action_cache
                 await invalidate_action_cache(action.agent_id)
 
                 return True

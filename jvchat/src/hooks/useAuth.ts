@@ -18,7 +18,7 @@ export function useAuth() {
     loading: false,
     error: null,
   })
-  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Proactive token refresh: check token expiration and refresh before it expires
   useEffect(() => {

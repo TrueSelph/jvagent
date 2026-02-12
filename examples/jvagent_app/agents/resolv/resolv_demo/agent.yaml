@@ -14,7 +14,7 @@ actions:
       # Model Configuration
       model_action_type: "OpenAILanguageModelAction"
       history_limit: 3
-      model: gpt-4o
+      model: "gpt-4.1"
 
   - action: jvagent/openai_embedding
     context:
@@ -82,7 +82,7 @@ actions:
       api_key: ${OPENAI_API_KEY}
       api_endpoint: "https://api.openai.com/v1"
       # Model Configuration
-      model: gpt-4o
+      model: "gpt-4.1"
       temperature: 0.2
       max_tokens: 4096
       timeout: 60
@@ -98,14 +98,12 @@ actions:
         understand how the resolv framework works. You provide clear,
         concise answers and demonstrate best practices. Keep your responses very short and concise. Do not give any explanation unless asked.
       persona_capabilities:
-        - "Answer questions about jvagent"
-        - "Demonstrate action delegation"
-        - "Process user interactions with behavioral parameters"
-        - "Provide streaming and non-streaming responses"
-        - "can sign the user up for jvagent training"
+        - "Submit report for a project"
+        - "Submit feedback for an incident or project"
+        - "Provide subscription link to opt in and out"
       # Model Configuration
       model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4o"
+      model: "gpt-4.1"
       model_temperature: 0.1
       model_max_tokens: 8192
 
@@ -116,14 +114,12 @@ actions:
       weight: -50
     config:
       model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4o"
+      model: "gpt-4.1"
       model_temperature: 0.1
       model_max_tokens: 4096
       use_history: true
       max_statement_length: 100
       history_limit: 3
-      use_dspy: true
-
   - action: resolv/feedback_interview_interact_action
     context:
       enabled: true
@@ -131,59 +127,38 @@ actions:
       weight: -50
     config:
       model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4o"
-      model_temperature: 0.1
-      model_max_tokens: 4096
-      use_history: true
-      max_statement_length: 600
-      history_limit: 4
-      use_dspy: true
-
-  - action: resolv/signup_interview_interact_action
-    context:
-      enabled: true
-      description: "Training signup interview flow for user registration and training scheduling"
-      weight: -50 # Runs after InteractRouter
-      anchors:
-        - "User wants to sign up or register for jvagent training"
-        - "User wants to enroll or join jvagent training"
-    config:
-      model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4o-mini"
+      model: "gpt-4.1"
       model_temperature: 0.1
       model_max_tokens: 4096
       use_history: true
       max_statement_length: 100
       history_limit: 3
-      use_dspy: true
-
   - action: jvagent/converse_interact_action
     context:
       enabled: true
       description: "Fallback action for smalltalk and casual conversation"
       weight: 100 # Runs last as a safety net
 
-  - action: resolv/resolv_onboarding_interact_action
+  - action: resolv/onboarding_interact_action
     context:
       enabled: true
-      description: "Resolv Onboarding action is used to register user and subscribe them to default groups."
+      description: "Onboarding action is used to register user and subscribe them to default groups."
       weight: -100
-      default_groups: ["28"]
 
   - action: resolv/resolv_api_action
     context:
       enabled: true
       description: "Houses Resolv API credentials and endpoints"
-      user_uuid: "af76d73a-6043-4815-bb33-0732eda03c04"
-      secret_token: "306bb4ca-0e3e-4938-8b6a-09b8903e41d2"
-      api_url: "https://app.resolv-ims.com/api"
-      organization_slug: "mopw-guyana"
-      project_id: "32"
-      agent_identifier: "n:Agent:68a1556ce82af5547f4b4347"
+      user_uuid: ${USER_UUID}
+      secret_token: ${SECRET_TOKEN}
+      api_url: ${API_URL}
+      organization_slug: ${ORGANIZATION_SLUG}
+      project_id: ${PROJECT_ID}
+      agent_identifier: ${AGENT_IDENTIFIER}
 
   - action: jvagent/access_control_action
     context:
-      enabled: true
+      enabled: false
       description: "Role-based access control with session tracking and permission validation for secure agent operations"
       permissions:
         {

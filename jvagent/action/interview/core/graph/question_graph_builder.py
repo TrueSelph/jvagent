@@ -42,6 +42,7 @@ class QuestionGraphBuilder:
         for state in [InterviewState.REVIEW, InterviewState.COMPLETED, InterviewState.CANCELLED]:
             state_node = await StateNode.create(
                 agent_id=self.action.agent_id,
+                interview_type=self.action.get_class_name(),
                 state_type=state,
                 label=state.value.upper(),
             )
@@ -57,6 +58,7 @@ class QuestionGraphBuilder:
 
             question_node = await QuestionNode.create(
                 agent_id=self.action.agent_id,
+                interview_type=self.action.get_class_name(),
                 state=question_config,
                 label=question_name,
             )
@@ -90,16 +92,18 @@ class QuestionGraphBuilder:
 
             # Create edges for branches (conditional)
             if branches:
-                for branch in branches:
+                for branch_idx, branch in enumerate(branches):
                     condition = branch.get("condition", {})
                     target_name = branch.get("target")
                     target_node = resolve_target(target_name)
                     if target_node:
-                        # Create edge with condition
+                        # Create edge with condition and branch metadata
                         await source_node.connect(
                             target_node,
                             edge=QuestionEdge,
-                            condition=condition
+                            condition=condition,
+                            branch_index=branch_idx,
+                            is_default=False
                         )
                 
                 # IMPORTANT: Also create default edge when branches exist but might not match
@@ -108,7 +112,12 @@ class QuestionGraphBuilder:
                     # Has default_next, create edge for it (unconditional, for default path)
                     target_node = resolve_target(default_next)
                     if target_node:
-                        await source_node.connect(target_node, edge=QuestionEdge)
+                        await source_node.connect(
+                            target_node,
+                            edge=QuestionEdge,
+                            branch_index=-1,
+                            is_default=True
+                        )
                 else:
                     # No default_next specified, create edge to next question in sequence
                     current_idx = next(
@@ -120,12 +129,22 @@ class QuestionGraphBuilder:
                         if next_question_name and next_question_name in question_node_map:
                             target_node = question_node_map[next_question_name]
                             # Create unconditional edge (no condition) for default path
-                            await source_node.connect(target_node, edge=QuestionEdge)
+                            await source_node.connect(
+                                target_node,
+                                edge=QuestionEdge,
+                                branch_index=-1,
+                                is_default=True
+                            )
             elif default_next:
                 # No branches, just default_next
                 target_node = resolve_target(default_next)
                 if target_node:
-                    await source_node.connect(target_node, edge=QuestionEdge)
+                    await source_node.connect(
+                        target_node,
+                        edge=QuestionEdge,
+                        branch_index=-1,
+                        is_default=True
+                    )
             else:
                 # No branches, no default_next - sequential flow
                 current_idx = next(
@@ -136,7 +155,12 @@ class QuestionGraphBuilder:
                     next_question_name = question_graph[current_idx + 1].get("name")
                     if next_question_name and next_question_name in question_node_map:
                         target_node = question_node_map[next_question_name]
-                        await source_node.connect(target_node, edge=QuestionEdge)
+                        await source_node.connect(
+                            target_node,
+                            edge=QuestionEdge,
+                            branch_index=-1,
+                            is_default=True
+                        )
 
         # Ensure terminal questions (those without outgoing edges to other questions) transition to REVIEW
         review_state_node = state_node_map.get(InterviewState.REVIEW.value.upper())
@@ -158,4 +182,9 @@ class QuestionGraphBuilder:
                     
                     # If no REVIEW transition exists, add one
                     if not has_review_transition:
-                        await question_node.connect(review_state_node, edge=QuestionEdge)
+                        await question_node.connect(
+                            review_state_node,
+                            edge=QuestionEdge,
+                            branch_index=-1,
+                            is_default=True
+                        )

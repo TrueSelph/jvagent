@@ -21,7 +21,7 @@ from .core.foundation.decorators import (
 from .core import (
     InterviewSession,
     QuestionNode,
-    QuestionWalker,
+    InterviewWalker,
     QuestionEdge,
     StateNode,
     InterviewState,
@@ -39,7 +39,7 @@ __all__ = [
     "input_context_provider",
     "InterviewSession",
     "QuestionNode",
-    "QuestionWalker",
+    "InterviewWalker",
     "QuestionEdge",
     "StateNode",
     "InterviewState",

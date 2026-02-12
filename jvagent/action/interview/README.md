@@ -15,7 +15,6 @@ The Interview Action provides a reusable way to collect responses from users in 
 - **Per-User Session Isolation**: Sessions attached to Conversation nodes for user separation
 - **Type-Based Session Management**: Sessions identified by `interview_type` field (survives action rebuilds)
 - **Unified Classification System**: Single LLM call detects intent (CANCELLATION, CONFIRMATION, UPDATE, SUBMISSION, NONE) and extracts field values
-- **DSPy Integration**: Optional DSPy-based classification with typed signatures, optimizable with teleprompters
 - **State-Aware Classification**: Enhanced rules for accurate intent detection (e.g., "no" in REVIEW state = UPDATE, not CONFIRMATION)
 - **Service Layer Architecture**: Modular design with specialized service classes for classification, state handling, and response processing
 - **Logical State Management**: Four distinct states (ACTIVE, REVIEW, COMPLETED, CANCELLED) with clear transitions
@@ -27,7 +26,10 @@ The Interview Action provides a reusable way to collect responses from users in 
 - **Intelligent Response Pruning**: Automatically remove responses from questions no longer reachable when branching paths change
 - **Input Context**: Supply questions with extra context via static `input_context` (hardcoded dict) or dynamic `input_context_provider` (decorated function)
 - **Data Input Fields**: Extract values directly from `visitor.data` for file uploads and REST call data (bypasses LLM extraction)
-- **Completion Handlers**: Register completion handlers via `@on_interview_complete` decorator
+- **State Handlers**: Register handlers for interview state transitions:
+  - `@on_interview_complete`: Process data when interview completes
+  - `@on_interview_review`: Customize review experience before confirmation
+  - `@on_interview_cancelled`: Handle cancellation and cleanup
 - **Review Override**: Customize the list of values shown in the Review state via `@input_review_override` (omit, format, or adapt items before display)
 - **Question Node Rebuilding**: Automatically rebuilds question nodes when `question_graph` changes
 - **agent.yaml Overrides**: Override `question_graph` in `context:` and model/templates in `config:` (see Configuration)
@@ -68,9 +70,9 @@ The interview action is split into focused packages under `core/`:
 | Package | Responsibility |
 |---------|----------------|
 | **foundation** | Shared types, enums, config dataclasses, prompts, decorators, exceptions. No dependency on other interview packages. |
-| **classification** | Intent classification and extraction (LLM or DSPy). `ClassificationHandler` + strategy-style `IntentHandler` implementations. |
+| **classification** | Intent classification and extraction (LLM). `ClassificationHandler` + strategy-style `IntentHandler` implementations. |
 | **graph** | Question/state graph: `QuestionNode`, `StateNode`, `QuestionWalker`, `QuestionGraphBuilder`, validators, branch evaluation. |
-| **state** | State machine and state-specific directive generation (`StateHandler`, `InterviewStateMachine`). |
+| **state** | State machine and state-node directive generation (`InterviewStateMachine`, `StateNode`). |
 | **processing** | Response validation/storage (`ResponseProcessor`) and directive assembly (`DirectiveBuilder`). |
 | **session** | Session entity and orchestration service (`InterviewSession`, `InterviewService`). |
 | **utils** | Constants, JSON/session helpers, cache utilities. |
@@ -85,16 +87,14 @@ The abstract base class that orchestrates the complete interview flow. **Must be
 **Key Methods:**
 - `on_register()`: Builds question node chain from `question_graph`
 - `on_reload()`: Rebuilds question nodes if `question_graph` changed
-- `execute()`: Loads/creates session, classifies intent, and generates directives via `InterviewService`
+- `execute()`: Loads/creates session, classifies intent, and spawns `InterviewWalker` to traverse the graph
 
-**Service Layer Architecture:**
-The interview system uses a service layer pattern with specialized components:
-- `InterviewService`: Orchestrates classification, state handling, and directive generation
-- `StateHandler`: Generates state-specific directives (ACTIVE, REVIEW, COMPLETED, CANCELLED)
-- `ResponseProcessor`: Processes, validates, and stores user responses
-- `ClassificationHandler`: Handles intent classification and field extraction (optional DSPy `InterviewClassifier` when `use_dspy` is enabled)
+**Core Components:**
+The interview system uses specialized components following the data-spatial walker-node pattern:
+- `ClassificationHandler`: Handles intent classification and field extraction via prompt-based classification
 - `QuestionGraphBuilder`: Builds QuestionNode and StateNode graph from `question_graph`
-- `InterviewStateMachine`: Manages state transitions with validation
+- `InterviewWalker`: Traverses the question graph using `@on_visit` decorators
+- `StateNode`: Manages state transitions with validation (includes transition rules)
 
 **Unified Classification:**
 The system uses a single unified prompt (`INTERVIEW_PROMPT`) that:
@@ -105,7 +105,15 @@ The system uses a single unified prompt (`INTERVIEW_PROMPT`) that:
 - All in a single LLM call for efficiency and consistency
 
 **Data Input Fields:**
-Fields with `data_input_field` configured are automatically excluded from LLM extraction. Values are extracted directly from `visitor.data` and treated as SUBMISSION intent, bypassing the LLM classification for those specific fields. This enables file uploads and other binary data to be handled without LLM processing.
+Fields with `data_input_field` configured are automatically excluded from LLM extraction. Values are extracted directly from `visitor.data` and treated as SUBMISSION or UPDATE intent (depending on whether the field already has a value), bypassing the LLM classification for those specific fields. When the key is absent in `visitor.data`, the current question (first unanswered) is auto-populated with `"N/A"`. This enables file uploads and other binary data to be handled without LLM processing.
+
+When `data_input_field` provides data, the system furnishes a complete extraction payload with:
+- **Intent**: SUBMISSION (for new values) or UPDATE (for existing values)
+- **Field name**: The question field being populated
+- **Value**: The extracted value from `visitor.data`
+- **Metadata**: Persisted to the Interaction's `intent_type`, `interpretation`, and `parameters` for downstream consumers (external integrations, logging, analytics)
+
+This ensures the extraction payload structure is consistent whether data comes from LLM extraction or `data_input_field`, allowing the rest of the flow (execute, InterviewWalker, handlers, external systems) to process it uniformly.
 
 #### 2. InterviewSession Node
 Persistent node that stores:
@@ -131,8 +139,9 @@ Represents individual interview questions with:
 - Required vs optional flags
 - Condition matching for tree traversal
 
-#### 4. QuestionWalker
-Specialized walker that traverses QuestionNodes in a tree-based arrangement:
+#### 4. InterviewWalker
+Specialized walker that traverses QuestionNodes using the walker-node pattern:
+- Uses `@on_visit` decorators for automatic node dispatch
 - Finds next unanswered question based on conditional branches
 - Processes input via QuestionNode handlers
 - Validates responses via QuestionNode validators
@@ -148,32 +157,35 @@ Specialized edge connecting QuestionNodes with optional condition metadata:
 Provides unified condition matching logic for conditional branching:
 - Static utility for evaluating branch conditions
 - Supports both operator-based and function-based conditions
-- Used by QuestionWalker for tree traversal
+- Used by InterviewWalker for tree traversal
 - Ensures functions only execute after questions are answered
 
-#### 7. InterviewService
-Service layer that orchestrates interview components:
-- Coordinates between classification, state handling, and response processing
-- Provides unified interface for interview operations
+#### 7. StateNode & State Handlers
+Manages interview state transitions and state-specific behavior:
+- `StateNode`: Represents interview states (REVIEW, COMPLETED, CANCELLED) in the question graph
+- Includes state transition validation logic (VALID_TRANSITIONS map)
+- Registers and calls state handlers via decorators:
+  - `@on_interview_review`: Customize review experience
+  - `@on_interview_complete`: Process completion data
+  - `@on_interview_cancelled`: Handle cancellation
 
-#### 8. StateHandler
-Encapsulates state-specific directive generation logic:
-- Generates directives based on current interview state
-- Handles state transitions and flow control
+#### 8. PostUpdateWalker
+Specialized walker for computing reachable questions after branch changes:
+- Traverses from first question following active branch paths
+- Collects all reachable question names
+- Used for pruning responses when branch paths change
 
-#### 9. ResponseProcessor
-Consolidates logic for processing, validating, and storing user responses:
-- Processes extracted field values
-- Handles directive overrides (append and replace modes)
-- Manages field validation and storage
-
-#### 10. InterviewClassifier
+#### 9. ClassificationHandler
 Handles intent classification and field extraction:
 - Unified LLM-based classification and extraction
-- Supports both prompt-based and DSPy-based backends
+- Prompt-based classification with chain-of-verification reasoning
 
-#### 11. InteractWalker
-Standard walker used throughout. The interview action receives session via conversation queries.
+#### 10. DirectiveBuilder
+Handles directive formatting and generation:
+- Formats review summaries
+- Builds confirmation directives
+- Generates completion and cancellation messages
+- Queues directives to the InteractWalker
 
 ### Standard Anchors
 
@@ -239,8 +251,6 @@ The final anchors list will include:
 interview/
 ├── __init__.py                    # Package initialization (exports decorators)
 ├── interview_interact_action.py   # Abstract base class (orchestrator)
-├── decorators.py                  # Decorator functions (@input_handler, @input_validator, @input_review_override, etc.)
-├── prompts.py                     # Prompt templates
 ├── info.yaml                      # Action metadata
 ├── README.md                      # This file
 ├── core/
@@ -248,36 +258,32 @@ interview/
 │   ├── foundation/                # Core types & configuration
 │   │   ├── enums.py               # InterviewState, ValidationStatus, Intent, ContextKey
 │   │   ├── exceptions.py          # Custom exceptions
-│   │   └── config.py              # Configuration objects
+│   │   ├── config.py              # Configuration objects
+│   │   ├── decorators.py          # Decorator functions for handlers/validators
+│   │   └── prompts.py             # Prompt templates
 │   ├── graph/                     # Question graph domain
 │   │   ├── question_node.py       # QuestionNode
 │   │   ├── question_edge.py       # QuestionEdge with conditions
-│   │   ├── question_walker.py     # QuestionWalker for tree traversal
+│   │   ├── interview_walker.py    # InterviewWalker for graph traversal
+│   │   ├── post_update_walker.py  # PostUpdateWalker for reachability analysis
+│   │   ├── state_node.py          # StateNode (includes transition validation)
 │   │   ├── question_branch_evaluator.py  # QuestionBranchEvaluator (condition matching)
 │   │   ├── question_graph_builder.py  # QuestionGraphBuilder (question graph construction)
 │   │   ├── graph_validator.py     # QuestionGraphValidator
 │   │   └── condition_operators.py # ConditionOperator
-│   ├── state/                      # State management
-│   │   ├── state_machine.py       # InterviewStateMachine (state transitions)
-│   │   ├── state_node.py          # StateNode
-│   │   └── state_handlers.py      # StateHandler (state-specific directives)
 │   ├── classification/            # Classification & intent
-│   │   ├── classification_handler.py  # ClassificationHandler (intent classification)
-│   │   └── intent_handlers.py     # Intent handlers (strategy pattern)
-│   ├── processing/                 # Response processing & directives
-│   │   ├── response_processor.py  # ResponseProcessor (response processing)
+│   │   └── classification_handler.py  # ClassificationHandler (intent classification)
+│   ├── processing/                 # Directives
 │   │   └── directive_builder.py  # DirectiveBuilder
-│   ├── session/                    # Session & service orchestration
+│   ├── session/                    # Session management
 │   │   ├── interview_session.py   # InterviewSession Node
-│   │   └── interview_service.py   # InterviewService (orchestration layer)
+│   │   └── pruning_service.py     # Pruning utilities
 │   └── utils/                      # Utilities
 │       ├── session_utils.py       # Session utilities
 │       ├── cache_utils.py         # Cache utilities
+│       ├── handler_utils.py       # Handler invocation utilities
+│       ├── json_utils.py          # JSON parsing utilities
 │       └── constants.py           # Constants
-└── dspy/
-    ├── __init__.py                 # DSPy package exports
-    ├── signatures.py               # DSPy signatures for classification
-    └── modules.py                  # DSPy modules (InterviewClassifier)
 ```
 
 ## Configuration
@@ -313,7 +319,6 @@ config.templates.cancellation_message     # Cancellation message
 config.templates.question_directive       # Question directive template
 config.templates.required_field_decline   # Required field decline template
 config.templates.interview_prompt         # Interview classification prompt
-config.templates.interview_classification_signature  # DSPy signature
 
 # State event messages (via helper function)
 config.templates.get_state_event_message("ACTIVE", class_name)
@@ -325,14 +330,17 @@ config.templates.get_state_event_message("CANCELLED", class_name)
 config.classification.context_list_compact_threshold  # 5
 config.classification.context_options_text            # "options available"
 config.classification.decline_value                   # "n/a"
+config.classification.require_structured_reasoning   # True
+config.classification.include_few_shot_examples       # True
+config.classification.max_examples                    # 5
+config.classification.enable_reference_resolution     # True
+config.classification.enable_composition              # True
 
-# DSPy integration
-config.use_dspy  # False (enable DSPy-based classification)
 ```
 
 ### Overriding Configuration in agent.yaml
 
-Interview config (model, templates, use_dspy) must go under the action's **`config:`** block, not `context:`. The loader merges `config:` into the action's config dict, which `InterviewConfig.from_dict()` consumes. Use `context:` only for action attributes (e.g. `enabled`, `description`, `weight`, `anchors`, `question_graph`).
+Interview config (model, templates) must go under the action's **`config:`** block, not `context:`. The loader merges `config:` into the action's config dict, which `InterviewConfig.from_dict()` consumes. Use `context:` only for action attributes (e.g. `enabled`, `description`, `weight`, `anchors`, `question_graph`).
 
 **Model config keys** (under `config:`): use the `model_` prefix for model-related settings — `model_action_type`, `model`, `model_temperature`, `model_max_tokens`. Context/history keys have no prefix: `use_history`, `max_statement_length`, `history_limit`.
 
@@ -353,7 +361,6 @@ actions:
       use_history: true
       max_statement_length: 400
       history_limit: 10
-      use_dspy: false
       # Template overrides (InterviewConfig.templates)
       completion_message: "Tell the user: All set! Your information has been saved."
       review_confirmation: |
@@ -367,6 +374,11 @@ actions:
       classification:
         context_list_compact_threshold: 10
         decline_value: "skipped"
+        require_structured_reasoning: true
+        include_few_shot_examples: true
+        max_examples: 5
+        enable_reference_resolution: true
+        enable_composition: true
 ```
 
 ### Accessing Templates in Code
@@ -494,12 +506,14 @@ actions:
 - **constraints**: Validation constraints dictionary
   - **description**: Description of what information is needed
   - **instructions**: Additional instructions for the LLM
-  - **type**: Expected data type ("string", "number", "integer")
-  - **format**: Format specification (e.g., "email")
-  - **pattern**: Regex pattern for validation
+  - **type**: Expected data type ("string", "number", "integer") - automatically validated using standard validators
+  - **format**: Format specification (e.g., "email", "phone", "url") - automatically validated using standard validators
+  - **pattern**: Regex pattern for validation - automatically validated using standard "pattern" validator
+  - **standard_validators**: List of standard validator names to apply (e.g., ["email", "no_disposable_email"])
   - **input_handler**: String reference to function that processes raw input before validation (or use `@input_handler` decorator)
   - **input_validator**: String reference to function that validates responses (or use `@input_validator` decorator)
-  - **data_input_field**: Key name in `visitor.data` dictionary to extract value from (e.g., "whatsapp_media"). When specified, the field is excluded from LLM extraction and values are extracted directly from `visitor.data`. Useful for file uploads and other data passed via REST calls.
+  - **data_input_field**: Key name in `visitor.data` dictionary to extract value from (e.g., "whatsapp_media"). When specified, the field is excluded from LLM extraction and values are extracted directly from `visitor.data`. When the key is absent, the field is auto-populated with `"N/A"` for the current question only. Useful for file uploads and other data passed via REST calls.
+  - **extraction_mode**: Explicit override for classification extraction mode: `"verbatim"` (preserve full response), `"normalized"` (trim/normalize), or `"select"` (match to options). If omitted, mode is auto-detected from description keywords, `options`, or `input_context_provider`.
   - **ambiguous_patterns**: Patterns that trigger VALID status with optional feedback message for clarification
 - **input_context**: Optional dictionary of static context data to provide with the question (e.g., available options, metadata). See Context Data section for details.
 - **input_context_provider**: Optional string reference to a registered input context provider function (use `@input_context_provider` decorator). The function returns a dictionary of context data dynamically at runtime. See Context Data section for details.
@@ -1074,7 +1088,9 @@ question_graph = [
 
 ### Custom Input Handlers
 
-Process raw input before validation (e.g., normalize time expressions):
+Process raw input before validation (e.g., normalize time expressions).
+
+**Handler context:** All handlers (input handlers, validators, review override, context providers, state handlers like completion/cancellation/review handlers) can optionally accept `visitor` (InteractWalker) and `interview_action` (InterviewInteractAction) for consistent access to the walker and action. These are passed only when the callable's signature accepts them, so existing handlers remain backward compatible.
 
 **Recommended Approach: Use Decorators**
 
@@ -1204,15 +1220,149 @@ Validators can return:
 **Autocorrection Support:**
 Validators can return a corrected value as the third element of the tuple. If provided, the system will store the corrected value instead of the original input. This is useful for fuzzy matching scenarios (e.g., correcting "next tuesday" to a specific date, or matching "morning" to "9:00 AM").
 
+### Standard Validators
+
+The interview system includes a library of reusable standard validators for common field types. Standard validators run **before** custom `@input_validator` decorators, allowing custom validators to add domain-specific logic on top of format validation.
+
+**Built-in Standard Validators:**
+
+- **Type Validators:**
+  - `string`: Validates value is a string
+  - `number`: Validates value is a number (float)
+  - `integer`: Validates value is an integer
+
+- **Format Validators:**
+  - `email`: Validates email address format
+  - `phone`: Validates phone number format (accepts various formats)
+  - `url`: Validates URL format (http, https, ftp)
+
+- **Pattern Validator:**
+  - `pattern`: Validates value matches regex pattern from constraints
+
+- **Domain-Specific Validators:**
+  - `no_disposable_email`: Rejects disposable email providers
+  - `no_test_domain`: Rejects test domains (example.com, test.com, etc.)
+
+**Automatic Application:**
+
+Standard validators are automatically applied based on constraint keys:
+
+```python
+question_graph = [
+    {
+        "name": "user_email",
+        "question": "What is your email?",
+        "constraints": {
+            "type": "string",        # Applies "string" validator
+            "format": "email",       # Applies "email" validator
+            # Both validators run automatically
+        },
+        "required": True
+    }
+]
+```
+
+**Explicit Application:**
+
+Use `standard_validators` list to apply additional validators:
+
+```python
+question_graph = [
+    {
+        "name": "user_email",
+        "question": "What is your email?",
+        "constraints": {
+            "type": "string",
+            "format": "email",
+            "standard_validators": [
+                "no_disposable_email",  # Reject disposable email providers
+                "no_test_domain"        # Reject test domains
+            ]
+        },
+        "required": True
+    }
+]
+```
+
+**Validation Order:**
+
+1. Empty value check (if required)
+2. Standard validators (type, format, pattern, explicit list)
+3. Custom `@input_validator` decorators
+4. Ambiguous pattern checks
+
+**Combining Standard and Custom Validators:**
+
+Standard validators handle format validation, while custom validators add domain-specific rules:
+
+```python
+from jvagent.action.interview import input_validator
+from jvagent.action.interview.core.enums import ValidationStatus
+
+@input_validator('user_email')
+def validate_company_email(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+    """Custom validator runs AFTER standard email format validation."""
+    if "@company.com" not in value:
+        return ValidationStatus.INVALID, "Please use your company email address"
+    return ValidationStatus.VALID, None
+
+class MyInterviewAction(InterviewInteractAction):
+    question_graph = [
+        {
+            "name": "user_email",
+            "constraints": {
+                "type": "string",
+                "format": "email",  # Standard email validator runs first
+                # Custom validator runs second (checks company domain)
+            }
+        }
+    ]
+```
+
+**Creating Custom Standard Validators:**
+
+You can extend the standard validator library by registering new validators:
+
+```python
+from jvagent.action.interview.core.foundation.standard_validators import standard_validator
+from jvagent.action.interview.core.foundation.enums import ValidationStatus
+from typing import Any, Dict, Optional, Tuple
+
+@standard_validator("credit_card")
+def validate_credit_card(
+    value: Any, constraints: Dict[str, Any]
+) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
+    """Validate credit card number format."""
+    if not isinstance(value, str):
+        return ValidationStatus.INVALID, "Credit card must be a string", None
+    
+    # Remove spaces and dashes
+    digits = value.replace(" ", "").replace("-", "")
+    
+    if not digits.isdigit() or len(digits) not in (13, 15, 16):
+        return ValidationStatus.INVALID, "Invalid credit card number", None
+    
+    return None  # Valid
+```
+
+**Benefits:**
+
+- **Reusability**: Common validators defined once, used across all interviews
+- **Consistency**: Same validation logic applied uniformly
+- **Extensibility**: Easy to add new standard validators
+- **Clean Separation**: Format validation (standard) vs domain logic (custom)
+
 ### Data Input Fields (Direct Extraction from visitor.data)
 
 For fields that receive data directly from REST calls (e.g., file uploads, binary data), you can use `data_input_field` to extract values directly from the `visitor.data` dictionary, bypassing LLM extraction entirely.
 
 **How It Works:**
 - When `data_input_field` is specified in a question's constraints, the system checks `visitor.data` for a matching key
-- If the key exists, the value is extracted and treated as a SUBMISSION (new data)
+- If the key exists, the value is extracted and treated as SUBMISSION (new data) or UPDATE (if field already has a value)
+- If the key is absent, the field is auto-populated with `"N/A"` for the current question only (first unanswered); other data_input_field questions are not pre-populated
 - The field is automatically excluded from LLM extraction (not included in `entities_to_extract`)
 - Values go through the same validation pipeline (input handlers and validators) as LLM-extracted values
+- **Extraction metadata** (intent, field name, value) is furnished in a ClassificationResult and persisted to the Interaction for downstream consumers
 
 **Example: File Upload via WhatsApp Media**
 
@@ -1249,15 +1399,48 @@ question_graph = [
 
 **Key Behaviors:**
 - **Exclusion from LLM**: Fields with `data_input_field` are not sent to the LLM for extraction
-- **Always SUBMISSION**: Data input values are always treated as SUBMISSION intent, regardless of whether the field already has a value in the session
+- **Intent Detection**: Data input values are treated as SUBMISSION (for new values) or UPDATE (for existing values), matching the behavior of LLM extraction
+- **Extraction Payload**: A complete ClassificationResult is furnished with intent, field name, and value, ensuring consistent structure for downstream flow
+- **Metadata Persistence**: Extraction metadata is persisted to the Interaction's `intent_type`, `interpretation`, and `parameters` for external consumers
 - **Validation Pipeline**: Values still go through `process_input()` and `validate_response()` if handlers/validators are registered
 - **Coexistence**: Works alongside LLM extraction - other fields without `data_input_field` are still extracted by the LLM
+- **Premature Submissions**: If a `data_input_field` value is submitted before its turn in the question graph (e.g., user uploads images before answering earlier questions), the system intelligently starts at the first unanswered question and validates the premature submission when its turn comes, ensuring all questions are collected in order
 
 **Use Cases:**
 - File uploads (images, documents, etc.)
 - Binary data passed via REST calls
 - Pre-processed data that shouldn't be extracted from text
 - Data that comes from external systems rather than user utterances
+
+**Premature Submission Handling:**
+
+When a `data_input_field` value is submitted **before the interview reaches that question** (e.g., user uploads images before answering earlier questions), the system handles it intelligently:
+
+1. The value is stored in the session and added to the validation queue
+2. The target node is set to the **first unanswered question** (not the submitted field)
+3. The walker traverses sequentially, asking each unanswered question in order
+4. When the walker reaches the prematurely-submitted field, it validates it and executes handlers/validators
+5. The walker continues forward to collect remaining questions
+
+**Example:**
+```
+Question Graph: [incident_description, incident_location, incident_media, reporting_on_behalf]
+
+User uploads images BEFORE answering any questions
+→ incident_media stored with value and queued for validation
+→ Walker starts at incident_description (first unanswered)
+→ User answers incident_description
+→ Walker moves to incident_location
+→ User answers incident_location
+→ Walker reaches incident_media → validates the premature submission, runs handlers
+→ Walker continues to reporting_on_behalf
+```
+
+This ensures:
+- All questions are collected in the correct order
+- Premature submissions are validated when their turn comes
+- Branch functions have access to all earlier answers
+- The interview flow remains sequential and predictable
 
 ### Context Data
 
@@ -1606,97 +1789,97 @@ Directive overrides are checked:
 
 ## Unified Classification System
 
-The interview system uses a single unified prompt (`INTERVIEW_PROMPT`) that combines intent detection and field extraction in one LLM call. This approach is more efficient and ensures consistency.
+The interview system uses a single LLM call for classification and extraction. In one API call it: (1) detects intent, (2) extracts field values, (3) resolves conversational references, (4) composes multi-turn values, and (5) applies field-type-aware extraction modes. The prompt is built from modular sections via `build_classification_rules()` in `prompts.py`, with configuration toggles for token budget management.
 
-### Classification Backend Options
+### Prompt Architecture
 
-The system supports two classification backends:
+The classification prompt is composed from 8 sections:
 
-1. **Prompt-Based Classification** (default): Uses a structured prompt template with JSON response format
-2. **DSPy-Based Classification** (optional): Uses typed DSPy signatures that can be optimized with DSPy teleprompters
-
-Enable DSPy classification by setting `use_dspy=True` in your interview action:
-
-```python
-class MyInterviewAction(InterviewInteractAction):
-    use_dspy: bool = attribute(
-        default=True,
-        description="Use DSPy module for classification"
-    )
-```
-
-**Benefits of DSPy Integration:**
-- Typed signatures for better structure and validation
-- Optimizable with DSPy teleprompters (BootstrapFewShot, MIPROv2, etc.)
-- Evaluable with `dspy.Evaluate` for performance measurement
-- Consistent interface regardless of backend
+| Section | Purpose |
+|---------|---------|
+| **Reasoning Instructions** | 6-step structured process: identify user/state → check references → check composition → determine intent → extract → verify |
+| **Intent Rules** | Defines CANCELLATION, CONFIRMATION, UPDATE, DECLINE, SUBMISSION, NONE with expanded pattern matching |
+| **Extraction Rules** | Three modes: [verbatim] (preserve full response), [normalized] (trim/casing), [select] (match to options) |
+| **Reference Resolution** | Ordinal ("the second option"), temporal ("Wednesday afternoon"), anaphoric ("that one") |
+| **Composition Rules** | Multi-turn value composition (e.g., "John" + "Smith" → "John Smith") |
+| **Verification** | Chain-of-Verification checklist before final output |
+| **Output Format** | Required JSON with structured `reasoning` object |
+| **Examples** | Five few-shot examples for edge cases |
 
 ### Intent Detection
 
-The system detects intent types using the `Intent` enum with state-aware rules:
+- **CANCELLATION**: "cancel", "abort", "stop", "never mind" — any state
+- **CONFIRMATION** (REVIEW only): Pure affirmation with no new values. Expanded patterns: "yes", "correct", "looks good", "yep", "all good", "looks fine to me", "that's fine", "confirmed", "perfect"
+- **SUBMISSION**: Answering unanswered questions. Includes "yes"/"no" when answering yes/no questions in active state.
+- **UPDATE**: Changing an already-answered field. Requires explicit change language ("change to", "actually I prefer", "make it"). Bare "yes"/"no" is never UPDATE.
+- **DECLINE**: Explicit refusal or "no" to optional content (photos, attachments). Not "no" as answer to yes/no question.
+- **NONE**: Last resort for meta-requests, greetings, or off-topic content.
 
-- **Intent.CANCELLATION**: User wants to cancel/stop the interview
-  - Highest priority, overrides all other intents
-  - Can occur in any state
-  
-- **Intent.CONFIRMATION**: User confirms/approves information (only in REVIEW state)
-  - Only applies to positive affirmations ("yes", "correct", "looks good", etc.)
-  - **CRITICAL**: "No" is NOT a CONFIRMATION indicator
-  
-- **Intent.UPDATE**: User wants to change/update a previously answered field
-  - **State-Aware Rule**: In REVIEW state, "no" (rejecting confirmation) = UPDATE
-  - When field is null, system shows summary and asks which field to change
-  - Uses interpretation field when available for better context
-  
-- **Intent.SUBMISSION**: User is providing answers to unanswered questions
-  - Extracts field values from message and conversation history
-  - Also includes values from `data_input_field` (extracted directly from `visitor.data`, bypassing LLM)
-  
-- **Intent.DECLINE**: User declines to answer a non-required question
-  - Stores "n/a" for declined optional fields
-  
-- **Intent.NONE**: No clear intent or conversational filler
+**Critical**: "yes"/"no" in active state = SUBMISSION (answer). In review state = CONFIRMATION or refusal.
 
-### State-Aware Classification Rules
+### Extraction Modes
 
-The classification system includes state-aware rules for better accuracy:
+Extraction mode is auto-detected or set via `extraction_mode` constraint:
 
-- **"No" in REVIEW state**: Classified as UPDATE (rejecting confirmation), not CONFIRMATION
-- **Interpretation context**: When interpretation indicates "not correct" or "wrong", prefers UPDATE intent
-- **Field normalization**: Handles string "null" values from JSON parsing, normalizing them to Python None
+- **[verbatim]**: For description/narrative fields. Preserves full user response; no summarization. Keywords: "description", "narrative", "details", "incident", "explain"
+- **[normalized]**: For structured fields (email, phone, name). Trim whitespace, fix casing
+- **[select]**: For fields with `options` or `input_context_provider`. Match to closest valid option; handles references like "the second option"
+
+### Context Enhancement
+
+- **Entity format**: Each unanswered field includes mode marker, e.g. `incident_description [REQUIRED] [verbatim] — Expected: "..." | Constraints: ...`
+- **Inline options**: Select fields include `| Options: Monday 9AM, Monday 2PM, Wednesday 9AM` for reference resolution
+- **Conversation history**: Passed via the model API's `history` parameter as separate messages (not embedded in the prompt). The prompt instructs the LLM to use the preceding messages for identifying the current question, resolving "yes"/"no" and references, and multi-turn composition. Requires `use_history: true` and `history_limit` in config.
+
+### Classification Configuration
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `require_structured_reasoning` | true | Require structured reasoning object in LLM response |
+| `include_few_shot_examples` | true | Include few-shot examples in prompt |
+| `max_examples` | 5 | Cap on example count |
+| `enable_reference_resolution` | true | Include reference resolution section |
+| `enable_composition` | true | Include multi-turn composition section |
+
+**Token budget**: Full config ~700 tokens; minimal (examples+reasoning disabled) ~200 tokens. For GPT-4o/Claude 3.5+ use full; for smaller models or token limits, disable examples and reasoning.
+
+### Validation Scenarios
+
+The system addresses five failure modes:
+
+1. **Long-form extraction**: [verbatim] mode preserves multi-sentence incident descriptions verbatim
+2. **Multi-turn composition**: "John" (earlier message) + "Smith" (current) → "John Smith" for full_name
+3. **Reference resolution**: "the second option" resolved to specific value from Options list
+4. **CONFIRMATION in review**: "yep that all looks good", "everything is correct" correctly classified
+5. **"No" disambiguation**: "no" to yes/no question → SUBMISSION; "no" to optional content → DECLINE
 
 ### Input Processing
 
-The unified prompt accepts both:
-- **User's utterance**: The raw user message
-- **Interpretation**: LLM-generated interpretation of user intent (when available)
-
-Both are provided to the prompt when available, giving the classification system more context for accurate intent detection and extraction. The interpretation field is particularly useful for distinguishing between "no" as rejection (UPDATE) vs "no" as answer to a question (SUBMISSION).
+The prompt accepts both **utterance** and **interpretation** (when available). Interpretation helps distinguish "no" as rejection vs answer. Conversation history is passed as separate messages via the model API's `history` parameter (controlled by `use_history` and `history_limit` in config).
 
 ### Classification Result
 
-The `ClassificationResult` dataclass contains:
-- `intent`: Detected intent type
-- `confidence`: Confidence score (0.0-1.0)
-- `extracted_data`: Extracted field values (for SUBMISSION intent)
-- `field`: Field name (for UPDATE intent, null if unclear)
-- `value`: Field value (for UPDATE intent, null if not provided)
+`ClassificationResult` contains: `intent`, `confidence`, `extracted_data`, `field`, `value`, `from_data_input_field`.
 
 ### UPDATE Intent Handling
 
-When UPDATE intent is detected:
-
-1. **With field specified**: Processes the update inline using QuestionNode validation
-2. **Without field (null)**: Shows summary of current information and prompts user to specify which field to change
-3. **Field normalization**: Automatically handles string "null" values from JSON parsing
+- **With field**: Processes update via QuestionNode validation
+- **Without field**: Shows summary and prompts which field to change
+- **Field normalization**: Handles string "null" from JSON
 
 ### State Transitions
 
-State transitions happen within the same interaction when appropriate:
-- **ACTIVE → REVIEW**: When all required questions are answered
-- **REVIEW → COMPLETED**: When CONFIRMATION intent is detected
-- **REVIEW → ACTIVE**: When UPDATE intent is detected and processed
-- **Any → CANCELLED**: When CANCELLATION intent is detected
+- ACTIVE → REVIEW when all answered
+- REVIEW → COMPLETED on CONFIRMATION
+- REVIEW → ACTIVE on UPDATE
+- Any → CANCELLED on CANCELLATION
+
+### Troubleshooting Classification
+
+- **Token limit exceeded**: Set `include_few_shot_examples: false` or `max_examples: 2`
+- **Composition not working**: Ensure `enable_composition: true`, `use_history: true`, and `history_limit` is sufficient; history is passed via the API
+- **Reference resolution failing**: Ensure `enable_reference_resolution: true`, Options in entities, field marked [select]
+- **Verbatim truncated**: Add explicit `extraction_mode: verbatim` to constraints; check `model_max_tokens`
 
 ## Validation System
 
@@ -1867,6 +2050,72 @@ async def handle_completion(
 
 The completion handler is called automatically when the interview transitions to COMPLETED state.
 
+## Cancellation Handling
+
+**Use `@on_interview_cancelled` Decorator**
+
+Register a cancellation handler to process events when an interview is cancelled:
+
+```python
+from jvagent.action.interview import (
+    InterviewInteractAction,
+    on_interview_cancelled,
+)
+from jvagent.action.interview.core.interview_session import InterviewSession
+from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.action.interact.base import InteractAction
+
+@on_interview_cancelled('InterviewActionName')
+async def handle_cancellation(
+    session: InterviewSession,
+    visitor: InteractWalker,
+    action: InteractAction
+) -> None:
+    """Handle interview cancellation."""
+    # Log cancellation for analytics
+    logger.info(f"Interview cancelled. Partial responses: {session.responses}")
+    # Clean up any temporary resources
+    await cleanup_temp_resources(session)
+    # Send custom cancellation acknowledgment
+    await action.respond(visitor, directives=["No problem! Feel free to start again anytime."])
+```
+
+The cancellation handler is called automatically when the interview transitions to CANCELLED state (when the user explicitly cancels).
+
+## Review Handling
+
+**Use `@on_interview_review` Decorator**
+
+Register a review handler to customize the review experience before the user confirms their responses:
+
+```python
+from jvagent.action.interview import (
+    InterviewInteractAction,
+    on_interview_review,
+)
+from jvagent.action.interview.core.interview_session import InterviewSession
+from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.action.interact.base import InteractAction
+
+@on_interview_review('InterviewActionName')
+async def handle_review(
+    session: InterviewSession,
+    visitor: InteractWalker,
+    action: InteractAction
+) -> Optional[str]:
+    """Customize review summary with a custom prefix."""
+    # Get user info for personalization
+    user_name = session.responses.get('user_name', 'there')
+    # Return custom prefix to prepend to review summary
+    return f"Great job, {user_name}! Let's review your information:"
+```
+
+The review handler is called automatically when the interview transitions to REVIEW state, before the summary is shown. It can optionally return a custom directive string to prepend to the review summary. If no string is returned (or handler is not registered), the default review summary is shown.
+
+**Handler Return Values:**
+- `str`: Custom message to prepend to the review summary
+- `None`: Use default review summary
+
 ## Multiple Interviews Per Agent
 
 You can run multiple interview types in the same agent:
@@ -1892,8 +2141,7 @@ Each maintains its own sessions via `interview_type` identification.
 4. **Data Processing**: Choose appropriate pattern (A, B, or C) based on complexity
 5. **Session Cleanup**: Clean up sessions after data is processed
 6. **Type Identification**: Always use unique class names for interview types
-7. **DSPy Classification**: Enable `use_dspy=True` for optimizable and evaluable classification
-8. **State-Aware Responses**: Be aware that "no" in REVIEW state means UPDATE (rejecting confirmation), not CONFIRMATION
+7. **State-Aware Responses**: Be aware that "no" in REVIEW state means UPDATE (rejecting confirmation), not CONFIRMATION
 
 ## Troubleshooting
 
@@ -2019,9 +2267,9 @@ This ensures interview state remains consistent when branching paths change.
 For production monitoring, check cache contents in session.context:
 
 ```python
-# Access cache for debugging
-cache_data = session.context.get('_branch_function_cache', {})
-print(f"Cached entries: {len(cache_data)}")
+# Access cache for debugging (question name -> resolved target)
+cache_data = session.context.get('_branch_cache', {})
+print(f"Cached branch targets: {len(cache_data)}")
 
 pruned_data = session.context.get('_pruned_responses', {})
 if pruned_data:
@@ -2293,31 +2541,3 @@ class AppointmentInterviewAction(InterviewInteractAction):
 
 See `examples/jvagent_app/agents/jvagent/example_agent/actions/jvagent/signup_interview_interact_action/` for a production example that replaces the original hardcoded questions.
 
-### Example 5: Using DSPy Classification
-
-Enable DSPy-based classification for optimizable and evaluable classification:
-
-```python
-from jvagent.action.interview import InterviewInteractAction
-from jvspatial.core.annotations import attribute
-
-class MyInterviewAction(InterviewInteractAction):
-    """Interview with DSPy classification enabled."""
-    
-    use_dspy: bool = attribute(
-        default=True,
-        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)"
-    )
-    
-    question_graph: List[Dict[str, Any]] = attribute(
-        default_factory=lambda: [
-            # ... question configurations ...
-        ]
-    )
-```
-
-**Benefits:**
-- Typed signatures provide better structure and validation
-- Can be optimized with DSPy teleprompters for improved performance
-- Can be evaluated with `dspy.Evaluate` to measure classification accuracy
-- Same interface as prompt-based classification, just with different backend

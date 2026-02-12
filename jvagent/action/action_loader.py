@@ -276,7 +276,7 @@ class JvagentActionsImporter(importlib.abc.MetaPathFinder):
                     fullname, module_file, submodule_search_locations=[str(action_dir)]
                 )
                 return spec
-            # Deeper submodule (e.g. dspy.signatures)
+            # Deeper submodule (e.g. utils.helpers)
             subpath = action_dir / parts[4]
             if len(parts) == 5:
                 init = subpath / "__init__.py"

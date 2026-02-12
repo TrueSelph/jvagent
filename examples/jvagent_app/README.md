@@ -554,3 +554,44 @@ For issues and questions:
 - Check the [jvagent documentation](https://github.com/your-org/jvagent)
 - Open an issue on the project repository
 
+
+
+### 9. Interview Session Current Extraction Tracking (CRITICAL FIX)
+
+#### Problem Identified
+- **current_extraction Not Reset**: The `context.current_extraction` list was not being reset at the start of each turn
+- **Accumulation Issue**: Fields extracted in previous turns remained in the list, causing confusion about what was extracted in the current turn
+- **Impact**: Unable to track which fields were extracted in the current interaction turn vs previous turns
+
+#### Root Cause Analysis
+1. **Missing Reset Logic**: The extraction tracking was stored in `context` dict without proper reset mechanism
+2. **Update Flow Gap**: The `handle_update_inline` method didn't reset extraction tracking before processing updates
+3. **Persistence Issue**: The list persisted across turns in the session context without being cleared
+
+#### Solution Implemented
+- **Dedicated Attribute**: Created `current_extractions` as a proper `InterviewSession` attribute (renamed from `current_extraction`)
+- **Clean Access Pattern**: Changed from `session.context.get('current_extraction', [])` to `session.current_extractions`
+- **Auto-Reset**: Reset `session.current_extractions = []` at the start of both:
+  - `process_responses_to_questions()` - For SUBMISSION intent processing
+  - `handle_update_inline()` - For UPDATE intent processing
+- **Per-Turn Tracking**: Each turn starts with an empty list and only tracks fields extracted in that specific turn
+
+#### Technical Details
+- **Files Modified**: 
+  - `/jvagent/jvagent/action/interview/core/session/interview_session.py` - Added `current_extractions` attribute
+  - `/jvagent/jvagent/action/interview/core/processing/response_processor.py` - Updated to use new attribute with reset logic
+- **Changes**: 
+  1. Added `current_extractions: List[str]` attribute to `InterviewSession`
+  2. Changed access pattern from `session.context['current_extraction']` to `session.current_extractions`
+  3. Reset `session.current_extractions = []` at the start of both processing methods
+  4. Simplified tracking: `session.current_extractions.append(field)` instead of dict manipulation
+- **Benefit**: Cleaner API, accurate per-turn tracking, no dict key management needed
+
+## Testing Recommendations (Updated)
+
+1. **Current Extraction Tracking**:
+   - Test that `session.current_extractions` is empty at the start of each turn
+   - Verify fields are added to the list only when extracted in the current turn
+   - Test both SUBMISSION and UPDATE intents reset the list properly
+   - Verify the list persists correctly in the session JSON files
+   - Test access pattern: `session.current_extractions` returns empty list by default

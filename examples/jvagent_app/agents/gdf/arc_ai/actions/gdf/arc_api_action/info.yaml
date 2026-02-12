@@ -1,0 +1,16 @@
+package:
+  name: gdf/arc_api_action
+  author: V75 Inc.
+  archetype: ArcAPIAction
+  version: 1.0.0
+  meta:
+    title: Arc API Action
+    description: Houses Arc API credentials and endpoints
+    group: gdf
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []

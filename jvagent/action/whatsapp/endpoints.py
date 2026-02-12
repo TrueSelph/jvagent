@@ -86,8 +86,11 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             logger.debug(f"Error parsing WhatsApp webhook request: {e}")
             data = None
 
+        if data.message_type in ['ignored']:
+            return {"status": "ignored", "response": "Ignore message"}
 
-        # logger.info(f"Received WhatsApp webhook for agent {agent_id}: {data}")
+
+        # logger.warning(f"Received WhatsApp webhook for agent {agent_id}: {data}")
         
         if not data or data.fromMe:
             return {"status": "received", "response": "Ignore message"}
