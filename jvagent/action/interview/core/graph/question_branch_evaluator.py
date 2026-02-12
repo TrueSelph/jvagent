@@ -86,10 +86,7 @@ class QuestionBranchEvaluator:
         question_name: str,
         visitor: Optional["InteractWalker"]
     ) -> bool:
-        """Evaluate a function-based branch condition with caching support.
-        
-        Transparently caches computed results and only re-executes if dependencies change.
-        This avoids expensive function calls when response values haven't been modified.
+        """Evaluate a function-based branch condition.
 
         Args:
             condition: Condition dict with 'function' key and optional 'op' and 'value'
@@ -101,7 +98,6 @@ class QuestionBranchEvaluator:
             True if condition matches, False otherwise
         """
         from ..foundation.decorators import get_branch_function
-        from ..utils.cache_utils import BranchFunctionCache
 
         function_name = condition.get("function")
         if not function_name:
@@ -110,22 +106,16 @@ class QuestionBranchEvaluator:
             )
             return False
 
-        # Check if question is answered (unless checking existence)
-        # For function-based conditions, we need the question to be answered
-        # to have meaningful data for the function to evaluate.
-        # This prevents premature function execution during graph traversal.
         operator = condition.get("op")
         is_existence_check = operator in ("exists", "is_set", "not_exists", "is_not_set")
-        
         if not is_existence_check:
-            if question_name not in session.get_answered_questions():
+            if question_name not in session.responses:
                 logger.debug(
                     f"Function condition check skipped: question '{question_name}' not answered yet. "
                     f"Condition: {condition}"
                 )
                 return False
 
-        # Look up function from registry
         func = get_branch_function(session.interview_type, function_name)
         if not func:
             logger.error(
@@ -134,94 +124,34 @@ class QuestionBranchEvaluator:
             )
             return False
 
-        # Try to get cached result (check cache before executing)
-        branch_cache = BranchFunctionCache(session)
-        cache_key = branch_cache._make_cache_key(question_name, condition, function_name)
-        cached_entry = branch_cache.get(cache_key)
-        
-        if cached_entry:
-            # Dependencies haven't changed, use cached result
-            cached_result = cached_entry.get("result")
-            logger.debug(
-                f"Branch cache HIT for function '{function_name}' on question '{question_name}'. "
-                f"Using cached result: {cached_result!r}"
-            )
-            
-            # Still need to apply operator if present
-            if "op" in condition:
-                expected_value = condition.get("value")
-                operator = condition.get("op")
-                try:
-                    evaluation_result = ConditionOperator.evaluate(operator, cached_result, expected_value)
-                    logger.debug(
-                        f"Function '{function_name}' (cached) returned {cached_result!r}, operator '{operator}' "
-                        f"evaluation: {evaluation_result}"
-                    )
-                    return evaluation_result
-                except ValueError as e:
-                    logger.warning(
-                        f"Invalid operator '{operator}' in function condition for '{function_name}': {e}"
-                    )
-                    return False
-            else:
-                bool_result = bool(cached_result)
-                logger.debug(
-                    f"Function '{function_name}' (cached) returned {cached_result!r} (bool: {bool_result}) "
-                    f"for question '{question_name}'"
-                )
-                return bool_result
-
         try:
-            # Execute function (not in cache, or cache was invalid)
             if inspect.iscoroutinefunction(func):
                 result = await func(session, visitor)
             else:
                 result = func(session, visitor)
-            
-            # Extract accessed keys from instrumented responses (set by wrapper)
-            accessed_keys = set()
-            if hasattr(session, '_branch_function_accessed_keys'):
-                accessed_keys = session._branch_function_accessed_keys
-                # Clear for next function call
-                del session._branch_function_accessed_keys
-            
-            # Cache the result with dependencies
-            branch_cache.set(cache_key, result, accessed_keys)
-            logger.debug(
-                f"Branch cache SET for function '{function_name}' on question '{question_name}'. "
-                f"Result: {result!r}, Dependencies: {accessed_keys}"
-            )
 
-            # Hybrid logic: check for operator
             if "op" in condition:
-                # Function returns value, evaluate with operator
                 expected_value = condition.get("value")
-                operator = condition.get("op")
+                op = condition.get("op")
                 try:
-                    evaluation_result = ConditionOperator.evaluate(operator, result, expected_value)
+                    evaluation_result = ConditionOperator.evaluate(op, result, expected_value)
                     logger.debug(
-                        f"Function '{function_name}' returned {result!r}, operator '{operator}' "
+                        f"Function '{function_name}' returned {result!r}, operator '{op}' "
                         f"evaluation: {evaluation_result}"
                     )
                     return evaluation_result
                 except ValueError as e:
                     logger.warning(
-                        f"Invalid operator '{operator}' in function condition for '{function_name}': {e}"
+                        f"Invalid operator '{op}' in function condition for '{function_name}': {e}"
                     )
                     return False
             else:
-                # Function returns boolean directly
                 if not isinstance(result, bool):
                     logger.warning(
                         f"Branch function '{function_name}' returned {type(result).__name__} "
                         f"but bool expected when no operator is specified. Converting to bool."
                     )
-                bool_result = bool(result)
-                logger.debug(
-                    f"Function '{function_name}' returned {result!r} (bool: {bool_result}) "
-                    f"for question '{question_name}'"
-                )
-                return bool_result
+                return bool(result)
 
         except Exception as e:
             logger.error(

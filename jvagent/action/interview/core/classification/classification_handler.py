@@ -7,10 +7,11 @@ separation of concerns and maintainability.
 import json
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 from ..foundation.enums import Intent, InterviewState
 from ..session.interview_session import InterviewSession
+from ..graph.question_node import QuestionNode
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -19,12 +20,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Keys in LLM response that are metadata, not extracted field values
+EXTRACTION_METADATA_KEYS = frozenset({"intent", "confidence", "field", "value", "reasoning", "extracted"})
+
 
 @dataclass
 class ClassificationResult:
     """Result of unified classification and extraction routine.
 
     Uses unified intent types: CANCELLATION, CONFIRMATION, UPDATE, DECLINE, SUBMISSION, NONE
+    
+    This structure is used for both LLM-based extraction and data_input_field extraction,
+    ensuring consistent payload shape for downstream consumers.
     """
     intent: str  # "CANCELLATION", "CONFIRMATION", "UPDATE", "DECLINE", "SUBMISSION", "NONE"
     confidence: float = 1.0  # Confidence score for the classification
@@ -35,6 +42,9 @@ class ClassificationResult:
 
     # For SUBMISSION intent - extracted field values (multiple fields)
     extracted_data: Optional[Dict[str, Any]] = None  # Extracted responses for "SUBMISSION" intent
+    
+    # Metadata for tracking extraction source
+    from_data_input_field: bool = False  # True if data_input_field contributed to this result
 
 
 class ClassificationHandler:
@@ -47,25 +57,99 @@ class ClassificationHandler:
             action: InterviewInteractAction instance
         """
         self.action = action
-    
+
+    def _extract_field_values(self, result: Dict[str, Any], intent: Intent) -> Dict[str, Any]:
+        """Extract field-value pairs from LLM result using the single canonical format.
+
+        LLM returns all field data in result["extracted"]: a list of one-key dicts.
+        SUBMISSION/UPDATE = actual values; DECLINE = value "N/A" (excluded from returned dict).
+
+        Args:
+            result: Raw parsed JSON from LLM response
+            intent: Classified intent (extraction applies to SUBMISSION, UPDATE; DECLINE "N/A" filtered out)
+
+        Returns:
+            Filtered dict of field -> value (excludes empty/None/whitespace-only and "N/A")
+        """
+        raw_list = result.get("extracted")
+        if not isinstance(raw_list, list):
+            return {}
+
+        merged: Dict[str, Any] = {}
+        for item in raw_list:
+            if not isinstance(item, dict) or len(item) != 1:
+                continue
+            field_name, val = next(iter(item.items()))
+            if not isinstance(field_name, str) or not field_name.strip():
+                continue
+            if val is None:
+                continue
+            if isinstance(val, str) and (not val.strip() or val.strip().upper() == "N/A"):
+                continue
+            merged[field_name.strip()] = val
+
+        return merged
+
+    def _get_extraction_mode(self, question_config: Dict[str, Any]) -> str:
+        """Infer extraction mode from question configuration.
+        
+        Determines whether a field should use verbatim, normalized, or select extraction
+        based on the field's constraints and description.
+        
+        Args:
+            question_config: Question configuration dictionary
+            
+        Returns:
+            Extraction mode: "verbatim", "normalized", or "select"
+        """
+        constraints = question_config.get("constraints", {})
+        
+        # Check for explicit extraction_mode constraint
+        explicit_mode = constraints.get("extraction_mode")
+        if explicit_mode in ("verbatim", "normalized", "select"):
+            return explicit_mode
+        
+        # Check if field has options (either static or from context provider)
+        has_options = bool(constraints.get("options"))
+        has_context_provider = bool(question_config.get("input_context_provider"))
+        has_input_context = bool(question_config.get("input_context"))
+        
+        if has_options or has_context_provider or has_input_context:
+            return "select"
+        
+        # Check description for verbatim keywords
+        description = constraints.get("description", "").lower()
+        verbatim_keywords = [
+            "description", "narrative", "details", "incident", "explain", 
+            "describe", "story", "account", "report"
+        ]
+        
+        if any(keyword in description for keyword in verbatim_keywords):
+            return "verbatim"
+        
+        # Default to normalized for structured fields
+        return "normalized"
+
     def extract_data_input_values(
         self,
         session: InterviewSession,
         visitor: "InteractWalker"
     ) -> Tuple[Dict[str, Any], Set[str]]:
         """Extract values from visitor.data for fields with data_input_field configured.
-        
+
         Scans question_graph for fields with data_input_field in constraints and checks
-        visitor.data dictionary for matching keys. Returns both the extracted values
-        and the set of field names that have data_input_field (for exclusion from LLM).
-        
+        visitor.data for matching keys. When the key is absent, auto-populates with "N/A"
+        only for the current question (first unanswered) to avoid pre-populating future
+        questions. Returns both the extracted values and the set of field names that have
+        data_input_field (for exclusion from LLM).
+
         Args:
             session: Interview session
             visitor: InteractWalker with data property
-            
+
         Returns:
             Tuple of (extracted_values_dict, excluded_field_names_set):
-            - extracted_values_dict: Maps question names to values found in visitor.data
+            - extracted_values_dict: Maps question names to values from visitor.data or "N/A"
             - excluded_field_names_set: Set of question names that have data_input_field
         """
         extracted_values = {}
@@ -77,27 +161,31 @@ class ClassificationHandler:
         # Check visitor.data exists and is a dict
         if not hasattr(visitor, 'data') or not isinstance(visitor.data, dict):
             return extracted_values, excluded_fields
-        
+
+        unanswered = session.get_unanswered_questions()
+        current_question = unanswered[0] if unanswered else None
+
         # Scan question graph for data_input_field entries
         for question_config in question_graph:
             question_name = question_config.get("name")
             if not question_name:
                 continue
-            
+
             constraints = question_config.get("constraints", {})
             data_input_field = constraints.get("data_input_field")
-            
+
             if data_input_field:
                 # This field should be excluded from LLM extraction
                 excluded_fields.add(question_name)
-                
-                # Check if the data_input_field key exists in visitor.data
+
+                # Value from visitor.data key, or "N/A" for current question when key absent
                 if data_input_field in visitor.data:
                     value = visitor.data[data_input_field]
-                    # Only include if value is not None
                     if value is not None:
                         extracted_values[question_name] = value
-        
+                elif question_name == current_question:
+                    extracted_values[question_name] = "N/A"
+
         return extracted_values, excluded_fields
     
     async def _get_context_data_note(
@@ -173,58 +261,37 @@ class ClassificationHandler:
         session: InterviewSession,
         excluded_fields: Optional[Set[str]] = None
     ) -> Dict[str, str]:
-        """Build minimal context for classification.
-
-        Only includes reachable unanswered questions in entities_to_extract to prevent
-        premature extraction of questions that haven't been asked yet.
+        """Build context for classification.
 
         Args:
             session: Interview session
             excluded_fields: Optional set of field names to exclude from entities_to_extract
 
         Returns:
-            Dictionary with current_state, answered_fields, entities_to_extract, required_fields_info
+            Dictionary with current_state, answered_fields (with values), entities_to_extract
         """
         current_state = session.state.value
 
-        # Format answered fields (minimal - just field names)
+        # Format answered fields with their current values for UPDATE context
         answered_fields = session.get_answered_questions()
-        answered_fields_str = ", ".join(answered_fields) if answered_fields else "None"
+        if answered_fields:
+            answered_pairs = []
+            for field_name in answered_fields:
+                value = session.get_response(field_name)
+                value_str = str(value) if value is not None else "None"
+                # Truncate long values to prevent token bloat
+                if len(value_str) > 100:
+                    value_str = value_str[:97] + "..."
+                answered_pairs.append(f"{field_name}: {value_str}")
+            answered_fields_str = ", ".join(answered_pairs)
+        else:
+            answered_fields_str = "None"
 
-        # Get reachable unanswered questions using QuestionWalker
-        # This prevents premature extraction of questions that haven't been asked yet
-        from ..graph.question_walker import QuestionWalker
-        question_walker = QuestionWalker()
-        question_walker.interview_session = session
-        
-        # Get reachable unanswered questions based on current question path
-        reachable_unanswered = await question_walker.get_reachable_unanswered_questions(session, self.action)
-        reachable_set = set(reachable_unanswered) if reachable_unanswered else set()
-        
-        # Build question map for quick lookup
-        question_map = {q.get("name"): q for q in session.question_graph if q.get("name")}
-        
-        # Handle edge case: if no questions are answered yet, ensure first question is included
-        answered_set = set(session.get_answered_questions())
-        if not answered_set and session.question_graph:
-            first_question_name = session.question_graph[0].get("name")
-            if first_question_name and first_question_name not in reachable_set:
-                reachable_set.add(first_question_name)
-        
-        # Start with reachable questions
-        active_questions = [q for q in session.question_graph if q.get("name") in reachable_set]
-        
-        # Always include the active question if it's unanswered
-        # This ensures the current question can be answered even if not yet in reachable list
-        if session.active_question_key:
-            if (session.active_question_key not in answered_set and 
-                session.active_question_key not in reachable_set):
-                # Active question is not reachable yet but should be included
-                active_question_config = question_map.get(session.active_question_key)
-                if active_question_config:
-                    active_questions.append(active_question_config)
+        # Get all questions from the session
+        active_questions = [q for q in session.question_graph]
 
         excluded_set = excluded_fields or set()
+        answered_set = set(answered_fields)  # Mutual exclusion: unanswered only in entities_to_extract
         entities_list = []
         required_fields = set(session.get_required_questions())
 
@@ -233,42 +300,78 @@ class ClassificationHandler:
             constraints = item.get('constraints', {})
             if not key or not constraints:
                 continue
-            
+
             # Skip fields that should be excluded from LLM extraction
-            # EXCEPT when the field is the active question (user is currently being asked this question)
-            # This is necessary for proper DECLINE intent classification when user declines to provide data
-            is_active_data_field = False
             if key in excluded_set:
-                # Always include the active question for proper DECLINE intent classification
-                if key != session.active_question_key:
-                    continue
-                # If it's the active question, mark it as a data_input_field for special handling
-                is_active_data_field = True
-            
+                continue
+
+            # Skip answered fields so Answered and Unanswered are mutually exclusive
+            if key in answered_set:
+                continue
+
             desc = constraints.get('description', '')
-            other_constraints = {k: v for k, v in constraints.items() if k not in ('description', 'data_input_field')}
+            other_constraints = {k: v for k, v in constraints.items() if k not in ('description', 'data_input_field', 'extraction_mode', 'options')}
             constraint_strs = [f"{k}: {v}" for k, v in other_constraints.items()]
-            constraint_part = f" ({', '.join(constraint_strs)})" if constraint_strs else ""
+            constraints_display = ", ".join(constraint_strs) if constraint_strs else "(none)"
             is_required = key in required_fields
-            required_marker = " [REQUIRED]" if is_required else " [OPTIONAL]"
-            # Add note for data_input_field questions to help LLM understand it can accept DECLINE
-            data_field_note = " (expects data input, but user may decline)" if is_active_data_field else ""
+            required_marker = "[REQUIRED]" if is_required else "[OPTIONAL]"
             
-            # Add context data if available for this question
+            # Determine extraction mode
+            extraction_mode = self._get_extraction_mode(item)
+            mode_marker = f"[{extraction_mode}]"
+            
+            # Get inline options for select mode
+            options_note = ""
+            if extraction_mode == "select":
+                # Check for static options in constraints
+                static_options = constraints.get("options", [])
+                if static_options and isinstance(static_options, list):
+                    options_str = ", ".join(str(opt) for opt in static_options[:10])  # Limit to first 10
+                    if len(static_options) > 10:
+                        options_str += f" (and {len(static_options) - 10} more)"
+                    options_note = f" | Options: {options_str}"
+                else:
+                    # Try to get dynamic context data for options
+                    context_data = item.get("input_context", {})
+                    provider_name = item.get("input_context_provider")
+                    
+                    if provider_name:
+                        try:
+                            from ..foundation.decorators import get_input_context_provider
+                            func = get_input_context_provider(session.interview_type, provider_name)
+                            if func:
+                                import inspect
+                                if inspect.iscoroutinefunction(func):
+                                    dynamic_context = await func(session, None)
+                                else:
+                                    dynamic_context = func(session, None)
+                                if dynamic_context and isinstance(dynamic_context, dict):
+                                    context_data = {**context_data, **dynamic_context}
+                        except Exception as e:
+                            logger.debug(f"Could not fetch context for options: {e}")
+                    
+                    # Extract options from context data
+                    for ctx_key, ctx_value in context_data.items():
+                        if isinstance(ctx_value, list) and ctx_value:
+                            options_str = ", ".join(str(v) for v in ctx_value[:10])
+                            if len(ctx_value) > 10:
+                                options_str += f" (and {len(ctx_value) - 10} more)"
+                            options_note = f" | Options: {options_str}"
+                            break  # Use first list found
+
+            # Add context data note (for non-select modes or additional context)
             context_data_note = await self._get_context_data_note(item, session)
-            
-            entities_list.append(f"- {key}: {desc}{constraint_part}{required_marker}{data_field_note}{context_data_note}")
+
+            entities_list.append(
+                f"- {key} {required_marker} {mode_marker} — Expected: \"{desc}\" | Constraints: {constraints_display}{options_note}{context_data_note}"
+            )
 
         entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
-
-        # Build required fields info (simplified - comma-separated)
-        required_fields_info = ", ".join(sorted(required_fields)) if required_fields else "None"
 
         return {
             "current_state": current_state,
             "answered_fields": answered_fields_str,
             "entities_to_extract": entities_to_extract,
-            "required_fields_info": required_fields_info,
         }
     
     async def classify_and_extract(
@@ -318,33 +421,15 @@ class ClassificationHandler:
                 return self._build_result_from_data_inputs(data_input_values, session)
             return ClassificationResult(intent=Intent.NONE)
 
-        # Use DSPy if enabled, otherwise use prompt-based implementation
-        if self.action.config.use_dspy:
-            return await self._classify_with_dspy(session, user_input, interaction, visitor, data_input_values, excluded_fields)
-
         # Unified classification and extraction using single prompt
         try:
             # Build context for unified prompt (exclude fields with data_input_field)
             context = await self.build_classification_context(session, excluded_fields=excluded_fields)
 
-            prompt = self.action.config.templates.interview_prompt.format(
-                user_input=user_input,
-                current_state=context["current_state"],
-                answered_fields=context["answered_fields"],
-                entities_to_extract=context["entities_to_extract"],
-                required_fields_info=context["required_fields_info"]
-            )
-
-            # Get model action
-            model_action = await self.action.get_model_action(required=True)
-            if not model_action:
-                logger.warning(f"{self.action.get_class_name()}: Could not get model action for unified classification")
-                return ClassificationResult(intent=Intent.NONE)
-
-            # Get conversation history if needed
-            conversation_history = None
+            # Get conversation history for model API (passed as separate messages, not embedded in prompt)
+            conversation_history_list = None
             if self.action.config.model.use_history:
-                conversation_history = await self.action._get_conversation_history(
+                conversation_history_list = await self.action._get_conversation_history(
                     interaction,
                     self.action.config.model.history_limit,
                     with_utterance=True,
@@ -353,6 +438,34 @@ class ClassificationHandler:
                     with_event=False,
                     max_statement_length=self.action.config.model.max_statement_length,
                 )
+
+            # Build classification rules using configuration options
+            from ..foundation.prompts import build_classification_rules
+            classification_config = self.action.config.classification
+            classification_rules_core = build_classification_rules(
+                include_reasoning=classification_config.require_structured_reasoning,
+                include_examples=classification_config.include_few_shot_examples,
+                include_reference_resolution=classification_config.enable_reference_resolution,
+                include_composition=classification_config.enable_composition,
+                max_examples=classification_config.max_examples
+            )
+            
+            prompt = self.action.config.templates.interview_prompt.format(
+                user_input=user_input,
+                current_state=context["current_state"],
+                answered_fields=context["answered_fields"],
+                entities_to_extract=context["entities_to_extract"],
+                classification_rules_core=classification_rules_core,
+            )
+
+            # Get model action
+            model_action = await self.action.get_model_action(required=True)
+            if not model_action:
+                logger.warning(f"{self.action.get_class_name()}: Could not get model action for unified classification")
+                return ClassificationResult(intent=Intent.NONE)
+
+            # Pass history to generate() for API (model may use as separate messages)
+            conversation_history = conversation_history_list
 
             # Call LLM with unified prompt
             # Use interpretation as primary text when available (already in user_input)
@@ -381,6 +494,10 @@ class ClassificationHandler:
                     return self._build_result_from_data_inputs(data_input_values, session)
                 return ClassificationResult(intent=Intent.NONE)
 
+            # Remove field/value from result so they never appear in extraction output (canonical format is intent, confidence, extracted only)
+            result.pop("field", None)
+            result.pop("value", None)
+
             # Extract intent and convert to Intent enum
             intent_str = result.get("intent", Intent.NONE.value).upper()
             try:
@@ -391,37 +508,34 @@ class ClassificationHandler:
                 intent = Intent.NONE
             confidence = result.get("confidence", 1.0)
 
-            # Build ClassificationResult
-            # Normalize field - handle string "null" from JSON
-            field_value = result.get("field")
-            if field_value and isinstance(field_value, str):
-                field_str = field_value.strip().lower()
-                if field_str == "null" or field_str == "none":
-                    field_value = None
-
+            # Build ClassificationResult (LLM always sends field/value null; we derive from extracted)
             classification_result = ClassificationResult(
-                intent=intent.value,  # Store as string value for ClassificationResult
+                intent=intent.value,
                 confidence=confidence,
-                field=field_value,
-                value=result.get("value")
+                field=None,
+                value=None,
             )
 
-            # Handle SUBMISSION intent - extract field values
-            if intent == Intent.SUBMISSION:
-                # Extract field values (exclude intent-related keys)
-                intent_keys = {"intent", "confidence", "field", "value"}
-                extracted_data = {k: v for k, v in result.items() if k not in intent_keys}
+            # Extract field values from result["extracted"] (list of one-key dicts; N/A filtered out)
+            extracted_data = self._extract_field_values(result, intent)
+            if extracted_data:
+                classification_result.extracted_data = extracted_data
 
-                # Filter out empty/None/whitespace-only values
-                filtered_data = {}
-                for field, value in extracted_data.items():
-                    if value is not None and isinstance(value, str) and value.strip():
-                        filtered_data[field] = value
-                    elif value is not None and not isinstance(value, str):
-                        filtered_data[field] = value
+            # DECLINE: derive declined field from extracted entry with value "N/A"
+            if intent == Intent.DECLINE:
+                raw_list = result.get("extracted")
+                if isinstance(raw_list, list):
+                    for item in raw_list:
+                        if isinstance(item, dict) and len(item) == 1:
+                            (fname, v) = next(iter(item.items()))
+                            if isinstance(v, str) and v.strip().upper() == "N/A":
+                                classification_result.field = fname.strip() if isinstance(fname, str) else None
+                                break
 
-                if filtered_data:
-                    classification_result.extracted_data = filtered_data
+            # UPDATE: set field/value from single entry for downstream consumers
+            if intent == Intent.UPDATE and extracted_data and len(extracted_data) == 1:
+                classification_result.field = next(iter(extracted_data.keys()))
+                classification_result.value = next(iter(extracted_data.values()))
 
             # Merge data input values into classification result
             # Data input values take precedence and determine SUBMISSION vs UPDATE per field
@@ -443,13 +557,43 @@ class ClassificationHandler:
             if data_input_values:
                 return self._build_result_from_data_inputs(data_input_values, session)
             return ClassificationResult(intent=Intent.NONE)
-    
+
+    def _format_conversation_history_for_prompt(
+        self,
+        history: Optional[List[Dict[str, Any]]],
+    ) -> str:
+        """Format conversation history for inclusion in the classification prompt.
+        
+        Adds turn numbers to help the LLM reason about multi-turn composition
+        and reference resolution.
+
+        Args:
+            history: List of message dicts with 'role' and 'content' (from get_interaction_history formatted=True).
+
+        Returns:
+            String suitable for the conversation_history prompt placeholder; "(none)" if empty.
+        """
+        if not history:
+            return "(none)"
+        lines = []
+        turn_number = 1
+        for msg in history:
+            role = (msg.get("role") or "unknown").strip().lower()
+            content = (msg.get("content") or "").strip()
+            if content:
+                lines.append(f"[{turn_number}] {role}: {content}")
+                turn_number += 1
+        return "\n".join(lines) if lines else "(none)"
+
     def _build_result_from_data_inputs(
         self,
         data_input_values: Dict[str, Any],
         session: InterviewSession
     ) -> ClassificationResult:
         """Build ClassificationResult from data input values only.
+        
+        Simulates the extraction payload structure that would be produced by LLM extraction,
+        ensuring consistent shape for downstream consumers (execute, InterviewWalker, handlers).
         
         Checks if fields already have values in the session:
         - If a field has an existing value, treat as UPDATE (set field and value)
@@ -460,7 +604,8 @@ class ClassificationHandler:
             session: Interview session
             
         Returns:
-            ClassificationResult with appropriate intent (UPDATE or SUBMISSION)
+            ClassificationResult with appropriate intent (UPDATE or SUBMISSION) and
+            from_data_input_field=True to indicate source
         """
         if not data_input_values:
             return ClassificationResult(intent=Intent.NONE)
@@ -487,7 +632,8 @@ class ClassificationHandler:
             result = ClassificationResult(
                 intent=Intent.UPDATE.value,
                 field=first_update_field,
-                value=first_update_value
+                value=first_update_value,
+                from_data_input_field=True
             )
             
             # If there are multiple update fields, log a warning
@@ -505,7 +651,8 @@ class ClassificationHandler:
         if submission_fields:
             result = ClassificationResult(
                 intent=Intent.SUBMISSION.value,
-                extracted_data=submission_fields
+                extracted_data=submission_fields,
+                from_data_input_field=True
             )
             return result
         
@@ -520,6 +667,9 @@ class ClassificationHandler:
     ) -> ClassificationResult:
         """Merge data input values into classification result.
         
+        Augments LLM classification result with data_input_field values, ensuring the
+        extraction payload includes both LLM-extracted and directly-provided data.
+        
         Checks if fields already have values in the session:
         - If a field has an existing value, treat as UPDATE (set field and value)
         - If a field doesn't have a value, treat as SUBMISSION (add to extracted_data)
@@ -530,10 +680,14 @@ class ClassificationHandler:
             session: Interview session
             
         Returns:
-            Updated ClassificationResult with data input values merged
+            Updated ClassificationResult with data input values merged and
+            from_data_input_field=True when data_input_field contributes
         """
         if not data_input_values:
             return classification_result
+        
+        # Mark that data_input_field contributed to this result
+        classification_result.from_data_input_field = True
         
         # Separate fields into UPDATE (existing value) and SUBMISSION (no existing value)
         update_fields = {}  # Fields that already have values - treat as UPDATE
@@ -582,108 +736,7 @@ class ClassificationHandler:
                 classification_result.intent = Intent.SUBMISSION.value
         
         return classification_result
-    
-    async def _classify_with_dspy(
-        self,
-        session: InterviewSession,
-        user_input: str,
-        interaction: "Interaction",
-        visitor: "InteractWalker",
-        data_input_values: Dict[str, Any],
-        excluded_fields: Set[str]
-    ) -> ClassificationResult:
-        """DSPy-based classification and extraction routine.
 
-        Uses DSPy modules with typed signatures for classification, enabling
-        optimization via DSPy teleprompters (BootstrapFewShot, MIPROv2, etc.)
-        and evaluation with dspy.Evaluate.
-
-        Args:
-            session: Interview session
-            user_input: User's input (typically with reasoning)
-            interaction: Current interaction
-            visitor: InteractWalker
-            data_input_values: Dictionary of values extracted from visitor.data
-            excluded_fields: Set of field names excluded from LLM extraction
-
-        Returns:
-            ClassificationResult with unified intent and extracted data
-        """
-        try:
-            # Import DSPy components
-            import dspy
-            from jvagent.action.model.dspy import DSPyLM
-            from jvagent.action.interview.dspy import InterviewClassifier
-
-            # Build context for classification (exclude fields with data_input_field)
-            context = await self.build_classification_context(session, excluded_fields=excluded_fields)
-
-            # Get conversation history if needed
-            conversation_history = None
-            formatted_history = None
-            if self.action.config.model.use_history:
-                conversation_history = await self.action._get_conversation_history(
-                    interaction,
-                    self.action.config.model.history_limit,
-                    with_utterance=True,
-                    with_response=True,
-                    with_interpretation=False,
-                    with_event=False,
-                    max_statement_length=self.action.config.model.max_statement_length,
-                )
-                # Format history for DSPy signature
-                from jvagent.action.model.dspy import format_conversation_history_for_dspy
-                formatted_history = format_conversation_history_for_dspy(conversation_history)
-
-            # Get model action
-            model_action = await self.action.get_model_action(required=True)
-            if not model_action:
-                logger.warning(f"{self.action.get_class_name()}: Could not get model action for DSPy classification")
-                return ClassificationResult(intent=Intent.NONE)
-
-            # Create DSPy LM adapter
-            # Pass model, temperature, and max_tokens to allow agent.yaml overrides
-            lm = DSPyLM(
-                model_action=model_action,
-                model_type="chat",
-                model=self.action.config.model.model,
-                temperature=self.action.config.model.model_temperature,
-                max_tokens=self.action.config.model.model_max_tokens,
-            )
-
-            # Configure DSPy with the adapter
-            with dspy.context(lm=lm):
-                # Create classifier instance with action instance for signature docstring
-                classifier = InterviewClassifier(action_instance=self.action)
-
-                # Build kwargs for classifier, include history if available
-                classifier_kwargs = {
-                    "user_input": user_input,
-                    "current_state": context["current_state"],
-                    "answered_fields": context["answered_fields"],
-                    "entities_to_extract": context["entities_to_extract"],
-                    "required_fields_info": context["required_fields_info"],
-                }
-                if formatted_history:
-                    classifier_kwargs["conversation_history"] = formatted_history
-
-                # Call classifier with async forward
-                classification_result = await classifier.aforward(**classifier_kwargs)
-
-                # Merge data input values into classification result
-                classification_result = self._merge_data_input_values(
-                    classification_result, data_input_values, session
-                )
-
-                return classification_result
-
-        except Exception as e:
-            logger.error(
-                f"{self.action.get_class_name()}: Failed to classify/extract via DSPy: {e}",
-                exc_info=True
-            )
-            return ClassificationResult(intent=Intent.NONE)
-    
     def _extract_json(self, response: str) -> Dict[str, Any]:
         """Extract JSON from response string.
 

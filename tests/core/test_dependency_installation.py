@@ -154,7 +154,7 @@ class TestActionLoaderDependencyInstallation:
                 "data": {
                     "package": {
                         "name": "jvagent/test_action",
-                        "dependencies": {"pip": ["dspy>=3.0.4"]},
+                        "dependencies": {"pip": ["httpx>=0.27.0"]},
                     }
                 },
             }

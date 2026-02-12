@@ -1,0 +1,16 @@
+package:
+  name: gdf/supervisor_short_pass_interview_interact_action
+  author: V75 Inc.
+  archetype: SupervisorShortPassInterviewInteractAction
+  version: 1.0.0
+  meta:
+    title: Supervisor Short Pass Interview Interact Action
+    description: Supervisor Short Pass Interview action lets supervisor approve or reject ranks request for a short pass.
+    group: gdf
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []

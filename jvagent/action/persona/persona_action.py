@@ -15,13 +15,12 @@ from jvagent.action.base import Action
 from jvagent.action.persona.prompts import (
     CONTINUATION_GUIDANCE_PROMPT,
     DIRECTIVES_SECTION_PROMPT,
+    DIRECTIVE_COMPLIANCE_CHECK_PROMPT,
     NO_DIRECTIVES_SUB_PROMPT,
     PARAMETERS_SUB_PROMPT,
     SYSTEM_PROMPT_TEMPLATE,
     INTERPRETATION_INSIGHTS_PROMPT,
-    REVISION_MECHANISM_PROMPT,
-    CONTEXT_EVALUATION_PROMPT,
-    PRIORITIZATION_INSTRUCTIONS_PROMPT,
+    RESPONSE_PROTOCOL_PROMPT,
     format_conditional_section,
     format_parameter,
     get_channel_directive,
@@ -442,7 +441,7 @@ class PersonaAction(Action):
         continuation_guidance = format_conditional_section(continuation_guidance, bool(continuation_guidance))
 
         prompt_template = self.system_prompt if self.system_prompt else SYSTEM_PROMPT_TEMPLATE
-        return prompt_template.format(
+        composed = prompt_template.format(
             agent_name=self.persona_name,
             agent_description=self.persona_description,
             agent_capabilities=capabilities_str,
@@ -450,14 +449,24 @@ class PersonaAction(Action):
             date=date_str,
             time=time_str,
             interpretation_section=interpretation_section,
-            revision_mechanism=REVISION_MECHANISM_PROMPT,
-            prioritization_instructions=PRIORITIZATION_INSTRUCTIONS_PROMPT,
-            context_evaluation=CONTEXT_EVALUATION_PROMPT,
+            response_protocol=RESPONSE_PROTOCOL_PROMPT,
             directives_section=directives_section,
             parameters_section=parameters_section,
             channel_formatting_section=channel_formatting_section,
             continuation_guidance=continuation_guidance,
         )
+        
+        # Append compliance check for directive recency reinforcement
+        if applicable_directives:
+            checklist = "\n".join(
+                f"[ ] Directive {i+1}: {d.get('content', str(d))}"
+                for i, d in enumerate(applicable_directives)
+            )
+            composed += "\n\n" + DIRECTIVE_COMPLIANCE_CHECK_PROMPT.format(
+                directive_checklist=checklist
+            )
+        
+        return composed
 
     async def _get_conversation_history(
         self,
@@ -608,6 +617,13 @@ class PersonaAction(Action):
         response_bus = getattr(visitor, "response_bus", None) if visitor else None
 
         prompt = interaction.utterance if with_utterance else ""
+        
+        # Inject directive reminder into user prompt for peak-attention reinforcement
+        if applicable_directives and prompt:
+            directive_hints = "; ".join(
+                d.get('content', str(d)) for d in applicable_directives
+            )
+            prompt = f"{prompt}\n\n[SYSTEM: You MUST execute in your response: {directive_hints}]"
 
         # Make the language model call
         try:

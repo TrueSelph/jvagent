@@ -234,11 +234,11 @@ class QuestionGraphValidator:
             
             # Validate that function is registered (if interview_type is available)
             if self.interview_type:
-                from ..foundation.decorators import get_branch_function, get_pending_branch_functions
+                from ..foundation.decorators import get_branch_function, RegistryManager
                 func = get_branch_function(self.interview_type, function_name)
                 if not func:
                     # Check pending functions
-                    pending = get_pending_branch_functions(self.interview_type)
+                    pending = RegistryManager.get_pending("pending_branch_functions", self.interview_type)
                     if function_name not in pending:
                         self.report.warnings.append(
                             ValidationIssue(
@@ -311,11 +311,11 @@ class QuestionGraphValidator:
         
         # Validate that provider is registered (if interview_type is available)
         if self.interview_type:
-            from ..foundation.decorators import get_input_context_provider, get_pending_input_context_providers
+            from ..foundation.decorators import get_input_context_provider, RegistryManager
             func = get_input_context_provider(self.interview_type, provider_name)
             if not func:
                 # Check pending providers
-                pending = get_pending_input_context_providers(self.interview_type)
+                pending = RegistryManager.get_pending("pending_input_context_providers", self.interview_type)
                 if provider_name not in pending:
                     self.report.warnings.append(
                         ValidationIssue(

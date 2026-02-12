@@ -27,17 +27,19 @@ from jvspatial.core.annotations import attribute
 @input_context_provider()
 async def get_available_training_times(
     session: InterviewSession,
-    visitor: InteractWalker
+    visitor: Optional[InteractWalker] = None,
+    interview_action: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Provide available training times dynamically.
-    
+
     In a real implementation, this could query a calendar API or database
     to fetch real-time availability. For this example, we return static data.
-    
+
     Args:
         session: Interview session for context
         visitor: Walker for accessing graph context
-        
+        interview_action: Interview action instance for context
+
     Returns:
         Dictionary with available training times and metadata
     """
@@ -64,6 +66,8 @@ async def get_available_training_times(
 def adapt_signup_review_for_display(
     session: InterviewSession,
     data: Dict[str, Any],
+    visitor: Optional[InteractWalker] = None,
+    interview_action: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Omit or format values shown in the Review state (display only; session unchanged).
 
@@ -105,12 +109,6 @@ class SignupInterviewInteractAction(InterviewInteractAction):
     """
 
     description: str = "User signup interview flow for registration and training scheduling"
-
-    # DSPy Integration
-    use_dspy: bool = attribute(
-        default=True,
-        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)"
-    )
 
     # REQUIRED when using InteractRouter: Anchors for intelligent routing
     # Must cover both initial entry and intermediate states (when answering questions)
@@ -185,12 +183,19 @@ class SignupInterviewInteractAction(InterviewInteractAction):
 
 
 @input_validator('user_name')
-def validate_full_name(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+def validate_full_name(
+    value: str,
+    session: InterviewSession,
+    visitor: Optional[InteractWalker] = None,
+    interview_action: Optional[Any] = None,
+) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that full name contains both first and last name.
 
     Args:
         value: The name string to validate
         session: Interview session (for context)
+        visitor: Walker for context (optional)
+        interview_action: Interview action for context (optional)
 
     Returns:
         Tuple of (ValidationStatus, optional error message)
@@ -223,7 +228,12 @@ def validate_full_name(value: str, session: InterviewSession) -> Tuple[Validatio
 
 
 @input_validator('available_times')
-def validate_available_times(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str], Optional[str]]:
+def validate_available_times(
+    value: str,
+    session: InterviewSession,
+    visitor: Optional[InteractWalker] = None,
+    interview_action: Optional[Any] = None,
+) -> Tuple[ValidationStatus, Optional[str], Optional[str]]:
     """Validate that available times match one of the available training slots.
 
     Autocorrects close matches using fuzzy matching. If a value mostly matches
@@ -232,6 +242,8 @@ def validate_available_times(value: str, session: InterviewSession) -> Tuple[Val
     Args:
         value: The availability string to validate
         session: Interview session (for context)
+        visitor: Walker for context (optional)
+        interview_action: Interview action for context (optional)
 
     Returns:
         Tuple of (ValidationStatus, optional error message, optional corrected value)
@@ -333,12 +345,19 @@ def validate_available_times(value: str, session: InterviewSession) -> Tuple[Val
 
 
 @input_validator('user_email')
-def validate_email(value: str, session: InterviewSession) -> Tuple[ValidationStatus, Optional[str]]:
+def validate_email(
+    value: str,
+    session: InterviewSession,
+    visitor: Optional[InteractWalker] = None,
+    interview_action: Optional[Any] = None,
+) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate email address format and common domains.
 
     Args:
         value: The email string to validate
         session: Interview session (for context)
+        visitor: Walker for context (optional)
+        interview_action: Interview action for context (optional)
 
     Returns:
         Tuple of (ValidationStatus, optional error message)
@@ -370,7 +389,9 @@ def validate_email(value: str, session: InterviewSession) -> Tuple[ValidationSta
 async def check_training_availability(
     raw_input: str,
     session: InterviewSession,
-    interaction: Interaction
+    interaction: Interaction,
+    visitor: Optional[InteractWalker] = None,
+    interview_action: Optional[Any] = None,
 ) -> str:
     """Process and autocorrect training time availability against hardcoded available times.
 
@@ -381,6 +402,8 @@ async def check_training_availability(
         raw_input: Raw user input about availability
         session: Interview session (for context)
         interaction: Interaction node (can access interaction.user_id, interaction.utterance, etc.)
+        visitor: Walker for context (optional)
+        interview_action: Interview action for context (optional)
 
     Returns:
         Autocorrected availability string (full format) or original input if no match
@@ -502,20 +525,22 @@ async def custom_email_directive(
     value: str,
     session: InterviewSession,
     interaction: Interaction,
-    visitor: InteractWalker
+    visitor: InteractWalker,
+    interview_action: Optional[Any] = None,
 ) -> Optional[Union[str, Tuple[str, str]]]:
     """Custom directive after email is collected.
-    
+
     This demonstrates the @input_directive_override decorator, which allows
     customizing the agent's response after a field value is successfully stored.
-    
+
     Args:
         field_name: Name of the field that was just stored
         value: The email value that was stored
         session: Interview session for context
         interaction: Current interaction
         visitor: Walker for context
-        
+        interview_action: Interview action for context (optional)
+
     Returns:
         Optional directive override:
         - None: Use default directive (no override)
