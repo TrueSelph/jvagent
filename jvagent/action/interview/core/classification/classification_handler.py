@@ -90,6 +90,46 @@ class ClassificationHandler:
 
         return merged
 
+    def _get_extraction_mode(self, question_config: Dict[str, Any]) -> str:
+        """Infer extraction mode from question configuration.
+        
+        Determines whether a field should use verbatim, normalized, or select extraction
+        based on the field's constraints and description.
+        
+        Args:
+            question_config: Question configuration dictionary
+            
+        Returns:
+            Extraction mode: "verbatim", "normalized", or "select"
+        """
+        constraints = question_config.get("constraints", {})
+        
+        # Check for explicit extraction_mode constraint
+        explicit_mode = constraints.get("extraction_mode")
+        if explicit_mode in ("verbatim", "normalized", "select"):
+            return explicit_mode
+        
+        # Check if field has options (either static or from context provider)
+        has_options = bool(constraints.get("options"))
+        has_context_provider = bool(question_config.get("input_context_provider"))
+        has_input_context = bool(question_config.get("input_context"))
+        
+        if has_options or has_context_provider or has_input_context:
+            return "select"
+        
+        # Check description for verbatim keywords
+        description = constraints.get("description", "").lower()
+        verbatim_keywords = [
+            "description", "narrative", "details", "incident", "explain", 
+            "describe", "story", "account", "report"
+        ]
+        
+        if any(keyword in description for keyword in verbatim_keywords):
+            return "verbatim"
+        
+        # Default to normalized for structured fields
+        return "normalized"
+
     def extract_data_input_values(
         self,
         session: InterviewSession,
@@ -251,6 +291,7 @@ class ClassificationHandler:
         active_questions = [q for q in session.question_graph]
 
         excluded_set = excluded_fields or set()
+        answered_set = set(answered_fields)  # Mutual exclusion: unanswered only in entities_to_extract
         entities_list = []
         required_fields = set(session.get_required_questions())
 
@@ -264,18 +305,65 @@ class ClassificationHandler:
             if key in excluded_set:
                 continue
 
+            # Skip answered fields so Answered and Unanswered are mutually exclusive
+            if key in answered_set:
+                continue
+
             desc = constraints.get('description', '')
-            other_constraints = {k: v for k, v in constraints.items() if k not in ('description', 'data_input_field')}
+            other_constraints = {k: v for k, v in constraints.items() if k not in ('description', 'data_input_field', 'extraction_mode', 'options')}
             constraint_strs = [f"{k}: {v}" for k, v in other_constraints.items()]
             constraints_display = ", ".join(constraint_strs) if constraint_strs else "(none)"
             is_required = key in required_fields
             required_marker = "[REQUIRED]" if is_required else "[OPTIONAL]"
+            
+            # Determine extraction mode
+            extraction_mode = self._get_extraction_mode(item)
+            mode_marker = f"[{extraction_mode}]"
+            
+            # Get inline options for select mode
+            options_note = ""
+            if extraction_mode == "select":
+                # Check for static options in constraints
+                static_options = constraints.get("options", [])
+                if static_options and isinstance(static_options, list):
+                    options_str = ", ".join(str(opt) for opt in static_options[:10])  # Limit to first 10
+                    if len(static_options) > 10:
+                        options_str += f" (and {len(static_options) - 10} more)"
+                    options_note = f" | Options: {options_str}"
+                else:
+                    # Try to get dynamic context data for options
+                    context_data = item.get("input_context", {})
+                    provider_name = item.get("input_context_provider")
+                    
+                    if provider_name:
+                        try:
+                            from ..foundation.decorators import get_input_context_provider
+                            func = get_input_context_provider(session.interview_type, provider_name)
+                            if func:
+                                import inspect
+                                if inspect.iscoroutinefunction(func):
+                                    dynamic_context = await func(session, None)
+                                else:
+                                    dynamic_context = func(session, None)
+                                if dynamic_context and isinstance(dynamic_context, dict):
+                                    context_data = {**context_data, **dynamic_context}
+                        except Exception as e:
+                            logger.debug(f"Could not fetch context for options: {e}")
+                    
+                    # Extract options from context data
+                    for ctx_key, ctx_value in context_data.items():
+                        if isinstance(ctx_value, list) and ctx_value:
+                            options_str = ", ".join(str(v) for v in ctx_value[:10])
+                            if len(ctx_value) > 10:
+                                options_str += f" (and {len(ctx_value) - 10} more)"
+                            options_note = f" | Options: {options_str}"
+                            break  # Use first list found
 
-            # Add context data if available for this question
+            # Add context data note (for non-select modes or additional context)
             context_data_note = await self._get_context_data_note(item, session)
 
             entities_list.append(
-                f"- {key} {required_marker} — Expected: \"{desc}\" | Constraints: {constraints_display}{context_data_note}"
+                f"- {key} {required_marker} {mode_marker} — Expected: \"{desc}\" | Constraints: {constraints_display}{options_note}{context_data_note}"
             )
 
         entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
@@ -338,7 +426,7 @@ class ClassificationHandler:
             # Build context for unified prompt (exclude fields with data_input_field)
             context = await self.build_classification_context(session, excluded_fields=excluded_fields)
 
-            # Get conversation history for prompt (formatted so model sees current question and context)
+            # Get conversation history for model API (passed as separate messages, not embedded in prompt)
             conversation_history_list = None
             if self.action.config.model.use_history:
                 conversation_history_list = await self.action._get_conversation_history(
@@ -350,18 +438,24 @@ class ClassificationHandler:
                     with_event=False,
                     max_statement_length=self.action.config.model.max_statement_length,
                 )
-            conversation_history_str = self._format_conversation_history_for_prompt(
-                conversation_history_list
-            )
 
-            from ..foundation.prompts import CLASSIFICATION_RULES_CORE
+            # Build classification rules using configuration options
+            from ..foundation.prompts import build_classification_rules
+            classification_config = self.action.config.classification
+            classification_rules_core = build_classification_rules(
+                include_reasoning=classification_config.require_structured_reasoning,
+                include_examples=classification_config.include_few_shot_examples,
+                include_reference_resolution=classification_config.enable_reference_resolution,
+                include_composition=classification_config.enable_composition,
+                max_examples=classification_config.max_examples
+            )
+            
             prompt = self.action.config.templates.interview_prompt.format(
                 user_input=user_input,
                 current_state=context["current_state"],
                 answered_fields=context["answered_fields"],
                 entities_to_extract=context["entities_to_extract"],
-                conversation_history=conversation_history_str,
-                classification_rules_core=CLASSIFICATION_RULES_CORE,
+                classification_rules_core=classification_rules_core,
             )
 
             # Get model action
@@ -469,6 +563,9 @@ class ClassificationHandler:
         history: Optional[List[Dict[str, Any]]],
     ) -> str:
         """Format conversation history for inclusion in the classification prompt.
+        
+        Adds turn numbers to help the LLM reason about multi-turn composition
+        and reference resolution.
 
         Args:
             history: List of message dicts with 'role' and 'content' (from get_interaction_history formatted=True).
@@ -479,11 +576,13 @@ class ClassificationHandler:
         if not history:
             return "(none)"
         lines = []
+        turn_number = 1
         for msg in history:
             role = (msg.get("role") or "unknown").strip().lower()
             content = (msg.get("content") or "").strip()
             if content:
-                lines.append(f"{role}: {content}")
+                lines.append(f"[{turn_number}] {role}: {content}")
+                turn_number += 1
         return "\n".join(lines) if lines else "(none)"
 
     def _build_result_from_data_inputs(

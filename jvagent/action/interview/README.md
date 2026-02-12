@@ -330,6 +330,11 @@ config.templates.get_state_event_message("CANCELLED", class_name)
 config.classification.context_list_compact_threshold  # 5
 config.classification.context_options_text            # "options available"
 config.classification.decline_value                   # "n/a"
+config.classification.require_structured_reasoning   # True
+config.classification.include_few_shot_examples       # True
+config.classification.max_examples                    # 5
+config.classification.enable_reference_resolution     # True
+config.classification.enable_composition              # True
 
 ```
 
@@ -369,6 +374,11 @@ actions:
       classification:
         context_list_compact_threshold: 10
         decline_value: "skipped"
+        require_structured_reasoning: true
+        include_few_shot_examples: true
+        max_examples: 5
+        enable_reference_resolution: true
+        enable_composition: true
 ```
 
 ### Accessing Templates in Code
@@ -503,6 +513,7 @@ actions:
   - **input_handler**: String reference to function that processes raw input before validation (or use `@input_handler` decorator)
   - **input_validator**: String reference to function that validates responses (or use `@input_validator` decorator)
   - **data_input_field**: Key name in `visitor.data` dictionary to extract value from (e.g., "whatsapp_media"). When specified, the field is excluded from LLM extraction and values are extracted directly from `visitor.data`. When the key is absent, the field is auto-populated with `"N/A"` for the current question only. Useful for file uploads and other data passed via REST calls.
+  - **extraction_mode**: Explicit override for classification extraction mode: `"verbatim"` (preserve full response), `"normalized"` (trim/normalize), or `"select"` (match to options). If omitted, mode is auto-detected from description keywords, `options`, or `input_context_provider`.
   - **ambiguous_patterns**: Patterns that trigger VALID status with optional feedback message for clarification
 - **input_context**: Optional dictionary of static context data to provide with the question (e.g., available options, metadata). See Context Data section for details.
 - **input_context_provider**: Optional string reference to a registered input context provider function (use `@input_context_provider` decorator). The function returns a dictionary of context data dynamically at runtime. See Context Data section for details.
@@ -1778,74 +1789,97 @@ Directive overrides are checked:
 
 ## Unified Classification System
 
-The interview system uses a single unified prompt (`INTERVIEW_PROMPT`) that combines intent detection and field extraction in one LLM call. This approach is more efficient and ensures consistency.
+The interview system uses a single LLM call for classification and extraction. In one API call it: (1) detects intent, (2) extracts field values, (3) resolves conversational references, (4) composes multi-turn values, and (5) applies field-type-aware extraction modes. The prompt is built from modular sections via `build_classification_rules()` in `prompts.py`, with configuration toggles for token budget management.
+
+### Prompt Architecture
+
+The classification prompt is composed from 8 sections:
+
+| Section | Purpose |
+|---------|---------|
+| **Reasoning Instructions** | 6-step structured process: identify user/state → check references → check composition → determine intent → extract → verify |
+| **Intent Rules** | Defines CANCELLATION, CONFIRMATION, UPDATE, DECLINE, SUBMISSION, NONE with expanded pattern matching |
+| **Extraction Rules** | Three modes: [verbatim] (preserve full response), [normalized] (trim/casing), [select] (match to options) |
+| **Reference Resolution** | Ordinal ("the second option"), temporal ("Wednesday afternoon"), anaphoric ("that one") |
+| **Composition Rules** | Multi-turn value composition (e.g., "John" + "Smith" → "John Smith") |
+| **Verification** | Chain-of-Verification checklist before final output |
+| **Output Format** | Required JSON with structured `reasoning` object |
+| **Examples** | Five few-shot examples for edge cases |
 
 ### Intent Detection
 
-The system detects intent types using the `Intent` enum with state-aware rules:
+- **CANCELLATION**: "cancel", "abort", "stop", "never mind" — any state
+- **CONFIRMATION** (REVIEW only): Pure affirmation with no new values. Expanded patterns: "yes", "correct", "looks good", "yep", "all good", "looks fine to me", "that's fine", "confirmed", "perfect"
+- **SUBMISSION**: Answering unanswered questions. Includes "yes"/"no" when answering yes/no questions in active state.
+- **UPDATE**: Changing an already-answered field. Requires explicit change language ("change to", "actually I prefer", "make it"). Bare "yes"/"no" is never UPDATE.
+- **DECLINE**: Explicit refusal or "no" to optional content (photos, attachments). Not "no" as answer to yes/no question.
+- **NONE**: Last resort for meta-requests, greetings, or off-topic content.
 
-- **Intent.CANCELLATION**: User wants to cancel/stop the interview
-  - Highest priority, overrides all other intents
-  - Can occur in any state
-  
-- **Intent.CONFIRMATION**: User confirms/approves information (only in REVIEW state)
-  - Only applies to positive affirmations ("yes", "correct", "looks good", etc.)
-  - **CRITICAL**: "No" is NOT a CONFIRMATION indicator
-  
-- **Intent.UPDATE**: User wants to change/update a previously answered field
-  - **State-Aware Rule**: In REVIEW state, "no" (rejecting confirmation) = UPDATE
-  - When field is null, system shows summary and asks which field to change
-  - Uses interpretation field when available for better context
-  
-- **Intent.SUBMISSION**: User is providing answers to unanswered questions
-  - Extracts field values from message and conversation history
-  - Also includes values from `data_input_field` (extracted directly from `visitor.data`, bypassing LLM)
-  
-- **Intent.DECLINE**: User declines to answer a non-required question
-  - Stores "n/a" for declined optional fields
-  
-- **Intent.NONE**: No clear intent or conversational filler
+**Critical**: "yes"/"no" in active state = SUBMISSION (answer). In review state = CONFIRMATION or refusal.
 
-### State-Aware Classification Rules
+### Extraction Modes
 
-The classification system includes state-aware rules for better accuracy:
+Extraction mode is auto-detected or set via `extraction_mode` constraint:
 
-- **"No" in REVIEW state**: Classified as UPDATE (rejecting confirmation), not CONFIRMATION
-- **Interpretation context**: When interpretation indicates "not correct" or "wrong", prefers UPDATE intent
-- **Field normalization**: Handles string "null" values from JSON parsing, normalizing them to Python None
+- **[verbatim]**: For description/narrative fields. Preserves full user response; no summarization. Keywords: "description", "narrative", "details", "incident", "explain"
+- **[normalized]**: For structured fields (email, phone, name). Trim whitespace, fix casing
+- **[select]**: For fields with `options` or `input_context_provider`. Match to closest valid option; handles references like "the second option"
+
+### Context Enhancement
+
+- **Entity format**: Each unanswered field includes mode marker, e.g. `incident_description [REQUIRED] [verbatim] — Expected: "..." | Constraints: ...`
+- **Inline options**: Select fields include `| Options: Monday 9AM, Monday 2PM, Wednesday 9AM` for reference resolution
+- **Conversation history**: Passed via the model API's `history` parameter as separate messages (not embedded in the prompt). The prompt instructs the LLM to use the preceding messages for identifying the current question, resolving "yes"/"no" and references, and multi-turn composition. Requires `use_history: true` and `history_limit` in config.
+
+### Classification Configuration
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `require_structured_reasoning` | true | Require structured reasoning object in LLM response |
+| `include_few_shot_examples` | true | Include few-shot examples in prompt |
+| `max_examples` | 5 | Cap on example count |
+| `enable_reference_resolution` | true | Include reference resolution section |
+| `enable_composition` | true | Include multi-turn composition section |
+
+**Token budget**: Full config ~700 tokens; minimal (examples+reasoning disabled) ~200 tokens. For GPT-4o/Claude 3.5+ use full; for smaller models or token limits, disable examples and reasoning.
+
+### Validation Scenarios
+
+The system addresses five failure modes:
+
+1. **Long-form extraction**: [verbatim] mode preserves multi-sentence incident descriptions verbatim
+2. **Multi-turn composition**: "John" (earlier message) + "Smith" (current) → "John Smith" for full_name
+3. **Reference resolution**: "the second option" resolved to specific value from Options list
+4. **CONFIRMATION in review**: "yep that all looks good", "everything is correct" correctly classified
+5. **"No" disambiguation**: "no" to yes/no question → SUBMISSION; "no" to optional content → DECLINE
 
 ### Input Processing
 
-The unified prompt accepts both:
-- **User's utterance**: The raw user message
-- **Interpretation**: LLM-generated interpretation of user intent (when available)
-
-Both are provided to the prompt when available, giving the classification system more context for accurate intent detection and extraction. The interpretation field is particularly useful for distinguishing between "no" as rejection (UPDATE) vs "no" as answer to a question (SUBMISSION).
+The prompt accepts both **utterance** and **interpretation** (when available). Interpretation helps distinguish "no" as rejection vs answer. Conversation history is passed as separate messages via the model API's `history` parameter (controlled by `use_history` and `history_limit` in config).
 
 ### Classification Result
 
-The `ClassificationResult` dataclass contains:
-- `intent`: Detected intent type
-- `confidence`: Confidence score (0.0-1.0)
-- `extracted_data`: Extracted field values (for SUBMISSION intent)
-- `field`: Field name (for UPDATE intent, null if unclear)
-- `value`: Field value (for UPDATE intent, null if not provided)
+`ClassificationResult` contains: `intent`, `confidence`, `extracted_data`, `field`, `value`, `from_data_input_field`.
 
 ### UPDATE Intent Handling
 
-When UPDATE intent is detected:
-
-1. **With field specified**: Processes the update inline using QuestionNode validation
-2. **Without field (null)**: Shows summary of current information and prompts user to specify which field to change
-3. **Field normalization**: Automatically handles string "null" values from JSON parsing
+- **With field**: Processes update via QuestionNode validation
+- **Without field**: Shows summary and prompts which field to change
+- **Field normalization**: Handles string "null" from JSON
 
 ### State Transitions
 
-State transitions happen within the same interaction when appropriate:
-- **ACTIVE → REVIEW**: When all required questions are answered
-- **REVIEW → COMPLETED**: When CONFIRMATION intent is detected
-- **REVIEW → ACTIVE**: When UPDATE intent is detected and processed
-- **Any → CANCELLED**: When CANCELLATION intent is detected
+- ACTIVE → REVIEW when all answered
+- REVIEW → COMPLETED on CONFIRMATION
+- REVIEW → ACTIVE on UPDATE
+- Any → CANCELLED on CANCELLATION
+
+### Troubleshooting Classification
+
+- **Token limit exceeded**: Set `include_few_shot_examples: false` or `max_examples: 2`
+- **Composition not working**: Ensure `enable_composition: true`, `use_history: true`, and `history_limit` is sufficient; history is passed via the API
+- **Reference resolution failing**: Ensure `enable_reference_resolution: true`, Options in entities, field marked [select]
+- **Verbatim truncated**: Add explicit `extraction_mode: verbatim` to constraints; check `model_max_tokens`
 
 ## Validation System
 
