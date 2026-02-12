@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios'
 import { getJvagentUrl, getJvagentTimeout, getConfigAsync } from './config'
-import { getToken, removeToken, getUserId, getRefreshToken, setToken, setRefreshToken, removeRefreshToken } from '../utils/storage'
+import { getToken, removeToken, getUserId, getRefreshToken, setToken, setRefreshToken, removeRefreshToken, getAuthCreds, isTokenExpired } from '../utils/storage'
 import type {
   LoginRequest,
   LoginResponse,
@@ -30,9 +30,9 @@ class ApiClient {
     this.client = axios.create({
       baseURL: baseURL,
       timeout: getJvagentTimeout(),
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      // Remove default Content-Type header to avoid preflights on GET requests
+      // Headers will be set per-request in the interceptor
+      headers: {},
       // Enable cookies for session-based auth; harmless for bearer-token flows.
       withCredentials: true,
     })
@@ -46,18 +46,49 @@ class ApiClient {
       console.warn('Failed to load async config:', err)
     })
 
-    // Request interceptor to add JWT token
+    // Request interceptor to add JWT token and handle proactive refresh
     this.client.interceptors.request.use(
-      (config) => {
-        const token = getToken()
+      async (config) => {
+        // Set Content-Type for state-changing requests if not set
+        if (['post', 'put', 'patch', 'delete'].includes(config.method?.toLowerCase() || '')) {
+          if (!config.headers.get('Content-Type')) {
+            config.headers.set('Content-Type', 'application/json')
+          }
+        }
+
+        // Skip Authorization header for auth-related and anonymous paths
+        const authPaths = ['/auth/login', '/api/auth/login', '/auth/refresh', '/api/auth/refresh']
+        const isAuth = authPaths.some(path => config.url?.includes(path))
+        
+        // Strictly skip anonymous interact endpoint: /api/agents/{id}/interact
+        const isAnonymousInteract = config.url && (
+          config.url.endsWith('/interact') || 
+          config.url.includes('/interact?') || 
+          /\/agents\/[^/]+\/interact($|\?)/.test(config.url)
+        )
+        
+        if (isAuth || isAnonymousInteract) {
+          console.log('Skipping Authorization header for:', config.url)
+          return config
+        }
+
+        let token = getToken()
+        
+        // Proactive token refresh if expired or about to expire
+        if (token && isTokenExpired(token)) {
+          console.log('Token expired or expiring soon, triggering proactive refresh for:', config.url)
+          try {
+            const newToken = await this._refreshAuth()
+            token = newToken
+          } catch (err) {
+            console.error('Proactive refresh failed:', err)
+            // Error handling is inside _refreshAuth (redirect to login if both fail)
+            return Promise.reject(err)
+          }
+        }
+
         if (token) {
-          config.headers.Authorization = `Bearer ${token}`
-          console.log('Request with token:', {
-            url: config.url,
-            method: config.method,
-            hasToken: !!token,
-            tokenPreview: token.substring(0, 20) + '...'
-          })
+          config.headers.set('Authorization', `Bearer ${token}`)
         } else {
           console.warn('Request without token:', {
             url: config.url,
@@ -69,12 +100,40 @@ class ApiClient {
       (error) => Promise.reject(error)
     )
 
-    // Response interceptor for error handling and token refresh
+    // Response interceptor for error handling and token refresh (standard retry)
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
         const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
         
+        // Handle 401 errors with token refresh (fallback if proactive check missed it)
+        if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+          originalRequest._retry = true
+          
+          try {
+            console.log('Received 401, entering retry refresh flow...')
+            const token = await this._refreshAuth()
+            if (token) {
+              originalRequest.headers.set('Authorization', `Bearer ${token}`)
+            }
+            console.log('Retry refresh successful, retrying original request')
+            return this.client(originalRequest)
+          } catch (refreshErr) {
+            return Promise.reject(refreshErr)
+          }
+        }
+
+        // Check for "Network Error" which might be a CORS-blocked 401
+        // If we have a token and it's a network error, it's highly suspicious
+        if (!error.response && getToken()) {
+          console.warn('Network Error detected with an existing token. This might be a CORS-blocked 401.', {
+            url: error.config?.url,
+            baseURL: error.config?.baseURL
+          })
+          // We don't automatically retry here to avoid loops, 
+          // but the proactive check in the request interceptor should prevent this mostly.
+        }
+
         console.error('API Error:', {
           message: error.message,
           status: error.response?.status,
@@ -88,85 +147,116 @@ class ApiClient {
         if (!error.response) {
           console.error('Network Error - No response from server. Possible causes:')
           console.error('1. Server is not running')
-          console.error('2. CORS is blocking the request')
-          console.error('3. Wrong URL:', baseURL)
+          console.error('2. CORS is blocking the request (often due to 401 response missing CORS headers)')
+          console.error('3. Wrong URL:', this.client.defaults.baseURL)
           console.error('4. Network connectivity issue')
-        }
-        
-        // Handle 401 errors with token refresh
-        if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
-          originalRequest._retry = true
-          
-          const refreshToken = getRefreshToken()
-          if (!refreshToken) {
-            // No refresh token available, redirect to login
-            removeToken()
-            removeRefreshToken()
-            if (window.location.pathname !== '/login') {
-              window.location.replace('/login')
-            }
-            return Promise.reject(error)
-          }
-          
-          // If already refreshing, queue this request
-          if (this.isRefreshing) {
-            return new Promise((resolve, reject) => {
-              this.failedQueue.push({ 
-                resolve: () => {
-                  // Retry original request with new token
-                  const token = getToken()
-                  if (token && originalRequest.headers) {
-                    originalRequest.headers.Authorization = `Bearer ${token}`
-                  }
-                  this.client(originalRequest).then(resolve).catch(reject)
-                }, 
-                reject 
-              })
-            })
-          }
-          
-          // Start refresh process
-          this.isRefreshing = true
-          
-          try {
-            const refreshResponse = await this.refreshToken({ refresh_token: refreshToken })
-            
-            // Update tokens
-            setToken(refreshResponse.access_token)
-            if (refreshResponse.refresh_token) {
-              setRefreshToken(refreshResponse.refresh_token)
-            }
-            
-            // Update original request with new token
-            if (originalRequest.headers) {
-              originalRequest.headers.Authorization = `Bearer ${refreshResponse.access_token}`
-            }
-            
-            // Process queued requests
-            this.failedQueue.forEach(({ resolve }) => resolve())
-            this.failedQueue = []
-            
-            // Retry original request
-            return this.client(originalRequest)
-          } catch (refreshError) {
-            // Refresh failed, clear tokens and redirect to login
-            this.failedQueue.forEach(({ reject }) => reject(refreshError))
-            this.failedQueue = []
-            
-            removeToken()
-            removeRefreshToken()
-            if (window.location.pathname !== '/login') {
-              window.location.replace('/login')
-            }
-            return Promise.reject(refreshError)
-          } finally {
-            this.isRefreshing = false
-          }
         }
         
         return Promise.reject(error)
       }
     )
+  }
+
+  /**
+   * Internal flow to refresh auth tokens either via refresh token or auto-login.
+   * Consolidates logic to avoid duplication in interceptors.
+   * Returns a promise that resolves to the new access token.
+   */
+  private async _refreshAuth(): Promise<string> {
+    // If already refreshing, wait for it to complete
+    if (this.isRefreshing) {
+      return new Promise((resolve, reject) => {
+        this.failedQueue.push({ 
+          resolve: () => resolve(getToken()!), 
+          reject 
+        })
+      })
+    }
+
+    this.isRefreshing = true
+
+    const cleanUpAndRedirect = (error: any) => {
+      this.failedQueue.forEach(({ reject }) => reject(error))
+      this.failedQueue = []
+      this.isRefreshing = false
+      removeToken()
+      removeRefreshToken()
+      if (window.location.pathname !== '/login') {
+        window.location.replace('/login')
+      }
+      throw error
+    }
+
+    try {
+      const refreshToken = getRefreshToken()
+      if (refreshToken) {
+        try {
+          console.log('Attempting token refresh...')
+          const refreshResponse = await this.refreshToken({ refresh_token: refreshToken })
+          setToken(refreshResponse.access_token)
+          if (refreshResponse.refresh_token) {
+            setRefreshToken(refreshResponse.refresh_token)
+          }
+          console.log('Token refresh successful')
+          
+          this.failedQueue.forEach(({ resolve }) => resolve())
+          this.failedQueue = []
+          this.isRefreshing = false
+          return refreshResponse.access_token
+        } catch (refreshErr) {
+          console.warn('Refresh token failed, attempting auto-login fallback...')
+        }
+      }
+
+      // Auto-login fallback
+      const authCreds = getAuthCreds()
+      if (authCreds) {
+        try {
+          console.log('Attempting auto-login...')
+          const loginResponse = await this.login(authCreds)
+          setToken(loginResponse.access_token)
+          if (loginResponse.refresh_token) {
+            setRefreshToken(loginResponse.refresh_token)
+          }
+          console.log('Auto-login successful')
+          
+          this.failedQueue.forEach(({ resolve }) => resolve())
+          this.failedQueue = []
+          this.isRefreshing = false
+          return loginResponse.access_token
+        } catch (loginErr) {
+          console.error('Auto-login fallback failed')
+          return cleanUpAndRedirect(loginErr)
+        }
+      }
+
+      console.warn('No refresh token or credentials available for recovery')
+      return cleanUpAndRedirect(new Error('Authentication expired and no recovery credentials found'))
+    } catch (err) {
+      return cleanUpAndRedirect(err)
+    }
+  }
+
+  /**
+   * Manually set the access token. 
+   * Useful for explicit auth flows in components.
+   */
+  setToken(token: string | LoginResponse): void {
+    if (typeof token === 'string') {
+      setToken(token)
+    } else if (token && token.access_token) {
+      setToken(token.access_token)
+      if (token.refresh_token) {
+        setRefreshToken(token.refresh_token)
+      }
+    }
+  }
+
+  /**
+   * Manually set the refresh token.
+   */
+  setRefreshToken(token: string): void {
+    setRefreshToken(token)
   }
 
   /**

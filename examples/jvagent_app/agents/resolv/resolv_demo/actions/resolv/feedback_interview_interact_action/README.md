@@ -13,7 +13,6 @@ The Feedback Interview InteractAction guides users through collecting feedback o
 - **Conditional Branching**: Dynamic flow based on media availability
 - **Custom Validation**: Field-level validation with user-friendly error messages
 - **Custom Directives**: Shows matching reports for user selection
-- **DSPy Integration**: Optimized classification and extraction using DSPy teleprompters
 - **Flexible Feedback**: Supports feedback on both reports and projects
 
 ## Architecture
@@ -34,13 +33,12 @@ Inherits from `InterviewInteractAction` and uses a unified classification and ex
     weight: -50 # Runs before fallback actions
   config:
     model_action_type: "OpenAILanguageModelAction"
-    model: "gpt-4.1-mini"
+    model: "gpt-4o-mini"
     model_temperature: 0.1
     model_max_tokens: 4096
     use_history: true
     max_statement_length: 100
     history_limit: 3
-    use_dspy: true
 ```
 
 ### Routing Anchors
@@ -70,12 +68,12 @@ The action publishes anchors for InteractRouter routing:
    - Accepts multiple files
    - Optional field
 
-3. **report_details** (required)
+3. **report_details** (optional)
    - Description to match existing reports
    - Used for report lookup
    - Triggers report matching
 
-4. **selected_report_id** (required)
+4. **selected_report_id** (required if reports found)
    - ID of the report to attach feedback to
    - Validation: Must be a valid report ID from matching results
 
@@ -84,6 +82,7 @@ The action publishes anchors for InteractRouter routing:
 ### Validators
 
 - `validate_feedback_content`: Ensures sufficient detail (min 10 chars), proper whitespace handling
+- `validate_report_details`: Handles report matching logic (mocked in this example)
 - `validate_selected_report_id`: Validates report ID exists in matching results
 
 ### Directive Overrides
@@ -93,30 +92,30 @@ The action publishes anchors for InteractRouter routing:
 ### Branch Functions
 
 - `can_ask_for_media`: Determines if media question should be asked based on feedback type
+- `search_for_report`: Checks if matching reports were found
 
 ### Review Override
 
-- `adapt_feedback_review_for_display`: Formats data for review state, omits empty fields and formats media links
+- `adapt_review`: Formats data for review state, omits empty fields and formats media links
 
 ## Completion Handler
 
-The `handle_feedback_completion` function processes the collected data:
+The `handle_interview_completion` function processes the collected data:
 
 1. Extracts all interview responses
-2. Formats media files for upload
-3. Calls ResolvAPIAction to submit feedback
-4. Sends confirmation message to user
-5. Cleans up interview session
+2. Calls ResolvAPIAction to submit feedback
+3. Sends confirmation message to user
+4. Cleans up interview session
 
 ## API Integration
 
 Integrates with `ResolvAPIAction` to submit feedback to the Resolv IMS:
 
 ```python
-result = await resolv_api_action.submit_feedback(
+result = await resolv_api_action.submit_comment(
+    content=feedback_content,
     report_id=selected_report_id,
-    feedback_content=feedback_content,
-    media_files=feedback_media
+    attachments=feedback_media
 )
 ```
 
@@ -182,7 +181,6 @@ The action uses the `report_details` field to search for matching reports:
 feedback_interview_interact_action/
 ├── __init__.py                                # Package initialization
 ├── feedback_interview_interact_action.py      # Main action implementation
-├── endpoints.py                               # API endpoints
 ├── info.yaml                                  # Action metadata
 └── README.md                                  # This file
 ```
@@ -228,15 +226,6 @@ async def custom_report_details_directive(...):
     # Customize display format
     return ("replace", f"Custom message with {len(matching_reports)} reports")
 ```
-
-## Known Issues
-
-See [TARGETED_ACTION Updates](../../../../../../../jvsproject/README.md) for recent fixes:
-
-- Fixed grammatical error in validation message ("their feedback" → "your feedback")
-- Enhanced validation with minimum length check and proper whitespace handling
-- Added endpoints.py for standard API pattern
-- Fixed import issues and branch function implementation
 
 ## Testing
 

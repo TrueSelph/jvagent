@@ -1,304 +1,34 @@
 """Short Pass Interview action lets ranks request a short pass."""
+from __future__ import annotations
 
-import re
+# Standard library
 import json
 import logging
-from datetime import datetime, timedelta
+import re
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from jvagent.action.interview import (
-    InterviewInteractAction,
-    input_handler,
-    input_validator,
-    input_directive_override,
-    on_interview_complete,
-    input_context_provider,
-    branch_function,
-    input_review_override
-)
-from jvagent.action.interview.core.session.interview_session import InterviewSession
-from jvagent.action.interview.core.foundation.enums import ValidationStatus
-from jvagent.memory import Interaction
-from jvagent.action.interact.interact_walker import InteractWalker
-from jvagent.action.interact.base import InteractAction
+# Third-party / external packages
 from jvspatial.core.annotations import attribute
 
-from jvagent.action.interview.core.session.interview_service import InterviewService
+# Local application imports
+from jvagent.action.interact.base import InteractAction
+from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.action.interview import (
+    InterviewInteractAction,
+    branch_function,
+    input_context_provider,
+    input_directive_override,
+    input_review_override,
+    input_validator,
+    on_interview_complete,
+)
+from jvagent.action.interview.core.foundation.enums import ValidationStatus
+from jvagent.action.interview.core.session.interview_session import InterviewSession
+from jvagent.memory import Interaction
+
 
 logger = logging.getLogger(__name__)
-
-# directive override
-@input_review_override
-def adapt_short_pass_review_for_display(
-    session: InterviewSession,
-    data: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Omit or format values shown in the Review state."""
-    result: Dict[str, Any] = {}
-    for field_name, value in data.items():
-        if (
-            value is None
-            or value == ""
-            or (isinstance(value, str) and value.strip().lower() in ("n/a", "na"))
-        ):
-            continue
-        else:
-            result[field_name] = value
-
-    for key, value in session.context.items():
-        if key in ["supervisor_name", "supervisor_phone_number"]:
-            result[key] = value
-
-    return result
-
-
-# input validator 
-@input_validator("start_date")
-def validate_start_date(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the start date is not empty."""
-
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the start date"
-
-    return ValidationStatus.VALID, None
-
-
-@input_validator("end_date")
-def validate_end_date(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the end date is not empty."""
-
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the end date"
-
-    return ValidationStatus.VALID, None
-
-
-@input_validator("overseas_travel")
-def validate_overseas_travel(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the overseas travel is not empty."""
-
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the overseas travel"
-
-    value = value.strip()
-    if value.lower() not in ["yes", "no"]:
-        return (
-            ValidationStatus.INVALID,
-            "Ask: Please provide 'yes' or 'no' for overseas travel",
-        )
-
-    return ValidationStatus.VALID, None
-
-
-@input_validator("overseas_address")
-def validate_overseas_address(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the overseas address is not empty."""
-
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the overseas address"
-
-    value = value.strip()
-    name_parts = value.split()
-    if len(name_parts) < 5:
-        return (
-            ValidationStatus.INVALID,
-            "Ask: Please provide your full overseas address",
-        )
-
-    return ValidationStatus.VALID, None
-
-
-@input_validator("overseas_contact_number")
-def validate_overseas_contact_number(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the overseas contact number is not empty."""
-
-    if not value or not isinstance(value, str):
-        return (
-            ValidationStatus.INVALID,
-            "Ask: Please provide the overseas contact number",
-        )
-
-    value = value.strip()
-    if not re.match(r"^\d{10}$", value):
-        return (
-            ValidationStatus.INVALID,
-            "Tell the user: Please provide a valid 10-digit phone number",
-        )
-    return ValidationStatus.VALID, None
-
-
-@input_validator("under_confinement")
-def validate_under_confinement(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the under confinement is not empty."""
-
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the under confinement"
-
-    value = value.strip()
-    if value.lower() not in ["yes", "no"]:
-        return (
-            ValidationStatus.INVALID,
-            "Ask: Please provide 'yes' or 'no' for under confinement",
-        )
-
-    return ValidationStatus.VALID, None
-
-
-@input_validator("reason_for_pass")
-def validate_reason_for_pass(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the reason for pass is not empty."""
-
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the reason for pass"
-
-    value = value.strip()
-    name_parts = value.split()
-    if len(name_parts) < 3:
-        return (
-            ValidationStatus.INVALID,
-            "Ask: Please provide a more detailed reason for pass",
-        )
-
-    return ValidationStatus.VALID, None
-
-
-@input_validator("supervisor_name")
-def validate_supervisor_name(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the supervisor name is not empty."""
-
-    if not value or not isinstance(value, str):
-        return ValidationStatus.INVALID, "Ask: Please provide the supervisor name"
-
-    value = value.strip()
-    name_parts = value.split()
-    if len(name_parts) < 2:
-        return (
-            ValidationStatus.INVALID,
-            "Ask: Please provide a valid supervisor name",
-        )
-
-    return ValidationStatus.VALID, None
-
-
-@input_validator("supervisor_contact_number")
-def validate_supervisor_contact_number(
-    value: str, session: InterviewSession
-) -> Tuple[ValidationStatus, Optional[str]]:
-    """Validate that the supervisor contact number is not empty."""
-
-    if not value or not isinstance(value, str):
-        return (
-            ValidationStatus.INVALID,
-            "Ask: Please provide the supervisor contact number",
-        )
-
-    value = value.strip()
-    if not re.match(r"^\d{10}$", value):
-        return (
-            ValidationStatus.INVALID,
-            "Tell the user: Please provide a valid 10-digit phone number",
-        )
-    return ValidationStatus.VALID, None
-
-
-# input context 
-@input_context_provider()
-async def get_current_date(
-    session: InterviewSession, visitor: InteractWalker
-) -> Dict[str, Any]:
-    """Provide current date."""
-    now = datetime.now()
-    date_str = now.strftime("%A, %d %B, %Y")
-
-    return {"date": date_str}
-
-
-# branch function
-@branch_function("can_ask_for_supervisor_name")
-async def can_ask_for_supervisor_name(
-    session: InterviewSession, visitor: InteractWalker
-) -> bool:
-    """Search for completed reports matching the user's description."""
-
-    logger = logging.getLogger(__name__)
-    logger.warning("can ask for supervisor")
-
-    rank_profile = {
-        "ident_code": "MiPWJFWbxqPccfusEygn",
-        "regimental_number": "15264",
-        "unit": {"id": 4, "name": "Artillery"},
-        "sub_unit": None,
-        "supervisor": {
-            "first_name": "John",
-            "last_name": "Brown",
-            "regimental_number": "34342",
-            "phone": "5926415808",
-            "is_unit_supervisor": True,
-        },
-        "first_name": "Tharick",
-        "last_name": "Jairam",
-        "is_first_time": False,
-        "is_security_question_set": True,
-        "is_pin_set": True,
-        "rank": {"name": "Lt Col", "full_name": "Lieutenant Colonel"},
-    }
-
-    if rank_profile:
-        if rank_profile.get("supervisor", {}):
-            session.context[
-                "supervisor_name"
-            ] = f"{rank_profile['supervisor']['first_name']} {rank_profile['supervisor']['last_name']}"
-            session.context["supervisor_phone_number"] = rank_profile["supervisor"][
-                "phone"
-            ]
-            session.context["supervisor_rank_number"] = rank_profile["supervisor"][
-                "regimental_number"
-            ]
-            session.context["rank_number"] = rank_profile.get("regimental_number", "")
-
-            if isinstance(rank_profile.get("rank"), dict):
-                session.context["rank_name"] = rank_profile.get("rank", {}).get(
-                    "name", "Unknown"
-                )
-                session.context["rank_rank"] = rank_profile.get("rank", {}).get(
-                    "full_name", "Unknown"
-                )
-            else:
-                session.context["rank_name"] = "Unknown"
-                session.context["rank_rank"] = "Unknown"
-
-            if isinstance(rank_profile.get("unit"), dict):
-                session.context["unit"] = rank_profile.get("unit", {}).get(
-                    "name", "Unknown"
-                )
-            else:
-                session.context["unit"] = "Unknown"
-
-            if isinstance(rank_profile.get("sub_unit"), dict):
-                session.context["sub_unit"] = rank_profile.get("sub_unit", {}).get(
-                    "name", "Unknown"
-                )
-            else:
-                session.context["sub_unit"] = "Unknown"
-            return False
-
-    return True
 
 
 class ShortPassInterviewInteractAction(InterviewInteractAction):
@@ -339,8 +69,6 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
             "User is requesting a short pass",
             "User needs to file a new short pass request",
             "User is providing details for a new short pass request",
-            # Note: Standard anchors (cancellation, correction, review, etc.)
-            # are automatically merged with these implementation-specific anchors
         ],
         description="Anchor statements for InteractRouter routing",
     )
@@ -350,10 +78,10 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
             {
                 "name": "start_date",
                 "input_context_provider": "get_current_date",
-                "question": "What is your proposed start date of your short pass?",
+                "question": "What is the proposed start date of your short pass?",
                 "constraints": {
                     "description": "A date which marks the beginning of the engagement or leave request.",
-                    "instruction": "The current date is <datetime> - use this as a reference to accurately resolve, format and extract a start date specified. Note that the start date and end date are counted as day 1. Format date as '%A, %B %d, %Y'.",
+                    "instruction": "The current date is <datetime> - use this as a reference to accurately resolve, format, and extract a start date specified. Note that the start date and end date are counted as day 1. Format date as '%A, %B %d, %Y'.",
                     "type": "string",
                 },
                 "default_next": "end_date",
@@ -365,7 +93,7 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
                 "question": "What's the proposed end date of your short pass?",
                 "constraints": {
                     "description": "A date which marks the end of the engagement or leave request.",
-                    "instruction": "The current date is <datetime> - use this as a reference to accurately resolve, format and extract an end date specified. Note that the end date and start date are counted as day 1. Format date as '%A, %B %d, %Y'.",
+                    "instruction": "The current date is <datetime> - use this as a reference to accurately resolve, format, and extract an end date specified. Note that the end date and start date are counted as day 1. Format date as '%A, %B %d, %Y'.",
                     "type": "string",
                 },
                 "default_next": "overseas_travel",
@@ -376,7 +104,7 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
                 "question": "Will you be traveling overseas during this short pass?",
                 "constraints": {
                     "description": "Whether or not the user will be traveling overseas during this short pass.",
-                    "instruction": "Only select a 'yes' or 'no' if the user directly responds to traveling overseas or mention if they are traveling or not. leave blank otherwise.",
+                    "instruction": "Only select a 'yes' or 'no' if the user directly responds to traveling overseas or mentions if they are traveling or not. Leave blank otherwise.",
                     "type": "string",
                     "items": ["yes", "no"],
                 },
@@ -398,7 +126,7 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
                 "question": "What is your overseas address?",
                 "constraints": {
                     "description": "The full address where the user will be staying during their overseas travel.",
-                    "instruction": "The full address must include lot / apartment, street name area / city, state (if applicable) and country",
+                    "instruction": "The full address must include lot/apartment, street name, area/city, state (if applicable), and country.",
                     "type": "string",
                 },
                 "default_next": "overseas_contact_number",
@@ -408,7 +136,7 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
                 "name": "overseas_contact_number",
                 "question": "What is your overseas contact number?",
                 "constraints": {
-                    "description": "A complete phone number in various formats",
+                    "description": "A complete phone number in various formats.",
                     "type": "string",
                 },
                 "default_next": "under_confinement",
@@ -419,7 +147,7 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
                 "question": "Are you currently under base confinement?",
                 "constraints": {
                     "description": "Whether or not the user is under base confinement.",
-                    "instruction": "Only select a 'yes' or 'no' if the user directly responds to being under base confinement or mention if they are confined or not. leave blank otherwise.",
+                    "instruction": "Only select a 'yes' or 'no' if the user directly responds to being under base confinement or mentions if they are confined or not. Leave blank otherwise.",
                     "type": "string",
                     "items": ["yes", "no"],
                 },
@@ -471,153 +199,316 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
         "Branch functions can be registered with @branch_function decorator for complex branching logic.",
     )
 
-    short_pass_review_template: str = """*Short Pass Request*
+    # Input validator
+    @input_validator("start_date")
+    def validate_start_date(
+        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+    ) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that the start date is not empty."""
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please provide the start date."
+        return ValidationStatus.VALID, None
 
-    *Name:* <rank_rank> <rank_name> (<rank_number>)
-    *Unit/Subunit:* <unit> <sub_unit>
-    *Supervisor:* <supervisor_name> ( <supervisor_rank_number> )
+    @input_validator("end_date")
+    def validate_end_date(
+        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+    ) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that the end date is not empty."""
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please provide the end date."
+        return ValidationStatus.VALID, None
 
-    *Dates:*  <start_date> to <end_date>
+    @input_validator("overseas_travel")
+    def validate_overseas_travel(
+        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+    ) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that the overseas travel response is either yes or no."""
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please indicate if you'll be traveling overseas."
 
-    *Reason:* <reason_for_pass>
+        value = value.strip().lower()
+        if value not in ["yes", "no"]:
+            return (
+                ValidationStatus.INVALID,
+                "Ask: Please provide 'yes' or 'no' for overseas travel.",
+            )
+        return ValidationStatus.VALID, None
 
-    % if overseas_travel == "yes" %
-    *Overseas Address:* <overseas_address>
-    *Overseas Contact:* <overseas_contact_number>
-    % endif %
-    """
+    @input_validator("overseas_address")
+    def validate_overseas_address(
+        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+    ) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that the overseas address is sufficiently detailed."""
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please provide your overseas address."
+
+        value = value.strip()
+        address_parts = value.split()
+        if len(address_parts) < 5:
+            return (
+                ValidationStatus.INVALID,
+                "Ask: Please provide your full overseas address.",
+            )
+        return ValidationStatus.VALID, None
+
+    @input_validator("overseas_contact_number")
+    def validate_overseas_contact_number(
+        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+    ) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that the overseas contact number is a valid 10-digit number."""
+        if not value or not isinstance(value, str):
+            return (
+                ValidationStatus.INVALID,
+                "Ask: Please provide your overseas contact number.",
+            )
+
+        value = value.strip()
+        if not re.match(r"^\d{10}$", value):
+            return (
+                ValidationStatus.INVALID,
+                "Tell the user: Please provide a valid 10-digit phone number.",
+            )
+        return ValidationStatus.VALID, None
+
+    @input_validator("under_confinement")
+    def validate_under_confinement(
+        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+    ) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that the confinement response is either yes or no."""
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please indicate if you are under base confinement."
+
+        value = value.strip().lower()
+        if value not in ["yes", "no"]:
+            return (
+                ValidationStatus.INVALID,
+                "Ask: Please provide 'yes' or 'no' for under confinement.",
+            )
+        return ValidationStatus.VALID, None
+
+    @input_validator("reason_for_pass")
+    def validate_reason_for_pass(
+        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+    ) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that the reason for the pass has sufficient detail."""
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please provide the reason for your pass."
+
+        value = value.strip()
+        reason_parts = value.split()
+        if len(reason_parts) < 3:
+            return (
+                ValidationStatus.INVALID,
+                "Ask: Please provide a more detailed reason for your pass.",
+            )
+        return ValidationStatus.VALID, None
+
+    @input_validator("supervisor_name")
+    def validate_supervisor_name(
+        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+    ) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that the supervisor name is not empty and formatted correctly."""
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please provide your supervisor's name."
+
+        value = value.strip()
+        name_parts = value.split()
+        if len(name_parts) < 2:
+            return (
+                ValidationStatus.INVALID,
+                "Ask: Please provide your supervisor's full name.",
+            )
+        return ValidationStatus.VALID, None
+
+    @input_validator("supervisor_contact_number")
+    def validate_supervisor_contact_number(
+        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+    ) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that the supervisor's contact number is a valid 10-digit number."""
+        if not value or not isinstance(value, str):
+            return (
+                ValidationStatus.INVALID,
+                "Ask: Please provide your supervisor's contact number.",
+            )
+
+        value = value.strip()
+        if not re.match(r"^\d{10}$", value):
+            return (
+                ValidationStatus.INVALID,
+                "Tell the user: Please provide a valid 10-digit phone number.",
+            )
+        return ValidationStatus.VALID, None
+
+    # Input context provider
+    @input_context_provider()
+    async def get_current_date(
+        self, session: InterviewSession, visitor: InteractWalker
+    ) -> Dict[str, Any]:
+        """Provide the current date for reference."""
+        now = datetime.now()
+        date_str = now.strftime("%A, %d %B, %Y")
+        return {"date": date_str}
+
+    # Branch function
+    @branch_function("can_ask_for_supervisor_name")
+    async def can_ask_for_supervisor_name(
+        self, session: InterviewSession, visitor: InteractWalker
+    ) -> bool:
+        """Determine if supervisor details need to be collected from the user."""
+        logger.warning("Checking if supervisor details are already available.")
+
+        rank_profile = {
+            "ident_code": "MiPWJFWbxqPccfusEygn",
+            "regimental_number": "15264",
+            "unit": {"id": 4, "name": "Artillery"},
+            "sub_unit": None,
+            "supervisor": {
+                "first_name": "John",
+                "last_name": "Brown",
+                "regimental_number": "34342",
+                "phone": "5926415808",
+                "is_unit_supervisor": True,
+            },
+            "first_name": "Tharick",
+            "last_name": "Jairam",
+            "is_first_time": False,
+            "is_security_question_set": True,
+            "is_pin_set": True,
+            "rank": {"name": "Lt Col", "full_name": "Lieutenant Colonel"},
+        }
+
+        if rank_profile and rank_profile.get("supervisor"):
+            session.context["supervisor_name"] = f"{rank_profile['supervisor']['first_name']} {rank_profile['supervisor']['last_name']}"
+            session.context["supervisor_phone_number"] = rank_profile["supervisor"]["phone"]
+            session.context["supervisor_rank_number"] = rank_profile["supervisor"]["regimental_number"]
+            session.context["rank_number"] = rank_profile.get("regimental_number", "")
+
+            if isinstance(rank_profile.get("rank"), dict):
+                session.context["rank_name"] = rank_profile.get("rank", {}).get("name", "Unknown")
+                session.context["rank_rank"] = rank_profile.get("rank", {}).get("full_name", "Unknown")
+            else:
+                session.context["rank_name"] = "Unknown"
+                session.context["rank_rank"] = "Unknown"
+
+            unit = rank_profile.get("unit")
+            session.context["unit"] = unit["name"] if isinstance(unit, dict) else "Unknown"
+
+            sub_unit = rank_profile.get("sub_unit")
+            session.context["sub_unit"] = sub_unit["name"] if isinstance(sub_unit, dict) else "Unknown"
+            
+            return False
+
+        return True
 
 
+# Input review override
+@input_review_override
+def adapt_review(
+    session: InterviewSession,
+    data: Dict[str, Any],
+    visitor: Optional[InteractWalker] = None,
+    interview_action: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Omit or format values shown in the Review state."""
+    result: Dict[str, Any] = {}
+    result_ending: Dict[str, Any] = {}
+    
+    for field_name, value in data.items():
+        if (
+            value is None
+            or value == ""
+            or (isinstance(value, str) and value.strip().lower() in ("n/a", "na"))
+        ):
+            continue
+        else:
+            result[field_name] = value
+
+    for key, value in session.context.items():
+        if key in ["supervisor_name", "supervisor_phone_number"]:
+            result_ending[key] = value
+
+    # Add context items at the end
+    result.update(result_ending)
+    return result
 
 
 @on_interview_complete('ShortPassInterviewInteractAction')
-async def handle_short_pass_completion(
+async def handle_interview_completion(
     session: InterviewSession,
     visitor: InteractWalker,
     action: InteractAction
 ) -> None:
     """Handle completion of short pass interview."""
+    logger.warning(f"Interview responses: {json.dumps(session.responses, indent=4)}")
 
     arc_api_action = await action.get_action("ArcAPIAction")
-    completion_message = "Tell the user: Sorry I was unable to submit your short pass. Please try again later!"
+    completion_message = "Tell the user: Sorry, I was unable to submit your short pass. Please try again later!"
+    
     if arc_api_action:
-        logger.warning(json.dumps(session.responses, indent=4))
-
-        # session responses
+        # Session responses
         under_confinement = session.responses.get('under_confinement', "N/A")
         overseas_travel = session.responses.get('overseas_travel', "N/A")
-        start_date = session.responses.get('start_date', "N/A")
-        end_date = session.responses.get('end_date', "N/A")
+        start_date_str = session.responses.get('start_date', "N/A")
+        end_date_str = session.responses.get('end_date', "N/A")
         reason_for_pass = session.responses.get('reason_for_pass', "N/A")
         overseas_address = session.responses.get('overseas_address', "N/A")
         overseas_contact_number = session.responses.get('overseas_contact_number', "N/A")
 
-        # session context 
+        # Session context 
         supervisor_name = session.responses.get('supervisor_name') or session.context.get('supervisor_name')
-        supervisor_phone_number = session.responses.get('supervisor_phone_number') or session.context.get('supervisor_phone_number')
+        supervisor_phone_number = (session.responses.get('supervisor_phone_number') or 
+                                    session.responses.get('supervisor_contact_number') or 
+                                    session.context.get('supervisor_phone_number'))
         
-        supervisor_rank_number = session.context.get('supervisor_rank_number')
-        rank_number = session.context.get('rank_number')
-        rank_name = session.context.get('rank_name')
-        rank_rank = session.context.get('rank_rank')
-        unit = session.context.get('unit')
-        sub_unit = session.context.get('sub_unit')
+        supervisor_rank_number = session.context.get('supervisor_rank_number', "Unknown")
+        rank_number = session.context.get('rank_number', "Unknown")
+        rank_name = session.context.get('rank_name', "Unknown")
+        rank_rank = session.context.get('rank_rank', "Unknown")
+        unit = session.context.get('unit', "Unknown")
+        sub_unit = session.context.get('sub_unit', "Unknown")
 
-
-        # generated content 
-        now = datetime.now()
-        applied_on = now.strftime("%Y-%m-%d")
-        reviewed_on = applied_on
-
-        # Infers the type of pass based on interview responses
-        if under_confinement == "yes" or overseas_travel == "yes":
-            pass_type = "CONFINEMENT" if under_confinement == "yes" else "OVERSEAS"
+        # Determine pass type
+        if under_confinement == "yes":
+            pass_type = "CONFINEMENT"
+        elif overseas_travel == "yes":
+            pass_type = "OVERSEAS"
         else:
             pass_type = "TRADITIONAL"
 
-        # convert content 
-        start_date = datetime.strptime(start_date, "%A, %B %d, %Y").strftime("%Y-%m-%d")
-        end_date = datetime.strptime(end_date, "%A, %B %d, %Y").strftime("%Y-%m-%d")
+        # Convert date formats
+        try:
+            start_date = datetime.strptime(start_date_str, "%A, %B %d, %Y").strftime("%Y-%m-%d")
+            end_date = datetime.strptime(end_date_str, "%A, %B %d, %Y").strftime("%Y-%m-%d")
+        except ValueError:
+            start_date = start_date_str
+            end_date = end_date_str
+
+        # Format review / supervisor message
+        unit_or_sub_unit = f"{unit} {sub_unit}" if unit != "Unknown" and sub_unit != "Unknown" else (unit if unit != "Unknown" else sub_unit)
         
+        particulars = (
+            f"*Short Pass Request*\n\n"
+            f"*Name:* {rank_rank} {rank_name} ({rank_number})\n"
+            f"*Unit/Subunit:* {unit_or_sub_unit}\n"
+            f"*Supervisor:* {supervisor_name} ({supervisor_rank_number})\n\n"
+            f"*Dates:* {start_date} to {end_date}\n\n"
+            f"*Reason:* {reason_for_pass}"
+        )
 
-        short_pass_review_template: str = """*Short Pass Request*
+        if pass_type == "OVERSEAS":
+            particulars += f"\n\n*Overseas Address:* {overseas_address}\n*Overseas Contact:* {overseas_contact_number}"
 
-*Name:* <rank_rank> <rank_name> (<rank_number>)
-*Unit/Subunit:* <unit> <sub_unit>
-*Supervisor:* <supervisor_name> (<supervisor_rank_number>)
-
-*Dates:*  <start_date> to <end_date>
-
-*Reason:* <reason_for_pass>
-
-% if overseas_travel == 'yes' %
-*Overseas Address:* <overseas_address>
-*Overseas Contact:* <overseas_contact_number>
-% endif %
-"""
-
-        review_template_str = short_pass_review_template
-        if pass_type != "OVERSEAS":
-            review_template_str = short_pass_review_template.split("% if overseas_travel == 'yes' %")[0]
-            review_template_str = review_template_str.replace("<overseas_address>\n", "")
-            review_template_str = review_template_str.replace("<overseas_contact_number>\n", "")
-        
-        
-        review_template_str = review_template_str.replace("\n% if overseas_travel == 'yes' %", "")
-        review_template_str = review_template_str.replace("% endif %\n", "")
-        review_template_str = review_template_str.replace("<rank_number>", rank_number)
-        review_template_str = review_template_str.replace("<rank_name>", rank_name)
-        review_template_str = review_template_str.replace("<rank_rank>", rank_rank)
-        # review_template_str = review_template_str.replace("<unit>", unit)
-        # review_template_str = review_template_str.replace("<sub_unit>", sub_unit)
-        if unit != "Unknown" and sub_unit != "Unknown":
-            unit_or_sub_unit = f"{unit} {sub_unit}"
-        else:
-            unit_or_sub_unit = unit if unit != "Unknown" else sub_unit
-        review_template_str = review_template_str.replace("<unit> <sub_unit>", unit_or_sub_unit)
-
-        review_template_str = review_template_str.replace("<supervisor_name>", supervisor_name)
-        review_template_str = review_template_str.replace("<supervisor_rank_number>", supervisor_rank_number)
-        review_template_str = review_template_str.replace("<start_date>", start_date)
-        review_template_str = review_template_str.replace("<end_date>", end_date)
-        review_template_str = review_template_str.replace("<reason_for_pass>", reason_for_pass)
-        review_template_str = review_template_str.replace("<overseas_address>", overseas_address)
-        particulars = review_template_str.replace("<overseas_contact_number>", overseas_contact_number)
-        
-
-
-        # short_pass_id = await arc_api_action.create_short_pass(
-        #     rank_number=rank_number,
-        #     rank_name=rank_name,
-        #     rank_phone_number=visitor.user_id,
-        #     pass_type=pass_type,
-        #     start_date=start_date,
-        #     end_date=end_date,
-        #     reason_for_pass=reason_for_pass,
-        #     particulars=particulars,
-        #     supervisor=supervisor_name,
-        #     supervisor_phone_number=supervisor_phone_number,
-        #     applied_on=applied_on,
-        #     reviewed_on=reviewed_on
-        # )
+        # Mock ID for demo
         short_pass_id = "95"
 
         if short_pass_id:
-            supervisor_message = particulars.replace("*Short Pass Request*\n", f"*Short Pass Request*\n*Reference Number*: {short_pass_id}\n")
-            logger.warning(supervisor_message)
-            whatsapp_action = await action.get_action("WhatsAppAction")
-            completion_message = f"Tell the user: Thank you for your short pass! Here is your reference number for follow-up: {short_pass_id}"
-            # if whatsapp_action:
-            #     message_result = await whatsapp_action.api().send_message(
-            #         phone=supervisor_phone_number,
-            #         message=supervisor_message
-            #     )
-
-            #     if not message_result.get("success", False):
-            #         completion_message = f"Tell the user: Thank you for your short pass! Here is your reference number for follow-up: {short_pass_id}. However, I was unable to send the message to your supervisor. Please contact them directly."
-
+            completion_message = f"Tell the user: Thank you for your short pass submission! Your reference number for follow-up is: {short_pass_id}."
+            supervisor_notification = particulars.replace("*Short Pass Request*", f"*Short Pass Request*\n*Reference Number*: {short_pass_id}")
+            logger.warning(f"Supervisor Notification: {supervisor_notification}")
+            
+            # Logic for sending via WhatsApp would go here
     else:
-        logger.error("ArcAPIAction not found for short pass submission")
+        logger.error("ArcAPIAction not found for short pass submission.")
 
     await action.respond(visitor, directives=[completion_message])
     await session.cleanup()

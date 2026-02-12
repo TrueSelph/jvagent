@@ -170,5 +170,6 @@ class PostUpdateWalker(Walker):
             )
 
         walker._prune_session()
+        session.reachable_questions = list(walker.reachable)
         await session.save()
         return walker.reachable

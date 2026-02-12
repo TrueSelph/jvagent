@@ -2,7 +2,9 @@ const TOKEN_KEY = 'jvchat_token'
 const REFRESH_TOKEN_KEY = 'jvchat_refresh_token'
 const USER_ID_KEY = 'jvchat_user_id'
 const CONVERSATIONS_KEY = 'jvchat_conversations'
-const MESSAGES_KEY = 'jvchat_messages' // Store messages by session_id
+const MESSAGES_KEY = 'jvchat_messages'
+const AUTH_CREDS_KEY = 'jvchat_auth_creds'
+const SELECTED_AGENT_KEY = 'jvchat_selected_agent'
 
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null
@@ -326,5 +328,71 @@ export function clearAllStorage(): void {
   } catch (error) {
     console.error('Failed to clear all storage:', error)
   }
+}
+
+export function saveAuthCreds(email: string, password: string, serverUrl: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(AUTH_CREDS_KEY, JSON.stringify({ email, password, serverUrl }))
+  } catch (error) {
+    console.error('Failed to save auth creds:', error)
+  }
+}
+
+export function getAuthCreds(): { email: string; password: string; serverUrl: string } | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const data = localStorage.getItem(AUTH_CREDS_KEY)
+    return data ? JSON.parse(data) : null
+  } catch (error) {
+    console.error('Failed to get auth creds:', error)
+    return null
+  }
+}
+
+export function removeAuthCreds(): void {
+  if (typeof window === 'undefined') return
+  localStorage.removeItem(AUTH_CREDS_KEY)
+}
+
+export function saveSelectedAgent(agentName: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(SELECTED_AGENT_KEY, agentName)
+  } catch (error) {
+    console.error('Failed to save selected agent:', error)
+  }
+}
+
+export function getSelectedAgent(): string | null {
+  if (typeof window === 'undefined') return null
+  return localStorage.getItem(SELECTED_AGENT_KEY)
+}
+
+export function removeSelectedAgent(): void {
+  if (typeof window === 'undefined') return
+  localStorage.removeItem(SELECTED_AGENT_KEY)
+}
+
+export function isTokenExpired(token: string | null): boolean {
+  if (!token) return true
+  try {
+    const base64Url = token.split('.')[1]
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+    }).join(''))
+    const payload = JSON.parse(jsonPayload)
+    const now = Math.floor(Date.now() / 1000)
+    // Return true if expired or expiring in the next 30 seconds
+    return payload.exp < now + 30
+  } catch (e) {
+    return true
+  }
+}
+
+export function cleanupOldStorage(): void {
+  if (typeof window === 'undefined') return
+  localStorage.removeItem('jvchat_saved_credentials')
 }
 

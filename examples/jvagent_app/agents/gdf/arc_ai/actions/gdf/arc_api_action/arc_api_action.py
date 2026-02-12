@@ -19,7 +19,7 @@ class ArcAPIAction(Action):
     """Arc API Action for interacting with the Arc APIs."""
 
     endpoint: str = attribute(default="https://example.com/api/v1", description="API Endpoint")
-    headers: dict = attribute(default={'x-api-key': 'secret', 'Content-Type': 'application/json'}, description="API Headers")
+    headers: dict = attribute(default={'x-api-key': '123', 'Content-Type': 'application/json'}, description="API Headers")
 
     timeout: int = attribute(default=30, description="Operation timeout in seconds", ge=1)
     retries: int = attribute(default=3, description="Number of retry attempts", ge=0, le=10)

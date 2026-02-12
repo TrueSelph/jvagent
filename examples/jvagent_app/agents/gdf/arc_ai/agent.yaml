@@ -14,7 +14,7 @@ actions:
       # Model Configuration
       model_action_type: "OpenAILanguageModelAction"
       history_limit: 3
-      model: gpt-4.1-mini
+      model: "gpt-4.1-mini"
 
   - action: jvagent/openai_embedding
     context:
@@ -82,7 +82,7 @@ actions:
       api_key: ${OPENAI_API_KEY}
       api_endpoint: "https://api.openai.com/v1"
       # Model Configuration
-      model: gpt-4.1-mini
+      model: "gpt-4.1-mini"
       temperature: 0.2
       max_tokens: 4096
       timeout: 60
@@ -106,24 +106,9 @@ actions:
         - "Supervisors can approve or deny short pass requests."
       # Model Configuration
       model_action_type: "OpenAILanguageModelAction"
-      model: gpt-4.1-mini
+      model: "gpt-4.1-mini"
       model_temperature: 0.1
       model_max_tokens: 8192
-
-  # - action: resolv/report_interview_interact_action
-  #   context:
-  #     enabled: true
-  #     description: "Report Interview action is used to create reports."
-  #     weight: -50
-  #   config:
-  #     model_action_type: "OpenAILanguageModelAction"
-  #     model: gpt-4.1-mini
-  #     model_temperature: 0.1
-  #     model_max_tokens: 4096
-  #     use_history: true
-  #     max_statement_length: 100
-  #     history_limit: 3
-  #     use_dspy: true
 
   - action: gdf/supervisor_short_pass_interview_interact_action
     context:
@@ -132,13 +117,13 @@ actions:
       weight: -50
     config:
       model_action_type: "OpenAILanguageModelAction"
-      model: gpt-4.1-mini
+      model: "gpt-4.1"
       model_temperature: 0.1
       model_max_tokens: 4096
       use_history: true
       max_statement_length: 100
       history_limit: 3
-      use_dspy: true
+      auto_confirm: false
 
   - action: gdf/short_pass_interview_interact_action
     context:
@@ -147,13 +132,13 @@ actions:
       weight: -50 # Runs after InteractRouter
     config:
       model_action_type: "OpenAILanguageModelAction"
-      model: gpt-4.1-mini
+      model: "gpt-4.1"
       model_temperature: 0.1
       model_max_tokens: 4096
       use_history: true
       max_statement_length: 100
       history_limit: 3
-      use_dspy: true
+      auto_confirm: false
 
   - action: jvagent/converse_interact_action
     context:
@@ -171,10 +156,12 @@ actions:
     context:
       enabled: true
       description: "Houses Arc API credentials and endpoints"
-      endpoint: "https://gdf-api-dev.v75inc.dev/api/v1"
-      headers:
-        x-api-key: "secret"
-        Content-Type: "application/json"
+      endpoint: ${ENDPOINT}
+      headers: ${HEADERS}
+      # endpoint: "https://gdf-api-dev.v75inc.dev/api/v1"
+      # headers:
+      #   x-api-key: "secret"
+      #   Content-Type: "application/json"
 
   - action: jvagent/access_control_action
     context:

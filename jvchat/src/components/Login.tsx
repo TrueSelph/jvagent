@@ -1,21 +1,25 @@
 import { useState, FormEvent, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { getConfigAsync, saveConfig, getConfig } from "../config/config";
+import { saveAuthCreds, cleanupOldStorage } from "../utils/storage";
 
 export function Login() {
   const [email, setEmail] = useState("admin@jvagent.example");
   const [password, setPassword] = useState("your-admin-password-here");
   const [serverUrl, setServerUrl] = useState("");
+  const [autoAuth, setAutoAuth] = useState(true);
   const { login, loading, error } = useAuth();
   const [localError, setLocalError] = useState<string | null>(null);
 
   // Load saved URL from config on mount
   useEffect(() => {
+    cleanupOldStorage();
     getConfigAsync()
       .then((config) => {
         if (config.jvagent.url) {
           setServerUrl(config.jvagent.url);
         }
+        setAutoAuth(config.ui.auto_authenticate);
       })
       .catch((err) => {
         console.warn("Failed to load config:", err);
@@ -58,7 +62,12 @@ export function Login() {
     }
 
     // Save the URL to config before attempting login
-    saveConfig({ jvagent: { url: validatedUrl } });
+    saveConfig({ jvagent: { url: validatedUrl }, ui: { auto_authenticate: autoAuth } });
+
+    // Save credentials if auto_authenticate is enabled
+    if (autoAuth) {
+      saveAuthCreds(email, password, validatedUrl);
+    }
 
     try {
       await login({ email, password, serverUrl: validatedUrl });
@@ -145,6 +154,23 @@ export function Login() {
                 disabled={loading}
               />
             </div>
+          </div>
+
+          <div className="flex items-center">
+            <input
+              id="auto-auth"
+              name="auto-auth"
+              type="checkbox"
+              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+              checked={autoAuth}
+              onChange={(e) => setAutoAuth(e.target.checked)}
+            />
+            <label
+              htmlFor="auto-auth"
+              className="ml-2 block text-sm text-gray-900"
+            >
+              Auto Authenticate
+            </label>
           </div>
 
           {/* <div className="flex items-center justify-between">

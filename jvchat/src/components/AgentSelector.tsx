@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAgents } from '../hooks/useAgents'
+import { saveSelectedAgent } from '../utils/storage'
 import type { Agent } from '../types/agent'
 
 export function AgentSelector() {
@@ -19,6 +20,7 @@ export function AgentSelector() {
   })
 
   const handleSelectAgent = (agent: Agent) => {
+    saveSelectedAgent(agent.name || agent.id)
     navigate(`/chat/${agent.id}`)
   }
 

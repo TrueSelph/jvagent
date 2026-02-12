@@ -49,6 +49,9 @@ class OnboardingInteractAction(InteractAction):
         if not subscriber_phone or not subscriber_display_name or not api or channel != 'whatsapp' or not is_new_user:
             return
 
+        # # remove in production
+        # await visitor.add_directives(["Introduce yourself and present the link to the channels page for the user to select the channels they want to join: https://app.resolv-ims.com/public/mopw-guyana/groups?d=eyJwaG9uZSI6IjU5MjY0MzE1MzAiLCJ0b2tlbiI6ImUyOWU0ZThiLTcyMzMtNDdmMy05NmQyLTE3OWRmN2VjMjlkOCJ9"])
+
 
         # EXECUTE ACTION
 
