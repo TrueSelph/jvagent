@@ -145,6 +145,7 @@ CLASSIFICATION_INTENT_RULES = """INTENT CLASSIFICATION (choose exactly one):
    - Includes "yes"/"no" when answering a yes/no question in active state
    - If field is in Answered fields → UPDATE instead
    - Invalid format is still SUBMISSION (validation layer handles it)
+   - When the utterance is a bare value matching an unanswered field's type (email format for email field, digits for phone, etc.), treat as SUBMISSION and extract the value. Do not ask for clarification.
 
 4. UPDATE
    - User changes an ALREADY-ANSWERED field
@@ -400,18 +401,28 @@ CLASSIFICATION_RULES_CORE_LEGACY = """CLASSIFICATION AND EXTRACTION INSTRUCTIONS
 # =============================================================================
 
 # Interview Prompt - Full template with context formatting (use .format(classification_rules_core=..., ...))
-INTERVIEW_PROMPT = """Classify intent and extract field values from user input.
+INTERVIEW_PROMPT = """You are a classification and extraction module. Your ONLY output is a single JSON object. NEVER output natural language, questions, prompts, or dialogue.
 
-USER INPUT (router interpretation or raw utterance):
+USER INPUT:
+- Interpretation (if present): Router's description of what the user is doing. Does NOT contain the field value.
+- User's utterance: The ACTUAL user message. This is where you extract values from.
+
 {user_input}
+
+EXTRACT FROM THE UTTERANCE. When the utterance is a bare value (e.g. "john@gmail.com", "555-1234") that matches an unanswered field's expected format, classify SUBMISSION and extract it directly.
 
 CONTEXT:
 - Current state: {current_state}
+- Current question (first unanswered): {current_question}
 - Answered fields (with current values): {answered_fields}
 - Unanswered fields: {entities_to_extract}
 - Use the conversation history in the preceding messages to identify the current question, resolve "yes"/"no" and references, and for multi-turn composition.
 
 {classification_rules_core}
+
+OUTPUT: Valid JSON only. No markdown, no explanation, no conversational text.
+
+CRITICAL: Never respond with questions or prompts (e.g. "Please provide..."). Always output the JSON object.
 
 Return a single JSON object only. No markdown or explanation. Required keys: intent, confidence, extracted (array), reasoning (object). Do not include "field" or "value" at top level. SUBMISSION/UPDATE: put actual values in extracted as list of one-key objects, e.g. [{{"incident_location": "Water Street"}}]. DECLINE: put [{{"field_name": "N/A"}}]. When no extractions: extracted: []. Reasoning object is required.
 {{

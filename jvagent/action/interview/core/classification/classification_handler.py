@@ -368,8 +368,13 @@ class ClassificationHandler:
 
         entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
 
+        # Get current question (first unanswered) for context
+        unanswered = session.get_unanswered_questions()
+        current_question = unanswered[0] if unanswered else "None (all questions answered)"
+
         return {
             "current_state": current_state,
+            "current_question": current_question,
             "answered_fields": answered_fields_str,
             "entities_to_extract": entities_to_extract,
         }
@@ -453,6 +458,7 @@ class ClassificationHandler:
             prompt = self.action.config.templates.interview_prompt.format(
                 user_input=user_input,
                 current_state=context["current_state"],
+                current_question=context["current_question"],
                 answered_fields=context["answered_fields"],
                 entities_to_extract=context["entities_to_extract"],
                 classification_rules_core=classification_rules_core,
@@ -468,8 +474,13 @@ class ClassificationHandler:
             conversation_history = conversation_history_list
 
             # Call LLM with unified prompt
-            # Use interpretation as primary text when available (already in user_input)
-            primary_text = interaction.interpretation if interpretation_available else utterance
+            # Use utterance as primary_text when available, since it contains the actual user input
+            # The system prompt already has the full user_input (interpretation + utterance) embedded
+            # so the model has access to both; we just need to avoid sending interpretation as the
+            # user message since it can cause role confusion
+            primary_text = utterance if utterance and utterance.strip() else (
+                interaction.interpretation if interpretation_available else ""
+            )
             response = await model_action.generate(
                 prompt=primary_text,
                 stream=False,
