@@ -582,7 +582,7 @@ async def register_session(
     # If registration succeeded, mark as registered to avoid redundant lazy calls
     if isinstance(result, dict):
         if result.get("ok", True) and result.get("status") != "ERROR":
-            whatsapp_action._session_registration_done = True
+            whatsapp_action._session_registered = True
     
     return result
 
