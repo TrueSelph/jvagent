@@ -1,0 +1,16 @@
+package:
+  name: jvagent/switchboard_interact_action
+  author: V75 Inc.
+  archetype: SwitchboardInteractAction
+  version: 1.0.0
+  meta:
+    title: Switchboard Interact Action
+    description: Switchboard Interact action allows the user to choose the agent they want to interact with.
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []
