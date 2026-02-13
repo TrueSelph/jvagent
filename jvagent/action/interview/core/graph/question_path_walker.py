@@ -50,6 +50,7 @@ class QuestionPathWalker(Walker):
 
     interview_session: Optional[Any] = None
     interact_visitor: Optional[Any] = None
+    interview_action: Optional[Any] = None
     
     # Mode: "find_next" stops at first unanswered, "collect_all" traverses entire path
     _mode: str = PrivateAttr(default="find_next")
@@ -89,7 +90,7 @@ class QuestionPathWalker(Walker):
         ordered = QuestionEdge.sort_by_priority(edges)
         for edge in ordered:
             target = await edge.evaluate(
-                self.interview_session, question_name, self.interact_visitor
+                self.interview_session, question_name, self.interact_visitor, self.interview_action
             )
             if target is not None:
                 await self.visit(target)
@@ -120,7 +121,8 @@ class QuestionPathWalker(Walker):
         cls,
         session: Any,
         first_node: Optional[QuestionNode] = None,
-        visitor: Optional[Any] = None
+        visitor: Optional[Any] = None,
+        interview_action: Optional[Any] = None
     ) -> Optional[QuestionNode]:
         """Find the next unanswered question on the active branch path.
         
@@ -142,6 +144,7 @@ class QuestionPathWalker(Walker):
         walker = cls(
             interview_session=session,
             interact_visitor=visitor,
+            interview_action=interview_action,
         )
         walker._mode = "find_next"
         
@@ -158,7 +161,8 @@ class QuestionPathWalker(Walker):
         cls,
         session: Any,
         first_node: Optional[QuestionNode] = None,
-        visitor: Optional[Any] = None
+        visitor: Optional[Any] = None,
+        interview_action: Optional[Any] = None
     ) -> Set[str]:
         """Get all reachable questions on the active branch path.
         
@@ -180,6 +184,7 @@ class QuestionPathWalker(Walker):
         walker = cls(
             interview_session=session,
             interact_visitor=visitor,
+            interview_action=interview_action,
         )
         walker._mode = "collect_all"
         

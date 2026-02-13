@@ -690,7 +690,7 @@ def branch_function(function_name: Optional[str] = None, interview_type: Optiona
         interview_type: Optional interview type (auto-detected from module if not provided)
 
     Function Signature:
-        def function_name(session: InterviewSession, visitor: InteractWalker) -> Union[bool, Any]:
+        def function_name(session: InterviewSession, visitor: InteractWalker, interview_action: InteractAction) -> Union[bool, Any]:
             # Return bool for direct branching, or any value (for operator evaluation)
             # Accessed responses are automatically tracked for cache invalidation
             pass
@@ -698,13 +698,13 @@ def branch_function(function_name: Optional[str] = None, interview_type: Optiona
     Examples:
         # Name automatically derived from function name
         @branch_function()
-        async def check_similarity(session: InterviewSession, visitor: InteractWalker) -> bool:
+        async def check_similarity(session: InterviewSession, visitor: InteractWalker, interview_action: InteractAction) -> bool:
             description = session.responses.get('report_description', '')
             return similarity_score > 0.8
         
         # Explicit name (optional, for backward compatibility)
         @branch_function('check_similarity')
-        async def check_similarity(session: InterviewSession, visitor: InteractWalker) -> bool:
+        async def check_similarity(session: InterviewSession, visitor: InteractWalker, interview_action: InteractAction) -> bool:
             return similarity_score > 0.8
     """
     def decorator(func: Callable) -> Callable:
@@ -744,7 +744,7 @@ def _wrap_branch_function_with_tracking(func: Callable) -> Callable:
         Wrapped function that tracks response dependencies
     """
     if inspect.iscoroutinefunction(func):
-        async def async_wrapper(session: "InterviewSession", visitor: "InteractWalker") -> Any:
+        async def async_wrapper(session: "InterviewSession", visitor: "InteractWalker", interview_action: Optional[Any] = None) -> Any:
             if visitor is None:
                 raise ValueError("branch function requires a visitor to be provided")
             with track_response_access() as tracker:
@@ -754,7 +754,7 @@ def _wrap_branch_function_with_tracking(func: Callable) -> Callable:
                 session.responses = instrumented  # type: ignore
                 
                 try:
-                    result = await func(session, visitor)
+                    result = await func(session, visitor, interview_action)
                     # Store accessed keys in context for branch evaluator to retrieve
                     if not hasattr(session, '_branch_function_accessed_keys'):
                         session._branch_function_accessed_keys = set()  # type: ignore
@@ -765,7 +765,7 @@ def _wrap_branch_function_with_tracking(func: Callable) -> Callable:
         
         return async_wrapper
     else:
-        def sync_wrapper(session: "InterviewSession", visitor: "InteractWalker") -> Any:
+        def sync_wrapper(session: "InterviewSession", visitor: "InteractWalker", interview_action: Optional[Any] = None) -> Any:
             if visitor is None:
                 raise ValueError("branch function requires a visitor to be provided")
             with track_response_access() as tracker:
@@ -775,7 +775,7 @@ def _wrap_branch_function_with_tracking(func: Callable) -> Callable:
                 session.responses = instrumented  # type: ignore
                 
                 try:
-                    result = func(session, visitor)
+                    result = func(session, visitor, interview_action)
                     # Store accessed keys in context for branch evaluator to retrieve
                     if not hasattr(session, '_branch_function_accessed_keys'):
                         session._branch_function_accessed_keys = set()  # type: ignore
