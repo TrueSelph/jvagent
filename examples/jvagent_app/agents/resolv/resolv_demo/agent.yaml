@@ -92,7 +92,7 @@ actions:
       enabled: true
       description: "Persona action with LLM-driven behavioral parameters"
       # Persona Identity
-      persona_name: "Navi"
+      persona_name: "SERT"
       persona_description: |
         You are a friendly and knowledgeable assistant that helps users
         understand how the resolv framework works. You provide clear,
@@ -151,12 +151,12 @@ actions:
     context:
       enabled: true
       description: "Houses Resolv API credentials and endpoints"
-      user_uuid: ${USER_UUID}
-      secret_token: ${SECRET_TOKEN}
-      api_url: ${API_URL}
-      organization_slug: ${ORGANIZATION_SLUG}
-      project_id: ${PROJECT_ID}
-      agent_identifier: ${AGENT_IDENTIFIER}
+      user_uuid: ${RESOLV_SERT_USER_UUID}
+      secret_token: ${RESOLV_SERT_SECRET_TOKEN}
+      api_url: ${RESOLV_SERT_API_URL}
+      organization_slug: ${RESOLV_SERT_ORGANIZATION_SLUG}
+      project_id: ${RESOLV_SERT_PROJECT_ID}
+      agent_identifier: ${RESOLV_SERT_AGENT_IDENTIFIER}
 
   - action: jvagent/access_control_action
     context:

@@ -156,7 +156,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "instruction": "The name should not be the same as the name of the person submitting the report.",
                     "type": "string",
                 },
-                "required": True,
+                "required": False,
                 "default_next": "stakeholder_address",
             },
             {
@@ -167,7 +167,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "instruction": "The address should not be the same as the address of the person submitting the report.",
                     "type": "string",
                 },
-                "required": True,
+                "required": False,
                 "default_next": "stakeholder_phone",
             },
             {
@@ -178,7 +178,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "instruction": "The phone number should not be the same as the phone number of the person submitting the report.",
                     "type": "string",
                 },
-                "required": True,
+                "required": False,
                 "default_next": "reporter_name",
             },
             {
@@ -189,7 +189,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "instruction": "The name should not be the same as the name of the person the report is being filed on behalf of.",
                     "type": "string",
                 },
-                "required": True,
+                "required": False,
                 "default_next": "reporter_address",
             },
             {
@@ -200,57 +200,18 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "instruction": "The address should not be the incident location or the address of the person the report is being filed on behalf of.",
                     "type": "string",
                 },
-                "required": True
+                "required": False,
             },
         ],
         description="List of question configurations defining the interview graph. Can be overridden in agent.yaml. "
-        "Supports conditional branching via 'branches' and 'default_next'. "
-        "Handlers, validators, and directive overrides can be registered via decorators "
-        "(@input_handler, @input_validator, @input_directive_override) or specified as string "
-        "references in constraints (input_handler, input_validator). "
-        "Branch functions can be registered with @branch_function decorator for complex branching logic.",
+                    "Supports conditional branching via 'branches' and 'default_next'. "
+                    "Enhanced condition operators are supported (==, !=, >, >=, <, <=, in, contains, exists, matches). "
+                    "Example: {\"condition\": {\"question\": \"age\", \"operator\": \">=\", \"value\": 18}, \"target\": \"next_question\"} "
+                    "Handlers, validators, and directive overrides can be registered via decorators "
+                    "(@input_handler, @input_validator, @input_directive_override) or specified as string "
+                    "references in constraints (input_handler, input_validator)."
     )
 
-    # Helper function
-    async def _get_model_action(self, user_prompt: str, system_prompt: str, json_response: bool = False):
-        try:
-            model_action = await self.get_model_action()
-            if not model_action:
-                return False
-
-            if json_response:
-                result_str = await model_action.generate(
-                    prompt=user_prompt,
-                    stream=False,
-                    system=system_prompt,
-                    model=self.config.model.model,
-                    temperature=self.config.model.model_temperature,
-                    max_tokens=self.config.model.model_max_tokens,
-                    response_format={"type": "json_object"}
-                )
-
-                json_match = re.search(r'```(?:json)?\s*({.*?})\s*```', result_str, re.DOTALL)
-                if json_match:
-                    result_str = json_match.group(1)
-                elif result_str.strip().startswith('{'):
-                    result_str = result_str.strip()
-                else:
-                    json_match = re.search(r'{.*}', result_str, re.DOTALL)
-                    result_str = json_match.group(0) if json_match else result_str.strip()
-
-                return json.loads(result_str)
-            else:
-                return await model_action.generate(
-                    prompt=user_prompt,
-                    stream=False,
-                    system=system_prompt,
-                    model=self.config.model.model,
-                    temperature=self.config.model.model_temperature,
-                    max_tokens=self.config.model.model_max_tokens,
-                )
-        except Exception as e:
-            logger.error(f"Error in LLM helper: {e}")
-            return None
 
     # branch function
     @branch_function("detect_sensitive_content")
@@ -292,70 +253,8 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                 has_media = True
 
         result = has_sensitive_text or has_media
-        logger.info(
-            f"detect_sensitive_content: has_sensitive_text={has_sensitive_text}, "
-            f"has_media={has_media}, result={result}"
-        )
         return result
 
-    @branch_function("check_for_similar_incidents")
-    def check_for_similar_incidents(
-        session: InterviewSession, visitor: Optional[InteractWalker] = None
-    ) -> bool:
-        """Check for similar incident reports in the same location.
-
-        Returns True if similar incidents found, triggering user confirmation.
-        This helps prevent duplicate reports and informs users of existing issues.
-        """
-        matching_reports = session.context.get("matching_reports", [])
-        result = bool(matching_reports)
-        logger.info(
-            f"check_for_similar_incidents: found {len(matching_reports)} reports, "
-            f"result={result}"
-        )
-        if matching_reports:
-            return True
-
-        return False
-
-    # directive override
-    # @input_directive_override("incident_location")
-    # async def custom_location_directive(
-    #     field_name: str,
-    #     value: str,
-    #     session: InterviewSession,
-    #     interaction: Interaction,
-    #     visitor: InteractWalker,
-    #     interview_action: Optional[Any] = None,
-    # ) -> Optional[Union[str, Tuple[str, str]]]:
-    #     """Custom directive after incident_location is answered."""
-    #     matching_reports = session.context.get("matching_reports")
-    #     if matching_reports:
-    #         report_str = ""
-    #         for report in matching_reports:
-    #             report_str += (
-    #                 f"___\nReport ID: {report['id']}\n{report['description'][:300]}..."
-    #             )
-
-    #         return (
-    #             "replace",
-    #             f"Tell the user: I found {len(matching_reports)} reports that match your description. Would you like to continue with the interview?\n{report_str}",
-    #         )
-    #     return None
-
-    @input_directive_override("continue_report")
-    async def custom_continue_directive(
-        field_name: str,
-        value: str,
-        session: InterviewSession,
-        interaction: Interaction,
-        visitor: InteractWalker,
-        interview_action: Optional[Any] = None,
-    ) -> Optional[Union[str, Tuple[str, str]]]:
-        """Custom directive after continue_report is answered."""
-        if value == "no":
-            return ("replace", "Tell the user: Thank you for your time. Your report has been cancelled.")
-        return None
 
     # input validator
     @input_validator("incident_description")
@@ -381,6 +280,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
             )
         return ValidationStatus.VALID, None
 
+
     @input_validator("incident_location")
     def validate_incident_location(
         value: str,
@@ -400,19 +300,8 @@ class ReportInterviewInteractAction(InterviewInteractAction):
         if len(value) < 10:
             return ValidationStatus.INVALID, "Ask: Please provide a more specific location."
 
-        # For demo purposes, always return True to show the flow
-        # In production, this would query a database of existing reports
-        session.context["matching_reports"] = [
-            {
-                "id": "RL2FG12V",
-                "description": "At a residence in South Ruimveldt, a woman is repeatedly being verbally and physically abused by her partner. Neighbours have heard loud shouting, threats such as “ah gon kill you,” and sounds of slapping and objects being thrown late at night. This has been happening for weeks. People hearing the noise and frighten because this man does lose control. The failure to intervene despite obvious warning signs places the victim at high risk of serious injury or death. Urgent protective action is required.",
-            },
-            {
-                "id": "RL1FG12W",
-                "description": "A deh one house in South Ruimveldt, a woman been gettin cuss out and beat regular by she partner. Neighbours hear plenty loud shouting, serious threats like “ah gon kill you”, an sounds like slap, beat, and tings fling ’bout late night. Dis na one-time thing — dis been goin on fuh weeks now. People round de area frighten because de man does lose control real bad. De fact that nobody ain’t step in yet, even when de signs clear, put de woman life in serious danger. She could get bad hurt or even dead if something ain’t do quick. Immediate action need fuh protect she and stop dis abuse before it turn into something worse.",
-            },
-        ]
         return ValidationStatus.VALID, None
+
 
     @input_validator("is_sensitive")
     def validate_is_sensitive(
@@ -596,10 +485,6 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                 "Ask: Please provide your full address.",
             )
 
-        logger.info(
-            f"validate_reporter_address: validation passed for reporter_address. "
-            f"This is the terminal question - should transition to REVIEW next."
-        )
         return ValidationStatus.VALID, None
 
 
@@ -612,17 +497,11 @@ def adapt_review(
     interview_action: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Omit or format values shown in the Review state."""
-    logger.info(
-        f"adapt_review called: interview reached REVIEW state. "
-        f"Questions answered: {list(data.keys())}"
-    )
     result: Dict[str, Any] = {}
     result_ending: Dict[str, Any] = {}
     for field_name, value in data.items():
 
-        if field_name in ["continue_report"]:
-            continue
-        elif (
+        if (
             value is None
             or value == ""
             or (isinstance(value, str) and value.strip().lower() in ("n/a", "na"))
@@ -650,7 +529,7 @@ async def handle_interview_completion(
 ) -> None:
     """Handle completion of report interview."""
 
-    logger.warning(f"Interview responses: {json.dumps(session.responses, indent=4)}")
+    logger.warning(f"Interview responses:\n{json.dumps(session.responses, indent=4)}")
 
     # Extract collected data
     incident_description = session.responses.get('incident_description', '')
@@ -665,27 +544,27 @@ async def handle_interview_completion(
     reporter_address = session.responses.get('reporter_address', '')
 
     is_anonymous = is_sensitive == 'yes'
+    reporter_phone = visitor.user_id
 
     # generated data
-    title = "default title"
-    generated_description = "default generated description"
-    reporter_phone = visitor.user_id
-    priority = "low"
-    category_id = 1
-    ai_overview = "Incident Report R657224 documents a high-priority safety concern at 47 Main Street, where heavy construction equipment is being operated without proper safety barriers or signage near a public walkway. Reported by Jivas AI Agent for contact ID 395 on 28 January 2026. The absence of required protective measures poses a serious risk of injury to pedestrians and workers. Report remains open."
+    # title = "Suspected Ongoing Domestic Violence - Immediate Safety Risk"
+    # generated_description = "Reports indicate an ongoing domestic violence situation at a residence in South Ruimveldt. Neighbours have repeatedly heard loud arguments, physical assaults, and serious verbal threats, including threats to kill, occurring late at night over several weeks. The incidents appear frequent and escalating, suggesting a loss of control by the alleged perpetrator.\n\nThe victim is believed to be at high risk of serious injury or death if intervention does not occur promptly. The continued absence of action despite clear warning signs presents a critical safety concern. Immediate investigation and protective measures are strongly recommended to ensure the safety of the individual involved and to prevent further harm."
+    # priority = "high"
+    # category_id = 1
+    # ai_overview = ""
 
 
     completion_message = f"Tell the user: Sorry, {reporter_name}! I was unable to submit your report. Please try again later!"
     resolv_api_action = await action.get_action("ResolvAPIAction")
     if resolv_api_action:
         result = await resolv_api_action.submit_report(
-            title=title,
+            # title=title,
             is_anonymous=is_anonymous,
-            description=generated_description,
+            # description=generated_description,
             original_description=incident_description,
             attachments=incident_media,
-            priority=priority,
-            category_id=category_id,
+            # priority=priority,
+            # category_id=category_id,
             reporting_on_behalf=reporting_on_behalf,
             stakeholder_name=stakeholder_name,
             stakeholder_address=stakeholder_address,
@@ -693,16 +572,16 @@ async def handle_interview_completion(
             reporter_name=reporter_name,
             reporter_phone=reporter_phone,
             reporter_address=reporter_address,
-            ai_overview=ai_overview
+            # ai_overview=ai_overview
         )
 
         if result:
             logger.warning("result")
             logger.warning(result)
-            reference_number = result.get("referenceNumber")
+            reference_number = result.get("id")
             completion_message = f"Tell the user: Thank you, {reporter_name}! Your report has been submitted successfully. Here is your {reference_number} for follow up."
     else:
-        logger.error("ResolvAPIAction not found for report submission")
+        logger.warning("ResolvAPIAction not found for report submission")
 
     # Send completion message
     await action.respond(visitor, directives=[completion_message])
