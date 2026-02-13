@@ -508,11 +508,13 @@ async def delete_conversation(
 @endpoint(
     "/storage/{file_path:path}",
     methods=["GET"],
-    auth=False,  # Public access for images/media
+    auth=False,
     tags=["Storage"],
 )
 async def get_storage_file(file_path: str):
     """Serve a file from the application's storage.
+
+    No authentication required. Public access for images and media assets.
 
     Args:
         file_path: Relative path to the file in storage
