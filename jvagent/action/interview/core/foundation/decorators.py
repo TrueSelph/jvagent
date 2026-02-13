@@ -938,13 +938,16 @@ def input_context_provider(function_name: Optional[str] = None, interview_type: 
         function_name: Optional unique name for this input context provider. If not provided, uses the function's __name__
         interview_type: Optional interview type (auto-detected from module if not provided)
 
-    Function signature (recommended): (session, visitor, interview_action=None) -> Dict[str, Any].
-    interview_action is passed only when the callable accepts it (backward compatible).
+    Function signature: (session, visitor, interview_action) -> Dict[str, Any].
 
     Examples:
         # Name automatically derived from function name (recommended)
         @input_context_provider()
-        async def get_available_times(session: InterviewSession, visitor: InteractWalker) -> Dict[str, Any]:
+        async def get_available_times(
+            session: InterviewSession, 
+            visitor: InteractWalker,
+            interview_action: InteractAction
+        ) -> Dict[str, Any]:
             times = await fetch_calendar_availability()
             return {
                 "available_times": times,
@@ -953,7 +956,11 @@ def input_context_provider(function_name: Optional[str] = None, interview_type: 
         
         # Explicit name (optional, for backward compatibility)
         @input_context_provider('get_available_times')
-        async def get_available_times(session: InterviewSession, visitor: InteractWalker) -> Dict[str, Any]:
+        async def get_available_times(
+            session: InterviewSession, 
+            visitor: InteractWalker,
+            interview_action: InteractAction
+        ) -> Dict[str, Any]:
             return {"available_times": times}
     """
     def decorator(func: Callable) -> Callable:
