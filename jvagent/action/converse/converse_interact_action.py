@@ -43,7 +43,7 @@ class ConverseInteractAction(InteractAction):
 
     directive: str = attribute(
         default=(
-            "Only handle smalltalk and casual conversation; politely decline answering if enough context is not provided by stating that you don't have the "
+            "Only handle smalltalk and casual conversation; politely decline answering if you do not have sufficient information to answer the user's query by stating that you don't have the "
             "information or ability to respond at the moment."
         ),
         description="Fallback directive for smalltalk and conservative replies",
@@ -72,15 +72,17 @@ class ConverseInteractAction(InteractAction):
             {
                 "condition": "User asks a knowledge-based question (what, how, why, when, where, who questions about facts, information, or concepts)",
                 "response": (
-                    "Politely decline and explain that you don't have the information or ability "
+                    "If there you are not provided with the knowledge to answer the user's question, check your internal knowldge "
+                    "and answer the question to the best of your ability while giving disclaimers that it might not be the most acurate or up to date information."
+                    "If you cannot answer the question, politely decline and explain that you don't have the information or ability "
                     "to respond at the moment."
                 ),
             },
             {
                 "condition": "User invokes a capability-based response (can you, do you know, are you able to, tell me about, explain, define)",
                 "response": (
-                    "Politely decline and explain that you don't have the information or ability "
-                    "to respond at the moment."
+                    "If you cannot answer the question based on your own capabilities and knowledge, "
+                    "politely decline and explain that you don't have the information or ability to respond at the moment."
                 ),
             },
             {
@@ -207,4 +209,3 @@ class ConverseInteractAction(InteractAction):
             }
 
         return True
-
