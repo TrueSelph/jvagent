@@ -10,6 +10,7 @@ from ..foundation.enums import InterviewState, ValidationStatus
 
 if TYPE_CHECKING:
     from ..graph.interview_walker import InterviewWalker
+    from ..graph.question_node import QuestionNode
 
 
 class InterviewSession(Node):
@@ -318,6 +319,51 @@ class InterviewSession(Node):
                 next_questions.append(default_next)
         
         return next_questions
+    
+    async def get_reachable_questions(
+        self,
+        first_node: "QuestionNode",
+        visitor: Optional[Any] = None
+    ) -> set:
+        """Get questions reachable on the current branch path.
+        
+        Uses QuestionPathWalker to traverse the question graph following
+        conditional branches (using BranchCache) and returns the set of
+        question names that are reachable given current responses.
+        
+        Args:
+            first_node: The first QuestionNode in the graph (entry point)
+            visitor: Optional InteractWalker for branch function evaluation
+            
+        Returns:
+            Set of question names reachable on the active branch path
+        """
+        from ..graph.question_path_walker import QuestionPathWalker
+        return await QuestionPathWalker.get_reachable_questions(
+            self, first_node, visitor
+        )
+
+    async def get_next_unanswered_on_path(
+        self,
+        first_node: "QuestionNode",
+        visitor: Optional[Any] = None
+    ) -> Optional["QuestionNode"]:
+        """Get next unanswered question on the active path.
+        
+        Uses QuestionPathWalker to find the next unanswered question
+        following the active branch path (using BranchCache).
+        
+        Args:
+            first_node: The first QuestionNode in the graph (entry point)
+            visitor: Optional InteractWalker for branch function evaluation
+            
+        Returns:
+            Next unanswered QuestionNode on the active path, or None if all answered
+        """
+        from ..graph.question_path_walker import QuestionPathWalker
+        return await QuestionPathWalker.find_next_target(
+            self, first_node, visitor
+        )
     
     def extract_data(self) -> Dict[str, Any]:
         """Extract collected data for external processing.

@@ -259,13 +259,15 @@ class ClassificationHandler:
     async def build_classification_context(
         self,
         session: InterviewSession,
-        excluded_fields: Optional[Set[str]] = None
+        excluded_fields: Optional[Set[str]] = None,
+        visitor: Optional["InteractWalker"] = None
     ) -> Dict[str, str]:
         """Build context for classification.
 
         Args:
             session: Interview session
             excluded_fields: Optional set of field names to exclude from entities_to_extract
+            visitor: Optional InteractWalker for branch function evaluation
 
         Returns:
             Dictionary with current_state, answered_fields (with values), entities_to_extract
@@ -287,8 +289,31 @@ class ClassificationHandler:
         else:
             answered_fields_str = "None"
 
-        # Get all questions from the session
-        active_questions = [q for q in session.question_graph]
+        # Get reachable questions from the active branch path
+        from ..graph.question_path_walker import QuestionPathWalker
+        
+        # Get first node to start traversal
+        first_node = None
+        if session.question_graph:
+            first_question_name = session.question_graph[0].get("name")
+            if first_question_name:
+                try:
+                    first_node = await self.action._get_first_question_node(session)
+                except Exception:
+                    logger.exception("Failed to get first question node for path walker")
+        
+        # Get reachable questions on active branch path
+        if first_node and visitor:
+            reachable_names = await QuestionPathWalker.get_reachable_questions(
+                session, first_node, visitor
+            )
+            active_questions = [
+                q for q in session.question_graph 
+                if q.get("name") in reachable_names
+            ]
+        else:
+            # Fallback: use all questions if we can't determine reachable path
+            active_questions = [q for q in session.question_graph]
 
         excluded_set = excluded_fields or set()
         answered_set = set(answered_fields)  # Mutual exclusion: unanswered only in entities_to_extract
@@ -429,7 +454,7 @@ class ClassificationHandler:
         # Unified classification and extraction using single prompt
         try:
             # Build context for unified prompt (exclude fields with data_input_field)
-            context = await self.build_classification_context(session, excluded_fields=excluded_fields)
+            context = await self.build_classification_context(session, excluded_fields=excluded_fields, visitor=visitor)
 
             # Get conversation history for model API (passed as separate messages, not embedded in prompt)
             conversation_history_list = None

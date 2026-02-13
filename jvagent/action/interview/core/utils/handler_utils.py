@@ -20,8 +20,9 @@ def invoke_with_optional_context(
     """Invoke a callable with optional visitor and interview_action if it accepts them.
 
     Inspects the callable's signature and only passes visitor and interview_action
-    when the callable has parameters with those names. This keeps existing handlers
-    (that take fewer arguments) working unchanged.
+    when the callable has parameters with those names. Handlers may use 'action' as
+    an alias for 'interview_action'. This keeps existing handlers (that take fewer
+    arguments) working unchanged.
 
     Args:
         func: The callable to invoke (sync or async; caller must await if async).
@@ -44,6 +45,8 @@ def invoke_with_optional_context(
         merged["visitor"] = visitor
     if "interview_action" in params and interview_action is not None:
         merged["interview_action"] = interview_action
+    if "action" in params and interview_action is not None:
+        merged["action"] = interview_action
 
     return func(*args, **merged)
 

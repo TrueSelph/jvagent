@@ -410,23 +410,28 @@ def on_interview_complete(interview_type: str):
         interview_type: Class name of the InterviewInteractAction (e.g., 'SignupInterviewInteractAction')
 
     Handler Signature:
-        The handler must accept three parameters:
+        The handler may accept (session, visitor, interview_action) or any subset.
+        Parameters are passed only when the callable signature accepts them (backward compatible).
+        
+        Recommended: (session: InterviewSession, visitor: InteractWalker, interview_action: InteractAction)
+        Minimal: (session: InterviewSession)
+        
         - session: InterviewSession - The completed interview session with all collected responses
-        - visitor: InteractWalker - The walker for accessing context and responding
-        - action: InteractAction - The action instance (use action.respond() to send responses)
+        - visitor: InteractWalker - The walker for accessing context and responding (optional)
+        - interview_action: InteractAction - The action instance (optional, use interview_action.respond() to send responses)
 
     Example:
         @on_interview_complete('SignupInterviewInteractAction')
         async def handle_signup_completion(
             session: InterviewSession,
             visitor: InteractWalker,
-            action: InteractAction
+            interview_action: InteractAction
         ) -> None:
             # Process collected data
             user_name = session.responses.get('user_name')
             user_email = session.responses.get('user_email')
-            # Send response using action.respond()
-            await action.respond(visitor, directives=["Thank you for signing up!"])
+            # Send response using interview_action.respond()
+            await interview_action.respond(visitor, directives=["Thank you for signing up!"])
             # Trigger downstream actions, send notifications, etc.
     """
     def decorator(func: Callable) -> Callable:
@@ -447,24 +452,29 @@ def on_interview_cancelled(interview_type: str):
         interview_type: Class name of the InterviewInteractAction (e.g., 'SignupInterviewInteractAction')
 
     Handler Signature:
-        The handler must accept three parameters:
+        The handler may accept (session, visitor, interview_action) or any subset.
+        Parameters are passed only when the callable signature accepts them (backward compatible).
+        
+        Recommended: (session: InterviewSession, visitor: InteractWalker, interview_action: InteractAction)
+        Minimal: (session: InterviewSession)
+        
         - session: InterviewSession - The cancelled interview session with partial responses
-        - visitor: InteractWalker - The walker for accessing context and responding
-        - action: InteractAction - The action instance (use action.respond() to send responses)
+        - visitor: InteractWalker - The walker for accessing context and responding (optional)
+        - interview_action: InteractAction - The action instance (optional, use interview_action.respond() to send responses)
 
     Example:
         @on_interview_cancelled('SignupInterviewInteractAction')
         async def handle_signup_cancellation(
             session: InterviewSession,
             visitor: InteractWalker,
-            action: InteractAction
+            interview_action: InteractAction
         ) -> None:
             # Log cancellation for analytics
             logger.info(f"Signup cancelled at question: {session.current_question}")
             # Optionally save partial data
             partial_data = session.responses
             # Send custom cancellation message
-            await action.respond(visitor, directives=["No problem! Feel free to start again anytime."])
+            await interview_action.respond(visitor, directives=["No problem! Feel free to start again anytime."])
     """
     def decorator(func: Callable) -> Callable:
         with _registry_lock:
@@ -487,10 +497,15 @@ def on_interview_review(interview_type: str):
         interview_type: Class name of the InterviewInteractAction (e.g., 'SignupInterviewInteractAction')
 
     Handler Signature:
-        The handler must accept three parameters:
+        The handler may accept (session, visitor, interview_action) or any subset.
+        Parameters are passed only when the callable signature accepts them (backward compatible).
+        
+        Recommended: (session: InterviewSession, visitor: InteractWalker, interview_action: InteractAction)
+        Minimal: (session: InterviewSession)
+        
         - session: InterviewSession - The interview session with all collected responses
-        - visitor: InteractWalker - The walker for accessing context and responding
-        - action: InteractAction - The action instance
+        - visitor: InteractWalker - The walker for accessing context and responding (optional)
+        - interview_action: InteractAction - The action instance (optional)
 
     Returns:
         Optional[str]: Custom directive to prepend to the review summary, or None to use default.
@@ -500,7 +515,7 @@ def on_interview_review(interview_type: str):
         async def handle_signup_review(
             session: InterviewSession,
             visitor: InteractWalker,
-            action: InteractAction
+            interview_action: InteractAction
         ) -> Optional[str]:
             # Add personalized review introduction
             user_name = session.responses.get('user_name', 'there')
@@ -773,27 +788,94 @@ def _wrap_branch_function_with_tracking(func: Callable) -> Callable:
 
 
 class _InstrumentedResponses(dict):
-    """Dictionary subclass that tracks access to response keys.
+    """Dictionary proxy that tracks read access and writes through to original.
     
-    When a key is accessed (via get, __getitem__, etc.), records it
-    in the active response access tracker.
+    This proxy wraps session.responses during branch function execution to:
+    1. Track which response keys are accessed (reads)
+    2. Pass all modifications through to the original dict (writes)
+    
+    This ensures that session.set_response() works correctly from within
+    branch functions - modifications persist to the session even after
+    the instrumented wrapper is discarded.
     """
+    
+    def __init__(self, original_dict: Dict[str, Any]):
+        """Initialize with reference to original responses dict.
+        
+        Args:
+            original_dict: The original session.responses dict to proxy
+        """
+        super().__init__()  # Don't copy data - we proxy to original
+        # Store reference to original dict (not a copy)
+        object.__setattr__(self, '_original', original_dict)
+    
+    # Read operations (with tracking)
     
     def get(self, key: str, default: Any = None) -> Any:
         """Get with access tracking."""
         record_response_access(key)
-        return super().get(key, default)
+        return self._original.get(key, default)
     
     def __getitem__(self, key: str) -> Any:
         """Index access with tracking."""
         record_response_access(key)
-        return super().__getitem__(key)
+        return self._original[key]
     
     def __contains__(self, key: Any) -> bool:
         """Containment check with tracking."""
         if isinstance(key, str):
             record_response_access(key)
-        return super().__contains__(key)
+        return key in self._original
+    
+    def keys(self):
+        """Return keys from original."""
+        return self._original.keys()
+    
+    def values(self):
+        """Return values from original."""
+        return self._original.values()
+    
+    def items(self):
+        """Return items from original."""
+        return self._original.items()
+    
+    def __len__(self) -> int:
+        """Return length of original."""
+        return len(self._original)
+    
+    def __iter__(self):
+        """Iterate over original keys."""
+        return iter(self._original)
+    
+    # Write operations (write-through to original)
+    
+    def __setitem__(self, key: str, value: Any) -> None:
+        """Set item on original dict (write-through)."""
+        self._original[key] = value
+    
+    def __delitem__(self, key: str) -> None:
+        """Delete item from original dict (write-through)."""
+        del self._original[key]
+    
+    def pop(self, key: str, *args) -> Any:
+        """Pop from original dict (write-through)."""
+        return self._original.pop(key, *args)
+    
+    def popitem(self) -> tuple:
+        """Pop item from original dict (write-through)."""
+        return self._original.popitem()
+    
+    def clear(self) -> None:
+        """Clear original dict (write-through)."""
+        self._original.clear()
+    
+    def update(self, *args, **kwargs) -> None:
+        """Update original dict (write-through)."""
+        self._original.update(*args, **kwargs)
+    
+    def setdefault(self, key: str, default: Any = None) -> Any:
+        """Set default on original dict (write-through)."""
+        return self._original.setdefault(key, default)
 
 
 def get_branch_function(interview_type: str, function_name: str) -> Optional[Callable]:

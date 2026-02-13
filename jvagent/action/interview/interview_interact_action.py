@@ -32,6 +32,7 @@ from .core.graph.question_node import QuestionNode
 from .core.graph.interview_walker import InterviewWalker
 from .core.graph.state_node import StateNode
 from .core.graph.question_edge import QuestionEdge
+from .core.graph.question_path_walker import QuestionPathWalker
 from .core.utils.session_utils import cleanup_session
 from .core.utils.cache_utils import QuestionNodeCache, BranchCache
 from .core.utils.constants import CACHE_KEY_QUESTION_NODES
@@ -543,7 +544,8 @@ class InterviewInteractAction(InteractAction, ABC):
     async def _resolve_target_node(
         self,
         session: InterviewSession,
-        intent: Intent
+        intent: Intent,
+        visitor: Optional["InteractWalker"] = None
     ) -> None:
         """Determine and set session.target_node based on intent, state, and interview progress.
 
@@ -561,6 +563,7 @@ class InterviewInteractAction(InteractAction, ABC):
         Args:
             session: Interview session
             intent: Detected user intent
+            visitor: Optional InteractWalker for branch function evaluation
         """
         current_state = session.state
 
@@ -588,19 +591,21 @@ class InterviewInteractAction(InteractAction, ABC):
                 # If there are unanswered questions BEFORE the earliest queued field,
                 # start from the first question to collect them before reaching the queue entry.
                 # This handles premature data_input_field submissions.
-                unanswered = session.get_unanswered_questions()
-                if unanswered:
+                first_node = await self._get_first_question_node(session)
+                next_unanswered = await QuestionPathWalker.find_next_target(
+                    session, first_node, visitor
+                )
+                if next_unanswered:
                     graph_order = {
                         q["name"]: i for i, q in enumerate(session.question_graph) if q.get("name")
                     }
-                    first_unanswered_idx = graph_order.get(unanswered[0], 999)
+                    first_unanswered_idx = graph_order.get(next_unanswered.state.get("name", next_unanswered.label) if hasattr(next_unanswered, "state") else next_unanswered.label, 999)
                     earliest_queue_idx = graph_order.get(earliest_field, 999)
                     
                     if first_unanswered_idx < earliest_queue_idx:
                         # Premature submission: start from beginning so walker collects
                         # unanswered questions before reaching the queued field
-                        first_question = await self._get_first_question_node(session)
-                        session.target_node = first_question.id if first_question else None
+                        session.target_node = first_node.id if first_node else None
                     else:
                         node = await self._get_question_node(earliest_field, session)
                         session.target_node = node.id if node else None
@@ -615,9 +620,12 @@ class InterviewInteractAction(InteractAction, ABC):
 
         # Handle ACTIVE state intents
         elif current_state == InterviewState.ACTIVE:
-            # Check if all questions answered → REVIEW
-            unanswered = session.get_unanswered_questions()
-            if not unanswered:
+            # Check if all reachable questions answered → REVIEW
+            first_node = await self._get_first_question_node(session)
+            next_unanswered = await QuestionPathWalker.find_next_target(
+                session, first_node, visitor
+            )
+            if not next_unanswered:  # All reachable questions answered
                 node = await self.get_state_node(InterviewState.REVIEW)
                 session.target_node = node.id if node else None
                 changed = True
@@ -625,15 +633,11 @@ class InterviewInteractAction(InteractAction, ABC):
                 # Keep current target_node — QuestionNode handles DECLINE logic
                 # (required: returns decline directive, optional: sets N/A and continues)
                 if not session.target_node:
-                    first_unanswered = unanswered[0]
-                    node = await self._get_question_node(first_unanswered, session)
-                    session.target_node = node.id if node else None
+                    session.target_node = next_unanswered.id
                     changed = True
             elif intent == Intent.NONE:
                 if not session.target_node:
-                    first_unanswered = unanswered[0]
-                    node = await self._get_question_node(first_unanswered, session)
-                    session.target_node = node.id if node else None
+                    session.target_node = next_unanswered.id
                     changed = True
             elif intent == Intent.SUBMISSION:
                 # SUBMISSION: Start from first question to ensure sequential flow.
@@ -886,7 +890,7 @@ class InterviewInteractAction(InteractAction, ABC):
                     )
 
         # 4. Determine target node based on intent and state
-        await self._resolve_target_node(session, intent)
+        await self._resolve_target_node(session, intent, visitor)
         target_node_id = session.target_node
         try:
             target_node = await Node.get(target_node_id)
