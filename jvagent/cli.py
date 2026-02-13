@@ -469,7 +469,25 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         dynamodb_secret_access_key=dynamodb_secret_access_key if db_type == "dynamodb" else None,
     )
 
-    # Auth configuration
+    # Auth configuration - merge default exempt paths with app-specific (auth.exempt_paths)
+    default_exempt_paths = [
+        "/health",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        "/favicon.ico",
+        "/api/auth/register",
+        "/api/auth/login",
+        "/api/auth/refresh",
+        "/api/auth/logout",
+        "/api/storage/*",  # Public access for images/media
+    ]
+    app_exempt_paths = _get_config_value(app_config, "auth.exempt_paths", None, None)
+    if isinstance(app_exempt_paths, list):
+        auth_exempt_paths = list(dict.fromkeys(default_exempt_paths + app_exempt_paths))
+    else:
+        auth_exempt_paths = default_exempt_paths
+
     auth_config = AuthConfig(
         auth_enabled=auth_enabled,
         jwt_auth_enabled=jwt_auth_enabled,
@@ -478,6 +496,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         api_key_auth_enabled=api_key_auth_enabled,
         api_key_prefix=api_key_prefix,
         api_key_header=api_key_header,
+        auth_exempt_paths=auth_exempt_paths,
     )
 
     # CORS configuration
