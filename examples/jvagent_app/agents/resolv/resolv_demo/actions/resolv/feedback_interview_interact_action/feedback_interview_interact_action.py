@@ -113,35 +113,6 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
                 "default_next": "REVIEW",
                 "required": False,
             }
-            # {
-            #     "name": "report_details",
-            #     "question": "Please describe the report or issue you want to provide feedback about.",
-            #     "constraints": {
-            #         "description": "Details about the report or issue the user wants to provide feedback about. They can skip this to give feedback on the project.",
-            #         "instruction": "Details are about an existing report or issue that the user wants to provide feedback about. The user can skip this question if they want to give feedback on the project.",
-            #         "type": "string",
-            #     },
-            #     "branches": [
-            #         {
-            #             "condition": {"function": "search_for_report"},
-            #             "target": "selected_report_id",
-            #         }
-            #     ],
-            #     "default_next": "REVIEW",
-            #     "required": False,
-            # },
-            # {
-            #     "name": "selected_report_id",
-            #     "input_context_provider": "get_matching_reports",
-            #     "question": "I found multiple completed reports that match your description. Please select which one you want to provide feedback about:",
-            #     "constraints": {
-            #         "description": "The correct report id based on the report details from the list of matching reports the user selected. return the report id(not the index) for the report selected.",
-            #         "instructions": "return the report id(not the index) for the report selected.",
-            #         "type": "integer",
-            #     },
-            #     # "default_next": "REVIEW",
-            #     "required": True,
-            # },
         ],
         description="List of question configurations defining the interview graph. Can be overridden in agent.yaml. "
                     "Supports conditional branching via 'branches' and 'default_next'. "
@@ -195,44 +166,6 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
             return None
 
 
-    # # input context 
-    # @input_context_provider()
-    # async def get_matching_reports(
-    #     session: InterviewSession, visitor: InteractWalker
-    # ) -> Dict[str, Any]:
-    #     """Provide matching reports dynamically."""
-    #     matching_reports = session.context.get("matching_reports", [])
-    #     if not matching_reports:
-    #         return {}
-
-    #     report_list = []
-    #     for i, report in enumerate(matching_reports):
-    #         report_list.append(
-    #             f"Report ID: {report['id']} - {report['description'][:200]}..."
-    #         )
-
-    #     return {
-    #         "reports": "\n".join(report_list),
-    #         "note": "Please select the report ID (not the number) that matches the report you are providing your feedback on.",
-    #     }
-
-
-
-
-    # branch function
-    # @branch_function()
-    # def search_for_report(
-    #     session: InterviewSession, visitor: Optional[InteractWalker] = None
-    # ) -> bool:
-    #     """Search for completed reports matching the user's description."""
-    #     report_details = session.context.get("matching_reports")
-
-    #     if report_details:
-    #         return True
-
-    #     return False
-
-
     @branch_function()
     async def can_ask_for_media(
         session: InterviewSession, 
@@ -275,39 +208,10 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
 
         return False
 
-    # directive override
-    # @input_directive_override("report_details")
-    # async def custom_report_details_directive(
-    #     field_name: str,
-    #     value: str,
-    #     session: InterviewSession,
-    #     interaction: Interaction,
-    #     visitor: InteractWalker,
-    #     interview_action: Optional[Any] = None,
-    # ) -> Optional[Union[str, Tuple[str, str]]]:
-    #     """Custom directive after report_details is answered."""
-    #     matching_reports = session.context.get("matching_reports", [])
-
-    #     if matching_reports:
-    #         report_list = "\n".join(
-    #             [
-    #                 f"Report ID: {report['id']} - {report['description'][:300]}..."
-    #                 for i, report in enumerate(matching_reports)
-    #             ]
-    #         )
-
-    #         return (
-    #             "replace",
-    #             f"Tell the user: I found {len(matching_reports)} reports that match your description. Please select which report you want to provide feedback on:\n{report_list}",
-    #         )
-
-    #     return None
-
-
 
     # input validator 
     @input_validator("feedback_content")
-    def validate_feedback_content(
+    async def validate_feedback_content(
         value: str,
         session: InterviewSession,
         visitor: Optional[InteractWalker] = None,
@@ -326,71 +230,21 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
             )
         return ValidationStatus.VALID, None
 
+    @input_validator("reference_number")
+    async def validate_reference_number(
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
+    ) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate reference number is detailed and constructive."""
+        logger = logging.getLogger(__name__)
 
-    # @input_validator("report_details")
-    # def validate_report_details(
-    #     value: str,
-    #     session: InterviewSession,
-    #     visitor: Optional[InteractWalker] = None,
-    #     interview_action: Optional[Any] = None,
-    # ) -> Tuple[ValidationStatus, Optional[str]]:
-    #     """Validate report details are detailed and constructive."""
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please share your feedback."
 
-    #     if value:
-    #         session.context["matching_reports"] = [
-    #             {
-    #                 "id": 211,
-    #                 "description": "At a residence in South Ruimveldt, a woman is repeatedly being verbally and physically abused by her partner. Neighbours have heard loud shouting, threats such as “ah gon kill you,” and sounds of slapping and objects being thrown late at night. This has been happening for weeks. People hearing the noise and frighten because this man does lose control. The failure to intervene despite obvious warning signs places the victim at high risk of serious injury or death. Urgent protective action is required.",
-    #             },
-    #             {
-    #                 "id": 223,
-    #                 "description": "A deh one house in South Ruimveldt, a woman been gettin cuss out and beat regular by she partner. Neighbours hear plenty loud shouting, serious threats like “ah gon kill you”, an sounds like slap, beat, and tings fling ’bout late night. Dis na one-time thing — dis been goin on fuh weeks now. People round de area frighten because de man does lose control real bad. De fact that nobody ain’t step in yet, even when de signs clear, put de woman life in serious danger. She could get bad hurt or even dead if something ain’t do quick. Immediate action need fuh protect she and stop dis abuse before it turn into something worse.",
-    #             },
-    #         ]
-            
-    #     return ValidationStatus.VALID, None
-
-
-    # @input_validator("selected_report_id")
-    # def validate_selected_report_id(
-    #     value: int,
-    #     session: InterviewSession,
-    #     visitor: Optional[InteractWalker] = None,
-    #     interview_action: Optional[Any] = None,
-    # ) -> Tuple[ValidationStatus, Optional[str]]:
-    #     """Validate selected report ID matches one of the available reports."""
-
-    #     if not value:
-    #         return (
-    #             ValidationStatus.INVALID,
-    #             "Ask: Please select a report ID from the list provided",
-    #         )
-
-    #     # Convert to integer
-    #     try:
-    #         report_id = int(value)
-    #     except (ValueError, TypeError):
-    #         return ValidationStatus.INVALID, "Ask: Please enter a valid numeric report ID"
-
-    #     if report_id <= 0:
-    #         return ValidationStatus.INVALID, "Ask: Report ID must be a positive number"
-
-    #     matching_reports = session.context.get("matching_reports", [])
-    #     if not matching_reports:
-    #         return ValidationStatus.INVALID, "Ask: No reports available for selection"
-
-    #     available_ids = [report["id"] for report in matching_reports]
-    #     if report_id not in available_ids:
-    #         return (
-    #             ValidationStatus.INVALID,
-    #             f"Ask: Please select a valid report ID from: {', '.join(map(str, available_ids))}",
-    #         )
-
-    #     # Store the validated integer ID back in the session if needed
-    #     session.context["selected_report_id"] = report_id
-
-    #     return ValidationStatus.VALID, None
-
+        return ValidationStatus.VALID, None
+        
 
 
 # input review override
@@ -439,7 +293,9 @@ async def handle_interview_completion(
     
     feedback_content = session.responses.get('feedback_content', '')
     reference_number = session.responses.get('reference_number', '')
-    feedback_media = session.responses.get('feedback_media', '')
+    feedback_media = session.responses.get('feedback_media')
+    if not isinstance(feedback_media, list):
+        feedback_media = []
 
 
     completion_message = "Tell the user: Sorry, I was unable to submit your feedback. Please try again later!"
