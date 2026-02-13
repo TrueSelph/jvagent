@@ -171,16 +171,16 @@ actions:
       #   - condition: "User asks about something outside your knowledge or role"
       #     response: "Politely explain that this falls outside your area of knowledge or role, and suggest alternative ways they might find the information they need."
 
-  - action: jvagent/whatsapp_action
-    context:
-      enabled: true
-      description: "WhatsApp provider (wppconnect, ultramsg, wwebjs)"
-      # whatsapp configuration
-      provider: "wwebjs"
-      api_url: ${WHATSAPP_API_URL}
-      api_key: ${WHATSAPP_API_KEY}
-      session: ${WHATSAPP_SESSION}
-      base_url: ${APP_BASE_URL}
+  # - action: jvagent/whatsapp_action
+  #   context:
+  #     enabled: true
+  #     description: "WhatsApp provider (wppconnect, ultramsg, wwebjs)"
+  #     # whatsapp configuration
+  #     provider: "wwebjs"
+  #     api_url: ${WHATSAPP_API_URL}
+  #     api_key: ${WHATSAPP_API_KEY}
+  #     session: ${WHATSAPP_SESSION}
+  #     base_url: ${APP_BASE_URL}
 
   - action: jvagent/tts_action
     context:

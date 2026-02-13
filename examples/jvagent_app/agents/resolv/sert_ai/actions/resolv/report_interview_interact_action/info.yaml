@@ -1,0 +1,16 @@
+package:
+  name: resolv/report_interview_interact_action
+  author: V75 Inc.
+  archetype: ReportInterviewInteractAction
+  version: 1.0.0
+  meta:
+    title: Report Interview Interact Action
+    description: Report Interview action is used to create reports.
+    group: resolv
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []
