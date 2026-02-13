@@ -283,7 +283,7 @@ class InterviewSession(Node):
             None
         )
     
-    async def get_next_questions(self, current_question: str, visitor: Optional[Any] = None) -> List[str]:
+    async def get_next_questions(self, current_question: str, visitor: Optional[Any] = None, interview_action: Optional[Any] = None) -> List[str]:
         """Get possible next questions based on branches.
         
         Args:
@@ -307,7 +307,7 @@ class InterviewSession(Node):
             condition = branch.get("condition", {})
             
             # Use QuestionBranchEvaluator for proper evaluation
-            if await QuestionBranchEvaluator.matches(condition, self, implicit_question=question_config.get("name"), visitor=visitor):
+            if await QuestionBranchEvaluator.matches(condition, self, implicit_question=question_config.get("name"), visitor=visitor, interview_action=interview_action):
                 target = branch.get("target")
                 if target:
                     next_questions.append(target)
@@ -323,7 +323,8 @@ class InterviewSession(Node):
     async def get_reachable_questions(
         self,
         first_node: "QuestionNode",
-        visitor: Optional[Any] = None
+        visitor: Optional[Any] = None,
+        interview_action: Optional[Any] = None
     ) -> set:
         """Get questions reachable on the current branch path.
         
@@ -340,13 +341,14 @@ class InterviewSession(Node):
         """
         from ..graph.question_path_walker import QuestionPathWalker
         return await QuestionPathWalker.get_reachable_questions(
-            self, first_node, visitor
+            self, first_node, visitor, interview_action
         )
 
     async def get_next_unanswered_on_path(
         self,
         first_node: "QuestionNode",
-        visitor: Optional[Any] = None
+        visitor: Optional[Any] = None,
+        interview_action: Optional[Any] = None
     ) -> Optional["QuestionNode"]:
         """Get next unanswered question on the active path.
         
@@ -362,7 +364,7 @@ class InterviewSession(Node):
         """
         from ..graph.question_path_walker import QuestionPathWalker
         return await QuestionPathWalker.find_next_target(
-            self, first_node, visitor
+            self, first_node, visitor, interview_action
         )
     
     def extract_data(self) -> Dict[str, Any]:

@@ -593,7 +593,7 @@ class InterviewInteractAction(InteractAction, ABC):
                 # This handles premature data_input_field submissions.
                 first_node = await self._get_first_question_node(session)
                 next_unanswered = await QuestionPathWalker.find_next_target(
-                    session, first_node, visitor
+                    session, first_node, visitor, self
                 )
                 if next_unanswered:
                     graph_order = {
@@ -623,7 +623,7 @@ class InterviewInteractAction(InteractAction, ABC):
             # Check if all reachable questions answered → REVIEW
             first_node = await self._get_first_question_node(session)
             next_unanswered = await QuestionPathWalker.find_next_target(
-                session, first_node, visitor
+                session, first_node, visitor, self
             )
             if not next_unanswered:  # All reachable questions answered
                 node = await self.get_state_node(InterviewState.REVIEW)
@@ -930,7 +930,7 @@ class InterviewInteractAction(InteractAction, ABC):
 
                 first_node = await self._get_first_question_node(session)
                 if first_node:
-                    await PostUpdateWalker.sync(session, first_node, visitor)
+                    await PostUpdateWalker.sync(session, first_node, visitor, self)
 
             await session.save()
 

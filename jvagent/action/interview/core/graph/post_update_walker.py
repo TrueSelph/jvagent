@@ -52,6 +52,7 @@ class PostUpdateWalker(Walker):
 
     interview_session: Optional[Any] = None
     interact_visitor: Optional[Any] = None
+    interview_action: Optional[Any] = None
     _reachable: Set[str] = PrivateAttr(default_factory=set)
     _visited_ids: Set[str] = PrivateAttr(default_factory=set)
 
@@ -72,7 +73,7 @@ class PostUpdateWalker(Walker):
         ordered = QuestionEdge.sort_by_priority(edges)
         for edge in ordered:
             target = await edge.evaluate(
-                self.interview_session, question_name, self.interact_visitor
+                self.interview_session, question_name, self.interact_visitor, self.interview_action
             )
             if target is not None:
                 await self.visit(target)
@@ -131,6 +132,7 @@ class PostUpdateWalker(Walker):
         session: Any,
         first_node: Optional[Any] = None,
         interact_visitor: Optional[Any] = None,
+        interview_action: Optional[Any] = None,
     ) -> Set[str]:
         """Run post-update sync: walk the graph, prune stale data, return reachable set.
 
@@ -159,6 +161,7 @@ class PostUpdateWalker(Walker):
         walker = cls(
             interview_session=session,
             interact_visitor=interact_visitor,
+            interview_action=interview_action,
         )
 
         try:

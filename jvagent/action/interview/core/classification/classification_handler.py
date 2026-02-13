@@ -305,7 +305,7 @@ class ClassificationHandler:
         # Get reachable questions on active branch path
         if first_node and visitor:
             reachable_names = await QuestionPathWalker.get_reachable_questions(
-                session, first_node, visitor
+                session, first_node, visitor, self.action
             )
             active_questions = [
                 q for q in session.question_graph 

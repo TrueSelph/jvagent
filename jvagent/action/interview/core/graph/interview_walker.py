@@ -134,7 +134,7 @@ class InterviewWalker(Walker):
         # Resolve first node from session.question_graph
         first_node = await self._resolve_first_node(session)
         reachable = await PostUpdateWalker.sync(
-            session, first_node, self.interact_visitor
+            session, first_node, self.interact_visitor, self.interview_action
         )
         required = set(session.get_required_questions())
         return reachable & required
@@ -379,6 +379,7 @@ class InterviewWalker(Walker):
                 self.interview_session,
                 question_name,
                 self.interact_visitor,
+                self.interview_action,
             )
             if target is not None:
                 await self.visit(target)
@@ -413,6 +414,7 @@ class InterviewWalker(Walker):
                 self.interview_session,
                 here.label,
                 self.interact_visitor,
+                self.interview_action,
             )
             if target is not None:
                 await self.visit(target)
@@ -532,7 +534,7 @@ class InterviewWalker(Walker):
             )
             if first_node:
                 await PostUpdateWalker.sync(
-                    self.interview_session, first_node, self.interact_visitor
+                    self.interview_session, first_node, self.interact_visitor, self.interview_action
                 )
 
         # Execute state node - handles transition and returns directive

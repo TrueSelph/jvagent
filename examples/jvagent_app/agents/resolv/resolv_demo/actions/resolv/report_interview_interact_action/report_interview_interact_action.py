@@ -216,7 +216,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
     # branch function
     @branch_function("detect_sensitive_content")
     def detect_sensitive_content(
-        session: InterviewSession, visitor: Optional[InteractWalker] = None
+        session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
     ) -> bool:
         """Detect if incident report contains sensitive content requiring privacy protection.
 

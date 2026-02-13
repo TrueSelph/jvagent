@@ -71,7 +71,7 @@ class TestConditionalBranching:
         session.set_response("user_type", "premium")
         
         condition = {"op": "equals", "value": "premium"}
-        matches = QuestionBranchEvaluator.matches(
+        matches = await QuestionBranchEvaluator.matches(
             condition,
             session,
             implicit_question="user_type"
@@ -80,7 +80,7 @@ class TestConditionalBranching:
         
         # Test non-matching value
         session.set_response("user_type", "standard")
-        matches = QuestionBranchEvaluator.matches(
+        matches = await QuestionBranchEvaluator.matches(
             condition,
             session,
             implicit_question="user_type"
@@ -95,7 +95,7 @@ class TestConditionalBranching:
         session.set_response("user_type", "premium")
         
         condition = {"op": "in", "value": ["premium", "vip"]}
-        matches = QuestionBranchEvaluator.matches(
+        matches = await QuestionBranchEvaluator.matches(
             condition,
             session,
             implicit_question="user_type"
@@ -104,7 +104,7 @@ class TestConditionalBranching:
         
         # Test value not in list
         session.set_response("user_type", "standard")
-        matches = QuestionBranchEvaluator.matches(
+        matches = await QuestionBranchEvaluator.matches(
             condition,
             session,
             implicit_question="user_type"
@@ -119,7 +119,7 @@ class TestConditionalBranching:
         # Test exists when value is present
         session.set_response("user_type", "premium")
         condition = {"op": "exists"}
-        matches = QuestionBranchEvaluator.matches(
+        matches = await QuestionBranchEvaluator.matches(
             condition,
             session,
             implicit_question="user_type"
@@ -128,7 +128,7 @@ class TestConditionalBranching:
         
         # Test exists when value is None
         session.responses.pop("user_type", None)
-        matches = QuestionBranchEvaluator.matches(
+        matches = await QuestionBranchEvaluator.matches(
             condition,
             session,
             implicit_question="user_type"
@@ -141,7 +141,7 @@ class TestConditionalBranching:
         session = test_session_with_branches
         
         # Add numeric question
-        session.question_index.append({
+        session.question_graph.append({
             "name": "age",
             "question": "What's your age?",
             "constraints": {"description": "Age", "type": "integer"},
@@ -151,7 +151,7 @@ class TestConditionalBranching:
         # Test >=
         session.set_response("age", 25)
         condition = {"op": ">=", "value": 18}
-        matches = QuestionBranchEvaluator.matches(
+        matches = await QuestionBranchEvaluator.matches(
             condition,
             session,
             implicit_question="age"
@@ -161,7 +161,7 @@ class TestConditionalBranching:
         # Test <
         session.set_response("age", 15)
         condition = {"op": "<", "value": 18}
-        matches = QuestionBranchEvaluator.matches(
+        matches = await QuestionBranchEvaluator.matches(
             condition,
             session,
             implicit_question="age"
@@ -175,7 +175,7 @@ class TestConditionalBranching:
         
         # Don't set user_type response
         condition = {"op": "equals", "value": "premium"}
-        matches = QuestionBranchEvaluator.matches(
+        matches = await QuestionBranchEvaluator.matches(
             condition,
             session,
             implicit_question="user_type"
@@ -191,10 +191,10 @@ class TestConditionalBranching:
         # Set premium response
         session.set_response("user_type", "premium")
         
-        next_questions = session.get_next_questions("user_type")
+        next_questions = await session.get_next_questions("user_type")
         assert "premium_features" in next_questions
         
         # Set standard response
         session.set_response("user_type", "standard")
-        next_questions = session.get_next_questions("user_type")
+        next_questions = await session.get_next_questions("user_type")
         assert "standard_setup" in next_questions
