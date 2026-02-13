@@ -1,0 +1,15 @@
+package:
+  name: jvagent/user_model_action
+  author: V75 Inc.
+  archetype: UserModelAction
+  version: 1.0.0
+  meta:
+    title: User Model Action
+    description: User Model Action
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
