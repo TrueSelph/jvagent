@@ -342,7 +342,7 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
     # Input context provider
     @input_context_provider()
     async def get_current_date(
-        self, session: InterviewSession, visitor: InteractWalker
+        self, session: InterviewSession, visitor: InteractWalker, interview_action: Optional[Any] = None
     ) -> Dict[str, Any]:
         """Provide the current date for reference."""
         now = datetime.now()
@@ -352,7 +352,7 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
     # Branch function
     @branch_function("can_ask_for_supervisor_name")
     async def can_ask_for_supervisor_name(
-        self, session: InterviewSession, visitor: InteractWalker
+        self, session: InterviewSession, visitor: InteractWalker, interview_action: Optional[Any] = None
     ) -> bool:
         """Determine if supervisor details need to be collected from the user."""
         logger.warning("Checking if supervisor details are already available.")

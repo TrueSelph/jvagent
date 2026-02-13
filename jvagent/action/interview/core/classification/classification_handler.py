@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 from ..foundation.enums import Intent, InterviewState
 from ..session.interview_session import InterviewSession
 from ..graph.question_node import QuestionNode
+from ..utils.handler_utils import invoke_async_with_optional_context
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -191,7 +192,8 @@ class ClassificationHandler:
     async def _get_context_data_note(
         self,
         question_config: Dict[str, Any],
-        session: InterviewSession
+        session: InterviewSession,
+        visitor: Optional[Any] = None
     ) -> str:
         """Get a note about context data for inclusion in entities_to_extract.
         
@@ -215,12 +217,13 @@ class ClassificationHandler:
                 from ..foundation.decorators import get_input_context_provider
                 func = get_input_context_provider(session.interview_type, provider_name)
                 if func:
-                    # Execute provider to get dynamic context (Note: visitor not available here, pass None)
-                    import inspect
-                    if inspect.iscoroutinefunction(func):
-                        dynamic_context = await func(session, None)
-                    else:
-                        dynamic_context = func(session, None)
+                    # Execute provider to get dynamic context
+                    dynamic_context = await invoke_async_with_optional_context(
+                        func,
+                        session=session,
+                        visitor=visitor,
+                        interview_action=self.action,
+                    )
                     
                     if dynamic_context and isinstance(dynamic_context, dict):
                         # Merge with static context (dynamic takes precedence)
@@ -365,11 +368,12 @@ class ClassificationHandler:
                             from ..foundation.decorators import get_input_context_provider
                             func = get_input_context_provider(session.interview_type, provider_name)
                             if func:
-                                import inspect
-                                if inspect.iscoroutinefunction(func):
-                                    dynamic_context = await func(session, None)
-                                else:
-                                    dynamic_context = func(session, None)
+                                dynamic_context = await invoke_async_with_optional_context(
+                                    func,
+                                    session=session,
+                                    visitor=visitor,
+                                    interview_action=self.action,
+                                )
                                 if dynamic_context and isinstance(dynamic_context, dict):
                                     context_data = {**context_data, **dynamic_context}
                         except Exception as e:
@@ -385,7 +389,7 @@ class ClassificationHandler:
                             break  # Use first list found
 
             # Add context data note (for non-select modes or additional context)
-            context_data_note = await self._get_context_data_note(item, session)
+            context_data_note = await self._get_context_data_note(item, session, visitor)
 
             entities_list.append(
                 f"- {key} {required_marker} {mode_marker} — Expected: \"{desc}\" | Constraints: {constraints_display}{options_note}{context_data_note}"
