@@ -88,35 +88,10 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "description": "The exact location where the incident occurred, including street address, area name, or landmark. Must be specific, not vague references.",
                     "type": "string",
                 },
-                "branches": [
-                    {
-                        "condition": {"function": "check_for_similar_incidents"},
-                        "target": "continue_report",
-                    }
-                ],
-                "default_next": "incident_media",
+                
                 "required": True,
             },
-            {
-                "name": "continue_report",
-                "question": "I found similar incident reports. Would you like to continue creating your new report?",
-                "constraints": {
-                    "description": "User's decision to continue with their new incident report despite similar existing reports.",
-                    "type": "string",
-                    "options": ["yes", "no"],
-                },
-                "branches": [
-                    {
-                        "condition": {"op": "equals", "value": "yes"},
-                        "target": "incident_media",
-                    },
-                    {
-                        "condition": {"op": "equals", "value": "no"},
-                        "target": "CANCELLED",
-                    },
-                ],
-                "required": True,
-            },
+            
             {
                 "name": "incident_media",
                 "question": "Do you have any photos or videos of the incident you'd like to include? You can upload them now or skip this step.",
@@ -225,8 +200,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "instruction": "The address should not be the incident location or the address of the person the report is being filed on behalf of.",
                     "type": "string",
                 },
-                "required": True,
-                "default_next": "REVIEW",
+                "required": True
             },
         ],
         description="List of question configurations defining the interview graph. Can be overridden in agent.yaml. "
