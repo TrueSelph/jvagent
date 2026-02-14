@@ -1,12 +1,12 @@
 """Test to verify pruning of unreachable responses after branch path change.
 
-Uses PostUpdateWalker's _prune_session logic directly by setting the reachable
+Uses QuestionPathWalker's _prune_session logic directly by setting the reachable
 set to simulate what a graph traversal would compute.
 """
 
 import pytest
 from jvagent.action.interview.core.session.interview_session import InterviewSession
-from jvagent.action.interview.core.graph.post_update_walker import PostUpdateWalker
+from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
 from jvagent.action.interview.core.utils.cache_utils import BranchCache
 from jvagent.action.interview.core.foundation.enums import InterviewState
 
@@ -53,8 +53,8 @@ async def test_pruning_removes_unreachable_responses():
     session.state = InterviewState.ACTIVE
     await session.save()
 
-    # Simulate PostUpdateWalker traversal result: new path is Q1 -> Q4 -> Q5
-    walker = PostUpdateWalker(interview_session=session)
+    # Simulate QuestionPathWalker traversal result: new path is Q1 -> Q4 -> Q5
+    walker = QuestionPathWalker(interview_session=session)
     walker._reachable = {"q1", "q4", "q5"}
 
     walker._prune_session()
@@ -121,8 +121,8 @@ async def test_pruning_preserves_pre_branch_answers():
     session.state = InterviewState.ACTIVE
     await session.save()
 
-    # Simulate PostUpdateWalker traversal: new path is q0 -> q1 -> q2 -> q3_b -> q4
-    walker = PostUpdateWalker(interview_session=session)
+    # Simulate QuestionPathWalker traversal: new path is q0 -> q1 -> q2 -> q3_b -> q4
+    walker = QuestionPathWalker(interview_session=session)
     walker._reachable = {"q0", "q1", "q2", "q3_b", "q4"}
 
     walker._prune_session()

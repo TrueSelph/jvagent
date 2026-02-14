@@ -24,7 +24,7 @@ from pydantic import Field, PrivateAttr
 from jvspatial.core import Walker, on_visit
 
 from .question_node import QuestionNode
-from .post_update_walker import PostUpdateWalker
+from .question_path_walker import QuestionPathWalker
 from .state_node import StateNode
 from ..foundation.enums import ValidationStatus, InterviewState, Intent
 from ..utils.handler_utils import invoke_async_with_optional_context
@@ -120,7 +120,7 @@ class InterviewWalker(Walker):
     async def get_reachable_required_questions(self, session: Any) -> Set[str]:
         """Compute the set of required questions reachable on the current active path.
 
-        Delegates to PostUpdateWalker for a cache-independent graph traversal,
+        Delegates to QuestionPathWalker.sync for a cache-independent graph traversal,
         then intersects the reachable set with the session's required questions.
 
         Args:
@@ -129,11 +129,9 @@ class InterviewWalker(Walker):
         Returns:
             Set of required question names reachable on the active branch path.
         """
-        from .post_update_walker import PostUpdateWalker
-
         # Resolve first node from session.question_graph
         first_node = await self._resolve_first_node(session)
-        reachable = await PostUpdateWalker.sync(
+        reachable = await QuestionPathWalker.sync(
             session, first_node, self.interact_visitor, self.interview_action
         )
         required = set(session.get_required_questions())
@@ -533,7 +531,7 @@ class InterviewWalker(Walker):
                 self.interview_session
             )
             if first_node:
-                await PostUpdateWalker.sync(
+                await QuestionPathWalker.sync(
                     self.interview_session, first_node, self.interact_visitor, self.interview_action
                 )
 

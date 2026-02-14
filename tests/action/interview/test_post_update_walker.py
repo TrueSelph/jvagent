@@ -1,4 +1,4 @@
-"""Comprehensive tests for PostUpdateWalker.
+"""Comprehensive tests for QuestionPathWalker.sync and _prune_session.
 
 Covers:
 - Unit tests for _prune_session (no graph needed)
@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 
 from jvagent.action.interview.core.foundation.enums import InterviewState
 from jvagent.action.interview.core.session.interview_session import InterviewSession
-from jvagent.action.interview.core.graph.post_update_walker import PostUpdateWalker
+from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
 from jvagent.action.interview.core.graph.question_node import QuestionNode
 from jvagent.action.interview.core.graph.question_edge import QuestionEdge
 from jvagent.action.interview.core.graph.state_node import StateNode
@@ -23,7 +23,7 @@ from jvagent.action.interview.core.utils.cache_utils import BranchCache
 # ---------------------------------------------------------------------------
 
 class TestPruneSessionUnit:
-    """Unit-level tests for PostUpdateWalker._prune_session()."""
+    """Unit-level tests for QuestionPathWalker._prune_session()."""
 
     @pytest.mark.asyncio
     async def test_linear_graph_no_pruning(self):
@@ -36,7 +36,7 @@ class TestPruneSessionUnit:
         session.responses = {"q1": "a", "q2": "b"}
         await session.save()
 
-        walker = PostUpdateWalker(interview_session=session)
+        walker = QuestionPathWalker(interview_session=session)
         walker._reachable = {"q1", "q2"}
 
         walker._prune_session()
@@ -58,7 +58,7 @@ class TestPruneSessionUnit:
         session.responses = {"q1": "b", "q2a": "old_answer"}
         await session.save()
 
-        walker = PostUpdateWalker(interview_session=session)
+        walker = QuestionPathWalker(interview_session=session)
         walker._reachable = {"q1", "q2b"}
 
         walker._prune_session()
@@ -82,7 +82,7 @@ class TestPruneSessionUnit:
         session.responses = {"qA": "c", "qB": "valB", "qD": "valD"}
         await session.save()
 
-        walker = PostUpdateWalker(interview_session=session)
+        walker = QuestionPathWalker(interview_session=session)
         walker._reachable = {"qA", "qC", "qD"}
 
         walker._prune_session()
@@ -99,7 +99,7 @@ class TestPruneSessionUnit:
         session.responses = {"q1": "answer"}
         await session.save()
 
-        walker = PostUpdateWalker(interview_session=session)
+        walker = QuestionPathWalker(interview_session=session)
         # _reachable is empty by default
 
         walker._prune_session()
@@ -121,7 +121,7 @@ class TestPruneSessionUnit:
         ]
         await session.save()
 
-        walker = PostUpdateWalker(interview_session=session)
+        walker = QuestionPathWalker(interview_session=session)
         walker._reachable = {"q1", "q2"}
 
         walker._prune_session()
@@ -142,7 +142,7 @@ class TestPruneSessionUnit:
         session.validation_results = {"q1": "VALID", "q2": "VALID"}
         await session.save()
 
-        walker = PostUpdateWalker(interview_session=session)
+        walker = QuestionPathWalker(interview_session=session)
         walker._reachable = {"q1"}
 
         walker._prune_session()
@@ -158,7 +158,7 @@ class TestPruneSessionUnit:
         session.responses = {"q1": "keep", "q2": "prune_me"}
         await session.save()
 
-        walker = PostUpdateWalker(interview_session=session)
+        walker = QuestionPathWalker(interview_session=session)
         walker._reachable = {"q1"}
 
         walker._prune_session()
@@ -173,7 +173,7 @@ class TestPruneSessionUnit:
 # Integration tests — real graph traversal via test_db
 # ---------------------------------------------------------------------------
 
-class TestPostUpdateWalkerSync:
+class TestQuestionPathWalkerSync:
     """Integration tests with real spatial graph nodes."""
 
     @pytest.mark.asyncio
@@ -208,7 +208,7 @@ class TestPostUpdateWalkerSync:
         await q1.connect(q2, edge=QuestionEdge, is_default=True, branch_index=-1)
         await q2.connect(review, edge=QuestionEdge, is_default=True, branch_index=-1)
 
-        reachable = await PostUpdateWalker.sync(session, q1)
+        reachable = await QuestionPathWalker.sync(session, q1)
         assert reachable == {"q1", "q2"}
         assert session.responses == {"q1": "a", "q2": "b"}
 
@@ -267,7 +267,7 @@ class TestPostUpdateWalkerSync:
         await q2a.connect(review, edge=QuestionEdge, is_default=True, branch_index=-1)
         await q2b.connect(review, edge=QuestionEdge, is_default=True, branch_index=-1)
 
-        reachable = await PostUpdateWalker.sync(session, q1)
+        reachable = await QuestionPathWalker.sync(session, q1)
 
         assert "q1" in reachable
         assert "q2b" in reachable
@@ -316,7 +316,7 @@ class TestPostUpdateWalkerSync:
         await qC.connect(qD, edge=QuestionEdge, is_default=True, branch_index=-1)
         await qD.connect(review, edge=QuestionEdge, is_default=True, branch_index=-1)
 
-        reachable = await PostUpdateWalker.sync(session, q1)
+        reachable = await QuestionPathWalker.sync(session, q1)
 
         assert reachable == {"q1", "qC", "qD"}
         assert "qB" not in session.responses, "Old branch pruned"
@@ -329,7 +329,7 @@ class TestPostUpdateWalkerSync:
         session.responses = {"q1": "safe"}
         await session.save()
 
-        reachable = await PostUpdateWalker.sync(session, first_node=None)
+        reachable = await QuestionPathWalker.sync(session, first_node=None)
         assert reachable == set()
         assert "q1" in session.responses, "Responses must not be touched"
 
@@ -353,7 +353,7 @@ class TestPostUpdateWalkerSync:
         review = await StateNode.create(agent_id="t", interview_type="Test", state_type=InterviewState.REVIEW, label="REVIEW")
         await q1.connect(review, edge=QuestionEdge, is_default=True, branch_index=-1)
 
-        reachable = await PostUpdateWalker.sync(session, q1)
+        reachable = await QuestionPathWalker.sync(session, q1)
 
         # Cache was cleared before traversal; stale entry should be gone.
         # After traversal the cache only has entries recorded during evaluation.
@@ -376,15 +376,15 @@ class TestPostUpdateWalkerSync:
         q1 = await QuestionNode.create(agent_id="t", interview_type="Test", state={"name": "q1"}, label="q1")
 
         # Force spawn to raise after partial traversal
-        original_spawn = PostUpdateWalker.spawn
+        original_spawn = QuestionPathWalker.spawn
 
         async def exploding_spawn(self, node):
             # Manually add q1 to reachable to simulate partial work
             self._reachable.add("q1")
             raise RuntimeError("boom")
 
-        with patch.object(PostUpdateWalker, "spawn", exploding_spawn):
-            reachable = await PostUpdateWalker.sync(session, q1)
+        with patch.object(QuestionPathWalker, "spawn", exploding_spawn):
+            reachable = await QuestionPathWalker.sync(session, q1)
 
         # Partial reachable set should be used — q1 is in it, so no pruning occurs
         assert "q1" in session.responses

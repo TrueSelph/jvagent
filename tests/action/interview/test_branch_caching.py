@@ -249,14 +249,14 @@ class TestBranchCachingIntegration:
         assert branch_cache.get("report_description") == "contact_info"
 
 class TestPostUpdatePruning:
-    """Tests for PostUpdateWalker-based pruning on path change."""
+    """Tests for QuestionPathWalker-based pruning on path change."""
 
     @pytest.mark.asyncio
     async def test_no_pruning_when_all_reachable(
         self, test_session_with_dynamic_branches
     ):
         """No responses should be pruned when all answered questions are reachable."""
-        from jvagent.action.interview.core.graph.post_update_walker import PostUpdateWalker
+        from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
 
         session = test_session_with_dynamic_branches
         session.responses = {
@@ -265,7 +265,7 @@ class TestPostUpdatePruning:
         }
         await session.save()
 
-        walker = PostUpdateWalker(interview_session=session)
+        walker = QuestionPathWalker(interview_session=session)
         walker._reachable = {"report_description", "contact_info"}
 
         walker._prune_session()
@@ -278,7 +278,7 @@ class TestPostUpdatePruning:
         self, test_session_with_dynamic_branches
     ):
         """When path switches from is_sensitive to contact_info, is_sensitive is pruned."""
-        from jvagent.action.interview.core.graph.post_update_walker import PostUpdateWalker
+        from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
 
         session = test_session_with_dynamic_branches
         session.responses = {
@@ -288,7 +288,7 @@ class TestPostUpdatePruning:
         await session.save()
 
         # New reachable path: report_description -> contact_info (default_next)
-        walker = PostUpdateWalker(interview_session=session)
+        walker = QuestionPathWalker(interview_session=session)
         walker._reachable = {"report_description", "contact_info"}
 
         walker._prune_session()
@@ -301,7 +301,7 @@ class TestPostUpdatePruning:
         self, test_session_with_dynamic_branches
     ):
         """Pruned responses are recorded in the BranchCache audit trail."""
-        from jvagent.action.interview.core.graph.post_update_walker import PostUpdateWalker
+        from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
 
         session = test_session_with_dynamic_branches
         session.responses = {
@@ -310,7 +310,7 @@ class TestPostUpdatePruning:
         }
         await session.save()
 
-        walker = PostUpdateWalker(interview_session=session)
+        walker = QuestionPathWalker(interview_session=session)
         walker._reachable = {"report_description", "contact_info"}
 
         walker._prune_session()
