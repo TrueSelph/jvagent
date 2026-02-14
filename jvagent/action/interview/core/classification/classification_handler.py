@@ -131,7 +131,7 @@ class ClassificationHandler:
         # Default to normalized for structured fields
         return "normalized"
 
-    def extract_data_input_values(
+    async def extract_data_input_values(
         self,
         session: InterviewSession,
         visitor: "InteractWalker"
@@ -140,9 +140,9 @@ class ClassificationHandler:
 
         Scans question_graph for fields with data_input_field in constraints and checks
         visitor.data for matching keys. When the key is absent, auto-populates with "N/A"
-        only for the current question (first unanswered) to avoid pre-populating future
-        questions. Returns both the extracted values and the set of field names that have
-        data_input_field (for exclusion from LLM).
+        only for the current question (first reachable unanswered) to avoid pre-populating
+        future questions. Returns both the extracted values and the set of field names that
+        have data_input_field (for exclusion from LLM).
 
         Args:
             session: Interview session
@@ -163,7 +163,25 @@ class ClassificationHandler:
         if not hasattr(visitor, 'data') or not isinstance(visitor.data, dict):
             return extracted_values, excluded_fields
 
-        unanswered = session.get_unanswered_questions()
+        # Get first node to determine reachable unanswered questions
+        first_node = None
+        if session.question_graph:
+            first_question_name = session.question_graph[0].get("name")
+            if first_question_name:
+                try:
+                    first_node = await self.action._get_first_question_node(session)
+                except Exception:
+                    logger.debug("Failed to get first question node for path walker in extract_data_input_values")
+
+        # Get reachable unanswered questions to identify current question
+        if first_node:
+            unanswered = await session.get_reachable_unanswered_questions(
+                first_node, visitor, self.action
+            )
+        else:
+            # Fallback to all unanswered if we can't determine reachable path
+            unanswered = session.get_unanswered_questions()
+        
         current_question = unanswered[0] if unanswered else None
 
         # Scan question graph for data_input_field entries
@@ -397,8 +415,14 @@ class ClassificationHandler:
 
         entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
 
-        # Get current question (first unanswered) for context
-        unanswered = session.get_unanswered_questions()
+        # Get current question (first reachable unanswered) for context
+        if first_node:
+            unanswered = await session.get_reachable_unanswered_questions(
+                first_node, visitor, self.action
+            )
+        else:
+            # Fallback to all unanswered if we can't determine reachable path
+            unanswered = session.get_unanswered_questions()
         current_question = unanswered[0] if unanswered else "None (all questions answered)"
 
         return {
@@ -434,7 +458,7 @@ class ClassificationHandler:
             return ClassificationResult(intent=Intent.NONE)
 
         # Extract data input values from visitor.data before LLM classification
-        data_input_values, excluded_fields = self.extract_data_input_values(session, visitor)
+        data_input_values, excluded_fields = await self.extract_data_input_values(session, visitor)
         
         # Build user input - prioritize interpretation when available
         interpretation_available = interaction.interpretation and interaction.interpretation.strip()

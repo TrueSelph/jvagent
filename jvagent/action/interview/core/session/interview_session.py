@@ -117,6 +117,11 @@ class InterviewSession(Node):
     def get_unanswered_questions(self) -> List[str]:
         """Get list of question keys that haven't been answered.
 
+        WARNING: This method returns ALL unanswered questions from question_graph,
+        regardless of whether they are reachable on the current conditional branch path.
+        For most use cases, you should use get_reachable_unanswered_questions() instead
+        to ensure only questions on the active branch path are considered.
+
         Forces a fresh read from the responses dict to avoid any caching issues
         with jvspatial attributes.
         """
@@ -125,6 +130,49 @@ class InterviewSession(Node):
         answered = set(responses_dict.keys())
         all_questions = [q.get("name", "") for q in self.question_graph if q.get("name")]
         return [q for q in all_questions if q and q not in answered]
+    
+    async def get_reachable_unanswered_questions(
+        self,
+        first_node: "QuestionNode",
+        visitor: Optional[Any] = None,
+        interview_action: Optional[Any] = None
+    ) -> List[str]:
+        """Get unanswered questions that are reachable on the active branch path.
+        
+        This method uses QuestionPathWalker to traverse the question graph following
+        conditional branches (using BranchCache) and returns only the unanswered
+        questions that are reachable given current responses and branch decisions.
+        
+        This is the preferred method for determining which questions are currently
+        applicable, as it respects conditional branching logic and ensures branch
+        functions are not prematurely considered.
+        
+        Args:
+            first_node: The first QuestionNode in the graph (entry point)
+            visitor: Optional InteractWalker for branch function evaluation
+            interview_action: Optional InterviewInteractAction for branch evaluation
+            
+        Returns:
+            List of unanswered question names that are reachable on the active path,
+            in graph order (preserving sequence from question_graph)
+        """
+        from ..graph.question_path_walker import QuestionPathWalker
+        
+        # Get all reachable questions on the active branch path
+        reachable_names = await QuestionPathWalker.get_reachable_questions(
+            self, first_node, visitor, interview_action
+        )
+        
+        # Filter to only unanswered questions
+        responses_dict = dict(self.responses) if self.responses else {}
+        answered = set(responses_dict.keys())
+        
+        # Return in graph order (preserve sequence from question_graph)
+        all_questions = [q.get("name", "") for q in self.question_graph if q.get("name")]
+        return [
+            q for q in all_questions 
+            if q and q in reachable_names and q not in answered
+        ]
     
     def get_required_questions(self) -> List[str]:
         """Get list of required question keys."""
@@ -349,18 +397,19 @@ class InterviewSession(Node):
         first_node: "QuestionNode",
         visitor: Optional[Any] = None,
         interview_action: Optional[Any] = None
-    ) -> Optional["QuestionNode"]:
-        """Get next unanswered question on the active path.
+    ) -> Optional[Any]:
+        """Get next target on the active path.
         
-        Uses QuestionPathWalker to find the next unanswered question
-        following the active branch path (using BranchCache).
+        Uses QuestionPathWalker to find the next target (unanswered QuestionNode
+        or StateNode such as REVIEW when all answered) following the active
+        branch path (using BranchCache).
         
         Args:
             first_node: The first QuestionNode in the graph (entry point)
             visitor: Optional InteractWalker for branch function evaluation
             
         Returns:
-            Next unanswered QuestionNode on the active path, or None if all answered
+            Next QuestionNode or StateNode on the active path, or None if traversal fails
         """
         from ..graph.question_path_walker import QuestionPathWalker
         return await QuestionPathWalker.find_next_target(

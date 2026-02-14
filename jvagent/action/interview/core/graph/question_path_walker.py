@@ -2,19 +2,23 @@
 
 This module provides QuestionPathWalker, a lightweight walker that traverses
 the question graph following the active branch path (using BranchCache) to:
-- Find the next unanswered question on the active path
+- Find the next target (QuestionNode or StateNode) on the active path
 - Collect all reachable questions on the active path
 - Sync session state after updates (invalidate cache, traverse, prune, save)
 - Determine if all reachable questions are answered (→ REVIEW)
 
+find_next_target may return a QuestionNode (unanswered) or a StateNode (e.g., REVIEW
+when all questions are answered). StateNodes are also traversed to discover
+downstream QuestionNodes (e.g., edit flow from REVIEW).
+
 Modes:
-- find_next: Uses existing cache, stops at first unanswered (read-only)
+- find_next: Uses existing cache, stops at first unanswered or returns StateNode
 - collect_all: Uses existing cache, traverses full path (read-only)
 - sync_post_update: Invalidates cache, traverses full path, prunes unreachable data
 """
 
 import logging
-from typing import Any, Optional, Set
+from typing import Any, Optional, Set, Union
 
 from pydantic import PrivateAttr
 from jvspatial.core import Walker, on_visit
@@ -31,18 +35,22 @@ class QuestionPathWalker(Walker):
     
     This walker traverses the question graph following the active branch path
     (using BranchCache) to:
-    - Find the next unanswered question on the active path
+    - Find the next target (QuestionNode or StateNode) on the active path
     - Collect all reachable questions on the active path
     - Sync session state after updates (invalidate cache, prune unreachable data)
     - Determine if all reachable questions are answered (→ REVIEW)
     
+    find_next_target returns a QuestionNode when an unanswered question is found,
+    or a StateNode (e.g., REVIEW) when all questions are answered. StateNodes
+    are traversed to discover downstream QuestionNodes (e.g., edit flow).
+    
     Modes:
-    - find_next: Uses existing cache, stops at first unanswered (read-only)
+    - find_next: Uses existing cache, stops at first unanswered or StateNode
     - collect_all: Uses existing cache, traverses full path (read-only)
     - sync_post_update: Invalidates cache, traverses full path, prunes session data
     
     Usage:
-        # Find next unanswered question
+        # Find next target (QuestionNode or StateNode)
         next_node = await QuestionPathWalker.find_next_target(session, first_node, visitor)
         
         # Get all reachable questions
@@ -59,61 +67,77 @@ class QuestionPathWalker(Walker):
     # Mode: "find_next" stops at first unanswered, "collect_all" traverses entire path,
     # "sync_post_update" invalidates cache, traverses full path, prunes session
     _mode: str = PrivateAttr(default="find_next")
-    _next_target: Optional[QuestionNode] = PrivateAttr(default=None)
+    _next_target: Optional[Any] = PrivateAttr(default=None)
     _reachable: Set[str] = PrivateAttr(default_factory=set)
     _visited_ids: Set[str] = PrivateAttr(default_factory=set)
 
-    @on_visit(QuestionNode)
-    async def on_question_node(self, here: QuestionNode) -> None:
-        """Handle visiting a QuestionNode during path traversal.
-        
-        Collects the question name as reachable and follows the active branch.
-        In find_next mode, stops at the first unanswered question.
-        
-        Args:
-            here: QuestionNode being visited
-        """
-        # Prevent loops
+    @on_visit(QuestionNode, StateNode)
+    async def on_path_node(self, here: Union[QuestionNode, StateNode]) -> None:
+        """Handle QuestionNode or StateNode: collect reachable, set next target, follow edges."""
         if here.id in self._visited_ids:
             return
         self._visited_ids.add(here.id)
-        
-        question_name = here.state.get("name", here.label) if hasattr(here, "state") else here.label
-        self._reachable.add(question_name)
-        
-        # Check if answered
-        if question_name not in self.interview_session.responses:
-            # Found unanswered question
+
+        implicit_name = (
+            here.state.get("name", here.label)
+            if hasattr(here, "state") and isinstance(getattr(here, "state"), dict)
+            else here.label
+        )
+
+        if isinstance(here, QuestionNode):
+            self._reachable.add(implicit_name)
+            if implicit_name not in self.interview_session.responses:
+                if self._mode == "find_next" and self._next_target is None:
+                    self._next_target = here
+                    return
+
+        if isinstance(here, StateNode):
             if self._mode == "find_next" and self._next_target is None:
                 self._next_target = here
-                return  # Stop traversal - we found what we're looking for
-        
-        # Question is answered, continue following edges
+
         from .question_edge import QuestionEdge
-        
         edges = await here.edges(direction="out")
+        if not edges:
+            return
+
+        # Check if this UNANSWERED node has conditional branches and no cache to guide traversal
+        if isinstance(here, QuestionNode) and self._mode in ("collect_all", "sync_post_update"):
+            # Only check branches if the question is UNANSWERED
+            if implicit_name not in self.interview_session.responses:
+                has_conditional_branches = any(
+                    hasattr(e, 'condition') and e.condition is not None 
+                    for e in edges
+                )
+                
+                if has_conditional_branches:
+                    # Check if BranchCache has a decision for this question
+                    branch_cache = BranchCache(self.interview_session)
+                    cached_target = branch_cache.get(implicit_name)
+                    
+                    if cached_target is None:
+                        # No cache guidance - cannot determine which branch to take
+                        logger.debug(
+                            f"QuestionPathWalker: stopping at unanswered '{implicit_name}' - "
+                            f"has {len(edges)} conditional branch(es) but no cache to guide traversal"
+                        )
+                        return  # Stop at undetermined branch point
+
         ordered = QuestionEdge.sort_by_priority(edges)
         for edge in ordered:
             target = await edge.evaluate(
-                self.interview_session, question_name, self.interact_visitor, self.interview_action
+                self.interview_session,
+                implicit_name,
+                self.interact_visitor,
+                self.interview_action,
+                edge_count=len(edges),
             )
             if target is not None:
                 await self.visit(target)
                 return
 
-    @on_visit(StateNode)
-    async def on_state_node(self, here: StateNode) -> None:
-        """Handle visiting a StateNode - terminal node, stop traversal.
-        
-        Args:
-            here: StateNode being visited
-        """
-        # Reached terminal state node - stop traversal
-        pass
-
     @property
-    def next_target(self) -> Optional[QuestionNode]:
-        """Get the next unanswered question node found during traversal."""
+    def next_target(self) -> Optional[Any]:
+        """Get the next target node (QuestionNode or StateNode) found during traversal."""
         return self._next_target
 
     @property
@@ -167,18 +191,21 @@ class QuestionPathWalker(Walker):
         first_node: Optional[Any] = None,
         interact_visitor: Optional[Any] = None,
         interview_action: Optional[Any] = None,
+        invalidate_cache: bool = True,
     ) -> Set[str]:
         """Run post-update sync: walk the graph, prune stale data, return reachable set.
 
-        Invalidates the BranchCache so every conditional edge is evaluated fresh,
-        spawns the walker from the first question node, prunes unreachable session
-        data, and saves.
+        When invalidate_cache is True, invalidates the BranchCache so every conditional
+        edge is evaluated fresh. When False (e.g. SUBMISSION or REVIEW), preserves
+        cache populated during resolution and walker spawn.
 
         Args:
             session: InterviewSession with responses to prune.
             first_node: The first QuestionNode in the graph (entry point).
             interact_visitor: Optional InteractWalker for branch function evaluation.
             interview_action: Optional InterviewInteractAction for branch evaluation.
+            invalidate_cache: If True, clear branch cache before traversal (UPDATE intent).
+                If False, preserve cache (SUBMISSION, REVIEW).
 
         Returns:
             Set of reachable question names on the active path.
@@ -188,8 +215,9 @@ class QuestionPathWalker(Walker):
             return set()
 
         branch_cache = BranchCache(session)
-        branch_cache.invalidate_all()
-        branch_cache.clear_pruned_responses()
+        if invalidate_cache:
+            branch_cache.invalidate_all()
+            branch_cache.clear_pruned_responses()
 
         walker = cls(
             interview_session=session,
@@ -217,11 +245,12 @@ class QuestionPathWalker(Walker):
         first_node: Optional[QuestionNode] = None,
         visitor: Optional[Any] = None,
         interview_action: Optional[Any] = None
-    ) -> Optional[QuestionNode]:
-        """Find the next unanswered question on the active branch path.
+    ) -> Optional[Any]:
+        """Find the next target on the active branch path.
         
         Traverses the question graph following conditional branches (using BranchCache)
-        and stops at the first unanswered question encountered.
+        and stops at the first unanswered question, or returns a StateNode (e.g., REVIEW)
+        when all questions are answered.
         
         Args:
             session: InterviewSession with responses and branch cache
@@ -229,7 +258,8 @@ class QuestionPathWalker(Walker):
             visitor: Optional InteractWalker for branch function evaluation
         
         Returns:
-            Next unanswered QuestionNode on the active path, or None if all answered
+            Next QuestionNode (unanswered) or StateNode (e.g., REVIEW) on the path,
+            or None if traversal fails
         """
         if first_node is None:
             logger.warning("QuestionPathWalker.find_next_target: first_node is None")
@@ -247,7 +277,7 @@ class QuestionPathWalker(Walker):
         except Exception:
             logger.exception("QuestionPathWalker.find_next_target: error during traversal")
             return None
-        
+
         return walker.next_target
 
     @classmethod
