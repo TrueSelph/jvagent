@@ -852,8 +852,8 @@ class InterviewInteractAction(InteractAction, ABC):
         for directive in interview_walker.directives:
             await self._queue_directive(visitor, directive)
 
-        # Post-walk: delegate graph sync and cleanup to PostUpdateWalker when path may have changed.
-        # Skip when we reached REVIEW (on_state_node already ran PostUpdateWalker before building directive).
+        # Post-walk: delegate graph sync and cleanup to QuestionPathWalker.sync when path may have changed.
+        # Skip when we reached REVIEW (on_state_node already ran sync before building directive).
         # Skip when session was removed by a terminal state (COMPLETED/CANCELLED).
         terminal = interview_walker.terminal_state
         session_removed = terminal in (InterviewState.COMPLETED, InterviewState.CANCELLED)
@@ -862,11 +862,11 @@ class InterviewInteractAction(InteractAction, ABC):
             if (had_updates or session.update_queue) and (
                 terminal != InterviewState.REVIEW
             ):
-                from .core.graph.post_update_walker import PostUpdateWalker
+                from .core.graph.question_path_walker import QuestionPathWalker
 
                 first_node = await self._get_first_question_node(session)
                 if first_node:
-                    await PostUpdateWalker.sync(session, first_node, visitor, self)
+                    await QuestionPathWalker.sync(session, first_node, visitor, self)
 
             await session.save()
 

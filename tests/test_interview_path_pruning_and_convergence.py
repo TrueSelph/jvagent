@@ -1,12 +1,12 @@
 """Test that pruning correctly handles convergence: responses after a convergence
 point are preserved even when the branch before the convergence changes.
 
-Uses PostUpdateWalker's _prune_session directly.
+Uses QuestionPathWalker's _prune_session directly.
 """
 
 import pytest
 from jvagent.action.interview.core.session.interview_session import InterviewSession
-from jvagent.action.interview.core.graph.post_update_walker import PostUpdateWalker
+from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
 from jvagent.action.interview.core.utils.cache_utils import BranchCache
 
 
@@ -35,8 +35,8 @@ async def test_path_change_prunes_unreachable_responses():
     session.responses = {"qA": "c", "qB": "valB", "qD": "valD"}
     await session.save()
 
-    # Simulate PostUpdateWalker traversal: new path is qA -> qC -> qD
-    walker = PostUpdateWalker(interview_session=session)
+    # Simulate QuestionPathWalker traversal: new path is qA -> qC -> qD
+    walker = QuestionPathWalker(interview_session=session)
     walker._reachable = {"qA", "qC", "qD"}
 
     walker._prune_session()
@@ -71,7 +71,7 @@ async def test_update_queue_pruned_for_unreachable():
     ]
     await session.save()
 
-    walker = PostUpdateWalker(interview_session=session)
+    walker = QuestionPathWalker(interview_session=session)
     walker._reachable = {"qA", "qB"}
 
     walker._prune_session()

@@ -4,13 +4,13 @@ This module provides QuestionPathWalker, a lightweight walker that traverses
 the question graph following the active branch path (using BranchCache) to:
 - Find the next unanswered question on the active path
 - Collect all reachable questions on the active path
+- Sync session state after updates (invalidate cache, traverse, prune, save)
 - Determine if all reachable questions are answered (→ REVIEW)
 
-Unlike PostUpdateWalker:
-- Does NOT invalidate cache (uses existing branch decisions)
-- Does NOT prune responses (read-only)
-- Can stop at first unanswered question (optimization)
-- Can operate in two modes: find_next or collect_all
+Modes:
+- find_next: Uses existing cache, stops at first unanswered (read-only)
+- collect_all: Uses existing cache, traverses full path (read-only)
+- sync_post_update: Invalidates cache, traverses full path, prunes unreachable data
 """
 
 import logging
@@ -21,6 +21,7 @@ from jvspatial.core import Walker, on_visit
 
 from .question_node import QuestionNode
 from .state_node import StateNode
+from ..utils.cache_utils import BranchCache
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +33,13 @@ class QuestionPathWalker(Walker):
     (using BranchCache) to:
     - Find the next unanswered question on the active path
     - Collect all reachable questions on the active path
+    - Sync session state after updates (invalidate cache, prune unreachable data)
     - Determine if all reachable questions are answered (→ REVIEW)
     
-    Unlike PostUpdateWalker:
-    - Does NOT invalidate cache (uses existing branch decisions)
-    - Does NOT prune responses (read-only)
-    - Stops at first unanswered question in find_next mode (optimization)
-    - Can operate in two modes: find_next or collect_all
+    Modes:
+    - find_next: Uses existing cache, stops at first unanswered (read-only)
+    - collect_all: Uses existing cache, traverses full path (read-only)
+    - sync_post_update: Invalidates cache, traverses full path, prunes session data
     
     Usage:
         # Find next unanswered question
@@ -46,13 +47,17 @@ class QuestionPathWalker(Walker):
         
         # Get all reachable questions
         reachable = await QuestionPathWalker.get_reachable_questions(session, first_node, visitor)
+        
+        # Post-update sync (prune unreachable responses)
+        reachable = await QuestionPathWalker.sync(session, first_node, visitor, self)
     """
 
     interview_session: Optional[Any] = None
     interact_visitor: Optional[Any] = None
     interview_action: Optional[Any] = None
     
-    # Mode: "find_next" stops at first unanswered, "collect_all" traverses entire path
+    # Mode: "find_next" stops at first unanswered, "collect_all" traverses entire path,
+    # "sync_post_update" invalidates cache, traverses full path, prunes session
     _mode: str = PrivateAttr(default="find_next")
     _next_target: Optional[QuestionNode] = PrivateAttr(default=None)
     _reachable: Set[str] = PrivateAttr(default_factory=set)
@@ -115,6 +120,95 @@ class QuestionPathWalker(Walker):
     def reachable(self) -> Set[str]:
         """Get the set of question names reachable on the active branch path."""
         return self._reachable
+
+    def _prune_session(self) -> None:
+        """Prune responses, validation_results, and update_queue for unreachable questions.
+
+        Safety: if the reachable set is empty (e.g. traversal failed silently),
+        pruning is skipped to prevent catastrophic data loss.
+        """
+        session = self.interview_session
+        if not session:
+            return
+
+        if not self._reachable:
+            logger.warning(
+                "QuestionPathWalker._prune_session: reachable set is empty — "
+                "skipping pruning to prevent data loss"
+            )
+            return
+
+        branch_cache = BranchCache(session)
+        pruned_questions = []
+
+        for field in list(session.responses.keys()):
+            if field not in self._reachable:
+                old_value = session.responses.pop(field)
+                session.validation_results.pop(field, None)
+                branch_cache.record_pruned_response(field, old_value, "branch_path_change")
+                pruned_questions.append(field)
+                logger.debug(f"QuestionPathWalker: pruned unreachable response '{field}'")
+
+        if session.update_queue:
+            session.update_queue = [
+                e for e in session.update_queue if e["field"] in self._reachable
+            ]
+
+        if pruned_questions:
+            logger.info(
+                f"QuestionPathWalker: pruned {len(pruned_questions)} unreachable "
+                f"response(s): {pruned_questions}"
+            )
+
+    @classmethod
+    async def sync(
+        cls,
+        session: Any,
+        first_node: Optional[Any] = None,
+        interact_visitor: Optional[Any] = None,
+        interview_action: Optional[Any] = None,
+    ) -> Set[str]:
+        """Run post-update sync: walk the graph, prune stale data, return reachable set.
+
+        Invalidates the BranchCache so every conditional edge is evaluated fresh,
+        spawns the walker from the first question node, prunes unreachable session
+        data, and saves.
+
+        Args:
+            session: InterviewSession with responses to prune.
+            first_node: The first QuestionNode in the graph (entry point).
+            interact_visitor: Optional InteractWalker for branch function evaluation.
+            interview_action: Optional InterviewInteractAction for branch evaluation.
+
+        Returns:
+            Set of reachable question names on the active path.
+        """
+        if first_node is None:
+            logger.warning("QuestionPathWalker.sync: first_node is None, skipping traversal")
+            return set()
+
+        branch_cache = BranchCache(session)
+        branch_cache.invalidate_all()
+        branch_cache.clear_pruned_responses()
+
+        walker = cls(
+            interview_session=session,
+            interact_visitor=interact_visitor,
+            interview_action=interview_action,
+        )
+        walker._mode = "sync_post_update"
+
+        try:
+            await walker.spawn(first_node)
+        except Exception:
+            logger.exception(
+                "QuestionPathWalker.sync: error during traversal — "
+                "pruning will use partial reachable set"
+            )
+
+        walker._prune_session()
+        await session.save()
+        return walker.reachable
 
     @classmethod
     async def find_next_target(

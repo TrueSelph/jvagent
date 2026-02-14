@@ -1,12 +1,12 @@
 """Comprehensive test for branch re-routing and pruning behavior.
 
-Uses PostUpdateWalker's _prune_session logic to verify that old-path
+Uses QuestionPathWalker's _prune_session logic to verify that old-path
 responses are removed and new-path responses are left untouched.
 """
 
 import pytest
 from jvagent.action.interview.core.session.interview_session import InterviewSession
-from jvagent.action.interview.core.graph.post_update_walker import PostUpdateWalker
+from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
 from jvagent.action.interview.core.utils.cache_utils import BranchCache
 from jvagent.action.interview.core.foundation.enums import InterviewState
 
@@ -19,7 +19,7 @@ async def test_branch_change_triggers_pruning():
     Tests the exact scenario:
     1. User answers questions on Branch A (urban) path
     2. User updates location to "rural" (Branch B)
-    3. PostUpdateWalker computes new reachable set: {location, rural_details}
+    3. QuestionPathWalker.sync computes new reachable set: {location, rural_details}
     4. Old-path response (urban_details) is pruned
     """
 
@@ -52,8 +52,8 @@ async def test_branch_change_triggers_pruning():
     assert "urban_details" in session.responses
     assert "rural_details" not in session.responses
 
-    # Simulate PostUpdateWalker traversal result: new path is location -> rural_details
-    walker = PostUpdateWalker(interview_session=session)
+    # Simulate QuestionPathWalker traversal result: new path is location -> rural_details
+    walker = QuestionPathWalker(interview_session=session)
     walker._reachable = {"location", "rural_details"}
 
     walker._prune_session()
@@ -82,7 +82,7 @@ async def test_empty_reachable_set_does_not_prune():
     session.state = InterviewState.ACTIVE
     await session.save()
 
-    walker = PostUpdateWalker(interview_session=session)
+    walker = QuestionPathWalker(interview_session=session)
     # _reachable is empty (default) — simulates a failed traversal
     walker._prune_session()
 

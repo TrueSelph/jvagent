@@ -176,11 +176,11 @@ Manages interview state transitions and state-specific behavior:
   - `@on_interview_complete`: Process completion data
   - `@on_interview_cancelled`: Handle cancellation
 
-#### 8. PostUpdateWalker
-Specialized walker for computing reachable questions after branch changes:
-- Traverses from first question following active branch paths
-- Collects all reachable question names
-- Used for pruning responses when branch paths change
+#### 8. QuestionPathWalker
+Lightweight walker for path discovery and post-update sync:
+- `find_next_target`: Finds next unanswered question on active path (uses existing cache)
+- `get_reachable_questions`: Collects all reachable question names (uses existing cache)
+- `sync`: Post-update sync—invalidates cache, traverses full path, prunes unreachable responses
 
 #### 9. ClassificationHandler
 Handles intent classification and field extraction:
@@ -272,7 +272,7 @@ interview/
 │   │   ├── question_node.py       # QuestionNode
 │   │   ├── question_edge.py       # QuestionEdge with conditions
 │   │   ├── interview_walker.py    # InterviewWalker for graph traversal
-│   │   ├── post_update_walker.py  # PostUpdateWalker for reachability analysis
+│   │   ├── question_path_walker.py  # QuestionPathWalker (path discovery + sync)
 │   │   ├── state_node.py          # StateNode (includes transition validation)
 │   │   ├── question_branch_evaluator.py  # QuestionBranchEvaluator (condition matching)
 │   │   ├── question_graph_builder.py  # QuestionGraphBuilder (question graph construction)
@@ -283,8 +283,7 @@ interview/
 │   ├── processing/                 # Directives
 │   │   └── directive_builder.py  # DirectiveBuilder
 │   ├── session/                    # Session management
-│   │   ├── interview_session.py   # InterviewSession Node
-│   │   └── pruning_service.py     # Pruning utilities
+│   │   └── interview_session.py   # InterviewSession Node
 │   └── utils/                      # Utilities
 │       ├── session_utils.py       # Session utilities
 │       ├── cache_utils.py         # Cache utilities
