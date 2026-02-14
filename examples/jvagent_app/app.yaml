@@ -181,10 +181,10 @@ agents:
   # Example agent - will be loaded from agents/jvagent/example_agent/
   # - jvagent/example_agent
   # - gdf/arc_ai
-  # - resolv/resolv_demo
-  - resolv/sert_ai
-  - resolv/sildsl_ai
-  - resolv/moe_ai
+  - resolv/resolv_demo
+  # - resolv/sert_ai
+  # - resolv/sildsl_ai
+  # - resolv/moe_ai
 
   # Add more agents here - they will be installed automatically when you run jvagent
   # - contrib/another_agent

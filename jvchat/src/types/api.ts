@@ -123,4 +123,3 @@ export interface LogsResponse {
   logs: LogEntry[]
   pagination: LogsPagination
 }
-

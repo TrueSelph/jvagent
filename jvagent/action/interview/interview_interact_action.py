@@ -443,67 +443,6 @@ class InterviewInteractAction(InteractAction, ABC):
         """
         return await self.node(node=StateNode, state_type=state_type)
 
-    async def _persist_extraction_metadata(
-        self,
-        interaction: Interaction,
-        classification_result: "ClassificationResult",
-        utterance: str
-    ) -> None:
-        """Persist extraction metadata to Interaction for downstream consumers.
-        
-        When data_input_field contributes to the classification result, this ensures
-        the Interaction carries extraction metadata (intent, field, extracted data)
-        so external systems, logging, and other actions can access it.
-        
-        Args:
-            interaction: Current interaction
-            classification_result: Classification result from classify_and_extract
-            utterance: User utterance (may be empty for data-only flows)
-        """
-        # Only persist when data_input_field contributed or when we have extraction data
-        if not classification_result.from_data_input_field:
-            return
-        
-        # Set intent_type on interaction
-        if classification_result.intent:
-            interaction.intent_type = classification_result.intent
-        
-        # Set interpretation when there's no utterance (data-only flow)
-        if not utterance or not utterance.strip():
-            if classification_result.field:
-                # Single field (UPDATE or DECLINE)
-                interaction.interpretation = f"User provided {classification_result.field} via data input"
-            elif classification_result.extracted_data:
-                # Multiple fields (SUBMISSION)
-                field_names = ", ".join(classification_result.extracted_data.keys())
-                interaction.interpretation = f"User provided {field_names} via data input"
-        
-        # Add extraction parameter for external consumers
-        extraction_param = {
-            "intent": classification_result.intent,
-            "confidence": classification_result.confidence,
-        }
-        
-        # Add field/value for single-field intents (UPDATE, DECLINE)
-        if classification_result.field:
-            extraction_param["field"] = classification_result.field
-            if classification_result.value is not None:
-                extraction_param["value"] = str(classification_result.value)[:200]  # Truncate for safety
-        
-        # Add extracted data for multi-field intents (SUBMISSION)
-        if classification_result.extracted_data:
-            # Convert to list of {field: value} for consistency with LLM extraction format
-            extraction_param["extracted"] = [
-                {field: str(value)[:200] if value is not None else None}
-                for field, value in classification_result.extracted_data.items()
-            ]
-        
-        # Add source indicator
-        extraction_param["source"] = "data_input_field"
-        
-        interaction.add_parameter(extraction_param, self.get_class_name())
-        await interaction.save()
-
     async def _queue_directive(
         self,
         visitor: "InteractWalker",
@@ -819,9 +758,6 @@ class InterviewInteractAction(InteractAction, ABC):
             intent = Intent(classification_result.intent)
         except ValueError:
             intent = Intent.NONE
-        
-        # 2.5. Persist extraction metadata to Interaction when data_input_field contributes
-        await self._persist_extraction_metadata(interaction, classification_result, utterance)
 
         # 3. Store extracted responses based on intent
         # Note: DECLINE is intentionally not handled here - QuestionNode handles

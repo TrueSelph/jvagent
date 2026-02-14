@@ -118,7 +118,7 @@ When `data_input_field` provides data, the system furnishes a complete extractio
 - **Intent**: SUBMISSION (for new values) or UPDATE (for existing values)
 - **Field name**: The question field being populated
 - **Value**: The extracted value from `visitor.data`
-- **Metadata**: Persisted to the Interaction's `intent_type`, `interpretation`, and `parameters` for downstream consumers (external integrations, logging, analytics)
+- **Reconciliation**: Values are reconciled into ClassificationResult (the extracted structure) via `_merge_data_input_values` or `_build_result_from_data_inputs`, producing the same structure as LLM extraction for congruency
 
 This ensures the extraction payload structure is consistent whether data comes from LLM extraction or `data_input_field`, allowing the rest of the flow (execute, InterviewWalker, handlers, external systems) to process it uniformly.
 
@@ -1468,7 +1468,7 @@ question_graph = [
 - **Exclusion from LLM**: Fields with `data_input_field` are not sent to the LLM for extraction
 - **Intent Detection**: Data input values are treated as SUBMISSION (for new values) or UPDATE (for existing values), matching the behavior of LLM extraction
 - **Extraction Payload**: A complete ClassificationResult is furnished with intent, field name, and value, ensuring consistent structure for downstream flow
-- **Metadata Persistence**: Extraction metadata is persisted to the Interaction's `intent_type`, `interpretation`, and `parameters` for external consumers
+- **Reconciliation**: Data_input_field values are reconciled into ClassificationResult via `_merge_data_input_values` or `_build_result_from_data_inputs`, ensuring the same structure as LLM extraction for congruency
 - **Validation Pipeline**: Values still go through `process_input()` and `validate_response()` if handlers/validators are registered
 - **Coexistence**: Works alongside LLM extraction - other fields without `data_input_field` are still extracted by the LLM
 - **Premature Submissions**: If a `data_input_field` value is submitted before its turn in the question graph (e.g., user uploads images before answering earlier questions), the system intelligently starts at the first unanswered question and validates the premature submission when its turn comes, ensuring all questions are collected in order
