@@ -866,7 +866,10 @@ class InterviewInteractAction(InteractAction, ABC):
 
                 first_node = await self._get_first_question_node(session)
                 if first_node:
-                    await QuestionPathWalker.sync(session, first_node, visitor, self)
+                    await QuestionPathWalker.sync(
+                        session, first_node, visitor, self,
+                        invalidate_cache=(intent == Intent.UPDATE)
+                    )
 
             await session.save()
 

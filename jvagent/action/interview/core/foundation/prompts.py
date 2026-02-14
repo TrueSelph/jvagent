@@ -142,7 +142,9 @@ CLASSIFICATION_INTENT_RULES = """INTENT CLASSIFICATION (choose exactly one):
 3. SUBMISSION
    - User answers an UNANSWERED question
    - Field MUST be in Unanswered fields list
-   - Includes "yes"/"no" when answering a yes/no question in active state
+   - CRITICAL: "yes"/"no" responses in active state
+     * If field description expects "yes or no" answers → SUBMISSION
+     * If field is [OPTIONAL] and no yes/no expectation → DECLINE (user declining, not answering)
    - If field is in Answered fields → UPDATE instead
    - Invalid format is still SUBMISSION (validation layer handles it)
    - When the utterance is a bare value matching an unanswered field's type (email format for email field, digits for phone, etc.), treat as SUBMISSION and extract the value. Do not ask for clarification.
@@ -156,10 +158,12 @@ CLASSIFICATION_INTENT_RULES = """INTENT CLASSIFICATION (choose exactly one):
    - Bare values or "yes"/"no" are NEVER UPDATE → classify as SUBMISSION or DECLINE
 
 5. DECLINE
-   - User explicitly refuses to answer (optional or required field)
-   - Patterns: "I won't answer", "skip", "I'd rather not", "no thanks", "I prefer not to"
-   - "No" to optional content (photos, attachments) → DECLINE
-   - NOT for "no" as answer to yes/no question → SUBMISSION
+   - User explicitly refuses to answer an optional or required field
+   - CRITICAL: Check if field is marked [OPTIONAL] in Unanswered fields
+   - When field is [OPTIONAL] and user says "no", "nope", "n/a", "none", "skip" → DECLINE (unless field expects yes/no answers)
+   - Explicit refusal patterns: "I won't answer", "skip", "I'd rather not", "no thanks", "I prefer not to"
+   - "No" to optional content (photos, attachments, phone numbers, addresses) → DECLINE
+   - EXCEPTION: "No" as answer to yes/no question (field description contains "yes or no", "yes/no", or similar) → SUBMISSION
 
 6. NONE
    - Last resort only when no clear intent and no viable extractions
@@ -259,10 +263,15 @@ Before finalizing your classification and extraction, verify:
    - SUBMISSION: field in Unanswered fields
    - UPDATE: field in Answered fields
 
-5. NO DISAMBIGUATION: For "no" responses:
-   - Is it answering a yes/no question? → SUBMISSION with value "no"
-   - Is it declining optional content? → DECLINE
-   - Is it refusing in review? → depends on context"""
+5. NO DISAMBIGUATION: For "no" responses, follow this decision tree:
+   STEP 1: Check field description for yes/no question indicators
+      - Does description say "yes or no", "yes/no", "true or false"? → SUBMISSION with value "no"
+   STEP 2: Check if field is [OPTIONAL]
+      - Is field marked [OPTIONAL] in Unanswered fields? → DECLINE (user declining to provide optional info)
+   STEP 3: Check if field is [REQUIRED] with explicit refusal context
+      - "no thanks", "I'd rather not", "skip" → DECLINE
+   STEP 4: Default for [REQUIRED] fields with bare "no"
+      - If unclear and field is [REQUIRED] → SUBMISSION (benefit of doubt for data capture)"""
 
 CLASSIFICATION_OUTPUT_FORMAT = """OUTPUT FORMAT:
 
@@ -361,7 +370,7 @@ Answered fields: user_name, email, phone
 
 Example 5 - 'no' disambiguation:
 Conversation: [1] assistant: Are you submitting on behalf of someone else? [2] user: no
-Unanswered fields: reporting_on_behalf [normalized] — Expected: "yes or no"
+Unanswered fields: reporting_on_behalf [REQUIRED] [normalized] — Expected: "yes or no"
 {
   "reasoning": {
     "user_said": "User answered 'no' to yes/no question in active state",

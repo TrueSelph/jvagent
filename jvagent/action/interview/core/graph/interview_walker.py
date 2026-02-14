@@ -378,6 +378,7 @@ class InterviewWalker(Walker):
                 question_name,
                 self.interact_visitor,
                 self.interview_action,
+                edge_count=len(edges),
             )
             if target is not None:
                 await self.visit(target)
@@ -413,6 +414,7 @@ class InterviewWalker(Walker):
                 here.label,
                 self.interact_visitor,
                 self.interview_action,
+                edge_count=len(edges),
             )
             if target is not None:
                 await self.visit(target)
@@ -532,7 +534,8 @@ class InterviewWalker(Walker):
             )
             if first_node:
                 await QuestionPathWalker.sync(
-                    self.interview_session, first_node, self.interact_visitor, self.interview_action
+                    self.interview_session, first_node, self.interact_visitor, self.interview_action,
+                    invalidate_cache=False
                 )
 
         # Execute state node - handles transition and returns directive

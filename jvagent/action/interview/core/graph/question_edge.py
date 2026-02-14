@@ -92,6 +92,7 @@ class QuestionEdge(Edge):
         implicit_question: str,
         visitor: Optional[Any] = None,
         interview_action: Optional[Any] = None,
+        edge_count: int = 1,
     ) -> Optional[Node]:
         """Evaluate this edge: return the target node if the branch holds or edge is simple.
 
@@ -101,10 +102,13 @@ class QuestionEdge(Edge):
         QuestionBranchEvaluator; if the condition matches, records the branch path
         and returns the target node.
 
+        Branch path is only recorded when edge_count > 1 (actual branch point).
+
         Args:
             session: Interview session for condition evaluation
             implicit_question: Question name that owns this branch (implicit from context)
             visitor: Optional InteractWalker for branch function access
+            edge_count: Number of outgoing edges; only record in cache when > 1
 
         Returns:
             Target Node if this edge should be taken, None otherwise
@@ -114,13 +118,16 @@ class QuestionEdge(Edge):
             return None
 
         if not self.condition:
+            if edge_count > 1:
+                self.record_branch_path(session, implicit_question, target)
             return target
 
         branch_cache = BranchCache(session)
         cached_target = branch_cache.get(implicit_question)
         if cached_target is not None:
             if cached_target == target.label:
-                self.record_branch_path(session, implicit_question, target)
+                if edge_count > 1:
+                    self.record_branch_path(session, implicit_question, target)
                 return target
             return None
 
@@ -132,7 +139,8 @@ class QuestionEdge(Edge):
             interview_action=interview_action,
         ):
             return None
-        self.record_branch_path(session, implicit_question, target)
+        if edge_count > 1:
+            self.record_branch_path(session, implicit_question, target)
         return target
 
     def record_branch_path(
