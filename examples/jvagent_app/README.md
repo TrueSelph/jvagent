@@ -26,6 +26,8 @@ jvagent_app/
 
 After installing jvagent, you can run this example application:
 
+> **PageIndex document retrieval**: The example agent includes `jvagent/pageindex_retrieval_interact_action`. Install jvagent with the pageindex extra: `pip install jvagent[pageindex]` or `pip install -e ".[pageindex]"` from the jvagent repo. Documents must be ingested via `POST /pageindex/documents` before retrieval works. Ingestion options (`node_summary`, `node_text`, etc.) are configured under the action's `config` block in `agent.yaml`—see [PageIndex README](../jvagent/action/pageindex/README.md).
+
 1. **Navigate to the jvagent repository root** (where you installed jvagent)
 
 2. **Set up environment variables** (if not already done):

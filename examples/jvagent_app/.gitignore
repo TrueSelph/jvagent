@@ -18,6 +18,8 @@ jvdb/
 jvspatial_logs/
 jvagent_logs/
 jvagent_db/
+pageindex_db/
+pageindex
 
 # ============================================================================
 # File Storage

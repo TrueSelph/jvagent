@@ -50,9 +50,9 @@ class ApiClient {
     // Request interceptor to add JWT token and handle proactive refresh
     this.client.interceptors.request.use(
       async (config) => {
-        // Set Content-Type for state-changing requests if not set
+        // Set Content-Type for state-changing requests if not set (skip for FormData - axios sets multipart boundary)
         if (['post', 'put', 'patch', 'delete'].includes(config.method?.toLowerCase() || '')) {
-          if (!config.headers.get('Content-Type')) {
+          if (!config.headers.get('Content-Type') && !(config.data instanceof FormData)) {
             config.headers.set('Content-Type', 'application/json')
           }
         }
@@ -764,6 +764,64 @@ class ApiClient {
       }
     })
     return response.data
+  }
+
+  async listPageIndexDocuments(): Promise<{ documents: Array<{ doc_name: string; doc_description?: string; root_id: string }> }> {
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.get('/api/pageindex/documents', { baseURL })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.get('/pageindex/documents', { baseURL })
+        }
+        throw err
+      }
+    })
+    const data = response.data
+    if (data?.success && data?.data) {
+      return data.data
+    }
+    return data
+  }
+
+  async uploadPageIndexDocument(file: File, docName?: string): Promise<{ doc_name: string; root_id: string; doc_description?: string }> {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (docName) formData.append('doc_name', docName)
+
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.post('/api/pageindex/documents', formData, { baseURL })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.post('/pageindex/documents', formData, { baseURL })
+        }
+        throw err
+      }
+    })
+    const data = response.data
+    if (data?.success && data?.data) {
+      return data.data
+    }
+    return data
+  }
+
+  async deletePageIndexDocument(docName: string): Promise<{ message: string }> {
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.delete(`/api/pageindex/documents/${encodeURIComponent(docName)}`, { baseURL })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.delete(`/pageindex/documents/${encodeURIComponent(docName)}`, { baseURL })
+        }
+        throw err
+      }
+    })
+    const data = response.data
+    if (data?.success && data?.data) {
+      return data.data
+    }
+    return data
   }
 
   async getInteractions(actionId: string): Promise<any> {

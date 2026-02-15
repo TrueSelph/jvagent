@@ -162,6 +162,16 @@ POST /api/agents/{agent_id}/interact
 }
 ```
 
+### PageIndex Retrieval Action
+
+Vectorless RAG from indexed documents (no embeddings). Configure ingestion options under the `config` block in `agent.yaml`:
+
+- `node_summary`: Generate node summaries (required for tree_search)
+- `node_text`, `doc_description`: Control what content is stored per node
+- `max_token_num_each_node`, `summary_token_threshold`: Token limits for PDF/Markdown
+
+See [PageIndex README](../../../../../jvagent/action/pageindex/README.md) for full configuration.
+
 ### Example Action
 
 Demonstrates custom action development with:
