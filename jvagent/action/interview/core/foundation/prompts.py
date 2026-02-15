@@ -31,6 +31,8 @@ Placeholder Conventions:
     {question}, {description}: Question-related values
 """
 
+import re
+
 # =============================================================================
 # Summary Formatting Templates
 # =============================================================================
@@ -116,12 +118,14 @@ def get_state_event_message(state: str, class_name: str) -> str:
 CLASSIFICATION_REASONING_INSTRUCTIONS = """REASONING PROCESS (required structured output):
 You must follow this step-by-step reasoning process before classifying and extracting. Output your reasoning in the "reasoning" object.
 
-1. USER SAID: Identify exactly what the user said and the current interview state.
+1. USER SAID: Identify exactly what the user said. Note current state first; CONFIRMATION is only valid when state=review.
 2. REFERENCES: Check if the user's response contains references (e.g., "the second option", "Wednesday afternoon", "that one") that need resolution against conversation history or context data.
 3. COMPOSITION: Check if the user's current response is a partial value that should be composed with a previous fragment from conversation history (e.g., "Smith" following "John" for full_name).
 4. INTENT: Determine the user's intent based on state and response content.
 5. EXTRACTION: Extract values using the appropriate mode (verbatim, normalized, or select) based on field type.
 6. VERIFICATION: Verify the extracted value genuinely satisfies the field's expected content description."""
+
+CLASSIFICATION_DECISION_ORDER = """DECISION ORDER: 1) CANCELLATION (any state). When utterance contains both cancellation language and extractable content, CANCELLATION takes precedence. 2) If state=REVIEW and pure affirmation → CONFIRMATION. 3) If explicit change language + field in Answered → UPDATE. When both UPDATE language and new value appear, prefer UPDATE. 4) If explicit refusal + field [OPTIONAL] → DECLINE. 5) If answer to Unanswered field → SUBMISSION. 6) Else → NONE."""
 
 CLASSIFICATION_INTENT_RULES = """INTENT CLASSIFICATION (choose exactly one):
 
@@ -166,17 +170,16 @@ CLASSIFICATION_INTENT_RULES = """INTENT CLASSIFICATION (choose exactly one):
    - EXCEPTION: "No" as answer to yes/no question (field description contains "yes or no", "yes/no", or similar) → SUBMISSION
 
 6. NONE
-   - Last resort only when no clear intent and no viable extractions
+   - Use when (a) meta-request or greeting with no extractable content, (b) off-topic, or (c) ambiguous with no viable extraction
    - Meta-requests (e.g., "I want to make a report"), greetings, or off-topic content
-   - NOT for "no" to yes/no question → SUBMISSION
-   - NOT for explicit refusal → DECLINE"""
+   - Do NOT use for "no" (→ SUBMISSION or DECLINE) or explicit refusal (→ DECLINE)"""
 
 CLASSIFICATION_EXTRACTION_RULES = """EXTRACTION MODES (field-type aware):
 
 The Unanswered fields list includes extraction mode hints in brackets. Use these modes:
 
 1. [verbatim] MODE
-   - For fields with "description", "narrative", "details", "incident", "explain" in their description
+   - For fields with "description", "narrative", "details", "incident", "explain", "describe", "story", "account", "report" in their description
    - Preserve the user's FULL response exactly as stated
    - Do NOT summarize, truncate, normalize, or paraphrase
    - Capture multi-sentence responses completely
@@ -190,7 +193,22 @@ The Unanswered fields list includes extraction mode hints in brackets. Use these
 3. [select] MODE
    - For fields with "Options:" in their Unanswered fields entry
    - Match user's response to closest valid option from the list
-   - Handle partial matches and references (see Reference Resolution)"""
+   - Handle partial matches and references (see Reference Resolution)
+
+FIELD NAME CONSTRAINT: You may ONLY extract for fields that appear in the Unanswered fields list. The field_name in each extracted entry MUST exactly match one of the field names listed (e.g., incident_description, incident_location). Do NOT invent, hallucinate, or use field names not in the list.
+
+A single utterance may satisfy multiple Unanswered fields; extract each when the mapping is clear."""
+
+CLASSIFICATION_META_EXTRACTION = """META EXTRACTION FROM VERBATIM:
+
+When a [verbatim] extraction captures a full description or narrative, the content may contain enough information to satisfy OTHER unanswered fields. You may extract additional fields from within that verbatim content:
+
+1. SOURCE: The meta value must be a direct extraction from the verbatim content — a verbatim substring or clearly stated information. Do NOT infer, speculate, or hallucinate.
+2. TARGET: Only meta-extract for fields that are in Unanswered fields.
+3. EXAMPLE: User says "There's a pothole on Water Street near Oak. It's been there for weeks."
+   - incident_description [verbatim]: full text (primary extraction)
+   - incident_location [normalized]: "Water Street near Oak" (meta from verbatim content)
+4. WHEN TO META-EXTRACT: Only when the verbatim content unambiguously contains information satisfying another unanswered field's expected content."""
 
 CLASSIFICATION_REFERENCE_RESOLUTION = """REFERENCE RESOLUTION:
 
@@ -211,11 +229,7 @@ When the user's response contains a reference rather than a literal value, resol
    - Resolve from conversation history
    - Look back at what the user or assistant most recently mentioned
 
-4. COMPOSITION WITH HISTORY
-   - If user's current response is a fragment, check if prior turn contains another fragment for same field
-   - Example: [Previous turn] Assistant asks "What's your full name?", User says "John"
-            [Current turn] Assistant re-asks, User says "Smith" → compose to "John Smith"
-   - Only compose when field is still unanswered (in Unanswered fields)"""
+4. COMPOSITION WITH HISTORY: See MULTI-TURN VALUE COMPOSITION for composition rules."""
 
 CLASSIFICATION_COMPOSITION_RULES = """MULTI-TURN VALUE COMPOSITION:
 
@@ -262,6 +276,7 @@ Before finalizing your classification and extraction, verify:
 4. CORRECT FIELD: Am I extracting for the right field?
    - SUBMISSION: field in Unanswered fields
    - UPDATE: field in Answered fields
+   - field_name must exactly match a listed field (Unanswered for SUBMISSION/DECLINE, Answered for UPDATE). No invented or hallucinated field names.
 
 5. NO DISAMBIGUATION: For "no" responses, follow this decision tree:
    STEP 1: Check field description for yes/no question indicators
@@ -291,12 +306,15 @@ Return a single JSON object with structured reasoning:
   "extracted": [{"field_name": "value"}] or []
 }
 
+Confidence: Use lower (0.5-0.7) when intent or extraction is ambiguous; use high (0.9+) when clear.
+
 CRITICAL:
 - ALL field data goes in "extracted" as list of one-key objects
 - Do NOT include "field" or "value" keys at top level
 - DECLINE with identified field: [{"field_name": "N/A"}]
 - No extractions: extracted: []
-- reasoning object is REQUIRED (not optional)"""
+- reasoning object is REQUIRED (not optional)
+- field_name in each extracted entry MUST exactly match a field from Unanswered fields (SUBMISSION, DECLINE) or Answered fields (UPDATE). Entries with unknown field names are invalid and will be discarded."""
 
 CLASSIFICATION_EXAMPLES = """EXAMPLES:
 
@@ -315,6 +333,26 @@ Unanswered fields: incident_description [verbatim] — Expected: "Detailed descr
   "intent": "SUBMISSION",
   "confidence": 0.95,
   "extracted": [{"incident_description": "There's a huge pothole on Water Street near the intersection with Oak. It's been there for weeks and caused two flat tires that I know of. The hole is about 2 feet wide and 8 inches deep."}]
+}
+
+Example 1b - Verbatim + meta extraction (multiple fields from same utterance):
+User: "There's a pothole on Water Street near Oak. It's been there for weeks."
+Unanswered fields: incident_description [verbatim], incident_location [normalized]
+{
+  "reasoning": {
+    "user_said": "User provided incident description containing location",
+    "references_resolved": "none",
+    "composition_applied": "none",
+    "intent_rationale": "Answering unanswered questions; verbatim content also satisfies incident_location",
+    "extraction_mode": "verbatim + meta",
+    "verification": "Full narrative for incident_description; 'Water Street near Oak' directly extracted for incident_location"
+  },
+  "intent": "SUBMISSION",
+  "confidence": 0.9,
+  "extracted": [
+    {"incident_description": "There's a pothole on Water Street near Oak. It's been there for weeks."},
+    {"incident_location": "Water Street near Oak"}
+  ]
 }
 
 Example 2 - Multi-turn composition:
@@ -383,6 +421,40 @@ Unanswered fields: reporting_on_behalf [REQUIRED] [normalized] — Expected: "ye
   "intent": "SUBMISSION",
   "confidence": 0.95,
   "extracted": [{"reporting_on_behalf": "no"}]
+}
+
+Example 6 - CANCELLATION:
+State: active, User: "never mind, cancel"
+Unanswered fields: user_name, user_email
+{
+  "reasoning": {
+    "user_said": "User requested cancellation with 'never mind, cancel'",
+    "references_resolved": "none",
+    "composition_applied": "none",
+    "intent_rationale": "Explicit cancellation language, valid in any state",
+    "extraction_mode": "none",
+    "verification": "Cancellation pattern matched, no extraction"
+  },
+  "intent": "CANCELLATION",
+  "confidence": 0.95,
+  "extracted": []
+}
+
+Example 7 - UPDATE in review:
+State: review, User: "actually change my email to jane@example.com"
+Answered fields: user_name: Jane Doe, user_email: jane.doe@old.com
+{
+  "reasoning": {
+    "user_said": "User requested change with explicit 'change my email to' language",
+    "references_resolved": "none",
+    "composition_applied": "none",
+    "intent_rationale": "Explicit change language, field in Answered fields",
+    "extraction_mode": "normalized",
+    "verification": "Change pattern matched, user_email is in Answered fields"
+  },
+  "intent": "UPDATE",
+  "confidence": 0.95,
+  "extracted": [{"user_email": "jane@example.com"}]
 }"""
 
 # Composed classification rules (built dynamically via build_classification_rules())
@@ -418,7 +490,7 @@ USER INPUT:
 
 {user_input}
 
-EXTRACT FROM THE UTTERANCE. When the utterance is a bare value (e.g. "john@gmail.com", "555-1234") that matches an unanswered field's expected format, classify SUBMISSION and extract it directly.
+EXTRACT FROM THE UTTERANCE ONLY. Extract values ONLY from the User's utterance, never from Interpretation. When the utterance is a bare value (e.g. "john@gmail.com", "555-1234") that matches an unanswered field's expected format, classify SUBMISSION and extract it directly.
 
 CONTEXT:
 - Current state: {current_state}
@@ -429,24 +501,7 @@ CONTEXT:
 
 {classification_rules_core}
 
-OUTPUT: Valid JSON only. No markdown, no explanation, no conversational text.
-
-CRITICAL: Never respond with questions or prompts (e.g. "Please provide..."). Always output the JSON object.
-
-Return a single JSON object only. No markdown or explanation. Required keys: intent, confidence, extracted (array), reasoning (object). Do not include "field" or "value" at top level. SUBMISSION/UPDATE: put actual values in extracted as list of one-key objects, e.g. [{{"incident_location": "Water Street"}}]. DECLINE: put [{{"field_name": "N/A"}}]. When no extractions: extracted: []. Reasoning object is required.
-{{
-  "reasoning": {{
-    "user_said": "...",
-    "references_resolved": "...",
-    "composition_applied": "...",
-    "intent_rationale": "...",
-    "extraction_mode": "...",
-    "verification": "..."
-  }},
-  "intent": "CANCELLATION" | "CONFIRMATION" | "UPDATE" | "DECLINE" | "SUBMISSION" | "NONE",
-  "confidence": 0.0-1.0,
-  "extracted": [{{"<field_name>": "<value>"}}] or []
-}}"""
+OUTPUT: Valid JSON only. No markdown, no explanation, no conversational text. Output must match the structure in OUTPUT FORMAT below exactly."""
 
 
 def build_classification_rules(
@@ -473,9 +528,11 @@ def build_classification_rules(
     """
     sections = []
     
-    # Always include intent and extraction rules (core functionality)
+    # Always include decision order and intent rules (core functionality)
+    sections.append(CLASSIFICATION_DECISION_ORDER)
     sections.append(CLASSIFICATION_INTENT_RULES)
     sections.append(CLASSIFICATION_EXTRACTION_RULES)
+    sections.append(CLASSIFICATION_META_EXTRACTION)
     
     # Optional: Reasoning instructions
     if include_reasoning:
@@ -497,8 +554,27 @@ def build_classification_rules(
     
     # Optional: Examples (token-expensive but improves accuracy)
     if include_examples:
-        # Could implement max_examples limiting here by parsing CLASSIFICATION_EXAMPLES
-        # For now, include all examples when enabled
-        sections.append(CLASSIFICATION_EXAMPLES)
+        examples_text = _get_classification_examples(max_examples)
+        sections.append(examples_text)
     
     return "\n\n".join(sections)
+
+
+def _get_classification_examples(max_examples: int) -> str:
+    """Return classification examples, limited to first max_examples blocks.
+    
+    Splits CLASSIFICATION_EXAMPLES by 'Example N - ' pattern and returns
+    the header plus the first max_examples example blocks.
+    
+    Args:
+        max_examples: Maximum number of examples to include
+        
+    Returns:
+        Examples string with at most max_examples blocks
+    """
+    parts = re.split(r'(?=Example \d+b? - )', CLASSIFICATION_EXAMPLES)
+    # parts[0] = "EXAMPLES:\n\n", parts[1:] = "Example 1 - ...", "Example 1b - ...", etc.
+    header = parts[0] if parts else ""
+    example_blocks = [p for p in parts[1:] if p.strip()]
+    selected = example_blocks[:max_examples]
+    return header + "\n\n".join(selected) if selected else header

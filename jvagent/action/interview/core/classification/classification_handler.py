@@ -59,7 +59,12 @@ class ClassificationHandler:
         """
         self.action = action
 
-    def _extract_field_values(self, result: Dict[str, Any], intent: Intent) -> Dict[str, Any]:
+    def _extract_field_values(
+        self,
+        result: Dict[str, Any],
+        intent: Intent,
+        allowed_field_names: Optional[Set[str]] = None,
+    ) -> Dict[str, Any]:
         """Extract field-value pairs from LLM result using the single canonical format.
 
         LLM returns all field data in result["extracted"]: a list of one-key dicts.
@@ -68,6 +73,7 @@ class ClassificationHandler:
         Args:
             result: Raw parsed JSON from LLM response
             intent: Classified intent (extraction applies to SUBMISSION, UPDATE; DECLINE "N/A" filtered out)
+            allowed_field_names: Optional set of valid field names; entries not in this set are discarded.
 
         Returns:
             Filtered dict of field -> value (excludes empty/None/whitespace-only and "N/A")
@@ -83,11 +89,19 @@ class ClassificationHandler:
             field_name, val = next(iter(item.items()))
             if not isinstance(field_name, str) or not field_name.strip():
                 continue
+            field_name = field_name.strip()
+            if allowed_field_names is not None and field_name not in allowed_field_names:
+                logger.debug(
+                    "%s: Discarding extraction for unknown field '%s' (not in allowed list)",
+                    self.action.get_class_name(),
+                    field_name,
+                )
+                continue
             if val is None:
                 continue
             if isinstance(val, str) and (not val.strip() or val.strip().upper() == "N/A"):
                 continue
-            merged[field_name.strip()] = val
+            merged[field_name] = val
 
         return merged
 
@@ -339,6 +353,7 @@ class ClassificationHandler:
         excluded_set = excluded_fields or set()
         answered_set = set(answered_fields)  # Mutual exclusion: unanswered only in entities_to_extract
         entities_list = []
+        allowed_field_names: Set[str] = set()
         required_fields = set(session.get_required_questions())
 
         for item in active_questions:
@@ -412,6 +427,10 @@ class ClassificationHandler:
             entities_list.append(
                 f"- {key} {required_marker} {mode_marker} — Expected: \"{desc}\" | Constraints: {constraints_display}{options_note}{context_data_note}"
             )
+            allowed_field_names.add(key)
+
+        # Include answered fields for UPDATE intent; DECLINE uses unanswered
+        allowed_field_names |= answered_set
 
         entities_to_extract = "\n".join(entities_list) if entities_list else "None (all questions answered)"
 
@@ -430,6 +449,7 @@ class ClassificationHandler:
             "current_question": current_question,
             "answered_fields": answered_fields_str,
             "entities_to_extract": entities_to_extract,
+            "allowed_field_names": allowed_field_names,
         }
     
     async def classify_and_extract(
@@ -581,7 +601,10 @@ class ClassificationHandler:
             )
 
             # Extract field values from result["extracted"] (list of one-key dicts; N/A filtered out)
-            extracted_data = self._extract_field_values(result, intent)
+            allowed_field_names = context.get("allowed_field_names", set())
+            extracted_data = self._extract_field_values(
+                result, intent, allowed_field_names=allowed_field_names
+            )
             if extracted_data:
                 classification_result.extracted_data = extracted_data
 
@@ -593,7 +616,9 @@ class ClassificationHandler:
                         if isinstance(item, dict) and len(item) == 1:
                             (fname, v) = next(iter(item.items()))
                             if isinstance(v, str) and v.strip().upper() == "N/A":
-                                classification_result.field = fname.strip() if isinstance(fname, str) else None
+                                fname = fname.strip() if isinstance(fname, str) else None
+                                if fname and (not allowed_field_names or fname in allowed_field_names):
+                                    classification_result.field = fname
                                 break
 
             # UPDATE: set field/value from single entry for downstream consumers

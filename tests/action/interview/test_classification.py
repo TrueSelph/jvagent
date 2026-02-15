@@ -111,6 +111,8 @@ class TestClassification:
         assert "current_state" in context
         assert "answered_fields" in context
         assert "entities_to_extract" in context
+        assert "allowed_field_names" in context
+        assert isinstance(context["allowed_field_names"], set)
         assert "required_fields_info" not in context  # Should be removed
     
     def test_intent_enum_values(self):
@@ -178,6 +180,36 @@ class TestClassification:
             {"extracted": [{"incident_location": "Water Street"}, {"incident_description": "Something"}]},
             Intent.SUBMISSION,
         ) == {"incident_location": "Water Street", "incident_description": "Something"}
+
+    def test_extract_field_values_filters_invalid_field_names(self):
+        """_extract_field_values drops extractions for field names not in allowed_field_names."""
+        from jvagent.action.interview.interview_interact_action import InterviewInteractAction
+
+        action = MagicMock(spec=InterviewInteractAction)
+        action.get_class_name = MagicMock(return_value="TestInterviewAction")
+        handler = ClassificationHandler(action)
+
+        result = handler._extract_field_values(
+            {"extracted": [{"user_name": "John"}, {"hallucinated_field": "value"}]},
+            Intent.SUBMISSION,
+            allowed_field_names={"user_name"},
+        )
+        assert result == {"user_name": "John"}
+
+    def test_extract_field_values_allowed_field_names_none_passes_all(self):
+        """_extract_field_values with allowed_field_names=None does not filter (backward compatible)."""
+        from jvagent.action.interview.interview_interact_action import InterviewInteractAction
+
+        action = MagicMock(spec=InterviewInteractAction)
+        action.get_class_name = MagicMock(return_value="TestInterviewAction")
+        handler = ClassificationHandler(action)
+
+        result = handler._extract_field_values(
+            {"extracted": [{"user_name": "John"}, {"other_field": "value"}]},
+            Intent.SUBMISSION,
+            allowed_field_names=None,
+        )
+        assert result == {"user_name": "John", "other_field": "value"}
 
     @pytest.mark.asyncio
     async def test_classification_context_answered_fields_with_values(self, test_session):
