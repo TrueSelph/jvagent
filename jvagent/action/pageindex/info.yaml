@@ -13,6 +13,15 @@ package:
   config:
     order:
       weight: -75
+    # collection: null  # Optional override; default = agent_id
+    # metadata_filter: {}  # Optional key-value filter to narrow search
+    node_summary: true
+    node_text: true
+    doc_description: false
+    max_token_num_each_node: 20000
+    summary_token_threshold: 200
+    limit: 10
+    strategy: tree_search
   dependencies:
     jvagent: ~0.0.1
     actions: []

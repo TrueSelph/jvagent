@@ -1,18 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiClient } from '../config/api'
-
-interface PageIndexDocument {
-  doc_name: string
-  doc_description?: string
-  root_id: string
-}
+import type { PageIndexDocument } from '../types/api'
 
 interface PageIndexDocumentsModalProps {
+  agentId: string
   onClose: () => void
   isEmbedded?: boolean
 }
 
 export function PageIndexDocumentsModal({
+  agentId,
   onClose,
   isEmbedded = true,
 }: PageIndexDocumentsModalProps) {
@@ -24,12 +21,26 @@ export function PageIndexDocumentsModal({
   const [deleting, setDeleting] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [docName, setDocName] = useState('')
+  const [docDescription, setDocDescription] = useState('')
+  const [metadataJson, setMetadataJson] = useState('')
+  const [addNodeSummary, setAddNodeSummary] = useState(true)
+
+  const parseMetadata = (): Record<string, unknown> | undefined => {
+    const trimmed = metadataJson.trim()
+    if (!trimmed) return undefined
+    try {
+      const parsed = JSON.parse(trimmed)
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : undefined
+    } catch {
+      return undefined
+    }
+  }
 
   const fetchDocuments = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await apiClient.listPageIndexDocuments()
+      const res = await apiClient.listPageIndexDocuments(agentId)
       setDocuments(res.documents || [])
     } catch (err: any) {
       console.error('Failed to fetch documents:', err)
@@ -37,7 +48,7 @@ export function PageIndexDocumentsModal({
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [agentId])
 
   useEffect(() => {
     fetchDocuments()
@@ -70,9 +81,16 @@ export function PageIndexDocumentsModal({
     setUploadError(null)
     try {
       const fileToUpload = await normalizeMarkdownForUpload(selectedFile)
-      await apiClient.uploadPageIndexDocument(fileToUpload, docName || undefined)
+      await apiClient.uploadPageIndexDocument(agentId, fileToUpload, {
+        docName: docName || undefined,
+        docDescription: docDescription || undefined,
+        metadata: parseMetadata(),
+        ifAddNodeSummary: addNodeSummary,
+      })
       setSelectedFile(null)
       setDocName('')
+      setDocDescription('')
+      setMetadataJson('')
       await fetchDocuments()
     } catch (err: any) {
       console.error('Upload failed:', err)
@@ -85,7 +103,7 @@ export function PageIndexDocumentsModal({
   const handleDelete = async (name: string) => {
     setDeleting(name)
     try {
-      await apiClient.deletePageIndexDocument(name)
+      await apiClient.deletePageIndexDocument(agentId, name)
       await fetchDocuments()
     } catch (err: any) {
       console.error('Delete failed:', err)
@@ -152,6 +170,38 @@ export function PageIndexDocumentsModal({
                 onChange={(e) => setDocName(e.target.value)}
                 className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
+            </div>
+            <div className="w-full">
+              <textarea
+                placeholder="Document description (optional)"
+                value={docDescription}
+                onChange={(e) => setDocDescription(e.target.value)}
+                rows={2}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-y min-h-[60px]"
+              />
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={addNodeSummary}
+                onChange={(e) => setAddNodeSummary(e.target.checked)}
+                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span className="text-sm text-gray-700">Generate node summaries (recommended for tree search)</span>
+            </label>
+            <div className="w-full">
+              <input
+                type="text"
+                placeholder='Metadata (optional JSON, e.g. {"topic": "finance", "year": 2024})'
+                value={metadataJson}
+                onChange={(e) => setMetadataJson(e.target.value)}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+              {metadataJson.trim() && !parseMetadata() && (
+                <p className="mt-1 text-xs text-amber-600">Invalid JSON – metadata will be ignored</p>
+              )}
+            </div>
+            <div className="flex justify-end">
               <button
                 onClick={handleUpload}
                 disabled={!selectedFile || uploading}
@@ -188,6 +238,9 @@ export function PageIndexDocumentsModal({
                         <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">
                           Description
                         </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">
+                          Metadata
+                        </th>
                         <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
                           Actions
                         </th>
@@ -201,6 +254,9 @@ export function PageIndexDocumentsModal({
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-600 hidden sm:table-cell max-w-[200px] truncate">
                             {doc.doc_description || '—'}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500 hidden md:table-cell max-w-[150px] truncate" title={doc.metadata ? JSON.stringify(doc.metadata) : undefined}>
+                            {doc.metadata ? JSON.stringify(doc.metadata) : '—'}
                           </td>
                           <td className="px-4 py-3 text-right">
                             <button

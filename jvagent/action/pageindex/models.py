@@ -4,7 +4,7 @@ DocumentNode, DocumentContentEdge, and DocumentRootNode extend jvspatial Node/Ed
 for graph-based persistence of document structure.
 """
 
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from jvspatial.core import Edge, Node
 from jvspatial.core.annotations import attribute
@@ -18,6 +18,8 @@ class DocumentRootNode(Node):
     Attributes:
         doc_name: Document identifier (e.g., filename or title)
         doc_description: Optional document-level description
+        collection_name: Collection this document belongs to (typically agent_id)
+        metadata: Custom key-value metadata for filtering at query time
     """
 
     doc_name: str = attribute(
@@ -27,6 +29,14 @@ class DocumentRootNode(Node):
     doc_description: Optional[str] = attribute(
         default=None,
         description="Optional document-level description",
+    )
+    collection_name: str = attribute(
+        default="default",
+        description="Collection this document belongs to (typically agent_id)",
+    )
+    metadata: Optional[Dict[str, Any]] = attribute(
+        default=None,
+        description="Custom key-value metadata for filtering at query time",
     )
 
 
@@ -66,6 +76,10 @@ class DocumentNode(Node):
     )
     doc_name: str = attribute(
         default="", description="Document this node belongs to"
+    )
+    collection_name: str = attribute(
+        default="default",
+        description="Collection this node belongs to",
     )
     line_num: Optional[int] = attribute(
         default=None, description="Line number in source (Markdown)"

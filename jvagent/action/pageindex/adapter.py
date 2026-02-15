@@ -35,6 +35,7 @@ def _extract_node_data(item: Dict[str, Any]) -> Dict[str, Any]:
 async def _tree_to_nodes(
     structure: Any,
     doc_name: str,
+    collection_name: str,
     context: GraphContext,
     parent_node: Optional[DocumentNode],
 ) -> List[DocumentNode]:
@@ -43,6 +44,7 @@ async def _tree_to_nodes(
     Args:
         structure: Tree node (dict) or list of tree nodes
         doc_name: Document identifier
+        collection_name: Collection this document belongs to
         context: GraphContext for persistence
         parent_node: Parent DocumentNode (or None for root-level)
 
@@ -56,6 +58,7 @@ async def _tree_to_nodes(
     ) -> DocumentNode:
         data = _extract_node_data(item)
         data["doc_name"] = doc_name
+        data["collection_name"] = collection_name
 
         node = DocumentNode(**data)
         await node.set_context(context)
@@ -85,6 +88,8 @@ async def persist_structure(
     doc_name: str,
     structure: Any,
     doc_description: Optional[str] = None,
+    collection_name: str = "default",
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Persist PageIndex output to jvspatial graph.
 
@@ -92,6 +97,8 @@ async def persist_structure(
         doc_name: Document identifier
         structure: PageIndex structure (tree of dicts with title, nodes, etc.)
         doc_description: Optional document-level description
+        collection_name: Collection this document belongs to (default: "default")
+        metadata: Custom key-value metadata for filtering at query time
 
     Returns:
         DocumentRootNode id for later retrieval/traversal
@@ -114,11 +121,15 @@ async def persist_structure(
         root = DocumentRootNode(
             doc_name=doc_name,
             doc_description=doc_description,
+            collection_name=collection_name,
+            metadata=metadata,
         )
         await root.set_context(context)
         await root.save()
 
-        top_level = await _tree_to_nodes(structure, doc_name, context, None)
+        top_level = await _tree_to_nodes(
+            structure, doc_name, collection_name, context, None
+        )
         for node in top_level:
             await root.connect(node, edge=DocumentContentEdge, direction="out")
 
@@ -136,7 +147,8 @@ async def tree_to_graph(
     """Convert PageIndex output to jvspatial graph and persist.
 
     Args:
-        pageindex_output: Dict with doc_name, structure, and optionally doc_description
+        pageindex_output: Dict with doc_name, structure, and optionally doc_description,
+            collection_name, metadata
 
     Returns:
         DocumentRootNode id
@@ -144,6 +156,8 @@ async def tree_to_graph(
     doc_name = pageindex_output.get("doc_name", "")
     structure = pageindex_output.get("structure", [])
     doc_description = pageindex_output.get("doc_description")
+    collection_name = pageindex_output.get("collection_name", "default")
+    metadata = pageindex_output.get("metadata")
 
     if not doc_name:
         raise ValueError("pageindex_output must contain 'doc_name'")
@@ -154,4 +168,6 @@ async def tree_to_graph(
         doc_name=doc_name,
         structure=structure,
         doc_description=doc_description,
+        collection_name=collection_name,
+        metadata=metadata,
     )

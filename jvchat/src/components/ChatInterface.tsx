@@ -573,8 +573,9 @@ export function ChatInterface() {
         )}
 
         {/* PageIndex Documents Modal Dialog */}
-        {isPageIndexModalOpen && (
+        {isPageIndexModalOpen && agentId && (
           <PageIndexDocumentsModal
+            agentId={agentId}
             onClose={handleClosePageIndexModal}
             isEmbedded={true}
           />
