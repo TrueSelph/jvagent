@@ -1,12 +1,17 @@
-"""PageIndex document ingestion and management endpoints."""
+"""PageIndex document ingestion and management endpoints.
 
+Vectorless RAG: ingest PDF/Markdown documents, list, search, and delete.
+All routes are agent-scoped (collection = agent_id from path).
+"""
+
+import json
 import logging
 import tempfile
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import Request
+from fastapi import Query, Request
 
 from pydantic import Field
 
@@ -22,6 +27,7 @@ from .documents import (
     get_document_root,
     list_documents,
 )
+from .pageindex_retrieval_interact_action import ensure_ingestion_config_for_agent
 from .retrieval import search_documents
 
 logger = logging.getLogger(__name__)
@@ -29,12 +35,24 @@ logger = logging.getLogger(__name__)
 ALLOWED_EXTENSIONS = {".pdf", ".md", ".markdown"}
 
 
+def _parse_metadata(value: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Parse metadata JSON string. Returns None if empty or invalid."""
+    if not value or not value.strip():
+        return None
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        return None
 
-def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[bytes, str, Optional[str], Optional[str], Optional[str]]:
+
+def _parse_multipart_safe(
+    body: bytes, content_type: str
+) -> tuple[bytes, str, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
     """Parse multipart form-data from raw body without decoding file content.
 
-    Returns (file_content, filename, doc_name, model, if_add_node_summary). Uses latin-1 for headers
-    to avoid UTF-8 decode errors on non-ASCII filenames or field values.
+    Returns (file_content, filename, doc_name, model, if_add_node_summary, collection_name, metadata, doc_description).
+    Uses latin-1 for headers to avoid UTF-8 decode errors on non-ASCII filenames or field values.
     """
     content_type_bytes = content_type.encode("latin-1") if isinstance(content_type, str) else content_type
     ctype, params = parse_options_header(content_type_bytes)
@@ -49,6 +67,9 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[bytes, str, O
     doc_name: Optional[str] = None
     model: Optional[str] = None
     if_add_node_summary: Optional[str] = None
+    collection_name: Optional[str] = None
+    metadata_raw: Optional[str] = None
+    doc_description: Optional[str] = None
 
     def _safe_str(b: bytes) -> str:
         try:
@@ -57,7 +78,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[bytes, str, O
             return b.decode("latin-1")
 
     def on_field(field) -> None:
-        nonlocal doc_name, model, if_add_node_summary
+        nonlocal doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description
         name = _safe_str(field.field_name) if field.field_name else ""
         val = field.value
         value = _safe_str(val) if val is not None else ""
@@ -67,6 +88,12 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[bytes, str, O
             model = value or None
         elif name == "if_add_node_summary":
             if_add_node_summary = value or None
+        elif name == "collection_name":
+            collection_name = value or None
+        elif name == "metadata":
+            metadata_raw = value or None
+        elif name == "doc_description":
+            doc_description = value or None
 
     def on_file(f) -> None:
         nonlocal file_content, filename
@@ -89,11 +116,59 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[bytes, str, O
             break
         parser.write(chunk)
     parser.finalize()
-    return file_content, filename, doc_name, model, if_add_node_summary
+    return file_content, filename, doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description
 
 
+async def _do_assimilate(
+    content: bytes,
+    ext: str,
+    *,
+    doc_name: Optional[str] = None,
+    model: Optional[str] = None,
+    if_add_node_summary: Optional[str] = None,
+    collection_name: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    doc_description: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Run assimilate_document on content. Handles PDF vs Markdown and temp files."""
+    assimilate_kw = {
+        "doc_name": doc_name,
+        "model": model,
+        "if_add_node_summary": if_add_node_summary,
+        "collection_name": collection_name,
+        "metadata": metadata,
+        "doc_description": doc_description,
+    }
+
+    if ext == ".pdf":
+        doc = BytesIO(content)
+        try:
+            return await assimilate_document(doc, **assimilate_kw)
+        except UnicodeDecodeError:
+            pass
+        ext = ".md"
+
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        text = content.decode("utf-8", errors="replace")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix=ext,
+        delete=False,
+    ) as tmp:
+        tmp.write(text)
+        tmp_path = tmp.name
+    try:
+        return await assimilate_document(tmp_path, **assimilate_kw)
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+# PageIndex API: agent-scoped routes only (collection = agent_id from path)
 @endpoint(
-    "/pageindex/documents",
+    "/agents/{agent_id}/pageindex/documents",
     methods=["POST"],
     auth=True,
     tags=["PageIndex"],
@@ -117,19 +192,39 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[bytes, str, O
         }
     ),
 )
-async def ingest_document_endpoint(request: Request) -> Dict[str, Any]:
-    """Ingest a PDF or Markdown document into the PageIndex graph.
+async def ingest_document_endpoint(
+    request: Request,
+    agent_id: str,
+) -> Dict[str, Any]:
+    """Ingest a PDF or Markdown document into the agent's PageIndex collection.
 
-    Accepts multipart form data with a file and optional doc_name override.
-    Supported formats: .pdf, .md, .markdown
-    Parses raw body to avoid UTF-8 decode errors on non-UTF-8 file content.
+    **Request:** `multipart/form-data`
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | file | File | Yes | PDF or Markdown file (`.pdf`, `.md`, `.markdown`) |
+    | doc_name | string | No | Override document identifier (default: derived from filename) |
+    | doc_description | string | No | Human-readable document description |
+    | if_add_node_summary | string | No | "yes" or "no" – generate LLM summaries per node (default: from agent's PageIndex config) |
+    | metadata | string | No | JSON object for tagging, e.g. `{"topic": "finance", "year": 2024}` |
+
+    **Response:** `doc_name`, `root_id`, `doc_description`
+
+    Documents are stored in the agent's collection (collection = `agent_id` from path).
     """
     content_type = request.headers.get("content-type", "")
     if "multipart/form-data" not in content_type:
         raise ValidationError("Expected multipart/form-data")
 
     body = await request.body()
-    content, filename, doc_name, model, if_add_node_summary = _parse_multipart_safe(body, content_type)
+    content, filename, doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description = _parse_multipart_safe(
+        body, content_type
+    )
+    collection_name = collection_name or agent_id
+    metadata = _parse_metadata(metadata_raw)
+
+    if if_add_node_summary is None:
+        await ensure_ingestion_config_for_agent(agent_id)
 
     ext = Path(filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -140,81 +235,31 @@ async def ingest_document_endpoint(request: Request) -> Dict[str, Any]:
     if not content:
         raise ValidationError("Empty file")
 
-    async def _assimilate_markdown(content_bytes: bytes, suffix: str, node_summary: Optional[str] = None) -> Dict[str, Any]:
-        """Decode bytes as UTF-8 (with replacement) and assimilate as markdown."""
-        try:
-            text = content_bytes.decode("utf-8")
-        except UnicodeDecodeError:
-            text = content_bytes.decode("utf-8", errors="replace")
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            suffix=suffix,
-            delete=False,
-        ) as tmp:
-            tmp.write(text)
-            tmp_path = tmp.name
-        try:
-            return await assimilate_document(tmp_path, doc_name=doc_name, model=model, if_add_node_summary=node_summary)
-        finally:
-            Path(tmp_path).unlink(missing_ok=True)
-
     try:
-        if ext == ".pdf":
-            doc = BytesIO(content)
-            try:
-                result = await assimilate_document(
-                    doc,
-                    doc_name=doc_name,
-                    model=model,
-                    if_add_node_summary=if_add_node_summary,
-                )
-            except UnicodeDecodeError:
-                # PDF parser failed on encoding; retry as markdown (handles misnamed .pdf that is actually text)
-                result = await _assimilate_markdown(content, ".md", if_add_node_summary)
-        else:
-            # Markdown: decode with error handling for non-UTF-8 files (e.g. Latin-1)
-            try:
-                text = content.decode("utf-8")
-                used_replace = False
-            except UnicodeDecodeError:
-                text = content.decode("utf-8", errors="replace")
-                used_replace = True
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                suffix=ext,
-                delete=False,
-            ) as tmp:
-                tmp.write(text)
-                tmp_path = tmp.name
-            try:
-                result = await assimilate_document(
-                    tmp_path,
-                    doc_name=doc_name,
-                    model=model,
-                    if_add_node_summary=if_add_node_summary,
-                )
-            finally:
-                Path(tmp_path).unlink(missing_ok=True)
-
-        return {
-            "doc_name": result.get("doc_name", ""),
-            "root_id": result.get("_root_id", ""),
-            "doc_description": result.get("doc_description"),
-        }
-    except UnicodeDecodeError:
-        raise
+        result = await _do_assimilate(
+            content,
+            ext,
+            doc_name=doc_name,
+            model=model,
+            if_add_node_summary=if_add_node_summary,
+            collection_name=collection_name,
+            metadata=metadata,
+            doc_description=doc_description,
+        )
     except ImportError as e:
         raise ValidationError(str(e))
     except ValueError as e:
         raise ValidationError(str(e))
-    except Exception:
-        raise
+
+    return {
+        "doc_name": result.get("doc_name", ""),
+        "root_id": result.get("_root_id", ""),
+        "doc_description": result.get("doc_description"),
+    }
 
 
 @endpoint(
-    "/pageindex/documents",
+    "/agents/{agent_id}/pageindex/documents",
     methods=["GET"],
     auth=True,
     tags=["PageIndex"],
@@ -222,49 +267,75 @@ async def ingest_document_endpoint(request: Request) -> Dict[str, Any]:
         data={
             "documents": ResponseField(
                 field_type=List[Dict[str, Any]],
-                description="List of documents",
+                description="Documents with doc_name, doc_description, root_id, collection_name, metadata",
                 example=[
                     {
                         "doc_name": "my_doc",
                         "doc_description": "Description",
                         "root_id": "n.DocumentRootNode.abc123",
+                        "collection_name": "example_agent",
+                        "metadata": {"topic": "finance"},
                     }
                 ],
             ),
         }
     ),
 )
-async def list_documents_endpoint() -> Dict[str, Any]:
-    """List all documents in the PageIndex graph."""
-    documents = await list_documents()
+async def list_documents_endpoint(
+    agent_id: str,
+    metadata: Optional[str] = Query(default=None, description="Metadata filter as JSON, e.g. {\"topic\": \"finance\"}"),
+) -> Dict[str, Any]:
+    """List documents in the agent's PageIndex collection.
+
+    **Query Parameters:**
+
+    | Param | Type | Description |
+    |-------|------|-------------|
+    | metadata | string | Optional JSON object to filter by document metadata (AND semantics) |
+
+    **Response:** `documents` — array of `{doc_name, doc_description, root_id, collection_name, metadata}`
+
+    Collection is determined by `agent_id` from the path.
+    """
+    metadata_filter = _parse_metadata(metadata)
+    documents = await list_documents(
+        collection_name=agent_id,
+        metadata_filter=metadata_filter,
+    )
     return {"documents": documents}
 
 
 @endpoint(
-    "/pageindex/documents/{doc_name}",
+    "/agents/{agent_id}/pageindex/documents/{doc_name}",
     methods=["GET"],
     auth=True,
     tags=["PageIndex"],
     response=success_response(
         data={
-            "doc_name": ResponseField(
-                field_type=str,
-                description="Document identifier",
-            ),
+            "doc_name": ResponseField(field_type=str, description="Document identifier"),
             "doc_description": ResponseField(
                 field_type=Optional[str],
                 description="Document description",
             ),
-            "root_id": ResponseField(
-                field_type=str,
-                description="Document root node ID",
-            ),
+            "root_id": ResponseField(field_type=str, description="Document root node ID"),
         }
     ),
 )
-async def get_document_endpoint(doc_name: str) -> Dict[str, Any]:
-    """Get document metadata by name."""
-    root = await get_document_root(doc_name)
+async def get_document_endpoint(agent_id: str, doc_name: str) -> Dict[str, Any]:
+    """Get document metadata by name.
+
+    **Path Parameters:**
+
+    | Param | Description |
+    |-------|-------------|
+    | agent_id | Agent identifier (collection scope) |
+    | doc_name | Document identifier |
+
+    **Response:** `doc_name`, `doc_description`, `root_id`
+
+    Returns 404 if the document is not found in the agent's collection.
+    """
+    root = await get_document_root(doc_name, collection_name=agent_id)
     if not root:
         raise ResourceNotFoundError(
             message=f"Document '{doc_name}' not found",
@@ -278,7 +349,7 @@ async def get_document_endpoint(doc_name: str) -> Dict[str, Any]:
 
 
 @endpoint(
-    "/pageindex/documents/{doc_name}",
+    "/agents/{agent_id}/pageindex/documents/{doc_name}",
     methods=["DELETE"],
     auth=True,
     tags=["PageIndex"],
@@ -292,9 +363,21 @@ async def get_document_endpoint(doc_name: str) -> Dict[str, Any]:
         }
     ),
 )
-async def delete_document_endpoint(doc_name: str) -> Dict[str, Any]:
-    """Delete a document and all its nodes from the PageIndex graph."""
-    deleted = await delete_document(doc_name)
+async def delete_document_endpoint(agent_id: str, doc_name: str) -> Dict[str, Any]:
+    """Delete a document and all its nodes from the agent's PageIndex collection.
+
+    **Path Parameters:**
+
+    | Param | Description |
+    |-------|-------------|
+    | agent_id | Agent identifier (collection scope) |
+    | doc_name | Document identifier to delete |
+
+    **Response:** `message` — success confirmation
+
+    Returns 404 if the document is not found in the agent's collection.
+    """
+    deleted = await delete_document(doc_name, collection_name=agent_id)
     if not deleted:
         raise ResourceNotFoundError(
             message=f"Document '{doc_name}' not found",
@@ -304,7 +387,7 @@ async def delete_document_endpoint(doc_name: str) -> Dict[str, Any]:
 
 
 @endpoint(
-    "/pageindex/documents/search",
+    "/agents/{agent_id}/pageindex/documents/search",
     methods=["POST"],
     auth=True,
     tags=["PageIndex"],
@@ -326,19 +409,39 @@ async def delete_document_endpoint(doc_name: str) -> Dict[str, Any]:
     ),
 )
 async def search_documents_endpoint(
-    query: str = Field(..., description="Search query"),
-    doc_name: Optional[str] = Field(None, description="Optional document name to scope search"),
+    agent_id: str,
+    query: str = Field(..., description="Search query text"),
+    doc_name: Optional[str] = Field(None, description="Scope search to a single document"),
     strategy: str = Field(
         default="tree_search",
-        description="Search strategy: 'tree_search', 'direct', or 'walker'",
+        description="Strategy: `tree_search` (LLM reasoning, recommended), `direct` (regex), or `walker` (graph traversal)",
     ),
-    limit: int = Field(default=20, ge=1, le=200, description="Max results to return"),
+    limit: int = Field(default=10, ge=1, le=200, description="Maximum number of results to return"),
+    metadata: Optional[str] = Field(None, description="Metadata filter as JSON, e.g. {\"topic\": \"finance\"}"),
 ) -> Dict[str, Any]:
-    """Search documents using vectorless retrieval (tree_search, direct, or walker strategy)."""
+    """Search documents in the agent's PageIndex collection using vectorless retrieval.
+
+    **Request Body (JSON):**
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | query | string | Yes | Search query text |
+    | doc_name | string | No | Limit search to a single document |
+    | strategy | string | No | `tree_search` (default), `direct`, or `walker` |
+    | limit | integer | No | Max results (default: 10, max: 200) |
+    | metadata | string | No | JSON object to filter by document metadata |
+
+    **Response:** `results` — array of `{node_id, title, doc_name, content, text, summary}`
+
+    Collection is determined by `agent_id` from the path.
+    """
+    metadata_filter = _parse_metadata(metadata)
     results = await search_documents(
         query=query,
         doc_name=doc_name,
         strategy=strategy,
         limit=limit,
+        collection_name=agent_id,
+        metadata_filter=metadata_filter,
     )
     return {"results": results}

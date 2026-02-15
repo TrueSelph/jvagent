@@ -64,6 +64,33 @@ def _get_ingestion_config(config: Dict[str, Any], node_summary_attr: bool) -> Di
     }
 
 
+async def ensure_ingestion_config_for_agent(agent_id: str) -> None:
+    """Push ingestion config from agent's PageIndex action to config module.
+
+    Used when REST ingest does not receive if_add_node_summary in the form.
+    Resolves config from cached actions; falls back to node_summary=True when
+    cache miss or no PageIndex action (agent-scoped routes assume PageIndex).
+    """
+    from jvagent.core.cache import get_cached_actions
+
+    actions = await get_cached_actions(agent_id, enabled_only=True)
+    for action in (actions or []):
+        if isinstance(action, PageIndexRetrievalInteractAction):
+            config = getattr(action, "config", None) or {}
+            node_summary_attr = getattr(action, "node_summary", False)
+            ingestion = _get_ingestion_config(config, node_summary_attr)
+            _push_ingestion_config(ingestion)
+            return
+    # Fallback: default to summaries for agent-scoped routes
+    _push_ingestion_config({
+        "node_summary": True,
+        "node_text": True,
+        "doc_description": False,
+        "max_token_num_each_node": None,
+        "summary_token_threshold": None,
+    })
+
+
 class PageIndexRetrievalInteractAction(InteractAction):
     """InteractAction that retrieves context from PageIndex graph (vectorless).
 
@@ -118,6 +145,23 @@ class PageIndexRetrievalInteractAction(InteractAction):
         description="When True, generate node summaries during ingestion (if_add_node_summary='yes'). "
         "Required for tree search to work well.",
     )
+    collection: Optional[str] = attribute(
+        default=None,
+        description="Collection name (default: agent_id). Override via context or config.",
+    )
+    metadata_filter: Optional[Dict[str, Any]] = attribute(
+        default=None,
+        description="Optional key-value filter to narrow search by document metadata",
+    )
+
+    def _resolve_collection(self) -> str:
+        """Resolve collection name from attribute, config, or agent_id."""
+        return (
+            self.collection
+            or (self.config.get("collection") if self.config else None)
+            or getattr(self, "agent_id", None)
+            or "default"
+        )
 
     async def on_register(self) -> None:
         """Push ingestion config for document assimilation when action is registered."""
@@ -153,12 +197,21 @@ class PageIndexRetrievalInteractAction(InteractAction):
                 return
 
             initialize_pageindex_database()
+            # Config can override attributes (allows retrieval params in context or config)
+            limit = self.config.get("limit", self.limit)
+            strategy = self.config.get("strategy", self.strategy)
+            model = self.config.get("model", self.model)
+            doc_name = self.doc_name or self.config.get("doc_name")
+            collection_name = self._resolve_collection()
+            metadata_filter = self.metadata_filter or self.config.get("metadata_filter")
             results = await search_documents(
                 query=query,
-                doc_name=self.doc_name,
-                strategy=self.strategy,
-                limit=self.limit,
-                model=self.model,
+                doc_name=doc_name,
+                strategy=strategy,
+                limit=limit,
+                model=model,
+                collection_name=collection_name,
+                metadata_filter=metadata_filter,
             )
 
             if results:

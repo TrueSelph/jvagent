@@ -19,7 +19,7 @@ from .config import PAGEINDEX_DB_NAME
 from .document_walker import DocumentWalker
 from .llm_bridge import get_pageindex_model_action
 from .models import DocumentContentEdge, DocumentNode, DocumentRootNode
-from .documents import get_document_root
+from .documents import get_document_root, get_document_roots
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +89,8 @@ async def _search_via_tree_search(
     query: str,
     doc_name: Optional[str],
     limit: int,
+    collection_name: str = "default",
+    metadata_filter: Optional[Dict[str, Any]] = None,
     model: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Search using LLM-based tree search (PageIndex recommended approach).
@@ -99,10 +101,13 @@ async def _search_via_tree_search(
     from .core.utils import ChatGPT_API_async, get_json_content, remove_fields
 
     if doc_name:
-        root = await get_document_root(doc_name)
+        root = await get_document_root(doc_name, collection_name=collection_name)
         roots = [root] if root else []
     else:
-        roots = await DocumentRootNode.find()
+        roots = await get_document_roots(
+            collection_name=collection_name,
+            metadata_filter=metadata_filter,
+        )
         roots = roots[:_MAX_DOCS_FOR_TREE_SEARCH]
 
     if not roots:
@@ -115,7 +120,11 @@ async def _search_via_tree_search(
             "PageIndex tree search requires CHATGPT_API_KEY or OPENAI_API_KEY "
             "(or model_action in context); falling back to direct search"
         )
-        return await _search_via_direct(context, query, doc_name, limit)
+        return await _search_via_direct(
+            context, query, doc_name, limit,
+            collection_name=collection_name,
+            metadata_filter=metadata_filter,
+        )
 
     all_results: List[Dict[str, Any]] = []
 
@@ -150,7 +159,11 @@ Directly return the final JSON structure. Do not output anything else.
             response = await ChatGPT_API_async(model, prompt, api_key=api_key)
             if not response or response == "Error":
                 logger.warning("PageIndex tree search LLM call failed; falling back to direct")
-                return await _search_via_direct(context, query, doc_name, limit)
+                return await _search_via_direct(
+                    context, query, doc_name, limit,
+                    collection_name=collection_name,
+                    metadata_filter=metadata_filter,
+                )
 
             raw = get_json_content(response)
             parsed = json.loads(raw)
@@ -167,6 +180,7 @@ Directly return the final JSON structure. Do not output anything else.
                 nodes = await DocumentNode.find({
                     "context.node_id": nid_str,
                     "context.doc_name": doc_name_val,
+                    "context.collection_name": collection_name,
                 })
                 for node in nodes:
                     seen.add(key)
@@ -189,19 +203,29 @@ Directly return the final JSON structure. Do not output anything else.
             logger.warning(
                 f"PageIndex tree search parse error: {e}; falling back to direct"
             )
-            return await _search_via_direct(context, query, doc_name, limit)
+            return await _search_via_direct(
+                context, query, doc_name, limit,
+                collection_name=collection_name,
+                metadata_filter=metadata_filter,
+            )
         except Exception as e:
             logger.warning(
                 f"PageIndex tree search error: {e}; falling back to direct",
                 exc_info=True,
             )
-            return await _search_via_direct(context, query, doc_name, limit)
+            return await _search_via_direct(
+                context, query, doc_name, limit,
+                collection_name=collection_name,
+                metadata_filter=metadata_filter,
+            )
 
         if len(all_results) >= limit:
             break
 
     return all_results[:limit] if all_results else await _search_via_direct(
-        context, query, doc_name, limit
+        context, query, doc_name, limit,
+        collection_name=collection_name,
+        metadata_filter=metadata_filter,
     )
 
 
@@ -211,6 +235,8 @@ async def search_documents(
     strategy: str = "tree_search",
     limit: int = 20,
     model: Optional[str] = None,
+    collection_name: str = "default",
+    metadata_filter: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """Search documents using vectorless retrieval.
 
@@ -221,6 +247,8 @@ async def search_documents(
             or "walker" (DocumentWalker traversal)
         limit: Max results to return
         model: LLM model for tree_search (default: PAGEINDEX_TREE_SEARCH_MODEL or gpt-4o-mini)
+        collection_name: Collection to search (default: "default")
+        metadata_filter: Optional key-value filter to narrow results by document metadata
 
     Returns:
         List of dicts with title, text, summary, doc_name, node_id, structure, content
@@ -242,13 +270,22 @@ async def search_documents(
 
         if strategy == "tree_search":
             return await _search_via_tree_search(
-                context, query, doc_name, limit, model=model
+                context, query, doc_name, limit,
+                collection_name=collection_name,
+                metadata_filter=metadata_filter,
+                model=model,
             )
         if strategy == "walker":
             return await _search_via_walker(
-                context, query, doc_name, limit
+                context, query, doc_name, limit,
+                collection_name=collection_name,
+                metadata_filter=metadata_filter,
             )
-        return await _search_via_direct(context, query, doc_name, limit)
+        return await _search_via_direct(
+            context, query, doc_name, limit,
+            collection_name=collection_name,
+            metadata_filter=metadata_filter,
+        )
     finally:
         set_default_context(prev)
 
@@ -258,10 +295,28 @@ async def _search_via_direct(
     query: str,
     doc_name: Optional[str],
     limit: int,
+    collection_name: str = "default",
+    metadata_filter: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """Search using database.find with text filters."""
     db_query = _build_text_query(query)
-    if doc_name:
+    db_query["context.collection_name"] = collection_name
+
+    if metadata_filter:
+        roots = await get_document_roots(
+            collection_name=collection_name,
+            metadata_filter=metadata_filter,
+        )
+        doc_names = [r.doc_name for r in roots]
+        if not doc_names:
+            return []
+        if doc_name:
+            if doc_name not in doc_names:
+                return []
+            db_query["context.doc_name"] = doc_name
+        else:
+            db_query["context.doc_name"] = {"$in": doc_names}
+    elif doc_name:
         db_query["context.doc_name"] = doc_name
 
     results = await context.database.find("node", db_query)
@@ -293,13 +348,18 @@ async def _search_via_walker(
     query: str,
     doc_name: Optional[str],
     limit: int,
+    collection_name: str = "default",
+    metadata_filter: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """Search using DocumentWalker traversal from document roots."""
     if doc_name:
-        root = await get_document_root(doc_name)
+        root = await get_document_root(doc_name, collection_name=collection_name)
         roots = [root] if root else []
     else:
-        roots = await DocumentRootNode.find()
+        roots = await get_document_roots(
+            collection_name=collection_name,
+            metadata_filter=metadata_filter,
+        )
     if not roots:
         return []
 

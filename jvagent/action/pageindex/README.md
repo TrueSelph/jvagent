@@ -34,24 +34,28 @@ Retrieval: query -> tree_search/direct/walker -> directive -> PersonaAction
 
 ### PageIndexRetrievalInteractAction (agent config)
 
-**Context** (attributes): `doc_name`, `limit`, `weight`, `strategy`, `model`, `directive`, `parameters`, etc.
+**Context** (attributes): `doc_name`, `limit`, `weight`, `strategy`, `model`, `directive`, `parameters`, etc. Retrieval params can also be in `config`; both take effect (config overrides attributes when present).
 
-**Config block** (ingestion): Settings applied when documents are assimilated. Use the `config` section in agent.yaml:
+**Config block** (ingestion + retrieval): Use the `config` section in agent.yaml. Ingestion settings apply when documents are assimilated. Retrieval params (`limit`, `strategy`, `model`, `doc_name`) can be in `config` or `context` (attributes).
 
 | Config key | Type | Default | Description |
 |------------|------|---------|-------------|
-| `node_summary` | bool | false | Generate node summaries during ingestion (required for tree_search) |
+| `node_summary` | bool | true | Generate node summaries during ingestion (required for tree_search) |
 | `node_text` | bool | true | Add node text to structure |
 | `doc_description` | bool | false | Add document description |
-| `max_token_num_each_node` | Optional[int] | None | Max tokens per node (PDF only) |
+| `max_token_num_each_node` | Optional[int] | 20000 | Max tokens per node (PDF only) |
 | `summary_token_threshold` | Optional[int] | 200 | Token threshold for summaries (Markdown only) |
 | `max_node_tokens` | Optional[int] | - | Alias for `summary_token_threshold` |
-
-**Retrieval config** (also in `config`): `limit`, `strategy`, `model`, etc.
+| `limit` | int | 10 | Number of results to retrieve (retrieval) |
+| `strategy` | str | "tree_search" | Retrieval strategy (retrieval) |
+| `collection` | Optional[str] | null | Override collection name (default: agent_id) |
+| `metadata_filter` | Optional[Dict] | null | Key-value filter to narrow search by document metadata |
 
 | Attribute | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `doc_name` | Optional[str] | None | Scope search to a single document |
+| `collection` | Optional[str] | None | Override collection (default: agent_id) |
+| `metadata_filter` | Optional[Dict] | None | Filter by document metadata |
 | `limit` | int | 10 | Number of results to retrieve |
 | `weight` | int | -75 | Execution order (after InteractRouter) |
 | `strategy` | str | "tree_search" | "tree_search", "direct", or "walker" |
@@ -77,12 +81,14 @@ Retrieval: query -> tree_search/direct/walker -> directive -> PersonaAction
 | `max_token_num_each_node` | Optional[int] | config | Max tokens per node (PDF; None = use action config) |
 | `summary_token_threshold` | Optional[int] | 200 | Token threshold for summaries (Markdown; None = use action config) |
 | `persist` | bool | True | Persist to graph DB |
+| `collection_name` | str | "default" | Collection this document belongs to (typically agent_id) |
+| `metadata` | Optional[Dict] | None | Custom key-value metadata for filtering at query time |
 
 ### Environment Variables (database and LLM)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `JVSPATIAL_PAGEINDEX_DB_PATH` | Path for json/sqlite | `{parent_of_prime_db}/pageindex` |
+| `JVSPATIAL_PAGEINDEX_DB_PATH` | Path for json/sqlite | `{parent_of_prime_db}/pageindex_db` |
 | `JVSPATIAL_PAGEINDEX_DB_NAME` | MongoDB database name / DynamoDB table name | pageindex_db |
 | `JVSPATIAL_PAGEINDEX_DB_TYPE` | json, sqlite, mongodb, dynamodb | json |
 | `JVSPATIAL_JSONDB_PATH` | Prime DB path (derives shared root) | - |
@@ -92,13 +98,31 @@ Retrieval: query -> tree_search/direct/walker -> directive -> PersonaAction
 
 ## REST API Endpoints
 
+All routes are agent-scoped (collection = agent_id from path).
+
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/pageindex/documents` | Ingest PDF/MD (multipart: file, doc_name, model) |
-| GET | `/pageindex/documents` | List documents |
-| GET | `/pageindex/documents/{doc_name}` | Get document metadata |
-| DELETE | `/pageindex/documents/{doc_name}` | Delete document |
-| POST | `/pageindex/documents/search` | Search (query, doc_name, strategy, limit) |
+| POST | `/api/agents/{agent_id}/pageindex/documents` | Ingest PDF/MD (multipart: file, doc_name, metadata) |
+| GET | `/api/agents/{agent_id}/pageindex/documents` | List documents (query: metadata) |
+| GET | `/api/agents/{agent_id}/pageindex/documents/{doc_name}` | Get document metadata |
+| DELETE | `/api/agents/{agent_id}/pageindex/documents/{doc_name}` | Delete document |
+| POST | `/api/agents/{agent_id}/pageindex/documents/search` | Search (body: query, doc_name, strategy, limit, metadata) |
+
+## Named Collections and Multi-Agent
+
+Documents are scoped by **collection** (default: `agent_id`). When multiple agents share one jvagent app, each agent's PageIndex action uses its own collection, keeping documents isolated.
+
+- **Collection resolution**: `collection` attribute → `config.collection` → `agent_id` → `"default"`
+- **Agent-scoped REST**: Use `/api/agents/{agent_id}/pageindex/*` so the path defines the collection
+- **Override**: Set `collection: my_custom_collection` in context/config for shared collections
+
+## Custom Metadata
+
+Documents can have key-value metadata at ingestion; filter at query time.
+
+- **Ingestion**: `assimilate_document(..., metadata={"topic": "finance", "year": 2024})` or REST form field `metadata` (JSON string)
+- **Search/List**: `metadata_filter={"topic": "finance"}` or REST `metadata` param (JSON)
+- **Values**: str, int, float, bool, or list of primitives; multiple keys use AND semantics
 
 ## Example Agent Configuration
 
@@ -107,11 +131,13 @@ Retrieval: query -> tree_search/direct/walker -> directive -> PersonaAction
   context:
     enabled: true
     weight: -75
+    # collection: my_custom_collection   # Optional override; default = agent_id
     anchors:
       - "User asks a question about indexed documents"
   config:
     limit: 10
     strategy: "tree_search"
+    # metadata_filter: {"access": "internal"}  # Optional: narrow search by metadata
     node_summary: true      # Required for tree_search; generates summaries during ingestion
     node_text: true
     doc_description: false
@@ -143,6 +169,6 @@ Retrieval: query -> tree_search/direct/walker -> directive -> PersonaAction
 
 - Documents must be ingested before retrieval
 - tree_search requires CHATGPT_API_KEY or OPENAI_API_KEY; falls back to direct if missing
-- PageIndex DB path is sibling of prime DB (e.g. `./pageindex` next to `./jvagent_db`)
+- PageIndex DB path is sibling of prime DB (e.g. `./pageindex_db` next to `./jvagent_db`)
 - Use `model_action_type` for token tracking and observability in agent context
-- **Ingestion config**: Put `node_summary`, `node_text`, `doc_description`, etc. under the `config` block (not `context`). These apply when documents are assimilated via API or `assimilate_document()`.
+- **Ingestion config**: Put `node_summary`, `node_text`, `doc_description`, etc. under the `config` block (not `context`). These apply when documents are assimilated via API or `assimilate_document()`. REST ingestion uses config pushed when the action registers; if no agent has PageIndex, defaults apply.

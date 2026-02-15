@@ -10,6 +10,11 @@ import type {
   InteractionRequest,
   InteractionResponse,
   LogsResponse,
+  PageIndexListResponse,
+  PageIndexUploadResponse,
+  PageIndexDeleteResponse,
+  PageIndexSearchResponse,
+  PageIndexSearchParams,
 } from '../types/api'
 
 class ApiClient {
@@ -766,61 +771,94 @@ class ApiClient {
     return response.data
   }
 
-  async listPageIndexDocuments(): Promise<{ documents: Array<{ doc_name: string; doc_description?: string; root_id: string }> }> {
-    const response = await this._withFallback(async (baseURL) => {
-      try {
-        return await this.client.get('/api/pageindex/documents', { baseURL })
-      } catch (err: any) {
-        if (err.response?.status === 404) {
-          return await this.client.get('/pageindex/documents', { baseURL })
-        }
-        throw err
-      }
-    })
+  /**
+   * List documents in the agent's PageIndex collection.
+   * Path: GET /api/agents/{agentId}/pageindex/documents
+   */
+  async listPageIndexDocuments(
+    agentId: string,
+    params?: { metadata?: Record<string, unknown> }
+  ): Promise<PageIndexListResponse> {
+    const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents`
+    const queryParams = params?.metadata
+      ? { metadata: JSON.stringify(params.metadata) }
+      : undefined
+    const response = await this._withFallback((baseURL) =>
+      this.client.get(path, { baseURL, params: queryParams })
+    )
     const data = response.data
-    if (data?.success && data?.data) {
-      return data.data
-    }
+    if (data?.success && data?.data) return data.data
     return data
   }
 
-  async uploadPageIndexDocument(file: File, docName?: string): Promise<{ doc_name: string; root_id: string; doc_description?: string }> {
+  /**
+   * Upload a document to the agent's PageIndex collection.
+   * Path: POST /api/agents/{agentId}/pageindex/documents
+   */
+  async uploadPageIndexDocument(
+    agentId: string,
+    file: File,
+    options?: {
+      docName?: string
+      docDescription?: string
+      metadata?: Record<string, unknown>
+      ifAddNodeSummary?: boolean
+    }
+  ): Promise<PageIndexUploadResponse> {
     const formData = new FormData()
     formData.append('file', file)
-    if (docName) formData.append('doc_name', docName)
-
-    const response = await this._withFallback(async (baseURL) => {
-      try {
-        return await this.client.post('/api/pageindex/documents', formData, { baseURL })
-      } catch (err: any) {
-        if (err.response?.status === 404) {
-          return await this.client.post('/pageindex/documents', formData, { baseURL })
-        }
-        throw err
-      }
-    })
-    const data = response.data
-    if (data?.success && data?.data) {
-      return data.data
+    if (options?.docName) formData.append('doc_name', options.docName)
+    if (options?.docDescription) formData.append('doc_description', options.docDescription)
+    if (options?.metadata) formData.append('metadata', JSON.stringify(options.metadata))
+    if (options?.ifAddNodeSummary !== undefined) {
+      formData.append('if_add_node_summary', options.ifAddNodeSummary ? 'yes' : 'no')
     }
+
+    const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents`
+    const response = await this._withFallback((baseURL) =>
+      this.client.post(path, formData, { baseURL })
+    )
+    const data = response.data
+    if (data?.success && data?.data) return data.data
     return data
   }
 
-  async deletePageIndexDocument(docName: string): Promise<{ message: string }> {
-    const response = await this._withFallback(async (baseURL) => {
-      try {
-        return await this.client.delete(`/api/pageindex/documents/${encodeURIComponent(docName)}`, { baseURL })
-      } catch (err: any) {
-        if (err.response?.status === 404) {
-          return await this.client.delete(`/pageindex/documents/${encodeURIComponent(docName)}`, { baseURL })
-        }
-        throw err
-      }
-    })
+  /**
+   * Delete a document from the agent's PageIndex collection.
+   * Path: DELETE /api/agents/{agentId}/pageindex/documents/{docName}
+   */
+  async deletePageIndexDocument(agentId: string, docName: string): Promise<PageIndexDeleteResponse> {
+    const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents/${encodeURIComponent(docName)}`
+    const response = await this._withFallback((baseURL) =>
+      this.client.delete(path, { baseURL })
+    )
     const data = response.data
-    if (data?.success && data?.data) {
-      return data.data
+    if (data?.success && data?.data) return data.data
+    return data
+  }
+
+  /**
+   * Search documents in the agent's PageIndex collection.
+   * Path: POST /api/agents/{agentId}/pageindex/documents/search
+   */
+  async searchPageIndexDocuments(
+    agentId: string,
+    params: PageIndexSearchParams
+  ): Promise<PageIndexSearchResponse> {
+    const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents/search`
+    const body: Record<string, unknown> = {
+      query: params.query,
+      strategy: params.strategy ?? 'tree_search',
+      limit: params.limit ?? 10,
     }
+    if (params.doc_name != null) body.doc_name = params.doc_name
+    if (params.metadata != null) body.metadata = JSON.stringify(params.metadata)
+
+    const response = await this._withFallback((baseURL) =>
+      this.client.post(path, body, { baseURL })
+    )
+    const data = response.data
+    if (data?.success && data?.data) return data.data
     return data
   }
 

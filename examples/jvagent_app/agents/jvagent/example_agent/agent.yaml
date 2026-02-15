@@ -85,7 +85,7 @@ actions:
     config:
       limit: 10
       strategy: "tree_search"
-      node_summary: false  # Required for tree_search; generates summaries during ingestion
+      node_summary: true   # Required for tree_search; generates summaries during ingestion
       node_text: true
       doc_description: false
       max_token_num_each_node: 20000
@@ -94,19 +94,19 @@ actions:
 
   # TypesenseVectorStore Action - Vector store for semantic search
   # Core action from jvagent library (jvagent/action/vectorstore/typesense/)
-  - action: jvagent/typesense_vectorstore
-    context:
-      enabled: true
-      description: "Typesense vector store for semantic search and context retrieval"
-      # Typesense Configuration
-      host: localhost
-      port: 8108
-      protocol: http
-      api_key: ${TYPESENSE_API_KEY} # Set in .env or environment
-      connection_timeout_seconds: 2
-      embedding_dimensions: 1536 # Must match embedding model dimensions
-      # Embedding Model Configuration
-      embedding_model_action_type: "OpenAIEmbeddingModelAction" # Entity type to find dynamically
+  # - action: jvagent/typesense_vectorstore
+  #   context:
+  #     enabled: true
+  #     description: "Typesense vector store for semantic search and context retrieval"
+  #     # Typesense Configuration
+  #     host: localhost
+  #     port: 8108
+  #     protocol: http
+  #     api_key: ${TYPESENSE_API_KEY} # Set in .env or environment
+  #     connection_timeout_seconds: 2
+  #     embedding_dimensions: 1536 # Must match embedding model dimensions
+  #     # Embedding Model Configuration
+  #     embedding_model_action_type: "OpenAIEmbeddingModelAction" # Entity type to find dynamically
 
   # OpenAI Language Model Action - LLM integration with multimodal support
   # Core action from jvagent library (jvagent/action/model/language/openai/)

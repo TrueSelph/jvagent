@@ -123,3 +123,47 @@ export interface LogsResponse {
   logs: LogEntry[]
   pagination: LogsPagination
 }
+
+/** PageIndex document (agent-scoped collection = agent_id) */
+export interface PageIndexDocument {
+  doc_name: string
+  doc_description?: string
+  root_id: string
+  collection_name?: string
+  metadata?: Record<string, unknown>
+}
+
+export interface PageIndexListResponse {
+  documents: PageIndexDocument[]
+}
+
+export interface PageIndexUploadResponse {
+  doc_name: string
+  root_id: string
+  doc_description?: string
+}
+
+export interface PageIndexDeleteResponse {
+  message: string
+}
+
+export interface PageIndexSearchResult {
+  node_id?: string
+  title?: string
+  doc_name?: string
+  content?: string
+  text?: string
+  summary?: string
+}
+
+export interface PageIndexSearchResponse {
+  results: PageIndexSearchResult[]
+}
+
+export interface PageIndexSearchParams {
+  query: string
+  doc_name?: string
+  strategy?: 'tree_search' | 'direct' | 'walker'
+  limit?: number
+  metadata?: Record<string, unknown>
+}

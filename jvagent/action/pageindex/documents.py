@@ -38,6 +38,18 @@ def _to_yes_no(value: Any, default: bool) -> str:
     return "yes" if v in ("yes", "true", "1") else "no"
 
 
+def _build_metadata_query(metadata_filter: Dict[str, Any]) -> Dict[str, Any]:
+    """Build query dict for metadata filter. Uses context.metadata.k for each key."""
+    if not metadata_filter:
+        return {}
+    clauses = [
+        {f"context.metadata.{k}": v} for k, v in metadata_filter.items()
+    ]
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$and": clauses}
+
+
 def _get_pageindex_context() -> GraphContext:
     """Get GraphContext for the PageIndex database."""
     manager = get_database_manager()
@@ -60,6 +72,9 @@ async def assimilate_document(
     max_token_num_each_node: Optional[int] = None,
     summary_token_threshold: Optional[int] = None,
     persist: bool = True,
+    collection_name: str = "default",
+    metadata: Optional[Dict[str, Any]] = None,
+    doc_description: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Assimilate a PDF or Markdown document via PageIndex and optionally persist to graph.
 
@@ -77,6 +92,9 @@ async def assimilate_document(
         max_token_num_each_node: Max tokens per node (PDF)
         summary_token_threshold: Token threshold for node summaries (default 200)
         persist: Whether to persist to graph database
+        collection_name: Collection this document belongs to (default: "default")
+        metadata: Custom key-value metadata for filtering at query time
+        doc_description: Optional user-provided document description (overrides LLM-generated if set)
 
     Returns:
         Dict with doc_name, structure, doc_description (if requested), _root_id (if persist)
@@ -153,6 +171,10 @@ async def assimilate_document(
             name = doc_name
 
         if persist and result.get("structure"):
+            result["collection_name"] = collection_name
+            result["metadata"] = metadata
+            if doc_description is not None:
+                result["doc_description"] = doc_description
             root_id = await tree_to_graph(result)
             result["_root_id"] = root_id
             logger.info(f"Assimilated document '{name}' (root={root_id})")
@@ -163,32 +185,63 @@ async def assimilate_document(
             set_pageindex_model_action(None)
 
 
-async def get_document_root(doc_name: str) -> Optional[DocumentRootNode]:
-    """Get DocumentRootNode by doc_name."""
+async def get_document_roots(
+    collection_name: str = "default",
+    metadata_filter: Optional[Dict[str, Any]] = None,
+) -> List[DocumentRootNode]:
+    """Get DocumentRootNodes filtered by collection and optional metadata."""
     initialize_pageindex_database()
     context = _get_pageindex_context()
     prev = get_default_context()
     try:
         set_default_context(context)
-        roots = await DocumentRootNode.find({"context.doc_name": doc_name})
+        query: Dict[str, Any] = {"context.collection_name": collection_name}
+        query.update(_build_metadata_query(metadata_filter or {}))
+        return await DocumentRootNode.find(query)
+    finally:
+        set_default_context(prev)
+
+
+async def get_document_root(
+    doc_name: str,
+    collection_name: str = "default",
+) -> Optional[DocumentRootNode]:
+    """Get DocumentRootNode by doc_name and collection_name."""
+    initialize_pageindex_database()
+    context = _get_pageindex_context()
+    prev = get_default_context()
+    try:
+        set_default_context(context)
+        query: Dict[str, Any] = {
+            "context.doc_name": doc_name,
+            "context.collection_name": collection_name,
+        }
+        roots = await DocumentRootNode.find(query)
         return roots[0] if roots else None
     finally:
         set_default_context(prev)
 
 
-async def list_documents() -> List[Dict[str, Any]]:
-    """List all documents in the PageIndex graph."""
+async def list_documents(
+    collection_name: str = "default",
+    metadata_filter: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """List documents in the PageIndex graph, optionally filtered by collection and metadata."""
     initialize_pageindex_database()
     context = _get_pageindex_context()
     prev = get_default_context()
     try:
         set_default_context(context)
-        roots = await DocumentRootNode.find()
+        query: Dict[str, Any] = {"context.collection_name": collection_name}
+        query.update(_build_metadata_query(metadata_filter or {}))
+        roots = await DocumentRootNode.find(query)
         return [
             {
                 "doc_name": r.doc_name,
                 "doc_description": r.doc_description,
                 "root_id": r.id,
+                "collection_name": r.collection_name,
+                "metadata": r.metadata,
             }
             for r in roots
         ]
@@ -196,10 +249,13 @@ async def list_documents() -> List[Dict[str, Any]]:
         set_default_context(prev)
 
 
-async def delete_document(doc_name: str) -> bool:
+async def delete_document(
+    doc_name: str,
+    collection_name: str = "default",
+) -> bool:
     """Delete a document and all its nodes from the PageIndex graph."""
     initialize_pageindex_database()
-    root = await get_document_root(doc_name)
+    root = await get_document_root(doc_name, collection_name=collection_name)
     if not root:
         return False
 
