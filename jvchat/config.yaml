@@ -10,7 +10,7 @@ jvagent:
   # Server URL - can be overridden from login screen
   url: http://localhost:8000
   # Request timeout in milliseconds
-  timeout: 30000
+  timeout: 120000
 
 ui:
   # Theme: 'light' or 'dark'

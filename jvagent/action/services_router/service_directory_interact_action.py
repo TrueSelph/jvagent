@@ -34,7 +34,7 @@ class ServiceDirectoryInteractAction(InterviewInteractAction):
 
     vectorstore_action_type: str = attribute(
         default="",
-        description="Entity type of VectorStore action (e.g., 'TypesenseVectorStore').",
+        description="Entity type of VectorStore action (e.g., 'TypesenseVectorStore', 'PineconeVectorStore').",
     )
     collection: str = attribute(
         default="service_directory",
@@ -227,12 +227,11 @@ async def _get_vectorstore_for_session(session: InterviewSession) -> Tuple[Optio
     if not agent_id:
         return None, collection, k, min_score
 
-    # Find vectorstore for this agent
-    # Assuming standard VectorStore
-    # We can try to finding it using Action.find_one
-    vectorstore = await Action.find_one({"context.agent_id": agent_id, "context.class_name": "TypesenseVectorStore"})
-    if not vectorstore:
-        vectorstore = await Action.find_one({"context.agent_id": agent_id, "context.class_name": "VectorStore"})
+    # Find any VectorStore action for this agent (Typesense, Pinecone, etc.)
+    vectorstore = await Action.find_one({
+        "context.agent_id": agent_id,
+        "context.class_name": {"$regex": r"VectorStore$"},
+    })
 
     return vectorstore, collection, k, min_score
 

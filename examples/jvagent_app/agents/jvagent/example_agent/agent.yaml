@@ -28,6 +28,7 @@ context:
 # - jvagent/openai_embedding, jvagent/openai_lm
 # - jvagent/typesense_vectorstore
 # - jvagent/retrieval_interact_action
+# - jvagent/pageindex_retrieval_interact_action (requires jvagent[pageindex])
 #
 # Local overrides/custom actions:
 # - jvagent/persona (custom ExamplePersonaAction override)
@@ -69,6 +70,27 @@ actions:
     context:
       enabled: true
       description: "Introductory interact action for first-time users"
+
+  # PageIndexRetrievalInteractAction - Vectorless RAG from indexed documents
+  # Documents must be ingested first via POST /pageindex/documents
+  - action: jvagent/pageindex_retrieval_interact_action
+    context:
+      enabled: true
+      description: "Vectorless RAG - retrieves context from indexed documents via PageIndex graph"
+      weight: -75  # Runs after InteractRouter, before Persona
+      anchors:
+        - "User asks a question about indexed documents"
+        - "User requests information from document index"
+        - "User wants to search or find information in documents"
+    config:
+      limit: 10
+      strategy: "tree_search"
+      node_summary: false  # Required for tree_search; generates summaries during ingestion
+      node_text: true
+      doc_description: false
+      max_token_num_each_node: 20000
+      summary_token_threshold: 200
+      # model: gpt-4o-mini  # Optional: override LLM for tree search
 
   # TypesenseVectorStore Action - Vector store for semantic search
   # Core action from jvagent library (jvagent/action/vectorstore/typesense/)
@@ -119,6 +141,7 @@ actions:
         - "Process user interactions with behavioral parameters"
         - "Provide streaming and non-streaming responses"
         - "can sign the user up for jvagent training"
+        - "Answer questions from indexed documents (when documents are ingested)"
       # Voice Channel Configuration (Optional)
       # Phonetic substitutions for text-to-speech when channel="voice"
       # Maps original terms to phonetic replacements for proper pronunciation

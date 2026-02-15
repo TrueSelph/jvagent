@@ -18,7 +18,7 @@ export interface AppConfig {
 const DEFAULT_CONFIG: AppConfig = {
   jvagent: {
     url: import.meta.env.VITE_JVAGENT_URL || 'http://localhost:8000',
-    timeout: 30000,
+    timeout: 120000,
   },
   ui: {
     theme: 'light',

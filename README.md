@@ -53,6 +53,11 @@ A modular, pluggable agentive platform built on jvspatial that provides a produc
    pip install -e ".[dev]"
    ```
 
+   Or install with PageIndex support (for document ingestion/retrieval):
+   ```bash
+   pip install -e ".[pageindex]"
+   ```
+
 ### Install from Distribution
 
 If you have a built distribution:

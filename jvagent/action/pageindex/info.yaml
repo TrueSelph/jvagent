@@ -1,0 +1,25 @@
+# PageIndexRetrievalInteractAction Package Descriptor
+
+package:
+  name: jvagent/pageindex_retrieval_interact_action
+  author: jvagent
+  archetype: PageIndexRetrievalInteractAction
+  version: 0.0.1
+  meta:
+    title: PageIndexRetrievalInteractAction
+    description: Vectorless RAG - retrieves context from PageIndex graph via LLM tree search (no VectorStore)
+    group: jvagent
+    type: interact_action
+  config:
+    order:
+      weight: -75
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []
+    pip:
+      - "tiktoken>=0.11.0"
+      - "openai>=1.0.0"
+      - "PyPDF2>=3.0.0"
+      - "pymupdf>=1.26.0"
+      - "python-dotenv>=1.1.0"
+      - "pyyaml>=6.0"
