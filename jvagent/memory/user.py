@@ -54,6 +54,8 @@ class User(Node):
     ) -> "Conversation":
         """Create and connect a new Conversation via edge.
 
+        When interaction_limit is not provided, it is taken from the agent's default.
+
         Args:
             session_id: Optional session identifier. If None, auto-generates one.
             channel: Communication channel (e.g., 'default', 'whatsapp', 'web')

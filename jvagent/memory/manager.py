@@ -123,13 +123,37 @@ class Memory(Node):
         """Get the Agent node this Memory belongs to.
 
         Memory is connected to Agent via bidirectional edge.
+        Agent connects to Memory, so from Memory's perspective Agent is incoming.
 
         Returns:
             Agent instance if found, None otherwise
         """
         from jvagent.core.agent import Agent
 
-        return await self.node(node=Agent)
+        return await self.node(direction="in", node=Agent)
+
+    async def _ensure_conversation_interaction_limit(
+        self, conversation: "Conversation"
+    ) -> None:
+        """Sync interaction_limit from agent and prune if over limit.
+
+        Always syncs from agent when agent has a positive limit, so that changes
+        to agent.yaml (increase or decrease) take effect on resume.
+        """
+        agent = await self.get_agent()
+        if (
+            not agent
+            or not hasattr(agent, "interaction_limit")
+            or agent.interaction_limit <= 0
+        ):
+            return
+        agent_limit = agent.interaction_limit
+        # Sync conversation limit from agent (handles both increase and decrease)
+        if conversation.interaction_limit != agent_limit:
+            conversation.interaction_limit = agent_limit
+            await conversation.save()
+        if conversation.interaction_count > conversation.interaction_limit:
+            await conversation._prune_old_interactions()
 
     async def get_user_by_session(self, session_id: str) -> Optional["User"]:
         """Find the User that owns a specific session.
@@ -213,7 +237,8 @@ class Memory(Node):
             # Update name if provided and not set
             if user_name and (not user.name or user.name == "user"):
                 await user.set_name(user_name)
-                
+
+            await self._ensure_conversation_interaction_limit(conversation)
             return user, conversation, conversation.user_id, session_id, False
 
         # Case 3: user_id only - get/create user, create conversation
@@ -253,7 +278,8 @@ class Memory(Node):
             # Update name if provided and not set
             if user_name and (not user.name or user.name == "user"):
                 await user.set_name(user_name)
-                
+
+            await self._ensure_conversation_interaction_limit(conversation)
             return user, conversation, user_id, session_id, False
 
         raise ValueError("Invalid user_id/session_id combination")
