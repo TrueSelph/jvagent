@@ -212,7 +212,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "references in constraints (input_handler, input_validator)."
     )
 
-    sensitive_keywords: str = [
+    sensitive_keywords: list[str] = [
         "abuse",
         "assault",
         "violence",
@@ -528,7 +528,7 @@ async def handle_interview_completion(
 ) -> None:
     """Handle completion of report interview."""
 
-    logger.warning(f"Interview responses:\n{json.dumps(session.responses, indent=4)}")
+    # logger.warning(f"Interview responses:\n{json.dumps(session.responses, indent=4)}")
 
     # Extract collected data
     incident_description = session.responses.get('incident_description', '')
@@ -542,16 +542,10 @@ async def handle_interview_completion(
     reporter_name = session.responses.get('reporter_name', '')
     reporter_address = session.responses.get('reporter_address', '')
 
+    incident_description = incident_description + "\n\n" + "Incident Location: " + incident_location + "\n\n" + "Reporter Address: " + reporter_address + "\n\n" + "Stakeholder Address: " + stakeholder_address
+
     is_anonymous = is_sensitive == 'yes'
     reporter_phone = visitor.user_id
-
-    # generated data
-    # title = "Suspected Ongoing Domestic Violence - Immediate Safety Risk"
-    # generated_description = "Reports indicate an ongoing domestic violence situation at a residence in South Ruimveldt. Neighbours have repeatedly heard loud arguments, physical assaults, and serious verbal threats, including threats to kill, occurring late at night over several weeks. The incidents appear frequent and escalating, suggesting a loss of control by the alleged perpetrator.\n\nThe victim is believed to be at high risk of serious injury or death if intervention does not occur promptly. The continued absence of action despite clear warning signs presents a critical safety concern. Immediate investigation and protective measures are strongly recommended to ensure the safety of the individual involved and to prevent further harm."
-    # priority = "high"
-    # category_id = 1
-    # ai_overview = ""
-
 
     completion_message = f"Tell the user: Sorry, {reporter_name}! I was unable to submit your report. Please try again later!"
     resolv_api_action = await action.get_action("ResolvAPIAction")
@@ -562,23 +556,14 @@ async def handle_interview_completion(
             attachments=incident_media,
             reporting_on_behalf=reporting_on_behalf,
             stakeholder_name=stakeholder_name,
-            # stakeholder_address=stakeholder_address,
             stakeholder_phone=stakeholder_phone,
             reporter_name=reporter_name,
             reporter_phone=reporter_phone,
-            # reporter_address=reporter_address,
-            # title=title,
-            # description=generated_description,
-            # priority=priority,
-            # category_id=category_id,
-            # ai_overview=ai_overview
         )
 
         if result:
-            logger.warning("result")
-            logger.warning(result)
             reference_number = result.get("id")
-            completion_message = f"Tell the user: Thank you, {reporter_name}! Your report has been submitted successfully. Here is your {reference_number} for follow up."
+            completion_message = f"Tell the user: Thank you, {reporter_name}! Your report has been submitted successfully. Please use reference number {reference_number} for any follow-up inquiries."
     else:
         logger.warning("ResolvAPIAction not found for report submission")
 

@@ -304,7 +304,7 @@ async def handle_interview_completion(
 ) -> None:
     """Handle completion of feedback interview."""
     
-    logger.warning(f"Interview responses: {json.dumps(session.responses, indent=4)}")
+    # logger.warning(f"Interview responses: {json.dumps(session.responses, indent=4)}")
     
     feedback_content = session.responses.get('feedback_content', '')
     reference_number = session.responses.get('reference_number', '')

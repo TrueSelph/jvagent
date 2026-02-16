@@ -158,10 +158,6 @@ actions:
       description: "Houses Arc API credentials and endpoints"
       endpoint: ${ENDPOINT}
       headers: ${HEADERS}
-      # endpoint: "https://gdf-api-dev.v75inc.dev/api/v1"
-      # headers:
-      #   x-api-key: "secret"
-      #   Content-Type: "application/json"
 
   - action: jvagent/access_control_action
     context:

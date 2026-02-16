@@ -1,4 +1,4 @@
-"""Short Pass Interview action lets ranks request a short pass."""
+"""Short pass interview for requesting short passes."""
 from __future__ import annotations
 
 # Standard library
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 class ShortPassInterviewInteractAction(InterviewInteractAction):
-    """Short Pass Interview action lets ranks request a short pass.
+    """Short Pass Interview action is used to request short passes.
 
     This is a concrete implementation of InterviewInteractAction that defines
     a specific interview flow. Sessions are identified by
@@ -54,13 +54,7 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
         generation prompts.
     """
 
-    description: str = "Short Pass Interview action lets ranks request a short pass."
-
-    # DSPy Integration
-    use_dspy: bool = attribute(
-        default=True,
-        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)",
-    )
+    description: str = "Short Pass Interview action is used to request short passes."
 
     # REQUIRED when using InteractRouter: Anchors for intelligent routing
     # Must cover both initial entry and intermediate states (when answering questions)
@@ -192,17 +186,105 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
             },
         ],
         description="List of question configurations defining the interview graph. Can be overridden in agent.yaml. "
-        "Supports conditional branching via 'branches' and 'default_next'. "
-        "Handlers, validators, and directive overrides can be registered via decorators "
-        "(@input_handler, @input_validator, @input_directive_override) or specified as string "
-        "references in constraints (input_handler, input_validator). "
-        "Branch functions can be registered with @branch_function decorator for complex branching logic.",
+                    "Supports conditional branching via 'branches' and 'default_next'. "
+                    "Handlers, validators, and directive overrides can be registered via decorators "
+                    "(@input_handler, @input_validator, @input_directive_override) or specified as string "
+                    "references in constraints (input_handler, input_validator). "
+                    "Branch functions can be registered with @branch_function decorator for complex branching logic.",
     )
+    short_pass_review_template: str = """*Short Pass Request*
 
-    # Input validator
+*Name:* <rank_rank> <rank_name> (<rank_number>)
+*Unit/Subunit:* <unit> <sub_unit>
+*Supervisor:* <supervisor_name> (<supervisor_rank_number>)
+
+*Dates:*  <start_date> to <end_date>
+
+*Reason:* <reason_for_pass>
+
+% if overseas_travel == 'yes' %
+*Overseas Address:* <overseas_address>
+*Overseas Contact:* <overseas_contact_number>
+% endif %
+"""
+
+    # Helper function
+    async def _call_model(self, user_prompt: str, system_prompt: str, json_response: bool = False):
+        """
+        Call the language model and return the response.
+        
+        Args:
+            user_prompt: The user's input/question
+            system_prompt: System instruction defining model behavior
+            json_response: If True, parse response as JSON (default: False)
+        
+        Returns:
+            - If json_response=True: Parsed JSON dict on success
+            - If json_response=False: Raw string response
+            - False if model action unavailable
+            - None if exception occurs
+        
+        Example:
+            # Text response
+            response = await self._call_model(
+                user_prompt="What is Python?",
+                system_prompt="You are a programming expert."
+            )
+            
+            # JSON response
+            data = await self._call_model(
+                user_prompt="List 3 Python frameworks",
+                system_prompt="Return JSON",
+                json_response=True
+            )
+        """
+        try:
+            model_action = await self.get_model_action()
+            if not model_action:
+                return False
+            
+            if json_response:
+                result_str = await model_action.generate(
+                    prompt=user_prompt,
+                    stream=False,
+                    system=system_prompt,
+                    model=self.config.model.model,
+                    temperature=self.config.model.model_temperature,
+                    max_tokens=self.config.model.model_max_tokens,
+                    response_format={"type": "json_object"}
+                )
+
+                json_match = re.search(r'```(?:json)?\s*({.*?})\s*```', result_str, re.DOTALL)
+                if json_match:
+                    result_str = json_match.group(1)
+                elif result_str.strip().startswith('{'):
+                    result_str = result_str.strip()
+                else:
+                    json_match = re.search(r'{.*}', result_str, re.DOTALL)
+                    result_str = json_match.group(0) if json_match else result_str.strip()
+                    
+                return json.loads(result_str)
+            else:
+                return await model_action.generate(
+                    prompt=user_prompt,
+                    stream=False,
+                    system=system_prompt,
+                    model=self.config.model.model,
+                    temperature=self.config.model.model_temperature,
+                    max_tokens=self.config.model.model_max_tokens,
+                )
+        except Exception as e:
+            logger.error(f"Error in LLM helper: {e}")
+            return None
+
+
+    # Validators
     @input_validator("start_date")
     def validate_start_date(
-        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
     ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate that the start date is not empty."""
         if not value or not isinstance(value, str):
@@ -211,7 +293,10 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
 
     @input_validator("end_date")
     def validate_end_date(
-        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
     ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate that the end date is not empty."""
         if not value or not isinstance(value, str):
@@ -220,7 +305,10 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
 
     @input_validator("overseas_travel")
     def validate_overseas_travel(
-        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
     ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate that the overseas travel response is either yes or no."""
         if not value or not isinstance(value, str):
@@ -236,7 +324,10 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
 
     @input_validator("overseas_address")
     def validate_overseas_address(
-        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
     ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate that the overseas address is sufficiently detailed."""
         if not value or not isinstance(value, str):
@@ -253,7 +344,10 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
 
     @input_validator("overseas_contact_number")
     def validate_overseas_contact_number(
-        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
     ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate that the overseas contact number is a valid 10-digit number."""
         if not value or not isinstance(value, str):
@@ -272,7 +366,10 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
 
     @input_validator("under_confinement")
     def validate_under_confinement(
-        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
     ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate that the confinement response is either yes or no."""
         if not value or not isinstance(value, str):
@@ -288,7 +385,10 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
 
     @input_validator("reason_for_pass")
     def validate_reason_for_pass(
-        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
     ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate that the reason for the pass has sufficient detail."""
         if not value or not isinstance(value, str):
@@ -305,7 +405,10 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
 
     @input_validator("supervisor_name")
     def validate_supervisor_name(
-        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
     ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate that the supervisor name is not empty and formatted correctly."""
         if not value or not isinstance(value, str):
@@ -322,7 +425,10 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
 
     @input_validator("supervisor_contact_number")
     def validate_supervisor_contact_number(
-        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
     ) -> Tuple[ValidationStatus, Optional[str]]:
         """Validate that the supervisor's contact number is a valid 10-digit number."""
         if not value or not isinstance(value, str):
@@ -342,7 +448,9 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
     # Input context provider
     @input_context_provider()
     async def get_current_date(
-        self, session: InterviewSession, visitor: InteractWalker, interview_action: Optional[Any] = None
+        session: InterviewSession,
+        visitor: InteractWalker,
+        interview_action: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Provide the current date for reference."""
         now = datetime.now()
@@ -352,10 +460,15 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
     # Branch function
     @branch_function("can_ask_for_supervisor_name")
     async def can_ask_for_supervisor_name(
-        self, session: InterviewSession, visitor: InteractWalker, interview_action: Optional[Any] = None
+        session: InterviewSession,
+        visitor: InteractWalker,
+        interview_action: Optional[Any] = None,
     ) -> bool:
         """Determine if supervisor details need to be collected from the user."""
         logger.warning("Checking if supervisor details are already available.")
+        arc_api_action = interview_action.get_action("ArcAPIAction")
+
+        # arc_api_action.get_short_pass()
 
         rank_profile = {
             "ident_code": "MiPWJFWbxqPccfusEygn",
@@ -400,7 +513,6 @@ class ShortPassInterviewInteractAction(InterviewInteractAction):
 
         return True
 
-
 # Input review override
 @input_review_override
 def adapt_review(
@@ -426,7 +538,6 @@ def adapt_review(
     for key, value in session.context.items():
         if key in ["supervisor_name", "supervisor_phone_number"]:
             result_ending[key] = value
-
     # Add context items at the end
     result.update(result_ending)
     return result
@@ -448,8 +559,6 @@ async def handle_interview_completion(
         # Session responses
         under_confinement = session.responses.get('under_confinement', "N/A")
         overseas_travel = session.responses.get('overseas_travel', "N/A")
-        start_date_str = session.responses.get('start_date', "N/A")
-        end_date_str = session.responses.get('end_date', "N/A")
         reason_for_pass = session.responses.get('reason_for_pass', "N/A")
         overseas_address = session.responses.get('overseas_address', "N/A")
         overseas_contact_number = session.responses.get('overseas_contact_number', "N/A")
@@ -467,46 +576,81 @@ async def handle_interview_completion(
         unit = session.context.get('unit', "Unknown")
         sub_unit = session.context.get('sub_unit', "Unknown")
 
-        # Determine pass type
-        if under_confinement == "yes":
-            pass_type = "CONFINEMENT"
-        elif overseas_travel == "yes":
-            pass_type = "OVERSEAS"
+        # generated content 
+        now = datetime.now()
+        applied_on = now.strftime("%Y-%m-%d")
+        reviewed_on = applied_on
+
+        # Infers the type of pass based on interview responses
+        if under_confinement == "yes" or overseas_travel == "yes":
+            pass_type = "CONFINEMENT" if under_confinement == "yes" else "OVERSEAS"
         else:
             pass_type = "TRADITIONAL"
 
-        # Convert date formats
-        try:
-            start_date = datetime.strptime(start_date_str, "%A, %B %d, %Y").strftime("%Y-%m-%d")
-            end_date = datetime.strptime(end_date_str, "%A, %B %d, %Y").strftime("%Y-%m-%d")
-        except ValueError:
-            start_date = start_date_str
-            end_date = end_date_str
+        # convert content 
+        start_date = datetime.strptime(start_date, "%A, %B %d, %Y").strftime("%Y-%m-%d")
+        end_date = datetime.strptime(end_date, "%A, %B %d, %Y").strftime("%Y-%m-%d")
 
-        # Format review / supervisor message
-        unit_or_sub_unit = f"{unit} {sub_unit}" if unit != "Unknown" and sub_unit != "Unknown" else (unit if unit != "Unknown" else sub_unit)
+        review_template_str = action.short_pass_review_template
+        if pass_type != "OVERSEAS":
+            review_template_str = review_template_str.split("% if overseas_travel == 'yes' %")[0]
+            review_template_str = review_template_str.replace("<overseas_address>\n", "")
+            review_template_str = review_template_str.replace("<overseas_contact_number>\n", "")
         
-        particulars = (
-            f"*Short Pass Request*\n\n"
-            f"*Name:* {rank_rank} {rank_name} ({rank_number})\n"
-            f"*Unit/Subunit:* {unit_or_sub_unit}\n"
-            f"*Supervisor:* {supervisor_name} ({supervisor_rank_number})\n\n"
-            f"*Dates:* {start_date} to {end_date}\n\n"
-            f"*Reason:* {reason_for_pass}"
-        )
+        
+        review_template_str = review_template_str.replace("\n% if overseas_travel == 'yes' %", "")
+        review_template_str = review_template_str.replace("% endif %\n", "")
+        review_template_str = review_template_str.replace("<rank_number>", rank_number)
+        review_template_str = review_template_str.replace("<rank_name>", rank_name)
+        review_template_str = review_template_str.replace("<rank_rank>", rank_rank)
+
+        if unit != "Unknown" and sub_unit != "Unknown":
+            unit_or_sub_unit = f"{unit} {sub_unit}"
+        else:
+            unit_or_sub_unit = unit if unit != "Unknown" else sub_unit
+        review_template_str = review_template_str.replace("<unit> <sub_unit>", unit_or_sub_unit)
+
+        review_template_str = review_template_str.replace("<supervisor_name>", supervisor_name)
+        review_template_str = review_template_str.replace("<supervisor_rank_number>", supervisor_rank_number)
+        review_template_str = review_template_str.replace("<start_date>", start_date)
+        review_template_str = review_template_str.replace("<end_date>", end_date)
+        review_template_str = review_template_str.replace("<reason_for_pass>", reason_for_pass)
+        review_template_str = review_template_str.replace("<overseas_address>", overseas_address)
+        particulars = review_template_str.replace("<overseas_contact_number>", overseas_contact_number)
 
         if pass_type == "OVERSEAS":
             particulars += f"\n\n*Overseas Address:* {overseas_address}\n*Overseas Contact:* {overseas_contact_number}"
 
-        # Mock ID for demo
-        short_pass_id = "95"
+        short_pass_id = await arc_api_action.create_short_pass(
+            rank_number=rank_number,
+            rank_name=rank_name,
+            rank_phone_number=visitor.user_id,
+            pass_type=pass_type,
+            start_date=start_date,
+            end_date=end_date,
+            reason_for_pass=reason_for_pass,
+            particulars=particulars,
+            supervisor=supervisor_name,
+            supervisor_phone_number=supervisor_phone_number,
+            applied_on=applied_on,
+            reviewed_on=reviewed_on
+        )
 
         if short_pass_id:
             completion_message = f"Tell the user: Thank you for your short pass submission! Your reference number for follow-up is: {short_pass_id}."
             supervisor_notification = particulars.replace("*Short Pass Request*", f"*Short Pass Request*\n*Reference Number*: {short_pass_id}")
             logger.warning(f"Supervisor Notification: {supervisor_notification}")
+            whatsapp_action = await action.get_action("WhatsAppAction")
             
-            # Logic for sending via WhatsApp would go here
+            # Notify the supervisor 
+            if whatsapp_action:
+                message_result = await whatsapp_action.api().send_message(
+                    phone=supervisor_phone_number,
+                    message=supervisor_notification
+                )
+
+                if not message_result.get("success", False):
+                    completion_message = f"Tell the user: Thank you for your short pass! Here is your reference number for follow-up: {short_pass_id}. However, I was unable to send the message to your supervisor. Please contact them directly."
     else:
         logger.error("ArcAPIAction not found for short pass submission.")
 

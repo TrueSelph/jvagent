@@ -1,4 +1,4 @@
-"""Supervisor Short Pass Interview action lets supervisors review short pass requests."""
+"""Supervisor short pass interview for reviewing and approving short pass requests."""
 from __future__ import annotations
 
 # Standard library
@@ -30,11 +30,13 @@ logger = logging.getLogger(__name__)
 
 
 class SupervisorShortPassInterviewInteractAction(InterviewInteractAction):
-    """Supervisor Short Pass Interview action lets supervisors review short pass requests.
+    """Supervisor Short Pass Interview action is used to review and approve short pass requests.
 
     This is a concrete implementation of InterviewInteractAction that defines
     a specific interview flow. Sessions are identified by
     interview_type='SupervisorShortPassInterviewInteractAction' and attached to Conversation nodes.
+
+    The question_graph can be overridden in agent.yaml to customize questions.
 
     Architecture:
         The interview system uses a unified classification and extraction approach
@@ -51,16 +53,11 @@ class SupervisorShortPassInterviewInteractAction(InterviewInteractAction):
     """
 
     description: str = (
-        "Supervisor Short Pass Interview action lets supervisors review short pass requests."
-    )
-
-    # DSPy Integration
-    use_dspy: bool = attribute(
-        default=True,
-        description="Use DSPy module for classification (enables optimization via DSPy teleprompters)"
+        "Supervisor Short Pass Interview action is used to review and approve short pass requests."
     )
 
     # REQUIRED when using InteractRouter: Anchors for intelligent routing
+    # Must cover both initial entry and intermediate states (when answering questions)
     anchors: List[str] = attribute(
         default_factory=lambda: [
             "Supervisor wants to review a short pass request",
@@ -110,109 +107,52 @@ class SupervisorShortPassInterviewInteractAction(InterviewInteractAction):
                 "required": True,
             },
         ],
-        description="List of question configurations defining the interview graph.",
+        description="List of question configurations defining the interview graph. Can be overridden in agent.yaml. "
+                    "Supports conditional branching via 'branches' and 'default_next'. "
+                    "Handlers, validators, and directive overrides can be registered via decorators "
+                    "(@input_handler, @input_validator, @input_directive_override) or specified as string "
+                    "references in constraints (input_handler, input_validator). "
+                    "Branch functions can be registered with @branch_function decorator for complex branching logic.",
     )
 
-    # Helper function
-    # async def _get_()
+    rank_update_message: str = """*{supervisor}* has *{short_pass_status}* your {type_of_pass} short pass request for the dates: *{start_date} to {end_date}*
 
-
-    # Validators
-    @input_validator("short_pass_reference_number")
-    async def validate_short_pass_reference_number(
-        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
-    ) -> Tuple[ValidationStatus, Optional[str]]:
-        """Validate and fetch short pass details using the reference number."""
-        if not value:
-            return (
-                ValidationStatus.INVALID,
-                "Ask: Please provide the short pass reference number.",
-            )
-
-        arc_api_action = await self.get_action("ArcAPIAction")
-        short_pass = await arc_api_action.get_short_pass(value)
-
-        if short_pass:
-            session.context["short_pass_details"] = short_pass
-            return ValidationStatus.VALID, None
-
-        return (
-            ValidationStatus.INVALID,
-            f"Tell the user: I couldn't find a short pass with the reference number {value}. Please check and try again.",
-        )
-
-    @input_validator("approval_status")
-    def validate_approval_status(
-        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
-    ) -> Tuple[ValidationStatus, Optional[str]]:
-        """Validate that approval status is either 'approved' or 'denied'."""
-        if not value or not isinstance(value, str):
-            return (
-                ValidationStatus.INVALID,
-                "Ask: Do you approve or deny this short pass request?",
-            )
-
-        value = value.strip().lower()
-        if value not in ["approved", "denied"]:
-            return (
-                ValidationStatus.INVALID,
-                "Ask: Please respond with either 'approved' or 'denied'.",
-            )
-
-        return ValidationStatus.VALID, None
-
-    @input_validator("supervisor_feedback")
-    def validate_supervisor_feedback(
-        self, value: str, session: InterviewSession, visitor: Optional[InteractWalker] = None, interview_action: Optional[Any] = None
-    ) -> Tuple[ValidationStatus, Optional[str]]:
-        """Validate that supervisor feedback is not empty and has sufficient length."""
-        if not value or not isinstance(value, str):
-            return ValidationStatus.INVALID, "Ask: Please provide your feedback or remarks."
-
-        value = value.strip()
-        if len(value) < 5:
-            return (
-                ValidationStatus.INVALID,
-                "Ask: Please provide more detailed remarks.",
-            )
-
-        return ValidationStatus.VALID, None
-
-    # Branch functions
-    @branch_function("skip_ref_if_known")
-    async def skip_ref_if_known(
-        session: InterviewSession, visitor: Optional[InteractWalker] = None
-    ) -> bool:
-        """Determine if we can skip the reference number question."""
-        # Check if reference is already in context from a quoted message
-        quoted_message = visitor.data.get("quoted_message", "") if visitor else ""
-        
-        if "*Reference Number*:" in quoted_message:
-            try:
-                ref_num = quoted_message.split("*Reference Number*:")[1].split()[0].strip()
-                if ref_num:
-                    arc_api_action = await ArcAPIAction.find_one({
-                        "context.enabled": True
-                    })
-                    short_pass = await arc_api_action.get_short_pass(ref_num)
-                    if short_pass:
-                        session.context["short_pass_reference_number"] = ref_num
-                        session.context["short_pass_details"] = short_pass
-                        session.responses["short_pass_reference_number"] = ref_num
-                        return True
-            except (IndexError, Exception) as e:
-                logger.warning(f"Failed to extract ref number from quote: {e}")
-
-        return "short_pass_reference_number" in session.context or "short_pass_reference_number" in session.responses
+{short_pass_comment}"""
 
     # Helper function
     async def _call_model(self, user_prompt: str, system_prompt: str, json_response: bool = False):
-        """Internal helper to interact with the LLM."""
+        """
+        Call the language model and return the response.
+        
+        Args:
+            user_prompt: The user's input/question
+            system_prompt: System instruction defining model behavior
+            json_response: If True, parse response as JSON (default: False)
+        
+        Returns:
+            - If json_response=True: Parsed JSON dict on success
+            - If json_response=False: Raw string response
+            - False if model action unavailable
+            - None if exception occurs
+        
+        Example:
+            # Text response
+            response = await self._call_model(
+                user_prompt="What is Python?",
+                system_prompt="You are a programming expert."
+            )
+            
+            # JSON response
+            data = await self._call_model(
+                user_prompt="List 3 Python frameworks",
+                system_prompt="Return JSON",
+                json_response=True
+            )
+        """
         try:
             model_action = await self.get_model_action()
             if not model_action:
-                logger.warning("No model action found.")
-                return None
+                return False
             
             if json_response:
                 result_str = await model_action.generate(
@@ -249,7 +189,107 @@ class SupervisorShortPassInterviewInteractAction(InterviewInteractAction):
             return None
 
 
-# Review override
+    # Validators
+    @input_validator("short_pass_reference_number")
+    async def validate_short_pass_reference_number(
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
+    ) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate and fetch short pass details using the reference number."""
+        if not value or not isinstance(value, str):
+            return (
+                ValidationStatus.INVALID,
+                "Ask: Please provide the short pass reference number.",
+            )
+
+        arc_api_action = await interview_action.get_action("ArcAPIAction")
+        if arc_api_action:
+            short_pass = await arc_api_action.get_short_pass(value)
+
+            if short_pass:
+                session.context["short_pass_details"] = short_pass
+                return ValidationStatus.VALID, None
+
+        return (
+            ValidationStatus.INVALID,
+            f"Tell the user: I couldn't find a short pass with the reference number {value}. Please check and try again.",
+        )
+
+    @input_validator("approval_status")
+    def validate_approval_status(
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
+    ) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that approval status is either 'approved' or 'denied'."""
+        if not value or not isinstance(value, str):
+            return (
+                ValidationStatus.INVALID,
+                "Ask: Do you approve or deny this short pass request?",
+            )
+
+        value = value.strip().lower()
+        if value not in ["approved", "denied"]:
+            return (
+                ValidationStatus.INVALID,
+                "Ask: Please respond with either 'approved' or 'denied'.",
+            )
+
+        return ValidationStatus.VALID, None
+
+    @input_validator("supervisor_feedback")
+    def validate_supervisor_feedback(
+        value: str,
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
+    ) -> Tuple[ValidationStatus, Optional[str]]:
+        """Validate that supervisor feedback is not empty and has sufficient length."""
+        if not value or not isinstance(value, str):
+            return ValidationStatus.INVALID, "Ask: Please provide your feedback or remarks."
+
+        value = value.strip()
+        if len(value) < 5:
+            return (
+                ValidationStatus.INVALID,
+                "Ask: Please provide more detailed remarks.",
+            )
+
+        return ValidationStatus.VALID, None
+
+    # Branch function
+    @branch_function("skip_ref_if_known")
+    async def skip_ref_if_known(
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[Any] = None,
+    ) -> bool:
+        """Determine if we can skip the reference number question."""
+        # Check if reference is already in context from a quoted message
+        quoted_message = visitor.data.get("quoted_message", "") if visitor else ""
+        
+        if "*Reference Number*:" in quoted_message:
+            try:
+                ref_num = quoted_message.split("*Reference Number*:")[1].split()[0].strip()
+                if ref_num and interview_action:
+                    arc_api_action = await interview_action.get_action("ArcAPIAction")
+                    if arc_api_action:
+                        short_pass = await arc_api_action.get_short_pass(ref_num)
+                        if short_pass:
+                            session.context["short_pass_reference_number"] = ref_num
+                            session.context["short_pass_details"] = short_pass
+                            session.responses["short_pass_reference_number"] = ref_num
+                            return True
+            except (IndexError, Exception) as e:
+                logger.warning(f"Failed to extract reference number from quote: {e}")
+
+        return "short_pass_reference_number" in session.context or "short_pass_reference_number" in session.responses
+
+
+# Input review override
 @input_review_override
 def adapt_review(
     session: InterviewSession,
@@ -274,7 +314,8 @@ def adapt_review(
     for key, value in session.context.items():
         if key == 'short_pass_reference_number' and key not in result:
             result_ending[key] = value
-            
+    
+    # Add items at the end of the dict
     result.update(result_ending)
     return result
 
@@ -292,29 +333,41 @@ async def handle_interview_completion(
     completion_message = "Tell the user: Sorry, I was unable to process your decision at this time. Please try again later!"
     
     if arc_api_action:
-        approval_status = session.responses.get('approval_status')
-        short_pass_reference_number = (session.responses.get('short_pass_reference_number') or 
-                                       session.context.get('short_pass_reference_number'))
-        comments = session.responses.get('supervisor_feedback', 'No remarks provided.')
-        short_pass_details = session.context.get('short_pass_details', {})
+        short_pass_status = session.responses.get('short_pass_status')
+        short_pass_reference_number = session.responses.get('short_pass_reference_number') or session.context.get('short_pass_reference_number')
+        comments = session.responses.get('comments', 'no comments')
+
+        short_pass_details = session.context.get('short_pass_details')
+        completion_message = f"Tell the user: Sorry, your request to {short_pass_status} the short pass for rank {short_pass_reference_number} could not be processed at this time. Please try again later."
 
         result = await arc_api_action.update_short_pass(
             reference_number=short_pass_reference_number,
-            status=approval_status,
+            status=short_pass_status,
             comments=comments
         )
-
         if result:
-            completion_message = (
-                f"Tell the user: Your decision to {approval_status} the short pass request "
-                f"({short_pass_reference_number}) has been processed successfully. The rank will be notified."
-            )
-            
-            # Logic for notifying the rank via WhatsApp would go here
-            # rank_notification = f"Your supervisor has {approval_status} your short pass request. Remarks: {comments}"
-            
-    else:
-        logger.error("ArcAPIAction not found for short pass update.")
+            completion_message = f"Tell the user: Your request to {short_pass_status} the short pass for rank {short_pass_reference_number} has been processed successfully. The rank will be notified shortly."
+            whatsapp_action = await action.get_action("WhatsAppAction")
+            if whatsapp_action:
+                # message to notify rank of supervisor decision
+                rank_update_message_str = action.rank_update_message.format(
+                    supervisor=short_pass_details.get('supervisor'),
+                    short_pass_status=short_pass_status,
+                    type_of_pass=short_pass_details.get('pass_type'),
+                    start_date=short_pass_details.get('start_date'),
+                    end_date=short_pass_details.get('end_date'),
+                    short_pass_comment=comments
+                )
+                rank_update_message_str = rank_update_message_str.replace("\nno comments", "")
+                message_result = await whatsapp_action.api().send_message(
+                    phone=short_pass_details.get("rank_phone_number"),
+                    message=rank_update_message_str
+                )
 
+                if not message_result.get("success", False):
+                    completion_message = f"Tell the user: Thank you for your short pass! Here is your reference number for follow-up: {short_pass_id}. However, I was unable to send the message to your supervisor. Please contact them directly."
+
+    else:
+        logger.error("ArcAPIAction not found for short pass submission")
     await action.respond(visitor, directives=[completion_message])
     await session.cleanup()

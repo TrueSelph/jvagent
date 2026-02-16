@@ -14,7 +14,7 @@ actions:
       # Model Configuration
       model_action_type: "OpenAILanguageModelAction"
       history_limit: 3
-      model: "gpt-4.1-mini"
+      model: "gpt-4.1"
 
   - action: jvagent/openai_embedding
     context:
@@ -32,6 +32,7 @@ actions:
     context:
       enabled: true
       description: "Introductory interact action for first-time users"
+      directive: "Introduce yourself and briefly explain your capabilities."
 
   - action: jvagent/openai_lm
     context:
@@ -55,7 +56,7 @@ actions:
   - action: resolv/switchboard_interview_interact_action
     context:
       enabled: true
-      description: "Interview action for guiding users through agent selection"
+      description: "This action allows the user to choose the agent they want to interact with."
       weight: -20
     config:
       model_action_type: "OpenAILanguageModelAction"
