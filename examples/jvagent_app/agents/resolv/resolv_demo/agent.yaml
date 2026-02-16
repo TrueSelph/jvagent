@@ -6,6 +6,7 @@ context:
   alias: Resolv Demo Agent
   description: A demo agent for Resolv
   enabled: true
+  interaction_limit: 10 # Optional limit on number of interactions (resets after reaching limit)
 actions:
   - action: jvagent/interact_router
     context:

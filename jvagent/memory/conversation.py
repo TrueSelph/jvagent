@@ -177,6 +177,17 @@ class Conversation(DeferredSaveMixin, Node):
         self.last_interaction_at = datetime.now(timezone.utc)
         await self.save()
 
+        # Sync limit from agent when missing or when agent limit changed (e.g. after --update)
+        agent = await self.get_agent()
+        if (
+            agent
+            and hasattr(agent, "interaction_limit")
+            and agent.interaction_limit > 0
+            and self.interaction_limit != agent.interaction_limit
+        ):
+            self.interaction_limit = agent.interaction_limit
+            await self.save()
+
         # Apply rolling window pruning if limit is set and exceeded
         if self.interaction_limit > 0 and self.interaction_count > self.interaction_limit:
             await self._prune_old_interactions()
@@ -204,13 +215,13 @@ class Conversation(DeferredSaveMixin, Node):
         while current and removed < to_remove:
             next_interaction = await current.get_next_interaction()
 
-            # Disconnect from conversation if this is the first interaction
-            if removed == 0:
-                if await self.is_connected_to(current):
-                    await self.disconnect(current)
-                # If there's a next interaction, connect conversation to it (new first)
-                if next_interaction:
-                    await self.connect(next_interaction, direction="out")
+            # Always update conversation connection: we remove from the head, so each
+            # iteration the current node is the (current) first. Disconnect conv from
+            # current and connect to next (new first) before deleting.
+            if await self.is_connected_to(current):
+                await self.disconnect(current)
+            if next_interaction:
+                await self.connect(next_interaction, direction="out")
 
             # Disconnect from next interaction if it exists
             if next_interaction:
