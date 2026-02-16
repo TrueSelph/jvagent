@@ -215,12 +215,12 @@ class TestResponseBuilder:
                 report=report,
             )
 
-            # Production should exclude report
+            # Production should exclude report and interaction
             assert response["user_id"] == "usr_123"
             assert response["session_id"] == "sess_456"
             assert response["response"] == "Hi there!"
             assert "report" not in response
-            assert "observability_metrics" not in response["interaction"]
+            assert "interaction" not in response
         finally:
             if original:
                 os.environ["JVAGENT_ENVIRONMENT"] = original

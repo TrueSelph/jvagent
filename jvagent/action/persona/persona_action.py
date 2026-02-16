@@ -6,6 +6,7 @@ action for applying agent prompts with configurable parameters.
 
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -13,6 +14,7 @@ from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
 from jvagent.action.persona.prompts import (
+    CHANNEL_OVERRIDE_PREAMBLE,
     CONTINUATION_GUIDANCE_PROMPT,
     DIRECTIVES_SECTION_PROMPT,
     DIRECTIVE_COMPLIANCE_CHECK_PROMPT,
@@ -78,6 +80,10 @@ class PersonaAction(Action):
     )
     model_max_tokens: int = attribute(
         default=4096, description="Max tokens for LLM generation"
+    )
+    voice_max_tokens: int = attribute(
+        default=150,
+        description="Max tokens for voice channel (~100 words); used when channel=voice",
     )
 
     # System prompt (default property)
@@ -230,6 +236,44 @@ class PersonaAction(Action):
         except Exception as e:
             logger.debug(f"PersonaAction: failed to resolve user display name: {e}")
         return "user"
+
+    def _sanitize_voice_response(self, response: str, max_words: int = 100) -> str:
+        """Sanitize response for voice/TTS: strip markdown, collapse whitespace, truncate.
+
+        Fallback when the model disobeys voice format rules.
+        """
+        if not response or not response.strip():
+            return response
+        text = response.strip()
+        # Strip markdown: **bold** -> bold, *italic* -> italic
+        text = re.sub(r"\*\*([^*]*)\*\*", r"\1", text)
+        text = re.sub(r"\*([^*]*)\*", r"\1", text)
+        text = re.sub(r"^#+\s*", "", text, flags=re.MULTILINE)
+        text = re.sub(r"`([^`]*)`", r"\1", text)
+        text = re.sub(r"^---+?\s*$", "", text, flags=re.MULTILINE)
+        # Strip [text](url) -> text
+        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+        # Remove numbered/bullet list prefixes (1. 2. - *)
+        text = re.sub(r"^\s*\d+\.\s*", " ", text, flags=re.MULTILINE)
+        text = re.sub(r"^\s*[-*]\s+", " ", text, flags=re.MULTILINE)
+        # Collapse double newlines and extra whitespace
+        text = re.sub(r"\n\n+", ". ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        # Truncate to max_words
+        words = text.split()
+        if len(words) <= max_words:
+            return text
+        truncated = words[:max_words]
+        # Prefer sentence boundary
+        last_sentence_end = -1
+        for i in range(len(truncated) - 1, -1, -1):
+            w = truncated[i]
+            if w and w[-1] in ".!?":
+                last_sentence_end = i
+                break
+        if last_sentence_end > max_words // 2:
+            truncated = truncated[: last_sentence_end + 1]
+        return " ".join(truncated).strip()
 
     async def _pipe_response(
         self,
@@ -431,15 +475,18 @@ class PersonaAction(Action):
         else:
             parameters_section = ""
 
-        # Build channel formatting section
+        # Build channel formatting section (with override preamble when channel present)
         channel = interaction.channel or "default"
         channel_directive = get_channel_directive(
             channel,
             phonetic_substitutions=self.phonetic_substitutions if channel == "voice" else None
         )
-        channel_formatting_section = (
-            f"### CHANNEL FORMATTING\n{channel_directive}" if channel_directive else ""
-        )
+        if channel_directive:
+            channel_formatting_section = (
+                f"### CHANNEL FORMATTING\n{CHANNEL_OVERRIDE_PREAMBLE}\n\n{channel_directive}"
+            )
+        else:
+            channel_formatting_section = ""
 
         # Format conditional sections
         interpretation_section = format_conditional_section(interpretation_section, bool(interpretation_section))
@@ -633,11 +680,17 @@ class PersonaAction(Action):
             )
             prompt = f"{prompt}\n\n[SYSTEM: You MUST execute in your response: {directive_hints}]"
 
+        # When channel=voice, inject format reminder for peak-attention reinforcement
+        channel = interaction.channel or "default"
+        if channel == "voice" and prompt:
+            prompt = f"{prompt}\n\n[VOICE: Plain text only. Max 100 words. No markdown, lists, or **bold**.]"
+
         # Make the language model call
         try:
             # Enable JSON response format if structured output is requested
             response_format = {"type": "json_object"} if self.use_structured_output else None
 
+            max_tokens = self.voice_max_tokens if channel == "voice" else self.model_max_tokens
             response = await model_action.generate(
                 prompt=prompt,
                 stream=streaming,
@@ -646,7 +699,7 @@ class PersonaAction(Action):
                 calling_action_name=self.get_class_name(),
                 model=self.model,
                 temperature=self.model_temperature,
-                max_tokens=self.model_max_tokens,
+                max_tokens=max_tokens,
                 response_bus=response_bus if streaming else None,
                 interaction=interaction if streaming else None,
                 response_format=response_format,
@@ -659,6 +712,10 @@ class PersonaAction(Action):
                 if parsed_response:
                     response = parsed_response
                 # If parsing fails, response remains as-is (fallback)
+
+            # Sanitize for voice channel (strip markdown, truncate) when model disobeys
+            if channel == "voice" and response:
+                response = self._sanitize_voice_response(response)
 
             # Mark directives and parameters as executed only if we got a meaningful response
             if response and response.strip():

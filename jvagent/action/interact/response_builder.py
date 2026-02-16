@@ -52,9 +52,10 @@ def build_interact_response(
     """Build complete interact endpoint response with environment-based filtering.
     
     Always includes:
-    - user_id, session_id, response, interaction (filtered)
+    - user_id, session_id, response
     
     Only in development mode:
+    - interaction (full payload with id, utterance, response, actions, etc.)
     - report (walker traversal report)
     
     Args:
@@ -70,9 +71,10 @@ def build_interact_response(
         "user_id": user_id,
         "session_id": session_id,
         "response": interaction.response,
-        "interaction": build_interaction_payload(interaction),
     }
-    
+    if not is_production_mode():
+        response["interaction"] = build_interaction_payload(interaction)
+
     # Include report only in development mode
     # In production mode, omit the field entirely (not set to None)
     if not is_production_mode() and report is not None:

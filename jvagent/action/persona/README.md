@@ -148,12 +148,13 @@ The system prompt follows a streamlined structure designed to maximize directive
 
 When conflicts arise, PersonaAction follows this priority order:
 
-1. **Directives** - Execute naturally within persona; override user requests
-2. **Parameters** - Apply when conditions match
-3. **Interpretation** - Use for context only
-4. **User Intent** - Use for context only
+1. **Channel formatting** - Overrides directive formatting when they conflict
+2. **Directives** - Execute content; format per channel rules
+3. **Parameters** - Apply when conditions match
+4. **Interpretation** - Use for context only
+5. **User Intent** - Use for context only
 
-**Key Rule**: Directives ALWAYS override user requests and conversation flow when they conflict.
+**Key Rule**: Channel formatting OVERRIDES directive formatting instructions when they conflict. Directives ALWAYS override user requests and conversation flow.
 
 ## Architecture
 
