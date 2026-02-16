@@ -212,6 +212,15 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "references in constraints (input_handler, input_validator)."
     )
 
+    sensitive_keywords: str = [
+        "abuse",
+        "assault",
+        "violence",
+        "threat",
+        "harassment",
+        "domestic",
+        "sexual",
+    ]
 
     # branch function
     @branch_function("detect_sensitive_content")
@@ -226,18 +235,8 @@ class ReportInterviewInteractAction(InterviewInteractAction):
         description = session.responses.get("incident_description", "").lower()
         media = session.responses.get("incident_media")
 
-        sensitive_keywords = [
-            "abuse",
-            "assault",
-            "violence",
-            "threat",
-            "harassment",
-            "domestic",
-            "sexual",
-        ]
-
         # Check description for sensitive keywords
-        has_sensitive_text = any(keyword in description for keyword in sensitive_keywords)
+        has_sensitive_text = any(keyword in description for keyword in interview_action.sensitive_keywords)
 
         # Check for presence of media - handle N/A, skip, empty list, None
         # Optional questions may be set to "N/A" or similar when skipped
@@ -558,20 +557,20 @@ async def handle_interview_completion(
     resolv_api_action = await action.get_action("ResolvAPIAction")
     if resolv_api_action:
         result = await resolv_api_action.submit_report(
-            # title=title,
             is_anonymous=is_anonymous,
-            # description=generated_description,
             original_description=incident_description,
             attachments=incident_media,
-            # priority=priority,
-            # category_id=category_id,
             reporting_on_behalf=reporting_on_behalf,
             stakeholder_name=stakeholder_name,
-            stakeholder_address=stakeholder_address,
+            # stakeholder_address=stakeholder_address,
             stakeholder_phone=stakeholder_phone,
             reporter_name=reporter_name,
             reporter_phone=reporter_phone,
-            reporter_address=reporter_address,
+            # reporter_address=reporter_address,
+            # title=title,
+            # description=generated_description,
+            # priority=priority,
+            # category_id=category_id,
             # ai_overview=ai_overview
         )
 

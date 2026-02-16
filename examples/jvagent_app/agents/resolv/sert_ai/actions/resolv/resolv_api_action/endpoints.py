@@ -77,19 +77,9 @@ async def unsubscribe_contact_from_group(action_id: str, group_id: int, contact_
     
     success = await action.unsubscribe_contact_from_group(contact_id=contact_id, group_id=group_id)
     return {"success": success}
+
 # --- Issues ---
 
-# @endpoint(
-#     "/actions/{action_id}/issues",
-#     methods=["POST"],
-#     auth=True,
-#     tags=["ResolvAPIAction"],
-#     response=success_response(
-#         data={
-#             "issue": ResponseField(field_type=Dict[str, Any], description="The created issue")
-#         }
-#     )
-# )
 @endpoint(
     "/actions/{action_id}/issues",
     methods=["POST"],
@@ -103,31 +93,13 @@ async def unsubscribe_contact_from_group(action_id: str, group_id: int, contact_
 )
 async def create_issue(
     action_id: str,
-    title: str = EndpointField(
-        default="Report",
-        description="Title of the issue",
-        examples=["Bug Report", "Feature Request", "Support Issue"]
-    ),
     is_anonymous: bool = EndpointField(
         default=False,
         description="Whether the issue is submitted anonymously"
     ),
-    description: Optional[str] = EndpointField(
-        default=None,
-        description="Detailed description of the issue"
-    ),
     original_description: Optional[str] = EndpointField(
         default=None,
         description="Original description before any processing"
-    ),
-    priority: str = EndpointField(
-        default="medium",
-        description="Priority level of the issue",
-        examples=["low", "medium", "high", "critical"]
-    ),
-    category_id: Optional[int] = EndpointField(
-        default=None,
-        description="ID of the issue category"
     ),
     reported_by_contact_id: Optional[int] = EndpointField(
         default=None,
@@ -136,14 +108,6 @@ async def create_issue(
     reported_for_contact_id: Optional[int] = EndpointField(
         default=None,
         description="Contact ID of the person the issue is reported for"
-    ),
-    expected_resolution_date: Optional[str] = EndpointField(
-        default=None,
-        description="Expected date for issue resolution (ISO format)"
-    ),
-    ai_overview: Optional[str] = EndpointField(
-        default=None,
-        description="AI-generated overview of the issue"
     )
 ) -> Dict[str, Any]:
     """Create a new issue in the project."""
@@ -152,27 +116,49 @@ async def create_issue(
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
     
     issue = await action.create_issue(
-        title=title,
         is_anonymous=is_anonymous,
-        description=description,
         original_description=original_description,
-        priority=priority,
-        category_id=category_id,
         reported_by_contact_id=reported_by_contact_id,
-        reported_for_contact_id=reported_for_contact_id,
-        expected_resolution_date=expected_resolution_date,
-        ai_overview=ai_overview
+        reported_for_contact_id=reported_for_contact_id
     )
     return {"issue": issue}
 
-# async def create_issue(action_id: str, **kwargs) -> Dict[str, Any]:
-#     """Create a new issue in the project."""
-#     action = await ResolvAPIAction.get(action_id)
-#     if not action:
-#         raise ResourceNotFoundError(message=f"Action {action_id} not found")
+@endpoint(
+    "/actions/{action_id}/issues/{issue_id}",
+    methods=["PUT"],
+    auth=True,
+    tags=["ResolvAPIAction"],
+    response=success_response(
+        data={
+            "success": ResponseField(field_type=bool, description="Whether the update was successful")
+        }
+    )
+)
+async def update_issue(
+    action_id: str,
+    issue_id: int,
+    title: Optional[str] = EndpointField(default=None, description="New title"),
+    description: Optional[str] = EndpointField(default=None, description="New description"),
+    priority: Optional[str] = EndpointField(default=None, description="New priority"),
+    status: Optional[str] = EndpointField(default=None, description="New status"),
+    category_id: Optional[int] = EndpointField(default=None, description="New category ID"),
+    expected_resolution_date: Optional[str] = EndpointField(default=None, description="New expected resolution date")
+) -> Dict[str, Any]:
+    """Update an existing issue."""
+    action = await ResolvAPIAction.get(action_id)
+    if not action:
+        raise ResourceNotFoundError(message=f"Action {action_id} not found")
     
-#     issue = await action.create_issue(**kwargs)
-#     return {"issue": issue}
+    success = await action.update_issue(
+        issue_id=issue_id,
+        title=title,
+        description=description,
+        priority=priority,
+        status=status,
+        category_id=category_id,
+        expected_resolution_date=expected_resolution_date
+    )
+    return {"success": success}
 
 @endpoint(
     "/actions/{action_id}/issues",
@@ -214,6 +200,26 @@ async def get_issue(action_id: str, issue_id: str) -> Dict[str, Any]:
     issue = await action.get_issue_by_id(issue_id=issue_id)
     return {"issue": issue}
 
+@endpoint(
+    "/actions/{action_id}/issue-categories",
+    methods=["GET"],
+    auth=True,
+    tags=["ResolvAPIAction"],
+    response=success_response(
+        data={
+            "categories": ResponseField(field_type=List[Dict[str, Any]], description="List of issue categories")
+        }
+    )
+)
+async def get_issue_categories(action_id: str) -> Dict[str, Any]:
+    """Retrieve all issue categories for the organization."""
+    action = await ResolvAPIAction.get(action_id)
+    if not action:
+        raise ResourceNotFoundError(message=f"Action {action_id} not found")
+    
+    categories = await action.get_issue_categories()
+    return {"categories": categories}
+
 # --- Contacts ---
 
 @endpoint(
@@ -236,6 +242,66 @@ async def lookup_contact(action_id: str, phone: str, name: str = "", email: str 
     contact = await action.get_contact_by_phone(phone=phone, name=name, email=email)
     return {"contact": contact}
 
+@endpoint(
+    "/actions/{action_id}/contacts",
+    methods=["POST"],
+    auth=True,
+    tags=["ResolvAPIAction"],
+    response=success_response(
+        data={
+            "contact": ResponseField(field_type=Dict[str, Any], description="The created contact response")
+        }
+    )
+)
+async def create_contact(action_id: str, name: str, phone: str, email: str) -> Dict[str, Any]:
+    """Create a new contact."""
+    action = await ResolvAPIAction.get(action_id)
+    if not action:
+        raise ResourceNotFoundError(message=f"Action {action_id} not found")
+    
+    contact = await action.create_contact(name=name, phone=phone, email=email)
+    return {"contact": contact}
+
+@endpoint(
+    "/actions/{action_id}/contacts/{contact_id}",
+    methods=["PUT"],
+    auth=True,
+    tags=["ResolvAPIAction"],
+    response=success_response(
+        data={
+            "success": ResponseField(field_type=bool, description="Whether the update was successful")
+        }
+    )
+)
+async def update_contact(action_id: str, contact_id: int, name: str, phone: str, email: str) -> Dict[str, Any]:
+    """Update an existing contact."""
+    action = await ResolvAPIAction.get(action_id)
+    if not action:
+        raise ResourceNotFoundError(message=f"Action {action_id} not found")
+    
+    success = await action.update_contact(contact_id=contact_id, name=name, phone=phone, email=email)
+    return {"success": success}
+
+@endpoint(
+    "/actions/{action_id}/contacts/subscription-link",
+    methods=["POST"],
+    auth=True,
+    tags=["ResolvAPIAction"],
+    response=success_response(
+        data={
+            "url": ResponseField(field_type=str, description="The subscription page URL")
+        }
+    )
+)
+async def get_subscription_link(action_id: str, phone: str, name: str) -> Dict[str, Any]:
+    """Get a subscription channels page URL for a contact."""
+    action = await ResolvAPIAction.get(action_id)
+    if not action:
+        raise ResourceNotFoundError(message=f"Action {action_id} not found")
+    
+    url = await action.get_channels_page(phone_number=phone, name=name)
+    return {"url": url}
+
 # --- Notices ---
 
 @endpoint(
@@ -257,3 +323,92 @@ async def list_notices(action_id: str, status: Optional[str] = None) -> Dict[str
     
     notices = await action.get_all_notices(status=status)
     return {"notices": notices}
+
+# --- Projects ---
+
+@endpoint(
+    "/actions/{action_id}/projects",
+    methods=["GET"],
+    auth=True,
+    tags=["ResolvAPIAction"],
+    response=success_response(
+        data={
+            "projects": ResponseField(field_type=List[Dict[str, Any]], description="List of projects")
+        }
+    )
+)
+async def list_projects(action_id: str, query: str = "") -> Dict[str, Any]:
+    """Get projects for the organization."""
+    action = await ResolvAPIAction.get(action_id)
+    if not action:
+        raise ResourceNotFoundError(message=f"Action {action_id} not found")
+    
+    projects = await action.get_projects(query=query)
+    return {"projects": projects}
+
+# --- Comments ---
+
+@endpoint(
+    "/actions/{action_id}/projects/{project_id}/comments",
+    methods=["POST"],
+    auth=True,
+    tags=["ResolvAPIAction"],
+    response=success_response(
+        data={
+            "comment": ResponseField(field_type=Dict[str, Any], description="The comment response")
+        }
+    )
+)
+async def post_project_comment(action_id: str, project_id: str, content: str) -> Dict[str, Any]:
+    """Post a comment on a project."""
+    action = await ResolvAPIAction.get(action_id)
+    if not action:
+        raise ResourceNotFoundError(message=f"Action {action_id} not found")
+    
+    comment = await action.post_project_comment(project_id=project_id, content=content)
+    return {"comment": comment}
+
+@endpoint(
+    "/actions/{action_id}/projects/{project_id}/issues/{issue_id}/comments",
+    methods=["POST"],
+    auth=True,
+    tags=["ResolvAPIAction"],
+    response=success_response(
+        data={
+            "comment": ResponseField(field_type=Dict[str, Any], description="The comment response")
+        }
+    )
+)
+async def post_issue_comment(action_id: str, project_id: str, issue_id: str, content: str) -> Dict[str, Any]:
+    """Post a comment on an issue."""
+    action = await ResolvAPIAction.get(action_id)
+    if not action:
+        raise ResourceNotFoundError(message=f"Action {action_id} not found")
+    
+    comment = await action.post_issue_comment(project_id=project_id, issue_id=issue_id, content=content)
+    return {"comment": comment}
+
+@endpoint(
+    "/actions/{action_id}/comments",
+    methods=["POST"],
+    auth=True,
+    tags=["ResolvAPIAction"],
+    response=success_response(
+        data={
+            "result": ResponseField(field_type=Dict[str, Any], description="The submission result")
+        }
+    )
+)
+async def submit_comment(
+    action_id: str,
+    content: str,
+    report_id: str = "",
+    attachments: List[str] = EndpointField(default_factory=list, description="List of attachment URLs")
+) -> Dict[str, Any]:
+    """Submit a comment to a project or issue with optional attachments."""
+    action = await ResolvAPIAction.get(action_id)
+    if not action:
+        raise ResourceNotFoundError(message=f"Action {action_id} not found")
+    
+    result = await action.submit_comment(content=content, report_id=report_id, attachments=attachments)
+    return {"result": result}
