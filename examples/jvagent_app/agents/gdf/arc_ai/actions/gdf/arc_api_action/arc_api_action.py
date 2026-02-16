@@ -2,7 +2,6 @@
 
 Houses Arc API credentials and endpoints.
 """
-import time
 import json
 import logging
 from typing import Any, Dict, List, Optional, Union
@@ -19,7 +18,7 @@ class ArcAPIAction(Action):
     """Arc API Action for interacting with the Arc APIs."""
 
     endpoint: str = attribute(default="https://example.com/api/v1", description="API Endpoint")
-    headers: dict = attribute(default={'x-api-key': '123', 'Content-Type': 'application/json'}, description="API Headers")
+    api_key: str = attribute(default="123", description="API Key")
 
     timeout: int = attribute(default=30, description="Operation timeout in seconds", ge=1)
     retries: int = attribute(default=3, description="Number of retry attempts", ge=0, le=10)
@@ -52,7 +51,8 @@ class ArcAPIAction(Action):
 
     def _get_headers(self) -> Dict[str, str]:
         """Get common headers for API requests."""
-        return self.headers
+        
+        return {"x-api-key": self.api_key,"Content-Type": "application/json"}
 
     async def http_request(
         self,

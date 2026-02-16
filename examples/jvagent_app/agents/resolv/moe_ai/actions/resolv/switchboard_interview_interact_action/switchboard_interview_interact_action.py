@@ -200,7 +200,7 @@ async def handle_interview_completion(
 
     # Notify user of successful connection
     if selected_agent:
-        completion_message = f"Tell the user: You're now chatting with {selected_agent.get('alias')}. Say hi to get started."
+        completion_message = f"Tell the user: You're now connected to {selected_agent.get('alias')}. Say hi to get started."
         await visitor.add_directives([completion_message])
         await action.respond(visitor)
 
