@@ -244,12 +244,11 @@ _initialize_rate_limiter_from_config()
                 example="Hello! How can I help you today?",
             ),
             "interaction": ResponseField(
-                field_type=Dict[str, Any],
+                field_type=Optional[Dict[str, Any]],  # type: ignore[arg-type]
                 description=(
-                    "Interaction details. In production mode (JVAGENT_ENVIRONMENT or "
-                    "config.development.environment=production), only includes: id, utterance, "
-                    "response. In development mode, includes: id, utterance, response, actions, "
-                    "directives, parameters, events, observability_metrics, streamed."
+                    "Interaction details (development mode only). Excluded in production mode. "
+                    "Includes: id, utterance, response, actions, directives, parameters, "
+                    "events, observability_metrics, streamed."
                 ),
                 example={
                     "id": "int_123",
@@ -262,6 +261,7 @@ _initialize_rate_limiter_from_config()
                     "events": [],
                     "observability_metrics": [],
                 },
+                default=None,
             ),
             "report": ResponseField(
                 field_type=Optional[List[Dict[str, Any]]],  # type: ignore[arg-type]
@@ -282,6 +282,7 @@ _initialize_rate_limiter_from_config()
             ),
         }
     ),
+    response_model_exclude_none=True,
 )
 async def interact_endpoint(
     request: Request,
