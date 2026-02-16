@@ -27,11 +27,11 @@ Inherits from `InterviewInteractAction` and uses a unified classification and ex
 ### Agent Configuration (agent.yaml)
 
 ```yaml
-- action: jvagent/switchboard_interview_interact_action
+- action: resolv/switchboard_interview_interact_action
   context:
     enabled: true
     description: "Interview action for guiding users through agent selection"
-    weight: -50  # Runs before fallback actions
+    weight: -50 # Runs before fallback actions
   config:
     model_action_type: "OpenAILanguageModelAction"
     model: "gpt-4o-mini"
@@ -240,19 +240,19 @@ async def validate_selected_agent(
     interview_action: Optional[Any] = None,
 ) -> Tuple[ValidationStatus, Optional[str]]:
     """Validate that the selected agent exists and is available."""
-    
+
     if not value or not isinstance(value, str):
         return ValidationStatus.INVALID, "Ask: Please select an agent you wish to be routed to."
-    
+
     # Get available agents
     switchboard_action = await interview_action.get_action("SwitchboardInteractAction")
     agents = await switchboard_action.get_switchboard_agents()
-    
+
     # Check if selected agent exists
     agent_aliases = [agent["alias"] for agent in agents]
     if value not in agent_aliases:
         return ValidationStatus.INVALID, f"Ask: Please select from the available agents: {', '.join(agent_aliases)}"
-    
+
     return ValidationStatus.VALID, None
 ```
 
@@ -268,7 +268,7 @@ async def handle_interview_completion(
     action: InteractAction
 ) -> None:
     """Handle completion with custom message."""
-    
+
     switchboard_action = await action.get_action("SwitchboardInteractAction")
     agents = await switchboard_action.get_switchboard_agents()
 
@@ -277,17 +277,17 @@ async def handle_interview_completion(
         if agent['alias'] == session.responses.get('selected_agent', ''):
             selected_agent = agent
             break
-    
+
     if selected_agent:
         conversation = visitor.conversation
         conversation.context["switchboard_agent"] = selected_agent
-        
+
         # Custom completion message
         completion_message = f\"\"\"
         Great! I'm connecting you to {selected_agent.get('alias')}.
-        
+
         {selected_agent.get('description')}
-        
+
         They'll be with you shortly. Feel free to start the conversation!
         \"\"\"
         await visitor.add_directives([completion_message])
@@ -308,23 +308,23 @@ async def get_switchboard_agents_with_recommendation(
     interview_action: Optional[InteractAction] = None
 ) -> Dict[str, Any]:
     """Provide agents with AI-powered recommendation."""
-    
+
     conversation = visitor.conversation
     conversation.context["switchboard_agent"] = {}
-    
+
     switchboard_action = await interview_action.get_action("SwitchboardInteractAction")
     agents = await switchboard_action.get_switchboard_agents()
-    
+
     # Analyze user's recent messages to recommend agent
     recent_messages = conversation.get_recent_messages(limit=5)
     user_intent = await analyze_intent(recent_messages)
-    
+
     # Find best matching agent
     recommended_agent = find_best_agent(agents, user_intent)
-    
+
     agents_str = ", ".join(agent["alias"] for agent in agents)
     recommendation = f"Based on your request, I recommend {recommended_agent['alias']}."
-    
+
     return {
         "agents": agents_str,
         "recommendation": recommendation

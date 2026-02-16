@@ -206,7 +206,7 @@ class SupervisorShortPassInterviewInteractAction(InterviewInteractAction):
         return "short_pass_reference_number" in session.context or "short_pass_reference_number" in session.responses
 
     # Helper function
-    async def _get_model_action(self, user_prompt: str, system_prompt: str, json_response: bool = False):
+    async def _call_model(self, user_prompt: str, system_prompt: str, json_response: bool = False):
         """Internal helper to interact with the LLM."""
         try:
             model_action = await self.get_model_action()

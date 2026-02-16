@@ -1,6 +1,6 @@
-"""Resolv API Action
+"""Resolv API Action for interacting with the Resolv platform.
 
-Houses Resolv API credentials and endpoints.
+Provides methods for managing contacts, issues, notices, and project communications.
 """
 import time
 import json
@@ -64,6 +64,29 @@ class ResolvAPIAction(Action):
             'Accept': 'application/json'
         }
 
+    def get_curl_command(self, method, url, params, headers, json_data, data):
+        parts = [f"curl -X {method} \\"]
+
+        if headers:
+            for k, v in headers.items():
+                parts.append(f"  -H '{k}: {v}' \\")
+
+        if json_data is not None:
+            parts.append("  -H 'Content-Type: application/json' \\")
+            parts.append(f"  -d '{json.dumps(json_data)}' \\")
+
+        elif data is not None:
+            parts.append(f"  -d '{data}' \\")
+
+        if params:
+            query = "&".join(f"{k}={v}" for k, v in params.items())
+            url = f"{url}?{query}"
+
+        parts.append(f"  '{url}'")
+
+        return "\n".join(parts)
+
+
     async def http_request(
         self,
         method: str,
@@ -74,6 +97,7 @@ class ResolvAPIAction(Action):
         headers: Optional[Dict[str, str]] = None,
         timeout: Optional[int] = None,
         retries: Optional[int] = None,
+        show_curl_for_function: str = "",
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -89,6 +113,8 @@ class ResolvAPIAction(Action):
         # Determine if we can use the persistent session
         use_persistent = self._session is not None and not self._session.closed
         session = self._session if use_persistent else None
+
+        
         
         # If no persistent session, create a temporary one for this request
         if not use_persistent:
@@ -105,6 +131,9 @@ class ResolvAPIAction(Action):
         # If headers are provided, use them (caller responsible for full set/auth)
         # Otherwise, use defaults.
         request_headers = headers if headers is not None else self._get_headers()
+        if show_curl_for_function:
+            curl_command = self.get_curl_command(method, url, params, request_headers, json_data, data)
+            logger.warning(f"CURL for {show_curl_for_function}:\n\n{curl_command}\n\n")
 
         try:
             for attempt in range(effective_retries + 1):
@@ -238,31 +267,19 @@ class ResolvAPIAction(Action):
 
     async def create_issue(
         self,
-        title: str = "Report",
         is_anonymous: bool = False,
         description: Optional[str] = None,
-        original_description: Optional[str] = None,
-        priority: str = "medium",
-        category_id: Optional[int] = None,
         reported_by_contact_id: Optional[int] = None,
-        reported_for_contact_id: Optional[int] = None,
-        expected_resolution_date: Optional[str] = None,
-        ai_overview: Optional[str] = None
+        reported_for_contact_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Create a new issue in the project.
 
         Args:
-            title: Title of the issue.
             is_anonymous: Whether the reporter wants to remain anonymous.
             description: Detailed description of the issue.
-            original_description: Original description provided by the user.
-            priority: Priority level (e.g., "low", "medium", "high").
-            category_id: ID of the issue category.
             reported_by_contact_id: ID of the contact who reported the issue.
             reported_for_contact_id: ID of the contact for whom the issue is reported.
-            expected_resolution_date: ISO format date string.
-            ai_overview: AI-generated summary of the issue.
 
         Returns:
             The created issue dictionary.
@@ -270,22 +287,17 @@ class ResolvAPIAction(Action):
         project_id = await self.get_project_id_by_agent_identifier()
         endpoint = f"{self.api_url.rstrip('/')}/organizations/{self.organization_slug}/projects/{project_id}/issues"
         
-        payload = {
-            "title": title,
-            "isAnonymous": is_anonymous,
-            "priority": priority.lower()
-        }
+        payload = {"isAnonymous": is_anonymous}
 
-        if description: payload["description"] = description
-        if original_description: payload["originalDescription"] = original_description
-        if category_id: payload["categoryId"] = int(category_id)
-        if reported_by_contact_id: payload["reportedByContactId"] = int(reported_by_contact_id)
-        if reported_for_contact_id: payload["reportedForContactId"] = int(reported_for_contact_id)
-        if expected_resolution_date: payload["expectedResolutionDate"] = expected_resolution_date
-        if ai_overview: payload["aiOverview"] = ai_overview
+        if description:
+            payload["description"] = description
+        if reported_by_contact_id:
+            payload["reportedByContactId"] = int(reported_by_contact_id)
+        if reported_for_contact_id:
+            payload["reportedForContactId"] = int(reported_for_contact_id)
 
         try:
-            res = await self.http_request('POST', endpoint, json_data=payload)
+            res = await self.http_request('POST', endpoint, json_data=payload, show_curl_for_function="create_issue")
             if res['status'] in [200, 201]:
                 return res['json'].get('issue', {})
             
@@ -337,9 +349,6 @@ class ResolvAPIAction(Action):
             logger.error(f"Error uploading file: {e}")
             return False
 
-    async def upload_file_from_url(self, *args, **kwargs) -> bool:
-        """Alias for upload_file_url for backward compatibility."""
-        return await self.upload_file_url(*args, **kwargs)
 
     async def update_issue(
         self,
@@ -439,7 +448,16 @@ class ResolvAPIAction(Action):
 
     # Backwards compatibility for get_issue
     async def get_issue(self, issue_id: str = "", query: str = "") -> Union[Dict[str, Any], List[Dict[str, Any]]]:
-        """Legacy get_issue method."""
+        """
+        Get issue(s) by ID or query (legacy method).
+
+        Args:
+            issue_id: Specific issue ID to retrieve.
+            query: Search query to filter issues.
+
+        Returns:
+            Single issue dict if issue_id provided, otherwise list of issues.
+        """
         if issue_id:
             return await self.get_issue_by_id(issue_id)
         return await self.list_issues(query)
@@ -616,28 +634,41 @@ class ResolvAPIAction(Action):
     # Legacy method compatibility
 
     async def get_subscription_groups(self) -> List[Dict[str, Any]]:
-        """Maps to contact groups for backward compatibility."""
+        """
+        Get contact groups (legacy method).
+
+        Returns:
+            A list of contact group dictionaries.
+        """
         return await self.get_contact_groups()
 
     async def submit_report(
         self,
-        title: str,
         is_anonymous: bool,
-        description: str,
         original_description: str,
         attachments: List[str],
-        priority: str,
-        category_id: int,
         reporting_on_behalf: str,
         stakeholder_name: str,
-        stakeholder_address: str,
         stakeholder_phone: str,
         reporter_name: str,
-        reporter_phone: str,
-        reporter_address: str,
-        ai_overview: str
+        reporter_phone: str
     ) -> Dict[str, Any]:
-        """Submit a report (legacy method)."""
+        """
+        Submit a report (legacy method).
+
+        Args:
+            is_anonymous: Whether the report is anonymous.
+            original_description: Original description of the report.
+            attachments: List of attachment URLs.
+            reporting_on_behalf: Whether reporting on behalf of someone else ("yes"/"no").
+            stakeholder_name: Name of the stakeholder.
+            stakeholder_phone: Phone number of the stakeholder.
+            reporter_name: Name of the reporter.
+            reporter_phone: Phone number of the reporter.
+
+        Returns:
+            The created issue dictionary.
+        """
         reported_for_contact_id = None
         reported_by_contact_id = None
         
@@ -654,20 +685,14 @@ class ResolvAPIAction(Action):
             if reported_by_contact:
                 reported_by_contact_id = reported_by_contact.get('id')
 
-        # Create the issue
         result = await self.create_issue(
-            title=title,
-            original_description=original_description,
-            description=description,
-            ai_overview=ai_overview,
-            priority=priority,
-            category_id=category_id,
+            description=original_description,
             reported_by_contact_id=reported_by_contact_id,
             reported_for_contact_id=reported_for_contact_id,
             is_anonymous=is_anonymous
         )
         
-        if result and 'id' in result:
+        if attachments and result and 'id' in result:
             for attachment_url in attachments:
                 await self.upload_file_url(
                     file_url=attachment_url,
@@ -679,7 +704,17 @@ class ResolvAPIAction(Action):
         return {}
 
     async def subscribe_user(self, phone: str, group_id: int, name: str = "user") -> bool:
-        """Subscribe a user to a contact group by phone number."""
+        """
+        Subscribe a user to a contact group by phone number.
+
+        Args:
+            phone: User's phone number.
+            group_id: ID of the contact group.
+            name: User's name (default: "user").
+
+        Returns:
+            True if successful, False otherwise.
+        """
         contact = await self.get_contact_by_phone(phone=phone, name=f"{name}_{phone}")
         if contact and 'id' in contact:
             return await self.subscribe_contact_to_group(contact_id=contact['id'], group_id=group_id)
@@ -688,7 +723,17 @@ class ResolvAPIAction(Action):
         return False
 
     async def unsubscribe_user(self, phone: str, group_id: int, name: str = "user") -> bool:
-        """Unsubscribe a user from a contact group by phone number."""
+        """
+        Unsubscribe a user from a contact group by phone number.
+
+        Args:
+            phone: User's phone number.
+            group_id: ID of the contact group.
+            name: User's name (default: "user").
+
+        Returns:
+            True if successful, False otherwise.
+        """
         contact = await self.get_contact_by_phone(phone=phone, name=f"{name}_{phone}")
         if contact and 'id' in contact:
             return await self.unsubscribe_contact_from_group(contact_id=contact['id'], group_id=group_id)
@@ -697,12 +742,25 @@ class ResolvAPIAction(Action):
         return False
 
     async def get_alert(self) -> Dict[str, Any]:
-        """Legacy method - maps to getting the latest notice."""
+        """
+        Get the latest sent notice (legacy method).
+
+        Returns:
+            The most recent notice dictionary, or empty dict if none found.
+        """
         notices = await self.get_all_notices(status="sent")
         return notices[0] if notices else {}
 
     async def cancel_incident(self, reference_number: str) -> bool:
-        """Legacy method - maps to closing an issue."""
+        """
+        Close an issue by reference number (legacy method).
+
+        Args:
+            reference_number: The issue ID as a string.
+
+        Returns:
+            True if successful, False otherwise.
+        """
         try:
             return await self.update_issue(issue_id=int(reference_number), status="closed")
         except (ValueError, TypeError, Exception) as e:
@@ -710,7 +768,12 @@ class ResolvAPIAction(Action):
             return False
 
     async def get_categories(self) -> List[Dict[str, Any]]:
-        """Legacy method - maps to issue categories."""
+        """
+        Get issue categories (legacy method).
+
+        Returns:
+            A list of category dictionaries.
+        """
         return await self.get_issue_categories()
 
     # Communication & Projects
@@ -732,7 +795,7 @@ class ResolvAPIAction(Action):
         try:
             res = await self.http_request('POST', endpoint, json_data=payload)
             if res['status'] in [200, 201]:
-                return res['json']
+                return res['json']['comment']
             else:
                 raise Exception(f"HTTP Error {res['status']}: {res.get('json', {})}")
         except Exception as e:
@@ -757,7 +820,7 @@ class ResolvAPIAction(Action):
         try:
             res = await self.http_request('POST', endpoint, json_data=payload)
             if res['status'] in [200, 201]:
-                return res['json']
+                return res['json']['comment']
             else:
                 raise Exception(f"HTTP Error {res['status']}: {res.get('json', {})}")
         except Exception as e:
@@ -790,7 +853,12 @@ class ResolvAPIAction(Action):
             return []
 
     async def get_project_id_by_agent_identifier(self) -> str:
-        """Get project ID by agent identifier, caching it once found."""
+        """
+        Get project ID by agent identifier, caching it once found.
+
+        Returns:
+            The project ID as a string.
+        """
         if not self.project_id:
             agent_id = self.get_agent_identifier()
             projects = await self.get_projects(agent_id)
@@ -799,7 +867,15 @@ class ResolvAPIAction(Action):
         return self.project_id
 
     async def get_issues_by_project(self, project_id: str) -> List[Dict[str, Any]]:
-        """Retrieve all issues for a specific project."""
+        """
+        Retrieve all issues for a specific project.
+
+        Args:
+            project_id: The ID of the project.
+
+        Returns:
+            A list of issue dictionaries.
+        """
         endpoint = f"{self.api_url.rstrip('/')}/organizations/{self.organization_slug}/issues"
         params = {"projectId": project_id}
         
@@ -844,14 +920,13 @@ class ResolvAPIAction(Action):
         content: str,
         report_id: str = "",
         attachments: list = []
-    ):
+    ) -> Dict[str, Any]:
         """
         Submit a comment to a project or issue.
 
         Args:
-            project_id: The ID of the project.
             content: The comment content.
-            report_id: Optional report ID to comment on.
+            report_id: Optional issue ID to comment on.
             attachments: Optional list of attachment URLs.
 
         Returns:
@@ -865,15 +940,14 @@ class ResolvAPIAction(Action):
         else:
             result = await self.post_project_comment(project_id, content)
 
-        # Upload attachments if provided
-        # if attachments and 'id' in list(result.values())[0]:
-            # for attachment_url in attachments:
-            #     await self.upload_file_url(
-            #         file_url=attachment_url,
-            #         entity_id=result.get('id', ''),
-            #         file_type="attachment",
-            #         entity_type="comment"
-            #     )
+        if attachments and result and 'id' in result:
+            for attachment_url in attachments:
+                await self.upload_file_url(
+                    file_url=attachment_url,
+                    entity_id=result.get('id', ''),
+                    file_type="attachment",
+                    entity_type="comment"
+                )
 
         return result
 

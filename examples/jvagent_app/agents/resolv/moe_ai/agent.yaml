@@ -46,13 +46,13 @@ actions:
       max_tokens: 4096
       timeout: 60
 
-  - action: jvagent/switchboard_interact_action
+  - action: resolv/switchboard_interact_action
     context:
       enabled: true
       description: "Switchboard action for presenting and routing to available agents"
       weight: -10
 
-  - action: jvagent/switchboard_interview_interact_action
+  - action: resolv/switchboard_interview_interact_action
     context:
       enabled: true
       description: "Interview action for guiding users through agent selection"

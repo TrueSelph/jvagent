@@ -34,6 +34,27 @@ actions:
   #     enabled: true
   #     description: "Introductory interact action for first-time users"
 
+  # PageIndexRetrievalInteractAction - Vectorless RAG from indexed documents
+  # Documents must be ingested first via POST /pageindex/documents
+  - action: jvagent/pageindex_retrieval_interact_action
+    context:
+      enabled: true
+      description: "Vectorless RAG - retrieves context from indexed documents via PageIndex graph"
+      weight: -75 # Runs after InteractRouter, before Persona
+      anchors:
+        - "User asks a question about indexed documents"
+        - "User requests information from document index"
+        - "User wants to search or find information in documents"
+    config:
+      limit: 10
+      strategy: "tree_search"
+      node_summary: true # Required for tree_search; generates summaries during ingestion
+      node_text: true
+      doc_description: false
+      max_token_num_each_node: 20000
+      summary_token_threshold: 200
+      # model: gpt-4o-mini  # Optional: override LLM for tree search
+
   # # TypesenseVectorStore Action - Vector store for semantic search
   # # Core action from jvagent library (jvagent/action/vectorstore/typesense/)
   # - action: jvagent/typesense_vectorstore
@@ -152,12 +173,12 @@ actions:
     context:
       enabled: true
       description: "Houses Resolv API credentials and endpoints"
-      user_uuid: ${RESOLV_SERT_USER_UUID}
-      secret_token: ${RESOLV_SERT_SECRET_TOKEN}
-      api_url: ${RESOLV_SERT_API_URL}
-      organization_slug: ${RESOLV_SERT_ORGANIZATION_SLUG}
-      project_id: ${RESOLV_SERT_PROJECT_ID}
-      agent_identifier: ${RESOLV_SERT_AGENT_IDENTIFIER}
+      user_uuid: ${RESOLV_TEST_USER_UUID}
+      secret_token: ${RESOLV_TEST_SECRET_TOKEN}
+      api_url: ${RESOLV_TEST_API_URL}
+      organization_slug: ${RESOLV_TEST_ORGANIZATION_SLUG}
+      project_id: ${RESOLV_TEST_PROJECT_ID}
+      agent_identifier: ${RESOLV_TEST_AGENT_IDENTIFIER}
 
   - action: jvagent/access_control_action
     context:

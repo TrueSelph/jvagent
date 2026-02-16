@@ -1,12 +1,12 @@
 package:
-  name: jvagent/switchboard_interview_interact_action
+  name: resolv/switchboard_interview_interact_action
   author: V75 Inc.
   archetype: SwitchboardInterviewInteractAction
   version: 1.0.0
   meta:
     title: Switchboard Interview Interact Action
     description: This action allows the user to choose the agent they want to interact with.
-    group: jvagent
+    group: resolv
     type: action
   config:
     order:

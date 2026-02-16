@@ -64,7 +64,7 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
             "User wants to provide feedback on a completed report or project",
             "User is giving feedback about work that was done",
             "User is providing an update on a previously reported issue",
-            "User is sharing photos or evidence of completed work for feedback",
+            "User is uploading photos or evidence for a feedback",
             "User is providing an update or follow-up on previously submitted feedback",
             "User is currently creating feedback and providing an incident that took place.",
             "User is providing additional details about an incident likely related to ongoing feedback or report"
@@ -123,9 +123,44 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
                     "references in constraints (input_handler, input_validator)."
     )
 
+    can_ask_for_media_prompt: str = (
+        "You are an assistant deciding if it's appropriate to ask for media (photos/videos/audio) "
+        "based on feedback provided by a user. If the feedback describes a physical issue, "
+        "damage, or something visual, it is appropriate to ask. "
+        "Return a JSON object with a single boolean field 'should_ask'."
+    )
+
 
     # Helper function
-    async def _get_model_action(self, user_prompt: str, system_prompt: str, json_response: bool = False):
+    async def _call_model(self, user_prompt: str, system_prompt: str, json_response: bool = False):
+        """
+        Call the language model and return the response.
+        
+        Args:
+            user_prompt: The user's input/question
+            system_prompt: System instruction defining model behavior
+            json_response: If True, parse response as JSON (default: False)
+        
+        Returns:
+            - If json_response=True: Parsed JSON dict on success
+            - If json_response=False: Raw string response
+            - False if model action unavailable
+            - None if exception occurs
+        
+        Example:
+            # Text response
+            response = await self._call_model(
+                user_prompt="What is Python?",
+                system_prompt="You are a programming expert."
+            )
+            
+            # JSON response
+            data = await self._call_model(
+                user_prompt="List 3 Python frameworks",
+                system_prompt="Return JSON",
+                json_response=True
+            )
+        """
         try:
             model_action = await self.get_model_action()
             if not model_action:
@@ -173,39 +208,18 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
         interview_action: Optional[Any] = None,
     ) -> bool:
         """Check if the user can be asked for media using LLM reasoning."""
-        logger = logging.getLogger(__name__)
-        # if not interview_action:
-        #     logger.warning("Interview action is None in can_ask_for_mediaqqqqqqqqqqqq")
-        #     return False
 
         feedback_content = session.responses.get("feedback_content", "")
+        if feedback_content:
+            user_prompt = f"Feedback content: {feedback_content}"
 
-        if not feedback_content:
-            return False
-        
-        action = await FeedbackInterviewInteractAction.find_one({
-            "context.enabled": True
-        })
-
-        system_prompt = (
-            "You are an assistant deciding if it's appropriate to ask for media (photos/videos/audio) "
-            "based on feedback provided by a user. If the feedback describes a physical issue, "
-            "damage, or something visual, it is appropriate to ask. "
-            "Return a JSON object with a single boolean field 'should_ask'."
-        )
-
-        user_prompt = f"Feedback content: {feedback_content}"
-
-        try:
-            result_json = await action._get_model_action(user_prompt, system_prompt, json_response=True)
-            result_json = {
-                "should_ask": False
-            }
-            if result_json and isinstance(result_json, dict):
-                should_ask = result_json.get("should_ask", False)
-                return should_ask
-        except Exception as e:
-            logger.error(f"Error in can_ask_for_media: {e}")
+            try:
+                result_json = await interview_action._call_model(user_prompt, interview_action.can_ask_for_media_prompt, json_response=True)
+                if result_json and isinstance(result_json, dict):
+                    should_ask = result_json.get("should_ask", False)    
+                    return should_ask
+            except Exception as e:
+                logger.error(f"Error in can_ask_for_media: {e}")
 
         return False
 

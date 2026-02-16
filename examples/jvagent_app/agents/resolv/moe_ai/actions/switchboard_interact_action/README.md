@@ -26,16 +26,16 @@ Inherits from `InteractAction` and uses the `always_execute` flag to run on ever
 
 ```yaml
 actions:
-  - action: jvagent/switchboard_interact_action
+  - action: resolv/switchboard_interact_action
     context:
       enabled: true
       description: "Switchboard action for presenting and routing to available agents"
-      weight: 0  # Runs at normal priority
+      weight: 0 # Runs at normal priority
       available_switchboard_agents_directive: |
         Present these agents to the user and ask them to choose a single agent from the list:
 
         {agents}
-      switchboard_agents: []  # Optional: Pre-configure agents, otherwise auto-discovered
+      switchboard_agents: [] # Optional: Pre-configure agents, otherwise auto-discovered
 ```
 
 ### Configuration Properties
@@ -67,6 +67,7 @@ The action executes in two modes:
 ### Conditions for Execution
 
 The action skips execution if:
+
 - `SwitchboardInterviewInteractAction` is already running (prevents conflicts)
 
 ## Methods
@@ -93,6 +94,7 @@ agents = await action.get_switchboard_agents()
 **Returns:** List of agent dictionaries with id, name, alias, and description
 
 **Behavior:**
+
 - Returns pre-configured agents if available
 - Otherwise fetches from Agents node
 - Excludes current agent from list
@@ -114,7 +116,7 @@ Agent: I can connect you to one of these agents:
        - Support Agent (for technical support)
        - Sales Agent (for product inquiries)
        - Billing Agent (for payment questions)
-       
+
        Which agent would you like to talk to?
 ```
 
@@ -222,9 +224,9 @@ Update the directive template in agent.yaml:
 ```yaml
 available_switchboard_agents_directive: |
   Here are the available specialists:
-  
+
   {agents}
-  
+
   Please type the name of the specialist you'd like to connect with.
 ```
 
@@ -260,7 +262,7 @@ async def execute(self, visitor: InteractWalker) -> None:
             "alias": "Priority Agent",
             "description": "Handles urgent requests"
         }
-    
+
     # Continue with normal execution
     await super().execute(visitor)
 ```
@@ -272,12 +274,12 @@ Filter agents based on user attributes:
 ```python
 async def get_switchboard_agents(self) -> list[dict]:
     all_agents = await super().get_switchboard_agents()
-    
+
     # Filter based on user role
     user = await self.get_user()
     if user.role == "premium":
         return [a for a in all_agents if a.get("tier") == "premium"]
-    
+
     return all_agents
 ```
 
