@@ -156,8 +156,8 @@ actions:
     context:
       enabled: true
       description: "Houses Arc API credentials and endpoints"
-      endpoint: ${ENDPOINT}
-      headers: ${HEADERS}
+      endpoint: ${ARC_API_ENDPOINT}
+      ARC_API_KEY: ${ARC_API_KEY}
 
   - action: jvagent/access_control_action
     context:
