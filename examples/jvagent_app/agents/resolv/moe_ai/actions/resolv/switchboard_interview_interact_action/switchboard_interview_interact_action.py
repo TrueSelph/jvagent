@@ -21,33 +21,9 @@ from jvagent.action.interview.core.foundation.enums import ValidationStatus
 from jvagent.action.interview.core.session.interview_session import InterviewSession
 
 
-@input_context_provider()
-async def get_switchboard_agents(
-    session: InterviewSession,
-    visitor: Optional[InteractWalker] = None,
-    interview_action: Optional[InteractAction] = None
-) -> Dict[str, Any]:
-    """Provide available switchboard agents dynamically for interview context.
-
-    Args:
-        session: Interview session for context storage
-        visitor: Walker for accessing graph context
-        interview_action: Interview action instance for accessing other actions
-
-    Returns:
-        Dictionary with 'agents' key containing comma-separated agent aliases
-    """
-    conversation = visitor.conversation
-    conversation.context["switchboard_agent"] = {}
-    
-    switchboard_action = await interview_action.get_action("SwitchboardInteractAction")
-    agents = await switchboard_action.get_switchboard_agents()
-    agents_str = ", ".join(agent["alias"] for agent in agents)
-    return {"agents": agents_str}
-
 
 class SwitchboardInterviewInteractAction(InterviewInteractAction):
-    """Interview action for guiding users through agent selection.
+    """This action allows the user to choose the agent they want to interact with.
 
     This action allows users to choose which agent they want to interact with
     through a structured interview flow. It presents available agents and
@@ -81,16 +57,16 @@ class SwitchboardInterviewInteractAction(InterviewInteractAction):
     # Must cover both initial entry and intermediate states (when answering questions)
     anchors: List[str] = attribute(
         default_factory=lambda: [
-            "MESSAGE references an agent by name AND includes an explicit action such as connect, switch, talk to, or disconnect",
-            "MESSAGE explicitly asks to be removed from the current agent or stop interacting with them",
-            "MESSAGE explicitly asks to switch to a different agent or project",
-            "MESSAGE includes a clear request to change location or department",
-            "MESSAGE clearly says connect me to <agent> or switch to <agent>",
-            "MESSAGE references an agent by name and asks to interact with them instead of the current one",
-            "MESSAGE is Extract selected_agent as the Id of the agent explicitly mentioned by name from the provided list. Only return the Id if the user directly references an agent by name."
+            "User requests to switch to a different agent by name",
+            "User asks to connect to a specific agent",
+            "User requests to disconnect from the current agent",
+            "User asks to change department or location",
+            "User explicitly mentions switching, connecting, or disconnecting from an agent or department",
         ],
         description="Anchor statements for InteractRouter routing",
     )
+
+    _standard_interview_anchor_templates: List[str] = []
 
     question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
@@ -138,6 +114,31 @@ class SwitchboardInterviewInteractAction(InterviewInteractAction):
             return ValidationStatus.INVALID, "Ask: Please select an agent you wish to be routed to."
 
         return ValidationStatus.VALID, None
+
+
+    @input_context_provider("get_switchboard_agents")
+    async def get_switchboard_agents(
+        session: InterviewSession,
+        visitor: Optional[InteractWalker] = None,
+        interview_action: Optional[InteractAction] = None
+    ) -> Dict[str, Any]:
+        """Provide available switchboard agents dynamically for interview context.
+
+        Args:
+            session: Interview session for context storage
+            visitor: Walker for accessing graph context
+            interview_action: Interview action instance for accessing other actions
+
+        Returns:
+            Dictionary with 'agents' key containing comma-separated agent aliases
+        """
+        conversation = visitor.conversation
+        conversation.context["switchboard_agent"] = {}
+        
+        switchboard_action = await interview_action.get_action("SwitchboardInteractAction")
+        agents = await switchboard_action.get_switchboard_agents()
+        agents_str = ", ".join(agent["alias"] for agent in agents)
+        return {"agents": agents_str}
 
 
 

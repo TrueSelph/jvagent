@@ -55,47 +55,6 @@ actions:
       summary_token_threshold: 200
       # model: gpt-4o-mini  # Optional: override LLM for tree search
 
-  # # TypesenseVectorStore Action - Vector store for semantic search
-  # # Core action from jvagent library (jvagent/action/vectorstore/typesense/)
-  # - action: jvagent/typesense_vectorstore
-  #   context:
-  #     enabled: true
-  #     description: "Typesense vector store for semantic search and context retrieval"
-  #     # Typesense Configuration
-  #     host: localhost
-  #     port: 8108
-  #     protocol: http
-  #     api_key: ${TYPESENSE_API_KEY}  # Set in .env or environment
-  #     connection_timeout_seconds: 2
-  #     embedding_dimensions: 1536  # Must match embedding model dimensions
-  #     # Embedding Model Configuration
-  #     embedding_model_action_type: "OpenAIEmbeddingModelAction"  # Entity type to find dynamically
-
-  # # RetrievalInteractAction - Context retrieval from vector stores
-  # # Core action from jvagent library (jvagent/action/retrieval/)
-  # - action: jvagent/retrieval_interact_action
-  #   context:
-  #     enabled: true
-  #     description: "Retrieves context from vector stores and adds directives for PersonaAction"
-  #     # VectorStore Configuration
-  #     vectorstore_action_type: "TypesenseVectorStore"  # Entity type to find dynamically
-  #     k: 5  # Number of search results to retrieve
-  #     weight: -75  # Runs after InteractRouter but before other Interact Actions
-  #     # Anchors for routing - published to InteractRouter
-  #     # The entity name (RetrievalInteractAction) is automatically used as the key
-  #     anchors:
-  #       - "User requests information from knowledge base"
-  #       - "User asks a question requiring search"
-  #       - "User wants to find information"
-  #     # Optional: Minimum similarity score threshold (0.0-1.0)
-  #     # min_score_threshold: 0.7
-  #     # Optional: Customize directive template (default shown for reference)
-  #     directive: |
-  #       Context retrieved from knowledge base:
-  #       {results}
-  #       Use this context to inform your response to the user's query.
-  #     collection: "n.Agent.478ee040eb98491c8426c975"
-
   - action: jvagent/openai_lm
     context:
       enabled: true
@@ -157,6 +116,13 @@ actions:
       max_statement_length: 100
       history_limit: 3
       auto_confirm: false
+
+  - action: resolv/subscription_interact_action
+    context:
+      enabled: true
+      description: "Subscription action is used to present a link to the user to subscribe and unsubscribe from channels and groups."
+      weight: -50
+
   - action: jvagent/converse_interact_action
     context:
       enabled: true

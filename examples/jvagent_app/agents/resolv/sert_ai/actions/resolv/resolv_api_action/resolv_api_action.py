@@ -297,7 +297,7 @@ class ResolvAPIAction(Action):
             payload["reportedForContactId"] = int(reported_for_contact_id)
 
         try:
-            res = await self.http_request('POST', endpoint, json_data=payload, show_curl_for_function="create_issue")
+            res = await self.http_request('POST', endpoint, json_data=payload, show_curl_for_function="")
             if res['status'] in [200, 201]:
                 return res['json'].get('issue', {})
             
