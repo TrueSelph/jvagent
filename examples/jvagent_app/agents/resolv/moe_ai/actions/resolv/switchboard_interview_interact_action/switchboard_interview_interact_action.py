@@ -23,7 +23,7 @@ from jvagent.action.interview.core.session.interview_session import InterviewSes
 
 
 class SwitchboardInterviewInteractAction(InterviewInteractAction):
-    """This action allows the user to choose the agent they want to interact with.
+    """SwitchboardInterviewInteractAction is used ONLY when the user explicitly wants to change the agent, department, or service they are connected to.
 
     This action allows users to choose which agent they want to interact with
     through a structured interview flow. It presents available agents and
@@ -57,11 +57,12 @@ class SwitchboardInterviewInteractAction(InterviewInteractAction):
     # Must cover both initial entry and intermediate states (when answering questions)
     anchors: List[str] = attribute(
         default_factory=lambda: [
-            "User requests to switch to a different agent by name",
-            "User asks to connect to a specific agent",
-            "User requests to disconnect from the current agent",
-            "User asks to change department or location",
-            "User explicitly mentions switching, connecting, or disconnecting from an agent or department",
+            "User explicitly requests to switch to another agent by name",
+            "User explicitly asks to connect to a specific agent",
+            "User explicitly asks to change department or service",
+            "User says phrases like: 'switch to...', 'connect me to...', 'transfer me to...', 'I want [agent name]', 'change agent'",
+            "DO NOT trigger this action if the user says generic cancellation words such as: 'cancel', 'stop', 'nevermind', 'exit', 'leave', unless they clearly mention switching agents.",
+            "This action should only trigger when the user clearly intent to change an agent"
         ],
         description="Anchor statements for InteractRouter routing",
     )

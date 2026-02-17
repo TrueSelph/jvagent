@@ -77,7 +77,6 @@ class SwitchboardInteractAction(InteractAction):
                 
                 # Route to target agent if found
                 if target_agent:
-                    logger.warning("rest8")
                     # Prepare data (copy from current visitor)
                     data = visitor.data.copy()
                     data['switchboard_agent_id'] = target_agent.id

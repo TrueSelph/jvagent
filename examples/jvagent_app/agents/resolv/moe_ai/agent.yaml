@@ -58,7 +58,7 @@ actions:
   - action: resolv/switchboard_interview_interact_action
     context:
       enabled: true
-      description: "This action allows the user to choose the agent they want to interact with."
+      description: "SwitchboardInterviewInteractAction is used ONLY when the user explicitly wants to change the agent, department, or service they are connected to."
       weight: -20
     config:
       model_action_type: "OpenAILanguageModelAction"
