@@ -5,6 +5,7 @@ from jvagent.core.agents import Agents
 from jvagent.core.app import App
 from jvagent.core.app_loader import AppDescriptor, AppLoader
 from jvagent.core import endpoints  # noqa: F401 - Import to register endpoints
+from jvagent.memory import endpoints as memory_endpoints  # noqa: F401 - Memory admin endpoints
 
 
 def __getattr__(name: str):

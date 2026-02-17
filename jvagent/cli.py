@@ -125,8 +125,9 @@ async def _manual_bootstrap() -> None:
     root = await Root.get()
     logger.info(f"Root node ready: {root.id}")
 
-    # Step 2: Create App node if it doesn't exist
-    app = await App.find_one({"context.name": "jvAgent"})
+    # Step 2: Create App node if it doesn't exist (graph-based lookup)
+    app_nodes = [n for n in await root.nodes(direction="out") if isinstance(n, App)]
+    app = app_nodes[0] if app_nodes else None
 
     if app:
         logger.info(f"App node already exists: {app.id}")
@@ -134,6 +135,7 @@ async def _manual_bootstrap() -> None:
     else:
         # Create App node with file storage configuration
         app = await App.create(
+            app_id="jvagent_app",
             name="jvAgent",
             version=__version__,
             description="jvAgent Application",

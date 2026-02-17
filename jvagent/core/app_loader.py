@@ -195,7 +195,7 @@ class AppLoader:
                 return None
 
             # Step 2: Create or update App node
-            app = await self._ensure_app_node(descriptor, update_if_exists)
+            app = await self._ensure_app_node(descriptor, update_if_exists, root)
             if not app:
                 logger.error("Failed to create/update App node")
                 return None
@@ -222,25 +222,38 @@ class AppLoader:
             return None
 
     async def _ensure_app_node(
-        self, descriptor: AppDescriptor, update_if_exists: bool
+        self, descriptor: AppDescriptor, update_if_exists: bool, root
     ) -> Optional[App]:
         """Ensure App node exists and is configured.
+
+        Uses graph-based lookup (Root -> App) instead of name-based lookup so that
+        when context.name changes in app.yaml, the existing App is updated in place
+        rather than creating a duplicate.
 
         Args:
             descriptor: App descriptor
             update_if_exists: If True, update existing app; if False, skip update
+            root: Root node for graph traversal
 
         Returns:
             App instance if successful, None otherwise
         """
         try:
-            # Check for existing App node
-            app = await App.find_one({"context.name": descriptor.name})
+            App.clear_cache()
 
-            if app:
+            # Graph-based lookup: find App nodes connected to Root
+            root_nodes = await root.nodes(direction="out")
+            app_nodes = [n for n in root_nodes if isinstance(n, App)]
 
+            # Deduplicate if multiple App nodes exist (corruption from prior buggy runs)
+            if len(app_nodes) > 1:
+                app_nodes = await self._deduplicate_app_nodes(root, app_nodes, descriptor)
+                if not app_nodes:
+                    return None
+
+            if app_nodes:
+                app = app_nodes[0]
                 if update_if_exists:
-                    # Update existing app with context properties
                     app.name = descriptor.name
                     app.version = descriptor.version
                     app.description = descriptor.description
@@ -250,17 +263,16 @@ class AppLoader:
                     app.logging_enabled = descriptor.logging_enabled
                     app.log_retention_days = descriptor.log_retention_days
 
-                    # Apply additional context properties
-                    self._apply_app_properties(app, descriptor.properties)
+                    app.app_id = descriptor.app_id
 
+                    self._apply_app_properties(app, descriptor.properties)
                     await app.save()
                     logger.debug(f"Updated App node: {app.id}")
 
-                # Update cache
                 App._cached_app = app
                 return app
 
-            # Build initial app data
+            # No App found - create new
             app_data = {
                 "name": descriptor.name,
                 "version": descriptor.version,
@@ -271,24 +283,76 @@ class AppLoader:
                 "logging_enabled": descriptor.logging_enabled,
                 "log_retention_days": descriptor.log_retention_days,
             }
+            app_data["app_id"] = descriptor.app_id
 
-            # Apply additional context properties
             if descriptor.properties:
                 for key, value in descriptor.properties.items():
-                    # Only override if it's a valid field (don't override private fields)
                     if not key.startswith("_") and key not in ["id", "name"]:
                         app_data[key] = value
 
-            # Create new App node
             app = await App.create(**app_data)
             logger.debug(f"Created App node: {app.id}")
 
-            # Update cache
             App._cached_app = app
             return app
         except Exception as e:
             logger.error(f"Error in _ensure_app_node: {e}", exc_info=True)
             return None
+
+    async def _deduplicate_app_nodes(
+        self, root, app_nodes: list, descriptor: AppDescriptor
+    ) -> list:
+        """Keep canonical App, remove duplicates. Returns list with single App or empty."""
+        if len(app_nodes) <= 1:
+            return app_nodes
+
+        async def _agents_count(app_node) -> tuple:
+            """Return (total_agents, child_count) for canonical selection."""
+            agents_count = 0
+            child_count = 0
+            for node in await app_node.nodes():
+                child_count += 1
+                if isinstance(node, Agents):
+                    agents_count = node.total_agents
+                    break
+            return (agents_count, child_count)
+
+        # Prefer App with Agents that has total_agents > 0; tie-break by child count
+        scores = []
+        for a in app_nodes:
+            ac, cc = await _agents_count(a)
+            scores.append((ac, cc, a))
+
+        scores.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        canonical = scores[0][2]
+        duplicates = [s[2] for s in scores[1:]]
+
+        logger.warning(
+            f"Found {len(app_nodes)} App nodes under Root; deduplicating, keeping canonical App {canonical.id}"
+        )
+
+        for dup in duplicates:
+            try:
+                agents_node = None
+                for node in await dup.nodes():
+                    if isinstance(node, Agents):
+                        agents_node = node
+                        break
+
+                if agents_node and agents_node.total_agents > 0:
+                    logger.error(
+                        f"Skipping deduplication of App {dup.id}: has Agents with "
+                        f"total_agents={agents_node.total_agents}. Manual intervention required."
+                    )
+                    continue
+
+                await root.disconnect(dup)
+                await dup.delete(cascade=True)
+                logger.debug(f"Removed duplicate App node: {dup.id}")
+            except Exception as e:
+                logger.warning(f"Failed to remove duplicate App {dup.id}: {e}")
+
+        return [canonical]
 
     def _apply_app_properties(self, app: App, properties: Dict[str, Any]) -> None:
         """Apply property overrides from descriptor to app instance.

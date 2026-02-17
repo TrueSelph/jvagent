@@ -366,32 +366,70 @@ class Memory(Node):
         Returns:
             List of purged conversations, or None if no conversations found
         """
+        return await self.purge_conversations(
+            user_id=None, conversation_id=conversation_id
+        )
+
+    async def purge_conversations(
+        self,
+        user_id: Optional[str] = None,
+        conversation_id: Optional[str] = None,
+    ) -> Optional[List["Conversation"]]:
+        """Purge conversations with orphan cleanup.
+
+        Uses both graph and database queries to handle broken graphs.
+        After purging, deletes orphaned interactions (those whose conversation_id
+        references non-existent or disconnected conversations).
+
+        Args:
+            user_id: Optional - purge only this user's conversations. If None and
+                conversation_id is None, purges all users.
+            conversation_id: Optional - purge only this conversation. If set,
+                user_id is ignored for the purge scope.
+
+        Returns:
+            List of purged conversations, or None if no conversations found
+        """
         from jvagent.memory.conversation import Conversation
+        from jvagent.memory.interaction import Interaction
 
         if conversation_id:
-            # Purge specific conversation by ID
             conversation = await Conversation.get(conversation_id)
             if not conversation:
                 return None
-
-            # Conversation.delete() will handle decrementing total_conversations counter
-            await conversation.delete(cascade=True)
-            await self.save()
-            return [conversation]
+            conversations_to_purge = [conversation]
+        elif user_id:
+            conversations_to_purge = await Conversation.find(
+                {"context.user_id": user_id}
+            )
+            if not conversations_to_purge:
+                return None
         else:
-            # Purge all conversations
-            conversations = await Conversation.find()
-
-            if not conversations:
+            conversations_to_purge = await Conversation.find()
+            if not conversations_to_purge:
                 return None
 
-            purged = []
-            for conversation in conversations:
-                purged.append(conversation)
-                # Conversation.delete() will handle decrementing total_conversations counter
-                await conversation.delete(cascade=True)
+        purged = []
+        for conversation in conversations_to_purge:
+            purged.append(conversation)
+            await conversation.delete(cascade=True)
 
         await self.save()
+
+        # Orphan cleanup: delete interactions whose conversation_id references
+        # non-existent conversations (exclude empty conversation_id)
+        remaining_conversations = await Conversation.find()
+        valid_conv_ids = list({c.id for c in remaining_conversations}) + [""]
+        orphaned = await Interaction.find(
+            {"context.conversation_id": {"$nin": valid_conv_ids}}
+        )
+        for interaction in orphaned:
+            if interaction.conversation_id:
+                try:
+                    await interaction.delete(cascade=True)
+                except Exception:
+                    pass
+
         return purged
 
     async def export_memory(self, user_id: str = "") -> Dict[str, Any]:
