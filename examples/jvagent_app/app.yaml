@@ -182,9 +182,10 @@ agents:
   # - jvagent/example_agent
   # - gdf/arc_ai
   # - resolv/resolv_demo
-  - resolv/sert_ai
-  - resolv/sildsl_ai
-  - resolv/moe_ai
+  # - resolv/sert_ai
+  # - resolv/sildsl_ai
+  # - resolv/moe_ai
+  - silvies/silvie_ai
 
   # Add more agents here - they will be installed automatically when you run jvagent
   # - contrib/another_agent

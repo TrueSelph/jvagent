@@ -110,6 +110,12 @@ actions:
       model_temperature: 0.1
       model_max_tokens: 8192
 
+  - action: gdf/qr_code_interact_action
+    context:
+      enabled: true
+      description: "Qr Code Interact action lets ranks request a qr code."
+      weight: -40 # Runs after InteractRouter
+
   - action: gdf/supervisor_short_pass_interview_interact_action
     context:
       enabled: true
@@ -157,11 +163,11 @@ actions:
       enabled: true
       description: "Houses Arc API credentials and endpoints"
       endpoint: ${ARC_API_ENDPOINT}
-      ARC_API_KEY: ${ARC_API_KEY}
+      api_key: ${ARC_API_KEY}
 
   - action: jvagent/access_control_action
     context:
-      enabled: false
+      enabled: true
       description: "Role-based access control with session tracking and permission validation for secure agent operations"
       permissions:
         {
