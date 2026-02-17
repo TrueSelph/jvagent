@@ -61,10 +61,10 @@ class ReportInterviewInteractAction(InterviewInteractAction):
     anchors: List[str] = attribute(
         default_factory=lambda: [
             "User is reporting a new problem, hazard, or safety issue",
-            "User needs to file a new complaint or incident report",
-            "User is providing details for a new incident report",
-            "User is uploading photos or evidence for a new incident report",
-            "User is revising, canceling, updating, or confirming an active incident report being created",
+            "User needs to file a new complaint or incident report.",
+            "User is providing details for a new incident report that was not confirmed.",
+            "User is uploading photos or evidence for a new incident report that was not confirmed.",
+            "User is revising, canceling, updating, or confirming an active incident report being created"
         ],
         description="Anchor statements for InteractRouter routing",
     )

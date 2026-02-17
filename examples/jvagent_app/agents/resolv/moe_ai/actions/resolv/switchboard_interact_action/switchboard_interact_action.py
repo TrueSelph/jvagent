@@ -97,8 +97,9 @@ class SwitchboardInteractAction(InteractAction):
 
                     # Spawn walker on the target agent
                     await sub_walker.spawn(target_agent)
-                    
-                    
+
+                    visitor.interaction.observability_metrics.extend(sub_walker.interaction.observability_metrics)
+                    await visitor.interaction.save()                    
 
                 return
 
