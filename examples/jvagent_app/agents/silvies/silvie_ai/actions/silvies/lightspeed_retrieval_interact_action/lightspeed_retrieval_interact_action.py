@@ -82,13 +82,17 @@ Return a json object containing intro, products, and outro.
         try:
             # 1. Extract Keywords
             keywords = await self.extract_search_keywords(visitor)
+            logger.warning(f"Extracted keywords: {keywords}")
+            logger.warning("test1")
             if not keywords:
+                logger.warning("test2")
                 await visitor.add_directive(self.no_product_directive)
                 return
 
             # 2. Search Products
             lightspeed_api = await self.get_action("LightspeedAPIAction")
             if not lightspeed_api:
+                logger.warning("test3")
                 logger.error("LightspeedAPIAction not found")
                 await visitor.add_directive(self.no_product_directive)
                 return
@@ -101,14 +105,18 @@ Return a json object containing intro, products, and outro.
                     if item['id'] not in product_ids:
                         product_ids.add(item['id'])
                         products.append(item)
-
+            
+            logger.warning(f"Found products: {products}")
             if not products:
+                logger.warning("test4")
                 await visitor.add_directive(self.no_product_directive)
                 return
 
             # 3. Refine Top Products
             products = self.refine_top_products(products, keywords, limit=3)
+            logger.warning(f"Refined products: {products}")
             if not products:
+                logger.warning("test5")
                 await visitor.add_directive(self.no_product_directive)
                 return
 
@@ -117,7 +125,9 @@ Return a json object containing intro, products, and outro.
             
             # 5. Generate JSON Reply
             reply = await self.generate_reply(visitor, products_text)
+            logger.warning(f"Generated reply: {reply}")
             if not reply or not reply.get("products"):
+                logger.warning("test6")
                 await visitor.add_directive(self.no_product_directive)
                 return
 

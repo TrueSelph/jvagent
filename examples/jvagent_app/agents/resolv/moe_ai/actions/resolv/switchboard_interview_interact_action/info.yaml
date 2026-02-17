@@ -5,7 +5,7 @@ package:
   version: 1.0.0
   meta:
     title: Switchboard Interview Interact Action
-    description: This action allows the user to choose the agent they want to interact with.
+    description: SwitchboardInterviewInteractAction is used ONLY when the user explicitly wants to change the agent, department, or service they are connected to.
     group: resolv
     type: action
   config:

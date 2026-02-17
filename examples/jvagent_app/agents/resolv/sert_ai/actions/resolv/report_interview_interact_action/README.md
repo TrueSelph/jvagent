@@ -31,7 +31,7 @@ Inherits from `InterviewInteractAction` and uses a unified classification and ex
 - action: resolv/report_interview_interact_action
   context:
     enabled: true
-    description: "Report Interview action is used to create reports."
+    description: "Report Interview action is used to create a **new incident report or complaint** that does not yet exist in the system."
     weight: -50 # Runs before fallback actions
   config:
     model_action_type: "OpenAILanguageModelAction"

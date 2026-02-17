@@ -15,6 +15,7 @@ actions:
       model_action_type: "OpenAILanguageModelAction"
       history_limit: 3
       model: "gpt-4.1"
+      generate_dynamic_clarification: true
 
   - action: jvagent/openai_embedding
     context:
@@ -84,7 +85,7 @@ actions:
   - action: resolv/report_interview_interact_action
     context:
       enabled: true
-      description: "Report Interview action is used to create reports."
+      description: "Report Interview action is used to create a **new incident report or complaint** that does not yet exist in the system."
       weight: -50
     config:
       model_action_type: "OpenAILanguageModelAction"
@@ -99,7 +100,7 @@ actions:
   - action: resolv/feedback_interview_interact_action
     context:
       enabled: true
-      description: "Feedback Interview action is used to create feedback for incidents and projects."
+      description: "Feedback Interview action is used to provide **feedback, updates, or follow-ups** on an existing report, project, or completed work."
       weight: -50
     config:
       model_action_type: "OpenAILanguageModelAction"

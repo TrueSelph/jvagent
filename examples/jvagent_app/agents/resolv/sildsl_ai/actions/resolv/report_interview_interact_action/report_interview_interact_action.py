@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 class ReportInterviewInteractAction(InterviewInteractAction):
-    """Report Interview action is used to create reports.
+    """Report Interview action is used to create a **new incident report or complaint** that does not yet exist in the system.
 
     This is a concrete implementation of InterviewInteractAction that defines
     a specific interview flow. Sessions are identified by
@@ -53,21 +53,24 @@ class ReportInterviewInteractAction(InterviewInteractAction):
         generation prompts.
     """
 
-    description: str = "Report Interview action is used to create reports."
+    description: str = "Report Interview action is used to create a **new incident report or complaint** that does not yet exist in the system."
     resolv_api_action: str = "ResolvAPIAction"
 
     # REQUIRED when using InteractRouter: Anchors for intelligent routing
     # Must cover both initial entry and intermediate states (when answering questions)
     anchors: List[str] = attribute(
         default_factory=lambda: [
-            "User is reporting a new problem, hazard, or safety issue",
-            "User needs to file a new complaint or incident report.",
-            "User is providing details for a new incident report that was not confirmed.",
-            "User is uploading photos or evidence for a new incident report that was not confirmed.",
-            "User is revising, canceling, updating, or confirming an active incident report being created"
+            "User wants to file a new complaint.",
+            "User is reporting an incident for the first time.",
+            "User describes a problem that has not been formally reported.",
+            "User provides: Incident description, Location, Media or evidence, Privacy preference, Reporting on behalf of someone, Name, email, phone number",
+            "User uploads photos or evidence for a new issue.",
+            "User updates details of a report that has **not yet been confirmed or submitted**.",
+            "User confirms or cancels a report being created.",
         ],
         description="Anchor statements for InteractRouter routing",
     )
+    _standard_interview_anchor_templates: List[str] = []
 
     question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [

@@ -29,7 +29,7 @@ Inherits from `InterviewInteractAction` and uses a unified classification and ex
 - action: resolv/feedback_interview_interact_action
   context:
     enabled: true
-    description: "Feedback Interview action is used to create feedback for incidents and projects."
+    description: "Feedback Interview action is used to provide **feedback, updates, or follow-ups** on an existing report, project, or completed work."
     weight: -50 # Runs before fallback actions
   config:
     model_action_type: "OpenAILanguageModelAction"

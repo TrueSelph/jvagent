@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 class FeedbackInterviewInteractAction(InterviewInteractAction):
-    """Feedback Interview action is used to create feedback for incidents and projects.
+    """Feedback Interview action is used to provide **feedback, updates, or follow-ups** on an existing report, project, or completed work.
 
     This is a concrete implementation of InterviewInteractAction that defines
     a specific interview flow. Sessions are identified by
@@ -54,24 +54,24 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
     """
 
     description: str = (
-        "Feedback Interview action is used to create feedback for incidents and projects."
+        "Feedback Interview action is used to provide **feedback, updates, or follow-ups** on an existing report, project, or completed work."
     )
 
     # REQUIRED when using InteractRouter: Anchors for intelligent routing
     # Must cover both initial entry and intermediate states (when answering questions)
     anchors: List[str] = attribute(
         default_factory=lambda: [
-            "User wants to provide feedback on a completed report or project",
-            "User is giving feedback about work that was done",
-            "User is providing an update on a previously reported issue",
-            "User is uploading photos or evidence for feedback",
-            "User is providing an update or follow-up on previously submitted feedback",
-            "User is currently creating feedback and providing an incident that took place.",
-            "User is providing additional details (comments, evidence, media, etc.) about an incident likely related to ongoing feedback or a report that was confirmed.",
-            "User is providing additional details (comments, evidence, media, etc.) to a previous report."
+            "User provides a reference number.",
+            "User follows up on a previously submitted issue.",
+            "User gives feedback on completed work or a resolved report.",
+            "User provides additional details after a report was confirmed.",
+            "User uploads new evidence or details for an existing report.",
+            "User corrects previously submitted feedback.",
+            "User confirms or cancels feedback submission.",
         ],
         description="Anchor statements for InteractRouter routing",
     )
+    _standard_interview_anchor_templates: List[str] = []
 
     question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
@@ -217,7 +217,9 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
             try:
                 result_json = await interview_action._call_model(user_prompt, interview_action.can_ask_for_media_prompt, json_response=True)
                 if result_json and isinstance(result_json, dict):
+                    logger.warning(f"Should ask for media: {result_json}")
                     should_ask = result_json.get("should_ask", False)    
+                    logger.warning(f"Should ask for media: {type(should_ask)}")
                     return should_ask
             except Exception as e:
                 logger.error(f"Error in can_ask_for_media: {e}")
