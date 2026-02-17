@@ -31,6 +31,10 @@ class App(Node):
     """
 
     # Application metadata
+    app_id: str = attribute(
+        default="jvagent_app",
+        description="Stable application identifier from app.yaml (app: key)",
+    )
     name: str = "jvAgent"
     version: str = "0.0.1"
     description: str = "jvagent Application"

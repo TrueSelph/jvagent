@@ -95,6 +95,11 @@ class Action(Node):
     Note: Disabling an action (on_disable) does NOT deregister it. Deregistration
     (on_deregister) is a separate operation that removes the action from the system
     and automatically cleans up endpoints and modules.
+
+    Child Nodes:
+        Actions with attached child nodes (e.g., NewsSummaryCache) must connect
+        them via outgoing edges. When an action is deleted, all child nodes
+        reachable via outgoing edges are cascade-deleted.
     """
 
     # Core Attributes
@@ -141,6 +146,31 @@ class Action(Node):
         # Merge: overrides take precedence
         merged = {**base_config, **overrides}
         return merged
+
+    async def delete(self, cascade: bool = True) -> None:
+        """Delete this action and cascade to child nodes.
+
+        Actions with attached child nodes (e.g., NewsSummaryCache) must connect
+        them via outgoing edges so cascade delete applies. This override
+        explicitly deletes all outgoing child nodes before calling super().delete()
+        as a safety net if jvspatial cascade misses any.
+        """
+        if cascade:
+            try:
+                # Get all nodes reachable via outgoing edges (child nodes)
+                child_nodes = await self.nodes(direction="out")
+                for child in child_nodes:
+                    try:
+                        await child.delete(cascade=True)
+                    except Exception as e:
+                        logger.warning(
+                            f"Error cascade-deleting child node {getattr(child, 'id', child)} "
+                            f"of action {self.id}: {e}"
+                        )
+            except Exception as e:
+                logger.warning(f"Error enumerating child nodes for action {self.id}: {e}")
+
+        await super().delete(cascade=cascade)
 
     # ============================================================================
     # Lifecycle Hooks

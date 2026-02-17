@@ -102,7 +102,7 @@ class Actions(Node):
                         try:
                             if await self.is_connected_to(existing):
                                 await self.disconnect(existing)
-                            await existing.delete()
+                            await existing.delete(cascade=True)
                             self.registered_count = max(0, self.registered_count - 1)
                             if existing.enabled:
                                 self.enabled_count = max(0, self.enabled_count - 1)
@@ -125,7 +125,7 @@ class Actions(Node):
                         try:
                             if await self.is_connected_to(duplicate):
                                 await self.disconnect(duplicate)
-                            await duplicate.delete()
+                            await duplicate.delete(cascade=True)
                             self.registered_count = max(0, self.registered_count - 1)
                             if duplicate.enabled:
                                 self.enabled_count = max(0, self.enabled_count - 1)
@@ -171,7 +171,7 @@ class Actions(Node):
                     # Clean up the duplicate we just created
                     if await self.is_connected_to(action):
                         await self.disconnect(action)
-                    await action.delete()
+                    await action.delete(cascade=True)
                     self.registered_count = max(0, self.registered_count - 1)
                     if action.enabled:
                         self.enabled_count = max(0, self.enabled_count - 1)
@@ -352,8 +352,8 @@ class Actions(Node):
                 if action.enabled:
                     self.enabled_count = max(0, self.enabled_count - 1)
 
-                # Step 5: Delete the action (this also removes edges)
-                await action.delete()
+                # Step 5: Delete the action (cascade deletes child nodes e.g. NewsSummaryCache)
+                await action.delete(cascade=True)
                 await self.save()
 
                 # Invalidate action cache for this agent

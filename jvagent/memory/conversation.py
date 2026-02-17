@@ -154,28 +154,36 @@ class Conversation(DeferredSaveMixin, Node):
         Interactions are chained chronologically: Interaction1 <-> Interaction2 <-> Interaction3
         The conversation connects to the first interaction only.
 
+        Uses per-conversation locking to prevent concurrent requests from creating
+        multiple bidirectional edges from one interaction node (invalid chain).
+
         Args:
             interaction: Interaction node to add
 
         Returns:
             The added Interaction node
         """
+        from jvagent.memory.conversation_lock_manager import get_conversation_lock_manager
         from jvagent.memory.interaction import Interaction
 
-        last_interaction = await self.get_last_interaction()
+        lock_manager = get_conversation_lock_manager()
+        lock = await lock_manager.acquire_lock(self.session_id)
 
-        if last_interaction:
-            # Chain the new interaction after the last one (bidirectional edge)
-            await last_interaction.connect(interaction, direction="both")
-        else:
-            # This is the first interaction - connect conversation to it
-            await self.connect(interaction, direction="out")
+        async with lock:
+            last_interaction = await self.get_last_interaction()
 
-        # Update the last interaction reference
-        self.last_interaction_id = interaction.id
-        self.interaction_count += 1
-        self.last_interaction_at = datetime.now(timezone.utc)
-        await self.save()
+            if last_interaction:
+                # Chain the new interaction after the last one (bidirectional edge)
+                await last_interaction.connect(interaction, direction="both")
+            else:
+                # This is the first interaction - connect conversation to it
+                await self.connect(interaction, direction="out")
+
+            # Update the last interaction reference
+            self.last_interaction_id = interaction.id
+            self.interaction_count += 1
+            self.last_interaction_at = datetime.now(timezone.utc)
+            await self.save()
 
         # Sync limit from agent when missing or when agent limit changed (e.g. after --update)
         agent = await self.get_agent()

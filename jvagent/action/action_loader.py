@@ -521,6 +521,14 @@ class ActionLoader:
         # Ensure parent packages exist in sys.modules (does not rely on MetaPathFinder)
         self._ensure_action_parent_packages(module_name, action_dir)
 
+        # Avoid re-loading: module may already be loaded by pre_import_action_modules_for_agents.
+        # Re-execution would re-run @endpoint decorators and cause duplicate route registration.
+        if module_name in sys.modules:
+            existing = sys.modules[module_name]
+            action_class = getattr(existing, archetype, None)
+            if action_class is not None and issubclass(action_class, Action):
+                return action_class
+
         init_file = action_dir / "__init__.py"
         module_file = action_dir / f"{action_name}.py"
 
