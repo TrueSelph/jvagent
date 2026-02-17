@@ -6,6 +6,8 @@ from jvagent.action.interact.interact_walker import InteractWalker
 from jvspatial.core.annotations import attribute
 import logging
 logger = logging.getLogger(__name__)
+from .rank_profile import RankProfile
+
 
 class OnboardingInteractAction(InteractAction):
     """This action only allows verified ranks to interact with the agent."""
@@ -50,7 +52,6 @@ class OnboardingInteractAction(InteractAction):
         # profile_data = await api.retrieve_rank_info(pin="", session_id=subscriber_phone)
         result = {'first_name': 'Tharick', 'last_name': 'Jairam', 'is_first_time': False, 'is_security_question_set': True, 'is_pin_set': True, 'rank': {'name': 'Lt Col', 'full_name': 'Lieutenant Colonel'}}
         profile_data = {'ident_code': 'MiPWJFWbxqPccfusEygn', 'regimental_number': '15264', 'unit': {'id': 4, 'name': 'Artillery'}, 'sub_unit': None, 'supervisor': {'first_name': 'John', 'last_name': 'Brown', 'regimental_number': '34342', 'phone': '5926415808', 'is_unit_supervisor': True}}
-
         
         if(result and profile_data):
             # set the user name
@@ -59,74 +60,30 @@ class OnboardingInteractAction(InteractAction):
                 user.display_name = rank_name
                 await user.save()
 
-
             # save rank profile to the conversation 
             rank_profile = await RankProfile.create(
-                ident_code=profile_data.get("ident_code", ""),
-                regimental_number=profile_data.get("regimental_number", ""),
-                unit=profile_data.get("unit", {}),
-                sub_unit=profile_data.get("sub_unit", {}),
-                supervisor=profile_data.get("supervisor", {}),
-                first_name=result.get("first_name", ""),
-                last_name=result.get("last_name", ""),
+                ident_code=profile_data.get("ident_code") or "",
+                regimental_number=profile_data.get("regimental_number") or "",
+                unit=profile_data.get("unit") or {},
+                sub_unit=profile_data.get("sub_unit") or {},  # This will now use {} instead of None
+                supervisor=profile_data.get("supervisor") or {},
+                first_name=result.get("first_name") or "",
+                last_name=result.get("last_name") or "",
                 is_first_time=result.get("is_first_time", False),
                 is_security_question_set=result.get("is_security_question_set", False),
                 is_pin_set=result.get("is_pin_set", False),
-                rank=result.get("rank", {}),
+                rank=result.get("rank") or {},
             )
             await user.connect(rank_profile)
 
+            # update access control 
+            access_control = await self.get_action("AccessControlAction")
+            if access_control:
+                session_groups = access_control.session_groups
+                session_groups["ranks"] = session_groups.get("ranks", []) + [user.user_id]
+                await access_control.save()
 
             await visitor.add_directives([self.intro_directive])
         else:
             await visitor.add_directives([self.unverified_directive])
 
-
-
-class RankProfile(Node):
-    """Rank profile node."""
-    
-    ident_code: str = attribute(
-        default="",
-        description="Ident code of the rank",
-    )
-    regimental_number: str = attribute(
-        default="",
-        description="Regimental number of the rank",
-    )
-    unit: Dict[str, Any] = attribute(
-        default_factory=dict,
-        description="Unit of the rank",
-    )
-    sub_unit: Dict[str, Any] = attribute(
-        default_factory=dict,
-        description="Sub unit of the rank",
-    )
-    supervisor: Dict[str, Any] = attribute(
-        default_factory=dict,
-        description="Supervisor of the rank",
-    )
-    first_name: str = attribute(
-        default="",
-        description="First name of the rank",
-    )
-    last_name: str = attribute(
-        default="",
-        description="Last name of the rank",
-    )
-    is_first_time: bool = attribute(
-        default=False,
-        description="Whether the rank is a first time user",
-    )
-    is_security_question_set: bool = attribute(
-        default=False,
-        description="Whether the rank has set a security question",
-    )
-    is_pin_set: bool = attribute(
-        default=False,
-        description="Whether the rank has set a PIN",
-    )
-    rank: Dict[str, Any] = attribute(
-        default_factory=dict,
-        description="Rank of the rank",
-    )

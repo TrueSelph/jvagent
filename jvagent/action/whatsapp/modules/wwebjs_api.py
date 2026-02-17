@@ -7,6 +7,7 @@ import aiohttp
 
 from .base import BaseWhatsAppAPI, MessagePayload
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -180,17 +181,7 @@ class WWebJSAPI(BaseWhatsAppAPI):
             if webhook_url:
                 # ONLY update if we haven't already registered this webhook for this session in this process
                 try:
-                    await self.close_session()
-                    webhook_result = await self.start_session(webhook=webhook_url, wait_qr_code=False)
-                    if not webhook_result.get("ok", True) and webhook_result.get("error"):
-                        self.logger.debug(
-                            f"Could not update webhook for existing session '{self.session}': "
-                            f"{webhook_result.get('error')}"
-                        )
-                    else:
-                        self.logger.debug(
-                            f"Updated webhook URL for existing session '{self.session}'"
-                        )
+                    await self.update_webhook(webhook_url)
                 except Exception as e:
                     self.logger.debug(
                         f"Error updating webhook for existing session '{self.session}': {e}"
@@ -357,6 +348,11 @@ class WWebJSAPI(BaseWhatsAppAPI):
     async def close_session(self) -> dict:
         """GET /session/stop/{sessionId} - Close/terminate the session"""
         return await self.send_rest_request(f"session/stop/{self.session}", method="GET")
+
+    async def update_webhook(self, webhook: str) -> dict:
+        """PATCH /session/webhook/{sessionId} - Update webhook URL for the session"""
+        data = {"webhookUrl": webhook}
+        return await self.send_rest_request(f"session/webhook/{self.session}", method="PATCH", data=data)
 
     async def logout_session(self) -> dict:
         """GET /session/terminate/{sessionId} - Logout from the session"""

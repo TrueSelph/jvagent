@@ -15,7 +15,7 @@ actions:
       # Model Configuration
       model_action_type: "OpenAILanguageModelAction"
       history_limit: 3
-      model: "gpt-4.1-mini"
+      model: "gpt-4.1"
 
   - action: jvagent/openai_embedding
     context:
@@ -102,6 +102,7 @@ actions:
       max_statement_length: 100
       history_limit: 3
       auto_confirm: false
+
   - action: resolv/feedback_interview_interact_action
     context:
       enabled: true

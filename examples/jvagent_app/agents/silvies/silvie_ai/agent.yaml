@@ -1,10 +1,10 @@
-agent: resolv/sildsl_ai
+agent: silvies/silvie_ai
 version: 1.0.0
 author: V75 Inc.
 jvagent: ~0.0.1
 context:
-  alias: SILDSL AI
-  description: SILDSL AI is the virtual assistant for the Resolv IMS System, delivering updates and stakeholder support for the Strengthening Instructional Leadership at the District and School Levels (SILDSL) “Leadership Project”.
+  alias: Silvie AI
+  description: Silvie is the official sales representative for Silvie's General Store. With knowledge on their wide inventory, she's the go-to AI for stock checks and inventory queries.
   enabled: true
 actions:
   - action: jvagent/interact_router
@@ -14,7 +14,7 @@ actions:
       # Model Configuration
       model_action_type: "OpenAILanguageModelAction"
       history_limit: 3
-      model: "gpt-4.1"
+      model: "gpt-4.1-mini"
 
   - action: jvagent/openai_embedding
     context:
@@ -27,6 +27,11 @@ actions:
       model: text-embedding-3-small
       embedding_dimensions: 1536
       timeout: 30
+
+  - action: jvagent/intro_interact_action
+    context:
+      enabled: true
+      description: "Introductory interact action for first-time users"
 
   # PageIndexRetrievalInteractAction - Vectorless RAG from indexed documents
   # Documents must be ingested first via POST /pageindex/documents
@@ -67,55 +72,37 @@ actions:
       enabled: true
       description: "Persona action with LLM-driven behavioral parameters"
       # Persona Identity
-      persona_name: "SILDSL"
+      persona_name: "Silvie"
       persona_description: |
-        You are the virtual assistant for the Strengthening Instructional Leadership at the District and School Levels (SILDSL) Project, also known as the “Leadership Project”. Your role involves providing informational support and updates on the Leadership Project, which aims to strengthen school and district leadership and improve sector management within Guyana's education system. Keep your responses very short and concise. Do not give any explanation unless asked.
+        You are a confident and professional sales associate at Silvie's Industrial Solutions. You provide accurate information about inventory items and deliver clear, concise customer support. Focus on assisting customers efficiently and ensuring their satisfaction. Keep responses short and direct.
       persona_capabilities:
-        - "Provide updates and progress reports on the Leadership Project."
-        - "Record and file project-related inquiries or feedback from stakeholders."
-        - "Answer questions about project objectives, timelines, and implementation partners."
-        - "Share official information from the Ministry of Education and the IDB."
+        - "Check inventory, stock levels, and retrieve product details."
       # Model Configuration
       model_action_type: "OpenAILanguageModelAction"
       model: "gpt-4.1-mini"
       model_temperature: 0.1
       model_max_tokens: 8192
 
-  - action: resolv/report_interview_interact_action
+  - action: gdf/qr_code_interact_action
     context:
       enabled: true
-      description: "Report Interview action is used to create reports."
-      weight: -50
-    config:
-      model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4.1"
-      model_temperature: 0.1
-      model_max_tokens: 8192
-      use_history: true
-      max_statement_length: 100
-      history_limit: 3
-      auto_confirm: false
+      description: "Qr Code Interact action lets ranks request a qr code."
+      weight: -40 # Runs after InteractRouter
 
-  - action: resolv/feedback_interview_interact_action
-    context:
-      enabled: true
-      description: "Feedback Interview action is used to create feedback for incidents and projects."
-      weight: -50
-    config:
-      model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4.1"
-      model_temperature: 0.1
-      model_max_tokens: 8192
-      use_history: true
-      max_statement_length: 100
-      history_limit: 3
-      auto_confirm: false
-
-  - action: resolv/subscription_interact_action
-    context:
-      enabled: true
-      description: "Subscription action is used to present a link to the user to subscribe and unsubscribe from channels and groups."
-      weight: -50
+  # - action: gdf/supervisor_short_pass_interview_interact_action
+  #   context:
+  #     enabled: true
+  #     description: "Supervisor Short Pass Interview action is used to approve or deny short pass requests."
+  #     weight: -50
+  #   config:
+  #     model_action_type: "OpenAILanguageModelAction"
+  #     model: "gpt-4.1"
+  #     model_temperature: 0.1
+  #     model_max_tokens: 4096
+  #     use_history: true
+  #     max_statement_length: 100
+  #     history_limit: 3
+  #     auto_confirm: false
 
   - action: jvagent/converse_interact_action
     context:
@@ -123,27 +110,33 @@ actions:
       description: "Fallback action for smalltalk and casual conversation"
       weight: 100 # Runs last as a safety net
 
-  - action: resolv/onboarding_interact_action
+  - action: silvies/lightspeed_retrieval_interact_action
     context:
       enabled: true
-      description: "Onboarding action is used to register user and subscribe them to default groups."
-      weight: -100
+      description: "Retrieves and interacts with Lightspeed products"
+      weight: -50 # Runs after InteractRouter
 
-  - action: resolv/resolv_api_action
+  - action: silvies/lightspeed_api_action
     context:
       enabled: true
-      description: "Houses Resolv API credentials and endpoints"
-      user_uuid: ${RESOLV_SILDSL_USER_UUID}
-      secret_token: ${RESOLV_SILDSL_SECRET_TOKEN}
-      api_url: ${RESOLV_SILDSL_API_URL}
-      organization_slug: ${RESOLV_SILDSL_ORGANIZATION_SLUG}
-      project_id: ${RESOLV_SILDSL_PROJECT_ID}
-      agent_identifier: ${RESOLV_SILDSL_AGENT_IDENTIFIER}
+      description: "Houses Lightspeed API credentials and endpoints"
 
   - action: jvagent/agent_utils
     context:
       enabled: true
       description: "Agent Utils action for power user controls"
+
+  - action: jvagent/whatsapp_action
+    context:
+      enabled: true
+      description: "WhatsApp provider (wppconnect, ultramsg, wwebjs)"
+      # whatsapp configuration
+      provider: wwebjs
+      api_url: ${WHATSAPP_API_URL}
+      api_key: ${WHATSAPP_API_KEY}
+      session: ${WHATSAPP_SESSION}
+      base_url: ${APP_BASE_URL}
+      token: ${WHATSAPP_TOKEN}
 
   - action: jvagent/tts_action
     context:
