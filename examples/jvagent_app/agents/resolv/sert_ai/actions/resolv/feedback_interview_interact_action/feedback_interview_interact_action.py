@@ -64,10 +64,11 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
             "User wants to provide feedback on a completed report or project",
             "User is giving feedback about work that was done",
             "User is providing an update on a previously reported issue",
-            "User is uploading photos or evidence for a feedback",
+            "User is uploading photos or evidence for feedback",
             "User is providing an update or follow-up on previously submitted feedback",
             "User is currently creating feedback and providing an incident that took place.",
-            "User is providing additional details about an incident likely related to ongoing feedback or report"
+            "User is providing additional details (comments, evidence, media, etc.) about an incident likely related to ongoing feedback or a report that was confirmed.",
+            "User is providing additional details (comments, evidence, media, etc.) to a previous report."
         ],
         description="Anchor statements for InteractRouter routing",
     )
