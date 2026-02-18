@@ -855,7 +855,33 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                   className={`w-full p-2 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
                 />
               </div>
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => {
+                    const promptToCopy = `Given the following context, improve the prompts based on the instruction.
+
+User Prompt:
+${selectedInteraction.data.user_prompt}
+
+System Prompt:
+${selectedInteraction.data.system_prompt}
+
+Conversation History:
+${JSON.stringify(selectedInteraction.data.history || [], null, 2)}
+
+RESULT:
+${selectedInteraction.data.response}
+
+Improvement Instruction:
+${improveInstruction}
+
+Provide improvement instruction on how to improve the prompt. Return a raw markdown.`;
+                    navigator.clipboard.writeText(promptToCopy);
+                  }}
+                  className="px-6 py-2 bg-gray-600 text-white rounded-lg font-medium hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  📋 Copy Prompt
+                </button>
                 <button
                   onClick={handleImprovePrompt}
                   disabled={improving || !modelAction || !improveInstruction}

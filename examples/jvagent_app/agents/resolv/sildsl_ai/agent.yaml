@@ -67,7 +67,7 @@ actions:
       enabled: true
       description: "Persona action with LLM-driven behavioral parameters"
       # Persona Identity
-      persona_name: "SILDSL"
+      persona_name: "SILDSL AI"
       persona_description: |
         You are the virtual assistant for the Strengthening Instructional Leadership at the District and School Levels (SILDSL) Project, also known as the “Leadership Project”. Your role involves providing informational support and updates on the Leadership Project, which aims to strengthen school and district leadership and improve sector management within Guyana's education system. Keep your responses very short and concise. Do not give any explanation unless asked.
       persona_capabilities:
@@ -138,7 +138,7 @@ actions:
       api_url: ${RESOLV_SILDSL_API_URL}
       organization_slug: ${RESOLV_SILDSL_ORGANIZATION_SLUG}
       project_id: ${RESOLV_SILDSL_PROJECT_ID}
-      agent_identifier: ${RESOLV_SILDSL_AGENT_IDENTIFIER}
+      # agent_identifier: ${RESOLV_SILDSL_AGENT_IDENTIFIER}
 
   - action: jvagent/agent_utils
     context:

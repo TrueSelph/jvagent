@@ -1,0 +1,16 @@
+package:
+  name: resolv/subscription_interact_action
+  author: V75 Inc.
+  archetype: SubscriptionInteractAction
+  version: 1.0.0
+  meta:
+    title: Subscription Interact Action
+    description: Subscription action is used to present a link to the user to subscribe and unsubscribe from channels and groups.
+    group: resolv
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []

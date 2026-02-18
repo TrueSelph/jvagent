@@ -98,13 +98,14 @@ class SwitchboardInteractAction(InteractAction):
                     await sub_walker.spawn(target_agent)
 
                     visitor.interaction.observability_metrics.extend(sub_walker.interaction.observability_metrics)
+                    visitor.interaction.response = sub_walker.interaction.response
                     await visitor.interaction.save()                    
 
                 return
 
         # Present available agents for selection
         switchboard_agents = await self.get_switchboard_agents()
-        agents_str = ", ".join(agent["alias"] for agent in switchboard_agents)
+        agents_str = "- " + "\n- ".join(agent["alias"] for agent in switchboard_agents)
 
         await visitor.add_directives([self.available_switchboard_agents_directive.format(agents=agents_str)])
         await self.respond(visitor)

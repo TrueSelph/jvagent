@@ -11,33 +11,19 @@ The Resolv Demo Agent demonstrates:
 - Role-based access control with session tracking
 - Integration with external APIs (Resolv IMS)
 - Speech-to-text and text-to-speech capabilities
-- Vector-based semantic search (optional)
+- Document retrieval via PageIndex for project information
 
 ## Structure
 
 ```
 resolv_demo/
-├── actions/              # Actions packaged with this agent
-│   └── resolv/          # Namespace directory
+├── actions/              # Shared actions from resolv namespace
+│   └── resolv/          # Namespace directory (shared with other agents)
 │       ├── feedback_interview_interact_action/
-│       │   ├── __init__.py
-│       │   ├── feedback_interview_interact_action.py
-│       │   ├── endpoints.py
-│       │   └── info.yaml
 │       ├── report_interview_interact_action/
-│       │   ├── __init__.py
-│       │   ├── report_interview_interact_action.py
-│       │   └── info.yaml
-│       ├── resolv_api_action/
-│       │   ├── __init__.py
-│       │   ├── resolv_api_action.py
-│       │   ├── endpoints.py
-│       │   └── info.yaml
-│       └── resolv_onboarding_interact_action/
-│           ├── __init__.py
-│           ├── resolv_onboarding_interact_action.py
-│           ├── endpoints.py
-│           └── info.yaml
+│       ├── onboarding_interact_action/
+│       ├── subscription_interact_action/
+│       └── resolv_api_action/
 ├── agent.yaml           # Agent configuration and action assignments
 └── README.md           # This file
 ```
@@ -62,21 +48,25 @@ context:
 actions:
   # Core routing and model actions
   - action: jvagent/interact_router
-  - action: jvagent/openai_lm
   - action: jvagent/openai_embedding
+  - action: jvagent/pageindex_retrieval_interact_action
+  - action: jvagent/openai_lm
   - action: jvagent/persona
   
   # Custom Resolv actions
   - action: resolv/report_interview_interact_action
   - action: resolv/feedback_interview_interact_action
-  - action: resolv/resolv_onboarding_interact_action
+  - action: resolv/subscription_interact_action
+  - action: jvagent/converse_interact_action
+  - action: resolv/onboarding_interact_action
   - action: resolv/resolv_api_action
   
   # Integration actions
+  - action: jvagent/access_control_action
+  - action: jvagent/agent_utils
   - action: jvagent/whatsapp_action
   - action: jvagent/tts_action
   - action: jvagent/stt_action
-  - action: jvagent/access_control_action
 ```
 
 ## Actions
@@ -84,14 +74,16 @@ actions:
 ### Core Actions
 
 #### InteractRouter
+
 Intent-based routing action that analyzes utterances and routes to appropriate InteractActions.
 
 **Configuration:**
-- Model: `gpt-4.1-mini`
+- Model: `gpt-4.1`
 - History limit: 3 interactions
 - Analyzes conversation context for intelligent routing
 
 #### OpenAI Language Model
+
 Provides LLM integration with GPT-4.1-mini for natural language processing.
 
 **Configuration:**
@@ -105,6 +97,7 @@ Provides LLM integration with GPT-4.1-mini for natural language processing.
 - `GET /actions/{action_id}/metrics` - Get usage metrics
 
 #### OpenAI Embedding
+
 Generates vector embeddings for semantic search and context retrieval.
 
 **Configuration:**
@@ -116,24 +109,40 @@ Generates vector embeddings for semantic search and context retrieval.
 - `POST /actions/{action_id}/embed` - Generate embedding for text
 - `POST /actions/{action_id}/embed/batch` - Generate embeddings for multiple texts
 
+#### PageIndex Retrieval InteractAction
+
+Vectorless RAG action that retrieves context from indexed documents.
+
+**Configuration:**
+- Weight: -75 (runs after InteractRouter, before Persona)
+- Strategy: `tree_search`
+- Limit: 10 documents
+- Node summary: enabled
+
+**Features:**
+- Retrieves context from indexed documents via PageIndex graph
+- Tree search strategy for efficient document retrieval
+- Requires document ingestion via POST /pageindex/documents
+
 #### Persona Action
+
 Conversational agent with configurable personality and capabilities.
 
 **Configuration:**
-- Persona name: "Navi"
+- Persona name: "RESOLV DEMO AI"
 - Model: `gpt-4.1-mini`
 - Temperature: 0.1
 - Max tokens: 8192
 
 **Capabilities:**
-- Answer questions about jvagent
-- Demonstrate action delegation
-- Process user interactions with behavioral parameters
-- Provide streaming and non-streaming responses
+- Submit report for a project
+- Submit feedback for an incident or project
+- Provide subscription link to opt in and out
 
 ### Custom Resolv Actions
 
 #### Report Interview InteractAction
+
 Structured interview action for creating incident reports in the Resolv IMS.
 
 **Features:**
@@ -145,9 +154,9 @@ Structured interview action for creating incident reports in the Resolv IMS.
 
 **Configuration:**
 - Weight: -50 (runs before fallback actions)
-- Model: `gpt-4.1-mini`
+- Model: `gpt-4.1`
 - History limit: 3 interactions
-- DSPy optimization enabled
+- Auto-confirm: false
 
 **Interview Fields:**
 - Reporter name
@@ -165,6 +174,7 @@ Structured interview action for creating incident reports in the Resolv IMS.
 - Standard InteractAction endpoints via InteractWalker
 
 #### Feedback Interview InteractAction
+
 Structured interview action for submitting feedback on existing reports or projects.
 
 **Features:**
@@ -175,9 +185,9 @@ Structured interview action for submitting feedback on existing reports or proje
 
 **Configuration:**
 - Weight: -50 (runs before fallback actions)
-- Model: `gpt-4.1-mini`
+- Model: `gpt-4.1`
 - History limit: 3 interactions
-- DSPy optimization enabled
+- Auto-confirm: false
 
 **Interview Fields:**
 - Project details (for report matching)
@@ -188,7 +198,28 @@ Structured interview action for submitting feedback on existing reports or proje
 **API Endpoints:**
 - Standard InteractAction endpoints via InteractWalker
 
-#### Resolv Onboarding InteractAction
+#### Subscription InteractAction
+
+Presents a link to users for subscribing and unsubscribing from channels and groups.
+
+**Features:**
+- Dynamic subscription link generation
+- Channel and group management
+- User preference handling
+
+**Configuration:**
+- Weight: -50 (runs before fallback actions)
+
+#### Converse InteractAction
+
+Fallback action for smalltalk and casual conversation.
+
+**Configuration:**
+- Weight: 100 (runs last as a safety net)
+- Handles general conversation when no specific action is triggered
+
+#### Onboarding InteractAction
+
 User registration and group subscription action for new users.
 
 **Features:**
@@ -199,13 +230,9 @@ User registration and group subscription action for new users.
 
 **Configuration:**
 - Weight: -100 (runs early in routing)
-- Default groups: ["28"]
-
-**API Endpoints:**
-- `POST /actions/{action_id}/onboard` - Onboard a new user
-- `GET /actions/{action_id}/status` - Check onboarding status
 
 #### Resolv API Action
+
 Central configuration and API client for Resolv IMS integration.
 
 **Features:**
@@ -216,9 +243,11 @@ Central configuration and API client for Resolv IMS integration.
 - Organization and project context
 
 **Configuration:**
-- Organization: `mopw-guyana`
-- Project ID: `32`
-- API URL: `https://app.resolv-ims.com/api`
+- User UUID: `${RESOLV_TEST_USER_UUID}`
+- Secret token: `${RESOLV_TEST_SECRET_TOKEN}`
+- API URL: `${RESOLV_TEST_API_URL}`
+- Organization slug: `${RESOLV_TEST_ORGANIZATION_SLUG}`
+- Project ID: `${RESOLV_TEST_PROJECT_ID}`
 
 **API Endpoints:**
 - `POST /actions/{action_id}/reports` - Create a report
@@ -229,6 +258,7 @@ Central configuration and API client for Resolv IMS integration.
 ### Integration Actions
 
 #### WhatsApp Action
+
 Multi-provider WhatsApp integration for messaging.
 
 **Configuration:**
@@ -244,6 +274,7 @@ Multi-provider WhatsApp integration for messaging.
 - Multi-provider support
 
 #### Text-to-Speech Action
+
 Converts text responses to speech audio.
 
 **Configuration:**
@@ -252,6 +283,7 @@ Converts text responses to speech audio.
 - Voice: "Sarah"
 
 #### Speech-to-Text Action
+
 Converts audio messages to text.
 
 **Configuration:**
@@ -259,6 +291,7 @@ Converts audio messages to text.
 - Model: `nova-2`
 
 #### Access Control Action
+
 Role-based access control with session tracking and permission validation.
 
 **Features:**
@@ -268,14 +301,16 @@ Role-based access control with session tracking and permission validation.
 - Dynamic permission validation
 
 **Configuration:**
+- Enabled: false (disabled by default)
 - Default channel: Allow all users
-- WhatsApp channel: Restricted to specific users (5926431530)
+- WhatsApp channel: Configurable user restrictions
 
 **API Endpoints:**
 - `POST /actions/{action_id}/validate` - Validate user permissions
 - `GET /actions/{action_id}/permissions` - Get permission configuration
 
 #### Agent Utils Action
+
 Power user controls for agent management and debugging.
 
 **Features:**
@@ -291,7 +326,7 @@ When jvagent starts from the app directory:
 
 1. The agent configuration is loaded from `agent.yaml` and environment variables are resolved
 2. An Agent node is created/updated in the graph
-3. Actions are discovered from `actions/resolv/` subdirectories
+3. Actions are discovered from `actions/resolv/` subdirectories (shared with other agents)
 4. Each action's `info.yaml` is read and environment variables are resolved
 5. Action classes are loaded and `__init__.py` modules are imported for endpoint discovery
 6. Actions are registered with their configuration from the `actions` section in `agent.yaml`
@@ -335,10 +370,17 @@ Send a message to the configured WhatsApp number. The agent will automatically r
 
 #### User Onboarding
 1. New user interacts with agent
-2. Agent routes to `resolv_onboarding_interact_action`
+2. Agent routes to `onboarding_interact_action`
 3. Agent registers user with Resolv API
 4. Agent subscribes user to default groups
 5. Agent confirms successful onboarding
+
+#### Managing Subscriptions
+1. User: "I want to change my notification preferences"
+2. Agent routes to `subscription_interact_action`
+3. Agent presents subscription management link
+4. User manages channel and group subscriptions
+5. Agent confirms subscription changes
 
 ## Environment Variables
 
@@ -347,6 +389,13 @@ This agent uses environment variables for configuration:
 **Required:**
 - `${OPENAI_API_KEY}` - OpenAI API key for LLM and embeddings
 - `${APP_BASE_URL}` - Base URL for the application
+
+**Resolv Demo Project API:**
+- `${RESOLV_TEST_USER_UUID}` - Resolv API user UUID for Demo Project
+- `${RESOLV_TEST_SECRET_TOKEN}` - Resolv API secret token for Demo Project
+- `${RESOLV_TEST_API_URL}` - Resolv API URL for Demo Project
+- `${RESOLV_TEST_ORGANIZATION_SLUG}` - Organization slug in Resolv IMS
+- `${RESOLV_TEST_PROJECT_ID}` - Demo Project ID in Resolv IMS
 
 **WhatsApp Integration:**
 - `${WHATSAPP_API_URL}` - WhatsApp provider API URL
@@ -357,9 +406,6 @@ This agent uses environment variables for configuration:
 **Speech Services:**
 - `${TTS_API_KEY}` - Text-to-speech API key (ElevenLabs)
 - `${STT_API_KEY}` - Speech-to-text API key (Deepgram)
-
-**Optional:**
-- `${TYPESENSE_API_KEY}` - Typesense API key for vector search (if enabled)
 
 See the main [jvagent README](../../../../../README.md) for more information about environment variable resolution.
 
@@ -420,7 +466,7 @@ Update weights in `agent.yaml` under each action's `context.weight`.
 
 ## Known Issues and Fixes
 
-See [TARGETED_ACTION Updates](../../../../../../../jvsproject/README.md) for detailed information about recent fixes:
+Recent fixes applied to all Resolv agents:
 
 1. **Report Interview Directive Passing** - Fixed directive override functions and validation messages
 2. **Feedback Interview Fixes** - Fixed imports, validators, and directive overrides
@@ -434,7 +480,7 @@ See [TARGETED_ACTION Updates](../../../../../../../jvsproject/README.md) for det
 2. **Advanced Privacy** - Configurable privacy levels for sensitive data
 3. **Audit Trail** - Compliance-focused audit logging
 4. **Smart Truncation** - Intelligent conversation history management
-5. **Vector Search** - Enable Typesense integration for semantic search
+5. **Enhanced Document Retrieval** - Improved PageIndex integration for project documentation
 6. **Multi-Project Support** - Support multiple Resolv projects per agent
 
 ## Support

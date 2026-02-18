@@ -29,11 +29,6 @@ actions:
       embedding_dimensions: 1536
       timeout: 30
 
-  # - action: jvagent/intro_interact_action
-  #   context:
-  #     enabled: true
-  #     description: "Introductory interact action for first-time users"
-
   # PageIndexRetrievalInteractAction - Vectorless RAG from indexed documents
   # Documents must be ingested first via POST /pageindex/documents
   - action: jvagent/pageindex_retrieval_interact_action
@@ -73,7 +68,7 @@ actions:
       enabled: true
       description: "Persona action with LLM-driven behavioral parameters"
       # Persona Identity
-      persona_name: "SERT"
+      persona_name: "RESOLV DEMO AI"
       persona_description: |
         You are a friendly and knowledgeable assistant that helps users
         understand how the resolv framework works. You provide clear,
@@ -145,7 +140,7 @@ actions:
       api_url: ${RESOLV_TEST_API_URL}
       organization_slug: ${RESOLV_TEST_ORGANIZATION_SLUG}
       project_id: ${RESOLV_TEST_PROJECT_ID}
-      agent_identifier: ${RESOLV_TEST_AGENT_IDENTIFIER}
+      # agent_identifier: ${RESOLV_TEST_AGENT_IDENTIFIER}
 
   - action: jvagent/access_control_action
     context:
