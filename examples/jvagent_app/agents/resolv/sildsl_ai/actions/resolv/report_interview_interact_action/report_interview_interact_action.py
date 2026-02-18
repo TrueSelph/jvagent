@@ -409,7 +409,7 @@ class ReportInterviewInteractAction(InterviewInteractAction):
         return ValidationStatus.VALID, None
 
     @input_validator("stakeholder_phone")
-    def validate_stakeholder_phone(
+    async def validate_stakeholder_phone(
         value: str,
         session: InterviewSession,
         visitor: Optional[InteractWalker] = None,
@@ -422,12 +422,23 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                 "Ask: Please provide the contact number of the stakeholder.",
             )
 
-        value = value.strip()
+        logger.warning("value")
+        logger.warning(value)
+        value = re.sub(r"\D", "", value)  # Remove everything except digits
+        logger.warning(value)
         if not re.match(r"^\d{10}$", value):
+            # session.set_response("stakeholder_phone", "")
+            session.responses.pop("stakeholder_phone", None)  # avoids KeyError
+
+            await session.save()
             return (
                 ValidationStatus.INVALID,
                 "Tell the user: Please provide a valid 10-digit phone number.",
             )
+        logger.warning("value1")
+        
+        session.set_response("stakeholder_phone", value)
+        await session.save()
         return ValidationStatus.VALID, None
 
     @input_validator("reporter_name")
