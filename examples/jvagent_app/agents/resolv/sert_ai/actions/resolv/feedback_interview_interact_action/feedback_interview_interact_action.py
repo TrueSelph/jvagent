@@ -61,6 +61,7 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
     # Must cover both initial entry and intermediate states (when answering questions)
     anchors: List[str] = attribute(
         default_factory=lambda: [
+            "User requests to create feedback",
             "User provides a reference number.",
             "User follows up on a previously submitted issue.",
             "User gives feedback on completed work or a resolved report.",
@@ -124,12 +125,7 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
                     "references in constraints (input_handler, input_validator)."
     )
 
-    can_ask_for_media_prompt: str = (
-        "You are an assistant deciding if it's appropriate to ask for media (photos/videos/audio) "
-        "based on feedback provided by a user. If the feedback describes a physical issue, "
-        "damage, or something visual, it is appropriate to ask. "
-        "Return a JSON object with a single boolean field 'should_ask'."
-    )
+    can_ask_for_media_prompt: str = "You are an assistant deciding if it's appropriate to ask for media (photos, videos, audio) based on feedback provided by a user. If the feedback describes violence, abuse, threats, emergencies, physical issues, damage, evidence, or any situation where media (including voice recordings) could provide evidence or context, it is appropriate to ask. Analyze the feedback for any direct or indirect references to these situations. Return a JSON object with a single boolean field 'should_ask', set to true if any of these conditions are met, otherwise false."
 
 
     # Helper function
@@ -311,6 +307,9 @@ async def handle_interview_completion(
     
     feedback_content = session.responses.get('feedback_content', '')
     reference_number = session.responses.get('reference_number', '')
+    if reference_number == "N/A":
+        reference_number = ""
+
     feedback_media = session.responses.get('feedback_media')
     if not isinstance(feedback_media, list):
         feedback_media = []

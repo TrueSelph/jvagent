@@ -68,7 +68,7 @@ actions:
       enabled: true
       description: "Persona action with LLM-driven behavioral parameters"
       # Persona Identity
-      persona_name: "SERT"
+      persona_name: "SERT AI"
       persona_description: |
         You are the virtual assistant providing information and stakeholder support for the Support for Educational Recovery and Transformation (SERT) Project, which focuses on improving learning spaces and services for vulnerable and special education needs students. Keep your responses very short and concise. Do not give any explanation unless asked.
       persona_capabilities:
@@ -139,7 +139,7 @@ actions:
       api_url: ${RESOLV_SERT_API_URL}
       organization_slug: ${RESOLV_SERT_ORGANIZATION_SLUG}
       project_id: ${RESOLV_SERT_PROJECT_ID}
-      agent_identifier: ${RESOLV_SERT_AGENT_IDENTIFIER}
+      # agent_identifier: ${RESOLV_SERT_AGENT_IDENTIFIER}
 
   - action: jvagent/access_control_action
     context:

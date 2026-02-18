@@ -793,7 +793,7 @@ class ResolvAPIAction(Action):
         payload = {"content": content, "type": "feedback"}
         
         try:
-            res = await self.http_request('POST', endpoint, json_data=payload)
+            res = await self.http_request('POST', endpoint, json_data=payload, show_curl_for_function="")
             if res['status'] in [200, 201]:
                 return res['json']['comment']
             else:
