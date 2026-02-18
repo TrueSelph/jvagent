@@ -160,6 +160,12 @@ Return a json object containing intro, products, and outro.
                 
                 full_response = full_response + "\n" + product_content
                 
+                # Add media metadata for WhatsApp (and others who support it)
+                metadata = {}
+                if product.get('image_url'):
+                    metadata['media_url'] = product['image_url']
+                    metadata['media_type'] = 'image'
+
                 await visitor.response_bus.publish(
                     session_id=visitor.session_id,
                     content=product_content,
@@ -169,6 +175,7 @@ Return a json object containing intro, products, and outro.
                     interaction=visitor.interaction,
                     user_id=visitor.user_id,
                     transient=True,
+                    metadata=metadata,
                 )
             
             # Send outro

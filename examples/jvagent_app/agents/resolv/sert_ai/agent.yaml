@@ -15,7 +15,8 @@ actions:
       model_action_type: "OpenAILanguageModelAction"
       history_limit: 3
       model: "gpt-4.1"
-      generate_dynamic_clarification: true
+      enable_clarification: false
+      enable_canned_response: false
 
   - action: jvagent/openai_embedding
     context:
