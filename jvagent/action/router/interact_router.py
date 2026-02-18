@@ -197,7 +197,7 @@ class InteractRouter(InteractAction):
                     excluded=interaction.id,
                     with_utterance=True,
                     with_response=True,
-                    with_interpretation=False,
+                    with_interpretation=True,
                     with_event=True,
                     formatted=True,
                 )

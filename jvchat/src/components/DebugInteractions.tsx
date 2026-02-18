@@ -121,7 +121,12 @@ export function DebugInteractions({
   );
 
   const loadMore = useCallback(async () => {
-    if (!targetAgentId || !pagination || pagination.page >= pagination.total_pages) return;
+    if (
+      !targetAgentId ||
+      !pagination ||
+      pagination.page >= pagination.total_pages
+    )
+      return;
     setLoadingMore(true);
     setError(null);
     try {
@@ -221,8 +226,7 @@ export function DebugInteractions({
       const parents = (logsResponse.logs || [])
         .map((log: any) => {
           const interactionData = log.log_data?.interaction_data || {};
-          const metrics =
-            interactionData.observability_metrics || [];
+          const metrics = interactionData.observability_metrics || [];
           const utterance = interactionData.utterance;
           const conversationHistory =
             interactionData.conversation_history || [];
@@ -252,8 +256,7 @@ export function DebugInteractions({
     }
   }, [selectInteraction]);
 
-  const hasMorePages =
-    pagination && pagination.page < pagination.total_pages;
+  const hasMorePages = pagination && pagination.page < pagination.total_pages;
 
   useEffect(() => {
     initializeDebugSession();
@@ -383,15 +386,16 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
   };
 
   const handleExport = () => {
-    if (!selectedInteraction) return;
+    if (parentInteractions.length === 0) return;
 
     const dataToExport = {
-      interaction: selectedInteraction,
-      testResult: testResult,
+      parentInteractions: parentInteractions,
+      pagination: pagination,
+      selectedParentIndex: selectedParentIndex,
+      selectedMetricIndex: selectedMetricIndex,
       metadata: {
         exportedAt: new Date().toISOString(),
-        parentIndex: selectedParentIndex,
-        metricIndex: selectedMetricIndex,
+        agentId: targetAgentId,
       },
     };
 
@@ -401,7 +405,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `interaction_${selectedInteraction.id || new Date().getTime()}.json`;
+    a.download = `interactions_${new Date().getTime()}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -417,18 +421,44 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
       try {
         const content = event.target?.result as string;
         const parsed = JSON.parse(content);
-        const interactionData = parsed.interaction || parsed;
-        const testResultData = parsed.testResult || null;
 
-        if (interactionData?.data) {
+        // Check if it's the new format (full list) or legacy format (single interaction)
+        if (
+          parsed.parentInteractions &&
+          Array.isArray(parsed.parentInteractions)
+        ) {
           preserveScroll(() => {
-            setSelectedParentIndex(null);
-            setSelectedMetricIndex(null);
-            setSelectedInteraction(interactionData);
-            setTestResult(testResultData);
+            setParentInteractions(parsed.parentInteractions);
+            setPagination(parsed.pagination || null);
+
+            const pIdx =
+              typeof parsed.selectedParentIndex === "number"
+                ? parsed.selectedParentIndex
+                : 0;
+            const mIdx =
+              typeof parsed.selectedMetricIndex === "number"
+                ? parsed.selectedMetricIndex
+                : 0;
+
+            if (parsed.parentInteractions.length > 0) {
+              selectInteraction(pIdx, mIdx, parsed.parentInteractions);
+            }
           });
         } else {
-          setError("Invalid import file format");
+          // Legacy format or single interaction export
+          const interactionData = parsed.interaction || parsed;
+          const testResultData = parsed.testResult || null;
+
+          if (interactionData?.data) {
+            preserveScroll(() => {
+              setSelectedParentIndex(null);
+              setSelectedMetricIndex(null);
+              setSelectedInteraction(interactionData);
+              setTestResult(testResultData);
+            });
+          } else {
+            setError("Invalid import file format");
+          }
         }
       } catch (err) {
         console.error("Import failed", err);
@@ -468,15 +498,27 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
       <button
         onClick={initializeDebugSession}
         disabled={loading}
-        className={isEmbedded
-          ? "px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-          : `px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`}
+        className={
+          isEmbedded
+            ? "px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            : `px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`
+        }
         title="Refresh"
       >
         {isEmbedded ? (
           <>
-            <svg className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            <svg
+              className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
             </svg>
             <span className="hidden sm:inline">Refresh</span>
           </>
@@ -487,20 +529,29 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
       <button
         onClick={handleExport}
         disabled={!selectedInteraction}
-        className={isEmbedded
-          ? "px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          : `px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`}
+        className={
+          isEmbedded
+            ? "px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            : `px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`
+        }
         title="Export"
       >
         {isEmbedded ? "Export" : "📤 Export"}
       </button>
       <label
-        className={isEmbedded
-          ? "px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 cursor-pointer transition-colors"
-          : `px-3 py-1.5 rounded text-sm cursor-pointer ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`}
+        className={
+          isEmbedded
+            ? "px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 cursor-pointer transition-colors"
+            : `px-3 py-1.5 rounded text-sm cursor-pointer ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`
+        }
       >
         {isEmbedded ? "Import" : "📥 Import"}
-        <input type="file" accept=".json" className="hidden" onChange={handleImport} />
+        <input
+          type="file"
+          accept=".json"
+          className="hidden"
+          onChange={handleImport}
+        />
       </label>
       {isEmbedded && onClose && (
         <button
@@ -509,8 +560,18 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
           title="Close"
           aria-label="Close debug interactions"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          <svg
+            className="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
         </button>
       )}
@@ -523,17 +584,31 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
       onClick={(e) => isEmbedded && e.stopPropagation()}
     >
       {/* Header - matches GraphViewer when embedded */}
-      <div className={isEmbedded
-        ? "flex-shrink-0 border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center justify-between"
-        : "flex justify-between items-center mb-6"
-      }>
-        <h2 className={isEmbedded ? "text-xl sm:text-2xl font-semibold text-gray-900" : "text-2xl font-bold"}>
+      <div
+        className={
+          isEmbedded
+            ? "flex-shrink-0 border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center justify-between"
+            : "flex justify-between items-center mb-6"
+        }
+      >
+        <h2
+          className={
+            isEmbedded
+              ? "text-xl sm:text-2xl font-semibold text-gray-900"
+              : "text-2xl font-bold"
+          }
+        >
           {isEmbedded ? "Debug Interactions" : "Debug Interactions"}
         </h2>
         {headerButtons}
       </div>
 
-      <div ref={!isEmbedded ? scrollContainerRef : undefined} className={isEmbedded ? "flex-1 overflow-hidden relative" : "max-w-full mx-auto"}>
+      <div
+        ref={!isEmbedded ? scrollContainerRef : undefined}
+        className={
+          isEmbedded ? "flex-1 overflow-hidden relative" : "max-w-full mx-auto"
+        }
+      >
         {isEmbedded && loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-white">
             <div className="text-center">
@@ -546,10 +621,15 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
         {isEmbedded && error && !loading && parentInteractions.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center bg-white p-4">
             <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md w-full">
-              <h3 className="text-lg font-semibold text-red-800 mb-2">Error Loading Interactions</h3>
+              <h3 className="text-lg font-semibold text-red-800 mb-2">
+                Error Loading Interactions
+              </h3>
               <p className="text-red-700 mb-4">{error}</p>
               <button
-                onClick={() => { setError(null); initializeDebugSession(); }}
+                onClick={() => {
+                  setError(null);
+                  initializeDebugSession();
+                }}
                 className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
               >
                 Retry
@@ -560,305 +640,318 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
 
         <div
           ref={isEmbedded ? scrollContainerRef : undefined}
-          className={isEmbedded && (loading || (error && parentInteractions.length === 0)) ? "hidden" : (isEmbedded ? "h-full overflow-y-auto p-4 sm:p-6" : "")}
+          className={
+            isEmbedded &&
+            (loading || (error && parentInteractions.length === 0))
+              ? "hidden"
+              : isEmbedded
+                ? "h-full overflow-y-auto p-4 sm:p-6"
+                : ""
+          }
         >
-        {/* Error Display - inline for transient errors or when not embedded */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-4 flex justify-between items-center">
-            <span>{error}</span>
-            <button
-              onClick={() => setError(null)}
-              className="text-red-700 hover:text-red-900 font-bold"
-            >
-              ×
-            </button>
-          </div>
-        )}
-
-        {/* Interaction Selector */}
-        {!loading && parentInteractions.length > 0 && (
-          <div
-            className={`${effectiveDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow-sm p-4 mb-6 border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"}`}
-          >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Interaction
-                </label>
-                <select
-                  className={`w-full p-2 border rounded text-sm ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
-                  value={selectedParentIndex ?? ""}
-                  onChange={(e) =>
-                    selectInteraction(
-                      parseInt(e.target.value),
-                      0,
-                      parentInteractions,
-                    )
-                  }
-                >
-                  {parentInteractions.map((p, idx) => (
-                    <option key={p.id || idx} value={idx}>
-                      [{idx + 1}]{" "}
-                      {truncate(p.utterance || "(no utterance)", 100)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Response
-                </label>
-                <select
-                  className={`w-full p-2 border rounded text-sm ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
-                  value={selectedMetricIndex ?? ""}
-                  onChange={(e) =>
-                    selectInteraction(
-                      selectedParentIndex!,
-                      parseInt(e.target.value),
-                      parentInteractions,
-                    )
-                  }
-                  disabled={selectedParentIndex === null}
-                >
-                  {selectedParentIndex !== null &&
-                    parentInteractions[selectedParentIndex]?.metrics.map(
-                      (m: any, mi: number) => (
-                        <option key={mi} value={mi}>
-                          [{mi + 1}]{" "}
-                          {truncate(
-                            m.data?.response || m.data?.model || "Interaction",
-                            100,
-                          )}
-                        </option>
-                      ),
-                    )}
-                </select>
-              </div>
+          {/* Error Display - inline for transient errors or when not embedded */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-4 flex justify-between items-center">
+              <span>{error}</span>
+              <button
+                onClick={() => setError(null)}
+                className="text-red-700 hover:text-red-900 font-bold"
+              >
+                ×
+              </button>
             </div>
-            {hasMorePages && (
-              <div className="mt-4 flex justify-center">
-                <button
-                  onClick={loadMore}
-                  disabled={loadingMore}
-                  className={`px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${isEmbedded ? "text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200" : `rounded ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-100 hover:bg-gray-200"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`}`}
-                >
-                  {loadingMore ? "Loading..." : "Load more"}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+          )}
 
-        {/* Loading State - non-embedded only; embedded uses overlay */}
-        {!isEmbedded && loading && (
-          <div
-            className={`${effectiveDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow-sm p-12 text-center border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"}`}
-          >
-            <div className="text-lg">Loading interactions...</div>
-          </div>
-        )}
-
-        {/* Main Content */}
-        {!loading && selectedInteraction && (
-          <div
-            className={`${effectiveDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow-sm p-6 border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"}`}
-          >
-            <div className="space-y-6">
-              {/* Original Response */}
-              {selectedInteraction.data.response && (
+          {/* Interaction Selector */}
+          {!loading && parentInteractions.length > 0 && (
+            <div
+              className={`${effectiveDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow-sm p-4 mb-6 border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"}`}
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Original Response
+                    Interaction
                   </label>
-                  <div
-                    className={`p-4 rounded text-sm border ${effectiveDarkMode ? "bg-gray-900 border-gray-700" : "bg-red-50 border-red-200"}`}
+                  <select
+                    className={`w-full p-2 border rounded text-sm ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                    value={selectedParentIndex ?? ""}
+                    onChange={(e) =>
+                      selectInteraction(
+                        parseInt(e.target.value),
+                        0,
+                        parentInteractions,
+                      )
+                    }
                   >
-                    <pre className="whitespace-pre-wrap font-mono text-xs">
-                      {selectedInteraction.data.response}
-                    </pre>
-                  </div>
+                    {parentInteractions.map((p, idx) => (
+                      <option key={p.id || idx} value={idx}>
+                        [{idx + 1}]{" "}
+                        {truncate(p.utterance || "(no utterance)", 100)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Response
+                  </label>
+                  <select
+                    className={`w-full p-2 border rounded text-sm ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                    value={selectedMetricIndex ?? ""}
+                    onChange={(e) =>
+                      selectInteraction(
+                        selectedParentIndex!,
+                        parseInt(e.target.value),
+                        parentInteractions,
+                      )
+                    }
+                    disabled={selectedParentIndex === null}
+                  >
+                    {selectedParentIndex !== null &&
+                      parentInteractions[selectedParentIndex]?.metrics.map(
+                        (m: any, mi: number) => (
+                          <option key={mi} value={mi}>
+                            [{mi + 1}]{" "}
+                            {truncate(
+                              m.data?.response ||
+                                m.data?.model ||
+                                "Interaction",
+                              100,
+                            )}
+                          </option>
+                        ),
+                      )}
+                  </select>
+                </div>
+              </div>
+              {hasMorePages && (
+                <div className="mt-4 flex justify-center">
+                  <button
+                    onClick={loadMore}
+                    disabled={loadingMore}
+                    className={`px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${isEmbedded ? "text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200" : `rounded ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-100 hover:bg-gray-200"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`}`}
+                  >
+                    {loadingMore ? "Loading..." : "Load more"}
+                  </button>
                 </div>
               )}
-              {/* User Prompt */}
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  User Prompt
-                </label>
-                <textarea
-                  ref={userRef}
-                  value={selectedInteraction.data.user_prompt}
-                  onChange={(e) => {
-                    setSelectedInteraction({
-                      ...selectedInteraction,
-                      data: {
-                        ...selectedInteraction.data,
-                        user_prompt: e.target.value,
-                      },
-                    });
-                  }}
-                  className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-blue-900 border-blue-700 text-gray-100" : "bg-blue-50 border-blue-200 text-gray-900"}`}
-                  style={{ overflow: "hidden" }}
-                />
-              </div>
-              {/* System Prompt */}
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  System Prompt
-                </label>
-                <textarea
-                  ref={systemRef}
-                  value={selectedInteraction.data.system_prompt}
-                  onChange={(e) => {
-                    setSelectedInteraction({
-                      ...selectedInteraction,
-                      data: {
-                        ...selectedInteraction.data,
-                        system_prompt: e.target.value,
-                      },
-                    });
-                  }}
-                  className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-yellow-900 border-yellow-700 text-gray-100" : "bg-yellow-50 border-yellow-200 text-gray-900"}`}
-                  style={{ overflow: "hidden" }}
-                />
-              </div>
-              {/* History - Only show if exists */}
-              {showHistory && (
+            </div>
+          )}
+
+          {/* Loading State - non-embedded only; embedded uses overlay */}
+          {!isEmbedded && loading && (
+            <div
+              className={`${effectiveDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow-sm p-12 text-center border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"}`}
+            >
+              <div className="text-lg">Loading interactions...</div>
+            </div>
+          )}
+
+          {/* Main Content */}
+          {!loading && selectedInteraction && (
+            <div
+              className={`${effectiveDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow-sm p-6 border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"}`}
+            >
+              <div className="space-y-6">
+                {/* Original Response */}
+                {selectedInteraction.data.response && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Original Response
+                    </label>
+                    <div
+                      className={`p-4 rounded text-sm border ${effectiveDarkMode ? "bg-gray-900 border-gray-700" : "bg-red-50 border-red-200"}`}
+                    >
+                      <pre className="whitespace-pre-wrap font-mono text-xs">
+                        {selectedInteraction.data.response}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+                {/* User Prompt */}
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    History (JSON)
+                    User Prompt
                   </label>
                   <textarea
-                    ref={historyRef}
-                    value={historyText}
-                    onChange={(e) => setHistoryText(e.target.value)}
-                    onBlur={() => {
-                      try {
-                        const parsed = historyText
-                          ? JSON.parse(historyText)
-                          : [];
-                        setSelectedInteraction((si: any) =>
-                          si
-                            ? { ...si, data: { ...si.data, history: parsed } }
-                            : si,
-                        );
-                      } catch (err) {
-                        console.error("Invalid JSON for history:", err);
-                      }
+                    ref={userRef}
+                    value={selectedInteraction.data.user_prompt}
+                    onChange={(e) => {
+                      setSelectedInteraction({
+                        ...selectedInteraction,
+                        data: {
+                          ...selectedInteraction.data,
+                          user_prompt: e.target.value,
+                        },
+                      });
                     }}
-                    className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-gray-900 border-gray-700 text-gray-100" : "bg-gray-100 border-gray-200 text-gray-900"}`}
+                    className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-blue-900 border-blue-700 text-gray-100" : "bg-blue-50 border-blue-200 text-gray-900"}`}
                     style={{ overflow: "hidden" }}
                   />
                 </div>
-              )}
-              {/* Model */}
-              <div>
-                <label className="block text-sm font-medium mb-2">Model</label>
-                <input
-                  type="text"
-                  value={selectedInteraction.data.model}
-                  onChange={(e) =>
-                    setSelectedInteraction({
-                      ...selectedInteraction,
-                      data: {
-                        ...selectedInteraction.data,
-                        model: e.target.value,
-                      },
-                    })
-                  }
-                  className={`w-full p-2 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
-                />
-              </div>
-              {/* Test Button */}
-              <div className="flex justify-end">
-                <button
-                  onClick={handleTest}
-                  disabled={testing || !modelAction}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {testing ? "Testing..." : "🧪 Run Test"}
-                </button>
-              </div>
-              {/* Test Result */}
-              {testResult && (
+                {/* System Prompt */}
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Test Result
+                    System Prompt
                   </label>
-                  <div
-                    className={`p-4 rounded text-sm border ${testResult.success ? (effectiveDarkMode ? "bg-green-900 border-green-700" : "bg-green-50 border-green-200") : effectiveDarkMode ? "bg-red-900 border-red-700" : "bg-red-50 border-red-200"}`}
+                  <textarea
+                    ref={systemRef}
+                    value={selectedInteraction.data.system_prompt}
+                    onChange={(e) => {
+                      setSelectedInteraction({
+                        ...selectedInteraction,
+                        data: {
+                          ...selectedInteraction.data,
+                          system_prompt: e.target.value,
+                        },
+                      });
+                    }}
+                    className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-yellow-900 border-yellow-700 text-gray-100" : "bg-yellow-50 border-yellow-200 text-gray-900"}`}
+                    style={{ overflow: "hidden" }}
+                  />
+                </div>
+                {/* History - Only show if exists */}
+                {showHistory && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      History (JSON)
+                    </label>
+                    <textarea
+                      ref={historyRef}
+                      value={historyText}
+                      onChange={(e) => setHistoryText(e.target.value)}
+                      onBlur={() => {
+                        try {
+                          const parsed = historyText
+                            ? JSON.parse(historyText)
+                            : [];
+                          setSelectedInteraction((si: any) =>
+                            si
+                              ? { ...si, data: { ...si.data, history: parsed } }
+                              : si,
+                          );
+                        } catch (err) {
+                          console.error("Invalid JSON for history:", err);
+                        }
+                      }}
+                      className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-gray-900 border-gray-700 text-gray-100" : "bg-gray-100 border-gray-200 text-gray-900"}`}
+                      style={{ overflow: "hidden" }}
+                    />
+                  </div>
+                )}
+                {/* Model */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Model
+                  </label>
+                  <input
+                    type="text"
+                    value={selectedInteraction.data.model}
+                    onChange={(e) =>
+                      setSelectedInteraction({
+                        ...selectedInteraction,
+                        data: {
+                          ...selectedInteraction.data,
+                          model: e.target.value,
+                        },
+                      })
+                    }
+                    className={`w-full p-2 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                  />
+                </div>
+                {/* Test Button */}
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleTest}
+                    disabled={testing || !modelAction}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {testResult.success ? (
-                      <pre
-                        className={`whitespace-pre-wrap font-mono text-xs ${effectiveDarkMode ? "text-green-100" : "text-green-700"}`}
-                      >
-                        {testResult.response}
+                    {testing ? "Testing..." : "🧪 Run Test"}
+                  </button>
+                </div>
+                {/* Test Result */}
+                {testResult && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Test Result
+                    </label>
+                    <div
+                      className={`p-4 rounded text-sm border ${testResult.success ? (effectiveDarkMode ? "bg-green-900 border-green-700" : "bg-green-50 border-green-200") : effectiveDarkMode ? "bg-red-900 border-red-700" : "bg-red-50 border-red-200"}`}
+                    >
+                      {testResult.success ? (
+                        <pre
+                          className={`whitespace-pre-wrap font-mono text-xs ${effectiveDarkMode ? "text-green-100" : "text-green-700"}`}
+                        >
+                          {testResult.response}
+                        </pre>
+                      ) : (
+                        <div
+                          className={
+                            effectiveDarkMode ? "text-red-100" : "text-red-700"
+                          }
+                        >
+                          <div className="font-medium mb-2">Error</div>
+                          <div>{testResult.error}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {/* show Original Response below test result for quick comparison */}
+                {selectedInteraction.data.response && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Original Response
+                    </label>
+                    <div
+                      className={`p-4 rounded text-sm border ${effectiveDarkMode ? "bg-gray-900 border-gray-700" : "bg-red-50 border-red-200"}`}
+                    >
+                      <pre className="whitespace-pre-wrap font-mono text-xs">
+                        {selectedInteraction.data.response}
                       </pre>
-                    ) : (
-                      <div
-                        className={effectiveDarkMode ? "text-red-100" : "text-red-700"}
-                      >
-                        <div className="font-medium mb-2">Error</div>
-                        <div>{testResult.error}</div>
-                      </div>
-                    )}
+                    </div>
                   </div>
-                </div>
-              )}
-              {/* show Original Response below test result for quick comparison */}
-              {selectedInteraction.data.response && (
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Improve Prompt Section */}
+          {!loading && selectedInteraction && (
+            <div
+              className={`${effectiveDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow-sm p-6 border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"} mt-6`}
+            >
+              <h2 className="text-xl font-semibold mb-4">Improve Prompt</h2>
+              <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Original Response
+                    Improvement Instruction
                   </label>
-                  <div
-                    className={`p-4 rounded text-sm border ${effectiveDarkMode ? "bg-gray-900 border-gray-700" : "bg-red-50 border-red-200"}`}
-                  >
-                    <pre className="whitespace-pre-wrap font-mono text-xs">
-                      {selectedInteraction.data.response}
-                    </pre>
-                  </div>
+                  <textarea
+                    ref={improveInstructionRef}
+                    value={improveInstruction}
+                    onChange={(e) => setImproveInstruction(e.target.value)}
+                    placeholder="Describe how you want to improve the prompts..."
+                    className={`w-full p-3 border rounded text-sm ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                    style={{ overflow: "hidden" }}
+                  />
                 </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Improve Prompt Section */}
-        {!loading && selectedInteraction && (
-          <div
-            className={`${effectiveDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow-sm p-6 border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"} mt-6`}
-          >
-            <h2 className="text-xl font-semibold mb-4">Improve Prompt</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Improvement Instruction
-                </label>
-                <textarea
-                  ref={improveInstructionRef}
-                  value={improveInstruction}
-                  onChange={(e) => setImproveInstruction(e.target.value)}
-                  placeholder="Describe how you want to improve the prompts..."
-                  className={`w-full p-3 border rounded text-sm ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
-                  style={{ overflow: "hidden" }}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Model for Improvement
-                </label>
-                <input
-                  type="text"
-                  value={improveModel}
-                  onChange={(e) => setImproveModel(e.target.value)}
-                  className={`w-full p-2 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => {
-                    const promptToCopy = `Given the following context, improve the prompts based on the instruction.
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Model for Improvement
+                  </label>
+                  <input
+                    type="text"
+                    value={improveModel}
+                    onChange={(e) => setImproveModel(e.target.value)}
+                    className={`w-full p-2 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => {
+                      const promptToCopy = `Given the following context, improve the prompts based on the instruction.
 
 User Prompt:
 ${selectedInteraction.data.user_prompt}
@@ -876,49 +969,49 @@ Improvement Instruction:
 ${improveInstruction}
 
 Provide improvement instruction on how to improve the prompt. Return a raw markdown.`;
-                    navigator.clipboard.writeText(promptToCopy);
-                  }}
-                  className="px-6 py-2 bg-gray-600 text-white rounded-lg font-medium hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  📋 Copy Prompt
-                </button>
-                <button
-                  onClick={handleImprovePrompt}
-                  disabled={improving || !modelAction || !improveInstruction}
-                  className="px-6 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {improving ? "Improving..." : "✨ Improve Prompt"}
-                </button>
-              </div>
-              {improveResult && (
-                <div>
-                  <label className="block text-sm font-medium mb-2">
-                    Improvement Result
-                  </label>
-                  <textarea
-                    ref={improveResultRef}
-                    value={improveResult}
-                    onChange={(e) => setImproveResult(e.target.value)}
-                    className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-purple-900 border-purple-700 text-gray-100" : "bg-purple-50 border-purple-200 text-gray-900"}`}
-                    style={{ overflow: "hidden" }}
-                  />
+                      navigator.clipboard.writeText(promptToCopy);
+                    }}
+                    className="px-6 py-2 bg-gray-600 text-white rounded-lg font-medium hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    📋 Copy Prompt
+                  </button>
+                  <button
+                    onClick={handleImprovePrompt}
+                    disabled={improving || !modelAction || !improveInstruction}
+                    className="px-6 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {improving ? "Improving..." : "✨ Improve Prompt"}
+                  </button>
                 </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!loading &&
-          !selectedInteraction &&
-          parentInteractions.length === 0 && (
-            <div
-              className={`${effectiveDarkMode ? "bg-gray-800 text-gray-400" : "bg-white text-gray-500"} rounded-lg shadow-sm p-12 text-center border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"}`}
-            >
-              No interaction logs available. Ensure database logging is enabled
-              with INTERACTION level, then try refreshing.
+                {improveResult && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Improvement Result
+                    </label>
+                    <textarea
+                      ref={improveResultRef}
+                      value={improveResult}
+                      onChange={(e) => setImproveResult(e.target.value)}
+                      className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-purple-900 border-purple-700 text-gray-100" : "bg-purple-50 border-purple-200 text-gray-900"}`}
+                      style={{ overflow: "hidden" }}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           )}
+
+          {/* Empty State */}
+          {!loading &&
+            !selectedInteraction &&
+            parentInteractions.length === 0 && (
+              <div
+                className={`${effectiveDarkMode ? "bg-gray-800 text-gray-400" : "bg-white text-gray-500"} rounded-lg shadow-sm p-12 text-center border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"}`}
+              >
+                No interaction logs available. Ensure database logging is
+                enabled with INTERACTION level, then try refreshing.
+              </div>
+            )}
         </div>
       </div>
     </div>
