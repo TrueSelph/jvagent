@@ -57,7 +57,7 @@ class SwitchboardInterviewInteractAction(InterviewInteractAction):
     # Must cover both initial entry and intermediate states (when answering questions)
     anchors: List[str] = attribute(
         default_factory=lambda: [
-            "User explicitly requests to switch to another agent by name",
+            "User explicitly requests to switch to another agent by name (SILDSL OR SERT)",
             "User explicitly asks to connect to a specific agent",
             "User explicitly asks to change department or service",
             "User says phrases like: 'switch to...', 'connect me to...', 'transfer me to...', 'I want [agent name]', 'change agent'",
@@ -139,7 +139,7 @@ class SwitchboardInterviewInteractAction(InterviewInteractAction):
         switchboard_action = await interview_action.get_action("SwitchboardInteractAction")
         agents = await switchboard_action.get_switchboard_agents()
         agents_str = ", ".join(agent["alias"] for agent in agents)
-        return {"agents": agents_str}
+        return {"agents": f"Valid agent names: {agents_str}"}
 
 
 
