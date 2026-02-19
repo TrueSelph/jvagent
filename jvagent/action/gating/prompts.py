@@ -1,6 +1,6 @@
-"""Prompt templates for ResponseGatingAction.
+"""Prompt templates for ResponseGatingInteractAction.
 
-This module provides the prompt templates used by ResponseGatingAction
+This module provides the prompt templates used by ResponseGatingInteractAction
 for posture classification (RESPOND / SUPPRESS / DEFER).
 """
 

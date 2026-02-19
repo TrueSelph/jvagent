@@ -1,4 +1,4 @@
-"""ResponseGatingAction for realistic conversational behavior.
+"""ResponseGatingInteractAction for realistic conversational behavior.
 
 Classifies each utterance's response posture (RESPOND / SUPPRESS / DEFER)
 to determine when the agent should reply, stay silent, or accumulate fragments.
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 BUFFER_KEY = "gating_deferred_fragments"
 
 
-class ResponseGatingAction(InteractAction):
+class ResponseGatingInteractAction(InteractAction):
     """Gating action that classifies whether an utterance warrants a response.
 
     Runs before InteractRouter (weight=-200) to:
@@ -92,20 +92,20 @@ class ResponseGatingAction(InteractAction):
         """Execute posture classification and apply gating logic."""
         interaction: Interaction | None = visitor.interaction
         if not interaction:
-            logger.warning("ResponseGatingAction: No interaction available")
+            logger.warning("ResponseGatingInteractAction: No interaction available")
             await visitor.unrecord_action_execution()
             return
 
         conversation: Conversation | None = visitor.conversation
         if not conversation:
-            logger.warning("ResponseGatingAction: No conversation available")
+            logger.warning("ResponseGatingInteractAction: No conversation available")
             await visitor.unrecord_action_execution()
             return
 
         try:
             model_action = await self.get_model_action()
             if not model_action:
-                logger.warning("ResponseGatingAction: Model action not found, proceeding as RESPOND")
+                logger.warning("ResponseGatingInteractAction: Model action not found, proceeding as RESPOND")
                 return
 
             interaction_history = await conversation.get_interaction_history(
@@ -154,11 +154,11 @@ class ResponseGatingAction(InteractAction):
                 await self._handle_respond(visitor, interaction, conversation)
                 return
 
-            logger.debug(f"ResponseGatingAction: Unknown posture {result.posture}, proceeding as RESPOND")
+            logger.debug(f"ResponseGatingInteractAction: Unknown posture {result.posture}, proceeding as RESPOND")
             await self._handle_respond(visitor, interaction, conversation)
 
         except Exception as e:
-            logger.error(f"ResponseGatingAction: Error during execution: {e}", exc_info=True)
+            logger.error(f"ResponseGatingInteractAction: Error during execution: {e}", exc_info=True)
             await visitor.unrecord_action_execution()
 
     def _build_gating_prompt(
@@ -211,7 +211,7 @@ class ResponseGatingAction(InteractAction):
     async def _handle_suppress(self, visitor: "InteractWalker") -> None:
         """Clear walk path so no response is emitted."""
         await visitor.set_walk_path([])
-        logger.info("ResponseGatingAction: SUPPRESS - cleared walk path, no response")
+        logger.info("ResponseGatingInteractAction: SUPPRESS - cleared walk path, no response")
 
     async def _handle_defer(
         self,
@@ -231,7 +231,7 @@ class ResponseGatingAction(InteractAction):
         await conversation.update_context({BUFFER_KEY: buffer})
         await visitor.set_walk_path([])
         logger.info(
-            f"ResponseGatingAction: DEFER - appended to buffer ({len(buffer)} fragments), no response"
+            f"ResponseGatingInteractAction: DEFER - appended to buffer ({len(buffer)} fragments), no response"
         )
 
     async def _handle_respond(
@@ -251,7 +251,7 @@ class ResponseGatingAction(InteractAction):
                 )
                 await visitor.add_directive(directive)
                 logger.info(
-                    f"ResponseGatingAction: RESPOND - injected directive with {len(fragments)} prior fragments"
+                    f"ResponseGatingInteractAction: RESPOND - injected directive with {len(fragments)} prior fragments"
                 )
             await conversation.update_context({BUFFER_KEY: []})
             await conversation.save()

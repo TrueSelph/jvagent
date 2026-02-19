@@ -4,7 +4,7 @@ Response gating determines whether a user utterance warrants a reply from the ag
 
 ## Overview
 
-The `ResponseGatingAction` runs early in the interact pipeline (before `InteractRouter`) and classifies each utterance into one of three postures:
+The `ResponseGatingInteractAction` runs early in the interact pipeline (before `InteractRouter`) and classifies each utterance into one of three postures:
 
 | Posture | Behavior | Examples |
 |---------|----------|----------|
@@ -15,7 +15,7 @@ The `ResponseGatingAction` runs early in the interact pipeline (before `Interact
 ## Architecture
 
 ```
-User Utterance → InteractWalker → ResponseGatingAction (weight=-200)
+User Utterance → InteractWalker → ResponseGatingInteractAction (weight=-200)
                                        │
                     ┌──────────────────┼──────────────────┐
                     │                  │                  │
@@ -28,7 +28,7 @@ User Utterance → InteractWalker → ResponseGatingAction (weight=-200)
 
 ## Components
 
-### ResponseGatingAction
+### ResponseGatingInteractAction
 
 - **File**: `response_gating_action.py`
 - **Weight**: `-200` (runs before InteractRouter at `-100`)
@@ -52,7 +52,7 @@ Add to your agent's `agent.yaml`:
 
 ```yaml
 actions:
-  - action: jvagent/response_gating_action
+  - action: jvagent/response_gating
     context:
       enabled: true
       model: gpt-4o-mini          # Fast model recommended
@@ -102,7 +102,7 @@ The directive instructs downstream actions (e.g. PersonaAction) to treat prior f
 
 ```python
 from jvagent.action.gating import (
-    ResponseGatingAction,
+    ResponseGatingInteractAction,
     GatingResult,
     POSTURE_RESPOND,
     POSTURE_SUPPRESS,

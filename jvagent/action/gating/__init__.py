@@ -1,6 +1,6 @@
 """Response gating for realistic conversational behavior.
 
-ResponseGatingAction classifies utterances as RESPOND, SUPPRESS, or DEFER
+ResponseGatingInteractAction classifies utterances as RESPOND, SUPPRESS, or DEFER
 to determine when the agent should reply, stay silent, or accumulate fragments.
 """
 
@@ -11,7 +11,7 @@ from jvagent.action.gating.gating_result import (
     POSTURE_SUPPRESS,
     parse_gating_response,
 )
-from jvagent.action.gating.response_gating_action import ResponseGatingAction
+from jvagent.action.gating.response_gating_action import ResponseGatingInteractAction
 
 __all__ = [
     "GatingResult",
@@ -19,5 +19,5 @@ __all__ = [
     "POSTURE_RESPOND",
     "POSTURE_SUPPRESS",
     "parse_gating_response",
-    "ResponseGatingAction",
+    "ResponseGatingInteractAction",
 ]
