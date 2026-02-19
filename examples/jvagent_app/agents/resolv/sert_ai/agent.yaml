@@ -7,6 +7,18 @@ context:
   description: SERT AI is the virtual assistant for the Resolv IMS System, providing information and stakeholder support for the Support for Educational Recovery and Transformation (SERT) Project, which focuses on improving learning spaces and services for vulnerable and special education needs students.
   enabled: true
 actions:
+  # ResponseGatingInteractAction - Determines when to respond, suppress, or defer
+  # Runs before InteractRouter (weight -200); classifies utterance posture for realistic conversation
+  - action: jvagent/response_gating
+    context:
+      enabled: true
+      description: "Classifies utterance posture (RESPOND/SUPPRESS/DEFER) for realistic conversational behavior"
+      model_action_type: "OpenAILanguageModelAction"
+      model: gpt-4o-mini
+      history_limit: 5
+      enable_accumulation: true
+      max_fragment_buffer: 5
+
   - action: jvagent/interact_router
     context:
       enabled: true
@@ -49,6 +61,7 @@ actions:
       doc_description: false
       max_token_num_each_node: 20000
       summary_token_threshold: 200
+      collection: "sert_ai"
       # model: gpt-4o-mini  # Optional: override LLM for tree search
 
   - action: jvagent/openai_lm

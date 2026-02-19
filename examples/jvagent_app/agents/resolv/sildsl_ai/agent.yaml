@@ -7,6 +7,18 @@ context:
   description: SILDSL AI is the virtual assistant for the Resolv IMS System, delivering updates and stakeholder support for the Strengthening Instructional Leadership at the District and School Levels (SILDSL) “Leadership Project”.
   enabled: true
 actions:
+  # ResponseGatingInteractAction - Determines when to respond, suppress, or defer
+  # Runs before InteractRouter (weight -200); classifies utterance posture for realistic conversation
+  - action: jvagent/response_gating
+    context:
+      enabled: true
+      description: "Classifies utterance posture (RESPOND/SUPPRESS/DEFER) for realistic conversational behavior"
+      model_action_type: "OpenAILanguageModelAction"
+      model: gpt-4o-mini
+      history_limit: 5
+      enable_accumulation: true
+      max_fragment_buffer: 5
+
   - action: jvagent/interact_router
     context:
       enabled: true
@@ -39,6 +51,7 @@ actions:
         - "User asks a question about indexed documents"
         - "User requests information from document index"
         - "User wants to search or find information in documents"
+      collection: "sildsl_ai"
     config:
       limit: 10
       strategy: "tree_search"

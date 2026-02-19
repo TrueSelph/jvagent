@@ -52,6 +52,7 @@ actions:
       doc_description: false
       max_token_num_each_node: 20000
       summary_token_threshold: 200
+      collection: "silvie_ai"
       # model: gpt-4o-mini  # Optional: override LLM for tree search
 
   - action: jvagent/openai_lm

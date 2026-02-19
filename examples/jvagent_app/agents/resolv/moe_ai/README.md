@@ -5,6 +5,7 @@ A production-ready switchboard agent for the Ministry of Education, managing and
 ## Overview
 
 The MOE AI Agent provides:
+
 - Multi-agent routing and switchboard functionality
 - Intent-based routing with conversation history management
 - Multi-channel support (web and WhatsApp)
@@ -15,6 +16,7 @@ The MOE AI Agent provides:
 ## Agent Purpose
 
 The MOE AI serves as the central switchboard for the Ministry of Education's Resolv IMS System, ensuring:
+
 - Smooth transitions between SERT AI and SILDSL AI agents
 - Consistent communication across projects
 - Seamless access to project-specific support and information
@@ -49,19 +51,20 @@ context:
 
 actions:
   # Core routing and model actions
+  - action: jvagent/response_gating
   - action: jvagent/interact_router
   - action: jvagent/openai_embedding
   - action: jvagent/intro_interact_action
   - action: jvagent/openai_lm
-  
+
   # Switchboard actions
   - action: jvagent/switchboard_interact_action
   - action: jvagent/switchboard_interview_interact_action
-  
+
   # Persona and utilities
   - action: jvagent/persona
   - action: jvagent/agent_utils
-  
+
   # Integration actions
   - action: jvagent/whatsapp_action
   - action: jvagent/tts_action
@@ -73,34 +76,42 @@ actions:
 ### Core Actions
 
 #### InteractRouter
+
 Intent-based routing action that analyzes utterances and routes to appropriate InteractActions.
 
 **Configuration:**
+
 - Model: `gpt-4.1-mini`
 - History limit: 3 interactions
 - Analyzes conversation context for intelligent routing
 
 #### OpenAI Language Model
+
 Provides LLM integration with GPT-4.1-mini for natural language processing.
 
 **Configuration:**
+
 - Model: `gpt-4.1-mini`
 - Temperature: 0.2
 - Max tokens: 4096
 - Vision support enabled
 
 #### OpenAI Embedding
+
 Generates vector embeddings for semantic search and context retrieval.
 
 **Configuration:**
+
 - Model: `text-embedding-3-small`
 - Dimensions: 1536
 - Timeout: 30 seconds
 
 #### Intro InteractAction
+
 Introductory action for welcoming first-time users.
 
 **Features:**
+
 - Detects first-time users automatically
 - Provides welcome message and guidance
 - One-time execution per user
@@ -108,22 +119,27 @@ Introductory action for welcoming first-time users.
 ### Switchboard Actions
 
 #### Switchboard InteractAction
+
 Agent routing action that presents available agents and routes users to their selected agent.
 
 **Features:**
+
 - Automatic agent discovery
 - Dynamic agent list presentation
 - Sub-walker routing to target agents
 - State persistence in conversation context
 
 **Configuration:**
+
 - Weight: -10 (runs early for routing)
 - Always execute: true
 
 #### Switchboard Interview InteractAction
+
 Structured interview action for guiding users through agent selection.
 
 **Features:**
+
 - Guided selection flow
 - Dynamic agent list via context provider
 - Input validation
@@ -131,6 +147,7 @@ Structured interview action for guiding users through agent selection.
 - Completion handling with agent storage
 
 **Configuration:**
+
 - Weight: -20 (runs before switchboard interact)
 - Model: `gpt-4.1`
 - History limit: 3 interactions
@@ -141,6 +158,7 @@ Structured interview action for guiding users through agent selection.
 Conversational agent with switchboard-specific personality and capabilities.
 
 **Configuration:**
+
 - Persona name: "Navi"
 - Model: `gpt-4.1-mini`
 - Temperature: 0.1
@@ -150,45 +168,55 @@ Conversational agent with switchboard-specific personality and capabilities.
 Friendly and knowledgeable assistant that helps users understand how the resolv framework works. Provides clear, concise answers and demonstrates best practices.
 
 **Capabilities:**
+
 - Can onboard users
 - Routing users to their subscribed agents
 
 ### Integration Actions
 
 #### WhatsApp Action
+
 Multi-provider WhatsApp integration for messaging.
 
 **Configuration:**
+
 - Provider: `wwebjs` (supports wppconnect, ultramsg, wwebjs)
 - Session management
 - Media file handling
 - Webhook support
 
 **Features:**
+
 - Send and receive messages
 - Media file upload/download
 - Session persistence
 - Multi-provider support
 
 #### Text-to-Speech Action
+
 Converts text responses to speech audio.
 
 **Configuration:**
+
 - Provider: `elevenlabs`
 - Model: `eleven_turbo_v2`
 - Voice: "Sarah"
 
 #### Speech-to-Text Action
+
 Converts audio messages to text.
 
 **Configuration:**
+
 - Provider: `deepgram`
 - Model: `nova-2`
 
 #### Agent Utils Action
+
 Power user controls for agent management and debugging.
 
 **Features:**
+
 - Agent status monitoring
 - Configuration inspection
 - Debug utilities
@@ -208,6 +236,7 @@ When jvagent starts from the app directory:
 ### Interacting with the Agent
 
 **Web Interface:**
+
 ```http
 POST /api/agents/{agent_id}/interact
 Content-Type: application/json
@@ -227,6 +256,7 @@ Send a message to the configured WhatsApp number. The agent will automatically p
 ### Example Workflows
 
 #### First-Time User
+
 1. User: "Hello"
 2. Agent presents introduction (via intro_interact_action)
 3. Agent presents available agents (SERT AI, SILDSL AI)
@@ -234,6 +264,7 @@ Send a message to the configured WhatsApp number. The agent will automatically p
 5. Agent routes to selected agent
 
 #### Agent Selection
+
 1. User: "I want to switch to SERT AI"
 2. Agent routes to `switchboard_interview_interact_action`
 3. Agent presents available agents
@@ -243,6 +274,7 @@ Send a message to the configured WhatsApp number. The agent will automatically p
 7. Next interaction routes to SERT AI
 
 #### Agent Switching
+
 1. User: "Switch me to SILDSL AI"
 2. Agent routes to `switchboard_interview_interact_action`
 3. Agent presents available agents
@@ -252,6 +284,7 @@ Send a message to the configured WhatsApp number. The agent will automatically p
 7. Next interaction routes to SILDSL AI
 
 #### Cancellation
+
 1. User: "I want to switch agents"
 2. Agent presents available agents
 3. User: "Never mind, cancel"
@@ -263,16 +296,19 @@ Send a message to the configured WhatsApp number. The agent will automatically p
 This agent uses environment variables for configuration:
 
 **Required:**
+
 - `${OPENAI_API_KEY}` - OpenAI API key for LLM and embeddings
 - `${APP_BASE_URL}` - Base URL for the application
 
 **WhatsApp Integration:**
+
 - `${WHATSAPP_API_URL}` - WhatsApp provider API URL
 - `${WHATSAPP_API_KEY}` - WhatsApp provider API key
 - `${WHATSAPP_SESSION}` - WhatsApp session identifier
 - `${WHATSAPP_TOKEN}` - WhatsApp webhook token
 
 **Speech Services:**
+
 - `${TTS_API_KEY}` - Text-to-speech API key (ElevenLabs)
 - `${STT_API_KEY}` - Speech-to-text API key (Deepgram)
 
@@ -354,6 +390,7 @@ Update the persona description in `agent.yaml` to customize the agent's behavior
 ### Adjusting Routing Weights
 
 Action weights control execution order:
+
 - Negative weights run earlier (e.g., -20, -10)
 - Positive weights run later (e.g., 100 for fallback)
 - Default weight is 0
@@ -381,6 +418,7 @@ Agents are automatically discovered from the graph. To manually configure:
 ## Testing
 
 ### Switchboard Testing
+
 - Test agent list presentation
 - Test agent selection flow
 - Test agent switching
@@ -389,12 +427,14 @@ Agents are automatically discovered from the graph. To manually configure:
 - Test conversation context persistence
 
 ### WhatsApp Integration Testing
+
 - Send messages and verify agent routing
 - Test media file handling
 - Verify proper response formatting
 - Test error handling and fallback responses
 
 ### First-Time User Testing
+
 - Test introduction message
 - Verify one-time execution
 - Test agent selection after introduction
@@ -416,6 +456,7 @@ See the [switchboard action READMEs](../../../../../jvagent/action/switchboard_i
 ## Support
 
 For issues or questions:
+
 - Review the [jvagent documentation](../../../../../README.md)
 - Check the [architecture documentation](../../../docs/architecture.md)
 - Review [switchboard action documentation](../../../../../jvagent/action/switchboard_interact_action/README.md)

@@ -24,6 +24,7 @@ export function PageIndexDocumentsModal({
   const [docDescription, setDocDescription] = useState('')
   const [metadataJson, setMetadataJson] = useState('')
   const [addNodeSummary, setAddNodeSummary] = useState(true)
+  const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 
   const parseMetadata = (): Record<string, unknown> | undefined => {
     const trimmed = metadataJson.trim()
@@ -77,6 +78,13 @@ export function PageIndexDocumentsModal({
 
   const handleUpload = async () => {
     if (!selectedFile) return
+    
+    // Validate file size
+    if (selectedFile.size > MAX_FILE_SIZE) {
+      setUploadError(`File size exceeds ${MAX_FILE_SIZE / (1024 * 1024)}MB limit`)
+      return
+    }
+    
     setUploading(true)
     setUploadError(null)
     try {
@@ -94,7 +102,12 @@ export function PageIndexDocumentsModal({
       await fetchDocuments()
     } catch (err: any) {
       console.error('Upload failed:', err)
-      setUploadError(err.message || 'Upload failed')
+      const errorMsg = err.message || 'Upload failed'
+      setUploadError(
+        errorMsg.includes('timeout') 
+          ? 'Upload timed out. File may be too large or server is slow.'
+          : errorMsg
+      )
     } finally {
       setUploading(false)
     }
@@ -160,8 +173,21 @@ export function PageIndexDocumentsModal({
                   type="file"
                   accept=".pdf,.md,.markdown"
                   className="block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null
+                    setSelectedFile(file)
+                    if (file && file.size > MAX_FILE_SIZE) {
+                      setUploadError(`File exceeds ${MAX_FILE_SIZE / (1024 * 1024)}MB limit`)
+                    } else {
+                      setUploadError(null)
+                    }
+                  }}
                 />
+                {selectedFile && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                  </p>
+                )}
               </label>
               <input
                 type="text"

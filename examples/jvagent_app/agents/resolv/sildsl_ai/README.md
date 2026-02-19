@@ -5,6 +5,7 @@ A production-ready agent for the Strengthening Instructional Leadership at the D
 ## Overview
 
 The SILDSL AI Agent provides:
+
 - Interview-based actions for structured data collection (reports and feedback)
 - Intent-based routing with conversation history management
 - Multi-channel support (web interface)
@@ -15,6 +16,7 @@ The SILDSL AI Agent provides:
 ## Project Context
 
 The SILDSL Project, also known as the "Leadership Project", aims to strengthen school and district leadership and improve sector management within Guyana's education system. This agent serves as the virtual assistant providing:
+
 - Updates and progress reports on the Leadership Project
 - Recording and filing project-related inquiries or feedback from stakeholders
 - Answering questions about project objectives, timelines, and implementation partners
@@ -54,12 +56,13 @@ context:
 
 actions:
   # Core routing and model actions
+  - action: jvagent/response_gating
   - action: jvagent/interact_router
   - action: jvagent/openai_embedding
   - action: jvagent/pageindex_retrieval_interact_action
   - action: jvagent/openai_lm
   - action: jvagent/persona
-  
+
   # Custom Resolv actions
   - action: resolv/report_interview_interact_action
   - action: resolv/feedback_interview_interact_action
@@ -67,7 +70,7 @@ actions:
   - action: jvagent/converse_interact_action
   - action: resolv/onboarding_interact_action
   - action: resolv/resolv_api_action
-  
+
   # Integration actions
   - action: jvagent/agent_utils
   - action: jvagent/tts_action
@@ -83,6 +86,7 @@ actions:
 Intent-based routing action that analyzes utterances and routes to appropriate InteractActions.
 
 **Configuration:**
+
 - Model: `gpt-4.1`
 - History limit: 3 interactions
 - Analyzes conversation context for intelligent routing
@@ -92,12 +96,14 @@ Intent-based routing action that analyzes utterances and routes to appropriate I
 Provides LLM integration with GPT-4.1-mini for natural language processing.
 
 **Configuration:**
+
 - Model: `gpt-4.1-mini`
 - Temperature: 0.2
 - Max tokens: 4096
 - Vision support enabled
 
 **API Endpoints:**
+
 - `POST /actions/{action_id}/query` - Query the language model
 - `GET /actions/{action_id}/metrics` - Get usage metrics
 
@@ -106,11 +112,13 @@ Provides LLM integration with GPT-4.1-mini for natural language processing.
 Generates vector embeddings for semantic search and context retrieval.
 
 **Configuration:**
+
 - Model: `text-embedding-3-small`
 - Dimensions: 1536
 - Timeout: 30 seconds
 
 **API Endpoints:**
+
 - `POST /actions/{action_id}/embed` - Generate embedding for text
 - `POST /actions/{action_id}/embed/batch` - Generate embeddings for multiple texts
 
@@ -119,12 +127,14 @@ Generates vector embeddings for semantic search and context retrieval.
 Vectorless RAG action that retrieves context from indexed documents.
 
 **Configuration:**
+
 - Weight: -75 (runs after InteractRouter, before Persona)
 - Strategy: `tree_search`
 - Limit: 10 documents
 - Node summary: enabled
 
 **Features:**
+
 - Retrieves context from indexed documents via PageIndex graph
 - Tree search strategy for efficient document retrieval
 - Requires document ingestion via POST /pageindex/documents
@@ -134,6 +144,7 @@ Vectorless RAG action that retrieves context from indexed documents.
 Conversational agent with SILDSL Project-specific personality and capabilities.
 
 **Configuration:**
+
 - Persona name: "SILDSL AI"
 - Model: `gpt-4.1-mini`
 - Temperature: 0.1
@@ -143,6 +154,7 @@ Conversational agent with SILDSL Project-specific personality and capabilities.
 Virtual assistant for the Strengthening Instructional Leadership at the District and School Levels (SILDSL) Project, also known as the "Leadership Project". Provides informational support and updates on the Leadership Project, which aims to strengthen school and district leadership and improve sector management within Guyana's education system.
 
 **Capabilities:**
+
 - Provide updates and progress reports on the Leadership Project
 - Record and file project-related inquiries or feedback from stakeholders
 - Answer questions about project objectives, timelines, and implementation partners
@@ -155,6 +167,7 @@ Virtual assistant for the Strengthening Instructional Leadership at the District
 Structured interview action for creating incident reports in the Resolv IMS.
 
 **Features:**
+
 - Multi-step interview flow with validation
 - Custom directive passing for user guidance
 - Media file attachment support
@@ -162,12 +175,14 @@ Structured interview action for creating incident reports in the Resolv IMS.
 - Privacy-aware logging for sensitive reports
 
 **Configuration:**
+
 - Weight: -50 (runs before fallback actions)
 - Model: `gpt-4.1`
 - History limit: 3 interactions
 - Auto-confirm: false
 
 **Interview Fields:**
+
 - Reporter name
 - Reporter phone
 - Reporter address
@@ -180,6 +195,7 @@ Structured interview action for creating incident reports in the Resolv IMS.
 - Media attachments (optional)
 
 **API Endpoints:**
+
 - Standard InteractAction endpoints via InteractWalker
 
 #### Feedback Interview InteractAction
@@ -187,24 +203,28 @@ Structured interview action for creating incident reports in the Resolv IMS.
 Structured interview action for submitting feedback on existing reports or projects.
 
 **Features:**
+
 - Report selection with matching
 - Media file attachment support
 - Feedback content validation
 - Integration with Resolv API
 
 **Configuration:**
+
 - Weight: -50 (runs before fallback actions)
 - Model: `gpt-4.1`
 - History limit: 3 interactions
 - Auto-confirm: false
 
 **Interview Fields:**
+
 - Project details (for report matching)
 - Feedback content
 - Selected report ID
 - Media files (optional)
 
 **API Endpoints:**
+
 - Standard InteractAction endpoints via InteractWalker
 
 #### Subscription InteractAction
@@ -212,11 +232,13 @@ Structured interview action for submitting feedback on existing reports or proje
 Presents a link to users for subscribing and unsubscribing from channels and groups.
 
 **Features:**
+
 - Dynamic subscription link generation
 - Channel and group management
 - User preference handling
 
 **Configuration:**
+
 - Weight: -50 (runs before fallback actions)
 
 #### Converse InteractAction
@@ -224,6 +246,7 @@ Presents a link to users for subscribing and unsubscribing from channels and gro
 Fallback action for smalltalk and casual conversation.
 
 **Configuration:**
+
 - Weight: 100 (runs last as a safety net)
 - Handles general conversation when no specific action is triggered
 
@@ -232,12 +255,14 @@ Fallback action for smalltalk and casual conversation.
 User registration and group subscription action for new users.
 
 **Features:**
+
 - User registration with Resolv API
 - Automatic group subscription
 - Session tracking
 - Access control integration
 
 **Configuration:**
+
 - Weight: -100 (runs early in routing)
 
 #### Resolv API Action
@@ -245,6 +270,7 @@ User registration and group subscription action for new users.
 Central configuration and API client for Resolv IMS integration.
 
 **Features:**
+
 - Centralized API credentials
 - Report creation and retrieval
 - Feedback submission
@@ -252,6 +278,7 @@ Central configuration and API client for Resolv IMS integration.
 - Organization and project context
 
 **Configuration:**
+
 - User UUID: `${RESOLV_SILDSL_USER_UUID}`
 - Secret token: `${RESOLV_SILDSL_SECRET_TOKEN}`
 - API URL: `${RESOLV_SILDSL_API_URL}`
@@ -259,6 +286,7 @@ Central configuration and API client for Resolv IMS integration.
 - Project ID: `${RESOLV_SILDSL_PROJECT_ID}`
 
 **API Endpoints:**
+
 - `POST /actions/{action_id}/reports` - Create a report
 - `GET /actions/{action_id}/reports/{report_id}` - Get report details
 - `POST /actions/{action_id}/feedback` - Submit feedback
@@ -271,6 +299,7 @@ Central configuration and API client for Resolv IMS integration.
 Power user controls for agent management and debugging.
 
 **Features:**
+
 - Agent status monitoring
 - Configuration inspection
 - Debug utilities
@@ -280,6 +309,7 @@ Power user controls for agent management and debugging.
 Converts text responses to speech audio.
 
 **Configuration:**
+
 - Provider: `elevenlabs`
 - Model: `eleven_turbo_v2`
 - Voice: "Sarah"
@@ -289,6 +319,7 @@ Converts text responses to speech audio.
 Converts audio messages to text.
 
 **Configuration:**
+
 - Provider: `deepgram`
 - Model: `nova-2`
 
@@ -309,6 +340,7 @@ When jvagent starts from the app directory:
 ### Interacting with the Agent
 
 **Web Interface:**
+
 ```http
 POST /api/agents/{agent_id}/interact
 Content-Type: application/json
@@ -325,6 +357,7 @@ Content-Type: application/json
 ### Example Workflows
 
 #### Creating a Report
+
 1. User: "I want to report an issue with the leadership training program"
 2. Agent routes to `report_interview_interact_action`
 3. Agent collects: reporter info, incident details, location, media
@@ -332,6 +365,7 @@ Content-Type: application/json
 5. Agent provides confirmation with report ID
 
 #### Submitting Feedback
+
 1. User: "I want to give feedback on the district leadership workshop"
 2. Agent routes to `feedback_interview_interact_action`
 3. Agent matches existing reports
@@ -340,12 +374,14 @@ Content-Type: application/json
 6. Agent provides confirmation
 
 #### Project Information
+
 1. User: "What is the SILDSL Project about?"
 2. Agent routes to `persona` action
 3. Agent provides information about SILDSL Project objectives and focus areas
 4. Agent offers to help with reports or feedback
 
 #### User Onboarding
+
 1. New user interacts with agent
 2. Agent routes to `onboarding_interact_action`
 3. Agent registers user with Resolv API
@@ -353,6 +389,7 @@ Content-Type: application/json
 5. Agent confirms successful onboarding
 
 #### Managing Subscriptions
+
 1. User: "I want to change my notification preferences"
 2. Agent routes to `subscription_interact_action`
 3. Agent presents subscription management link
@@ -364,9 +401,11 @@ Content-Type: application/json
 This agent uses environment variables for configuration:
 
 **Required:**
+
 - `${OPENAI_API_KEY}` - OpenAI API key for LLM and embeddings
 
 **SILDSL Project Resolv API:**
+
 - `${RESOLV_SILDSL_USER_UUID}` - Resolv API user UUID for SILDSL Project
 - `${RESOLV_SILDSL_SECRET_TOKEN}` - Resolv API secret token for SILDSL Project
 - `${RESOLV_SILDSL_API_URL}` - Resolv API URL for SILDSL Project
@@ -374,6 +413,7 @@ This agent uses environment variables for configuration:
 - `${RESOLV_SILDSL_PROJECT_ID}` - SILDSL Project ID in Resolv IMS
 
 **Speech Services:**
+
 - `${TTS_API_KEY}` - Text-to-speech API key (ElevenLabs)
 - `${STT_API_KEY}` - Speech-to-text API key (Deepgram)
 
@@ -399,6 +439,7 @@ Update the persona description in `agent.yaml` to customize the agent's behavior
 ### Adjusting Routing Weights
 
 Action weights control execution order:
+
 - Negative weights run earlier (e.g., -100, -50)
 - Positive weights run later (e.g., 100 for fallback)
 - Default weight is 0
@@ -416,6 +457,7 @@ Update weights in `agent.yaml` under each action's `context.weight`.
 ## Testing
 
 ### Report Interview Testing
+
 - Test all validation scenarios (name, phone, address formats)
 - Test conditional fields (stakeholder info when reporting on behalf)
 - Test media file attachments
@@ -423,12 +465,14 @@ Update weights in `agent.yaml` under each action's `context.weight`.
 - Verify privacy protection for sensitive reports
 
 ### Feedback Interview Testing
+
 - Test report matching with various descriptions
 - Test feedback content validation
 - Test media file attachments
 - Verify integration with Resolv API
 
 ### Persona Testing
+
 - Test SILDSL Project-specific information queries
 - Verify appropriate responses to stakeholder questions
 - Test capability demonstrations
@@ -450,6 +494,7 @@ See the main [resolv_demo README](../resolv_demo/README.md) for detailed informa
 ## Support
 
 For issues or questions:
+
 - Review the [jvagent documentation](../../../../../README.md)
 - Check the [architecture documentation](../../../docs/architecture.md)
 - Review action-specific READMEs in the `actions/` directory

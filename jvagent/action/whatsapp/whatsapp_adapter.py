@@ -121,7 +121,10 @@ class WhatsAppAdapter(ChannelAdapter):
             )
             return False
 
-        if not message.content or not message.content.strip():
+        media_url = message.metadata.get("media_url")
+        media_type = message.metadata.get("media_type")
+
+        if not media_url and (not message.content or not message.content.strip()):
             logger.debug(
                 f"WhatsAppAdapter: Skipping empty message {message.id} for user {message.user_id}"
             )
@@ -132,12 +135,6 @@ class WhatsAppAdapter(ChannelAdapter):
         )
         
         api = self.action.api()
-        # Message content is already transformed by filters before reaching the adapter
-        chunks = self.chunk_long_message(
-            message.content, 
-            max_length=self.action.chunk_length, 
-            chunk_length=self.action.chunk_length
-        )
 
         # Extract is_group from message metadata or interaction
         is_group = message.metadata.get("isGroup", False)
@@ -145,20 +142,78 @@ class WhatsAppAdapter(ChannelAdapter):
         # If not in metadata, try to get it from the interaction
         if message.interaction_id and (not is_group or message.metadata.get("isGroup") is None):
             is_group = await self._get_channel_metadata_from_interaction(message.interaction_id, "isGroup", False)
-        
+
+        # Handle media messages
+        if media_url and media_type:
+            logger.debug(f"WhatsAppAdapter: Sending media message - type={media_type}, url={media_url}")
+            try:
+                send_result = {"ok": False, "error": f"Unsupported media type: {media_type}"}
+                
+                if media_type == "image":
+                    send_result = await api.send_image(
+                        phone=message.user_id,
+                        file_url=media_url,
+                        caption=message.content,
+                        is_group=is_group,
+                    )
+                elif media_type in ["document", "file", "docs"]:
+                    filename = message.metadata.get("filename") or media_url.split("/")[-1]
+                    send_result = await api.send_file(
+                        phone=message.user_id,
+                        file_url=media_url,
+                        caption=message.content,
+                        filename=filename,
+                        is_group=is_group,
+                    )
+                elif media_type == "video":
+                    if hasattr(api, "send_video"):
+                        send_result = await api.send_video(
+                            phone=message.user_id,
+                            file_url=media_url,
+                            caption=message.content,
+                            is_group=is_group,
+                        )
+                    else:
+                        send_result = await api.send_file(
+                            phone=message.user_id,
+                            file_url=media_url,
+                            caption=message.content,
+                            is_group=is_group,
+                        )
+                elif media_type in ["audio", "voice"]:
+                    send_result = await api.send_voice(
+                        phone=message.user_id,
+                        file_url=media_url,
+                        is_group=is_group,
+                    )
+                
+                if send_result.get("ok", True):
+                    logger.debug(f"WhatsAppAdapter: Media sent successfully to {message.user_id}")
+                    # Clear typing status after sending
+                    await self._clear_typing_status(api, message.user_id, is_group)
+                    return True
+                else:
+                    error_msg = send_result.get("error", "Unknown error")
+                    logger.error(f"WhatsAppAdapter: Media send failed for {message.user_id}: {error_msg}")
+                    await self._clear_typing_status(api, message.user_id, is_group)
+                    return False
+            except Exception as e:
+                logger.error(f"WhatsAppAdapter: Exception sending media to {message.user_id}: {e}", exc_info=True)
+                await self._clear_typing_status(api, message.user_id, is_group)
+                return False
+
+        # Message content is already transformed by filters before reaching the adapter
+        chunks = self.chunk_long_message(
+            message.content, 
+            max_length=self.action.chunk_length, 
+            chunk_length=self.action.chunk_length
+        )
+
         if not chunks or all(not chunk.strip() for chunk in chunks):
             logger.debug(
                 f"WhatsAppAdapter: No valid message chunks to send for user {message.user_id}"
             )
-            # Clear typing status
-            try:
-                await api.set_typing_status(
-                    phone=message.user_id,
-                    value=False,
-                    is_group=is_group
-                )
-            except Exception as e:
-                logger.debug(f"WhatsAppAdapter: Failed to clear typing status for {message.user_id}: {e}")
+            await self._clear_typing_status(api, message.user_id, is_group)
             return False
 
         try:
@@ -192,17 +247,20 @@ class WhatsAppAdapter(ChannelAdapter):
             )
             raise
         finally:
-            # Clear typing status after sending
-            try:
-                await api.set_typing_status(
-                    phone=message.user_id,
-                    value=False,
-                    is_group=is_group
-                )
-            except Exception as e:
-                logger.debug(f"WhatsAppAdapter: Failed to clear typing status for {message.user_id}: {e}")
+            await self._clear_typing_status(api, message.user_id, is_group)
 
         return success
+
+    async def _clear_typing_status(self, api, phone, is_group):
+        """Helper to clear typing status."""
+        try:
+            await api.set_typing_status(
+                phone=phone,
+                value=False,
+                is_group=is_group
+            )
+        except Exception as e:
+            logger.debug(f"WhatsAppAdapter: Failed to clear typing status for {phone}: {e}")
 
     def chunk_long_message(
         self, message: str, max_length: int = 1024, chunk_length: int = 1024
