@@ -268,3 +268,59 @@ async def delete_document(
         return True
     finally:
         set_default_context(prev)
+
+
+async def export_documents(
+    collection_name: str = "default",
+    doc_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Export documents and their graph structure."""
+    from .models import DocumentNode, DocumentContentEdge
+    initialize_pageindex_database()
+    context = _get_pageindex_context()
+    prev = get_default_context()
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"exporting documents in collection: {collection_name}")  
+    try:
+        set_default_context(context)
+        query: Dict[str, Any] = {"context.collection_name": collection_name}
+        if doc_name:
+            query["context.doc_name"] = doc_name
+        roots = await DocumentRootNode.find(query)
+        nodes = await DocumentNode.find(query)
+        edges = await DocumentContentEdge.find({})
+        return {
+            "roots": [r.model_dump() for r in roots],
+            "nodes": [n.model_dump() for n in nodes],
+            "edges": [e.model_dump() for e in edges],
+        }
+    finally:
+        set_default_context(prev)
+
+
+async def import_documents(
+    data: Dict[str, Any],
+    purge: bool = False,
+    collection_name: Optional[str] = None,
+) -> None:
+    """Import documents and their graph structure."""
+    from .models import DocumentNode, DocumentContentEdge
+    initialize_pageindex_database()
+    context = _get_pageindex_context()
+    prev = get_default_context()
+    try:
+        set_default_context(context)
+        if purge and collection_name:
+            query = {"context.collection_name": collection_name}
+            roots = await DocumentRootNode.find(query)
+            for root in roots:
+                await root.delete()
+        for root_data in data.get("roots", []):
+            await DocumentRootNode(**root_data).save()
+        for node_data in data.get("nodes", []):
+            await DocumentNode(**node_data).save()
+        for edge_data in data.get("edges", []):
+            await DocumentContentEdge(**edge_data).save()
+    finally:
+        set_default_context(prev)

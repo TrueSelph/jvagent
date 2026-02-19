@@ -24,6 +24,13 @@ export function PageIndexDocumentsModal({
   const [docDescription, setDocDescription] = useState('')
   const [metadataJson, setMetadataJson] = useState('')
   const [addNodeSummary, setAddNodeSummary] = useState(true)
+  const [purgeOnImport, setPurgeOnImport] = useState(false)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importText, setImportText] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportCollectionName, setExportCollectionName] = useState('default')
+  const [importExportError, setImportExportError] = useState<string | null>(null)
   const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 
   const parseMetadata = (): Record<string, unknown> | undefined => {
@@ -126,6 +133,46 @@ export function PageIndexDocumentsModal({
     }
   }
 
+  const handleExport = async () => {
+    setExporting(true)
+    setImportExportError(null)
+    try {
+      const data = await apiClient.exportPageIndex('json', exportCollectionName)
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `pageindex-${exportCollectionName}-${Date.now()}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err: any) {
+      console.error('Export failed:', err)
+      setImportExportError(err.message || 'Export failed')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleImport = async () => {
+    const source = importText.trim() || (importFile ? await importFile.text() : '')
+    if (!source) return
+    setImporting(true)
+    setImportExportError(null)
+    try {
+      const data = JSON.parse(source)
+      await apiClient.importPageIndex(agentId, data, purgeOnImport)
+      setImportFile(null)
+      setImportText('')
+      setPurgeOnImport(false)
+      await fetchDocuments()
+    } catch (err: any) {
+      console.error('Import failed:', err)
+      setImportExportError(err.message || 'Import failed')
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50"
@@ -163,6 +210,77 @@ export function PageIndexDocumentsModal({
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-6">
+          {/* Import/Export section */}
+          <div className="space-y-3 border-b border-gray-200 pb-6">
+            <h3 className="text-sm font-medium text-gray-700">Import / Export</h3>
+            
+            {/* Export */}
+            <div className="flex flex-col sm:flex-row gap-3 items-end">
+              <div className="flex-1">
+                <label className="block text-xs text-gray-600 mb-1">Collection name</label>
+                <input
+                  type="text"
+                  value={exportCollectionName}
+                  onChange={(e) => setExportCollectionName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+              </div>
+              <button
+                onClick={handleExport}
+                disabled={exporting}
+                className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+              >
+                {exporting ? 'Exporting...' : 'Export'}
+              </button>
+            </div>
+
+            {/* Import */}
+            <div className="space-y-2">
+              <label className="block text-xs text-gray-600">Import from file or paste JSON</label>
+              <input
+                type="file"
+                accept=".json"
+                className="block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+                onChange={(e) => {
+                  setImportFile(e.target.files?.[0] || null)
+                  if (e.target.files?.[0]) setImportText('')
+                }}
+              />
+              <textarea
+                value={importText}
+                onChange={(e) => {
+                  setImportText(e.target.value)
+                  if (e.target.value.trim()) setImportFile(null)
+                }}
+                placeholder='{\n  "roots": [ ... ],\n  "nodes": [ ... ],\n  "edges": [ ... ]\n}'
+                rows={4}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-green-500 focus:border-green-500 resize-y"
+              />
+              <div className="flex gap-3 items-center">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={purgeOnImport}
+                    onChange={(e) => setPurgeOnImport(e.target.checked)}
+                    className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                  />
+                  <span className="text-sm text-gray-700">Purge existing</span>
+                </label>
+                <button
+                  onClick={handleImport}
+                  disabled={(!importFile && !importText.trim()) || importing}
+                  className="ml-auto px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {importing ? 'Importing...' : 'Import'}
+                </button>
+              </div>
+            </div>
+
+            {importExportError && (
+              <p className="text-sm text-red-600">{importExportError}</p>
+            )}
+          </div>
+
           {/* Upload section */}
           <div className="space-y-3">
             <h3 className="text-sm font-medium text-gray-700">Upload document</h3>

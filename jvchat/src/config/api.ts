@@ -865,6 +865,32 @@ class ApiClient {
     return data
   }
 
+  /**
+   * Export PageIndex data.
+   * Path: GET /api/agents/{agentId}/pageindex/export
+   */
+  async exportPageIndex(format: 'json' = 'json', collectionName: string = 'default'): Promise<any> {
+    const path = `/api/agents/${encodeURIComponent(collectionName)}/pageindex/export`
+    const response = await this._withFallback((baseURL) =>
+      this.client.get(path, { baseURL, params: { format } })
+    )
+    return response.data.data
+  }
+
+  /**
+   * Import PageIndex data.
+   * Path: POST /api/agents/{agentId}/pageindex/import
+   */
+  async importPageIndex(agentId: string, data: any, purge: boolean = false): Promise<any> {
+    const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/import`
+    const response = await this._withFallback((baseURL) =>
+      this.client.post(path, { purge, data }, { baseURL })
+    )
+    const responseData = response.data
+    if (responseData?.success && responseData?.data) return responseData.data
+    return responseData
+  }
+
   async getInteractions(actionId: string): Promise<any> {
     const response = await this._withFallback(async (baseURL) => {
       try {
