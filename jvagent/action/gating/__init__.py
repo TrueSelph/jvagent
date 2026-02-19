@@ -11,7 +11,7 @@ from jvagent.action.gating.gating_result import (
     POSTURE_SUPPRESS,
     parse_gating_response,
 )
-from jvagent.action.gating.response_gating_action import ResponseGatingInteractAction
+from jvagent.action.gating.response_gating import ResponseGatingInteractAction
 
 __all__ = [
     "GatingResult",

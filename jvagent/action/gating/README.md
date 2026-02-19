@@ -30,7 +30,7 @@ User Utterance → InteractWalker → ResponseGatingInteractAction (weight=-200)
 
 ### ResponseGatingInteractAction
 
-- **File**: `response_gating_action.py`
+- **File**: `response_gating.py`
 - **Weight**: `-200` (runs before InteractRouter at `-100`)
 - **Always executes**: Yes — evaluates every utterance regardless of routing
 
