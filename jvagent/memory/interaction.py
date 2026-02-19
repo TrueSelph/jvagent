@@ -82,7 +82,7 @@ class Interaction(DeferredSaveMixin, Node):
     )
     response_posture: Optional[str] = attribute(
         default=None,
-        description="Response gating posture: RESPOND | SUPPRESS | DEFER (from ResponseGatingAction)",
+        description="Response gating posture: RESPOND | SUPPRESS | DEFER (from ResponseGatingInteractAction)",
     )
 
     # Processing tracking

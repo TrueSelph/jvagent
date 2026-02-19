@@ -1,10 +1,10 @@
 package:
-  name: jvagent/response_gating_action
+  name: jvagent/response_gating
   author: jvagent
-  archetype: ResponseGatingAction
+  archetype: ResponseGatingInteractAction
   version: 0.0.1
   meta:
-    title: ResponseGatingAction
+    title: ResponseGatingInteractAction
     description: Classifies utterance posture (RESPOND/SUPPRESS/DEFER) for realistic conversational behavior
     group: core
     type: interact_action

@@ -1,7 +1,7 @@
 """GatingResult dataclass for response posture classification.
 
 This module provides the GatingResult dataclass that encapsulates
-the output of ResponseGatingAction's posture classification.
+the output of ResponseGatingInteractAction's posture classification.
 """
 
 import json
@@ -18,7 +18,7 @@ VALID_POSTURES = (POSTURE_RESPOND, POSTURE_SUPPRESS, POSTURE_DEFER)
 
 @dataclass
 class GatingResult:
-    """Structured result from ResponseGatingAction posture classification.
+    """Structured result from ResponseGatingInteractAction posture classification.
 
     Attributes:
         posture: RESPOND | SUPPRESS | DEFER
