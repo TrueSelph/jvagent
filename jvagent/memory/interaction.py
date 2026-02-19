@@ -80,6 +80,10 @@ class Interaction(DeferredSaveMixin, Node):
         default_factory=list,
         description="Matched entity names from anchor matching"
     )
+    response_posture: Optional[str] = attribute(
+        default=None,
+        description="Response gating posture: RESPOND | SUPPRESS | DEFER (from ResponseGatingAction)",
+    )
 
     # Processing tracking
     actions: List[str] = attribute(

@@ -24,6 +24,7 @@ context:
 # Actions are referenced using the format: namespace/action_name
 #
 # Core actions (loaded from jvagent library if no local override exists):
+# - jvagent/response_gating_action
 # - jvagent/interact_router
 # - jvagent/openai_embedding, jvagent/openai_lm
 # - jvagent/typesense_vectorstore
@@ -38,6 +39,18 @@ actions:
     context:
       enabled: true
       description: "Agent Utils action for power user controls"
+
+  # ResponseGatingAction - Determines when to respond, suppress, or defer
+  # Runs before InteractRouter (weight -200); classifies utterance posture for realistic conversation
+  - action: jvagent/response_gating_action
+    context:
+      enabled: true
+      description: "Classifies utterance posture (RESPOND/SUPPRESS/DEFER) for realistic conversational behavior"
+      model_action_type: "OpenAILanguageModelAction"
+      model: gpt-4o-mini
+      history_limit: 5
+      enable_accumulation: true
+      max_fragment_buffer: 5
 
   # InteractRouter Action - Intent-based routing for InteractActions
   # Core action from jvagent library (jvagent/action/router/)
@@ -167,9 +180,9 @@ actions:
         - "User wants to enroll or join jvagent training"
     config:
       model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4.1-mini"
+      model: "gpt-4o-mini"
       model_temperature: 0.1
-      model_max_tokens: 4096
+      model_max_tokens: 8192
       use_history: true
       max_statement_length: 100
       history_limit: 3

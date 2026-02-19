@@ -59,10 +59,10 @@ class ModelConfig:
     model_action_type: str = "OpenAILanguageModelAction"
     model: str = "gpt-4o"
     model_temperature: float = 0.1
-    model_max_tokens: int = 4096
+    model_max_tokens: int = 8192
     use_history: bool = True
-    max_statement_length: int = 400
-    history_limit: int = 5
+    max_statement_length: int = 500
+    history_limit: int = 3
     
     def __post_init__(self) -> None:
         """Validate model configuration."""

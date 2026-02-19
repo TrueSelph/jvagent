@@ -31,7 +31,11 @@ KEY RULES:
 - Ongoing activities do NOT automatically capture all messages
 - Only route to ongoing activity when user is clearly engaging WITH it
 - CONVERSATIONAL intent (greetings, thanks, smalltalk) MUST have empty actions []
-- Lower confidence if ambiguous or uncertain"""
+- Lower confidence if ambiguous or uncertain
+
+GATING CONTEXT (when present in history):
+- "Agent did not respond to recent message (suppressed)": Prior user message was a backchannel/filler; agent correctly stayed silent. Do not over-explain.
+- "Deferred fragment(s) pending from user": User sent incomplete fragments; current message may complete the thought. Consider full context when routing."""
 
 # =============================================================================
 # Routing Prompt
@@ -64,7 +68,9 @@ RULES:
 6. If the most recent assistant message in the history was a question, and the current user message appears to answer it, use INTERACTIVE (not CONVERSATIONAL)
 7. If the user asks a question about the agent's role, capabilities, or purpose, use CONVERSATIONAL
 8. If context shows an ongoing activity and the current user message relates to it, use INTERACTIVE and route to that action
-9. Lower confidence if ambiguous or uncertain {optional_instructions}
+9. If context shows "Agent did not respond to recent message (suppressed)", the prior turn was correctly gated; route based on current message only
+10. If context shows "Deferred fragment(s) pending from user", the current message may complete a fragmented thought; consider prior fragments when interpreting
+11. Lower confidence if ambiguous or uncertain {optional_instructions}
 
 OUTPUT (JSON only):
 {{

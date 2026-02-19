@@ -35,7 +35,7 @@ Inherits from `InterviewInteractAction` and uses a unified classification and ex
     model_action_type: "OpenAILanguageModelAction"
     model: "gpt-4.1"
     model_temperature: 0.1
-    model_max_tokens: 4096
+    model_max_tokens: 8192
     use_history: true
     max_statement_length: 100
     history_limit: 3
