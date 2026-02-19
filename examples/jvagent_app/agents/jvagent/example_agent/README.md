@@ -81,7 +81,7 @@ actions:
       model_action_type: "OpenAILanguageModelAction"
       model: gpt-4o-mini
       model_temperature: 0.3
-      model_max_tokens: 4096
+      model_max_tokens: 8192
   
   # Example action for demonstrations
   - action: jvagent/example_action

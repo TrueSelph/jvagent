@@ -199,6 +199,7 @@ class InteractRouter(InteractAction):
                     with_response=True,
                     with_interpretation=True,
                     with_event=True,
+                    with_posture=True,
                     formatted=True,
                 )
 
@@ -373,6 +374,17 @@ class InteractRouter(InteractAction):
                         activity_name = ev.replace("[EVENT] ", "").replace("Ongoing Activity:", "").strip()
                         context_signals.append(f"Ongoing activity: {activity_name}")
                         break
+
+            # Look for gating posture (SUPPRESSED/DEFERRED) in most recent system messages
+            for e in reversed(interaction_history):
+                if isinstance(e, dict) and e.get("role") == "system":
+                    content = (e.get("content") or "")
+                    if content.startswith("[SUPPRESSED]"):
+                        context_signals.append("Agent did not respond to recent message (suppressed)")
+                        break
+                    if content.startswith("[DEFERRED]"):
+                        context_signals.append("Deferred fragment(s) pending from user")
+                        break
         else:
             # Custom dict format: find most recent assistant message
             for entry in reversed(interaction_history):
@@ -414,10 +426,17 @@ class InteractRouter(InteractAction):
                             lines.append(f"Assistant (question): {content}")
                         else:
                             lines.append(f"Assistant: {content}")
-                    elif role == "system" and (content or "").startswith("[EVENT]"):
-                        if "Ongoing Activity:" in content:
-                            lines.append(f"[Ongoing] {content.replace('[EVENT] ', '').replace('Ongoing Activity:', '').strip()}")
-                        else:
+                    elif role == "system":
+                        if (content or "").startswith("[EVENT]"):
+                            if "Ongoing Activity:" in content:
+                                lines.append(f"[Ongoing] {content.replace('[EVENT] ', '').replace('Ongoing Activity:', '').strip()}")
+                            else:
+                                lines.append(content)
+                        elif (content or "").startswith("[SUPPRESSED]") or (content or "").startswith("[DEFERRED]"):
+                            lines.append(content)
+                        elif (content or "").startswith("[INTERPRETATION]"):
+                            lines.append(content)
+                        elif content:
                             lines.append(content)
                 else:
                     if "human" in entry:

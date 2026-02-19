@@ -1,0 +1,13 @@
+package:
+  name: jvagent/response_gating_action
+  author: jvagent
+  archetype: ResponseGatingAction
+  version: 0.0.1
+  meta:
+    title: ResponseGatingAction
+    description: Classifies utterance posture (RESPOND/SUPPRESS/DEFER) for realistic conversational behavior
+    group: core
+    type: interact_action
+  config:
+    order:
+      weight: -200

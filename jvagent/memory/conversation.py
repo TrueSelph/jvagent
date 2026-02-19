@@ -371,6 +371,7 @@ class Conversation(DeferredSaveMixin, Node):
         with_response: bool = True,
         with_interpretation: bool = False,
         with_event: bool = False,
+        with_posture: bool = False,
         max_statement_length: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """Format interactions for language model consumption.
@@ -384,6 +385,7 @@ class Conversation(DeferredSaveMixin, Node):
             with_response: If True, include AI responses as assistant messages
             with_interpretation: If True, include interpretations as system messages
             with_event: If True, include events as system messages
+            with_posture: If True, prepend SUPPRESS/DEFER system messages when response_posture is set
             max_statement_length: Optional maximum length for utterance and response strings.
                 If provided and content exceeds this length, it will be truncated with "..." appended.
                 Does not apply to interpretations or events. Default: None (no truncation).
@@ -404,6 +406,24 @@ class Conversation(DeferredSaveMixin, Node):
                     "role": "system",
                     "content": f"[INTERPRETATION] {content}",
                 })
+
+            # Add posture context (if requested and set) - explains why no assistant reply followed
+            if with_posture and getattr(interaction, "response_posture", None):
+                posture = interaction.response_posture
+                utterance = interaction.utterance or ""
+                truncated = await Conversation.truncate_statement(
+                    utterance, max_statement_length, interaction=interaction
+                )
+                if posture == "SUPPRESS":
+                    history.append({
+                        "role": "system",
+                        "content": f'[SUPPRESSED] User said: "{truncated}"',
+                    })
+                elif posture == "DEFER":
+                    history.append({
+                        "role": "system",
+                        "content": f'[DEFERRED] User said: "{truncated}"',
+                    })
             
             # Add user utterance (if requested) - truncated if max_statement_length is set
             if with_utterance:
@@ -453,6 +473,7 @@ class Conversation(DeferredSaveMixin, Node):
         with_response: bool = True,
         with_interpretation: bool = False,
         with_event: bool = False,
+        with_posture: bool = False,
         formatted: bool = True,
         max_statement_length: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
@@ -471,6 +492,7 @@ class Conversation(DeferredSaveMixin, Node):
             with_response: If True, include AI responses (default: True)
             with_interpretation: If True, include interpretations (default: False)
             with_event: If True, include events (default: False)
+            with_posture: If True, include response_posture (SUPPRESS/DEFER) as system messages
             formatted: If True, format as role/content pairs for language models.
                 If False, return raw format with metadata. Default: True.
             max_statement_length: Optional maximum length for utterance and response strings.
@@ -523,6 +545,7 @@ class Conversation(DeferredSaveMixin, Node):
                 with_response=with_response,
                 with_interpretation=with_interpretation,
                 with_event=with_event,
+                with_posture=with_posture,
                 max_statement_length=max_statement_length,
             )
         else:
@@ -557,6 +580,9 @@ class Conversation(DeferredSaveMixin, Node):
                 if with_event and interaction.events:
                     # Note: events are not truncated
                     entry["events"] = interaction.events
+
+                if with_posture and getattr(interaction, "response_posture", None):
+                    entry["response_posture"] = interaction.response_posture
                 
                 history.append(entry)
             
