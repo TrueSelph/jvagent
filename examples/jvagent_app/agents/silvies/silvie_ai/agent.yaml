@@ -7,6 +7,18 @@ context:
   description: Silvie is the official sales representative for Silvie's General Store. With knowledge on their wide inventory, she's the go-to AI for stock checks and inventory queries.
   enabled: true
 actions:
+  # ResponseGatingInteractAction - Determines when to respond, suppress, or defer
+  # Runs before InteractRouter (weight -200); classifies utterance posture for realistic conversation
+  - action: jvagent/response_gating
+    context:
+      enabled: true
+      description: "Classifies utterance posture (RESPOND/SUPPRESS/DEFER) for realistic conversational behavior"
+      model_action_type: "OpenAILanguageModelAction"
+      model: gpt-4o-mini
+      history_limit: 5
+      enable_accumulation: true
+      max_fragment_buffer: 5
+
   - action: jvagent/interact_router
     context:
       enabled: true
@@ -15,6 +27,8 @@ actions:
       model_action_type: "OpenAILanguageModelAction"
       history_limit: 3
       model: "gpt-4.1-mini"
+      enable_clarification: true
+      enable_canned_response: false
 
   - action: jvagent/openai_embedding
     context:
@@ -38,12 +52,17 @@ actions:
   - action: jvagent/pageindex_retrieval_interact_action
     context:
       enabled: true
-      description: "Vectorless RAG - retrieves context from indexed documents via PageIndex graph"
+      description: "Handles FAQs about products, payments, shipping, returns, accounts, orders, and company information for Silvie's Industrial Solutions."
       weight: -75 # Runs after InteractRouter, before Persona
       anchors:
-        - "User asks a question about indexed documents"
-        - "User requests information from document index"
-        - "User wants to search or find information in documents"
+        - "User asks a FAQ"
+        - "User asks about products or categories"
+        - "User asks about payment methods or billing"
+        - "User asks about shipping or returns"
+        - "User asks about their account or orders"
+        - "User asks about Silvie's Industrial Solutions company"
+      collection: "n.Agent.ea765627fb1f4255b156fb68"
+      directive: "Context retrieved from document index:\n\n{results}\n\nUse this context to answer the user's query accurately and concisely. Put the main point in bold."
     config:
       limit: 10
       strategy: "tree_search"
@@ -51,8 +70,7 @@ actions:
       node_text: true
       doc_description: false
       max_token_num_each_node: 20000
-      summary_token_threshold: 200
-      collection: "silvie_ai"
+      summary_token_threshold: 600
       # model: gpt-4o-mini  # Optional: override LLM for tree search
 
   - action: jvagent/openai_lm
@@ -89,21 +107,6 @@ actions:
       enabled: true
       description: "Qr Code Interact action lets ranks request a qr code."
       weight: -40 # Runs after InteractRouter
-
-  # - action: gdf/supervisor_short_pass_interview_interact_action
-  #   context:
-  #     enabled: true
-  #     description: "Supervisor Short Pass Interview action is used to approve or deny short pass requests."
-  #     weight: -50
-  #   config:
-  #     model_action_type: "OpenAILanguageModelAction"
-  #     model: "gpt-4.1"
-  #     model_temperature: 0.1
-  #     model_max_tokens: 4096
-  #     use_history: true
-  #     max_statement_length: 100
-  #     history_limit: 3
-  #     auto_confirm: false
 
   - action: jvagent/converse_interact_action
     context:

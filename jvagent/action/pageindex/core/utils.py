@@ -577,6 +577,83 @@ def convert_page_to_int(data):
     return data
 
 
+def split_page_text_by_title(page_text, titles):
+    """Split a full page text into per-title slices.
+
+    Given a page's raw text and an ordered list of section titles that all
+    start on that page, return one text slice per title.  Each slice runs
+    from where that title first appears up to (but not including) where the
+    next title appears.  Falls back to the full page text for any title
+    that cannot be located.
+    """
+    positions = []
+    for title in titles:
+        idx = page_text.find(title)
+        if idx == -1:
+            # Loose match: collapse internal whitespace
+            pattern = r'\s+'.join(re.escape(w) for w in title.split())
+            m = re.search(pattern, page_text)
+            idx = m.start() if m else -1
+        positions.append(idx)
+
+    slices = []
+    for i, (title, pos) in enumerate(zip(titles, positions)):
+        if pos == -1:
+            slices.append(page_text)  # fallback: full page
+            continue
+        next_pos = None
+        for j in range(i + 1, len(positions)):
+            if positions[j] != -1:
+                next_pos = positions[j]
+                break
+        slices.append(
+            page_text[pos:next_pos].strip() if next_pos is not None
+            else page_text[pos:].strip()
+        )
+    return slices
+
+
+def _assign_sibling_texts(sibling_list, pdf_pages):
+    """Assign distinct text slices to sibling nodes that share the same page.
+
+    When multiple sibling nodes all have start_index == end_index (and the
+    same value), they would otherwise all receive the identical full-page
+    text.  This function detects such groups and splits the page text by
+    each node's title so every sibling gets its own distinct slice.
+    """
+    i = 0
+    while i < len(sibling_list):
+        node = sibling_list[i]
+        if not isinstance(node, dict):
+            i += 1
+            continue
+        si, ei = node.get('start_index'), node.get('end_index')
+        if si is None or ei is None or si != ei:
+            i += 1
+            continue
+        # Collect the contiguous run of siblings with the same single-page span
+        group = [node]
+        j = i + 1
+        while j < len(sibling_list):
+            peer = sibling_list[j]
+            if (
+                isinstance(peer, dict)
+                and peer.get('start_index') == si
+                and peer.get('end_index') == ei
+            ):
+                group.append(peer)
+                j += 1
+            else:
+                break
+        if len(group) > 1:
+            page_text = get_text_of_pdf_pages(pdf_pages, si, ei)
+            titles = [g.get('title', '') for g in group]
+            slices = split_page_text_by_title(page_text, titles)
+            for g, s in zip(group, slices):
+                g['text'] = s
+        i = j if len(group) > 1 else i + 1
+
+
 def add_node_text(node, pdf_pages):
     if isinstance(node, dict):
         start_page = node.get('start_index')
@@ -585,6 +662,8 @@ def add_node_text(node, pdf_pages):
         if 'nodes' in node:
             add_node_text(node['nodes'], pdf_pages)
     elif isinstance(node, list):
+        # Override text for sibling groups that all land on the same page
+        _assign_sibling_texts(node, pdf_pages)
         for index in range(len(node)):
             add_node_text(node[index], pdf_pages)
     return
@@ -598,17 +677,30 @@ def add_node_text_with_labels(node, pdf_pages):
         if 'nodes' in node:
             add_node_text_with_labels(node['nodes'], pdf_pages)
     elif isinstance(node, list):
+        # Override text for sibling groups that all land on the same page
+        _assign_sibling_texts(node, pdf_pages)
         for index in range(len(node)):
             add_node_text_with_labels(node[index], pdf_pages)
     return
 
 
 async def generate_node_summary(node, model=None):
-    prompt = f"""You are given a part of a document, your task is to generate a description of the partial document about what are main points covered in the partial document.
+    prompt = f"""You are given a part of a document, your task is to generate a detailed description that preserves all specific information from the text.
+
+    IMPORTANT: You must include ALL specific details exactly as they appear, including:
+    - Account numbers, merchant numbers, and reference codes
+    - Bank names with full account details and SWIFT codes
+    - Phone numbers, email addresses, and contact information
+    - Addresses, dates, amounts, and measurements
+    - Product names, model numbers, and technical specifications
+    - Lists, bullet points, and structured information
+    - Names of people, organizations, and locations
+
+    Format the description to be comprehensive and preserve the structure of lists and multiple options.
 
     Partial Document Text: {node['text']}
     
-    Directly return the description, do not include any other text.
+    Directly return the detailed description with all specific information preserved, do not include any other text.
     """
     response = await ChatGPT_API_async(model, prompt)
     return response

@@ -138,6 +138,14 @@ async def _search_via_tree_search(
             if not tree:
                 continue
             tree_no_text = remove_fields(tree, fields=["text"])
+            
+            seen = set()
+            deduped = []
+            for n in tree_no_text:
+                if n["node_id"] not in seen:
+                    seen.add(n["node_id"])
+                    deduped.append(n)
+            tree_no_text = deduped
 
             prompt = f"""You are given a question and a tree structure of a document.
 Each node contains a node id, node title, and a corresponding summary.

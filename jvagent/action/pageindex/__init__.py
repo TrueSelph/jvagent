@@ -20,7 +20,7 @@ from .config import (
 )
 from .models import DocumentContentEdge, DocumentNode, DocumentRootNode
 from .adapter import persist_structure, tree_to_graph
-from .documents import assimilate_document, get_document_root
+from .documents import assimilate_document, export_documents, get_document_root, import_documents
 from .retrieval import search_documents
 from .document_walker import DocumentWalker
 from .pageindex_retrieval_interact_action import PageIndexRetrievalInteractAction
@@ -39,4 +39,6 @@ __all__ = [
     "search_documents",
     "DocumentWalker",
     "PageIndexRetrievalInteractAction",
+    "export_documents",
+    "import_documents",
 ]

@@ -18,13 +18,16 @@ from pydantic import Field
 from python_multipart.multipart import FormParser, parse_options_header
 
 from jvspatial.api import endpoint
+from jvspatial.api.decorators import EndpointField
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
 
 from .documents import (
     assimilate_document,
     delete_document,
+    export_documents,
     get_document_root,
+    import_documents,
     list_documents,
 )
 from .pageindex_retrieval_interact_action import ensure_ingestion_config_for_agent
@@ -445,3 +448,83 @@ async def search_documents_endpoint(
         metadata_filter=metadata_filter,
     )
     return {"results": results}
+
+
+@endpoint(
+    "/agents/{agent_id}/pageindex/export",
+    methods=["GET"],
+    auth=True,
+    tags=["PageIndex"],
+    response=success_response(
+        data={
+            "data": ResponseField(
+                field_type=dict,
+                description="Exported graph data (roots, nodes, edges)",
+            ),
+        }
+    ),
+)
+async def export_documents_endpoint(
+    agent_id: str,
+    doc_name: Optional[str] = Query(default=None, description="Optional document name to export single document"),
+    format: str = Query(default="json", description="Export format: json or yaml"),
+) -> Dict[str, Any]:
+    """Export PageIndex graph data."""
+    data = await export_documents(collection_name=agent_id, doc_name=doc_name)
+    
+    if format.lower() == "yaml":
+        try:
+            import yaml
+            data_str = yaml.dump(data, default_flow_style=False)
+            return {"data": data_str, "format": "yaml"}
+        except ImportError:
+            logger.warning("PyYAML not available, falling back to JSON")
+    
+    return {"data": data, "format": "json"}
+
+
+@endpoint(
+    "/agents/{agent_id}/pageindex/import",
+    methods=["POST"],
+    auth=True,
+    tags=["PageIndex"],
+    response=success_response(
+        data={
+            "message": ResponseField(
+                field_type=str,
+                description="Import result message",
+            ),
+        }
+    ),
+)
+async def import_documents_endpoint(
+    agent_id: str,
+    data: Any = EndpointField(description="Graph data (JSON object or YAML string)"),
+    purge: bool = EndpointField(default=False, description="Purge existing documents before import"),
+) -> Dict[str, str]:
+    """Import PageIndex graph data."""
+    try:
+        if isinstance(data, str):
+            try:
+                import yaml
+                parsed = yaml.safe_load(data)
+            except (ImportError, yaml.YAMLError):
+                try:
+                    parsed = json.loads(data)
+                except json.JSONDecodeError as e:
+                    raise ValidationError(f"Invalid JSON/YAML format: {e}")
+        elif isinstance(data, dict):
+            parsed = data
+        else:
+            raise ValidationError("Data must be a JSON object or YAML string")
+        
+        if not isinstance(parsed, dict):
+            raise ValidationError("Data must be a dictionary")
+        
+        await import_documents(parsed, purge=purge, collection_name=agent_id)
+        
+        return {"message": "Documents imported successfully"}
+        
+    except Exception as e:
+        logger.error(f"Error importing documents: {e}")
+        raise ValidationError(f"Import failed: {str(e)}")

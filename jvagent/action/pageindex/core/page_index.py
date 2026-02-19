@@ -75,29 +75,49 @@ async def check_title_appearance_in_start(title, page_text, model=None, logger=N
 async def check_title_appearance_in_start_concurrent(structure, page_list, model=None, logger=None):
     if logger:
         logger.info("Checking title appearance in start concurrently")
-    
+
+    # Build a set of physical_index values that are shared by more than one
+    # consecutive neighbour.  When multiple siblings all have the same page
+    # index they definitely do NOT start at the top of that page, so we can
+    # skip the LLM call and default to 'no' without any cost.
+    from collections import Counter
+    page_index_counts = Counter(
+        item.get('physical_index')
+        for item in structure
+        if item.get('physical_index') is not None
+    )
+    shared_pages = {idx for idx, cnt in page_index_counts.items() if cnt > 1}
+
     # skip items without physical_index
     for item in structure:
         if item.get('physical_index') is None:
             item['appear_start'] = 'no'
+        elif item['physical_index'] in shared_pages:
+            # Multiple nodes share this page — no node can start at the very
+            # top of the page, so skip the LLM call.
+            item['appear_start'] = 'no'
 
-    # only for items with valid physical_index
+    # only for items with a unique physical_index (genuinely may start at top)
     tasks = []
     valid_items = []
     for item in structure:
-        if item.get('physical_index') is not None:
+        if (
+            item.get('physical_index') is not None
+            and item['physical_index'] not in shared_pages
+        ):
             page_text = page_list[item['physical_index'] - 1][0]
             tasks.append(check_title_appearance_in_start(item['title'], page_text, model=model, logger=logger))
             valid_items.append(item)
 
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    for item, result in zip(valid_items, results):
-        if isinstance(result, Exception):
-            if logger:
-                logger.error(f"Error checking start for {item['title']}: {result}")
-            item['appear_start'] = 'no'
-        else:
-            item['appear_start'] = result
+    if tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for item, result in zip(valid_items, results):
+            if isinstance(result, Exception):
+                if logger:
+                    logger.error(f"Error checking start for {item['title']}: {result}")
+                item['appear_start'] = 'no'
+            else:
+                item['appear_start'] = result
 
     return structure
 
@@ -584,6 +604,23 @@ def process_no_toc(page_list, start_index=1, model=None, logger=None):
 
     toc_with_page_number = convert_physical_index_to_int(toc_with_page_number)
     logger.info(f'convert_physical_index_to_int: {toc_with_page_number}')
+
+    # Deduplicate by title: the LLM sometimes hallucinates repeated section
+    # titles on later pages (e.g. Q entries from page 6 re-appearing on page
+    # 8).  Keep only the first occurrence of each title.
+    seen_titles = set()
+    deduped = []
+    for item in toc_with_page_number:
+        title = item.get('title', '')
+        if title not in seen_titles:
+            seen_titles.add(title)
+            deduped.append(item)
+    if len(deduped) < len(toc_with_page_number) and logger:
+        logger.info(
+            f'Deduplicated TOC: removed {len(toc_with_page_number) - len(deduped)} '
+            f'duplicate title(s)'
+        )
+    toc_with_page_number = deduped
 
     return toc_with_page_number
 
