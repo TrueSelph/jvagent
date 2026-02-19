@@ -816,7 +816,10 @@ class ApiClient {
 
     const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents`
     const response = await this._withFallback((baseURL) =>
-      this.client.post(path, formData, { baseURL })
+      this.client.post(path, formData, { 
+        baseURL,
+        timeout: 1000000 // 5 minutes for file uploads
+      })
     )
     const data = response.data
     if (data?.success && data?.data) return data.data

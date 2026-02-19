@@ -60,6 +60,7 @@ class SwitchboardInterviewInteractAction(InterviewInteractAction):
             "User explicitly requests to switch to another agent by name (SILDSL OR SERT)",
             "User explicitly asks to connect to a specific agent",
             "User explicitly asks to change department or service",
+            "User requested to be removed from the agent",
             "User says phrases like: 'switch to...', 'connect me to...', 'transfer me to...', 'I want [agent name]', 'change agent'",
             "DO NOT trigger this action if the user says generic cancellation words such as: 'cancel', 'stop', 'nevermind', 'exit', 'leave', unless they clearly mention switching agents.",
             "This action should only trigger when the user clearly intent to change an agent"
@@ -73,11 +74,11 @@ class SwitchboardInterviewInteractAction(InterviewInteractAction):
         default_factory=lambda: [
             {
                 "name": "selected_agent",
-                "question": "Please select an agent you wish to be routed to",
+                "question": "Which agent would you like to switch to?",
                 "input_context_provider": "get_switchboard_agents",  # Dynamic context from decorator
                 "constraints": {
                     "description": "Select the correct agent the user wishes to route to",
-                    "instruction": "IF user intent is to disconnect, leave, remove, exit, or stop interacting, THEN classify as CANCELLATION",
+                    "instruction": "Only select a valid agent name from the context. ",
                     "type": "string",
                 },
                 "required": True
@@ -112,7 +113,9 @@ class SwitchboardInterviewInteractAction(InterviewInteractAction):
             Tuple of (ValidationStatus, Optional error message)
         """
         if not value or not isinstance(value, str):
+            # await interview_action.respond(visitor)
             return ValidationStatus.INVALID, "Ask: Please select an agent you wish to be routed to."
+
 
         return ValidationStatus.VALID, None
 
@@ -133,8 +136,6 @@ class SwitchboardInterviewInteractAction(InterviewInteractAction):
         Returns:
             Dictionary with 'agents' key containing comma-separated agent aliases
         """
-        conversation = visitor.conversation
-        conversation.context["switchboard_agent"] = {}
         
         switchboard_action = await interview_action.get_action("SwitchboardInteractAction")
         agents = await switchboard_action.get_switchboard_agents()

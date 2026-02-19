@@ -53,9 +53,21 @@ class SwitchboardInteractAction(InteractAction):
         Args:
             visitor: InteractWalker instance containing interaction context
         """
-        # Skip if switchboard interview is already running
+        # Clear switchboard_agent when interview is active, except for when the interview is just completed  
         if "SwitchboardInterviewInteractAction" in visitor.interaction.actions:
-            return
+            can_clear_switchboard = True
+            for event in visitor.interaction.events:
+                if event.get("action_name") == "SwitchboardInterviewInteractAction" and "Completed activity" in event.get("content"):
+                    can_clear_switchboard = False
+                    break
+
+            if can_clear_switchboard:
+                conversation = visitor.conversation
+                conversation.context["switchboard_agent"] = {}
+                visitor.interaction.directives = []
+                await visitor.interaction.save()
+            else:
+                return
 
         # Check if agent routing is requested
         conversation = visitor.conversation
@@ -101,7 +113,7 @@ class SwitchboardInteractAction(InteractAction):
                     visitor.interaction.response = sub_walker.interaction.response
                     await visitor.interaction.save()                    
 
-                return
+                    return
 
         # Present available agents for selection
         switchboard_agents = await self.get_switchboard_agents()
