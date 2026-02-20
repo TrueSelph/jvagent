@@ -125,7 +125,25 @@ You must follow this step-by-step reasoning process before classifying and extra
 5. EXTRACTION: Extract values using the appropriate mode (verbatim, normalized, or select) based on field type.
 6. VERIFICATION: Verify the extracted value genuinely satisfies the field's expected content description."""
 
-CLASSIFICATION_DECISION_ORDER = """DECISION ORDER: 1) CANCELLATION (any state). When utterance contains both cancellation language and extractable content, CANCELLATION takes precedence. 2) If state=REVIEW and pure affirmation → CONFIRMATION. 3) If explicit change language + field in Answered → UPDATE. When both UPDATE language and new value appear, prefer UPDATE. 4) If explicit refusal + field [OPTIONAL] → DECLINE. 5) If answer to Unanswered field → SUBMISSION. 6) Else → NONE."""
+CLASSIFICATION_DECISION_ORDER = """DECISION ORDER:
+
+1. CANCELLATION (any state)
+   - If the utterance contains cancellation intent, return CANCELLATION.
+   - This takes absolute priority, even if extractable content is present.
+2. CONFIRMATION (only if state = REVIEW)
+   - If the utterance is a pure affirmation (e.g., "yes", "confirm", "looks good"), return CONFIRMATION.
+3. SUBMISSION
+   - If the utterance provides a valid answer to an UNANSWERED field, return SUBMISSION.
+   - This takes priority over UPDATE to prevent overwriting when multiple values are being collected.
+4. UPDATE
+   - If the utterance provides a value that matches or closely resembles an ALREADY-ANSWERED field, return UPDATE.
+     • Applies even without explicit change language
+     • Includes corrected, extended, or reformatted values
+   - If explicit change language is used and the field exists in Answered, return UPDATE.
+5. DECLINE
+   - If the utterance expresses refusal and the field is OPTIONAL, return DECLINE.
+6. NONE
+   - If none of the above conditions are met, return NONE."""
 
 CLASSIFICATION_INTENT_RULES = """INTENT CLASSIFICATION (choose exactly one):
 
@@ -147,19 +165,24 @@ CLASSIFICATION_INTENT_RULES = """INTENT CLASSIFICATION (choose exactly one):
    - User answers an UNANSWERED question
    - Field MUST be in Unanswered fields list
    - CRITICAL: "yes"/"no" responses in active state
-     * If field description expects "yes or no" answers → SUBMISSION
-     * If field is [OPTIONAL] and no yes/no expectation → DECLINE (user declining, not answering)
-   - If field is in Answered fields → UPDATE instead
+     * If field description expects "yes or no" answers ? SUBMISSION
+     * If field is [OPTIONAL] and no yes/no expectation ? DECLINE (user declining, not answering)
+   - CRITICAL: Before classifying as SUBMISSION, ALWAYS check if the value better matches an Answered field (→ UPDATE)
    - Invalid format is still SUBMISSION (validation layer handles it)
    - When the utterance is a bare value matching an unanswered field's type (email format for email field, digits for phone, etc.), treat as SUBMISSION and extract the value. Do not ask for clarification.
 
 4. UPDATE
-   - User changes an ALREADY-ANSWERED field
-   - REQUIRES explicit change language: "change ... to...", "update...", "actually I prefer...", 
-     "make it...", "switch to...", "no, change...", "I meant...", "let me correct...", 
-     "replace with...", "should be..."
-   - Field must be in Answered fields (not Unanswered)
-   - Bare values or "yes"/"no" are NEVER UPDATE → classify as SUBMISSION or DECLINE
+   - User changes, corrects, or re-provides a value for an **ALREADY-ANSWERED field**
+   - Field must be in Answered fields
+   - DOES NOT require explicit change language
+   - Trigger UPDATE when:
+     - Value closely matches or extends an existing answered field
+     - User provides a more complete version (e.g., phone number now includes country code)
+     - User corrects spelling, formatting, or adds missing components
+   - Examples:
+     - Old: "6235678" → New: "592-623-5678" → UPDATE
+     - Old: "John" → New: "John Smith" → UPDATE
+   - Bare values CAN be UPDATE if they align with an Answered field
 
 5. DECLINE
    - User explicitly refuses to answer an optional or required field
