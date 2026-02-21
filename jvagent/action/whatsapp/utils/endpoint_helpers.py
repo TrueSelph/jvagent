@@ -216,6 +216,22 @@ async def finalize_whatsapp_interaction(
         logger.error(f"Error finalizing interaction for user {sender}: {e}")
 
 
+async def _clear_whatsapp_typing(
+    agent: Any, agent_id: str, sender: str, is_group: bool = False
+) -> None:
+    """Clear typing indicator for WhatsApp. Safe to call multiple times."""
+    try:
+        if not agent:
+            return
+        whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
+        if whatsapp_action and whatsapp_action.is_configured():
+            await whatsapp_action.api().set_typing_status(
+                phone=sender, value=False, is_group=is_group
+            )
+    except Exception as e:
+        logger.debug(f"Failed to clear typing status for {sender}: {e}")
+
+
 def _convert_message_payload_to_dict(data: Any) -> Dict[str, Any]:
     """Convert MessagePayload to dict safely.
     
@@ -459,15 +475,17 @@ async def _process_interaction_async(
         logger.error(f"Error ensuring adapter registration for agent {agent_id}: {e}")
         # Continue anyway - adapter might still work if already registered
     
+    is_group = getattr(data, "isGroup", False)
     try:
         # Convert MessagePayload to dict for InteractWalker
         data_dict = _convert_message_payload_to_dict(data)
+        is_group = is_group or data_dict.get("isGroup", False)
 
         # Create walker using helper function
         walker = await create_whatsapp_walker(agent_id, utterance, sender, data_dict, sender_name=sender_name)
         if not walker:
             return
-            
+
         # Spawn walker with error handling
         try:
             await walker.spawn(agent)
@@ -486,3 +504,5 @@ async def _process_interaction_async(
             f"Error processing WhatsApp interaction for agent {agent_id}: {e}",
             exc_info=True,
         )
+    finally:
+        await _clear_whatsapp_typing(agent, agent_id, sender, is_group)
