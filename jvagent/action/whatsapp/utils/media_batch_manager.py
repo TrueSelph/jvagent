@@ -194,13 +194,15 @@ class MediaBatchManager:
         """Internal batch processing logic."""
         # Import here to avoid circular dependency
         from .endpoint_helpers import (
+            _clear_whatsapp_typing,
             _store_whatsapp_metadata_in_interaction,
             create_whatsapp_walker,
             finalize_whatsapp_interaction,
         )
-        
+
         agent_id = batch["agent_id"]
-        
+        is_group = batch.get("data", {}).get("isGroup", False)
+
         try:
             # Combine all media URLs
             all_media = batch["media_urls"]
@@ -247,12 +249,15 @@ class MediaBatchManager:
             
             # Finalize interaction using helper function
             await finalize_whatsapp_interaction(walker, agent_id, sender)
-        
+
         except Exception as e:
             logger.error(
                 f"Error processing batched media for user {sender}: {e}",
                 exc_info=True,
             )
+        finally:
+            agent = await Agent.get(agent_id)
+            await _clear_whatsapp_typing(agent, agent_id, sender, is_group)
     
     async def _cleanup_batch(self, sender: str) -> None:
         """Remove batch for sender without processing (cleanup on error)."""

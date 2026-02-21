@@ -13,6 +13,7 @@ from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.exceptions import DatabaseError, ValidationError
 
 from .utils.endpoint_helpers import (
+    _clear_whatsapp_typing,
     _handle_media_message,
     _handle_voice_message,
     _process_interaction_async,
@@ -133,10 +134,11 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             except Exception as e:
                 logger.debug(f"Failed to set typing status for {sender}: {e}")
         else:
+            await _clear_whatsapp_typing(agent, agent_id, sender, getattr(data, "isGroup", False))
             return {"status": "ignored", "response": "Ignore interaction"}
 
-        
         if utterance and len(utterance) > whatsapp_action.utterance_max_length:
+            await _clear_whatsapp_typing(agent, agent_id, sender, getattr(data, "isGroup", False))
             return {"status": "ignored", "response": "Utterance too long."}
 
         # Check if webhook should run in async mode (background task)
