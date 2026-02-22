@@ -118,7 +118,7 @@ class BaseModelAction(Action, ABC):
             result = None
             if hasattr(self, "_last_result"):
                 result = getattr(self, "_last_result", None)
-            
+
             # Get provider from result if available, otherwise from self
             # Implementing classes must set provider attribute explicitly
             provider = "unknown"
@@ -126,17 +126,20 @@ class BaseModelAction(Action, ABC):
                 provider = result.provider
             elif hasattr(self, "provider") and self.provider:
                 provider = self.provider
-            
+
             # Check if usage is estimated (for streaming results)
             usage_estimated = False
             if result and hasattr(result, "_usage_estimated"):
                 usage_estimated = getattr(result, "_usage_estimated", False)
-            
+
             # Use updated metrics from result if available (for streaming that completed)
             if result and hasattr(result, "metrics"):
                 result_metrics = result.metrics
                 # Check if result has updated usage (from token estimation)
-                if any(result_metrics.get(key, 0) > 0 for key in ["prompt_tokens", "completion_tokens", "total_tokens"]):
+                if any(
+                    result_metrics.get(key, 0) > 0
+                    for key in ["prompt_tokens", "completion_tokens", "total_tokens"]
+                ):
                     # Use the updated metrics from result
                     usage = {
                         "prompt_tokens": result_metrics.get("prompt_tokens", 0),
@@ -144,7 +147,7 @@ class BaseModelAction(Action, ABC):
                         "total_tokens": result_metrics.get("total_tokens", 0),
                     }
                     usage_estimated = getattr(result, "_usage_estimated", False)
-            
+
             # Get model from result if available (actual model used), otherwise fall back to self.model
             # This ensures we report the actual model used (e.g., from PersonaAction override)
             # rather than the LanguageModelAction's default model
@@ -153,10 +156,14 @@ class BaseModelAction(Action, ABC):
                 model = result.model
             elif hasattr(self, "model") and self.model:
                 model = self.model
-            
+
             # Get calling action name from result, fallback on context then model action
             action_name = None
-            if result and hasattr(result, "calling_action_name") and result.calling_action_name:
+            if (
+                result
+                and hasattr(result, "calling_action_name")
+                and result.calling_action_name
+            ):
                 action_name = result.calling_action_name
             elif hasattr(self, "_calling_action_name") and self._calling_action_name:
                 action_name = self._calling_action_name
@@ -164,8 +171,9 @@ class BaseModelAction(Action, ABC):
                 action_name = self._action_name
             else:
                 from jvagent.action.model.context import get_calling_action_name
+
                 action_name = get_calling_action_name() or self.get_class_name()
-            
+
             # Get system prompt, user prompt, and history from result
             system_prompt = None
             user_prompt = None
@@ -177,7 +185,7 @@ class BaseModelAction(Action, ABC):
                     user_prompt = result.prompt
                 if hasattr(result, "history") and result.history:
                     history = result.history
-            
+
             # Build comprehensive observability data
             data = {
                 "provider": provider,
@@ -187,19 +195,19 @@ class BaseModelAction(Action, ABC):
                 "estimated": usage_estimated,  # Flag to indicate estimated vs actual metrics
                 "called_by": action_name,  # Always include called_by with action name
             }
-            
+
             # Add system prompt (the actual prompt that was executed)
             if system_prompt:
                 data["system_prompt"] = system_prompt
-            
+
             # Add user prompt (the user's input)
             if user_prompt:
                 data["user_prompt"] = user_prompt
-            
+
             # Add history (conversation history) for observability
             if history:
                 data["history"] = history
-            
+
             # For language models, try to include response if available
             # This is a best-effort attempt - response may not be available at track_usage time
             if result:
@@ -208,7 +216,7 @@ class BaseModelAction(Action, ABC):
                 # to avoid interfering with the caller's stream consumption
                 response_text = None
                 is_streaming = getattr(result, "is_streaming", False)
-                
+
                 if hasattr(result, "response") and result.response:
                     # Response is already available (cached or sync)
                     response_text = result.response
@@ -227,17 +235,17 @@ class BaseModelAction(Action, ABC):
                     # (stream has been consumed by caller)
                     if hasattr(result, "response") and result.response:
                         response_text = result.response
-                
+
                 if response_text:
                     data["response"] = response_text
-                
+
                 data["is_streaming"] = is_streaming
-                
+
                 if hasattr(result, "finish_reason") and result.finish_reason:
                     data["finish_reason"] = result.finish_reason
                 if hasattr(result, "tool_calls") and result.tool_calls:
                     data["tool_calls"] = result.tool_calls
-            
+
             # Build event and append directly to interaction
             event = {
                 "event_type": event_type,
@@ -245,16 +253,16 @@ class BaseModelAction(Action, ABC):
                 "timestamp": time.time(),
             }
             interaction.observability_metrics.append(event)
-            
+
             # Save to mark dirty (with deferred saves enabled, this just sets _dirty = True)
             await interaction.save()
-            
+
         except Exception as e:
             logger.debug(f"Failed to emit observability event: {e}")
 
     async def _initialize_http_client(self) -> None:
         """Initialize HTTP client with connection pooling.
-        
+
         This method can be called multiple times safely - it will only initialize
         the client if it doesn't already exist. Called automatically during
         on_register() and when HTTP client is needed for queries.
@@ -277,7 +285,7 @@ class BaseModelAction(Action, ABC):
         HTTP client initialization is handled automatically.
         """
         logger.info(f"Model action registered: {self.label} (model: {self.model})")
-        
+
         # Initialize HTTP client automatically
         await self._initialize_http_client()
 
@@ -291,5 +299,5 @@ class BaseModelAction(Action, ABC):
             await self._http_client.aclose()
             self._http_client = None
             logger.debug("HTTP client closed")
-        
+
         logger.info(f"Model action disabled: {self.label}")

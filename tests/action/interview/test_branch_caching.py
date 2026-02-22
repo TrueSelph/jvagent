@@ -1,11 +1,14 @@
 """Tests for branch caching and path recording."""
 
-import pytest
 from unittest.mock import AsyncMock
 
+import pytest
+
 from jvagent.action.interview.core.foundation.enums import InterviewState
+from jvagent.action.interview.core.graph.question_branch_evaluator import (
+    QuestionBranchEvaluator,
+)
 from jvagent.action.interview.core.session.interview_session import InterviewSession
-from jvagent.action.interview.core.graph.question_branch_evaluator import QuestionBranchEvaluator
 from jvagent.action.interview.core.utils.cache_utils import BranchCache
 
 
@@ -21,37 +24,41 @@ async def test_session_with_dynamic_branches(test_db):
             "branches": [
                 {
                     "condition": {"function": "check_contains_sensitive_info"},
-                    "target": "is_sensitive"
+                    "target": "is_sensitive",
                 },
                 {
-                    "condition": {"function": "calculate_urgency_score", "op": ">=", "value": 8},
-                    "target": "urgent_escalation"
-                }
+                    "condition": {
+                        "function": "calculate_urgency_score",
+                        "op": ">=",
+                        "value": 8,
+                    },
+                    "target": "urgent_escalation",
+                },
             ],
-            "default_next": "contact_info"
+            "default_next": "contact_info",
         },
         {
             "name": "is_sensitive",
             "question": "Does this involve sensitive information?",
             "constraints": {"description": "Sensitive flag", "type": "string"},
             "required": False,
-            "default_next": "contact_info"
+            "default_next": "contact_info",
         },
         {
             "name": "urgent_escalation",
             "question": "This is urgent. Let me connect you to someone now.",
             "constraints": {"description": "Urgent routing", "type": "string"},
             "required": False,
-            "default_next": "contact_info"
+            "default_next": "contact_info",
         },
         {
             "name": "contact_info",
             "question": "What's your contact information?",
             "constraints": {"description": "Contact info", "type": "string"},
-            "required": True
-        }
+            "required": True,
+        },
     ]
-    
+
     session = await InterviewSession.create(
         agent_id="test_agent",
         conversation_id="test_conv",
@@ -67,19 +74,23 @@ async def test_session_with_dynamic_branches(test_db):
 
 class TestBranchCaching:
     """Test branch cache (question -> target) and path recording."""
-    
+
     @pytest.mark.asyncio
-    async def test_cache_stores_and_retrieves_target(self, test_session_with_dynamic_branches):
+    async def test_cache_stores_and_retrieves_target(
+        self, test_session_with_dynamic_branches
+    ):
         """Test that resolved branch target is cached and reused."""
         session = test_session_with_dynamic_branches
         branch_cache = BranchCache(session)
-        
+
         assert branch_cache.get("report_description") is None
         branch_cache.set("report_description", "is_sensitive")
         assert branch_cache.get("report_description") == "is_sensitive"
-    
+
     @pytest.mark.asyncio
-    async def test_cache_invalidation_clears_entry(self, test_session_with_dynamic_branches):
+    async def test_cache_invalidation_clears_entry(
+        self, test_session_with_dynamic_branches
+    ):
         """Test that invalidate(question_name) clears that question's cached target."""
         session = test_session_with_dynamic_branches
         branch_cache = BranchCache(session)
@@ -87,9 +98,11 @@ class TestBranchCaching:
         assert branch_cache.get("report_description") == "is_sensitive"
         branch_cache.invalidate("report_description")
         assert branch_cache.get("report_description") is None
-    
+
     @pytest.mark.asyncio
-    async def test_invalidate_targets_single_entry(self, test_session_with_dynamic_branches):
+    async def test_invalidate_targets_single_entry(
+        self, test_session_with_dynamic_branches
+    ):
         """Test targeted invalidation leaves other entries intact."""
         session = test_session_with_dynamic_branches
         branch_cache = BranchCache(session)
@@ -98,7 +111,7 @@ class TestBranchCaching:
         branch_cache.invalidate("report_description")
         assert branch_cache.get("report_description") is None
         assert branch_cache.get("contact_info") == "urgent_escalation"
-    
+
     @pytest.mark.asyncio
     async def test_branch_path_recording(self, test_session_with_dynamic_branches):
         """Test that branch paths are recorded for change detection."""
@@ -108,12 +121,12 @@ class TestBranchCaching:
             "report_description",
             condition_index=0,
             target="is_sensitive",
-            is_default=False
+            is_default=False,
         )
         path = branch_cache.get_previous_path("report_description")
         assert path is not None
         assert path["target"] == "is_sensitive"
-    
+
     @pytest.mark.asyncio
     async def test_pruned_response_tracking(self, test_session_with_dynamic_branches):
         """Test that pruned responses are tracked for audit trail."""
@@ -122,15 +135,17 @@ class TestBranchCaching:
         branch_cache.record_pruned_response(
             "is_sensitive",
             "yes",
-            "branch_path_change: is_sensitive -> urgent_escalation"
+            "branch_path_change: is_sensitive -> urgent_escalation",
         )
         pruned = branch_cache.get_pruned_responses()
         assert "is_sensitive" in pruned
         assert pruned["is_sensitive"]["value"] == "yes"
         assert "branch_path_change" in pruned["is_sensitive"]["reason"]
-    
+
     @pytest.mark.asyncio
-    async def test_invalidate_all_clears_cache(self, test_session_with_dynamic_branches):
+    async def test_invalidate_all_clears_cache(
+        self, test_session_with_dynamic_branches
+    ):
         """Test invalidate_all clears entire branch cache."""
         session = test_session_with_dynamic_branches
         branch_cache = BranchCache(session)
@@ -143,54 +158,57 @@ class TestBranchCaching:
 
 class TestBranchDependencyTracking:
     """Test automatic response dependency tracking in branch functions."""
-    
+
     @pytest.mark.asyncio
     async def test_dependency_tracking_context_manager(self):
         """Test that response access is tracked via context manager."""
         from jvagent.action.interview.core.foundation.decorators import (
+            get_tracked_responses,
             track_response_access,
-            get_tracked_responses
         )
-        
+
         with track_response_access() as tracker:
             # Access tracking should be active
             assert get_tracked_responses() is not None
             # Simulate tracking some keys
-            from jvagent.action.interview.core.foundation.decorators import record_response_access
+            from jvagent.action.interview.core.foundation.decorators import (
+                record_response_access,
+            )
+
             record_response_access("field1")
             record_response_access("field2")
-            
+
             # Should have tracked accesses
             tracked = tracker.get()
             assert "field1" in tracked
             assert "field2" in tracked
-        
+
         # After context, tracking should be cleared
         assert get_tracked_responses() is None
-    
+
     @pytest.mark.asyncio
     async def test_instrumented_responses_dict_access(self):
         """Test that _InstrumentedResponses tracks all access methods."""
         from jvagent.action.interview.core.foundation.decorators import (
             _InstrumentedResponses,
-            track_response_access
+            track_response_access,
         )
-        
+
         original = {"field1": "value1", "field2": "value2"}
         instrumented = _InstrumentedResponses(original)
-        
+
         with track_response_access() as tracker:
             # Test .get() access
             val = instrumented.get("field1")
             assert val == "value1"
-            
+
             # Test __getitem__ access
             val = instrumented["field2"]
             assert val == "value2"
-            
+
             # Test __contains__ access
             assert "field1" in instrumented
-            
+
             tracked = tracker.get()
             assert "field1" in tracked
             assert "field2" in tracked
@@ -198,7 +216,7 @@ class TestBranchDependencyTracking:
 
 class TestResponsePruning:
     """Test intelligent response pruning when branch paths change."""
-    
+
     @pytest.mark.asyncio
     async def test_detects_path_change(self, test_session_with_dynamic_branches):
         """Test detection of branch path changes."""
@@ -208,25 +226,27 @@ class TestResponsePruning:
             "report_description",
             condition_index=0,
             target="is_sensitive",
-            is_default=False
+            is_default=False,
         )
         new_path = "urgent_escalation"
         old_path = branch_cache.get_previous_path("report_description")
         assert old_path["target"] != new_path
-    
+
     @pytest.mark.asyncio
-    async def test_pruned_response_contains_all_data(self, test_session_with_dynamic_branches):
+    async def test_pruned_response_contains_all_data(
+        self, test_session_with_dynamic_branches
+    ):
         """Test that pruned responses maintain complete audit trail."""
         session = test_session_with_dynamic_branches
         branch_cache = BranchCache(session)
-        
+
         # Record multiple pruned responses
         branch_cache.record_pruned_response("is_sensitive", "yes", "path_change")
         branch_cache.record_pruned_response("urgent_escalation", None, "path_change")
-        
+
         pruned = branch_cache.get_pruned_responses()
         assert len(pruned) == 2
-        
+
         # Each should have required fields
         for question_name, data in pruned.items():
             assert "value" in data
@@ -237,7 +257,7 @@ class TestResponsePruning:
 
 class TestBranchCachingIntegration:
     """Integration tests for branch caching with question walker."""
-    
+
     @pytest.mark.asyncio
     async def test_cache_get_set_consistency(self, test_session_with_dynamic_branches):
         """Test that get returns the same target that was set."""
@@ -248,6 +268,7 @@ class TestBranchCachingIntegration:
         branch_cache.set("report_description", "contact_info")
         assert branch_cache.get("report_description") == "contact_info"
 
+
 class TestPostUpdatePruning:
     """Tests for QuestionPathWalker-based pruning on path change."""
 
@@ -256,7 +277,9 @@ class TestPostUpdatePruning:
         self, test_session_with_dynamic_branches
     ):
         """No responses should be pruned when all answered questions are reachable."""
-        from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
+        from jvagent.action.interview.core.graph.question_path_walker import (
+            QuestionPathWalker,
+        )
 
         session = test_session_with_dynamic_branches
         session.responses = {
@@ -278,7 +301,9 @@ class TestPostUpdatePruning:
         self, test_session_with_dynamic_branches
     ):
         """When path switches from is_sensitive to contact_info, is_sensitive is pruned."""
-        from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
+        from jvagent.action.interview.core.graph.question_path_walker import (
+            QuestionPathWalker,
+        )
 
         session = test_session_with_dynamic_branches
         session.responses = {
@@ -294,14 +319,18 @@ class TestPostUpdatePruning:
         walker._prune_session()
 
         assert "is_sensitive" not in session.responses, "is_sensitive should be pruned"
-        assert "report_description" in session.responses, "report_description should remain"
+        assert (
+            "report_description" in session.responses
+        ), "report_description should remain"
 
     @pytest.mark.asyncio
     async def test_pruned_response_audit_trail(
         self, test_session_with_dynamic_branches
     ):
         """Pruned responses are recorded in the BranchCache audit trail."""
-        from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
+        from jvagent.action.interview.core.graph.question_path_walker import (
+            QuestionPathWalker,
+        )
 
         session = test_session_with_dynamic_branches
         session.responses = {

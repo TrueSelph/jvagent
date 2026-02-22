@@ -143,7 +143,10 @@ class TestAction(Action):
         assert action_class is not None, "Failed to load class"
 
         action_instance = loader.create_action_instance(
-            metadata, agent_id="test_agent_id", agent_name="test_agent", action_class=action_class
+            metadata,
+            agent_id="test_agent_id",
+            agent_name="test_agent",
+            action_class=action_class,
         )
 
         assert action_instance is not None, "Failed to create instance"

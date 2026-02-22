@@ -78,7 +78,8 @@ async def get_action(action_id: str) -> Dict[str, Any]:
     action = await Action.get(action_id)
     if not action:
         raise ResourceNotFoundError(
-            message=f"Action with ID '{action_id}' not found", details={"action_id": action_id}
+            message=f"Action with ID '{action_id}' not found",
+            details={"action_id": action_id},
         )
 
     return {"action": await action.export()}
@@ -170,7 +171,8 @@ async def update_action(
     action = await Action.get(action_id)
     if not action:
         raise ResourceNotFoundError(
-            message=f"Action with ID '{action_id}' not found", details={"action_id": action_id}
+            message=f"Action with ID '{action_id}' not found",
+            details={"action_id": action_id},
         )
 
     # Track all updates
@@ -201,7 +203,9 @@ async def update_action(
     if properties:
         # Call update() directly on the entity instance
         # This inherits from Object.update() and correctly uses ExampleAction's class hierarchy
-        properties_result = await action.update(properties, skip_protected=True, skip_private=True)
+        properties_result = await action.update(
+            properties, skip_protected=True, skip_private=True
+        )
 
         # Merge properties update results
         if properties_result["updated"]:
@@ -228,9 +232,7 @@ async def update_action(
     if has_updates and not has_skipped:
         message = f"Successfully updated {len(updated_fields)} field(s)"
     elif has_updates and has_skipped:
-        message = (
-            f"Partially updated: {len(updated_fields)} succeeded, {len(skipped_fields)} skipped"
-        )
+        message = f"Partially updated: {len(updated_fields)} succeeded, {len(skipped_fields)} skipped"
     elif has_skipped:
         message = f"Update failed: {len(skipped_fields)} field(s) skipped"
     else:
@@ -243,7 +245,11 @@ async def update_action(
         "message": message,
     }
 
-    return {"action": await action.export(), "message": message, "update_result": update_result}
+    return {
+        "action": await action.export(),
+        "message": message,
+        "update_result": update_result,
+    }
 
 
 @endpoint(
@@ -361,7 +367,9 @@ async def list_agent_actions(
     tags=["Action"],
     response=success_response(
         data={
-            "action": ResponseField(field_type=Dict[str, Any], description="Action information"),
+            "action": ResponseField(
+                field_type=Dict[str, Any], description="Action information"
+            ),
             "message": ResponseField(field_type=str, description="Success message"),
         }
     ),
@@ -382,7 +390,8 @@ async def enable_action_endpoint(action_id: str) -> Dict[str, Any]:
     action = await Action.get(action_id)
     if not action:
         raise ResourceNotFoundError(
-            message=f"Action with ID '{action_id}' not found", details={"action_id": action_id}
+            message=f"Action with ID '{action_id}' not found",
+            details={"action_id": action_id},
         )
 
     await action.enable()
@@ -400,7 +409,9 @@ async def enable_action_endpoint(action_id: str) -> Dict[str, Any]:
     tags=["Action"],
     response=success_response(
         data={
-            "action": ResponseField(field_type=Dict[str, Any], description="Action information"),
+            "action": ResponseField(
+                field_type=Dict[str, Any], description="Action information"
+            ),
             "message": ResponseField(field_type=str, description="Success message"),
         }
     ),
@@ -421,7 +432,8 @@ async def disable_action_endpoint(action_id: str) -> Dict[str, Any]:
     action = await Action.get(action_id)
     if not action:
         raise ResourceNotFoundError(
-            message=f"Action with ID '{action_id}' not found", details={"action_id": action_id}
+            message=f"Action with ID '{action_id}' not found",
+            details={"action_id": action_id},
         )
 
     await action.disable()
@@ -439,7 +451,9 @@ async def disable_action_endpoint(action_id: str) -> Dict[str, Any]:
     tags=["Action"],
     response=success_response(
         data={
-            "action": ResponseField(field_type=Dict[str, Any], description="Action information"),
+            "action": ResponseField(
+                field_type=Dict[str, Any], description="Action information"
+            ),
             "message": ResponseField(field_type=str, description="Success message"),
         }
     ),
@@ -460,7 +474,8 @@ async def reload_action_endpoint(action_id: str) -> Dict[str, Any]:
     action = await Action.get(action_id)
     if not action:
         raise ResourceNotFoundError(
-            message=f"Action with ID '{action_id}' not found", details={"action_id": action_id}
+            message=f"Action with ID '{action_id}' not found",
+            details={"action_id": action_id},
         )
 
     await action.reload()
@@ -478,7 +493,9 @@ async def reload_action_endpoint(action_id: str) -> Dict[str, Any]:
     tags=["Action"],
     response=success_response(
         data={
-            "health": ResponseField(field_type=Dict[str, Any], description="Health information"),
+            "health": ResponseField(
+                field_type=Dict[str, Any], description="Health information"
+            ),
         }
     ),
 )
@@ -498,7 +515,8 @@ async def check_action_health(action_id: str) -> Dict[str, Any]:
     action = await Action.get(action_id)
     if not action:
         raise ResourceNotFoundError(
-            message=f"Action with ID '{action_id}' not found", details={"action_id": action_id}
+            message=f"Action with ID '{action_id}' not found",
+            details={"action_id": action_id},
         )
 
     health = await action.healthcheck()
@@ -510,4 +528,3 @@ async def check_action_health(action_id: str) -> Dict[str, Any]:
         health = {"healthy": True, "result": health}
 
     return {"health": health}
-

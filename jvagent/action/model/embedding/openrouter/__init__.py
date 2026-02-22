@@ -3,4 +3,3 @@
 from .openrouter import OpenRouterEmbeddingModelAction
 
 __all__ = ["OpenRouterEmbeddingModelAction"]
-

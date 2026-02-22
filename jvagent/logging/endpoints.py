@@ -88,6 +88,3 @@ async def get_logs_by_agent(
     )
 
     return result
-
-
-

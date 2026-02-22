@@ -112,11 +112,11 @@ class MyAction(Action):
     async def my_method(self):
         # Get the model action (use actual ID or find by label)
         model = await OpenAILanguageModelAction.find_one({"context.label": "openai_lm"})
-        
+
         # Text query
         result = await model.query_sync("Hello, how are you?")
         response = await result.get_response()
-        
+
         # Vision query
         content = model.create_image_content(
             text="What's in this image?",

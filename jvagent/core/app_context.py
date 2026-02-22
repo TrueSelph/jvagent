@@ -14,9 +14,9 @@ _app_root: Optional[str] = None
 
 def set_app_root(path: str) -> None:
     """Set the application root path.
-    
+
     This should be called by the CLI before any config loading occurs.
-    
+
     Args:
         path: Absolute path to the application root directory
     """
@@ -26,7 +26,7 @@ def set_app_root(path: str) -> None:
 
 def get_app_root() -> str:
     """Get the application root path.
-    
+
     Returns:
         The app root path if set, otherwise the current working directory
     """

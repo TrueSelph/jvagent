@@ -16,14 +16,14 @@ from jvagent.action.base import Action
 from jvagent.action.persona.prompts import (
     CHANNEL_OVERRIDE_PREAMBLE,
     CONTINUATION_GUIDANCE_PROMPT,
-    DIRECTIVES_SECTION_PROMPT,
     DIRECTIVE_COMPLIANCE_CHECK_PROMPT,
+    DIRECTIVES_SECTION_PROMPT,
+    INTERPRETATION_INSIGHTS_PROMPT,
     NO_DIRECTIVES_SUB_PROMPT,
     PARAMETERS_SUB_PROMPT,
     RESPONSE_LENGTH_PROMPT,
-    SYSTEM_PROMPT_TEMPLATE,
-    INTERPRETATION_INSIGHTS_PROMPT,
     RESPONSE_PROTOCOL_PROMPT,
+    SYSTEM_PROMPT_TEMPLATE,
     format_conditional_section,
     format_parameter,
     get_channel_directive,
@@ -53,9 +53,7 @@ class PersonaAction(Action):
     """
 
     # Persona attributes (for prompt formatting if using default template)
-    persona_name: str = attribute(
-        default="Agent", description="Agent display name"
-    )
+    persona_name: str = attribute(default="Agent", description="Agent display name")
     persona_description: str = attribute(
         default="You are friendly and helpful",
         description="Detailed agent description",
@@ -65,7 +63,7 @@ class PersonaAction(Action):
     )
     phonetic_substitutions: Dict[str, str] = attribute(
         default_factory=dict,
-        description="Map of original -> phonetic replacement for voice channel (e.g. essequibo: esseequibbo)"
+        description="Map of original -> phonetic replacement for voice channel (e.g. essequibo: esseequibbo)",
     )
 
     # Model Configuration
@@ -73,9 +71,7 @@ class PersonaAction(Action):
         default="OpenAILanguageModelAction",
         description="Entity type of the LanguageModelAction to use (e.g., OpenAILanguageModelAction)",
     )
-    model: str = attribute(
-        default="gpt-4o", description="Default model name"
-    )
+    model: str = attribute(default="gpt-4o", description="Default model name")
     model_temperature: float = attribute(
         default=0.3, description="Temperature for LLM generation"
     )
@@ -99,13 +95,14 @@ class PersonaAction(Action):
 
     # System prompt (default property)
     system_prompt: str = attribute(
-        default=SYSTEM_PROMPT_TEMPLATE, description="System prompt template for the agent"
+        default=SYSTEM_PROMPT_TEMPLATE,
+        description="System prompt template for the agent",
     )
 
     # Structured output configuration (optional, default False for backward compatibility)
     use_structured_output: bool = attribute(
         default=False,
-        description="Enable structured JSON output with insights, context evaluation, and revisions (default: False for backward compatibility)"
+        description="Enable structured JSON output with insights, context evaluation, and revisions (default: False for backward compatibility)",
     )
 
     # Standard collection of configurable parameters
@@ -113,32 +110,32 @@ class PersonaAction(Action):
         default_factory=lambda: [
             {
                 "condition": "User asks about OpenAI or your origin.",
-                "response": "Deny any association with OpenAI even when asked directly."
+                "response": "Deny any association with OpenAI even when asked directly.",
             },
             {
                 "condition": "User asks for your identity.",
-                "response": "Refer to yourself only by your name. Never say you are an AI language model."
+                "response": "Refer to yourself only by your name. Never say you are an AI language model.",
             },
             {
                 "condition": "User request is outside your role or ability.",
-                "response": "Admit that the request is outside your role or ability; Do not give inaccurate answers and avoid giving details not explicitly stated in this prompt."
+                "response": "Admit that the request is outside your role or ability; Do not give inaccurate answers and avoid giving details not explicitly stated in this prompt.",
             },
             {
                 "condition": "User requests information that you have already provided.",
-                "response": "Make the user aware that you have already provided the information."
+                "response": "Make the user aware that you have already provided the information.",
             },
             {
                 "condition": "The conversation seems repetitive.",
-                "response": "Bring the circular conversation to the user's attention."
+                "response": "Bring the circular conversation to the user's attention.",
             },
             {
                 "condition": "The user has diverged from the ongoing activity highlghted in conversation history",
-                "response": "Respond but in closing, remind the user to return to complete the ongoing activity"
+                "response": "Respond but in closing, remind the user to return to complete the ongoing activity",
             },
             {
                 "condition": "You are likely to mention how recent your knowledge cutoff is",
-                "response": "Do not give explicit details about your knowledge cutoff. Instead, respond with a general statement like 'I have access to a wealth of information but I admit I do not know everything"
-            }
+                "response": "Do not give explicit details about your knowledge cutoff. Instead, respond with a general statement like 'I have access to a wealth of information but I admit I do not know everything",
+            },
         ],
         description="Standard collection of configurable parameters to apply when executing the prompt",
     )
@@ -201,11 +198,15 @@ class PersonaAction(Action):
         # This allows accurate recording of persona-level parameters applied to each response
         # Duplicate prevention is handled by interaction.add_parameters()
         persona_action_name = self.get_class_name()
-        persona_parameters_to_add = list(self.parameters) if self.parameters is not None else []
+        persona_parameters_to_add = (
+            list(self.parameters) if self.parameters is not None else []
+        )
 
         if persona_parameters_to_add:
             # Only save if parameters were actually added (not duplicates)
-            if interaction.add_parameters(persona_parameters_to_add, persona_action_name):
+            if interaction.add_parameters(
+                persona_parameters_to_add, persona_action_name
+            ):
                 await interaction.save()
 
         # Get unexecuted directives and parameters (now includes persona parameters)
@@ -233,9 +234,18 @@ class PersonaAction(Action):
 
         # Generate response using direct prompt approach
         return await self._generate_response(
-            interaction, visitor, applicable_directives, applicable_parameters,
-            use_history, history_limit, with_utterance, with_interpretation,
-            with_event, with_response, max_statement_length, transient
+            interaction,
+            visitor,
+            applicable_directives,
+            applicable_parameters,
+            use_history,
+            history_limit,
+            with_utterance,
+            with_interpretation,
+            with_event,
+            with_response,
+            max_statement_length,
+            transient,
         )
 
     async def _get_user_display_name(self, interaction: Interaction) -> str:
@@ -315,15 +325,23 @@ class PersonaAction(Action):
         if not response:
             return
         response_bus = getattr(visitor, "response_bus", None) if visitor else None
-        has_bus = bool(response_bus and visitor and getattr(visitor, "session_id", None))
+        has_bus = bool(
+            response_bus and visitor and getattr(visitor, "session_id", None)
+        )
 
         if not has_bus:
             if not transient:
                 current_response = interaction.response or ""
                 response_changed = False
                 # Continuing (append with separator) vs replace/set
-                if current_response and current_response.strip() and current_response != response:
-                    response_changed = interaction.set_response(f"{current_response}\n\n{response}")
+                if (
+                    current_response
+                    and current_response.strip()
+                    and current_response != response
+                ):
+                    response_changed = interaction.set_response(
+                        f"{current_response}\n\n{response}"
+                    )
                 else:
                     response_changed = interaction.set_response(response)
                 if response_changed:
@@ -395,19 +413,27 @@ class PersonaAction(Action):
                     if "insights" in data:
                         logger.debug(f"PersonaAction insights: {data['insights']}")
                     if "context_evaluation" in data:
-                        logger.debug(f"PersonaAction context evaluation: {data['context_evaluation']}")
+                        logger.debug(
+                            f"PersonaAction context evaluation: {data['context_evaluation']}"
+                        )
 
                     return final_content
 
             # Fallback: if no revisions, return the whole response
-            logger.warning("PersonaAction: Structured output enabled but no revisions found in response")
+            logger.warning(
+                "PersonaAction: Structured output enabled but no revisions found in response"
+            )
             return response if isinstance(response, str) else json.dumps(response)
 
         except json.JSONDecodeError as e:
-            logger.warning(f"PersonaAction: Failed to parse structured JSON output: {e}. Returning raw response.")
+            logger.warning(
+                f"PersonaAction: Failed to parse structured JSON output: {e}. Returning raw response."
+            )
             return response if isinstance(response, str) else str(response)
         except Exception as e:
-            logger.error(f"PersonaAction: Error parsing structured output: {e}", exc_info=True)
+            logger.error(
+                f"PersonaAction: Error parsing structured output: {e}", exc_info=True
+            )
             return response if isinstance(response, str) else str(response)
 
     async def _compose_prompt(
@@ -439,16 +465,14 @@ class PersonaAction(Action):
                 interaction.response or "",
                 max_length=2000,
                 keep_last=True,
-                interaction=interaction
+                interaction=interaction,
             )
             user_utterance = await Conversation.truncate_statement(
-                interaction.utterance or "",
-                max_length=500,
-                interaction=interaction
+                interaction.utterance or "", max_length=500, interaction=interaction
             )
             continuation_guidance = CONTINUATION_GUIDANCE_PROMPT.format(
                 previous_response=previous_response or "(No previous response)",
-                user_utterance=user_utterance or "(No user utterance)"
+                user_utterance=user_utterance or "(No user utterance)",
             )
 
         capabilities_str = (
@@ -458,7 +482,9 @@ class PersonaAction(Action):
         )
 
         interpretation_section = (
-            INTERPRETATION_INSIGHTS_PROMPT.format(interpretation=interaction.interpretation)
+            INTERPRETATION_INSIGHTS_PROMPT.format(
+                interpretation=interaction.interpretation
+            )
             if interaction.interpretation and interaction.interpretation.strip()
             else ""
         )
@@ -471,7 +497,7 @@ class PersonaAction(Action):
             )
             directives_section = DIRECTIVES_SECTION_PROMPT.format(
                 directive_list=directive_list,
-                directive_count=len(applicable_directives)
+                directive_count=len(applicable_directives),
             )
         else:
             directives_section = NO_DIRECTIVES_SUB_PROMPT
@@ -479,10 +505,12 @@ class PersonaAction(Action):
         # Build parameters section
         if applicable_parameters:
             parameter_list = "\n".join(
-                format_parameter(p, index=i+1)
+                format_parameter(p, index=i + 1)
                 for i, p in enumerate(applicable_parameters)
             )
-            parameters_section = PARAMETERS_SUB_PROMPT.format(parameter_list=parameter_list)
+            parameters_section = PARAMETERS_SUB_PROMPT.format(
+                parameter_list=parameter_list
+            )
         else:
             parameters_section = ""
 
@@ -496,28 +524,42 @@ class PersonaAction(Action):
             response_length_section = RESPONSE_LENGTH_PROMPT.format(limit=word_limit)
         else:
             response_length_section = ""
-        response_length_section = format_conditional_section(response_length_section, bool(response_length_section))
+        response_length_section = format_conditional_section(
+            response_length_section, bool(response_length_section)
+        )
 
         # Build channel formatting section (with override preamble when channel present)
         channel_directive = get_channel_directive(
             channel,
-            phonetic_substitutions=self.phonetic_substitutions if channel == "voice" else None
+            phonetic_substitutions=(
+                self.phonetic_substitutions if channel == "voice" else None
+            ),
         )
         if channel_directive:
-            channel_formatting_section = (
-                f"### CHANNEL FORMATTING\n{CHANNEL_OVERRIDE_PREAMBLE}\n\n{channel_directive}"
-            )
+            channel_formatting_section = f"### CHANNEL FORMATTING\n{CHANNEL_OVERRIDE_PREAMBLE}\n\n{channel_directive}"
         else:
             channel_formatting_section = ""
 
         # Format conditional sections
-        interpretation_section = format_conditional_section(interpretation_section, bool(interpretation_section))
-        directives_section = format_conditional_section(directives_section, bool(directives_section))
-        parameters_section = format_conditional_section(parameters_section, bool(parameters_section))
-        channel_formatting_section = format_conditional_section(channel_formatting_section, bool(channel_formatting_section))
-        continuation_guidance = format_conditional_section(continuation_guidance, bool(continuation_guidance))
+        interpretation_section = format_conditional_section(
+            interpretation_section, bool(interpretation_section)
+        )
+        directives_section = format_conditional_section(
+            directives_section, bool(directives_section)
+        )
+        parameters_section = format_conditional_section(
+            parameters_section, bool(parameters_section)
+        )
+        channel_formatting_section = format_conditional_section(
+            channel_formatting_section, bool(channel_formatting_section)
+        )
+        continuation_guidance = format_conditional_section(
+            continuation_guidance, bool(continuation_guidance)
+        )
 
-        prompt_template = self.system_prompt if self.system_prompt else SYSTEM_PROMPT_TEMPLATE
+        prompt_template = (
+            self.system_prompt if self.system_prompt else SYSTEM_PROMPT_TEMPLATE
+        )
         composed = prompt_template.format(
             agent_name=self.persona_name,
             agent_description=self.persona_description,
@@ -533,7 +575,7 @@ class PersonaAction(Action):
             continuation_guidance=continuation_guidance,
             response_length_section=response_length_section,
         )
-        
+
         # Append compliance check for directive recency reinforcement
         if applicable_directives:
             checklist = "\n".join(
@@ -543,7 +585,7 @@ class PersonaAction(Action):
             composed += "\n\n" + DIRECTIVE_COMPLIANCE_CHECK_PROMPT.format(
                 directive_checklist=checklist
             )
-        
+
         return composed
 
     async def _get_conversation_history(
@@ -607,21 +649,27 @@ class PersonaAction(Action):
         # Important: Add utterance BEFORE response to maintain chronological order
         if with_utterance and with_response and interaction.response:
             # Add current utterance first
-            history.append({
-                "role": "user",
-                "content": _truncate(interaction.utterance),
-            })
+            history.append(
+                {
+                    "role": "user",
+                    "content": _truncate(interaction.utterance),
+                }
+            )
             # Then add current response
-            history.append({
-                "role": "assistant",
-                "content": _truncate(interaction.response),
-            })
+            history.append(
+                {
+                    "role": "assistant",
+                    "content": _truncate(interaction.response),
+                }
+            )
         elif with_response and interaction.response:
             # Only add response if utterance not requested
-            history.append({
-                "role": "assistant",
-                "content": _truncate(interaction.response),
-            })
+            history.append(
+                {
+                    "role": "assistant",
+                    "content": _truncate(interaction.response),
+                }
+            )
 
         return history if history else []
 
@@ -679,10 +727,12 @@ class PersonaAction(Action):
 
             # for reply coherence
             if with_interpretation and not with_response and interaction.response:
-                conversation_history.append({
-                    "role": "assistant",
-                    "content": interaction.response,
-                })
+                conversation_history.append(
+                    {
+                        "role": "assistant",
+                        "content": interaction.response,
+                    }
+                )
 
         streaming = bool(
             visitor
@@ -695,11 +745,11 @@ class PersonaAction(Action):
         response_bus = getattr(visitor, "response_bus", None) if visitor else None
 
         prompt = interaction.utterance if with_utterance else ""
-        
+
         # Inject directive reminder into user prompt for peak-attention reinforcement
         if applicable_directives and prompt:
             directive_hints = "; ".join(
-                d.get('content', str(d)) for d in applicable_directives
+                d.get("content", str(d)) for d in applicable_directives
             )
             prompt = f"{prompt}\n\n[SYSTEM: You MUST execute in your response: {directive_hints}]"
 
@@ -711,13 +761,19 @@ class PersonaAction(Action):
         # Make the language model call
         try:
             # Enable JSON response format if structured output is requested
-            response_format = {"type": "json_object"} if self.use_structured_output else None
+            response_format = (
+                {"type": "json_object"} if self.use_structured_output else None
+            )
 
-            max_tokens = self.voice_max_tokens if channel == "voice" else self.model_max_tokens
+            max_tokens = (
+                self.voice_max_tokens if channel == "voice" else self.model_max_tokens
+            )
             response = await model_action.generate(
                 prompt=prompt,
                 stream=streaming,
-                system=await self._compose_prompt(interaction, applicable_directives, applicable_parameters),
+                system=await self._compose_prompt(
+                    interaction, applicable_directives, applicable_parameters
+                ),
                 history=conversation_history,
                 calling_action_name=self.get_class_name(),
                 model=self.model,
@@ -747,7 +803,9 @@ class PersonaAction(Action):
                 if applicable_parameters:
                     interaction.set_to_executed(parameters=applicable_parameters)
 
-            await self._pipe_response(response, interaction, visitor, streaming, transient)
+            await self._pipe_response(
+                response, interaction, visitor, streaming, transient
+            )
 
             # Record PersonaAction execution AFTER response is generated and saved
             interaction.record_action_execution("PersonaAction")
@@ -755,7 +813,9 @@ class PersonaAction(Action):
             return response
 
         except Exception as e:
-            logger.error(f"Error in PersonaAction._generate_response: {e}", exc_info=True)
+            logger.error(
+                f"Error in PersonaAction._generate_response: {e}", exc_info=True
+            )
             raise
 
     async def healthcheck(self) -> bool:

@@ -46,7 +46,7 @@ async def get_available_training_times(
     # Example: In production, you might query an external API:
     # calendar_api = await get_calendar_api()
     # available_slots = await calendar_api.get_availability()
-    
+
     # For demonstration, return static available times
     return {
         "available_times": [
@@ -551,7 +551,7 @@ async def custom_email_directive(
     if '@mail.com' in value.lower():
         # Replace default directive with custom message for example.com emails
         return ("append", "Tell the user: Thank you for using your work email! We'll send you special updates about jvagent training.")
-    
+
     # Return None to use default directive for other emails
     return None
 

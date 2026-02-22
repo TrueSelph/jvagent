@@ -3,28 +3,28 @@
 package:
   # Action name in namespace/action_name format
   name: jvagent/typesense_vectorstore
-  
+
   # Package author
   author: jvagent
-  
+
   # Archetype: The main Action class name
   archetype: TypesenseVectorStore
-  
+
   # Package version
   version: 0.0.1
-  
+
   # Package metadata
   meta:
     title: TypesenseVectorStore
     description: VectorStore implementation using Typesense for semantic search
     group: jvagent
     type: vectorstore
-  
+
   # Package configuration
   config:
     order:
       weight: 0
-  
+
   # Package dependencies
   dependencies:
     jvagent: ~0.0.1

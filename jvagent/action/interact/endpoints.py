@@ -10,44 +10,46 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from fastapi import Request
 from fastapi.responses import StreamingResponse
-
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.api.exceptions import RateLimitError, ResourceNotFoundError, ValidationError
+from jvspatial.api.exceptions import (
+    RateLimitError,
+    ResourceNotFoundError,
+    ValidationError,
+)
 
-from jvagent.core.agent import Agent
 from jvagent.action.interact.interact_walker import InteractWalker
-from jvagent.action.interact.response_builder import build_interact_response
 from jvagent.action.interact.rate_limiter import (
     extract_client_ip,
     get_rate_limiter,
     initialize_rate_limiter,
 )
+from jvagent.action.interact.response_builder import build_interact_response
 from jvagent.action.response.streaming import create_sse_response, format_sse_chunk
+from jvagent.core.agent import Agent
 
 logger = logging.getLogger(__name__)
+
+from jvagent.action.interact.utils import flush_deferred_saves
+
+# Import profiling utilities
+from jvagent.core.profiling import profile_enabled, profiled_request
 
 # Import INTERACTION level to ensure it's registered and available for logging
 from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
 
-# Import profiling utilities
-from jvagent.core.profiling import profiled_request, profile_enabled
-
-
-from jvagent.action.interact.utils import flush_deferred_saves
-
 
 def _build_interaction_log_data(interaction, app_id, agent_id=None):
     """Build comprehensive log data dictionary for interaction logging.
-    
+
     This function extracts all available interaction data and builds a complete
     log payload that includes the full interaction state, metadata, and context.
-    
+
     Args:
         interaction: Interaction node instance
         app_id: Application ID
         agent_id: Optional agent ID
-    
+
     Returns:
         Tuple of (log_data_dict, message_string) for logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
     """
@@ -86,7 +88,7 @@ def _build_interaction_log_data(interaction, app_id, agent_id=None):
         if hasattr(interaction, "completed_at") and interaction.completed_at
         else None
     )
-    
+
     # Get full interaction state (comprehensive export)
     if hasattr(interaction, "get_state"):
         interaction_data = interaction.get_state()
@@ -112,24 +114,26 @@ def _build_interaction_log_data(interaction, app_id, agent_id=None):
             "closed": closed,
             "streamed": streamed,
         }
-    
+
     # Build message
-    message = f"Interaction: {utterance[:100]}" if utterance else "Interaction completed"
+    message = (
+        f"Interaction: {utterance[:100]}" if utterance else "Interaction completed"
+    )
     if response:
         message += f" → {response[:100]}"
-    
+
     # Build event code
     event_code = "interaction_completed"
     if closed:
         event_code = "interaction_closed"
-    
+
     # Calculate duration if available
     duration = None
     if hasattr(interaction, "get_duration"):
         duration = interaction.get_duration()
         if duration <= 0:
             duration = None
-    
+
     # Build comprehensive extra dict for logger
     # All fields in 'extra' will be captured by DBLogHandler and stored in log_data
     # Only interaction properties are included (no nested 'details' dict)
@@ -162,12 +166,13 @@ def _build_interaction_log_data(interaction, app_id, agent_id=None):
         "started_at": started_at,
         "completed_at": completed_at,
     }
-    
+
     # Add duration if available
     if duration is not None:
         log_data["duration_seconds"] = duration
-    
+
     return log_data, message
+
 
 # Module-level flag to track if rate limiter has been initialized from config
 _rate_limiter_initialized = False
@@ -180,8 +185,9 @@ def _initialize_rate_limiter_from_config() -> None:
         return
 
     try:
-        from jvagent.core.app_loader import AppLoader
         import os
+
+        from jvagent.core.app_loader import AppLoader
 
         # Try to find app.yaml in current directory or parent directories
         app_path = os.getcwd()
@@ -380,14 +386,16 @@ async def interact_endpoint(
     async with profiled_request() as profile:
         # Set profile in context for LM calls to record their timing
         from jvagent.core.profiling import set_current_profile
+
         set_current_profile(profile)
-        
+
         try:
             # Validate agent exists (use cache if enabled)
             async with profile.measure("agent_lookup"):
                 from jvagent.core.cache import get_cached_agent
+
                 agent = await get_cached_agent(agent_id)
-            
+
             if not agent:
                 raise ResourceNotFoundError(
                     message=f"Agent with ID '{agent_id}' not found",
@@ -436,13 +444,14 @@ async def interact_endpoint(
 
                 # Mark interaction as not streamed
                 interaction.streamed = False
-                
+
                 # Clear interaction from context
                 from jvagent.action.model.context import set_interaction
+
                 set_interaction(None)
-                
+
                 interaction.close_interaction()
-                
+
                 # Flush deferred saves (interaction and conversation) with error handling
                 async with profile.measure("flush_saves"):
                     await flush_deferred_saves(interaction, walker.conversation)
@@ -450,9 +459,12 @@ async def interact_endpoint(
                 # Log interaction using INTERACTION level
                 try:
                     from jvagent.core.app import App
+
                     app = await App.get()
                     if app:
-                        log_data, message = _build_interaction_log_data(interaction, app.id, agent_id)
+                        log_data, message = _build_interaction_log_data(
+                            interaction, app.id, agent_id
+                        )
                         # Use logger.log() directly to ensure extra parameter is passed correctly
                         logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
                 except Exception as e:
@@ -484,6 +496,7 @@ async def interact_endpoint(
             # Request-scoped cache cleanup (probabilistic, serverless-friendly)
             try:
                 from jvagent.core.cache import maybe_cleanup_on_request
+
                 await maybe_cleanup_on_request()
             except Exception:
                 pass  # Cleanup errors should never fail the request
@@ -502,15 +515,21 @@ async def _stream_interaction(
         SSE-formatted string chunks
     """
     import time
-    from jvagent.core.profiling import get_or_create_profile, finalize_profile, profile_enabled, set_current_profile
-    
+
+    from jvagent.core.profiling import (
+        finalize_profile,
+        get_or_create_profile,
+        profile_enabled,
+        set_current_profile,
+    )
+
     # Manual profiling for streaming (context manager doesn't work well with generators)
     profile = await get_or_create_profile()
     stream_start_time = time.time()
-    
+
     # Set profile in context for LM calls to record their timing
     set_current_profile(profile)
-    
+
     try:
         # Start walker in background
         walker_start = time.time()
@@ -531,7 +550,7 @@ async def _stream_interaction(
                 }
             )
             return
-        
+
         # Record time to interaction creation
         profile.record("interaction_created", time.time() - walker_start)
 
@@ -571,16 +590,22 @@ async def _stream_interaction(
                     if walk_task.done() and message_queue.empty():
                         try:
                             await walk_task
-                            profile.record("walker_execution", time.time() - walker_start)
+                            profile.record(
+                                "walker_execution", time.time() - walker_start
+                            )
                         except Exception as e:
-                            profile.record("walker_execution", time.time() - walker_start)
+                            profile.record(
+                                "walker_execution", time.time() - walker_start
+                            )
                             yield format_sse_chunk(
                                 {"type": "error", "message": f"Walker error: {str(e)}"}
                             )
                         break
 
                     try:
-                        message = await asyncio.wait_for(message_queue.get(), timeout=0.25)
+                        message = await asyncio.wait_for(
+                            message_queue.get(), timeout=0.25
+                        )
                         yield format_sse_chunk(
                             {"type": "message", "message": message.to_dict()}
                         )
@@ -588,10 +613,13 @@ async def _stream_interaction(
                         continue
             finally:
                 # Cleanup subscription
-                await walker.response_bus.unsubscribe(walker.session_id, message_callback)
+                await walker.response_bus.unsubscribe(
+                    walker.session_id, message_callback
+                )
 
             # Clear interaction from context
             from jvagent.action.model.context import set_interaction
+
             set_interaction(None)
 
             # Close interaction
@@ -602,11 +630,16 @@ async def _stream_interaction(
             # Log interaction using INTERACTION level
             try:
                 from jvagent.core.app import App
+
                 app = await App.get()
                 if app:
                     # Get agent_id from walker or agent
-                    agent_id_for_logging = walker.agent_id if hasattr(walker, 'agent_id') else agent.id
-                    log_data, message = _build_interaction_log_data(interaction, app.id, agent_id_for_logging)
+                    agent_id_for_logging = (
+                        walker.agent_id if hasattr(walker, "agent_id") else agent.id
+                    )
+                    log_data, message = _build_interaction_log_data(
+                        interaction, app.id, agent_id_for_logging
+                    )
                     # Use logger.log() directly to ensure extra parameter is passed correctly
                     logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
             except Exception as e:
@@ -624,14 +657,14 @@ async def _stream_interaction(
             )
             profile.record("build_response", time.time() - report_start)
             profile.record("total_stream_time", time.time() - stream_start_time)
-            
+
             yield format_sse_chunk(
                 {
                     "type": "final",
                     **final_response,  # Spread the filtered response
                 }
             )
-            
+
             # Log profile summary
             await finalize_profile(profile.request_id, log=True)
 
@@ -643,6 +676,7 @@ async def _stream_interaction(
 
             # Clear interaction from context
             from jvagent.action.model.context import set_interaction
+
             set_interaction(None)
 
             # Close interaction
@@ -653,11 +687,16 @@ async def _stream_interaction(
             # Log interaction using INTERACTION level
             try:
                 from jvagent.core.app import App
+
                 app = await App.get()
                 if app:
                     # Get agent_id from walker
-                    agent_id_from_walker = walker.agent_id if hasattr(walker, 'agent_id') else None
-                    log_data, message = _build_interaction_log_data(interaction, app.id, agent_id_from_walker)
+                    agent_id_from_walker = (
+                        walker.agent_id if hasattr(walker, "agent_id") else None
+                    )
+                    log_data, message = _build_interaction_log_data(
+                        interaction, app.id, agent_id_from_walker
+                    )
                     # Use logger.log() directly to ensure extra parameter is passed correctly
                     logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
             except Exception as e:
@@ -674,14 +713,14 @@ async def _stream_interaction(
             )
             profile.record("build_response", time.time() - report_start)
             profile.record("total_stream_time", time.time() - stream_start_time)
-            
+
             yield format_sse_chunk(
                 {
                     "type": "final",
                     **final_response,  # Spread the filtered response
                 }
             )
-            
+
             # Log profile summary
             await finalize_profile(profile.request_id, log=True)
 
@@ -703,7 +742,7 @@ async def _stream_interaction(
         # Request-scoped cache cleanup (probabilistic, serverless-friendly)
         try:
             from jvagent.core.cache import maybe_cleanup_on_request
+
             await maybe_cleanup_on_request()
         except Exception:
             pass  # Cleanup errors should never fail the request
-

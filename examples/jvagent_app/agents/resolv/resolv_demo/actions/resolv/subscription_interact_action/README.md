@@ -181,7 +181,7 @@ Update the prompt template in agent.yaml:
 prompt: |
   Manage your notification preferences here:
   {subscription_page}
-  
+
   You can update your subscriptions anytime!
 ```
 
@@ -197,17 +197,17 @@ async def execute(self, visitor: InteractWalker) -> None:
     subscriber_display_name = user.get_display_name() if user else "user"
     subscriber_phone = user.user_id
     subscriber_email = user.email  # Additional field
-    
+
     # Get API action
     api = await self.get_action("ResolvAPIAction")
-    
+
     # Get channels page with additional context
     subscription_page = await api.get_channels_page(
-        subscriber_phone, 
+        subscriber_phone,
         subscriber_display_name,
         email=subscriber_email
     )
-    
+
     if subscription_page:
         await visitor.add_directives([
             self.prompt.format(subscription_page=subscription_page)

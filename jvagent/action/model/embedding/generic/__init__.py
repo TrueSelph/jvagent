@@ -3,4 +3,3 @@
 from .generic import GenericEmbeddingModelAction
 
 __all__ = ["GenericEmbeddingModelAction"]
-

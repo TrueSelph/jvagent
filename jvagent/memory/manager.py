@@ -215,11 +215,11 @@ class Memory(Node):
             user = await self.get_user(new_user_id, create_if_missing=True)
             if not user:
                 raise RuntimeError("Failed to create user")
-            
+
             # Set name if provided
             if user_name:
                 await user.set_name(user_name)
-                
+
             conversation = await user.create_conversation(channel=channel)
             return user, conversation, new_user_id, conversation.session_id, True
 
@@ -228,12 +228,10 @@ class Memory(Node):
             conversation = await self.get_conversation_by_session(session_id)
             if not conversation:
                 raise ValueError(f"Session '{session_id}' not found")
-            user = await self.get_user(
-                conversation.user_id, create_if_missing=False
-            )
+            user = await self.get_user(conversation.user_id, create_if_missing=False)
             if not user:
                 raise RuntimeError(f"User for session '{session_id}' not found")
-                
+
             # Update name if provided and not set
             if user_name and (not user.name or user.name == "user"):
                 await user.set_name(user_name)
@@ -247,15 +245,15 @@ class Memory(Node):
             # Check if user already exists before creating
             existing_user = await self.node(node=User, user_id=user_id)
             is_new_user = existing_user is None
-            
+
             user = await self.get_user(user_id, create_if_missing=True)
             if not user:
                 raise RuntimeError(f"Failed to get/create user '{user_id}'")
-                
+
             # Update name if provided (especially if new user)
             if user_name and (is_new_user or not user.name or user.name == "user"):
                 await user.set_name(user_name)
-                
+
             conversation = await user.create_conversation(channel=channel)
             return user, conversation, user_id, conversation.session_id, is_new_user
 
@@ -265,7 +263,7 @@ class Memory(Node):
             conversation_task = self.get_conversation_by_session(session_id)
             user_task = self.get_user(user_id, create_if_missing=False)
             conversation, user = await asyncio.gather(conversation_task, user_task)
-            
+
             if not conversation:
                 raise ValueError(f"Session '{session_id}' not found")
             if not user:
@@ -274,7 +272,7 @@ class Memory(Node):
                 raise ValueError(
                     f"Session '{session_id}' does not belong to user '{user_id}'"
                 )
-                
+
             # Update name if provided and not set
             if user_name and (not user.name or user.name == "user"):
                 await user.set_name(user_name)
@@ -473,9 +471,7 @@ class Memory(Node):
             current = first
             seen = {first.id}
             while current:
-                next_nodes = await current.nodes(
-                    node=Interaction, direction="out"
-                )
+                next_nodes = await current.nodes(node=Interaction, direction="out")
                 if len(next_nodes) > 1:
                     next_nodes.sort(key=lambda n: (n.started_at, n.id))
                     keep = next_nodes[0]
@@ -532,9 +528,7 @@ class Memory(Node):
         remaining_conversations = await Conversation.find()
         valid_conv_ids = list({c.id for c in remaining_conversations}) + [""]
 
-        query: Dict[str, Any] = {
-            "context.conversation_id": {"$nin": valid_conv_ids}
-        }
+        query: Dict[str, Any] = {"context.conversation_id": {"$nin": valid_conv_ids}}
         if recent_minutes is not None and recent_minutes > 0:
             cutoff = datetime.now(timezone.utc) - timedelta(minutes=recent_minutes)
             query["context.started_at"] = {"$gte": cutoff}

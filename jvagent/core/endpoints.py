@@ -74,7 +74,8 @@ async def get_agent(agent_id: str) -> Dict[str, Any]:
     agent = await Agent.get(agent_id)
     if not agent:
         raise ResourceNotFoundError(
-            message=f"Agent with ID '{agent_id}' not found", details={"agent_id": agent_id}
+            message=f"Agent with ID '{agent_id}' not found",
+            details={"agent_id": agent_id},
         )
 
     return {"agent": await agent.export()}
@@ -158,7 +159,8 @@ async def update_agent(
     agent = await Agent.get(agent_id)
     if not agent:
         raise ResourceNotFoundError(
-            message=f"Agent with ID '{agent_id}' not found", details={"agent_id": agent_id}
+            message=f"Agent with ID '{agent_id}' not found",
+            details={"agent_id": agent_id},
         )
 
     # Note: 'name' is static and cannot be changed after creation
@@ -249,7 +251,8 @@ async def delete_agent(agent_id: str) -> Dict[str, Any]:
     agent = await Agent.get(agent_id)
     if not agent:
         raise ResourceNotFoundError(
-            message=f"Agent with ID '{agent_id}' not found", details={"agent_id": agent_id}
+            message=f"Agent with ID '{agent_id}' not found",
+            details={"agent_id": agent_id},
         )
 
     # Get agent enabled status before deletion for counter update
@@ -463,7 +466,8 @@ async def delete_conversation(
     agent = await Agent.get(agent_id)
     if not agent:
         raise ResourceNotFoundError(
-            message=f"Agent with ID '{agent_id}' not found", details={"agent_id": agent_id}
+            message=f"Agent with ID '{agent_id}' not found",
+            details={"agent_id": agent_id},
         )
 
     # Get Memory node from agent
@@ -503,8 +507,6 @@ async def delete_conversation(
     return {"message": "Conversation deleted successfully"}
 
 
-
-
 @endpoint(
     "/storage/{file_path:path}",
     methods=["GET"],
@@ -524,7 +526,9 @@ async def get_storage_file(file_path: str):
     """
     import mimetypes
     import os
+
     from fastapi import Response
+
     from jvagent.core.app import App
 
     app = await App.get()
@@ -548,13 +552,12 @@ async def get_storage_file(file_path: str):
 
     # Extract filename for Content-Disposition
     filename = os.path.basename(file_path)
-    
+
     return Response(
         content=content,
         media_type=mime_type,
         headers={
             "Content-Disposition": f"inline; filename={filename}",
-            "Cache-Control": "public, max-age=3600"
-        }
+            "Cache-Control": "public, max-age=3600",
+        },
     )
-

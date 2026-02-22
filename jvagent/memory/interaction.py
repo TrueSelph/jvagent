@@ -1,19 +1,22 @@
 """Interaction node for representing single exchanges within a conversation."""
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from jvagent.action.model.base import logger
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute, compound_index
 from jvspatial.core.mixins import DeferredSaveMixin
 
+from jvagent.action.model.base import logger
+
 if TYPE_CHECKING:
-    from jvagent.memory.user import User
     from jvagent.memory.conversation import Conversation
+    from jvagent.memory.user import User
 
 
-@compound_index([("context.conversation_id", 1), ("context.started_at", -1)], name="conv_timestamp")
+@compound_index(
+    [("context.conversation_id", 1), ("context.started_at", -1)], name="conv_timestamp"
+)
 class Interaction(DeferredSaveMixin, Node):
     """Single exchange within a Conversation.
 
@@ -55,30 +58,31 @@ class Interaction(DeferredSaveMixin, Node):
     user_id: str = attribute(default="", description="User ID")
     utterance: str = attribute(default="", description="User input text")
     channel: str = attribute(default="default", description="Communication channel")
-    session_id: str = attribute(default="", description="Session identifier for this interaction")
+    session_id: str = attribute(
+        default="", description="Session identifier for this interaction"
+    )
 
     canned_response: Optional[str] = attribute(
         default=None,
-        description="Immediate filler response before full processing (e.g., 'Let me see..', 'One moment..')"
+        description="Immediate filler response before full processing (e.g., 'Let me see..', 'One moment..')",
     )
-    
+
     # Response
     response: Optional[str] = attribute(
-        default=None, description="Agent response text (accumulated from stream chunks and ad hoc messages)"
+        default=None,
+        description="Agent response text (accumulated from stream chunks and ad hoc messages)",
     )
 
     # Routing (from InteractRouter)
     interpretation: Optional[str] = attribute(
         default=None,
-        description="LLM-generated interpretation of user intent (< 80 words)"
+        description="LLM-generated interpretation of user intent (< 80 words)",
     )
     intent_type: Optional[str] = attribute(
-        default=None,
-        description="Classified intent type"
+        default=None, description="Classified intent type"
     )
     anchors: List[str] = attribute(
-        default_factory=list,
-        description="Matched entity names from anchor matching"
+        default_factory=list, description="Matched entity names from anchor matching"
     )
     response_posture: Optional[str] = attribute(
         default=None,
@@ -90,15 +94,18 @@ class Interaction(DeferredSaveMixin, Node):
         default_factory=list, description="Actions involved in processing (in order)"
     )
     directives: List[Dict[str, Any]] = attribute(
-        default_factory=list, description="Directives issued by non-persona actions. Each entry has structure: {'action_name': str, 'content': str, 'executed': bool}"
+        default_factory=list,
+        description="Directives issued by non-persona actions. Each entry has structure: {'action_name': str, 'content': str, 'executed': bool}",
     )
     events: List[Dict[str, Any]] = attribute(
-        default_factory=list, description="System events (logs). Each entry has structure: {'action_name': str, 'content': str}"
+        default_factory=list,
+        description="System events (logs). Each entry has structure: {'action_name': str, 'content': str}",
     )
 
     # Parameter tracking
     parameters: List[Dict[str, Any]] = attribute(
-        default_factory=list, description="Applicable parameters for this interaction. Each entry should have 'action_name' and 'executed': bool keys"
+        default_factory=list,
+        description="Applicable parameters for this interaction. Each entry should have 'action_name' and 'executed': bool keys",
     )
 
     # Streaming and observability
@@ -106,14 +113,16 @@ class Interaction(DeferredSaveMixin, Node):
         default=False, description="Whether this interaction used streaming"
     )
     observability_metrics: List[Dict[str, Any]] = attribute(
-        default_factory=list, description="Aggregated observability events (model calls, embeddings, etc.)"
+        default_factory=list,
+        description="Aggregated observability events (model calls, embeddings, etc.)",
     )
 
     # Timestamps
     started_at: datetime = attribute(
-        indexed=True, index_direction=-1,
+        indexed=True,
+        index_direction=-1,
         default_factory=lambda: datetime.now(timezone.utc),
-        description="Interaction start timestamp"
+        description="Interaction start timestamp",
     )
     completed_at: Optional[datetime] = attribute(
         default=None, description="Interaction completion timestamp"
@@ -139,13 +148,16 @@ class Interaction(DeferredSaveMixin, Node):
         if directive and action_name:
             # Check for duplicates: same action_name and same content
             for existing in self.directives:
-                if existing.get("action_name") == action_name and existing.get("content") == directive:
+                if (
+                    existing.get("action_name") == action_name
+                    and existing.get("content") == directive
+                ):
                     return False  # Duplicate found, skip adding
-            
+
             entry = {
                 "action_name": action_name,
                 "content": directive,
-                "executed": False
+                "executed": False,
             }
             self.directives.append(entry)
             return True  # Added
@@ -199,7 +211,9 @@ class Interaction(DeferredSaveMixin, Node):
             for i in range(len(self.actions) - 1, -1, -1):
                 if self.actions[i] == action_name:
                     self.actions.pop(i)
-                    logger.warning(f"Interaction.unrecord_action_execution: Unrecorded action {action_name}")
+                    logger.warning(
+                        f"Interaction.unrecord_action_execution: Unrecorded action {action_name}"
+                    )
                     break
 
     def add_parameter(self, parameter: Dict[str, Any], action_name: str) -> bool:
@@ -219,18 +233,24 @@ class Interaction(DeferredSaveMixin, Node):
         """
         if not parameter:
             return False
-        
+
         # Check for duplicates: same action_name and same parameter content
         # Compare all keys except 'executed' and 'action_name' (which are set automatically)
-        param_copy = {k: v for k, v in parameter.items() if k not in ("executed", "action_name")}
-        
+        param_copy = {
+            k: v for k, v in parameter.items() if k not in ("executed", "action_name")
+        }
+
         for existing in self.parameters:
             if existing.get("action_name") == action_name:
                 # Compare parameter content (excluding executed and action_name)
-                existing_copy = {k: v for k, v in existing.items() if k not in ("executed", "action_name")}
+                existing_copy = {
+                    k: v
+                    for k, v in existing.items()
+                    if k not in ("executed", "action_name")
+                }
                 if existing_copy == param_copy:
                     return False  # Duplicate found, skip adding
-        
+
         # Not a duplicate, add it
         parameter["action_name"] = action_name
         # Ensure executed key is set to False if not already present
@@ -239,7 +259,9 @@ class Interaction(DeferredSaveMixin, Node):
         self.parameters.append(parameter)
         return True  # Added
 
-    def add_parameters(self, parameters: List[Dict[str, Any]], action_name: str) -> bool:
+    def add_parameters(
+        self, parameters: List[Dict[str, Any]], action_name: str
+    ) -> bool:
         """Add multiple parameters to the interaction.
 
         Bulk convenience method that adds multiple parameters with the same action_name.
@@ -254,7 +276,7 @@ class Interaction(DeferredSaveMixin, Node):
         """
         if not parameters:
             return False
-        
+
         any_added = False
         for parameter in parameters:
             if parameter and isinstance(parameter, dict):
@@ -277,7 +299,7 @@ class Interaction(DeferredSaveMixin, Node):
         """
         if not directives:
             return False
-        
+
         any_added = False
         for directive in directives:
             if directive:  # Skip empty directives
@@ -372,7 +394,11 @@ class Interaction(DeferredSaveMixin, Node):
         """
         return [e for e in self.events if e.get("action_name") == action_name]
 
-    def set_to_executed(self, parameters: List[Dict[str, Any]] = [], directives: List[Dict[str, Any]] = []) -> None:
+    def set_to_executed(
+        self,
+        parameters: List[Dict[str, Any]] = [],
+        directives: List[Dict[str, Any]] = [],
+    ) -> None:
         """Mark directives and parameters as executed.
 
         Finds matching entries in self.directives and self.parameters by comparing
@@ -388,7 +414,10 @@ class Interaction(DeferredSaveMixin, Node):
             content = directive_entry.get("content")
             if action_name and content:
                 for d in self.directives:
-                    if d.get("action_name") == action_name and d.get("content") == content:
+                    if (
+                        d.get("action_name") == action_name
+                        and d.get("content") == content
+                    ):
                         d["executed"] = True
 
         # Mark matching parameters as executed
@@ -406,7 +435,9 @@ class Interaction(DeferredSaveMixin, Node):
                     else:
                         # Create copies without executed key for comparison
                         p_copy = {k: v for k, v in p.items() if k != "executed"}
-                        param_copy = {k: v for k, v in parameter_entry.items() if k != "executed"}
+                        param_copy = {
+                            k: v for k, v in parameter_entry.items() if k != "executed"
+                        }
                         if p_copy == param_copy:
                             p["executed"] = True
 
@@ -460,7 +491,9 @@ class Interaction(DeferredSaveMixin, Node):
             "interpretation": self.interpretation,
             "anchors": self.anchors,
             "started_at": self.started_at.isoformat() if self.started_at else None,
-            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "completed_at": (
+                self.completed_at.isoformat() if self.completed_at else None
+            ),
             "closed": self.closed,
             "streamed": self.streamed,
         }

@@ -7,8 +7,9 @@ import logging
 from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
-    from ..session.interview_session import InterviewSession
     from jvagent.action.interact.interact_walker import InteractWalker
+
+    from ..session.interview_session import InterviewSession
 
 logger = logging.getLogger(__name__)
 
@@ -16,16 +17,16 @@ logger = logging.getLogger(__name__)
 async def cleanup_session(
     session: "InterviewSession",
     visitor: Optional["InteractWalker"] = None,
-    action_name: Optional[str] = None
+    action_name: Optional[str] = None,
 ) -> None:
     """Cleanup session data and edges.
-    
+
     Centralized session cleanup logic extracted from duplicate code.
     Removes session from graph and clears visitor reference.
-    
+
     Uses session.delete(cascade=False) for direct removal. If that fails,
     falls back to context.delete() to ensure the session is removed.
-    
+
     Args:
         session: Interview session to cleanup
         visitor: Optional InteractWalker to clear session reference from
@@ -59,8 +60,7 @@ async def cleanup_session(
 
 
 def sort_fields_by_question_order(
-    fields: List[str],
-    session: "InterviewSession"
+    fields: List[str], session: "InterviewSession"
 ) -> List[str]:
     """Sort fields by their position in question_graph.
 
@@ -82,9 +82,9 @@ def sort_fields_by_question_order(
         field_name = question_config.get("name", "")
         if field_name:
             field_to_index[field_name] = idx
-    
+
     # Sort fields by their index, unknown fields go to the end
     def get_sort_key(field: str) -> int:
         return field_to_index.get(field, len(session.question_graph))
-    
+
     return sorted(fields, key=get_sort_key)

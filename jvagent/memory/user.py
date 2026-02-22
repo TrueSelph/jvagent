@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, List, Optional, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
@@ -32,18 +32,29 @@ class User(Node):
         last_seen: Timestamp of last user activity
     """
 
-    user_id: str = attribute(indexed=True, index_unique=True, default="", description="Unique user identifier")
-    name: Optional[str] = attribute(default=None, description="User's preferred name (raw input)")
-    display_name: Optional[str] = attribute(default=None, description="Formatted display name for addressing the user")
+    user_id: str = attribute(
+        indexed=True,
+        index_unique=True,
+        default="",
+        description="Unique user identifier",
+    )
+    name: Optional[str] = attribute(
+        default=None, description="User's preferred name (raw input)"
+    )
+    display_name: Optional[str] = attribute(
+        default=None, description="Formatted display name for addressing the user"
+    )
     user_model: Dict[str, Any] = attribute(
         default_factory=dict,
         description="Compressed collection of facts and preferences about the user",
     )
     created_at: datetime = attribute(
-        default_factory=lambda: datetime.now(timezone.utc), description="Timestamp of user creation"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Timestamp of user creation",
     )
     last_seen: datetime = attribute(
-        default_factory=lambda: datetime.now(timezone.utc), description="Timestamp of last user activity"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Timestamp of last user activity",
     )
 
     async def create_conversation(
@@ -80,13 +91,13 @@ class User(Node):
             interaction_limit=interaction_limit or 0,
         )
         await self.connect(conv)  # Creates edge: User --> Conversation
-        
+
         # Update Memory's total_conversations counter
         memory = await self.node(direction="in", node=Memory)
         if memory:
             memory.total_conversations += 1
             await memory.save()
-        
+
         return conv
 
     async def get_agent(self) -> Optional[Any]:
@@ -121,12 +132,16 @@ class User(Node):
 
         # Use find_one for optimal performance
         # Filter by both session_id and user_id to ensure it belongs to this user
-        return await Conversation.find_one({
-            "context.session_id": session_id,
-            "context.user_id": self.user_id,
-        })
+        return await Conversation.find_one(
+            {
+                "context.session_id": session_id,
+                "context.user_id": self.user_id,
+            }
+        )
 
-    async def list_conversations(self, active_only: bool = False) -> List["Conversation"]:
+    async def list_conversations(
+        self, active_only: bool = False
+    ) -> List["Conversation"]:
         """Get all connected Conversations.
 
         Args:
@@ -141,7 +156,7 @@ class User(Node):
         query = {"context.user_id": self.user_id}
         if active_only:
             query["context.status"] = "active"
-        
+
         return await Conversation.find(query)
 
     async def get_active_conversation(self) -> Optional["Conversation"]:

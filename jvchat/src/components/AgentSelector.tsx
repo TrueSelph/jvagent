@@ -36,17 +36,17 @@ export function AgentSelector() {
   }
 
   if (error) {
-    const isNetworkError = error.toLowerCase().includes('network') || 
+    const isNetworkError = error.toLowerCase().includes('network') ||
                           error.toLowerCase().includes('failed to fetch') ||
                           error.toLowerCase().includes('cors')
-    
+
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
         <div className="max-w-md w-full">
           <div className="bg-white rounded-lg shadow-lg p-6">
             <h2 className="text-xl font-bold text-red-600 mb-4">Error Loading Agents</h2>
             <p className="text-gray-700 mb-4">{error}</p>
-            
+
             {isNetworkError && (
               <div className="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
                 <h3 className="font-semibold text-yellow-800 mb-2">Network Error Troubleshooting:</h3>
@@ -62,7 +62,7 @@ export function AgentSelector() {
                 </div>
               </div>
             )}
-            
+
             <button
               onClick={() => window.location.reload()}
               className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"

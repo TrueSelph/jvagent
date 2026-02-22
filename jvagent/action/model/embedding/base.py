@@ -35,7 +35,9 @@ class EmbeddingModelAction(BaseModelAction, ABC):
         default=0, description="Expected embedding dimensions (0 = auto-detect)", ge=0
     )
 
-    async def embed(self, text: str, calling_action_name: Optional[str] = None) -> List[float]:
+    async def embed(
+        self, text: str, calling_action_name: Optional[str] = None
+    ) -> List[float]:
         """Generate embedding vector for text.
 
         Public API for embedding generation with metrics tracking.

@@ -27,11 +27,17 @@ class TestDependencyInstallation:
 
     def test_install_pip_dependencies_filters_empty_strings(self):
         """Test that empty strings are filtered from dependencies."""
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-            result = install_pip_dependencies(
-                ["requests>=2.25.0", "", "  ", "numpy"], "test_action"
-            )
+        with patch(
+            "jvagent.core.dependency_installer.check_pip_dependency_installed"
+        ) as mock_check:
+            mock_check.return_value = False
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                result = install_pip_dependencies(
+                    ["requests>=2.25.0", "", "  ", "numpy"],
+                    "test_action",
+                    skip_if_installed=False,
+                )
             assert result is True
             # Should only install non-empty packages
             mock_run.assert_called_once()
@@ -42,11 +48,18 @@ class TestDependencyInstallation:
 
     def test_install_pip_dependencies_success(self):
         """Test successful dependency installation."""
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-            result = install_pip_dependencies(
-                ["requests>=2.25.0"], "test_action", upgrade=False
-            )
+        with patch(
+            "jvagent.core.dependency_installer.check_pip_dependency_installed"
+        ) as mock_check:
+            mock_check.return_value = False
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                result = install_pip_dependencies(
+                    ["requests>=2.25.0"],
+                    "test_action",
+                    upgrade=False,
+                    skip_if_installed=False,
+                )
             assert result is True
             mock_run.assert_called_once()
             args = mock_run.call_args[0][0]
@@ -203,4 +216,3 @@ class TestActionLoaderDependencyInstallation:
             mock_install.assert_called_once_with(
                 data, "test_action", tmp_path / "test_action"
             )
-

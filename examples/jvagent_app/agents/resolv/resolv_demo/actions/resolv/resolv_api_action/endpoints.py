@@ -34,7 +34,7 @@ async def get_contact_groups(action_id: str, project_groups: bool = True) -> Dic
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     groups = await action.get_contact_groups(project_groups=project_groups)
     return {"groups": groups}
 
@@ -54,7 +54,7 @@ async def subscribe_contact_to_group(action_id: str, group_id: int, contact_id: 
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     success = await action.subscribe_contact_to_group(contact_id=contact_id, group_id=group_id)
     return {"success": success}
 
@@ -74,7 +74,7 @@ async def unsubscribe_contact_from_group(action_id: str, group_id: int, contact_
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     success = await action.unsubscribe_contact_from_group(contact_id=contact_id, group_id=group_id)
     return {"success": success}
 
@@ -114,7 +114,7 @@ async def create_issue(
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     issue = await action.create_issue(
         is_anonymous=is_anonymous,
         original_description=original_description,
@@ -148,7 +148,7 @@ async def update_issue(
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     success = await action.update_issue(
         issue_id=issue_id,
         title=title,
@@ -176,7 +176,7 @@ async def list_issues(action_id: str, query: str = "") -> Dict[str, Any]:
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     issues = await action.list_issues(query=query)
     return {"issues": issues}
 
@@ -196,7 +196,7 @@ async def get_issue(action_id: str, issue_id: str) -> Dict[str, Any]:
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     issue = await action.get_issue_by_id(issue_id=issue_id)
     return {"issue": issue}
 
@@ -216,7 +216,7 @@ async def get_issue_categories(action_id: str) -> Dict[str, Any]:
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     categories = await action.get_issue_categories()
     return {"categories": categories}
 
@@ -238,7 +238,7 @@ async def lookup_contact(action_id: str, phone: str, name: str = "", email: str 
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     contact = await action.get_contact_by_phone(phone=phone, name=name, email=email)
     return {"contact": contact}
 
@@ -258,7 +258,7 @@ async def create_contact(action_id: str, name: str, phone: str, email: str) -> D
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     contact = await action.create_contact(name=name, phone=phone, email=email)
     return {"contact": contact}
 
@@ -278,7 +278,7 @@ async def update_contact(action_id: str, contact_id: int, name: str, phone: str,
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     success = await action.update_contact(contact_id=contact_id, name=name, phone=phone, email=email)
     return {"success": success}
 
@@ -298,7 +298,7 @@ async def get_subscription_link(action_id: str, phone: str, name: str) -> Dict[s
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     url = await action.get_channels_page(phone_number=phone, name=name)
     return {"url": url}
 
@@ -320,7 +320,7 @@ async def list_notices(action_id: str, status: Optional[str] = None) -> Dict[str
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     notices = await action.get_all_notices(status=status)
     return {"notices": notices}
 
@@ -342,7 +342,7 @@ async def list_projects(action_id: str, query: str = "") -> Dict[str, Any]:
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     projects = await action.get_projects(query=query)
     return {"projects": projects}
 
@@ -364,7 +364,7 @@ async def post_project_comment(action_id: str, project_id: str, content: str) ->
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     comment = await action.post_project_comment(project_id=project_id, content=content)
     return {"comment": comment}
 
@@ -384,7 +384,7 @@ async def post_issue_comment(action_id: str, project_id: str, issue_id: str, con
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     comment = await action.post_issue_comment(project_id=project_id, issue_id=issue_id, content=content)
     return {"comment": comment}
 
@@ -409,6 +409,6 @@ async def submit_comment(
     action = await ResolvAPIAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(message=f"Action {action_id} not found")
-    
+
     result = await action.submit_comment(content=content, report_id=report_id, attachments=attachments)
     return {"result": result}

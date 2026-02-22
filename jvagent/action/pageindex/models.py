@@ -71,12 +71,8 @@ class DocumentNode(Node):
     )
     start_index: Optional[int] = attribute(default=None, description="Start page index")
     end_index: Optional[int] = attribute(default=None, description="End page index")
-    structure: str = attribute(
-        default="", description="Hierarchy code (e.g., 1.2.3)"
-    )
-    doc_name: str = attribute(
-        default="", description="Document this node belongs to"
-    )
+    structure: str = attribute(default="", description="Hierarchy code (e.g., 1.2.3)")
+    doc_name: str = attribute(default="", description="Document this node belongs to")
     collection_name: str = attribute(
         default="default",
         description="Collection this node belongs to",

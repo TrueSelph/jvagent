@@ -19,47 +19,60 @@ from abc import ABC
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
-from jvagent.action.interact.base import InteractAction
-from jvagent.memory import Interaction
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
 
+from jvagent.action.interact.base import InteractAction
+from jvagent.memory import Interaction
+
+from .core.classification.classification_handler import (
+    ClassificationHandler,
+    ClassificationResult,
+)
+from .core.foundation.config import InterviewConfig, ModelConfig, TemplateConfig
 from .core.foundation.enums import Intent, InterviewState
-from .core.session.interview_session import InterviewSession
-from .core.classification.classification_handler import ClassificationHandler, ClassificationResult
+from .core.foundation.exceptions import QuestionNotFoundError
+from .core.graph.interview_walker import InterviewWalker
+from .core.graph.question_edge import QuestionEdge
 from .core.graph.question_graph_builder import QuestionGraphBuilder
 from .core.graph.question_node import QuestionNode
-from .core.graph.interview_walker import InterviewWalker
-from .core.graph.state_node import StateNode
-from .core.graph.question_edge import QuestionEdge
 from .core.graph.question_path_walker import QuestionPathWalker
-from .core.utils.session_utils import cleanup_session
-from .core.utils.cache_utils import QuestionNodeCache, BranchCache
-from .core.utils.constants import CACHE_KEY_QUESTION_NODES
+from .core.graph.state_node import StateNode
 from .core.processing.directive_builder import DirectiveBuilder
-from .core.foundation.exceptions import QuestionNotFoundError
-from .core.foundation.config import InterviewConfig, ModelConfig, TemplateConfig
+from .core.session.interview_session import InterviewSession
+from .core.utils.cache_utils import BranchCache, QuestionNodeCache
+from .core.utils.constants import CACHE_KEY_QUESTION_NODES
+from .core.utils.session_utils import cleanup_session
 
 if TYPE_CHECKING:
-    from jvagent.action.interview.core.session.interview_session import InterviewSession
     from jvagent.action.interact.interact_walker import InteractWalker
+    from jvagent.action.interview.core.session.interview_session import InterviewSession
 
 logger = logging.getLogger(__name__)
 
 # Import registry access functions (decorators are in separate module)
 from .core.foundation.decorators import (
     RegistryManager,
-    get_completion_handler as _get_completion_handler,
-    get_cancelled_handler as _get_cancelled_handler,
-    get_review_handler as _get_review_handler,
-    get_input_handler as _get_input_handler,
-    get_input_validator as _get_input_validator,
-    get_input_directive_override as _get_input_directive_override,
-    get_input_review_override as _get_input_review_override,
-    get_input_context_provider as _get_input_context_provider,
     clear_pending_registrations,
     flush_module_registrations_for_class,
 )
+from .core.foundation.decorators import get_cancelled_handler as _get_cancelled_handler
+from .core.foundation.decorators import (
+    get_completion_handler as _get_completion_handler,
+)
+from .core.foundation.decorators import (
+    get_input_context_provider as _get_input_context_provider,
+)
+from .core.foundation.decorators import (
+    get_input_directive_override as _get_input_directive_override,
+)
+from .core.foundation.decorators import get_input_handler as _get_input_handler
+from .core.foundation.decorators import (
+    get_input_review_override as _get_input_review_override,
+)
+from .core.foundation.decorators import get_input_validator as _get_input_validator
+from .core.foundation.decorators import get_review_handler as _get_review_handler
+
 
 class InterviewInteractAction(InteractAction, ABC):
     """Unified interview system orchestrator.
@@ -112,26 +125,26 @@ class InterviewInteractAction(InteractAction, ABC):
     _input_validators: Dict[str, Callable] = {}
     _input_directive_overrides: Dict[str, Callable] = {}
     _input_review_override: Optional[Callable] = None
-    
+
     # Instance-level handlers
     _classifier: Optional[ClassificationHandler] = None
     _question_builder: Optional[QuestionGraphBuilder] = None
     _directive_builder: Optional[DirectiveBuilder] = None
-        
+
     @property
     def classifier(self) -> ClassificationHandler:
         """Get or create classification handler."""
         if self._classifier is None:
             self._classifier = ClassificationHandler(self)
         return self._classifier
-    
+
     @property
     def question_builder(self) -> QuestionGraphBuilder:
         """Get or create question graph builder."""
         if self._question_builder is None:
             self._question_builder = QuestionGraphBuilder(self)
         return self._question_builder
-    
+
     @property
     def directive_builder(self) -> DirectiveBuilder:
         """Get or create directive builder."""
@@ -177,23 +190,29 @@ class InterviewInteractAction(InteractAction, ABC):
 
         # Load validators/handlers/overrides from module-level registry for this class
         class_name = cls.__name__
-        
+
         # Load from module-level registries
         # Note: We need to iterate through all registrations since we can't access the registry directly
         # The decorator module provides access functions, but for __init_subclass__ we need to
         # check all possible question names. For now, we'll rely on pending registries and
         # attribute scanning, which is the primary mechanism.
-        
+
         # Load from pending registries (for functions decorated before class definition)
-        pending_validators = RegistryManager.get_pending("pending_input_validators", class_name)
+        pending_validators = RegistryManager.get_pending(
+            "pending_input_validators", class_name
+        )
         for question_name, func in pending_validators.items():
             cls._input_validators[question_name] = func
 
-        pending_handlers = RegistryManager.get_pending("pending_input_handlers", class_name)
+        pending_handlers = RegistryManager.get_pending(
+            "pending_input_handlers", class_name
+        )
         for question_name, func in pending_handlers.items():
             cls._input_handlers[question_name] = func
 
-        pending_overrides = RegistryManager.get_pending("pending_input_directive_overrides", class_name)
+        pending_overrides = RegistryManager.get_pending(
+            "pending_input_directive_overrides", class_name
+        )
         for question_name, func in pending_overrides.items():
             cls._input_directive_overrides[question_name] = func
 
@@ -207,9 +226,9 @@ class InterviewInteractAction(InteractAction, ABC):
         # Also scan class attributes for decorated functions (class methods)
         for attr_name in dir(cls):
             attr = getattr(cls, attr_name, None)
-            if callable(attr) and hasattr(attr, '_interview_question_name'):
+            if callable(attr) and hasattr(attr, "_interview_question_name"):
                 question_name = attr._interview_question_name
-                handler_type = getattr(attr, '_interview_handler_type', None)
+                handler_type = getattr(attr, "_interview_handler_type", None)
 
                 if handler_type == "input_handler":
                     cls._input_handlers[question_name] = attr
@@ -223,14 +242,22 @@ class InterviewInteractAction(InteractAction, ABC):
                     # Register branch function into module-level registry so it can
                     # be looked up by QuestionBranchEvaluator using the interview_type.
                     try:
-                        RegistryManager.register_branch_function(class_name, question_name, attr)
+                        RegistryManager.register_branch_function(
+                            class_name, question_name, attr
+                        )
                     except Exception:
-                        logger.exception(f"Failed to register branch_function '{question_name}' for '{class_name}'")
+                        logger.exception(
+                            f"Failed to register branch_function '{question_name}' for '{class_name}'"
+                        )
                 elif handler_type == "input_context_provider" and question_name:
                     try:
-                        RegistryManager.register_input_context_provider(class_name, question_name, attr)
+                        RegistryManager.register_input_context_provider(
+                            class_name, question_name, attr
+                        )
                     except Exception:
-                        logger.exception(f"Failed to register input_context_provider '{question_name}' for '{class_name}'")
+                        logger.exception(
+                            f"Failed to register input_context_provider '{question_name}' for '{class_name}'"
+                        )
 
         # Note: We don't merge anchors in __init_subclass__ because we can't reliably
         # extract default values from Field/PrivateAttr descriptors at class definition time.
@@ -366,7 +393,7 @@ class InterviewInteractAction(InteractAction, ABC):
         multiple interview instances coexisting in a single agent.
         """
         # Get current anchors value (may be from agent.yaml override)
-        current_anchors = getattr(self, 'anchors', [])
+        current_anchors = getattr(self, "anchors", [])
         if not isinstance(current_anchors, list):
             current_anchors = []
 
@@ -385,9 +412,7 @@ class InterviewInteractAction(InteractAction, ABC):
         self.anchors = merged_anchors
 
     async def _get_question_node(
-        self,
-        field: str,
-        session: InterviewSession
+        self, field: str, session: InterviewSession
     ) -> Optional[QuestionNode]:
         """Get QuestionNode by ID.
 
@@ -403,7 +428,7 @@ class InterviewInteractAction(InteractAction, ABC):
         cached_node = await cache.get_cached_node_by_id(field)
         if cached_node:
             return cached_node
-        
+
         # Find question config
         question_config = session.get_question_by_name(field)
         if not question_config:
@@ -411,11 +436,9 @@ class InterviewInteractAction(InteractAction, ABC):
 
         # Question nodes are not connected directly to InterviewInteractAction, need direct ref
         question_node = await QuestionNode.find_one(
-            agent_id=self.agent_id,
-            interview_type=self.get_class_name(),
-            label=field
+            agent_id=self.agent_id, interview_type=self.get_class_name(), label=field
         )
-        
+
         if not question_node:
             # Create on-demand if not found (shouldn't happen in normal flow)
             question_node = await QuestionNode.create(
@@ -425,7 +448,7 @@ class InterviewInteractAction(InteractAction, ABC):
                 label=field,
             )
             await self.connect(question_node)
-        
+
         # Cache the node
         if question_node:
             cache.set(field, question_node.id)
@@ -443,11 +466,7 @@ class InterviewInteractAction(InteractAction, ABC):
         """
         return await self.node(node=StateNode, state_type=state_type)
 
-    async def _queue_directive(
-        self,
-        visitor: "InteractWalker",
-        directive: str
-    ) -> None:
+    async def _queue_directive(self, visitor: "InteractWalker", directive: str) -> None:
         """Queue a directive for later response generation.
 
         Delegates to DirectiveBuilder.
@@ -458,7 +477,9 @@ class InterviewInteractAction(InteractAction, ABC):
         """
         await self.directive_builder.queue_directive(visitor, directive)
 
-    async def _get_first_question_node(self, session: InterviewSession) -> Optional[QuestionNode]:
+    async def _get_first_question_node(
+        self, session: InterviewSession
+    ) -> Optional[QuestionNode]:
         """Get first question node via graph topology.
 
         Returns the QuestionNode with no incoming QuestionEdges (entry point).
@@ -484,7 +505,7 @@ class InterviewInteractAction(InteractAction, ABC):
         self,
         session: InterviewSession,
         intent: Intent,
-        visitor: Optional["InteractWalker"] = None
+        visitor: Optional["InteractWalker"] = None,
     ) -> None:
         """Determine and set session.target_node based on intent, state, and interview progress.
 
@@ -526,7 +547,7 @@ class InterviewInteractAction(InteractAction, ABC):
         ):
             if session.update_queue:
                 earliest_field = session.update_queue[0]["field"]
-                
+
                 # If there are unanswered questions BEFORE the earliest queued field,
                 # start from the first question to collect them before reaching the queue entry.
                 # This handles premature data_input_field submissions.
@@ -536,11 +557,20 @@ class InterviewInteractAction(InteractAction, ABC):
                 )
                 if next_unanswered:
                     graph_order = {
-                        q["name"]: i for i, q in enumerate(session.question_graph) if q.get("name")
+                        q["name"]: i
+                        for i, q in enumerate(session.question_graph)
+                        if q.get("name")
                     }
-                    first_unanswered_idx = graph_order.get(next_unanswered.state.get("name", next_unanswered.label) if hasattr(next_unanswered, "state") else next_unanswered.label, 999)
+                    first_unanswered_idx = graph_order.get(
+                        (
+                            next_unanswered.state.get("name", next_unanswered.label)
+                            if hasattr(next_unanswered, "state")
+                            else next_unanswered.label
+                        ),
+                        999,
+                    )
                     earliest_queue_idx = graph_order.get(earliest_field, 999)
-                    
+
                     if first_unanswered_idx < earliest_queue_idx:
                         # Premature submission: start from beginning so walker collects
                         # unanswered questions before reaching the queued field
@@ -582,8 +612,8 @@ class InterviewInteractAction(InteractAction, ABC):
                 # SUBMISSION: Start from first question to ensure sequential flow.
                 # The walker traverses forward, skipping answered questions and
                 # stopping at the first unanswered (or reaching REVIEW if all answered).
-                first_question = await self._get_first_question_node(session)
-                session.target_node = first_question.id if first_question else None
+                # Reuse first_node from the check above to avoid redundant call.
+                session.target_node = first_node.id if first_node else None
                 changed = True
             else:
                 # Other intents: start from first question
@@ -629,9 +659,18 @@ class InterviewInteractAction(InteractAction, ABC):
         """
         interview_type = self.get_class_name()
         session = await conversation.node(
-            node=[{"InterviewSession": {
-                "state": {"$nin": [InterviewState.COMPLETED.value, InterviewState.CANCELLED.value]}
-            }}],
+            node=[
+                {
+                    "InterviewSession": {
+                        "state": {
+                            "$nin": [
+                                InterviewState.COMPLETED.value,
+                                InterviewState.CANCELLED.value,
+                            ]
+                        }
+                    }
+                }
+            ],
             interview_type=interview_type,
         )
         if not session:
@@ -664,23 +703,28 @@ class InterviewInteractAction(InteractAction, ABC):
 
         # Get question graph
         question_graph = self._get_question_graph()
-        
+
         # Validate question graph is defined
         if not question_graph:
-            logger.warning(f"{self.get_class_name()}: question_graph is empty. Define questions in subclass or agent.yaml")
+            logger.warning(
+                f"{self.get_class_name()}: question_graph is empty. Define questions in subclass or agent.yaml"
+            )
 
         # Validate graph structure
         from .core.graph.graph_validator import QuestionGraphValidator
-        validator = QuestionGraphValidator(question_graph, interview_type=self.__class__.__name__)
+
+        validator = QuestionGraphValidator(
+            question_graph, interview_type=self.__class__.__name__
+        )
         validation_report = await validator.validate()
-        
+
         if not validation_report.is_valid():
             validation_report.log_issues(self.get_class_name())
             raise ValueError(
                 f"{self.get_class_name()}: Question graph validation failed. "
                 f"See logs for details."
             )
-        
+
         if validation_report.has_warnings():
             validation_report.log_issues(self.get_class_name())
 
@@ -709,6 +753,7 @@ class InterviewInteractAction(InteractAction, ABC):
                 await node.delete()
             # Also delete state nodes
             from .core.graph.state_node import StateNode
+
             existing_state_nodes = await self.nodes(direction="out", node=StateNode)
             for node in existing_state_nodes:
                 await self.disconnect(node)
@@ -749,7 +794,7 @@ class InterviewInteractAction(InteractAction, ABC):
 
         # Get utterance
         utterance = visitor.utterance if visitor.utterance else ""
-        
+
         # 2. Classify and extract
         classification_result = await self.classifier.classify_and_extract(
             session, utterance, interaction, visitor
@@ -767,7 +812,9 @@ class InterviewInteractAction(InteractAction, ABC):
             # Route SUBMISSION values through update_queue to ensure validation pipeline runs
             # This ensures @input_validator decorators fire for newly submitted values
             graph_order = {
-                q["name"]: i for i, q in enumerate(session.question_graph) if q.get("name")
+                q["name"]: i
+                for i, q in enumerate(session.question_graph)
+                if q.get("name")
             }
             sorted_fields = sorted(
                 classification_result.extracted_data.keys(),
@@ -777,11 +824,13 @@ class InterviewInteractAction(InteractAction, ABC):
                 value = classification_result.extracted_data[field]
                 old_value = session.get_response(field)
                 session.set_response(field, value)
-                session.update_queue.append({
-                    "field": field,
-                    "value": value,
-                    "old_value": old_value,
-                })
+                session.update_queue.append(
+                    {
+                        "field": field,
+                        "value": value,
+                        "old_value": old_value,
+                    }
+                )
             had_updates = bool(sorted_fields)
         elif intent == Intent.UPDATE:
             # Collect updates from extracted_data (multi-field) or field/value (single-field)
@@ -795,14 +844,24 @@ class InterviewInteractAction(InteractAction, ABC):
                 had_updates = True
                 # Build queue entries sorted by graph order
                 graph_order = {
-                    q["name"]: i for i, q in enumerate(session.question_graph) if q.get("name")
+                    q["name"]: i
+                    for i, q in enumerate(session.question_graph)
+                    if q.get("name")
                 }
-                sorted_fields = sorted(updates.keys(), key=lambda f: graph_order.get(f, 999))
+                sorted_fields = sorted(
+                    updates.keys(), key=lambda f: graph_order.get(f, 999)
+                )
 
                 queue_entries = []
                 for field in sorted_fields:
                     old_value = session.get_response(field)
-                    queue_entries.append({"field": field, "value": updates[field], "old_value": old_value})
+                    queue_entries.append(
+                        {
+                            "field": field,
+                            "value": updates[field],
+                            "old_value": old_value,
+                        }
+                    )
                     session.set_response(field, updates[field])
 
                 # Merge with any existing pending queue entries (from previous failed validation)
@@ -817,7 +876,9 @@ class InterviewInteractAction(InteractAction, ABC):
                         session.update_queue.append(entry)
 
                 # Re-sort merged queue by graph order
-                session.update_queue.sort(key=lambda e: graph_order.get(e["field"], 999))
+                session.update_queue.sort(
+                    key=lambda e: graph_order.get(e["field"], 999)
+                )
 
                 # Invalidate branch cache from earliest update onward
                 if session.update_queue:
@@ -836,7 +897,6 @@ class InterviewInteractAction(InteractAction, ABC):
             )
             raise
         node_label = getattr(target_node, "label", None)
-        
 
         interview_walker = InterviewWalker(
             interview_session=session,
@@ -847,7 +907,6 @@ class InterviewInteractAction(InteractAction, ABC):
         )
 
         await interview_walker.spawn(target_node)
-        
 
         for directive in interview_walker.directives:
             await self._queue_directive(visitor, directive)
@@ -856,7 +915,10 @@ class InterviewInteractAction(InteractAction, ABC):
         # Skip when we reached REVIEW (on_state_node already ran sync before building directive).
         # Skip when session was removed by a terminal state (COMPLETED/CANCELLED).
         terminal = interview_walker.terminal_state
-        session_removed = terminal in (InterviewState.COMPLETED, InterviewState.CANCELLED)
+        session_removed = terminal in (
+            InterviewState.COMPLETED,
+            InterviewState.CANCELLED,
+        )
 
         if not session_removed:
             if (had_updates or session.update_queue) and (
@@ -867,8 +929,11 @@ class InterviewInteractAction(InteractAction, ABC):
                 first_node = await self._get_first_question_node(session)
                 if first_node:
                     await QuestionPathWalker.sync(
-                        session, first_node, visitor, self,
-                        invalidate_cache=(intent == Intent.UPDATE)
+                        session,
+                        first_node,
+                        visitor,
+                        self,
+                        invalidate_cache=(intent == Intent.UPDATE),
                     )
 
             await session.save()

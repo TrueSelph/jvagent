@@ -3,28 +3,28 @@
 package:
   # Action name in namespace/action_name format
   name: jvagent/generic_embedding
-  
+
   # Package author
   author: jvagent
-  
+
   # Archetype: The main Action class name
   archetype: GenericEmbeddingModelAction
-  
+
   # Package version
   version: 0.0.1
-  
+
   # Package metadata
   meta:
     title: Generic Embedding Model Action
     description: Generic RESTful API implementation for custom embedding services
     group: jvagent
     type: embedding_model_action
-  
+
   # Package configuration
   config:
     order:
       weight: 0
-  
+
   # Package dependencies
   dependencies:
     jvagent: ~0.0.1

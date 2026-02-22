@@ -25,7 +25,7 @@ export function useAuth() {
     const checkAndRefreshToken = async () => {
       const token = getToken()
       const refreshToken = getRefreshToken()
-      
+
       if (!token || !refreshToken) {
         setState((prev) => ({ ...prev, isAuthenticated: false }))
         return
@@ -57,7 +57,7 @@ export function useAuth() {
               setUserId(refreshResponse.user.id)
             }
             console.log('Token refreshed proactively')
-            
+
             // Reschedule next check with new token
             // Decode new token to get its expiration
             try {
@@ -104,7 +104,7 @@ export function useAuth() {
 
     // Also check periodically (every 2 minutes) as a fallback
     const interval = setInterval(checkAndRefreshToken, 2 * 60 * 1000)
-    
+
     return () => {
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current)
@@ -125,13 +125,13 @@ export function useAuth() {
         const response = await apiClient.login(credentials)
         console.log('Login response received:', response)
         console.log('Access token to store:', response.access_token)
-        
+
         if (!response.access_token) {
           throw new Error('No access token received from server')
         }
-        
+
         setToken(response.access_token)
-        
+
         // Store refresh token if provided
         if (response.refresh_token) {
           setRefreshToken(response.refresh_token)
@@ -139,11 +139,11 @@ export function useAuth() {
         } else {
           console.warn('Login response did not include refresh_token')
         }
-        
+
         const storedToken = getToken()
         console.log('Token stored, verification:', storedToken ? 'Success' : 'Failed')
         console.log('Stored token preview:', storedToken ? storedToken.substring(0, 20) + '...' : 'None')
-        
+
         // Store the logged-in user's account ID as user_id for chat system
         if (response.user?.id) {
           setUserId(response.user.id)
@@ -151,7 +151,7 @@ export function useAuth() {
         } else {
           console.warn('Login response did not include user.id')
         }
-        
+
         setState({
           isAuthenticated: true,
           loading: false,

@@ -4,7 +4,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from jvspatial.db import unregister_database
 
 from jvagent.action.pageindex.adapter import persist_structure
@@ -294,7 +293,10 @@ async def test_adapter_persists_distinct_summary_vs_text(pageindex_temp_db):
 async def test_ensure_ingestion_config_for_agent_fallback():
     """When cache miss, ensure_ingestion_config_for_agent defaults to node_summary=True."""
     set_pageindex_node_summary(False)
-    with patch("jvagent.action.pageindex.pageindex_retrieval_interact_action.get_cached_actions", new_callable=AsyncMock) as m:
+    with patch(
+        "jvagent.core.cache.get_cached_actions",
+        new_callable=AsyncMock,
+    ) as m:
         m.return_value = None
         await ensure_ingestion_config_for_agent("agent_123")
     assert get_pageindex_node_summary() is True
@@ -303,22 +305,35 @@ async def test_ensure_ingestion_config_for_agent_fallback():
 @pytest.mark.asyncio
 async def test_ensure_ingestion_config_for_agent_from_action():
     """When cache has PageIndex action, ensure_ingestion_config_for_agent uses its config."""
-    mock_action = type("MockAction", (), {"config": {"node_summary": "yes"}, "node_summary": True})()
+    mock_action = type(
+        "MockAction", (), {"config": {"node_summary": "yes"}, "node_summary": True}
+    )()
 
     def mock_isinstance(obj, cls):
-        if cls == PageIndexRetrievalInteractAction and getattr(obj, "config", None) is not None:
+        if (
+            cls == PageIndexRetrievalInteractAction
+            and getattr(obj, "config", None) is not None
+        ):
             return True
         return isinstance(obj, cls)
 
-    with patch("jvagent.action.pageindex.pageindex_retrieval_interact_action.get_cached_actions", new_callable=AsyncMock) as m:
+    with patch(
+        "jvagent.core.cache.get_cached_actions",
+        new_callable=AsyncMock,
+    ) as m:
         m.return_value = [mock_action]
-        with patch("jvagent.action.pageindex.pageindex_retrieval_interact_action.isinstance", mock_isinstance):
+        with patch(
+            "jvagent.action.pageindex.pageindex_retrieval_interact_action.isinstance",
+            mock_isinstance,
+        ):
             await ensure_ingestion_config_for_agent("agent_123")
     assert get_pageindex_node_summary() is True
 
 
 @pytest.mark.asyncio
-async def test_do_assimilate_with_if_add_node_summary(pageindex_temp_db, sample_markdown):
+async def test_do_assimilate_with_if_add_node_summary(
+    pageindex_temp_db, sample_markdown
+):
     """_do_assimilate passes if_add_node_summary to assimilate_document."""
     content = sample_markdown.read_bytes()
     result = await _do_assimilate(

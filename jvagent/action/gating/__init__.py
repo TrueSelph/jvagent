@@ -5,10 +5,10 @@ to determine when the agent should reply, stay silent, or accumulate fragments.
 """
 
 from jvagent.action.gating.gating_result import (
-    GatingResult,
     POSTURE_DEFER,
     POSTURE_RESPOND,
     POSTURE_SUPPRESS,
+    GatingResult,
     parse_gating_response,
 )
 from jvagent.action.gating.response_gating import ResponseGatingInteractAction

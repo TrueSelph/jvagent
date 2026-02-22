@@ -140,7 +140,9 @@ def get_pageindex_config() -> Dict[str, Any]:
             db_path = explicit
         else:
             shared_root = _get_shared_db_root()
-            db_path = os.path.join(shared_root, PAGEINDEX_DB_NAME, "sqlite", "pageindex.db")
+            db_path = os.path.join(
+                shared_root, PAGEINDEX_DB_NAME, "sqlite", "pageindex.db"
+            )
         return {"db_type": db_type, "db_path": db_path}
     elif db_type == "mongodb":
         db_uri = os.getenv("JVSPATIAL_PAGEINDEX_DB_URI") or os.getenv(

@@ -33,15 +33,9 @@ class ResponseMessage(Object):
         delivered: Whether message was delivered
     """
 
-    user_id: str = attribute(
-        default="", description="User identifier"
-    )
-    session_id: str = attribute(
-        default="", description="Session identifier"
-    )
-    interaction_id: str = attribute(
-        default="", description="Parent interaction ID"
-    )
+    user_id: str = attribute(default="", description="User identifier")
+    session_id: str = attribute(default="", description="Session identifier")
+    interaction_id: str = attribute(default="", description="Parent interaction ID")
     message_type: str = attribute(
         default="adhoc",
         description='Type of message: "adhoc", "stream_chunk", or "final"',
@@ -54,7 +48,8 @@ class ResponseMessage(Object):
         default_factory=dict, description="Additional metadata"
     )
     observability_data: Optional[Dict[str, Any]] = attribute(
-        default=None, description="Structured observability metrics (for observability message types)"
+        default=None,
+        description="Structured observability metrics (for observability message types)",
     )
     timestamp: datetime = attribute(
         default_factory=lambda: datetime.now(timezone.utc),
@@ -70,13 +65,13 @@ class ResponseMessage(Object):
 
     async def save(self) -> "ResponseMessage":
         """Override save() to prevent ResponseMessage from being persisted.
-        
+
         ResponseMessage objects are ephemeral and should never be saved to the database.
         They are only stored in memory within the ResponseBus session queues.
-        
+
         Returns:
             Self (for chaining)
-        
+
         Raises:
             RuntimeError: Always raises, as ResponseMessage should never be saved
         """
@@ -87,7 +82,7 @@ class ResponseMessage(Object):
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert message to dictionary format.
-        
+
         Observability data, delivered status, and timestamp are conditionally omitted:
         - observability_data: Never included (keeps payloads lightweight)
         - delivered: Only meaningful for channel adapters, not SSE streaming
@@ -107,12 +102,11 @@ class ResponseMessage(Object):
             "channel": self.channel,
             "metadata": self.metadata,
         }
-        
+
         # Only include timestamp for non-stream-chunk messages
         # Stream chunks arrive in order, timestamp is only used once (first chunk),
         # and client can timestamp on receipt for better UX
         if self.message_type != "stream_chunk":
             result["timestamp"] = self.timestamp.isoformat() if self.timestamp else None
-        
-        return result
 
+        return result

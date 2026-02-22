@@ -3,28 +3,28 @@
 package:
   # Action name in namespace/action_name format
   name: jvagent/openai_embedding
-  
+
   # Package author
   author: jvagent
-  
+
   # Archetype: The main Action class name
   archetype: OpenAIEmbeddingModelAction
-  
+
   # Package version
   version: 0.0.1
-  
+
   # Package metadata
   meta:
     title: OpenAI Embedding Model Action
     description: Embedding model integration for OpenAI embeddings API
     group: jvagent
     type: embedding_model_action
-  
+
   # Package configuration
   config:
     order:
       weight: 0
-  
+
   # Package dependencies
   dependencies:
     jvagent: ~0.0.1

@@ -46,22 +46,25 @@ class OpenRouterLanguageModelAction(OpenAILanguageModelAction):
 
     # OpenRouter-specific configuration
     api_endpoint: str = attribute(
-        default="https://openrouter.ai/api/v1", description="OpenRouter API endpoint URL"
+        default="https://openrouter.ai/api/v1",
+        description="OpenRouter API endpoint URL",
     )
     model: str = attribute(
         default="openai/gpt-4o-mini",
         description="OpenRouter model identifier (provider/model format)",
     )
-    provider: str = attribute(
-        default="openrouter", description="Provider name"
-    )
+    provider: str = attribute(default="openrouter", description="Provider name")
     http_referer: str = attribute(
         default="", description="HTTP Referer header for OpenRouter (optional)"
     )
-    site_name: str = attribute(default="jvagent", description="Site name for OpenRouter (optional)")
+    site_name: str = attribute(
+        default="jvagent", description="Site name for OpenRouter (optional)"
+    )
 
     # OpenRouter pricing varies by model, so we don't provide defaults
-    _model_pricing: Dict[str, Dict[str, float]] = attribute(private=True, default_factory=dict)
+    _model_pricing: Dict[str, Dict[str, float]] = attribute(
+        private=True, default_factory=dict
+    )
 
     # ============================================================================
     # Lifecycle Hooks
@@ -156,7 +159,7 @@ class OpenRouterLanguageModelAction(OpenAILanguageModelAction):
 
             # Update provider name
             result.provider = "openrouter"
-            
+
             # Ensure messages are stored for token estimation (parent should have done this, but ensure it)
             if not hasattr(result, "_messages_for_estimation"):
                 result._messages_for_estimation = messages
@@ -200,4 +203,3 @@ class OpenRouterLanguageModelAction(OpenAILanguageModelAction):
 
             total_cost = prompt_cost + completion_cost
             self.total_cost += total_cost
-

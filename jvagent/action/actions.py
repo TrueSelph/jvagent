@@ -26,7 +26,9 @@ class Actions(Node):
     """
 
     # Statistics
-    registered_count: int = attribute(default=0, description="Number of registered actions")
+    registered_count: int = attribute(
+        default=0, description="Number of registered actions"
+    )
     enabled_count: int = attribute(default=0, description="Number of enabled actions")
 
     # Internal lock for thread-safe operations
@@ -36,7 +38,9 @@ class Actions(Node):
     # Action Registration
     # ============================================================================
 
-    async def register_action(self, action: Action, update_if_exists: bool = False) -> bool:
+    async def register_action(
+        self, action: Action, update_if_exists: bool = False
+    ) -> bool:
         """Register or update an action with this manager.
 
         This method includes a safeguard to prevent duplicate actions from being registered
@@ -138,7 +142,8 @@ class Actions(Node):
                             )
                         except Exception as e:
                             logger.error(
-                                f"Error removing duplicate action {duplicate.id}: {e}", exc_info=True
+                                f"Error removing duplicate action {duplicate.id}: {e}",
+                                exc_info=True,
                             )
 
                 # Register the new action
@@ -209,20 +214,23 @@ class Actions(Node):
                                 "context": context_name,
                                 "error_code": f"action_{context_name}_error",
                             }
-                        }
+                        },
                     )
                     raise  # Re-raise to be caught by outer handler
 
                 await self.save()
-                
+
                 # Invalidate action cache for this agent
                 from jvagent.core.cache import invalidate_action_cache
+
                 await invalidate_action_cache(action.agent_id)
-                
+
                 return True
 
             except Exception as e:
-                logger.error(f"Error registering action {action.label}: {e}", exc_info=True)
+                logger.error(
+                    f"Error registering action {action.label}: {e}", exc_info=True
+                )
                 return False
 
     async def register_actions(
@@ -238,21 +246,27 @@ class Actions(Node):
             Dictionary mapping action labels to registration status
         """
         results = {}
-        registered_actions = []  # Track actions that were actually registered (not duplicates)
+        registered_actions = (
+            []
+        )  # Track actions that were actually registered (not duplicates)
 
         for action in actions:
-            success = await self.register_action(action, update_if_exists=update_if_exists)
+            success = await self.register_action(
+                action, update_if_exists=update_if_exists
+            )
             results[action.label] = success
 
             # Only track as registered if it was successful AND we need to verify it wasn't a duplicate
             if success:
                 # Verify the action still exists and is connected (not deleted as duplicate)
                 try:
-                    existing = await Action.find_one({
-                        "context.agent_id": action.agent_id,
-                        "context.namespace": action.namespace,
-                        "context.label": action.label,
-                    })
+                    existing = await Action.find_one(
+                        {
+                            "context.agent_id": action.agent_id,
+                            "context.namespace": action.namespace,
+                            "context.label": action.label,
+                        }
+                    )
                     if existing and existing.id == action.id:
                         # This is the action we registered (not a duplicate)
                         registered_actions.append(existing)
@@ -278,7 +292,7 @@ class Actions(Node):
                             "context": "post_register",
                             "error_code": "action_post_register_error",
                         }
-                    }
+                    },
                 )
 
         return results
@@ -314,7 +328,9 @@ class Actions(Node):
                             f"Unregistered {endpoints_unregistered} endpoint(s) for action {action_id}"
                         )
                 except Exception as e:
-                    logger.warning(f"Error unregistering endpoints for action {action_id}: {e}")
+                    logger.warning(
+                        f"Error unregistering endpoints for action {action_id}: {e}"
+                    )
 
                 # Step 2: Unload action-specific modules (if safe)
                 try:
@@ -324,7 +340,9 @@ class Actions(Node):
                             f"Unloaded {modules_unloaded} module(s) for action {action_id}"
                         )
                 except Exception as e:
-                    logger.warning(f"Error unloading modules for action {action_id}: {e}")
+                    logger.warning(
+                        f"Error unloading modules for action {action_id}: {e}"
+                    )
 
                 # Step 3: Call lifecycle hook (allows action-specific cleanup)
                 try:
@@ -343,7 +361,7 @@ class Actions(Node):
                                 "context": "on_deregister",
                                 "error_code": "action_deregister_error",
                             }
-                        }
+                        },
                     )
                     # Continue with deregistration even if hook fails
 
@@ -358,12 +376,15 @@ class Actions(Node):
 
                 # Invalidate action cache for this agent
                 from jvagent.core.cache import invalidate_action_cache
+
                 await invalidate_action_cache(action.agent_id)
 
                 return True
 
             except Exception as e:
-                logger.error(f"Error deregistering action {action_id}: {e}", exc_info=True)
+                logger.error(
+                    f"Error deregistering action {action_id}: {e}", exc_info=True
+                )
                 return False
 
     # ============================================================================
@@ -371,7 +392,9 @@ class Actions(Node):
     # ============================================================================
 
     async def get_actions(
-        self, enabled_only: bool = False, entity: Optional[Union[Type[Action], str]] = None
+        self,
+        enabled_only: bool = False,
+        entity: Optional[Union[Type[Action], str]] = None,
     ) -> List[Action]:
         """Get all actions for this agent using node traversal.
 
@@ -389,7 +412,9 @@ class Actions(Node):
         """
         try:
             # Determine node filter - use entity if provided, otherwise default to Action
-            node_filter: Union[Type[Action], str] = entity if entity is not None else Action
+            node_filter: Union[Type[Action], str] = (
+                entity if entity is not None else Action
+            )
 
             # Build kwargs for property filtering
             kwargs = {}
@@ -402,7 +427,11 @@ class Actions(Node):
             logger.error(f"Error getting actions: {e}", exc_info=True)
             return []
 
-    async def get_all_actions(self, enabled_only: bool = False, entity: Optional[Union[Type[Action], str]] = None) -> List[Any]:
+    async def get_all_actions(
+        self,
+        enabled_only: bool = False,
+        entity: Optional[Union[Type[Action], str]] = None,
+    ) -> List[Any]:
         """Get all actions for this agent, including actions attached to actions (subactions).
 
         This recursively traverses the action graph to find all actions.
@@ -414,7 +443,9 @@ class Actions(Node):
             Flat list of all Action instances found in the hierarchy
         """
         # Get top-level actions
-        top_level_actions = await self.get_actions(enabled_only=enabled_only, entity=entity)
+        top_level_actions = await self.get_actions(
+            enabled_only=enabled_only, entity=entity
+        )
 
         all_actions = []
         processed_ids = set()
@@ -464,7 +495,9 @@ class Actions(Node):
                 return None
 
             # Use entity-centric find_one
-            return await Action.find_one({"context.agent_id": agent.id, "context.label": label})
+            return await Action.find_one(
+                {"context.agent_id": agent.id, "context.label": label}
+            )
 
         except Exception as e:
             logger.error(f"Error getting action by label {label}: {e}", exc_info=True)
@@ -487,7 +520,9 @@ class Actions(Node):
             return await action.to_dict()
 
         except Exception as e:
-            logger.error(f"Error getting action info for {action_id}: {e}", exc_info=True)
+            logger.error(
+                f"Error getting action info for {action_id}: {e}", exc_info=True
+            )
             return None
 
     async def list_actions(self) -> List[Dict[str, Any]]:

@@ -10,13 +10,12 @@ Use the standard logger with logger.interaction() to log interactions.
 For custom logging services, use jvspatial's BaseLoggingService.
 """
 
-# Import service to ensure INTERACTION level is registered
-from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
-
 # Import endpoints to ensure they are registered
 from jvagent.logging import endpoints  # noqa: F401
+
+# Import service to ensure INTERACTION level is registered
+from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
 
 __all__ = [
     "INTERACTION_LEVEL_NUMBER",
 ]
-

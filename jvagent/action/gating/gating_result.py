@@ -25,6 +25,7 @@ class GatingResult:
         confidence: Confidence score (0.0-1.0)
         reasoning: Brief explanation for the classification
     """
+
     posture: str = POSTURE_RESPOND
     confidence: float = 0.0
     reasoning: str = ""
@@ -52,7 +53,9 @@ def parse_gating_response(response: str) -> GatingResult:
         GatingResult instance
     """
     if not response:
-        return GatingResult(posture=POSTURE_RESPOND, confidence=0.0, reasoning="Empty response")
+        return GatingResult(
+            posture=POSTURE_RESPOND, confidence=0.0, reasoning="Empty response"
+        )
 
     json_str = response.strip()
 

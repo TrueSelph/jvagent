@@ -2,7 +2,8 @@
 
 import pytest
 
-from jvagent.action.model.base import ModelAction, ModelActionResult
+from jvagent.action.model import ModelAction, ModelActionResult
+from jvagent.action.model.language.base import LanguageModelAction
 
 
 class TestModelActionResult:
@@ -18,7 +19,7 @@ class TestModelActionResult:
         )
 
         assert result.response == "Hello world"
-        assert result.usage["total_tokens"] == 10
+        assert result.metrics["total_tokens"] == 10
         assert result.model == "test-model"
         assert result.provider == "test"
         assert not result.is_streaming
@@ -130,7 +131,7 @@ class TestModelActionResult:
         data = result.to_dict()
 
         assert data["response"] == "Hello"
-        assert data["usage"]["total_tokens"] == 5
+        assert data["metrics"]["total_tokens"] == 5
         assert data["model"] == "test-model"
         assert data["provider"] == "test"
         assert data["finish_reason"] == "stop"
@@ -144,8 +145,8 @@ class TestModelAction:
     def test_format_messages_simple(self):
         """Test formatting simple messages."""
 
-        # Create a mock ModelAction (abstract, so we need a subclass)
-        class MockModelAction(ModelAction):
+        # Use LanguageModelAction (has format_messages); ModelAction/BaseModelAction does not
+        class MockModelAction(LanguageModelAction):
             async def _query(self, messages, tools=None, **kwargs):
                 return ModelActionResult(response="", usage={}, model="", provider="")
 
@@ -162,7 +163,7 @@ class TestModelAction:
     def test_format_messages_with_system(self):
         """Test formatting messages with system prompt."""
 
-        class MockModelAction(ModelAction):
+        class MockModelAction(LanguageModelAction):
             async def _query(self, messages, tools=None, **kwargs):
                 return ModelActionResult(response="", usage={}, model="", provider="")
 
@@ -181,7 +182,7 @@ class TestModelAction:
     def test_format_messages_with_history(self):
         """Test formatting messages with conversation history."""
 
-        class MockModelAction(ModelAction):
+        class MockModelAction(LanguageModelAction):
             async def _query(self, messages, tools=None, **kwargs):
                 return ModelActionResult(response="", usage={}, model="", provider="")
 
@@ -207,7 +208,7 @@ class TestModelAction:
     async def test_track_usage(self):
         """Test usage tracking."""
 
-        class MockModelAction(ModelAction):
+        class MockModelAction(LanguageModelAction):
             async def _query(self, messages, tools=None, **kwargs):
                 return ModelActionResult(response="", usage={}, model="", provider="")
 

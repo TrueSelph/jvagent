@@ -20,42 +20,42 @@ Modes:
 import logging
 from typing import Any, Optional, Set, Union
 
-from pydantic import PrivateAttr
 from jvspatial.core import Walker, on_visit
+from pydantic import PrivateAttr
 
+from ..utils.cache_utils import BranchCache
 from .question_node import QuestionNode
 from .state_node import StateNode
-from ..utils.cache_utils import BranchCache
 
 logger = logging.getLogger(__name__)
 
 
 class QuestionPathWalker(Walker):
     """Lightweight walker for determining next target node and reachable questions.
-    
+
     This walker traverses the question graph following the active branch path
     (using BranchCache) to:
     - Find the next target (QuestionNode or StateNode) on the active path
     - Collect all reachable questions on the active path
     - Sync session state after updates (invalidate cache, prune unreachable data)
     - Determine if all reachable questions are answered (→ REVIEW)
-    
+
     find_next_target returns a QuestionNode when an unanswered question is found,
     or a StateNode (e.g., REVIEW) when all questions are answered. StateNodes
     are traversed to discover downstream QuestionNodes (e.g., edit flow).
-    
+
     Modes:
     - find_next: Uses existing cache, stops at first unanswered or StateNode
     - collect_all: Uses existing cache, traverses full path (read-only)
     - sync_post_update: Invalidates cache, traverses full path, prunes session data
-    
+
     Usage:
         # Find next target (QuestionNode or StateNode)
         next_node = await QuestionPathWalker.find_next_target(session, first_node, visitor)
-        
+
         # Get all reachable questions
         reachable = await QuestionPathWalker.get_reachable_questions(session, first_node, visitor)
-        
+
         # Post-update sync (prune unreachable responses)
         reachable = await QuestionPathWalker.sync(session, first_node, visitor, self)
     """
@@ -63,7 +63,7 @@ class QuestionPathWalker(Walker):
     interview_session: Optional[Any] = None
     interact_visitor: Optional[Any] = None
     interview_action: Optional[Any] = None
-    
+
     # Mode: "find_next" stops at first unanswered, "collect_all" traverses entire path,
     # "sync_post_update" invalidates cache, traverses full path, prunes session
     _mode: str = PrivateAttr(default="find_next")
@@ -96,24 +96,27 @@ class QuestionPathWalker(Walker):
                 self._next_target = here
 
         from .question_edge import QuestionEdge
+
         edges = await here.edges(direction="out")
         if not edges:
             return
 
         # Check if this UNANSWERED node has conditional branches and no cache to guide traversal
-        if isinstance(here, QuestionNode) and self._mode in ("collect_all", "sync_post_update"):
+        if isinstance(here, QuestionNode) and self._mode in (
+            "collect_all",
+            "sync_post_update",
+        ):
             # Only check branches if the question is UNANSWERED
             if implicit_name not in self.interview_session.responses:
                 has_conditional_branches = any(
-                    hasattr(e, 'condition') and e.condition is not None 
-                    for e in edges
+                    hasattr(e, "condition") and e.condition is not None for e in edges
                 )
-                
+
                 if has_conditional_branches:
                     # Check if BranchCache has a decision for this question
                     branch_cache = BranchCache(self.interview_session)
                     cached_target = branch_cache.get(implicit_name)
-                    
+
                     if cached_target is None:
                         # No cache guidance - cannot determine which branch to take
                         logger.debug(
@@ -169,9 +172,13 @@ class QuestionPathWalker(Walker):
             if field not in self._reachable:
                 old_value = session.responses.pop(field)
                 session.validation_results.pop(field, None)
-                branch_cache.record_pruned_response(field, old_value, "branch_path_change")
+                branch_cache.record_pruned_response(
+                    field, old_value, "branch_path_change"
+                )
                 pruned_questions.append(field)
-                logger.debug(f"QuestionPathWalker: pruned unreachable response '{field}'")
+                logger.debug(
+                    f"QuestionPathWalker: pruned unreachable response '{field}'"
+                )
 
         if session.update_queue:
             session.update_queue = [
@@ -211,7 +218,9 @@ class QuestionPathWalker(Walker):
             Set of reachable question names on the active path.
         """
         if first_node is None:
-            logger.warning("QuestionPathWalker.sync: first_node is None, skipping traversal")
+            logger.warning(
+                "QuestionPathWalker.sync: first_node is None, skipping traversal"
+            )
             return set()
 
         branch_cache = BranchCache(session)
@@ -244,19 +253,19 @@ class QuestionPathWalker(Walker):
         session: Any,
         first_node: Optional[QuestionNode] = None,
         visitor: Optional[Any] = None,
-        interview_action: Optional[Any] = None
+        interview_action: Optional[Any] = None,
     ) -> Optional[Any]:
         """Find the next target on the active branch path.
-        
+
         Traverses the question graph following conditional branches (using BranchCache)
         and stops at the first unanswered question, or returns a StateNode (e.g., REVIEW)
         when all questions are answered.
-        
+
         Args:
             session: InterviewSession with responses and branch cache
             first_node: The first QuestionNode in the graph (entry point)
             visitor: Optional InteractWalker for branch function evaluation
-        
+
         Returns:
             Next QuestionNode (unanswered) or StateNode (e.g., REVIEW) on the path,
             or None if traversal fails
@@ -264,18 +273,20 @@ class QuestionPathWalker(Walker):
         if first_node is None:
             logger.warning("QuestionPathWalker.find_next_target: first_node is None")
             return None
-        
+
         walker = cls(
             interview_session=session,
             interact_visitor=visitor,
             interview_action=interview_action,
         )
         walker._mode = "find_next"
-        
+
         try:
             await walker.spawn(first_node)
         except Exception:
-            logger.exception("QuestionPathWalker.find_next_target: error during traversal")
+            logger.exception(
+                "QuestionPathWalker.find_next_target: error during traversal"
+            )
             return None
 
         return walker.next_target
@@ -286,36 +297,40 @@ class QuestionPathWalker(Walker):
         session: Any,
         first_node: Optional[QuestionNode] = None,
         visitor: Optional[Any] = None,
-        interview_action: Optional[Any] = None
+        interview_action: Optional[Any] = None,
     ) -> Set[str]:
         """Get all reachable questions on the active branch path.
-        
+
         Traverses the entire question graph following conditional branches
         (using BranchCache) and collects all question names encountered.
-        
+
         Args:
             session: InterviewSession with responses and branch cache
             first_node: The first QuestionNode in the graph (entry point)
             visitor: Optional InteractWalker for branch function evaluation
-        
+
         Returns:
             Set of question names reachable given current responses and branch decisions
         """
         if first_node is None:
-            logger.warning("QuestionPathWalker.get_reachable_questions: first_node is None")
+            logger.warning(
+                "QuestionPathWalker.get_reachable_questions: first_node is None"
+            )
             return set()
-        
+
         walker = cls(
             interview_session=session,
             interact_visitor=visitor,
             interview_action=interview_action,
         )
         walker._mode = "collect_all"
-        
+
         try:
             await walker.spawn(first_node)
         except Exception:
-            logger.exception("QuestionPathWalker.get_reachable_questions: error during traversal")
+            logger.exception(
+                "QuestionPathWalker.get_reachable_questions: error during traversal"
+            )
             return set()
-        
+
         return walker.reachable

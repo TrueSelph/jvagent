@@ -8,7 +8,10 @@ from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
 from jvagent.action.mcp.client import MCPClientWrapper
-from jvagent.action.mcp.prompts import TOOL_SELECTION_SYSTEM, build_tool_selection_prompt
+from jvagent.action.mcp.prompts import (
+    TOOL_SELECTION_SYSTEM,
+    build_tool_selection_prompt,
+)
 from jvagent.action.mcp.result import MCPFulfillResult
 
 logger = logging.getLogger(__name__)
@@ -49,21 +52,26 @@ def _parse_tool_selection(response_text: str) -> Optional[Dict[str, Any]]:
             arguments = {}
         if not isinstance(arguments, dict):
             arguments = {}
-        return {"tool_name": str(tool_name) if tool_name else "", "arguments": arguments}
+        return {
+            "tool_name": str(tool_name) if tool_name else "",
+            "arguments": arguments,
+        }
     except json.JSONDecodeError:
         return None
 
 
-def _normalize_call_result(
-    result: Any, tool_name: str
-) -> MCPFulfillResult:
+def _normalize_call_result(result: Any, tool_name: str) -> MCPFulfillResult:
     """Convert MCP CallToolResult to MCPFulfillResult."""
     is_error = getattr(result, "is_error", True)
     content = getattr(result, "content", None) or []
     raw_content: List[Any] = list(content) if isinstance(content, (list, tuple)) else []
     text_parts = []
     for item in raw_content:
-        if hasattr(item, "type") and getattr(item, "type") == "text" and hasattr(item, "text"):
+        if (
+            hasattr(item, "type")
+            and getattr(item, "type") == "text"
+            and hasattr(item, "text")
+        ):
             text_parts.append(getattr(item, "text", ""))
         elif isinstance(item, dict):
             if item.get("type") == "text":
@@ -90,20 +98,34 @@ class MCPAction(Action):
     Use get_model_action(required=True) (will raise if none configured).
     """
 
-    server_name: str = attribute(default="mcp", description="Logical name for this MCP server")
-    transport: str = attribute(default="streamable_http", description="stdio or streamable_http")
+    server_name: str = attribute(
+        default="mcp", description="Logical name for this MCP server"
+    )
+    transport: str = attribute(
+        default="streamable_http", description="stdio or streamable_http"
+    )
     command: str = attribute(default="", description="For stdio: executable to run")
-    args: List[str] = attribute(default_factory=list, description="For stdio: command arguments")
-    env: Optional[Dict[str, str]] = attribute(default=None, description="For stdio: optional env")
+    args: List[str] = attribute(
+        default_factory=list, description="For stdio: command arguments"
+    )
+    env: Optional[Dict[str, str]] = attribute(
+        default=None, description="For stdio: optional env"
+    )
     url: str = attribute(default="", description="For streamable_http: endpoint URL")
 
     model_action_type: str = attribute(
         default="OpenAILanguageModelAction",
         description="LanguageModelAction type for NL→tool mapping",
     )
-    model: str = attribute(default="gpt-4o-mini", description="Model for tool selection")
-    mcp_connect_timeout: float = attribute(default=10.0, description="MCP connect/init timeout (s)")
-    mcp_call_timeout: float = attribute(default=30.0, description="MCP tool call timeout (s)")
+    model: str = attribute(
+        default="gpt-4o-mini", description="Model for tool selection"
+    )
+    mcp_connect_timeout: float = attribute(
+        default=10.0, description="MCP connect/init timeout (s)"
+    )
+    mcp_call_timeout: float = attribute(
+        default=30.0, description="MCP tool call timeout (s)"
+    )
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -113,6 +135,7 @@ class MCPAction(Action):
 
     def _get_lock(self) -> Any:
         import asyncio
+
         if self._lock is None:
             self._lock = asyncio.Lock()
         return self._lock
@@ -186,7 +209,9 @@ class MCPAction(Action):
                     error_kind="no_tool",
                 )
             tools_description = _format_tools_description(tools)
-            user_prompt = build_tool_selection_prompt(natural_language_command, tools_description)
+            user_prompt = build_tool_selection_prompt(
+                natural_language_command, tools_description
+            )
             model_action = await self.get_model_action(required=True)
             try:
                 result = await model_action.query_sync(

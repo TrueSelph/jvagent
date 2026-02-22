@@ -10,7 +10,11 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from jvspatial.core.context import GraphContext, get_default_context, set_default_context
+from jvspatial.core.context import (
+    GraphContext,
+    get_default_context,
+    set_default_context,
+)
 from jvspatial.db import get_database_manager
 
 from .adapter import tree_to_graph
@@ -23,7 +27,7 @@ from .config import (
     get_pageindex_summary_token_threshold,
     initialize_pageindex_database,
 )
-from .core import page_index, md_to_tree
+from .core import md_to_tree, page_index
 from .llm_bridge import set_pageindex_model_action
 from .models import DocumentRootNode
 
@@ -39,15 +43,19 @@ def _to_yes_no(value: Any, default: bool) -> str:
 
 
 def _build_metadata_query(metadata_filter: Dict[str, Any]) -> Dict[str, Any]:
-    """Build query dict for metadata filter. Uses context.metadata.k for each key."""
+    """Build query dict for metadata filter.
+
+    For single-key filters, uses context.metadata.k = v.
+    For multi-key filters, matches the full metadata dict to ensure AND semantics
+    work correctly with JSON backend (context.metadata must contain all keys).
+    """
     if not metadata_filter:
         return {}
-    clauses = [
-        {f"context.metadata.{k}": v} for k, v in metadata_filter.items()
-    ]
-    if len(clauses) == 1:
-        return clauses[0]
-    return {"$and": clauses}
+    if len(metadata_filter) == 1:
+        k, v = next(iter(metadata_filter.items()))
+        return {f"context.metadata.{k}": v}
+    # Multi-key: use $eq so QueryEngine matches dict equality (not operator dict)
+    return {"context.metadata": {"$eq": metadata_filter}}
 
 
 def _get_pageindex_context() -> GraphContext:
@@ -275,13 +283,15 @@ async def export_documents(
     doc_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Export documents and their graph structure."""
-    from .models import DocumentNode, DocumentContentEdge
+    from .models import DocumentContentEdge, DocumentNode
+
     initialize_pageindex_database()
     context = _get_pageindex_context()
     prev = get_default_context()
     import logging
+
     logger = logging.getLogger(__name__)
-    logger.warning(f"exporting documents in collection: {collection_name}")  
+    logger.warning(f"exporting documents in collection: {collection_name}")
     try:
         set_default_context(context)
         query: Dict[str, Any] = {"context.collection_name": collection_name}
@@ -305,7 +315,8 @@ async def import_documents(
     collection_name: Optional[str] = None,
 ) -> None:
     """Import documents and their graph structure."""
-    from .models import DocumentNode, DocumentContentEdge
+    from .models import DocumentContentEdge, DocumentNode
+
     initialize_pageindex_database()
     context = _get_pageindex_context()
     prev = get_default_context()

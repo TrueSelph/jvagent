@@ -36,11 +36,10 @@ class OpenAIEmbeddingModelAction(EmbeddingModelAction):
         default="https://api.openai.com/v1", description="OpenAI API endpoint URL"
     )
     model: str = attribute(
-        default="text-embedding-3-small", description="OpenAI embedding model identifier"
+        default="text-embedding-3-small",
+        description="OpenAI embedding model identifier",
     )
-    provider: str = attribute(
-        default="openai", description="Provider name"
-    )
+    provider: str = attribute(default="openai", description="Provider name")
 
     # Model dimension mapping (for auto-detection)
     _model_dimensions: Dict[str, int] = attribute(
@@ -54,7 +53,7 @@ class OpenAIEmbeddingModelAction(EmbeddingModelAction):
 
     async def on_register(self) -> None:
         """Called when action is registered during installation.
-        
+
         Validates configuration. HTTP client initialization is handled
         by the base class. This method should only be called once during
         action registration.
@@ -63,7 +62,9 @@ class OpenAIEmbeddingModelAction(EmbeddingModelAction):
 
         # Validate API key
         if not self.api_key:
-            logger.warning(f"OpenAI embedding action {self.label} has no API key configured")
+            logger.warning(
+                f"OpenAI embedding action {self.label} has no API key configured"
+            )
 
         # Auto-detect dimensions from model if not set
         if self.embedding_dimensions == 0 and self.model in self._model_dimensions:
@@ -113,7 +114,9 @@ class OpenAIEmbeddingModelAction(EmbeddingModelAction):
             return vector
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"OpenAI embedding API error: {e.response.status_code} - {e.response.text}")
+            logger.error(
+                f"OpenAI embedding API error: {e.response.status_code} - {e.response.text}"
+            )
             raise
         except httpx.TimeoutException as e:
             logger.error(f"OpenAI embedding API timeout: {e}")
@@ -124,4 +127,3 @@ class OpenAIEmbeddingModelAction(EmbeddingModelAction):
         except Exception as e:
             logger.error(f"OpenAI embedding failed: {e}", exc_info=True)
             raise
-

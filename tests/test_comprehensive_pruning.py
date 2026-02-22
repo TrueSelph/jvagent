@@ -5,10 +5,11 @@ responses are removed and new-path responses are left untouched.
 """
 
 import pytest
-from jvagent.action.interview.core.session.interview_session import InterviewSession
-from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
-from jvagent.action.interview.core.utils.cache_utils import BranchCache
+
 from jvagent.action.interview.core.foundation.enums import InterviewState
+from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
+from jvagent.action.interview.core.session.interview_session import InterviewSession
+from jvagent.action.interview.core.utils.cache_utils import BranchCache
 
 
 @pytest.mark.asyncio
@@ -35,8 +36,18 @@ async def test_branch_change_triggers_pruning():
             ],
             "default_next": "REVIEW",
         },
-        {"name": "urban_details", "question": "Urban area name and density?", "constraints": {"type": "string"}, "default_next": "REVIEW"},
-        {"name": "rural_details", "question": "Rural area name and population?", "constraints": {"type": "string"}, "default_next": "REVIEW"},
+        {
+            "name": "urban_details",
+            "question": "Urban area name and density?",
+            "constraints": {"type": "string"},
+            "default_next": "REVIEW",
+        },
+        {
+            "name": "rural_details",
+            "question": "Rural area name and population?",
+            "constraints": {"type": "string"},
+            "default_next": "REVIEW",
+        },
     ]
 
     # Initial state: User chose "urban", then updated to "rural"
@@ -76,7 +87,12 @@ async def test_empty_reachable_set_does_not_prune():
 
     session = InterviewSession(agent_id="test_agent")
     session.question_graph = [
-        {"name": "q1", "question": "Q1?", "constraints": {"type": "string"}, "default_next": "REVIEW"},
+        {
+            "name": "q1",
+            "question": "Q1?",
+            "constraints": {"type": "string"},
+            "default_next": "REVIEW",
+        },
     ]
     session.responses = {"q1": "answer"}
     session.state = InterviewState.ACTIVE
@@ -86,7 +102,9 @@ async def test_empty_reachable_set_does_not_prune():
     # _reachable is empty (default) — simulates a failed traversal
     walker._prune_session()
 
-    assert "q1" in session.responses, "No responses should be pruned when reachable is empty"
+    assert (
+        "q1" in session.responses
+    ), "No responses should be pruned when reachable is empty"
 
 
 if __name__ == "__main__":

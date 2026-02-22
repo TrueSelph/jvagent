@@ -17,7 +17,7 @@ SYSTEM_PROMPT_TEMPLATE = """
 
 ### IDENTITY
 
-Your name is {agent_name}. 
+Your name is {agent_name}.
 {agent_description}
 
 Your capabilities:
@@ -172,6 +172,7 @@ Rules: Apply all matching parameters. If multiple match, satisfy all (prioritize
 # Helper Functions
 # ============================================================================
 
+
 def format_parameter(param: dict, index: Optional[int] = None) -> str:
     """Format a parameter dictionary for inclusion in the prompt.
 
@@ -189,17 +190,19 @@ def format_parameter(param: dict, index: Optional[int] = None) -> str:
         rationale = param.get("rationale", "")
 
         if condition and response:
-            prefix = f"Parameter #{index}) " if index is not None else ""# "When {condition}, then {response}"
+            prefix = (
+                f"Parameter #{index}) " if index is not None else ""
+            )  # "When {condition}, then {response}"
             formatted = f"{prefix}When {condition}, then {response}"
-            
+
             # Add description if available
             if description:
                 formatted += f"\n      - Description: {description}"
-            
+
             # Add rationale if available
             if rationale:
                 formatted += f"\n      - Rationale: {rationale}"
-            
+
             return formatted
         elif condition:
             prefix = f"{index}. " if index is not None else ""
@@ -230,7 +233,9 @@ def format_conditional_section(content: str, condition: bool = True) -> str:
     return content.strip()
 
 
-def get_channel_directive(channel: str, phonetic_substitutions: Optional[Dict[str, str]] = None) -> str:
+def get_channel_directive(
+    channel: str, phonetic_substitutions: Optional[Dict[str, str]] = None
+) -> str:
     """Get the formatting directive for a specific channel.
 
     Args:
@@ -324,7 +329,7 @@ def get_channel_directive(channel: str, phonetic_substitutions: Optional[Dict[st
             "- Style: Use markdown formatting appropriately to enhance readability"
         ),
     }
-    
+
     # Handle voice channel with dynamic phonetic substitutions
     if channel == "voice":
         voice_directive = (
@@ -341,7 +346,7 @@ def get_channel_directive(channel: str, phonetic_substitutions: Optional[Dict[st
             "- Conversational tone. One or two sentences often suffice.\n\n"
             "Before outputting: Verify no markdown, no lists, under 100 words."
         )
-        
+
         # Add phonetic substitutions if provided
         if phonetic_substitutions:
             substitutions_list = "\n".join(
@@ -352,7 +357,7 @@ def get_channel_directive(channel: str, phonetic_substitutions: Optional[Dict[st
                 f"\n\nPhonetic substitutions (apply these when the terms appear):\n"
                 f"{substitutions_list}"
             )
-        
+
         return voice_directive
-    
+
     return CHANNEL_FORMAT_DIRECTIVES.get(channel, "")

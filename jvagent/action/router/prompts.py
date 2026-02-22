@@ -10,10 +10,10 @@ intelligent conversational state analysis and routing.
 
 INTENT_TYPES = [
     "CONVERSATIONAL",  # Simple exchanges - greetings, smalltalk, social pleasantries
-    "INFORMATIONAL",   # Knowledge/data retrieval - questions, lookups, RAG queries
-    "INTERACTIVE",     # Multi-turn, stateful interactions - interviews, forms, workflows (starting or continuing)
-    "DIRECTIVE",       # Direct action commands - "do X", "send Y", "create Z"
-    "UNCLEAR"          # Cannot determine intent with confidence
+    "INFORMATIONAL",  # Knowledge/data retrieval - questions, lookups, RAG queries
+    "INTERACTIVE",  # Multi-turn, stateful interactions - interviews, forms, workflows (starting or continuing)
+    "DIRECTIVE",  # Direct action commands - "do X", "send Y", "create Z"
+    "UNCLEAR",  # Cannot determine intent with confidence
 ]
 
 # =============================================================================

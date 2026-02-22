@@ -21,11 +21,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar('T', bound='Action')
+T = TypeVar("T", bound="Action")
 
 
 @compound_index([("context.agent_id", 1), ("context.enabled", 1)], name="agent_enabled")
-@compound_index([("context.agent_id", 1), ("context.label", 1)], name="agent_label", unique=True)
+@compound_index(
+    [("context.agent_id", 1), ("context.label", 1)], name="agent_label", unique=True
+)
 class Action(Node):
     """Base action class for all action types.
 
@@ -72,26 +74,26 @@ class Action(Node):
         on_disable() - Called when action is disabled (action remains registered)
         on_deregister() - Called when action is deregistered (action is removed)
         healthcheck() - Called to perform health checks
-    
+
     Action-to-Action Communication:
         Actions can retrieve other actions as tools using the get_action() method:
-        
+
         # Get action by class type
         from jvagent.action.persona.persona_action import PersonaAction
         persona = await self.get_action(PersonaAction)
-        
+
         # Get action by class name string
         llm = await self.get_action("OpenAILanguageModelAction")
-        
+
         # Get LanguageModelAction (recommended for actions that need models)
         # Define model_action_type attribute to specify a particular model, or omit for any available
         llm = await self.get_model_action()  # Returns None if not found
         llm = await self.get_model_action(required=True)  # Raises error if not found
-        
+
         # Get any instance of a base class (fallback)
         from jvagent.action.vectorstore.base import VectorStore
         vectorstore = await self.get_action(VectorStore)
-        
+
     Note: Disabling an action (on_disable) does NOT deregister it. Deregistration
     (on_deregister) is a separate operation that removes the action from the system
     and automatically cleans up endpoints and modules.
@@ -105,14 +107,22 @@ class Action(Node):
     # Core Attributes
     agent_id: str = attribute(
         indexed=True,
-        protected=True, default="", description="ID of the agent this action belongs to"
+        protected=True,
+        default="",
+        description="ID of the agent this action belongs to",
     )
-    enabled: bool = attribute(indexed=True, default=True, description="Whether the action is currently enabled")
+    enabled: bool = attribute(
+        indexed=True,
+        default=True,
+        description="Whether the action is currently enabled",
+    )
     namespace: str = attribute(
         default="", description="Namespace for the action (e.g., 'jvagent', 'contrib')"
     )
     label: str = attribute(
-        indexed=True, default="", description="Human-readable label for the action (used as identifier)"
+        indexed=True,
+        default="",
+        description="Human-readable label for the action (used as identifier)",
     )
     description: str = attribute(
         default="basic agent action", description="Description of what the action does"
@@ -168,7 +178,9 @@ class Action(Node):
                             f"of action {self.id}: {e}"
                         )
             except Exception as e:
-                logger.warning(f"Error enumerating child nodes for action {self.id}: {e}")
+                logger.warning(
+                    f"Error enumerating child nodes for action {self.id}: {e}"
+                )
 
         await super().delete(cascade=cascade)
 
@@ -181,7 +193,7 @@ class Action(Node):
 
         Override this method to perform initialization tasks when the action
         is first registered. This is called before the action is enabled.
-        
+
         Note: Errors in this method are automatically logged by the base system
         when called through enable() or the Actions manager. If you override this
         method, you can add additional error handling, but basic error logging
@@ -194,7 +206,7 @@ class Action(Node):
 
         Override this method to handle reloading of action code, dependencies,
         or configuration. This is useful for hot-reloading actions during runtime.
-        
+
         Note: Errors in this method are automatically logged by the base system
         when called through reload(). If you override this method, you can add
         additional error handling, but basic error logging is already provided.
@@ -207,7 +219,7 @@ class Action(Node):
         Override this method to perform tasks that require all actions to be
         registered first, such as resolving dependencies or setting up cross-action
         communication.
-        
+
         Note: Errors in this method are automatically logged by the base system
         when called through the Actions manager. If you override this method, you
         can add additional error handling, but basic error logging is already provided.
@@ -220,7 +232,7 @@ class Action(Node):
         Override this method to perform tasks when the action transitions from
         disabled to enabled state, such as initializing connections or starting
         background tasks.
-        
+
         Note: Errors in this method are automatically logged by the base system
         when called through enable(). If you override this method, you can add
         additional error handling, but basic error logging is already provided.
@@ -229,14 +241,14 @@ class Action(Node):
 
     async def on_startup(self) -> None:
         """Called when app starts and action is loaded from database.
-        
+
         Override this method to perform initialization tasks when the action
         is loaded on app startup. This is useful for re-initializing runtime
         components like channel adapters that don't persist across restarts.
-        
+
         This hook is called for ALL loaded actions, regardless of their
         enabled state, but actions should check self.enabled if needed.
-        
+
         Note: Errors in this method are automatically logged by the base system.
         """
         pass
@@ -247,7 +259,7 @@ class Action(Node):
         Override this method to perform cleanup tasks when the action transitions
         from enabled to disabled state, such as closing connections or stopping
         background tasks.
-        
+
         Note: Errors in this method are automatically logged by the base system
         when called through disable(). If you override this method, you can add
         additional error handling, but basic error logging is already provided.
@@ -259,11 +271,11 @@ class Action(Node):
 
         Override this method to perform final cleanup tasks when the action is
         removed from the system.
-        
+
         Note: This method is called automatically during deregistration, which also
         handles endpoint and module cleanup. Override only if you need additional
         action-specific cleanup.
-        
+
         Errors in this method are automatically logged by the base system when
         called through the Actions manager. If you override this method, you
         can add additional error handling, but basic error logging is already provided.
@@ -276,25 +288,25 @@ class Action(Node):
 
     def _discover_action_endpoints(self) -> List[Any]:
         """Discover all endpoints registered for this action.
-        
+
         Queries the endpoint registry for endpoints matching this action's path patterns.
         Endpoints are typically registered with paths like `/actions/{action_id}/...`.
-        
+
         Returns:
             List of endpoint function callables to unregister
         """
         try:
             from jvspatial.api.context import get_current_server
-            
+
             server = get_current_server()
             if not server or not hasattr(server, "_endpoint_registry"):
                 return []
-            
+
             registry = server._endpoint_registry
-            
+
             # Pattern: endpoints for this action typically use /actions/{action_id}/...
             action_path_prefix = f"/actions/{self.id}/"
-            
+
             # Find endpoints matching this action's ID by iterating through _function_registry
             matching_endpoints = []
             # Access the internal registry dict directly
@@ -302,38 +314,39 @@ class Action(Node):
                 path = endpoint_info.path
                 if path.startswith(action_path_prefix):
                     matching_endpoints.append(func)
-            
+
             return matching_endpoints
-            
+
         except Exception as e:
             import logging
+
             logger = logging.getLogger(__name__)
             logger.warning(f"Error discovering endpoints for action {self.id}: {e}")
             return []
 
     async def _unregister_endpoints(self) -> int:
         """Unregister all endpoints associated with this action.
-        
+
         Discovers and unregisters all endpoints that match this action's path patterns.
-        
+
         Returns:
             Number of endpoints successfully unregistered
         """
         try:
             from jvspatial.api.context import get_current_server
-            
+
             server = get_current_server()
             if not server or not hasattr(server, "_endpoint_registry"):
                 return 0
-            
+
             registry = server._endpoint_registry
-            
+
             # Discover endpoints for this action
             endpoints_to_unregister = self._discover_action_endpoints()
-            
+
             if not endpoints_to_unregister:
                 return 0
-            
+
             # Unregister each endpoint
             unregistered_count = 0
             for endpoint_func in endpoints_to_unregister:
@@ -342,79 +355,92 @@ class Action(Node):
                         unregistered_count += 1
                 except Exception as e:
                     import logging
+
                     logger = logging.getLogger(__name__)
-                    logger.warning(f"Error unregistering endpoint {endpoint_func.__name__}: {e}")
-            
+                    logger.warning(
+                        f"Error unregistering endpoint {endpoint_func.__name__}: {e}"
+                    )
+
             # Also try unregistering by path pattern as a fallback for any remaining endpoints
             action_path_prefix = f"/actions/{self.id}/"
             try:
                 # Get all function endpoints and check for any we might have missed
                 for func, endpoint_info in registry._function_registry.items():
                     path = endpoint_info.path
-                    if path.startswith(action_path_prefix) and func not in endpoints_to_unregister:
+                    if (
+                        path.startswith(action_path_prefix)
+                        and func not in endpoints_to_unregister
+                    ):
                         # Found an endpoint we missed, try to unregister it
                         if registry.unregister_function(func):
                             unregistered_count += 1
             except Exception:
                 pass  # Fallback failed, but we already got some endpoints
-            
+
             if unregistered_count > 0:
                 import logging
+
                 logger = logging.getLogger(__name__)
-                logger.debug(f"Unregistered {unregistered_count} endpoint(s) for action {self.id}")
-            
+                logger.debug(
+                    f"Unregistered {unregistered_count} endpoint(s) for action {self.id}"
+                )
+
             return unregistered_count
-            
+
         except Exception as e:
             import logging
+
             logger = logging.getLogger(__name__)
             logger.warning(f"Error unregistering endpoints for action {self.id}: {e}")
             return 0
 
     async def _unload_action_modules(self) -> int:
         """Unload modules that were loaded for this action.
-        
+
         Safely removes modules from sys.modules if they are not:
         - Core jvagent modules
         - Imported by other actions
         - Shared dependencies
-        
+
         Returns:
             Number of modules successfully unloaded
         """
         try:
-            import sys
             import logging
-            
+            import sys
+
             logger = logging.getLogger(__name__)
-            
+
             # Get list of loaded modules from metadata
             if not hasattr(self, "_metadata") or not self._metadata:
                 return 0
-            
+
             loaded_modules = self._metadata.get("loaded_modules", [])
             if not loaded_modules:
                 return 0
-            
+
             # Safety checks: don't unload core modules or shared dependencies
             core_module_prefixes = [
                 "jvagent.action.",  # Core action modules (shared)
                 "jvspatial.",  # jvspatial library (shared)
             ]
-            
+
             unloaded_count = 0
-            
+
             for module_name in loaded_modules:
                 try:
                     # Skip core modules
-                    if any(module_name.startswith(prefix) for prefix in core_module_prefixes):
+                    if any(
+                        module_name.startswith(prefix)
+                        for prefix in core_module_prefixes
+                    ):
                         logger.debug(f"Skipping core module: {module_name}")
                         continue
-                    
+
                     # Skip if module not in sys.modules
                     if module_name not in sys.modules:
                         continue
-                    
+
                     # Check if this is a local action module (jvagent.actions.*)
                     if module_name.startswith("jvagent.actions."):
                         # Local action modules can be safely unloaded
@@ -431,18 +457,21 @@ class Action(Node):
                     else:
                         # Non-action modules - be very conservative
                         logger.debug(f"Skipping non-action module: {module_name}")
-                        
+
                 except Exception as e:
                     logger.warning(f"Error unloading module {module_name}: {e}")
                     continue
-            
+
             if unloaded_count > 0:
-                logger.debug(f"Unloaded {unloaded_count} module(s) for action {self.id}")
-            
+                logger.debug(
+                    f"Unloaded {unloaded_count} module(s) for action {self.id}"
+                )
+
             return unloaded_count
-            
+
         except Exception as e:
             import logging
+
             logger = logging.getLogger(__name__)
             logger.warning(f"Error unloading modules for action {self.id}: {e}")
             return 0
@@ -477,7 +506,7 @@ class Action(Node):
 
         Calls the on_enable() lifecycle hook and updates the enabled state.
         This is the primary method for enabling an action.
-        
+
         Errors from on_enable() are automatically logged to the database by the base system.
         """
         if not self.enabled:
@@ -497,7 +526,7 @@ class Action(Node):
                         "action_label": self.label,
                         "context": "on_enable",
                         "error_code": "action_enable_error",
-                    }
+                    },
                 )
                 raise
 
@@ -506,7 +535,7 @@ class Action(Node):
 
         Calls the on_disable() lifecycle hook and updates the enabled state.
         This is the primary method for disabling an action.
-        
+
         Errors from on_disable() are automatically logged to the database by the base system.
         """
         if self.enabled:
@@ -526,7 +555,7 @@ class Action(Node):
                         "action_label": self.label,
                         "context": "on_disable",
                         "error_code": "action_disable_error",
-                    }
+                    },
                 )
                 raise
 
@@ -535,7 +564,7 @@ class Action(Node):
 
         Calls the on_reload() lifecycle hook. Useful for hot-reloading
         action code or configuration.
-        
+
         Errors from on_reload() are automatically logged to the database by the base system.
         """
         try:
@@ -552,7 +581,7 @@ class Action(Node):
                     "action_label": self.label,
                     "context": "on_reload",
                     "error_code": "action_reload_error",
-                }
+                },
             )
             raise
 
@@ -590,51 +619,54 @@ class Action(Node):
         enabled_only: bool = True,
     ) -> Optional[T]:
         """Get an action by class type or class name.
-        
+
         This is a convenience method for actions to retrieve other actions as tools.
         Supports both class type and class name string lookup. When a class type is
         provided, it will first try to find an action by entity type name, then
         fall back to searching all actions using isinstance() check (useful for
         finding any instance of a base class like LanguageModelAction).
-        
+
         Args:
             action_class: Either a class type (e.g., PersonaAction) or class name string
                 (e.g., "OpenAILanguageModelAction"). When a class type is provided,
                 the method will search for any instance of that class (including subclasses).
             enabled_only: If True, only return enabled actions (default: True)
-        
+
         Returns:
             Action instance if found, None otherwise
-        
+
         Examples:
             # Get PersonaAction by class type
             from jvagent.action.persona.persona_action import PersonaAction
             persona = await self.get_action(PersonaAction)
             if persona:
                 response = await persona.respond(interaction, visitor=visitor)
-            
+
             # Get action by class name string (uses agent.get_action_by_type)
             llm = await self.get_action("OpenAILanguageModelAction")
-            
+
             # Get LanguageModelAction (recommended for actions that need models)
             # Define model_action_type attribute to specify a particular model
             llm = await self.get_model_action()  # Returns None if not found
             llm = await self.get_model_action(required=True)  # Raises error if not found
-            
+
             # Get any VectorStore action
             from jvagent.action.vectorstore.base import VectorStore
             vectorstore = await self.get_action(VectorStore)
-            
+
             # Include disabled actions in search
             action = await self.get_action(MyAction, enabled_only=False)
         """
         agent = await self.get_agent()
         if not agent:
             import logging
+
             logger = logging.getLogger(__name__)
-            logger.debug(f"{self.get_class_name()}: Agent not found, cannot retrieve action")
+            logger.debug(
+                f"{self.get_class_name()}: Agent not found, cannot retrieve action"
+            )
             return None
-        
+
         # Handle string class name - use agent.get_action_by_type
         if isinstance(action_class, str):
             action = await agent.get_action_by_type(action_class)
@@ -644,14 +676,14 @@ class Action(Node):
                     return None
                 return action
             return None
-        
+
         # Handle class type - try by entity type name first (for specific classes)
         class_name = action_class.__name__
         action = await agent.get_action_by_type(class_name)
         if action and isinstance(action, action_class):
             if not enabled_only or action.enabled:
                 return action
-        
+
         # Fallback: search all actions by isinstance (for base classes or when
         # entity type lookup doesn't find a match)
         # This is useful when you want any LanguageModelAction, not a specific one
@@ -661,7 +693,7 @@ class Action(Node):
             for action in all_actions:
                 if isinstance(action, action_class):
                     return action
-        
+
         return None
 
     async def get_model_action(
@@ -669,48 +701,48 @@ class Action(Node):
         required: bool = False,
     ) -> Optional["LanguageModelAction"]:
         """Get a LanguageModelAction for LLM calls.
-        
+
         This is a convenience method for actions that need to use language models.
         Actions that require model usage should define a `model_action_type` attribute
         to specify a particular model action. If not specified, this method will
         fall back to finding any available LanguageModelAction.
-        
+
         Args:
             required: If True, raises RuntimeError when no model action is found.
                      If False (default), returns None when not found.
-        
+
         Returns:
             LanguageModelAction instance if found, None otherwise (unless required=True)
-        
+
         Raises:
             RuntimeError: If required=True and no model action is found
-        
+
         Examples:
             # Get model action (returns None if not found)
             model_action = await self.get_model_action()
             if model_action:
                 response = await model_action.generate("Hello")
-            
+
             # Require model action (raises error if not found)
             model_action = await self.get_model_action(required=True)
             response = await model_action.generate("Hello")
         """
         from jvagent.action.model.language.base import LanguageModelAction
-        
+
         # Check if this action has a model_action_type attribute
         model_action_type = getattr(self, "model_action_type", None)
-        
+
         # Try to get by type if specified
         if model_action_type:
             model_action = await self.get_action(model_action_type)
             if model_action and isinstance(model_action, LanguageModelAction):
                 return model_action
-        
+
         # Fallback: find first available LanguageModelAction
         model_action = await self.get_action(LanguageModelAction)
         if model_action:
             return model_action
-        
+
         # Not found - raise error if required, otherwise return None
         if required:
             agent = await self.get_agent()
@@ -719,7 +751,7 @@ class Action(Node):
             raise RuntimeError(
                 f"Model action of type '{model_type_str}' not found for agent '{agent_id}'"
             )
-        
+
         return None
 
     async def get_collection(self) -> Optional[Node]:
@@ -849,7 +881,9 @@ class Action(Node):
             return path
 
         # Construct storage path: actions/{agent_id}/{package_name}/{path}
-        return os.path.join("actions", self.agent_id, package_name, path).replace("\\", "/")
+        return os.path.join("actions", self.agent_id, package_name, path).replace(
+            "\\", "/"
+        )
 
     async def get_file(self, path: str) -> Optional[bytes]:
         """Get a file from the action's package directory using App's file storage.
@@ -981,7 +1015,10 @@ class Action(Node):
         )
 
         return await app.create_proxy_url(
-            path=storage_path, expires_in=expires_in, one_time=one_time, metadata=proxy_metadata
+            path=storage_path,
+            expires_in=expires_in,
+            one_time=one_time,
+            metadata=proxy_metadata,
         )
 
     # ============================================================================
@@ -1027,5 +1064,3 @@ class Action(Node):
             "type": await self.get_type(),
             "package_name": await self.get_package_name(),
         }
-
-

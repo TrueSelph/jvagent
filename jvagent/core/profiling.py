@@ -22,14 +22,14 @@ from typing import Any, Callable, Dict, Optional
 logger = logging.getLogger(__name__)
 
 # Context variable for the current request profile (async-safe)
-_current_profile: contextvars.ContextVar[Optional["RequestProfile"]] = contextvars.ContextVar(
-    "current_profile", default=None
+_current_profile: contextvars.ContextVar[Optional["RequestProfile"]] = (
+    contextvars.ContextVar("current_profile", default=None)
 )
 
 
 def _get_profiling_config() -> bool:
     """Get profiling configuration with app.yaml and environment variable support.
-    
+
     Configuration priority:
     1. Environment variable JVAGENT_ENABLE_PROFILING (highest)
     2. app.yaml config.performance.enable_profiling
@@ -39,21 +39,22 @@ def _get_profiling_config() -> bool:
     env_value = os.getenv("JVAGENT_ENABLE_PROFILING")
     if env_value is not None:
         return env_value.lower() == "true"
-    
+
     # Try app.yaml
     try:
-        from jvagent.core.app_loader import AppLoader
         from jvagent.core.app_context import get_app_root
+        from jvagent.core.app_loader import AppLoader
+
         loader = AppLoader(get_app_root())
         descriptor = loader.load_app_descriptor()
-        
+
         if descriptor and descriptor.config:
             perf_config = descriptor.config.get("performance", {})
             if "enable_profiling" in perf_config:
                 return bool(perf_config["enable_profiling"])
     except Exception:
         pass
-    
+
     return False
 
 
@@ -63,15 +64,16 @@ ENABLE_PROFILING = False
 
 def reload_profiling_config() -> None:
     """Reload profiling configuration from app.yaml.
-    
+
     This should be called after set_app_root() to ensure the config
     is loaded from the correct app.yaml location.
     """
     global ENABLE_PROFILING
-    
+
     ENABLE_PROFILING = _get_profiling_config()
-    
+
     logger.debug(f"Profiling config reloaded: enabled={ENABLE_PROFILING}")
+
 
 # Profile TTL in seconds - profiles older than this will be cleaned up
 # Default: 5 minutes (covers long-running requests with margin)
@@ -192,20 +194,21 @@ async def get_or_create_profile(request_id: Optional[str] = None) -> RequestProf
             if len(_profile_context) >= MAX_PROFILES:
                 # Remove oldest profiles (by start_time)
                 sorted_profiles = sorted(
-                    _profile_context.items(),
-                    key=lambda x: x[1].start_time
+                    _profile_context.items(), key=lambda x: x[1].start_time
                 )
                 # Remove 10% of oldest profiles to make room
                 to_remove = max(1, len(sorted_profiles) // 10)
                 for i in range(to_remove):
                     del _profile_context[sorted_profiles[i][0]]
                 logger.debug(f"Profile cleanup: removed {to_remove} oldest profiles")
-            
+
             _profile_context[rid] = RequestProfile(request_id=rid)
         return _profile_context[rid]
 
 
-async def finalize_profile(request_id: str, log: bool = True) -> Optional[Dict[str, Any]]:
+async def finalize_profile(
+    request_id: str, log: bool = True
+) -> Optional[Dict[str, Any]]:
     """Finalize and optionally log a request profile.
 
     Args:
@@ -266,50 +269,54 @@ async def profiled_request(request_id: Optional[str] = None):
 
 async def cleanup_stale_profiles() -> int:
     """Clean up stale profiles that have exceeded the TTL.
-    
+
     This function removes profiles that have been in the context for longer
     than PROFILE_TTL seconds. This handles cases where finalize_profile()
     was never called (e.g., due to exceptions or missing cleanup).
-    
+
     Returns:
         Number of profiles removed
     """
     if not ENABLE_PROFILING:
         return 0
-    
+
     now = time.time()
     removed = 0
-    
+
     async with _profile_lock:
         stale_ids = [
-            rid for rid, profile in _profile_context.items()
+            rid
+            for rid, profile in _profile_context.items()
             if (now - profile.start_time) >= PROFILE_TTL
         ]
         for rid in stale_ids:
             del _profile_context[rid]
             removed += 1
-    
+
     if removed > 0:
-        logger.debug(f"Profile cleanup: removed {removed} stale profiles (TTL: {PROFILE_TTL}s)")
-    
+        logger.debug(
+            f"Profile cleanup: removed {removed} stale profiles (TTL: {PROFILE_TTL}s)"
+        )
+
     return removed
 
 
 async def get_profile_stats() -> Dict[str, Any]:
     """Get statistics about the profile context.
-    
+
     Returns:
         Dictionary with profile statistics
     """
     now = time.time()
-    
+
     async with _profile_lock:
         size = len(_profile_context)
         stale_count = sum(
-            1 for profile in _profile_context.values()
+            1
+            for profile in _profile_context.values()
             if (now - profile.start_time) >= PROFILE_TTL
         )
-    
+
     return {
         "enabled": ENABLE_PROFILING,
         "size": size,
@@ -323,12 +330,13 @@ async def get_profile_stats() -> Dict[str, Any]:
 # Profile Context Propagation (for LM call tracking)
 # ============================================================================
 
+
 def set_current_profile(profile: Optional["RequestProfile"]) -> None:
     """Set the current profile in async context.
-    
+
     This allows nested code (like LM calls) to record timing to the
     current request's profile without explicit parameter passing.
-    
+
     Args:
         profile: The RequestProfile to set, or None to clear
     """
@@ -337,7 +345,7 @@ def set_current_profile(profile: Optional["RequestProfile"]) -> None:
 
 def get_current_profile() -> Optional["RequestProfile"]:
     """Get the current profile from async context.
-    
+
     Returns:
         The current RequestProfile if set, None otherwise
     """
@@ -346,18 +354,18 @@ def get_current_profile() -> Optional["RequestProfile"]:
 
 def record_lm_call(label: str, duration: float) -> None:
     """Record an LM API call duration to the current profile.
-    
+
     This is a convenience function for recording language model call
     timings. It safely handles the case where no profile is set or
     profiling is disabled.
-    
+
     Args:
         label: Label for the LM call (e.g., "lm:PersonaAction")
         duration: Duration of the call in seconds
     """
     if not ENABLE_PROFILING:
         return
-    
+
     profile = _current_profile.get()
     if profile is not None:
         profile.record(label, duration)

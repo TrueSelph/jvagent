@@ -32,7 +32,9 @@ class ChannelFilter(ABC):
     - filter(): Transform message content in-place
     """
 
-    def __init__(self, channels: List[str], priority: int = 100, fail_fast: bool = False):
+    def __init__(
+        self, channels: List[str], priority: int = 100, fail_fast: bool = False
+    ):
         """Initialize channel filter.
 
         Args:
@@ -60,10 +62,11 @@ class ChannelFilter(ABC):
         """
         if self._initialized:
             return True
-        
+
         # Get ResponseBus from App
         try:
             from jvagent.core.app import App
+
             app = await App.get()
             if app:
                 response_bus = await app.get_response_bus()

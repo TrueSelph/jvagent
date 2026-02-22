@@ -74,9 +74,9 @@ export const ConversationList = memo(function ConversationList({
   // Memoize sorted conversations with deep comparison to prevent unnecessary re-renders
   const sortedConversations = useMemo(() => {
     const currentHash = createConversationsHash(conversations)
-    
+
     // Only re-sort if conversations actually changed
-    if (currentHash === prevConversationsHashRef.current && 
+    if (currentHash === prevConversationsHashRef.current &&
         prevConversationsRef.current.length === conversations.length &&
         conversations.length > 0) {
       // Verify the arrays are actually the same
@@ -88,14 +88,14 @@ export const ConversationList = memo(function ConversationList({
         return prevConversationsRef.current
       }
     }
-    
+
     prevConversationsHashRef.current = currentHash
-    
+
     if (conversations.length === 0) {
       prevConversationsRef.current = []
       return []
     }
-    
+
     // Create a stable sorted array
     const sorted = [...conversations].sort((a, b) => {
       const aTime = a.last_message_at || a.created_at
@@ -107,7 +107,7 @@ export const ConversationList = memo(function ConversationList({
       }
       return timeDiff
     })
-    
+
     prevConversationsRef.current = sorted
     return sorted
   }, [conversations, createConversationsHash])
@@ -242,29 +242,29 @@ export const ConversationList = memo(function ConversationList({
 }, (prevProps, nextProps) => {
   // Custom comparison function for ConversationList memo
   // Return true if props are equal (should NOT re-render)
-  
+
   // Quick checks first
   if (prevProps.currentSessionId !== nextProps.currentSessionId) {
     return false
   }
-  
+
   if (prevProps.isMobileMenuOpen !== nextProps.isMobileMenuOpen) {
     return false
   }
-  
+
   if (prevProps.conversations.length !== nextProps.conversations.length) {
     return false
   }
-  
+
   // Create maps for efficient comparison
   const prevMap = new Map(prevProps.conversations.map(c => [c.session_id, c]))
   const nextMap = new Map(nextProps.conversations.map(c => [c.session_id, c]))
-  
+
   // Check if all conversations are the same
   if (prevMap.size !== nextMap.size) {
     return false
   }
-  
+
   // Compare each conversation
   for (const [sessionId, prevConv] of prevMap) {
     const nextConv = nextMap.get(sessionId)
@@ -280,15 +280,15 @@ export const ConversationList = memo(function ConversationList({
       return false
     }
   }
-  
+
   // Callbacks should be stable, but check them anyway
-  const callbacksEqual = 
+  const callbacksEqual =
     prevProps.onSelectConversation === nextProps.onSelectConversation &&
     prevProps.onNewConversation === nextProps.onNewConversation &&
     prevProps.onDeleteConversation === nextProps.onDeleteConversation &&
     prevProps.onLogout === nextProps.onLogout &&
     prevProps.onMobileMenuClose === nextProps.onMobileMenuClose
-  
+
   // Return true if all props are equal (no re-render needed)
   return callbacksEqual
 })
@@ -308,12 +308,12 @@ const ConversationItem = memo(({
   const handleClick = useCallback(() => {
     onSelect(conversation.session_id)
   }, [onSelect, conversation.session_id])
-  
+
   const handleDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
     onDelete?.(conversation.session_id)
   }, [onDelete, conversation.session_id])
-  
+
   return (
     <div
       className={`px-4 py-3 cursor-pointer hover:bg-gray-50 border-l-4 transition-colors duration-150 ${
@@ -348,17 +348,17 @@ const ConversationItem = memo(({
   )
 }, (prevProps, nextProps) => {
   // Custom comparison function for memo - return true if props are equal (should NOT re-render)
-  const conversationEqual = 
+  const conversationEqual =
     prevProps.conversation.session_id === nextProps.conversation.session_id &&
     prevProps.conversation.last_message === nextProps.conversation.last_message &&
     prevProps.conversation.last_message_at === nextProps.conversation.last_message_at &&
     prevProps.conversation.created_at === nextProps.conversation.created_at &&
     prevProps.conversation.agent_id === nextProps.conversation.agent_id &&
     prevProps.conversation.agent_name === nextProps.conversation.agent_name
-  
+
   const activeEqual = prevProps.isActive === nextProps.isActive
   const callbacksEqual = prevProps.onSelect === nextProps.onSelect && prevProps.onDelete === nextProps.onDelete
-  
+
   // Return true if all props are equal (no re-render needed)
   return conversationEqual && activeEqual && callbacksEqual
 })

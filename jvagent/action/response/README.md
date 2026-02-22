@@ -21,30 +21,30 @@ flowchart TB
         W2[commit_pending_adhoc]
         W3[Next action]
     end
-    
+
     subgraph ActionLayer [Action Layer]
         A1["InteractAction.publish(stream=visitor.stream)"]
         A2["PersonaAction.respond(stream=visitor.stream)"]
         A3["Model streaming(stream=visitor.stream)"]
     end
-    
+
     subgraph ResponseBus [ResponseBus.publish]
         SM{stream param?}
-        
+
         subgraph StreamingPath [stream=True]
             S1[Stream chunks to subscribers]
             S2[Accumulate in buffer]
             S3[On streaming_complete: filters/adapters]
             S4[Set interaction.response]
         end
-        
+
         subgraph NonStreamingPath [stream=False]
             N1[Apply filters immediately]
             N2[Send to adapter]
             N3[Append to interaction.response]
         end
     end
-    
+
     W1 --> A1
     A1 --> SM
     A2 --> SM
@@ -145,25 +145,25 @@ from jvagent.action.response.message import ResponseMessage
 
 class MyChannelAdapter(ChannelAdapter):
     """Adapter for MyChannel integration."""
-    
+
     def __init__(self, action: Any = None):
         """Initialize adapter.
-        
+
         Args:
             action: Your Action instance (for accessing config)
         """
         super().__init__(channel="mychannel")
         self.action = action  # Store action for accessing config
-    
+
     async def send(self, message: ResponseMessage) -> bool:
         """Send message to external API.
-        
+
         This method is called by ResponseBus when an adhoc message is published
         for this adapter's channel.
-        
+
         Args:
             message: ResponseMessage to send (contains user_id, session_id, content, etc.)
-            
+
         Returns:
             True if sent successfully, False otherwise
         """
@@ -171,7 +171,7 @@ class MyChannelAdapter(ChannelAdapter):
         if not message.user_id:
             logger.error(f"Cannot send message {message.id} - no user_id in message")
             return False
-        
+
         # Send to your external API
         try:
             # Your API call here using message.user_id
@@ -192,37 +192,37 @@ from .my_channel_adapter import MyChannelAdapter
 
 class MyChannelAction(Action):
     """Action for MyChannel integration."""
-    
+
     api_url: Optional[str] = attribute(default=None)
     api_key: Optional[str] = attribute(default=None)
-    
+
     async def on_register(self) -> None:
         """Called when action is registered.
-        
+
         Creates and initializes the channel adapter for automatic
         message delivery via the response bus.
         """
         # Create adapter instance with action reference
         adapter = MyChannelAdapter(action=self)
-        
+
         # Initialize the adapter (gets ResponseBus and registers itself)
         if await adapter.initialize():
             # Adapter is now stored in ResponseBus registry, no need for private reference
             pass
-    
+
     async def on_startup(self) -> None:
         """Called when app starts and action is loaded from database.
-        
+
         Re-initializes the channel adapter when the app restarts.
         This ensures adapters work correctly after app restarts.
         """
         # Only initialize if action is enabled and configured
         if not self.enabled:
             return
-        
+
         if not self.is_configured():
             return
-        
+
         # Reinitialize adapter (create new instance for clean state)
         adapter = MyChannelAdapter(action=self)
         if await adapter.initialize():
@@ -259,17 +259,17 @@ See `jvagent/action/whatsapp/whatsapp_adapter.py` for a complete implementation 
 class WhatsAppAction(Action):
     api_url: Optional[str] = attribute(default=None)
     api_key: Optional[str] = attribute(default=None)
-    
+
     async def on_register(self) -> None:
         """Called when action is first registered."""
         adapter = WhatsAppAdapter(action=self)
         if await adapter.initialize():
             # Adapter is now stored in ResponseBus registry, no need for private reference
             pass
-    
+
     async def on_startup(self) -> None:
         """Called when app starts and action is loaded from database.
-        
+
         Re-initializes the channel adapter when the app restarts.
         """
         if not self.enabled or not self.is_configured():
@@ -288,12 +288,12 @@ class WhatsAppAdapter(ChannelAdapter):
     def __init__(self, action: Any = None):
         super().__init__(channel="whatsapp")
         self.action = action
-    
+
     async def send(self, message: ResponseMessage) -> bool:
         # Use message.user_id directly (no database queries needed!)
         if not message.user_id:
             return False
-        
+
         # Use self.action.api_url and self.action.api_key
         # Send to WhatsApp API using message.user_id
         # Note: message.content is already transformed by filters
@@ -356,10 +356,10 @@ from jvagent.action.response.message import ResponseMessage
 
 class MyChannelFilter(ChannelFilter):
     """Filter for MyChannel message transformation."""
-    
+
     def __init__(self, channels: List[str] = None, priority: int = 100):
         """Initialize filter.
-        
+
         Args:
             channels: List of channel names (defaults to ["mychannel"])
             priority: Execution order (default 100, lower executes first)
@@ -367,19 +367,19 @@ class MyChannelFilter(ChannelFilter):
         if channels is None:
             channels = ["mychannel"]
         super().__init__(channels=channels, priority=priority)
-    
+
     async def filter(self, message: ResponseMessage) -> None:
         """Transform message content in-place.
-        
+
         This method is called by ResponseBus before routing to adapters.
         Modify message.content directly to transform the message.
-        
+
         Args:
             message: ResponseMessage to transform (modified in-place)
         """
         if not message.content:
             return
-        
+
         # Apply transformations
         message.content = message.content.replace("**", "*")
         # ... more transformations
@@ -396,26 +396,26 @@ from .my_channel_adapter import MyChannelAdapter
 
 class MyChannelAction(Action):
     """Action for MyChannel integration."""
-    
+
     async def on_register(self) -> None:
         """Register filter and adapter."""
         # Register filter first (transforms messages)
         filter = MyChannelFilter(channels=["mychannel"], priority=100)
         await filter.initialize()
-        
+
         # Register adapter (sends messages)
         adapter = MyChannelAdapter(action=self)
         await adapter.initialize()
-    
+
     async def on_startup(self) -> None:
         """Re-initialize filter and adapter on app restart."""
         if not self.enabled or not self.is_configured():
             return
-        
+
         # Re-register filter
         filter = MyChannelFilter(channels=["mychannel"], priority=100)
         await filter.initialize()
-        
+
         # Re-register adapter
         adapter = MyChannelAdapter(action=self)
         await adapter.initialize()
@@ -433,12 +433,12 @@ class WhatsAppFilter(ChannelFilter):
         if channels is None:
             channels = ["whatsapp"]
         super().__init__(channels=channels, priority=priority)
-    
+
     async def filter(self, message: ResponseMessage) -> None:
         """Transform message for WhatsApp formatting."""
         if not message.content:
             return
-        
+
         message.content = (
             message.content.replace("**", "*")      # Markdown bold -> WhatsApp bold
             .replace("<br/>", "\n")                  # HTML break -> newline

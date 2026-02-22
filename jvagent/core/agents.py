@@ -37,8 +37,12 @@ class Agents(Node):
         active_agents: Number of currently enabled agents (enabled=True)
     """
 
-    total_agents: int = attribute(default=0, description="Total number of agents registered")
-    active_agents: int = attribute(default=0, description="Number of currently active agents")
+    total_agents: int = attribute(
+        default=0, description="Total number of agents registered"
+    )
+    active_agents: int = attribute(
+        default=0, description="Number of currently active agents"
+    )
 
     # ============================================================================
     # Helper Methods
@@ -131,7 +135,9 @@ class Agents(Node):
 
             # Try to get healthcheck if agent has the method
             try:
-                if hasattr(agent, "healthcheck") and callable(getattr(agent, "healthcheck")):
+                if hasattr(agent, "healthcheck") and callable(
+                    getattr(agent, "healthcheck")
+                ):
                     health_result = await agent.healthcheck()
                     if isinstance(health_result, dict):
                         health_data["health"] = health_result
@@ -139,7 +145,9 @@ class Agents(Node):
                         health_data["healthy"] = health_status == 200
                     else:
                         health_data["healthy"] = bool(health_result)
-                        health_data["health"] = {"status": 200 if health_result else 500}
+                        health_data["health"] = {
+                            "status": 200 if health_result else 500
+                        }
                 else:
                     # Basic health based on enabled status
                     health_data["healthy"] = agent.enabled
@@ -225,7 +233,10 @@ class Agents(Node):
             await self.sync_counters()
 
         # Get statistics
-        counters = {"total_agents": self.total_agents, "active_agents": self.active_agents}
+        counters = {
+            "total_agents": self.total_agents,
+            "active_agents": self.active_agents,
+        }
 
         enabled_breakdown = await self.get_enabled_breakdown()
 

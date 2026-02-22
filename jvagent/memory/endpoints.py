@@ -3,7 +3,6 @@
 from typing import Any, Dict, List, Optional
 
 from fastapi import Query
-
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError
@@ -35,8 +34,12 @@ from jvagent.memory.manager import Memory
 )
 async def purge_conversations(
     agent_id: str,
-    user_id: Optional[str] = Query(None, description="Purge only this user's conversations"),
-    conversation_id: Optional[str] = Query(None, description="Purge only this conversation"),
+    user_id: Optional[str] = Query(
+        None, description="Purge only this user's conversations"
+    ),
+    conversation_id: Optional[str] = Query(
+        None, description="Purge only this conversation"
+    ),
 ) -> Dict[str, Any]:
     """Purge conversations for an agent (admin only).
 

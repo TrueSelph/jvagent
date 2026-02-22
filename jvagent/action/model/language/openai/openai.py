@@ -49,9 +49,7 @@ class OpenAILanguageModelAction(LanguageModelAction):
         default="https://api.openai.com/v1", description="OpenAI API endpoint URL"
     )
     model: str = attribute(default="gpt-4o-mini", description="OpenAI model identifier")
-    provider: str = attribute(
-        default="openai", description="Provider name"
-    )
+    provider: str = attribute(default="openai", description="Provider name")
 
     # Pricing per 1M tokens (approximate, for cost estimation)
     _model_pricing: Dict[str, Dict[str, float]] = attribute(
@@ -69,7 +67,7 @@ class OpenAILanguageModelAction(LanguageModelAction):
 
     async def on_register(self) -> None:
         """Called when action is registered during installation.
-        
+
         Validates configuration. HTTP client initialization is handled
         by the base class. This method should only be called once during
         action registration.
@@ -265,10 +263,10 @@ class OpenAILanguageModelAction(LanguageModelAction):
             finish_reason=None,
             tool_calls=[],
         )
-        
+
         # Store messages for token estimation (will be used by stream wrapper in base.py)
         result._messages_for_estimation = messages
-        
+
         return result
 
     # ============================================================================
@@ -303,7 +301,9 @@ class OpenAILanguageModelAction(LanguageModelAction):
             f"(prompt: ${prompt_cost:.6f}, completion: ${completion_cost:.6f})"
         )
 
-    async def track_usage(self, usage: Dict[str, int], duration: Optional[float] = None) -> None:
+    async def track_usage(
+        self, usage: Dict[str, int], duration: Optional[float] = None
+    ) -> None:
         """Track usage and estimate cost.
 
         Overrides base implementation to add cost estimation.

@@ -19,7 +19,7 @@ class UltraMsgAPI(BaseWhatsAppAPI):
     ):
         """
         Initialize UltraMsg API.
-        
+
         Args:
             api_url: Base URL (e.g., "https://api.ultramsg.com")
             session: Instance ID from UltraMsg
@@ -57,24 +57,24 @@ class UltraMsgAPI(BaseWhatsAppAPI):
     ) -> dict:
         """Generic HTTP request to UltraMsg API."""
         url = endpoint if use_full_url else self._build_url(endpoint)
-        
+
         # UltraMsg uses query params for auth, not headers
         params = self._build_params(params)
-        
+
         if headers is None:
             headers = {}
         if json_body and "Content-Type" not in headers:
             headers["Content-Type"] = "application/json"
-        
+
         result = await self._make_request(url, method, headers, data, params, json_body)
-        
+
         # Normalize UltraMsg response format
         # UltraMsg typically returns {"sent": true/false, "message": "..."}
         if "sent" in result:
             result["ok"] = result["sent"]
         elif "error" not in result:
             result["ok"] = True
-        
+
         return result
 
     # ========================================================================
@@ -84,7 +84,7 @@ class UltraMsgAPI(BaseWhatsAppAPI):
     async def parse_inbound_message(self, request: dict) -> Optional[MessagePayload]:
         """
         Parses UltraMsg webhook format and converts to standard format.
-        
+
         UltraMsg webhook structure:
         {
             "event_type": "message",
@@ -103,22 +103,25 @@ class UltraMsgAPI(BaseWhatsAppAPI):
         try:
             event_type = request.get("event_type", "message")
             data = request.get("data", request)  # Support both formats
-            
+
             # Build standard format
             payload = MessagePayload(
                 message_id=str(data.get("id", "")),
                 event_type=event_type,
                 message_type=data.get("type", "chat"),
-                author=self._clean_phone_number(data.get("author", data.get("from", ""))),
+                author=self._clean_phone_number(
+                    data.get("author", data.get("from", ""))
+                ),
                 sender=self._clean_phone_number(data.get("from", "")),
                 receiver=self._clean_phone_number(data.get("to", "")),
                 caption=data.get("caption", ""),
                 fromMe=data.get("fromMe", False),
-                isGroup=data.get("isGroup", False) or data.get("from", "").endswith("@g.us"),
+                isGroup=data.get("isGroup", False)
+                or data.get("from", "").endswith("@g.us"),
                 isForwarded=data.get("isForwarded", False),
                 sender_name=data.get("pushname", data.get("notifyName", "")),
             )
-            
+
             # Parse content by type
             if payload.message_type == "chat":
                 payload.body = data.get("body", "")
@@ -133,9 +136,9 @@ class UltraMsgAPI(BaseWhatsAppAPI):
                 }
             elif payload.message_type in ["audio", "ptt", "voice"]:
                 payload.media = data.get("media", data.get("body", ""))
-            
+
             return payload
-        
+
         except Exception as e:
             self.logger.error(f"Error parsing UltraMsg message: {e}")
             return None
@@ -155,10 +158,10 @@ class UltraMsgAPI(BaseWhatsAppAPI):
         Note: UltraMsg manages sessions differently - instances are pre-configured.
         """
         status_resp = await self.status()
-        
+
         if status_resp.get("ok"):
             account_status = status_resp.get("account_status", "")
-            
+
             if account_status == "authenticated":
                 return {
                     "status": "CONNECTED",
@@ -182,7 +185,7 @@ class UltraMsgAPI(BaseWhatsAppAPI):
                     "message": f"Session status: {account_status}",
                     "details": status_resp,
                 }
-        
+
         return {
             "status": "ERROR",
             "message": "Could not retrieve session status.",
@@ -192,7 +195,7 @@ class UltraMsgAPI(BaseWhatsAppAPI):
     async def status(self) -> dict:
         """GET /instance/status"""
         result = await self.send_rest_request("instance/status", method="GET")
-        
+
         # Add normalized status field
         if result.get("ok") and "account_status" in result:
             status_map = {
@@ -201,19 +204,21 @@ class UltraMsgAPI(BaseWhatsAppAPI):
                 "loading": "LOADING",
                 "logout": "DISCONNECTED",
             }
-            result["status"] = status_map.get(result["account_status"], result["account_status"].upper())
-        
+            result["status"] = status_map.get(
+                result["account_status"], result["account_status"].upper()
+            )
+
         return result
 
     async def qrcode(self) -> dict:
         """GET /instance/qr"""
         result = await self.send_rest_request("instance/qr", method="GET")
-        
+
         # UltraMsg returns QR as base64 or URL
         if result.get("ok") and "qrCode" in result:
             result["qrcode"] = result["qrCode"]
             result["qrcode_base64"] = result["qrCode"]
-        
+
         return result
 
     async def logout_session(self) -> dict:
@@ -242,14 +247,14 @@ class UltraMsgAPI(BaseWhatsAppAPI):
             "to": phone,
             "body": message,
         }
-        
+
         # UltraMsg uses specific fields for options
         if options:
             if "priority" in options:
                 data["priority"] = options["priority"]
             if "referenceId" in options:
                 data["referenceId"] = options["referenceId"]
-        
+
         return await self.send_rest_request("messages/chat", data=data)
 
     async def send_image(
@@ -258,7 +263,7 @@ class UltraMsgAPI(BaseWhatsAppAPI):
         file_url: str = "",
         caption: str = "",
         is_group: bool = False,
-        **kwargs
+        **kwargs,
     ) -> dict:
         """POST /messages/image"""
         data = {
@@ -266,10 +271,10 @@ class UltraMsgAPI(BaseWhatsAppAPI):
             "image": file_url,
             "caption": caption,
         }
-        
+
         if kwargs.get("referenceId"):
             data["referenceId"] = kwargs["referenceId"]
-        
+
         return await self.send_rest_request("messages/image", data=data)
 
     async def send_file(
@@ -279,7 +284,7 @@ class UltraMsgAPI(BaseWhatsAppAPI):
         filename: str = "",
         caption: str = "",
         is_group: bool = False,
-        **kwargs
+        **kwargs,
     ) -> dict:
         """POST /messages/document"""
         data = {
@@ -288,10 +293,10 @@ class UltraMsgAPI(BaseWhatsAppAPI):
             "filename": filename,
             "caption": caption,
         }
-        
+
         if kwargs.get("referenceId"):
             data["referenceId"] = kwargs["referenceId"]
-        
+
         return await self.send_rest_request("messages/document", data=data)
 
     async def send_video(
@@ -300,7 +305,7 @@ class UltraMsgAPI(BaseWhatsAppAPI):
         file_url: str = "",
         caption: str = "",
         is_group: bool = False,
-        **kwargs
+        **kwargs,
     ) -> dict:
         """POST /messages/video"""
         data = {
@@ -308,28 +313,24 @@ class UltraMsgAPI(BaseWhatsAppAPI):
             "video": file_url,
             "caption": caption,
         }
-        
+
         if kwargs.get("referenceId"):
             data["referenceId"] = kwargs["referenceId"]
-        
+
         return await self.send_rest_request("messages/video", data=data)
 
     async def send_audio(
-        self,
-        phone: str,
-        file_url: str = "",
-        is_group: bool = False,
-        **kwargs
+        self, phone: str, file_url: str = "", is_group: bool = False, **kwargs
     ) -> dict:
         """POST /messages/audio"""
         data = {
             "to": phone,
             "audio": file_url,
         }
-        
+
         if kwargs.get("referenceId"):
             data["referenceId"] = kwargs["referenceId"]
-        
+
         return await self.send_rest_request("messages/audio", data=data)
 
     async def send_voice(
@@ -344,7 +345,7 @@ class UltraMsgAPI(BaseWhatsAppAPI):
             "to": phone,
             "audio": file_url,
         }
-        
+
         return await self.send_rest_request("messages/voice", data=data)
 
     async def send_location(
@@ -362,7 +363,7 @@ class UltraMsgAPI(BaseWhatsAppAPI):
             "lat": str(latitude),
             "lng": str(longitude),
         }
-        
+
         return await self.send_rest_request("messages/location", data=data)
 
     async def send_contact(
@@ -376,7 +377,7 @@ class UltraMsgAPI(BaseWhatsAppAPI):
             "to": phone,
             "contact": contact_id,
         }
-        
+
         return await self.send_rest_request("messages/contact", data=data)
 
     async def send_link(
@@ -392,7 +393,7 @@ class UltraMsgAPI(BaseWhatsAppAPI):
             "link": url,
             "caption": caption,
         }
-        
+
         return await self.send_rest_request("messages/link", data=data)
 
     async def send_vcard(
@@ -406,7 +407,7 @@ class UltraMsgAPI(BaseWhatsAppAPI):
             "to": phone,
             "vcard": vcard,
         }
-        
+
         return await self.send_rest_request("messages/vcard", data=data)
 
     async def send_sticker(
@@ -420,7 +421,7 @@ class UltraMsgAPI(BaseWhatsAppAPI):
             "to": phone,
             "sticker": sticker_url,
         }
-        
+
         return await self.send_rest_request("messages/sticker", data=data)
 
     # ========================================================================
@@ -437,7 +438,7 @@ class UltraMsgAPI(BaseWhatsAppAPI):
             "groupName": name,
             "groupParticipants": ",".join(participants),
         }
-        
+
         return await self.send_rest_request("chats/createGroup", data=data)
 
     async def leave_group(self, group_id: str) -> dict:
@@ -448,7 +449,9 @@ class UltraMsgAPI(BaseWhatsAppAPI):
     async def get_group_info(self, group_id: str) -> dict:
         """GET /chats/getGroupInfo"""
         params = {"chatId": group_id}
-        return await self.send_rest_request("chats/getGroupInfo", method="GET", params=params)
+        return await self.send_rest_request(
+            "chats/getGroupInfo", method="GET", params=params
+        )
 
     # ========================================================================
     # CONTACTS & CHATS
@@ -465,7 +468,9 @@ class UltraMsgAPI(BaseWhatsAppAPI):
     async def check_phone(self, phone: str) -> dict:
         """GET /contacts/check"""
         params = {"chatId": phone}
-        return await self.send_rest_request("contacts/check", method="GET", params=params)
+        return await self.send_rest_request(
+            "contacts/check", method="GET", params=params
+        )
 
     async def list_chats(self) -> dict:
         """GET /chats"""
@@ -483,7 +488,9 @@ class UltraMsgAPI(BaseWhatsAppAPI):
             "limit": limit,
             "last": "true" if last else "false",
         }
-        return await self.send_rest_request("chats/messages", method="GET", params=params)
+        return await self.send_rest_request(
+            "chats/messages", method="GET", params=params
+        )
 
     async def read_chat(self, chatid: str) -> dict:
         """POST /chats/readMessages"""
@@ -514,14 +521,16 @@ class UltraMsgAPI(BaseWhatsAppAPI):
     # WEBHOOKS
     # ========================================================================
 
-    async def set_webhook(self, webhook_url: str, events: Optional[List[str]] = None) -> dict:
+    async def set_webhook(
+        self, webhook_url: str, events: Optional[List[str]] = None
+    ) -> dict:
         """POST /instance/webhook/set"""
         data = {"webhookUrl": webhook_url}
-        
+
         if events:
             # UltraMsg supports: message, ack, status, etc.
             data["events"] = ",".join(events)
-        
+
         return await self.send_rest_request("instance/webhook/set", data=data)
 
     async def get_webhook(self) -> dict:
@@ -543,7 +552,9 @@ class UltraMsgAPI(BaseWhatsAppAPI):
     async def get_profile_picture(self, phone: str) -> dict:
         """GET /contacts/profilePic"""
         params = {"chatId": phone}
-        return await self.send_rest_request("contacts/profilePic", method="GET", params=params)
+        return await self.send_rest_request(
+            "contacts/profilePic", method="GET", params=params
+        )
 
     async def block_contact(self, phone: str, is_group: bool = False) -> dict:
         """POST /contacts/block"""
@@ -575,6 +586,8 @@ class UltraMsgAPI(BaseWhatsAppAPI):
         """GET /instance/messageStatistic"""
         params = {
             "start": start_date,  # Format: YYYY-MM-DD
-            "end": end_date,      # Format: YYYY-MM-DD
+            "end": end_date,  # Format: YYYY-MM-DD
         }
-        return await self.send_rest_request("instance/messageStatistic", method="GET", params=params)
+        return await self.send_rest_request(
+            "instance/messageStatistic", method="GET", params=params
+        )

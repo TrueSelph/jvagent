@@ -6,7 +6,16 @@ and related types for text generation and multimodal interactions.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Dict, List, Optional, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncGenerator,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Union,
+)
 
 from jvspatial.core.annotations import attribute
 
@@ -18,8 +27,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Type aliases for multimodal content
-ContentPart = Dict[str, Any]  # {"type": "text", "text": "..."} or {"type": "image_url", ...}
-MessageContent = Union[str, List[ContentPart]]  # Content can be string or structured parts
+ContentPart = Dict[
+    str, Any
+]  # {"type": "text", "text": "..."} or {"type": "image_url", ...}
+MessageContent = Union[
+    str, List[ContentPart]
+]  # Content can be string or structured parts
 
 
 class ModelActionResult:
@@ -101,16 +114,16 @@ class ModelActionResult:
             self.metrics.update(usage)
         if duration is not None:
             self.metrics["duration"] = duration
-        
+
         # Track whether usage was estimated (for streaming)
         self._usage_estimated: bool = False
 
     def update_usage(self, usage: Dict[str, int], estimated: bool = True) -> None:
         """Update usage metrics after stream completion.
-        
+
         Used to update metrics for streaming results after the stream
         has been consumed and tokens have been estimated.
-        
+
         Args:
             usage: Token usage dict with prompt_tokens, completion_tokens, total_tokens
             estimated: Whether the usage is estimated (True) or actual (False)
@@ -218,8 +231,12 @@ class LanguageModelAction(BaseModelAction, ABC):
     temperature: float = attribute(
         default=0.7, description="Sampling temperature (0.0-2.0)", ge=0.0, le=2.0
     )
-    max_tokens: int = attribute(default=1000, description="Maximum tokens to generate", ge=1)
-    top_p: float = attribute(default=1.0, description="Nucleus sampling parameter", ge=0.0, le=1.0)
+    max_tokens: int = attribute(
+        default=1000, description="Maximum tokens to generate", ge=1
+    )
+    top_p: float = attribute(
+        default=1.0, description="Nucleus sampling parameter", ge=0.0, le=1.0
+    )
 
     # ============================================================================
     # Abstract Methods (Provider Implementation)
@@ -290,7 +307,7 @@ class LanguageModelAction(BaseModelAction, ABC):
 
         If response_bus and interaction are provided, messages will be published
         directly to the ResponseBus (streaming chunks or final message).
-        
+
         Observability metrics are automatically emitted via context-based tracking.
 
         Args:
@@ -311,17 +328,19 @@ class LanguageModelAction(BaseModelAction, ABC):
         # Validate: if response_bus is provided, interaction is required
         if response_bus and not interaction:
             raise ValueError("interaction is required when response_bus is provided")
-        
+
         # If ResponseBus is provided, extract values from interaction and publish directly
         if response_bus and interaction:
             # Extract values from interaction node
             session_id = getattr(interaction, "session_id", None)
             channel = getattr(interaction, "channel", "default")
             interaction_id = getattr(interaction, "id", None)
-            
+
             if not session_id:
-                raise ValueError("interaction must have session_id when response_bus is provided")
-            
+                raise ValueError(
+                    "interaction must have session_id when response_bus is provided"
+                )
+
             user_id = getattr(interaction, "user_id", None)
 
             # Non-streaming: publish adhoc and return
@@ -392,7 +411,7 @@ class LanguageModelAction(BaseModelAction, ABC):
                 transient=transient,
             )
             return full_text
-        
+
         # No ResponseBus: just return the response without publishing
         if not stream:
             result = await self.query(
@@ -405,7 +424,7 @@ class LanguageModelAction(BaseModelAction, ABC):
                 **kwargs,
             )
             return await result.get_response()
-        
+
         # Streaming without ResponseBus: collect and return
         result = await self.query(
             prompt,
@@ -423,11 +442,11 @@ class LanguageModelAction(BaseModelAction, ABC):
                 chunks.append(chunk)
 
         full_text = "".join(chunks)
-        
+
         # Ensure response is cached in result (for observability)
         if not result.response:
             result.response = full_text
-        
+
         return full_text
 
     async def query(
@@ -490,18 +509,20 @@ class LanguageModelAction(BaseModelAction, ABC):
         # This ensures PersonaAction's model override takes precedence over LanguageModelAction's default
         if "model" in kwargs:
             # Model was explicitly passed (even if empty/None) - use it
-            model_param = kwargs["model"] or self.model  # Fall back to instance default if empty/None
+            model_param = (
+                kwargs["model"] or self.model
+            )  # Fall back to instance default if empty/None
         else:
             # Model not in kwargs - use instance default
             model_param = self.model
-        
+
         query_params = {
             "model": model_param,
             "temperature": kwargs.get("temperature", self.temperature),
             "max_tokens": kwargs.get("max_tokens", self.max_tokens),
             "top_p": kwargs.get("top_p", self.top_p),
         }
-        
+
         # Debug logging to track model selection
         if "model" in kwargs:
             logger.debug(
@@ -524,7 +545,7 @@ class LanguageModelAction(BaseModelAction, ABC):
         result.prompt = prompt_str
         result.system = system
         result.history = history
-        
+
         # Store calling_action_name in result for observability
         if calling_action_name:
             result.calling_action_name = calling_action_name
@@ -535,6 +556,7 @@ class LanguageModelAction(BaseModelAction, ABC):
         # Record to request profile if profiling is enabled
         try:
             from jvagent.core.profiling import record_lm_call
+
             # Use calling_action_name to identify the LM call source
             lm_label = f"lm:{calling_action_name or self.__class__.__name__}"
             record_lm_call(lm_label, duration)
@@ -543,7 +565,7 @@ class LanguageModelAction(BaseModelAction, ABC):
 
         # Store result temporarily for observability (to include response in metrics)
         self._last_result = result
-        
+
         # Store messages and context for token estimation (for streaming)
         if stream:
             result._messages_for_estimation = messages
@@ -557,21 +579,23 @@ class LanguageModelAction(BaseModelAction, ABC):
             "completion_tokens": result.metrics.get("completion_tokens", 0),
             "total_tokens": result.metrics.get("total_tokens", 0),
         }
-        
+
         # For streaming results, skip initial observability emission
         # We'll emit after token estimation completes to avoid duplicate entries
         # For non-streaming, emit immediately
         if not (stream and result.is_streaming):
             await self.track_usage(usage_dict, duration)
-        
+
         # For streaming results, schedule token estimation after stream completion
         if stream and result.is_streaming:
             # Create a wrapper that estimates tokens when stream is consumed
             original_stream = result.stream
             if original_stream:
+
                 async def stream_with_estimation():
                     """Stream wrapper that estimates tokens after completion."""
                     import time
+
                     stream_start_time = time.time()
                     chunks = []
                     try:
@@ -584,29 +608,39 @@ class LanguageModelAction(BaseModelAction, ABC):
                             full_response = "".join(chunks)
                             # Store response for later use
                             result.response = full_response
-                            
+
                             # Calculate actual duration (from query start to stream completion)
                             stream_end_time = time.time()
                             actual_duration = stream_end_time - start_time
-                            
+
                             # Estimate tokens
                             try:
                                 from jvagent.action.model.utils.token_estimation import (
-                                    estimate_prompt_tokens,
                                     estimate_completion_tokens,
+                                    estimate_prompt_tokens,
                                 )
-                                
-                                messages = getattr(result, "_messages_for_estimation", [])
-                                model = getattr(result, "_model_for_estimation", result.model)
-                                provider = getattr(result, "_provider_for_estimation", result.provider)
-                                
-                                prompt_tokens = estimate_prompt_tokens(messages, model, provider)
-                                completion_tokens = estimate_completion_tokens(full_response, model, provider)
+
+                                messages = getattr(
+                                    result, "_messages_for_estimation", []
+                                )
+                                model = getattr(
+                                    result, "_model_for_estimation", result.model
+                                )
+                                provider = getattr(
+                                    result, "_provider_for_estimation", result.provider
+                                )
+
+                                prompt_tokens = estimate_prompt_tokens(
+                                    messages, model, provider
+                                )
+                                completion_tokens = estimate_completion_tokens(
+                                    full_response, model, provider
+                                )
                                 total_tokens = prompt_tokens + completion_tokens
-                                
+
                                 # Update result metrics with actual duration
                                 result.metrics["duration"] = actual_duration
-                                
+
                                 # Update result metrics
                                 estimated_usage = {
                                     "prompt_tokens": prompt_tokens,
@@ -614,24 +648,32 @@ class LanguageModelAction(BaseModelAction, ABC):
                                     "total_tokens": total_tokens,
                                 }
                                 result.update_usage(estimated_usage, estimated=True)
-                                
+
                                 # Emit observability with updated metrics and actual duration
                                 try:
-                                    from jvagent.action.model.context import get_interaction_id
+                                    from jvagent.action.model.context import (
+                                        get_interaction_id,
+                                    )
+
                                     interaction_id = get_interaction_id()
                                     if interaction_id:
                                         # Track usage with estimated metrics and actual duration
-                                        await self.track_usage(estimated_usage, actual_duration)
+                                        await self.track_usage(
+                                            estimated_usage, actual_duration
+                                        )
                                 except Exception as e:
-                                    logger.debug(f"Failed to emit observability after stream: {e}")
-                                    
+                                    logger.debug(
+                                        f"Failed to emit observability after stream: {e}"
+                                    )
+
                             except Exception as e:
-                                logger.debug(f"Failed to estimate tokens for streaming result: {e}")
-                
+                                logger.debug(
+                                    f"Failed to estimate tokens for streaming result: {e}"
+                                )
+
                 result.stream = stream_with_estimation()
 
         return result
-
 
     async def query_sync(
         self,
@@ -767,13 +809,19 @@ class LanguageModelAction(BaseModelAction, ABC):
 
         if image_url:
             content.append(
-                {"type": "image_url", "image_url": {"url": image_url, "detail": image_detail}}
+                {
+                    "type": "image_url",
+                    "image_url": {"url": image_url, "detail": image_detail},
+                }
             )
         elif image_base64:
             # Add data URI prefix for base64
             data_uri = f"data:image/jpeg;base64,{image_base64}"
             content.append(
-                {"type": "image_url", "image_url": {"url": data_uri, "detail": image_detail}}
+                {
+                    "type": "image_url",
+                    "image_url": {"url": data_uri, "detail": image_detail},
+                }
             )
 
         return content
@@ -814,7 +862,10 @@ class LanguageModelAction(BaseModelAction, ABC):
 
                 if "url" in img:
                     content.append(
-                        {"type": "image_url", "image_url": {"url": img["url"], "detail": detail}}
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": img["url"], "detail": detail},
+                        }
                     )
                 elif "base64" in img:
                     data_uri = f"data:image/jpeg;base64,{img['base64']}"
@@ -842,4 +893,3 @@ class LanguageModelAction(BaseModelAction, ABC):
 
         manager = TemplateManager(self)
         return await manager.render(template_name, **variables)
-

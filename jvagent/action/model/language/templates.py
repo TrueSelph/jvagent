@@ -55,7 +55,9 @@ class TemplateManager:
         # Get action package path
         package_path = await self.action.get_package_path()
         if not package_path:
-            logger.warning(f"Could not determine package path for action {self.action.label}")
+            logger.warning(
+                f"Could not determine package path for action {self.action.label}"
+            )
             return None
 
         # Check for templates directory

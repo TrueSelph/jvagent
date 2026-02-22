@@ -6,7 +6,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 from jvagent.action.response.message import ResponseMessage
 
@@ -25,6 +25,7 @@ class AdhocAccumulator:
     session_id: str = ""
     interaction_id: str = ""
     started_at: float = field(default_factory=time.time)
+
 
 # Forward declaration for type hints
 if TYPE_CHECKING:
@@ -53,8 +54,8 @@ class ResponseBus:
     """
 
     # Cleanup configuration
-    CLEANUP_INTERVAL_SECONDS = 60      # Max once per 60s for lazy cleanup
-    BUFFER_TTL_SECONDS = 3600          # 1 hour TTL for message/observability buffers
+    CLEANUP_INTERVAL_SECONDS = 60  # Max once per 60s for lazy cleanup
+    BUFFER_TTL_SECONDS = 3600  # 1 hour TTL for message/observability buffers
     ACCUMULATOR_TIMEOUT_SECONDS = 120  # 2 min timeout for incomplete streams
 
     _instance: Optional["ResponseBus"] = None
@@ -71,24 +72,32 @@ class ResponseBus:
         # O(1) subscriber lookup set: {session_id: {id(callback), ...}}
         # Used for fast duplicate checking during subscribe()
         self._subscriber_ids: Dict[str, set] = {}
-        self._subscriber_preferences: Dict[Callable[[ResponseMessage], Any], Dict[str, Any]] = {}
+        self._subscriber_preferences: Dict[
+            Callable[[ResponseMessage], Any], Dict[str, Any]
+        ] = {}
         # interaction_id -> in-order ResponseMessage objects published for that interaction
         self._message_buffers: Dict[str, List[ResponseMessage]] = {}
-        self._buffer_timestamps: Dict[str, float] = {}  # interaction_id -> creation time for TTL cleanup
-        
+        self._buffer_timestamps: Dict[str, float] = (
+            {}
+        )  # interaction_id -> creation time for TTL cleanup
+
         # Channel adapter registry: maps channel name -> single adapter instance
-        self._channel_adapters: Dict[str, "ChannelAdapter"] = {}  # channel -> single ChannelAdapter instance
-        
+        self._channel_adapters: Dict[str, "ChannelAdapter"] = (
+            {}
+        )  # channel -> single ChannelAdapter instance
+
         # Channel filter registry: list of filters sorted by priority (lower priority executes first)
         self._channel_filters: List["ChannelFilter"] = []
-        
+
         # Streaming adhoc accumulation: interaction_id -> AdhocAccumulator (chunks until streaming_complete)
         self._adhoc_accumulation: Dict[str, AdhocAccumulator] = {}
-        
+
         # Configuration
         self._max_session_queue_size = 1000  # Bounded storage per session
-        self._buffer_ttl_seconds = 3600  # 1 hour TTL for accumulation/observability buffers
-        
+        self._buffer_ttl_seconds = (
+            3600  # 1 hour TTL for accumulation/observability buffers
+        )
+
         # Cleanup state
         self._last_cleanup_time: float = 0.0
 
@@ -111,7 +120,7 @@ class ResponseBus:
 
     def _maybe_cleanup(self) -> None:
         """Lazy cleanup - evict expired entries only. Runs at most once per CLEANUP_INTERVAL_SECONDS.
-        
+
         IMPORTANT: Only evicts by TTL/timeout, never by count. Size-based eviction is unsafe
         for concurrent users - it could evict an active user's accumulator mid-stream.
         """
@@ -119,19 +128,21 @@ class ResponseBus:
         if now - self._last_cleanup_time < self.CLEANUP_INTERVAL_SECONDS:
             return
         self._last_cleanup_time = now
-        
+
         # Evict expired accumulators (incomplete streams older than timeout)
         expired_acc = [
-            k for k, v in self._adhoc_accumulation.items()
+            k
+            for k, v in self._adhoc_accumulation.items()
             if now - v.started_at > self.ACCUMULATOR_TIMEOUT_SECONDS
         ]
         for k in expired_acc:
             logger.debug(f"Evicting expired accumulator for interaction {k}")
             self._adhoc_accumulation.pop(k, None)
-        
+
         # Evict expired buffers (interactions never finalized within TTL)
         expired_buf = [
-            k for k, ts in self._buffer_timestamps.items()
+            k
+            for k, ts in self._buffer_timestamps.items()
             if now - ts > self.BUFFER_TTL_SECONDS
         ]
         for k in expired_buf:
@@ -161,7 +172,9 @@ class ResponseBus:
             )
         return self._adhoc_accumulation[interaction_id]
 
-    async def _enqueue_and_notify(self, message: ResponseMessage, session_id: str) -> None:
+    async def _enqueue_and_notify(
+        self, message: ResponseMessage, session_id: str
+    ) -> None:
         """Add message to session queue, enforce bound, notify subscribers.
         Awaits async callbacks so SSE consumer receives messages before walk_task.done() check.
         """
@@ -254,7 +267,9 @@ class ResponseBus:
             filter_ok = await self._apply_channel_filters(message, channel)
             if filter_ok:
                 if channel in self._channel_adapters:
-                    await self._send_to_adapter(self._channel_adapters[channel], message)
+                    await self._send_to_adapter(
+                        self._channel_adapters[channel], message
+                    )
                 if (interaction_id or interaction) and message.content:
                     if interaction is not None and not transient:
                         await self._append_to_interaction_response_impl(
@@ -282,7 +297,9 @@ class ResponseBus:
             filter_ok = await self._apply_channel_filters(message, channel)
             if filter_ok:
                 if channel in self._channel_adapters:
-                    await self._send_to_adapter(self._channel_adapters[channel], message)
+                    await self._send_to_adapter(
+                        self._channel_adapters[channel], message
+                    )
                 if interaction and not transient:
                     await self._append_to_interaction_response_impl(
                         interaction=interaction,
@@ -331,7 +348,9 @@ class ResponseBus:
             filter_ok = await self._apply_channel_filters(flush_message, acc.channel)
             if filter_ok:
                 if acc.channel in self._channel_adapters:
-                    await self._send_to_adapter(self._channel_adapters[acc.channel], flush_message)
+                    await self._send_to_adapter(
+                        self._channel_adapters[acc.channel], flush_message
+                    )
                 if interaction is not None and flush_message.content and not transient:
                     await self._append_to_interaction_response_impl(
                         interaction=interaction,
@@ -394,7 +413,9 @@ class ResponseBus:
             filter_ok = await self._apply_channel_filters(flush_message, acc.channel)
             if filter_ok:
                 if acc.channel in self._channel_adapters:
-                    await self._send_to_adapter(self._channel_adapters[acc.channel], flush_message)
+                    await self._send_to_adapter(
+                        self._channel_adapters[acc.channel], flush_message
+                    )
                 if full_content and (interaction or interaction_id):
                     if interaction is not None and not transient:
                         await self._append_to_interaction_response_impl(
@@ -452,7 +473,9 @@ class ResponseBus:
         filter_ok = await self._apply_channel_filters(message, acc.channel)
         if filter_ok:
             if acc.channel in self._channel_adapters:
-                await self._send_to_adapter(self._channel_adapters[acc.channel], message)
+                await self._send_to_adapter(
+                    self._channel_adapters[acc.channel], message
+                )
             if full_content and interaction:
                 await self._append_to_interaction_response_impl(
                     interaction=interaction,
@@ -518,17 +541,23 @@ class ResponseBus:
             return
 
         if interaction.set_response(new_response):
-            if not hasattr(interaction, "_graph_context") or interaction._graph_context is None:
+            if (
+                not hasattr(interaction, "_graph_context")
+                or interaction._graph_context is None
+            ):
                 try:
                     from jvspatial.core.context import get_default_context
+
                     interaction._graph_context = get_default_context()
                 except Exception:
                     pass
             await interaction.save()
 
-    async def _send_to_adapter(self, adapter: "ChannelAdapter", message: ResponseMessage) -> bool:
+    async def _send_to_adapter(
+        self, adapter: "ChannelAdapter", message: ResponseMessage
+    ) -> bool:
         """Send message to adapter with lightweight retry (max 2 attempts).
-        
+
         Returns:
             True if sent successfully, False on permanent failure or exhausted retries.
         """
@@ -542,7 +571,9 @@ class ResponseBus:
                     await asyncio.sleep(0.5)
                     logger.warning(f"Adapter retry for {adapter.channel}: {e}")
                 else:
-                    logger.error(f"Adapter failed for {adapter.channel}: {e}", exc_info=True)
+                    logger.error(
+                        f"Adapter failed for {adapter.channel}: {e}", exc_info=True
+                    )
         return False
 
     async def subscribe(
@@ -562,13 +593,13 @@ class ResponseBus:
         if session_id not in self._subscribers:
             self._subscribers[session_id] = []
             self._subscriber_ids[session_id] = set()
-        
+
         # Use O(1) set lookup for duplicate check instead of O(n) list search
         cb_id = id(callback)
         if cb_id not in self._subscriber_ids[session_id]:
             self._subscribers[session_id].append(callback)
             self._subscriber_ids[session_id].add(cb_id)
-        
+
         self._subscriber_preferences[callback] = {"receive_chunks": receive_chunks}
 
     async def unsubscribe(
@@ -589,7 +620,7 @@ class ResponseBus:
                     self._subscriber_ids[session_id].discard(cb_id)
             except ValueError:
                 pass  # Callback not in list
-        
+
         # Clean up preferences
         if callback in self._subscriber_preferences:
             del self._subscriber_preferences[callback]
@@ -628,7 +659,7 @@ class ResponseBus:
 
         # Clean old session messages
         await self._cleanup_old_session_messages(session_id)
-        
+
         # Trigger lazy cleanup (throttled)
         self._maybe_cleanup()
 
@@ -667,7 +698,7 @@ class ResponseBus:
             List of session IDs with active queues
         """
         return list(self._session_queues.keys())
-    
+
     async def _cleanup_old_session_messages(self, session_id: str) -> None:
         """Drop old messages from the session queue.
 
@@ -676,16 +707,20 @@ class ResponseBus:
         """
         if session_id not in self._session_queues:
             return
-        
+
         queue = self._session_queues[session_id]
         cutoff_dt = datetime.now(timezone.utc) - timedelta(minutes=5)
-        
+
         # ResponseMessage.timestamp is timezone-aware datetime; keep any messages newer than cutoff.
-        filtered_queue = [msg for msg in queue if msg.timestamp and msg.timestamp > cutoff_dt]
-        
+        filtered_queue = [
+            msg for msg in queue if msg.timestamp and msg.timestamp > cutoff_dt
+        ]
+
         if len(filtered_queue) < len(queue):
             self._session_queues[session_id] = filtered_queue
-            logger.debug(f"Cleaned up {len(queue) - len(filtered_queue)} old messages from session {session_id}")
+            logger.debug(
+                f"Cleaned up {len(queue) - len(filtered_queue)} old messages from session {session_id}"
+            )
 
     async def cleanup_expired_buffers(self) -> None:
         """Clean up expired accumulation and observability buffers (TTL cleanup).
@@ -699,32 +734,36 @@ class ResponseBus:
             for interaction_id, timestamp in self._buffer_timestamps.items()
             if current_time - timestamp > self.BUFFER_TTL_SECONDS
         ]
-        
+
         for interaction_id in expired_interaction_ids:
-            logger.debug(f"Cleaning up expired buffers for interaction {interaction_id}")
+            logger.debug(
+                f"Cleaning up expired buffers for interaction {interaction_id}"
+            )
             self._message_buffers.pop(interaction_id, None)
             self._adhoc_accumulation.pop(interaction_id, None)
             self._buffer_timestamps.pop(interaction_id, None)
 
     async def register_channel_adapter(self, adapter: "ChannelAdapter") -> None:
         """Register a channel adapter with the response bus.
-        
+
         Ensures only ONE adapter per channel. If an adapter already exists for the channel,
         it is replaced by the new adapter. This prevents duplicate message delivery.
 
         Args:
             adapter: ChannelAdapter instance to register
         """
-        if not hasattr(adapter, 'channel'):
-            logger.warning(f"Adapter {adapter} does not have a channel attribute, skipping registration")
+        if not hasattr(adapter, "channel"):
+            logger.warning(
+                f"Adapter {adapter} does not have a channel attribute, skipping registration"
+            )
             return
-        
+
         channel = adapter.channel
         old_adapter = self._channel_adapters.get(channel)
-        
+
         # Replace any existing adapter for this channel (ensures only one adapter per channel)
         self._channel_adapters[channel] = adapter
-        
+
         if old_adapter and old_adapter is not adapter:
             logger.info(f"Replaced existing channel adapter for channel '{channel}'")
         else:
@@ -732,51 +771,54 @@ class ResponseBus:
 
     async def register_channel_filter(self, filter: "ChannelFilter") -> None:
         """Register a channel filter with the response bus.
-        
+
         Filters are stored in priority order (lower priority executes first).
         Multiple filters can be registered for the same channel.
-        
+
         Args:
             filter: ChannelFilter instance to register
         """
-        if not hasattr(filter, 'channels') or not hasattr(filter, 'priority'):
-            logger.warning(f"Filter {filter} does not have required attributes (channels, priority), skipping registration")
+        if not hasattr(filter, "channels") or not hasattr(filter, "priority"):
+            logger.warning(
+                f"Filter {filter} does not have required attributes (channels, priority), skipping registration"
+            )
             return
-        
+
         # Add filter to list
         self._channel_filters.append(filter)
-        
+
         # Sort filters by priority (lower priority executes first)
         self._channel_filters.sort(key=lambda f: f.priority)
-        
+
         channel_list = ", ".join(filter.channels)
         logger.debug(
             f"Registered channel filter for channels [{channel_list}] "
             f"(priority: {filter.priority}, total filters: {len(self._channel_filters)})"
         )
 
-    async def _apply_channel_filters(self, message: ResponseMessage, channel: str) -> bool:
+    async def _apply_channel_filters(
+        self, message: ResponseMessage, channel: str
+    ) -> bool:
         """Apply all registered filters for a channel to the message.
-        
+
         Filters execute in priority order (lower priority first).
         Each filter transforms the message in-place.
-        
+
         Args:
             message: ResponseMessage to transform
             channel: Channel name to filter for
-            
+
         Returns:
             False if a fail_fast filter fails, True otherwise
         """
         # Get all filters that apply to this channel, sorted by priority
         applicable_filters = [
-            f for f in self._channel_filters
-            if f.applies_to_channel(channel)
+            f for f in self._channel_filters if f.applies_to_channel(channel)
         ]
-        
+
         if not applicable_filters:
             return True
-        
+
         # Apply each filter in priority order
         for filter_instance in applicable_filters:
             try:
@@ -787,9 +829,7 @@ class ResponseBus:
                     f"for channel '{channel}': {e}",
                     exc_info=True,
                 )
-                if getattr(filter_instance, 'fail_fast', False):
+                if getattr(filter_instance, "fail_fast", False):
                     return False
-        
+
         return True
-
-

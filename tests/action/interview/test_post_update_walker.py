@@ -5,22 +5,25 @@ Covers:
 - Integration tests with real spatial-graph nodes (test_db fixture)
 """
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
-from jvagent.action.interview.core.foundation.enums import InterviewState
-from jvagent.action.interview.core.session.interview_session import InterviewSession
-from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
-from jvagent.action.interview.core.graph.question_node import QuestionNode
-from jvagent.action.interview.core.graph.question_edge import QuestionEdge
-from jvagent.action.interview.core.graph.state_node import StateNode
-from jvagent.action.interview.core.graph.question_branch_evaluator import QuestionBranchEvaluator
-from jvagent.action.interview.core.utils.cache_utils import BranchCache
+import pytest
 
+from jvagent.action.interview.core.foundation.enums import InterviewState
+from jvagent.action.interview.core.graph.question_branch_evaluator import (
+    QuestionBranchEvaluator,
+)
+from jvagent.action.interview.core.graph.question_edge import QuestionEdge
+from jvagent.action.interview.core.graph.question_node import QuestionNode
+from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
+from jvagent.action.interview.core.graph.state_node import StateNode
+from jvagent.action.interview.core.session.interview_session import InterviewSession
+from jvagent.action.interview.core.utils.cache_utils import BranchCache
 
 # ---------------------------------------------------------------------------
 # Unit tests — _prune_session with manually-set _reachable
 # ---------------------------------------------------------------------------
+
 
 class TestPruneSessionUnit:
     """Unit-level tests for QuestionPathWalker._prune_session()."""
@@ -48,10 +51,14 @@ class TestPruneSessionUnit:
         """Responses from old branch are pruned when reachable set excludes them."""
         session = InterviewSession(agent_id="t")
         session.question_graph = [
-            {"name": "q1", "branches": [
-                {"condition": {"op": "equals", "value": "a"}, "target": "q2a"},
-                {"condition": {"op": "equals", "value": "b"}, "target": "q2b"},
-            ], "default_next": "REVIEW"},
+            {
+                "name": "q1",
+                "branches": [
+                    {"condition": {"op": "equals", "value": "a"}, "target": "q2a"},
+                    {"condition": {"op": "equals", "value": "b"}, "target": "q2b"},
+                ],
+                "default_next": "REVIEW",
+            },
             {"name": "q2a", "default_next": "REVIEW"},
             {"name": "q2b", "default_next": "REVIEW"},
         ]
@@ -71,10 +78,14 @@ class TestPruneSessionUnit:
         """Responses after the convergence point are preserved."""
         session = InterviewSession(agent_id="t")
         session.question_graph = [
-            {"name": "qA", "branches": [
-                {"condition": {"op": "equals", "value": "b"}, "target": "qB"},
-                {"condition": {"op": "equals", "value": "c"}, "target": "qC"},
-            ], "default_next": "qD"},
+            {
+                "name": "qA",
+                "branches": [
+                    {"condition": {"op": "equals", "value": "b"}, "target": "qB"},
+                    {"condition": {"op": "equals", "value": "c"}, "target": "qC"},
+                ],
+                "default_next": "qD",
+            },
             {"name": "qB", "default_next": "qD"},
             {"name": "qC", "default_next": "qD"},
             {"name": "qD", "default_next": "REVIEW"},
@@ -173,6 +184,7 @@ class TestPruneSessionUnit:
 # Integration tests — real graph traversal via test_db
 # ---------------------------------------------------------------------------
 
+
 class TestQuestionPathWalkerSync:
     """Integration tests with real spatial graph nodes."""
 
@@ -194,16 +206,22 @@ class TestQuestionPathWalkerSync:
 
         # Build graph nodes
         q1 = await QuestionNode.create(
-            agent_id="t", interview_type="Test",
-            state={"name": "q1"}, label="q1",
+            agent_id="t",
+            interview_type="Test",
+            state={"name": "q1"},
+            label="q1",
         )
         q2 = await QuestionNode.create(
-            agent_id="t", interview_type="Test",
-            state={"name": "q2"}, label="q2",
+            agent_id="t",
+            interview_type="Test",
+            state={"name": "q2"},
+            label="q2",
         )
         review = await StateNode.create(
-            agent_id="t", interview_type="Test",
-            state_type=InterviewState.REVIEW, label="REVIEW",
+            agent_id="t",
+            interview_type="Test",
+            state_type=InterviewState.REVIEW,
+            label="REVIEW",
         )
         await q1.connect(q2, edge=QuestionEdge, is_default=True, branch_index=-1)
         await q2.connect(review, edge=QuestionEdge, is_default=True, branch_index=-1)
@@ -228,10 +246,14 @@ class TestQuestionPathWalkerSync:
             state=InterviewState.ACTIVE,
         )
         session.question_graph = [
-            {"name": "q1", "branches": [
-                {"condition": {"op": "equals", "value": "a"}, "target": "q2a"},
-                {"condition": {"op": "equals", "value": "b"}, "target": "q2b"},
-            ], "default_next": "REVIEW"},
+            {
+                "name": "q1",
+                "branches": [
+                    {"condition": {"op": "equals", "value": "a"}, "target": "q2a"},
+                    {"condition": {"op": "equals", "value": "b"}, "target": "q2b"},
+                ],
+                "default_next": "REVIEW",
+            },
             {"name": "q2a", "default_next": "REVIEW"},
             {"name": "q2b", "default_next": "REVIEW"},
         ]
@@ -240,29 +262,45 @@ class TestQuestionPathWalkerSync:
         await session.save()
 
         q1 = await QuestionNode.create(
-            agent_id="t", interview_type="Test",
-            state={"name": "q1"}, label="q1",
+            agent_id="t",
+            interview_type="Test",
+            state={"name": "q1"},
+            label="q1",
         )
         q2a = await QuestionNode.create(
-            agent_id="t", interview_type="Test",
-            state={"name": "q2a"}, label="q2a",
+            agent_id="t",
+            interview_type="Test",
+            state={"name": "q2a"},
+            label="q2a",
         )
         q2b = await QuestionNode.create(
-            agent_id="t", interview_type="Test",
-            state={"name": "q2b"}, label="q2b",
+            agent_id="t",
+            interview_type="Test",
+            state={"name": "q2b"},
+            label="q2b",
         )
         review = await StateNode.create(
-            agent_id="t", interview_type="Test",
-            state_type=InterviewState.REVIEW, label="REVIEW",
+            agent_id="t",
+            interview_type="Test",
+            state_type=InterviewState.REVIEW,
+            label="REVIEW",
         )
 
         # Conditional edges
-        await q1.connect(q2a, edge=QuestionEdge,
-                         condition={"op": "equals", "value": "a"},
-                         branch_index=0, is_default=False)
-        await q1.connect(q2b, edge=QuestionEdge,
-                         condition={"op": "equals", "value": "b"},
-                         branch_index=1, is_default=False)
+        await q1.connect(
+            q2a,
+            edge=QuestionEdge,
+            condition={"op": "equals", "value": "a"},
+            branch_index=0,
+            is_default=False,
+        )
+        await q1.connect(
+            q2b,
+            edge=QuestionEdge,
+            condition={"op": "equals", "value": "b"},
+            branch_index=1,
+            is_default=False,
+        )
         await q1.connect(review, edge=QuestionEdge, is_default=True, branch_index=-1)
         await q2a.connect(review, edge=QuestionEdge, is_default=True, branch_index=-1)
         await q2b.connect(review, edge=QuestionEdge, is_default=True, branch_index=-1)
@@ -292,10 +330,14 @@ class TestQuestionPathWalkerSync:
             state=InterviewState.ACTIVE,
         )
         session.question_graph = [
-            {"name": "q1", "branches": [
-                {"condition": {"op": "equals", "value": "b"}, "target": "qB"},
-                {"condition": {"op": "equals", "value": "c"}, "target": "qC"},
-            ], "default_next": "qD"},
+            {
+                "name": "q1",
+                "branches": [
+                    {"condition": {"op": "equals", "value": "b"}, "target": "qB"},
+                    {"condition": {"op": "equals", "value": "c"}, "target": "qC"},
+                ],
+                "default_next": "qD",
+            },
             {"name": "qB", "default_next": "qD"},
             {"name": "qC", "default_next": "qD"},
             {"name": "qD", "default_next": "REVIEW"},
@@ -303,14 +345,39 @@ class TestQuestionPathWalkerSync:
         session.responses = {"q1": "c", "qB": "old", "qD": "keep"}
         await session.save()
 
-        q1 = await QuestionNode.create(agent_id="t", interview_type="Test", state={"name": "q1"}, label="q1")
-        qB = await QuestionNode.create(agent_id="t", interview_type="Test", state={"name": "qB"}, label="qB")
-        qC = await QuestionNode.create(agent_id="t", interview_type="Test", state={"name": "qC"}, label="qC")
-        qD = await QuestionNode.create(agent_id="t", interview_type="Test", state={"name": "qD"}, label="qD")
-        review = await StateNode.create(agent_id="t", interview_type="Test", state_type=InterviewState.REVIEW, label="REVIEW")
+        q1 = await QuestionNode.create(
+            agent_id="t", interview_type="Test", state={"name": "q1"}, label="q1"
+        )
+        qB = await QuestionNode.create(
+            agent_id="t", interview_type="Test", state={"name": "qB"}, label="qB"
+        )
+        qC = await QuestionNode.create(
+            agent_id="t", interview_type="Test", state={"name": "qC"}, label="qC"
+        )
+        qD = await QuestionNode.create(
+            agent_id="t", interview_type="Test", state={"name": "qD"}, label="qD"
+        )
+        review = await StateNode.create(
+            agent_id="t",
+            interview_type="Test",
+            state_type=InterviewState.REVIEW,
+            label="REVIEW",
+        )
 
-        await q1.connect(qB, edge=QuestionEdge, condition={"op": "equals", "value": "b"}, branch_index=0, is_default=False)
-        await q1.connect(qC, edge=QuestionEdge, condition={"op": "equals", "value": "c"}, branch_index=1, is_default=False)
+        await q1.connect(
+            qB,
+            edge=QuestionEdge,
+            condition={"op": "equals", "value": "b"},
+            branch_index=0,
+            is_default=False,
+        )
+        await q1.connect(
+            qC,
+            edge=QuestionEdge,
+            condition={"op": "equals", "value": "c"},
+            branch_index=1,
+            is_default=False,
+        )
         await q1.connect(qD, edge=QuestionEdge, is_default=True, branch_index=-1)
         await qB.connect(qD, edge=QuestionEdge, is_default=True, branch_index=-1)
         await qC.connect(qD, edge=QuestionEdge, is_default=True, branch_index=-1)
@@ -349,8 +416,15 @@ class TestQuestionPathWalkerSync:
         BranchCache(session).set("q1", "stale_target")
         await session.save()
 
-        q1 = await QuestionNode.create(agent_id="t", interview_type="Test", state={"name": "q1"}, label="q1")
-        review = await StateNode.create(agent_id="t", interview_type="Test", state_type=InterviewState.REVIEW, label="REVIEW")
+        q1 = await QuestionNode.create(
+            agent_id="t", interview_type="Test", state={"name": "q1"}, label="q1"
+        )
+        review = await StateNode.create(
+            agent_id="t",
+            interview_type="Test",
+            state_type=InterviewState.REVIEW,
+            label="REVIEW",
+        )
         await q1.connect(review, edge=QuestionEdge, is_default=True, branch_index=-1)
 
         reachable = await QuestionPathWalker.sync(session, q1)
@@ -373,7 +447,9 @@ class TestQuestionPathWalkerSync:
         session.responses = {"q1": "answer"}
         await session.save()
 
-        q1 = await QuestionNode.create(agent_id="t", interview_type="Test", state={"name": "q1"}, label="q1")
+        q1 = await QuestionNode.create(
+            agent_id="t", interview_type="Test", state={"name": "q1"}, label="q1"
+        )
 
         # Force spawn to raise after partial traversal
         original_spawn = QuestionPathWalker.spawn

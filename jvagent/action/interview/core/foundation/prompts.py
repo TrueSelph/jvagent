@@ -9,13 +9,13 @@ Template Categories:
         - REQUIRED_FIELD_DECLINE: Insist on required field
         - COMPLETION_MESSAGE: Interview completed confirmation
         - CANCELLATION_MESSAGE: Interview cancelled acknowledgment
-    
+
     System Directives: Guide LLM response generation
         - QUESTION_DIRECTIVE: Format question prompts
         - REVIEW_CONFIRMATION_DIRECTIVE: Confirmation with summary
         - REVIEW_UNCLEAR_EDIT_DIRECTIVE: Prompt for which field to edit
         - REVIEW_UNCLEAR_GENERAL_DIRECTIVE: General unclear response
-    
+
     Classification Prompts: Intent detection and extraction
         - CLASSIFICATION_RULES_CORE: Core classification logic (DRY)
         - INTERVIEW_PROMPT: Full prompt with context formatting
@@ -96,14 +96,18 @@ STATE_EVENT_MESSAGES = {
     "CANCELLED": "interview process cancelled as part of {class_name}",
 }
 
+# Aliases for test compatibility
+CANCELLATION_EVENT_MESSAGE_TEMPLATE = STATE_EVENT_MESSAGES["CANCELLED"]
+CANCELLATION_MESSAGE_TEMPLATE = CANCELLATION_MESSAGE
+
 
 def get_state_event_message(state: str, class_name: str) -> str:
     """Get formatted state event message.
-    
+
     Args:
         state: Interview state (ACTIVE, REVIEW, COMPLETED, CANCELLED)
         class_name: Interview action class name
-        
+
     Returns:
         Formatted event message string
     """
@@ -155,8 +159,8 @@ CLASSIFICATION_INTENT_RULES = """INTENT CLASSIFICATION (choose exactly one):
 2. CONFIRMATION (REVIEW STATE ONLY)
    - Pure affirmation with NO new field values
    - User confirms reviewed responses are correct
-   - Expanded patterns: "yes", "correct", "looks good", "that's right", "yep", "yeah", "all correct", 
-     "everything is correct", "looks fine", "looks fine to me", "that's fine", "confirmed", 
+   - Expanded patterns: "yes", "correct", "looks good", "that's right", "yep", "yeah", "all correct",
+     "everything is correct", "looks fine", "looks fine to me", "that's fine", "confirmed",
      "all good", "perfect", "exactly", "that's all correct"
    - CRITICAL: In active state, "yes"/"no" are SUBMISSION (answers to question), NOT CONFIRMATION
    - CRITICAL: If user provides ANY new value, it's UPDATE or SUBMISSION, not CONFIRMATION
@@ -532,70 +536,70 @@ def build_classification_rules(
     include_examples: bool = True,
     include_reference_resolution: bool = True,
     include_composition: bool = True,
-    max_examples: int = 5
+    max_examples: int = 5,
 ) -> str:
     """Build classification rules prompt from composed sections.
-    
+
     This builder allows conditional inclusion of sections to manage token budget
     and customize behavior based on configuration.
-    
+
     Args:
         include_reasoning: Include reasoning instructions section
         include_examples: Include few-shot examples section
         include_reference_resolution: Include reference resolution section
         include_composition: Include multi-turn composition section
         max_examples: Maximum number of examples to include (if include_examples=True)
-        
+
     Returns:
         Composed classification rules string ready for use in INTERVIEW_PROMPT
     """
     sections = []
-    
+
     # Always include decision order and intent rules (core functionality)
     sections.append(CLASSIFICATION_DECISION_ORDER)
     sections.append(CLASSIFICATION_INTENT_RULES)
     sections.append(CLASSIFICATION_EXTRACTION_RULES)
     sections.append(CLASSIFICATION_META_EXTRACTION)
-    
+
     # Optional: Reasoning instructions
     if include_reasoning:
         sections.insert(0, CLASSIFICATION_REASONING_INSTRUCTIONS)
-    
+
     # Optional: Reference resolution
     if include_reference_resolution:
         sections.append(CLASSIFICATION_REFERENCE_RESOLUTION)
-    
+
     # Optional: Multi-turn composition
     if include_composition:
         sections.append(CLASSIFICATION_COMPOSITION_RULES)
-    
+
     # Always include verification (best practice)
     sections.append(CLASSIFICATION_VERIFICATION)
-    
+
     # Always include output format
     sections.append(CLASSIFICATION_OUTPUT_FORMAT)
-    
+
     # Optional: Examples (token-expensive but improves accuracy)
     if include_examples:
         examples_text = _get_classification_examples(max_examples)
         sections.append(examples_text)
-    
+
     return "\n\n".join(sections)
 
 
 def _get_classification_examples(max_examples: int) -> str:
     """Return classification examples, limited to first max_examples blocks.
-    
+
     Splits CLASSIFICATION_EXAMPLES by 'Example N - ' pattern and returns
     the header plus the first max_examples example blocks.
-    
+
     Args:
         max_examples: Maximum number of examples to include
-        
+
     Returns:
         Examples string with at most max_examples blocks
     """
-    parts = re.split(r'(?=Example \d+b? - )', CLASSIFICATION_EXAMPLES)
+    parts = re.split(r"(?=Example \d+b? - )", CLASSIFICATION_EXAMPLES)
     # parts[0] = "EXAMPLES:\n\n", parts[1:] = "Example 1 - ...", "Example 1b - ...", etc.
     header = parts[0] if parts else ""
     example_blocks = [p for p in parts[1:] if p.strip()]

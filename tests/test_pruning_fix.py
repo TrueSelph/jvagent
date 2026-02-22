@@ -5,10 +5,11 @@ set to simulate what a graph traversal would compute.
 """
 
 import pytest
-from jvagent.action.interview.core.session.interview_session import InterviewSession
-from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
-from jvagent.action.interview.core.utils.cache_utils import BranchCache
+
 from jvagent.action.interview.core.foundation.enums import InterviewState
+from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
+from jvagent.action.interview.core.session.interview_session import InterviewSession
+from jvagent.action.interview.core.utils.cache_utils import BranchCache
 
 
 @pytest.mark.asyncio
@@ -38,10 +39,30 @@ async def test_pruning_removes_unreachable_responses():
             ],
             "default_next": "REVIEW",
         },
-        {"name": "q2", "question": "Branch A - Q2?", "constraints": {"type": "string"}, "default_next": "q3"},
-        {"name": "q3", "question": "Branch A - Q3?", "constraints": {"type": "string"}, "default_next": "REVIEW"},
-        {"name": "q4", "question": "Branch B - Q4?", "constraints": {"type": "string"}, "default_next": "q5"},
-        {"name": "q5", "question": "Branch B - Q5?", "constraints": {"type": "string"}, "default_next": "REVIEW"},
+        {
+            "name": "q2",
+            "question": "Branch A - Q2?",
+            "constraints": {"type": "string"},
+            "default_next": "q3",
+        },
+        {
+            "name": "q3",
+            "question": "Branch A - Q3?",
+            "constraints": {"type": "string"},
+            "default_next": "REVIEW",
+        },
+        {
+            "name": "q4",
+            "question": "Branch B - Q4?",
+            "constraints": {"type": "string"},
+            "default_next": "q5",
+        },
+        {
+            "name": "q5",
+            "question": "Branch B - Q5?",
+            "constraints": {"type": "string"},
+            "default_next": "REVIEW",
+        },
     ]
 
     # Setup: User took Branch A path, then updated Q1 to "value_b"
@@ -60,7 +81,9 @@ async def test_pruning_removes_unreachable_responses():
     walker._prune_session()
 
     # Q1 should be preserved (on new path)
-    assert "q1" in session.responses, "Q1 should still be answered (the branching point)"
+    assert (
+        "q1" in session.responses
+    ), "Q1 should still be answered (the branching point)"
     assert session.responses["q1"] == "value_b", "Q1 should have the new value"
 
     # Q2 and Q3 should be pruned (old Branch A path)
@@ -94,8 +117,18 @@ async def test_pruning_preserves_pre_branch_answers():
 
     session = InterviewSession(agent_id="test_agent")
     session.question_graph = [
-        {"name": "q0", "question": "Pre-branch 0?", "constraints": {"type": "string"}, "default_next": "q1"},
-        {"name": "q1", "question": "Pre-branch 1?", "constraints": {"type": "string"}, "default_next": "q2"},
+        {
+            "name": "q0",
+            "question": "Pre-branch 0?",
+            "constraints": {"type": "string"},
+            "default_next": "q1",
+        },
+        {
+            "name": "q1",
+            "question": "Pre-branch 1?",
+            "constraints": {"type": "string"},
+            "default_next": "q2",
+        },
         {
             "name": "q2",
             "question": "Branching question?",
@@ -106,9 +139,24 @@ async def test_pruning_preserves_pre_branch_answers():
             ],
             "default_next": "REVIEW",
         },
-        {"name": "q3_a", "question": "Branch A?", "constraints": {"type": "string"}, "default_next": "q4"},
-        {"name": "q3_b", "question": "Branch B?", "constraints": {"type": "string"}, "default_next": "q4"},
-        {"name": "q4", "question": "Post-convergence?", "constraints": {"type": "string"}, "default_next": "REVIEW"},
+        {
+            "name": "q3_a",
+            "question": "Branch A?",
+            "constraints": {"type": "string"},
+            "default_next": "q4",
+        },
+        {
+            "name": "q3_b",
+            "question": "Branch B?",
+            "constraints": {"type": "string"},
+            "default_next": "q4",
+        },
+        {
+            "name": "q4",
+            "question": "Post-convergence?",
+            "constraints": {"type": "string"},
+            "default_next": "REVIEW",
+        },
     ]
 
     # Setup: User answered pre-branch questions and took Branch A, then updated q2

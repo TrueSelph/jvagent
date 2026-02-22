@@ -4,8 +4,9 @@ import datetime
 import logging
 from typing import Any, Dict, List, Optional
 
-from jvagent.core.app import App
 from jvspatial.storage.security import FileValidator, PathSanitizer
+
+from jvagent.core.app import App
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,9 @@ class MediaManager:
         """
         self.storage_dir = PathSanitizer.sanitize_path(storage_dir)
         # Allow octet-stream as fallback when detection fails
-        allowed = FileValidator.DEFAULT_ALLOWED_MIME_TYPES | {"application/octet-stream"}
+        allowed = FileValidator.DEFAULT_ALLOWED_MIME_TYPES | {
+            "application/octet-stream"
+        }
         self.validator = FileValidator(
             max_size_mb=20,  # WhatsApp typical limit
             allowed_mime_types=allowed,
@@ -53,21 +56,22 @@ class MediaManager:
 
         # Sanitize user_id for path usage
         safe_user_id = PathSanitizer.sanitize_path(user_id)
-        
+
         # Validate file
         try:
             name_to_validate = filename or "media"
             # Help validator with extension if missing
             if "." not in name_to_validate and mime_type:
                 import mimetypes
+
                 ext = mimetypes.guess_extension(mime_type)
                 if ext:
                     name_to_validate += ext
-                    
+
             validation = self.validator.validate_file(
-                content=media_bytes, 
+                content=media_bytes,
                 filename=name_to_validate,
-                expected_mime_type=mime_type
+                expected_mime_type=mime_type,
             )
             extension = validation["extension"]
         except Exception as e:
@@ -77,6 +81,7 @@ class MediaManager:
         # Generate unique path: whatsapp_media/user_id/timestamp_uuid.ext
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         import uuid
+
         unique_id = uuid.uuid4().hex[:8]
         save_filename = f"{timestamp}_{unique_id}{extension}"
         storage_path = f"{self.storage_dir}/{safe_user_id}/{save_filename}"
@@ -137,7 +142,7 @@ class MediaManager:
 
         safe_user_id = PathSanitizer.sanitize_path(user_id)
         prefix = f"{self.storage_dir}/{safe_user_id}/"
-        
+
         file_interface = await app.get_file_interface()
         if not file_interface:
             return []
@@ -149,13 +154,15 @@ class MediaManager:
             for f in files:
                 path = f["path"]
                 url = await app.get_file_url(path)
-                results.append({
-                    "path": path, 
-                    "url": url,
-                    "mime_type": f.get("content_type"),
-                    "size": f.get("size"),
-                    "created_at": f.get("created_at")
-                })
+                results.append(
+                    {
+                        "path": path,
+                        "url": url,
+                        "mime_type": f.get("content_type"),
+                        "size": f.get("size"),
+                        "created_at": f.get("created_at"),
+                    }
+                )
             return results
         except Exception as e:
             logger.error(f"Error listing media for user {user_id}: {e}")
@@ -189,9 +196,10 @@ class MediaManager:
                         if created_at < threshold:
                             path = item["path"]
                             await app.delete_file(path)
-                            logger.debug(f"Deleted old media: {path} (created {created_at_str})")
+                            logger.debug(
+                                f"Deleted old media: {path} (created {created_at_str})"
+                            )
                     except (ValueError, TypeError):
                         continue
         except Exception as e:
             logger.error(f"Error during media cleanup: {e}")
-

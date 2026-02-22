@@ -1,7 +1,8 @@
 """Unit tests for ResponseBus incremental accumulation and finalization."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from jvagent.action.response.message import ResponseMessage
 from jvagent.action.response.response_bus import ResponseBus
@@ -95,12 +96,20 @@ class TestFinalizeInteractionSimplified:
     async def test_finalize_clears_buffers(self):
         """finalize_interaction clears message buffers."""
         bus = ResponseBus()
-        bus._message_buffers["i1"] = [MagicMock()]
+        bus._message_buffers["i1"] = [
+            ResponseMessage(
+                session_id="s1",
+                user_id="u1",
+                content="test",
+                channel="default",
+            )
+        ]
         bus._buffer_timestamps["i1"] = 0.0
 
         mock_interaction = MagicMock()
         mock_interaction.response = "Already set"
         mock_interaction.observability_metrics = []
+        mock_interaction.user_id = "test_user"
 
         await bus.finalize_interaction(
             interaction_id="i1",
@@ -119,6 +128,7 @@ class TestFinalizeInteractionSimplified:
         mock_interaction = MagicMock()
         mock_interaction.response = "Accumulated during publish"
         mock_interaction.set_response = MagicMock()
+        mock_interaction.user_id = "test_user"
 
         await bus.finalize_interaction(
             interaction_id="i1",
@@ -138,6 +148,7 @@ class TestFinalizeInteractionSimplified:
         mock_interaction = MagicMock()
         mock_interaction.response = "Full response"
         mock_interaction.observability_metrics = []
+        mock_interaction.user_id = "test_user"
 
         bus._emit_final_signal = AsyncMock()
 
@@ -237,7 +248,7 @@ class TestSimulatedStreaming:
         # Add a subscriber (but should still respect stream=False)
         async def callback(msg):
             pass
-        
+
         await bus.subscribe("s1", callback, receive_chunks=True)
 
         # Publish whole content with stream=False (explicit choice)
@@ -256,7 +267,7 @@ class TestSimulatedStreaming:
         messages = bus._message_buffers.get("i1", [])
         chunk_messages = [m for m in messages if m.message_type == "stream_chunk"]
         assert len(chunk_messages) == 0, "Should not auto-simulate chunks"
-        
+
         # Should have one adhoc message
         adhoc_messages = [m for m in messages if m.message_type == "adhoc"]
         assert len(adhoc_messages) == 1
@@ -287,7 +298,7 @@ class TestSimulatedStreaming:
         messages = bus._message_buffers.get("i1", [])
         chunk_messages = [m for m in messages if m.message_type == "stream_chunk"]
         assert len(chunk_messages) == 0, "Should not have chunks"
-        
+
         # Should have one adhoc message
         adhoc_messages = [m for m in messages if m.message_type == "adhoc"]
         assert len(adhoc_messages) == 1
@@ -305,6 +316,7 @@ class TestSimulatedStreaming:
         # Add subscriber
         async def callback(msg):
             pass
+
         await bus.subscribe("s1", callback, receive_chunks=True)
 
         # Short content
@@ -353,6 +365,7 @@ class TestSimulatedStreaming:
         # Should have multiple stream_chunk messages plus adhoc and final
         messages = bus._message_buffers.get("i1", [])
         chunk_messages = [m for m in messages if m.message_type == "stream_chunk"]
-        assert len(chunk_messages) > 1, "Should auto-detect and simulate multiple chunks"
+        assert (
+            len(chunk_messages) > 1
+        ), "Should auto-detect and simulate multiple chunks"
         assert "".join(m.content for m in chunk_messages) == content
-

@@ -1,44 +1,45 @@
 """Tests for InterviewWalker traversal logic."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock
 
 from jvagent.action.interview.core.foundation.enums import Intent, InterviewState
-from jvagent.action.interview.core.session.interview_session import InterviewSession
 from jvagent.action.interview.core.graph.interview_walker import InterviewWalker
 from jvagent.action.interview.core.graph.question_node import QuestionNode
+from jvagent.action.interview.core.session.interview_session import InterviewSession
 from jvagent.action.interview.interview_interact_action import InterviewInteractAction
 
 
 @pytest.fixture
 async def test_session(test_db):
     """Create a test interview session."""
-    question_index = [
+    question_graph = [
         {
             "name": "q1",
             "question": "Question 1?",
             "constraints": {"description": "First question", "type": "string"},
-            "required": True
+            "required": True,
         },
         {
             "name": "q2",
             "question": "Question 2?",
             "constraints": {"description": "Second question", "type": "string"},
-            "required": True
+            "required": True,
         },
         {
             "name": "q3",
             "question": "Question 3?",
             "constraints": {"description": "Third question", "type": "string"},
-            "required": False
-        }
+            "required": False,
+        },
     ]
-    
+
     session = await InterviewSession.create(
         agent_id="test_agent",
         conversation_id="test_conv",
         interview_type="TestInterviewAction",
-        question_index=question_index,
+        question_graph=question_graph,
         state=InterviewState.ACTIVE,
     )
     return session
@@ -54,40 +55,42 @@ def mock_interview_action():
 
 class TestInterviewWalker:
     """Test InterviewWalker functionality."""
-    
+
     @pytest.mark.asyncio
-    async def test_find_next_unanswered_question(self, test_session, mock_interview_action):
+    async def test_find_next_unanswered_question(
+        self, test_session, mock_interview_action
+    ):
         """Test finding next unanswered question."""
         walker = InterviewWalker()
         walker.interview_session = test_session
-        
+
         # No questions answered yet
         unanswered = test_session.get_unanswered_questions()
         assert "q1" in unanswered
         assert "q2" in unanswered
         assert "q3" in unanswered
-        
+
         # Answer first question
         test_session.set_response("q1", "answer1")
-        
+
         unanswered = test_session.get_unanswered_questions()
         assert "q1" not in unanswered
         assert "q2" in unanswered
         assert "q3" in unanswered
-    
+
     @pytest.mark.asyncio
     async def test_get_answered_questions(self, test_session):
         """Test getting answered questions."""
         assert len(test_session.get_answered_questions()) == 0
-        
+
         test_session.set_response("q1", "answer1")
         test_session.set_response("q2", "answer2")
-        
+
         answered = test_session.get_answered_questions()
         assert "q1" in answered
         assert "q2" in answered
         assert len(answered) == 2
-    
+
     @pytest.mark.asyncio
     async def test_get_unanswered_questions(self, test_session):
         """Test getting unanswered questions."""
@@ -96,12 +99,12 @@ class TestInterviewWalker:
         assert "q1" in unanswered
         assert "q2" in unanswered
         assert "q3" in unanswered
-        
+
         test_session.set_response("q1", "answer1")
         unanswered = test_session.get_unanswered_questions()
         assert "q1" not in unanswered
         assert len(unanswered) == 2
-    
+
     @pytest.mark.asyncio
     async def test_get_required_questions(self, test_session):
         """Test getting required questions."""
@@ -110,25 +113,25 @@ class TestInterviewWalker:
         assert "q2" in required
         assert "q3" not in required  # Optional
         assert len(required) == 2
-    
+
     @pytest.mark.asyncio
     async def test_state_target_detection(self):
         """Test state target detection."""
         walker = InterviewWalker()
-        
+
         assert walker._is_state_target("REVIEW") is True
         assert walker._is_state_target("COMPLETED") is True
         assert walker._is_state_target("CANCELLED") is True
         assert walker._is_state_target("ACTIVE") is False  # Not a state target
         assert walker._is_state_target("question_name") is False
-    
+
     @pytest.mark.asyncio
     async def test_get_state_from_target(self):
         """Test getting InterviewState from target string."""
         walker = InterviewWalker()
-        
+
         from jvagent.action.interview.core.foundation.enums import InterviewState
-        
+
         assert walker._get_state_from_target("REVIEW") == InterviewState.REVIEW
         assert walker._get_state_from_target("COMPLETED") == InterviewState.COMPLETED
         assert walker._get_state_from_target("CANCELLED") == InterviewState.CANCELLED
@@ -139,20 +142,37 @@ class TestResolveTargetNodeOutOfOrder:
     """Test that answering a non-current question does not skip preceding questions."""
 
     @pytest.mark.asyncio
-    async def test_submission_resolves_to_first_question_not_last_answered(self, test_db):
+    async def test_submission_resolves_to_first_question_not_last_answered(
+        self, test_db
+    ):
         """When user answers q3 out of order (q1, q2 unanswered), target is first question so walker prompts q1."""
         question_graph = [
-            {"name": "q1", "question": "Q1?", "constraints": {"description": "First"}, "required": True},
-            {"name": "q2", "question": "Q2?", "constraints": {"description": "Second"}, "required": True},
-            {"name": "q3", "question": "Q3?", "constraints": {"description": "Third"}, "required": False},
+            {
+                "name": "q1",
+                "question": "Q1?",
+                "constraints": {"description": "First"},
+                "required": True,
+            },
+            {
+                "name": "q2",
+                "question": "Q2?",
+                "constraints": {"description": "Second"},
+                "required": True,
+            },
+            {
+                "name": "q3",
+                "question": "Q3?",
+                "constraints": {"description": "Third"},
+                "required": False,
+            },
         ]
         session = await InterviewSession.create(
             agent_id="test_agent",
             conversation_id="test_conv",
             interview_type="ResolveTargetTestAction",
+            question_graph=question_graph,
             state=InterviewState.ACTIVE,
         )
-        session.question_graph = question_graph
         session.responses = {"q3": "out_of_order_answer"}
         await session.save()
 
@@ -166,7 +186,21 @@ class TestResolveTargetNodeOutOfOrder:
         action._get_question_node = AsyncMock(return_value=q3_node)
         action.get_state_node = AsyncMock(return_value=None)
 
-        await InterviewInteractAction._resolve_target_node(action, session, Intent.SUBMISSION)
+        # Mock find_next_target to return q1 (unanswered) so we hit SUBMISSION branch
+        # instead of "all answered" branch (which would go to REVIEW)
+        from jvagent.action.interview.core.graph.question_path_walker import (
+            QuestionPathWalker,
+        )
+
+        with patch.object(
+            QuestionPathWalker,
+            "find_next_target",
+            new_callable=AsyncMock,
+            return_value=first_node,
+        ):
+            await InterviewInteractAction._resolve_target_node(
+                action, session, Intent.SUBMISSION
+            )
 
         assert session.target_node == "first_question_node_id"
         action._get_first_question_node.assert_called_once_with(session)

@@ -5,7 +5,7 @@ first-time users and adds an introductory directive to guide the persona respons
 """
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 from jvspatial.core.annotations import attribute
 
@@ -41,7 +41,7 @@ class IntroInteractAction(InteractAction):
 
     description: str = attribute(
         default="Introductory interact action for welcoming first-time users.",
-        description="Action description"
+        description="Action description",
     )
 
     weight: int = attribute(
@@ -72,13 +72,17 @@ class IntroInteractAction(InteractAction):
         try:
             # Check if this is a new user (first interaction)
             if not visitor.new_user:
-                logger.debug("IntroInteractAction: Not a first-time user, skipping intro")
+                logger.debug(
+                    "IntroInteractAction: Not a first-time user, skipping intro"
+                )
                 await visitor.unrecord_action_execution()
                 return
 
             # Validate prompt is configured
             if not self.directive:
-                logger.warning("IntroInteractAction: Directive not configured, skipping intro")
+                logger.warning(
+                    "IntroInteractAction: Directive not configured, skipping intro"
+                )
                 await visitor.unrecord_action_execution()
                 return
 
@@ -86,11 +90,13 @@ class IntroInteractAction(InteractAction):
             await visitor.add_directive(self.directive)
 
         except Exception as e:
-            logger.error(f"IntroInteractAction: Error during execution: {e}", exc_info=True)
+            logger.error(
+                f"IntroInteractAction: Error during execution: {e}", exc_info=True
+            )
             await visitor.unrecord_action_execution()
             # Don't raise - allow other actions to continue
 
-    async def healthcheck(self) -> bool | dict:
+    async def healthcheck(self) -> Union[bool, dict]:
         """Perform health check on the action.
 
         Validates that the prompt is configured.

@@ -127,7 +127,7 @@ This document outlines the security improvements and coding standards compliance
        # Session registration attempted here (see whatsapp_action.py)
        adapter = WhatsAppAdapter(action=self)
        await adapter.initialize()
-   
+
    def is_session_registered(self) -> bool:
        """Return whether session was registered (at startup or via manual endpoint)."""
        return self._session_registered

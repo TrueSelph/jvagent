@@ -3,4 +3,3 @@
 from .openai import OpenAIEmbeddingModelAction
 
 __all__ = ["OpenAIEmbeddingModelAction"]
-
