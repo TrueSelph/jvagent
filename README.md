@@ -455,6 +455,23 @@ jvagent includes a comprehensive logging system that maintains complete interact
 
 jvagent is built on jvspatial's graph-based primitives. The system follows a server-based, plugin-first design with YAML-driven agent configuration.
 
+### Graph Hierarchy
+
+The application graph is rooted at `Root` and follows this structure:
+
+```
+Root -> App -> Agents -> Agent
+                Agent -> Memory -> User -> Conversation -> Interaction (chained)
+                Agent -> Actions -> Action (registered)
+```
+
+- **App**: Root application node; connects to Root. Manages file storage, logging config.
+- **Agents**: Structural branchpoint; connects to App. Aggregates all Agent nodes.
+- **Agent**: Individual agent; connects to Agents. Has one Memory and one Actions child.
+- **Memory**: Connects to Agent. Manages User nodes (User -> Conversation -> Interaction chain).
+- **Actions**: Connects to Agent. Registers Action nodes (plugins) discovered from `info.yaml`.
+- **Interaction chain**: Conversation connects to first Interaction; Interactions are bidirectionally chained (Interaction1 <-> Interaction2 <-> Interaction3).
+
 ### High-Level Architecture
 
 ```mermaid
@@ -466,16 +483,15 @@ graph TB
 
     subgraph "API Layer"
         API[REST API Server<br/>FastAPI]
-        WS[WebSocket Handler]
     end
 
     subgraph "jvagent Core"
-        App[App Node<br/>Root]
+        App[App Node]
         Agents[Agents Manager]
 
         subgraph "Agent Instance"
             Agent[Agent Node]
-            Memory[Memory System<br/>User, Conversation, Collection]
+            Memory[Memory<br/>User, Conversation, Interaction]
             Actions[Actions Registry]
         end
     end
@@ -484,7 +500,7 @@ graph TB
         Nodes[Node System]
         Edges[Edge System]
         Walkers[Walker System]
-        DB[(Database<br/>JSON/MongoDB)]
+        DB[(Database<br/>JSON/MongoDB/DynamoDB)]
     end
 
     subgraph "Plugin System"
@@ -498,7 +514,6 @@ graph TB
     Client --> API
     WebUI --> API
     API --> App
-    WS --> Agent
 
     App --> Agents
     Agents --> Agent
@@ -527,24 +542,24 @@ graph LR
     Agent -->|uses| Actions
 
     Memory -->|models| User
-    Memory -->|organizes| Collection
     User -->|has| Conversation1[Conversation]
     User -->|has| Conversation2[Conversation]
-    Conversation1 -->|contains| Interaction1[Interaction]
-    Conversation1 -->|contains| Interaction2[Interaction]
+    Conversation1 -->|chains to| Interaction1[Interaction]
+    Interaction1 -->|chained| Interaction2[Interaction]
 
     Actions -->|registers| Action
-    Action -->|uses| Collection
 
     Action -.subtype.-> InteractAction
-    Action -.subtype.-> ModelAction
+    Action -.subtype.-> BaseModelAction
     InteractAction -->|produces| Response
 ```
+
+**Note:** "Collection" in the codebase is a logical namespace (string, e.g., `agent_id`) used by vectorstores and PageIndex for document scoping—not a graph Node. The Memory node manages Users and their Conversation/Interaction chains.
 
 ### Technology Stack
 
 - **Core**: Python 3.12+, jvspatial (graph primitives), Pydantic v2, FastAPI
-- **Storage**: jvspatial database (JSON/MongoDB/DynamoDB backends)
+- **Storage**: jvspatial database (JSON, MongoDB, or DynamoDB backends)
 - **AI/ML**: OpenAI SDK, Anthropic SDK, Sentence Transformers (embeddings)
 - **Observability**: structlog, separate logging database for audit trails
 
@@ -554,17 +569,18 @@ graph LR
 jvagent_app/
 ├── app.yaml                    # Application configuration
 ├── agents/
-│   └── {agent_name}/
-│       ├── agent.yaml         # Agent configuration
-│       └── actions/
-│           └── {namespace}/   # Namespace directory
-│               └── {action_name}/
-│                   ├── __init__.py      # Package initialization (imports action & endpoints)
-│                   ├── {action_name}.py  # Action implementation (Action class)
-│                   ├── endpoints.py      # API endpoints (standard pattern)
-│                   ├── info.yaml         # Action metadata
-│                   ├── requirements.txt  # Action dependencies
-│                   └── README.md
+│   └── {namespace}/
+│       └── {agent_name}/
+│           ├── agent.yaml     # Agent configuration
+│           └── actions/
+│               └── {namespace}/   # Namespace directory
+│                   └── {action_name}/
+│                       ├── __init__.py      # Package initialization (imports action & endpoints)
+│                       ├── {action_name}.py  # Action implementation (Action class)
+│                       ├── endpoints.py      # API endpoints (standard pattern)
+│                       ├── info.yaml         # Action metadata
+│                       ├── requirements.txt  # Action dependencies
+│                       └── README.md
 └── .env
 ```
 
@@ -574,24 +590,25 @@ jvagent_app/
 jvagent_app/
 ├── app.yaml
 ├── agents/
-│   └── example_agent/
-│       ├── agent.yaml
-│       └── actions/
-│           ├── jvagent/              # Official namespace
-│           │   └── example_action/
-│           │       ├── __init__.py
-│           │       ├── example_action.py
-│           │       ├── endpoints.py
-│           │       ├── info.yaml
-│           │       └── requirements.txt
-│           ├── contrib/              # Community namespace
-│           │   └── slack_notifier/
-│           │       ├── info.yaml
-│           │       └── slack_notifier.py
-│           └── custom/              # Custom namespace
-│               └── custom_action/
-│                   ├── info.yaml
-│                   └── custom_action.py
+│   └── jvagent/
+│       └── example_agent/
+│           ├── agent.yaml
+│           └── actions/
+│               ├── jvagent/              # Official namespace
+│               │   └── example_action/
+│               │       ├── __init__.py
+│               │       ├── example_action.py
+│               │       ├── endpoints.py
+│               │       ├── info.yaml
+│               │       └── requirements.txt
+│               ├── contrib/              # Community namespace
+│               │   └── slack_notifier/
+│               │       ├── info.yaml
+│               │       └── slack_notifier.py
+│               └── custom/              # Custom namespace
+│                   └── custom_action/
+│                       ├── info.yaml
+│                       └── custom_action.py
 ```
 
 ## Configuration Files
