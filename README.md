@@ -14,6 +14,7 @@ A modular, pluggable agentive platform built on jvspatial that provides a produc
 - [Memory System](#memory-system)
 - [Namespaces](#namespaces)
 - [Logging System](#logging-system)
+- [Architecture](#architecture)
 - [Directory Structure](#directory-structure)
 - [Configuration Files](#configuration-files)
 - [Creating Actions](#creating-actions)
@@ -27,6 +28,7 @@ A modular, pluggable agentive platform built on jvspatial that provides a produc
 - [Development](#development)
 - [Deployment](#deployment)
   - [Dockerfile Generation](#dockerfile-generation)
+- [Documentation Index](#documentation-index)
 
 ## Installation
 
@@ -449,6 +451,103 @@ jvagent includes a comprehensive logging system that maintains complete interact
 - [Interaction Logging](docs/interaction-logging.md) - INTERACTION log level and interaction logging
 - [Error Logging](docs/error-logging.md) - Error logging and querying
 
+## Architecture
+
+jvagent is built on jvspatial's graph-based primitives. The system follows a server-based, plugin-first design with YAML-driven agent configuration.
+
+### High-Level Architecture
+
+```mermaid
+graph TB
+    subgraph "Application Layer"
+        Client[Client Applications]
+        WebUI[Web Interface]
+    end
+
+    subgraph "API Layer"
+        API[REST API Server<br/>FastAPI]
+        WS[WebSocket Handler]
+    end
+
+    subgraph "jvagent Core"
+        App[App Node<br/>Root]
+        Agents[Agents Manager]
+
+        subgraph "Agent Instance"
+            Agent[Agent Node]
+            Memory[Memory System<br/>User, Conversation, Collection]
+            Actions[Actions Registry]
+        end
+    end
+
+    subgraph "jvspatial Layer"
+        Nodes[Node System]
+        Edges[Edge System]
+        Walkers[Walker System]
+        DB[(Database<br/>JSON/MongoDB)]
+    end
+
+    subgraph "Plugin System"
+        PluginDir[actions Directory]
+        LLM[Language Model Actions]
+        VS[Vector Store Actions]
+        TTS[TTS/STT Actions]
+        Custom[Custom Actions]
+    end
+
+    Client --> API
+    WebUI --> API
+    API --> App
+    WS --> Agent
+
+    App --> Agents
+    Agents --> Agent
+    Agent --> Memory
+    Agent --> Actions
+
+    Actions -.loads.-> PluginDir
+    PluginDir --> LLM
+    PluginDir --> VS
+    PluginDir --> TTS
+    PluginDir --> Custom
+
+    Agent --> Nodes
+    Memory --> Nodes
+    Actions --> Nodes
+    Nodes --> DB
+```
+
+### Component Relationships
+
+```mermaid
+graph LR
+    App -->|manages| Agents
+    Agents -->|contains| Agent
+    Agent -->|has| Memory
+    Agent -->|uses| Actions
+
+    Memory -->|models| User
+    Memory -->|organizes| Collection
+    User -->|has| Conversation1[Conversation]
+    User -->|has| Conversation2[Conversation]
+    Conversation1 -->|contains| Interaction1[Interaction]
+    Conversation1 -->|contains| Interaction2[Interaction]
+
+    Actions -->|registers| Action
+    Action -->|uses| Collection
+
+    Action -.subtype.-> InteractAction
+    Action -.subtype.-> ModelAction
+    InteractAction -->|produces| Response
+```
+
+### Technology Stack
+
+- **Core**: Python 3.12+, jvspatial (graph primitives), Pydantic v2, FastAPI
+- **Storage**: jvspatial database (JSON/MongoDB/DynamoDB backends)
+- **AI/ML**: OpenAI SDK, Anthropic SDK, Sentence Transformers (embeddings)
+- **Observability**: structlog, separate logging database for audit trails
+
 ## Directory Structure
 
 ```
@@ -846,7 +945,7 @@ actions:
 ```
 
 **Available Core Actions:**
-- **Interact Actions**: `jvagent/interact_router`, `jvagent/retrieval_interact_action`, `jvagent/intro_interact_action`, `jvagent/interview_interact_action`
+- **Interact Actions**: `jvagent/interact_router`, `jvagent/retrieval_interact_action`, `jvagent/intro_interact_action`, `jvagent/interview_interact_action`, `jvagent/converse_interact_action`, `jvagent/pageindex_retrieval_interact_action` (requires `[pageindex]` extra), `jvagent/response_gating`
 - **Language Models**: `jvagent/openai_lm`, `jvagent/openrouter_lm`
 - **Embedding Models**: `jvagent/openai_embedding`, `jvagent/openrouter_embedding`, `jvagent/huggingface_embedding`, `jvagent/generic_embedding`
 - **Vector Stores**: `jvagent/typesense_vectorstore`
@@ -862,6 +961,7 @@ actions:
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md) - Vector store retrieval with simplified API
 - [IntroInteractAction](jvagent/action/intro/README.md) - First-time user welcome messages
 - [InterviewInteractAction](jvagent/action/interview/README.md) - Reusable interview system for stepwise information collection with validation
+- [PageIndex](jvagent/action/pageindex/README.md) - Document ingestion and retrieval (requires `[pageindex]` extra)
 - [MCPAction](jvagent/action/mcp/README.md) - Gateway for fulfilling natural language commands via an MCP server
 - [Model Actions](jvagent/action/model/README.md) - Language and embedding model integrations
 
@@ -875,7 +975,7 @@ The action loader automatically discovers core actions from the jvagent library 
 #### Step 1: Create Action Directory
 
 ```bash
-cd agents/my_agent/actions
+cd agents/jvagent/my_agent/actions
 mkdir -p jvagent/my_action
 cd jvagent/my_action
 ```
@@ -1156,10 +1256,10 @@ The namespace system organizes actions to prevent naming conflicts and clearly i
 
 ### Directory Structure
 
-Actions are organized under namespace directories:
+Actions are organized under namespace directories within each agent:
 
 ```
-agents/{agent_name}/actions/
+agents/{namespace}/{agent_name}/actions/
 ├── jvagent/          # Official jvagent actions
 ├── contrib/          # Community contributions
 ├── custom/           # Generic custom actions
@@ -1719,6 +1819,45 @@ package:
 Each action's dependencies are installed in separate RUN commands for optimal Docker layer caching.
 
 For more details, see [jvagent/bundle/README.md](jvagent/bundle/README.md).
+
+## Documentation Index
+
+### Core Documentation
+
+- [Logging System](docs/logging.md) - Interaction logging, archiving, retention
+- [Interaction Logging](docs/interaction-logging.md) - INTERACTION log level
+- [Error Logging](docs/error-logging.md) - Error logging and querying
+
+### Action Modules
+
+- [InteractAction API](jvagent/action/interact/README.md)
+- [InteractRouter](jvagent/action/router/README.md)
+- [RetrievalInteractAction](jvagent/action/retrieval/README.md)
+- [IntroInteractAction](jvagent/action/intro/README.md)
+- [InterviewInteractAction](jvagent/action/interview/README.md)
+- [PersonaAction](jvagent/action/persona/README.md)
+- [MCPAction](jvagent/action/mcp/README.md)
+- [Model Actions](jvagent/action/model/README.md)
+- [PageIndex](jvagent/action/pageindex/README.md)
+- [WhatsApp](jvagent/action/whatsapp/README.md)
+- [Gating](jvagent/action/gating/README.md)
+- [Converse](jvagent/action/converse/README.md)
+- [Response](jvagent/action/response/README.md)
+- [Access Control](jvagent/action/access_control/README.md)
+- [TTS](jvagent/action/tts_action/README.md)
+- [STT](jvagent/action/stt_action/README.md)
+- [Agent Utils](jvagent/action/agent_utils/README.md)
+
+### Deployment and Tooling
+
+- [Dockerfile Generator](jvagent/bundle/README.md)
+- [jvchat](jvchat/README.md) - React chat UI
+
+### Example Application
+
+- [jvagent_app](examples/jvagent_app/README.md)
+- [App Structure](examples/jvagent_app/STRUCTURE.md)
+- [Resolv Demo](examples/jvagent_app/agents/resolv/resolv_demo/README.md)
 
 ## License
 
