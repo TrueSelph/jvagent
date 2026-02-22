@@ -148,42 +148,60 @@ class Conversation(DeferredSaveMixin, Node):
 
         return last_interaction
 
-    async def add_interaction(self, interaction: "Interaction") -> "Interaction":
+    async def add_interaction(
+        self,
+        interaction: Optional["Interaction"] = None,
+        *,
+        utterance: Optional[str] = None,
+        channel: Optional[str] = None,
+        session_id: str = "",
+    ) -> "Interaction":
         """Add an Interaction to the chain with bidirectional edges.
 
         Interactions are chained chronologically: Interaction1 <-> Interaction2 <-> Interaction3
-        The conversation connects to the first interaction only.
-
-        Uses per-conversation locking to prevent concurrent requests from creating
-        multiple bidirectional edges from one interaction node (invalid chain).
+        The conversation connects to the first interaction only. When utterance is
+        provided (and interaction is None), the Interaction is created before connecting.
 
         Args:
-            interaction: Interaction node to add
+            interaction: Interaction node to add (optional if utterance provided)
+            utterance: User input text (required when interaction is None)
+            channel: Communication channel (defaults to conversation's channel)
+            session_id: Session identifier for the interaction
 
         Returns:
             The added Interaction node
+
+        Raises:
+            ValueError: If neither interaction nor utterance is provided
         """
-        from jvagent.memory.conversation_lock_manager import get_conversation_lock_manager
         from jvagent.memory.interaction import Interaction
 
-        lock_manager = get_conversation_lock_manager()
-        lock = await lock_manager.acquire_lock(self.session_id)
+        if interaction is None and utterance is None:
+            raise ValueError("Must provide either interaction or utterance")
 
-        async with lock:
-            last_interaction = await self.get_last_interaction()
+        if interaction is None:
+            interaction = await Interaction.create(
+                conversation_id=self.id,
+                user_id=self.user_id,
+                utterance=utterance or "",
+                channel=channel or self.channel,
+                session_id=session_id,
+            )
 
-            if last_interaction:
-                # Chain the new interaction after the last one (bidirectional edge)
-                await last_interaction.connect(interaction, direction="both")
-            else:
-                # This is the first interaction - connect conversation to it
-                await self.connect(interaction, direction="out")
+        last_interaction = await self.get_last_interaction()
 
-            # Update the last interaction reference
-            self.last_interaction_id = interaction.id
-            self.interaction_count += 1
-            self.last_interaction_at = datetime.now(timezone.utc)
-            await self.save()
+        if last_interaction:
+            # Chain the new interaction after the last one (bidirectional edge)
+            await last_interaction.connect(interaction, direction="both")
+        else:
+            # This is the first interaction - connect conversation to it
+            await self.connect(interaction, direction="out")
+
+        # Update the last interaction reference
+        self.last_interaction_id = interaction.id
+        self.interaction_count += 1
+        self.last_interaction_at = datetime.now(timezone.utc)
+        await self.save()
 
         # Sync limit from agent when missing or when agent limit changed (e.g. after --update)
         agent = await self.get_agent()
@@ -276,16 +294,11 @@ class Conversation(DeferredSaveMixin, Node):
         Returns:
             Newly created and connected Interaction node
         """
-        from jvagent.memory.interaction import Interaction
-
-        interaction = await Interaction.create(
-            conversation_id=self.id,
-            user_id=self.user_id,
+        return await self.add_interaction(
             utterance=utterance,
             channel=channel or self.channel,
             session_id=session_id,
         )
-        return await self.add_interaction(interaction)
 
     async def get_interactions(self, limit: int = 0, reverse: bool = False) -> List["Interaction"]:
         """Get Interactions by traversing the chain in chronological order.

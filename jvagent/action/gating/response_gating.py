@@ -61,8 +61,8 @@ class ResponseGatingInteractAction(InteractAction):
         description="Temperature for LLM generation",
     )
     model_max_tokens: int = attribute(
-        default=150,
-        description="Max tokens for gating (lightweight call)",
+        default=4096,
+        description="Max tokens for gating",
     )
     history_limit: int = attribute(
         default=5,
