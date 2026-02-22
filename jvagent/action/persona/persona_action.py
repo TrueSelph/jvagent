@@ -20,6 +20,7 @@ from jvagent.action.persona.prompts import (
     DIRECTIVE_COMPLIANCE_CHECK_PROMPT,
     NO_DIRECTIVES_SUB_PROMPT,
     PARAMETERS_SUB_PROMPT,
+    RESPONSE_LENGTH_PROMPT,
     SYSTEM_PROMPT_TEMPLATE,
     INTERPRETATION_INSIGHTS_PROMPT,
     RESPONSE_PROTOCOL_PROMPT,
@@ -84,6 +85,16 @@ class PersonaAction(Action):
     voice_max_tokens: int = attribute(
         default=150,
         description="Max tokens for voice channel (~100 words); used when channel=voice",
+    )
+
+    # Response length limits (words, prompt-based; model generates concise output)
+    response_limit: int = attribute(
+        default=500,
+        description="Maximum words for persona replies on non-voice channels (0 = disabled).",
+    )
+    voice_response_limit: int = attribute(
+        default=60,
+        description="Maximum words for voice channel (TTS). Used when channel=voice.",
     )
 
     # System prompt (default property)
@@ -475,8 +486,19 @@ class PersonaAction(Action):
         else:
             parameters_section = ""
 
-        # Build channel formatting section (with override preamble when channel present)
+        # Build response length section (channel-aware)
         channel = interaction.channel or "default"
+        if channel == "voice":
+            word_limit = self.voice_response_limit
+        else:
+            word_limit = self.response_limit if self.response_limit > 0 else 0
+        if word_limit > 0:
+            response_length_section = RESPONSE_LENGTH_PROMPT.format(limit=word_limit)
+        else:
+            response_length_section = ""
+        response_length_section = format_conditional_section(response_length_section, bool(response_length_section))
+
+        # Build channel formatting section (with override preamble when channel present)
         channel_directive = get_channel_directive(
             channel,
             phonetic_substitutions=self.phonetic_substitutions if channel == "voice" else None
@@ -509,6 +531,7 @@ class PersonaAction(Action):
             parameters_section=parameters_section,
             channel_formatting_section=channel_formatting_section,
             continuation_guidance=continuation_guidance,
+            response_length_section=response_length_section,
         )
         
         # Append compliance check for directive recency reinforcement

@@ -375,11 +375,10 @@ class Memory(Node):
         user_id: Optional[str] = None,
         conversation_id: Optional[str] = None,
     ) -> Optional[List["Conversation"]]:
-        """Purge conversations with orphan cleanup.
+        """Purge conversations (cascade deletes interactions).
 
         Uses both graph and database queries to handle broken graphs.
-        After purging, deletes orphaned interactions (those whose conversation_id
-        references non-existent or disconnected conversations).
+        Does not run repair; orphans remain until admin calls repair endpoint.
 
         Args:
             user_id: Optional - purge only this user's conversations. If None and
@@ -391,7 +390,6 @@ class Memory(Node):
             List of purged conversations, or None if no conversations found
         """
         from jvagent.memory.conversation import Conversation
-        from jvagent.memory.interaction import Interaction
 
         if conversation_id:
             conversation = await Conversation.get(conversation_id)
@@ -416,21 +414,141 @@ class Memory(Node):
 
         await self.save()
 
-        # Orphan cleanup: delete interactions whose conversation_id references
-        # non-existent conversations (exclude empty conversation_id)
+        return purged
+
+    async def repair_memory(
+        self, recent_minutes: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Run all orphan cleanup and memory repair procedures.
+
+        Manually triggered only via the repair endpoint. No automatic triggers.
+
+        Args:
+            recent_minutes: If set, only clean orphan interactions from the last
+                N minutes. None = all orphans.
+
+        Returns:
+            Dict with orphaned_interactions_deleted, orphaned_users_reconnected,
+            dual_edges_removed, conversation_first_edges_restored
+        """
+        deleted = await self._cleanup_orphaned_interactions(recent_minutes)
+        dual_removed, first_restored = await self._repair_interaction_chain_invariants()
+        reconnected = await self._reconnect_orphaned_users()
+
+        self.last_cleanup = datetime.now(timezone.utc)
+        await self.save()
+
+        return {
+            "orphaned_interactions_deleted": deleted,
+            "orphaned_users_reconnected": reconnected,
+            "dual_edges_removed": dual_removed,
+            "conversation_first_edges_restored": first_restored,
+        }
+
+    async def _repair_interaction_chain_invariants(self) -> Tuple[int, int]:
+        """Repair dual edges and missing conversation->first edges.
+
+        Returns:
+            Tuple of (dual_edges_removed, conversation_first_edges_restored)
+        """
+        from jvagent.memory.conversation import Conversation
+        from jvagent.memory.interaction import Interaction
+
+        dual_removed = 0
+        first_restored = 0
+
+        conversations = await Conversation.find()
+        for conv in conversations:
+            if conv.interaction_count <= 0:
+                continue
+
+            first = await conv.get_first_interaction()
+            if not first:
+                continue
+
+            if not await conv.is_connected_to(first):
+                await conv.connect(first, direction="out")
+                first_restored += 1
+
+            current = first
+            seen = {first.id}
+            while current:
+                next_nodes = await current.nodes(
+                    node=Interaction, direction="out"
+                )
+                if len(next_nodes) > 1:
+                    next_nodes.sort(key=lambda n: (n.started_at, n.id))
+                    keep = next_nodes[0]
+                    for extra in next_nodes[1:]:
+                        if await current.is_connected_to(extra):
+                            await current.disconnect(extra)
+                            dual_removed += 1
+                    current = keep
+                elif len(next_nodes) == 1:
+                    current = next_nodes[0]
+                    if current.id in seen:
+                        break
+                    seen.add(current.id)
+                else:
+                    break
+
+        return dual_removed, first_restored
+
+    async def _reconnect_orphaned_users(self) -> int:
+        """Find users in DB with no edge to this Memory and reconnect them."""
+        from jvagent.memory.user import User
+
+        connected = await self.nodes(node=User)
+        connected_ids = {u.id for u in connected}
+
+        all_users = await User.find()
+        reconnected = 0
+        for user in all_users:
+            if user.id not in connected_ids:
+                await self.connect(user)
+                reconnected += 1
+        return reconnected
+
+    async def _cleanup_orphaned_interactions(
+        self, recent_minutes: Optional[int] = None
+    ) -> int:
+        """Delete orphaned interactions (no graph edge to a valid conversation).
+
+        Internal helper for repair_memory. When recent_minutes is set, only
+        cleans orphans from the last N minutes.
+
+        Args:
+            recent_minutes: If set, only delete orphans with started_at within
+                this many minutes (for fast cold-start cleanup). None = all orphans.
+
+        Returns:
+            Number of orphaned interactions deleted
+        """
+        from datetime import datetime, timedelta, timezone
+
+        from jvagent.memory.conversation import Conversation
+        from jvagent.memory.interaction import Interaction
+
         remaining_conversations = await Conversation.find()
         valid_conv_ids = list({c.id for c in remaining_conversations}) + [""]
-        orphaned = await Interaction.find(
-            {"context.conversation_id": {"$nin": valid_conv_ids}}
-        )
+
+        query: Dict[str, Any] = {
+            "context.conversation_id": {"$nin": valid_conv_ids}
+        }
+        if recent_minutes is not None and recent_minutes > 0:
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=recent_minutes)
+            query["context.started_at"] = {"$gte": cutoff}
+
+        orphaned = await Interaction.find(query)
+        deleted = 0
         for interaction in orphaned:
             if interaction.conversation_id:
                 try:
                     await interaction.delete(cascade=True)
+                    deleted += 1
                 except Exception:
                     pass
-
-        return purged
+        return deleted
 
     async def export_memory(self, user_id: str = "") -> Dict[str, Any]:
         """Export memory state for backup/migration.

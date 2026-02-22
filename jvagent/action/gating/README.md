@@ -8,8 +8,8 @@ The `ResponseGatingInteractAction` runs early in the interact pipeline (before `
 
 | Posture | Behavior | Examples |
 |---------|----------|----------|
-| **RESPOND** | Agent replies normally | Greetings, questions, requests, substantive content |
-| **SUPPRESS** | No reply; walk path cleared | Repeat goodbyes after exchange concluded, "thanks again" after thanks already acknowledged |
+| **RESPOND** | Agent replies normally | Greetings, questions, requests, substantive content; affirmative answers ("ok" after "Would you like X?"); gratitude for preceding help (allow "you're welcome") |
+| **SUPPRESS** | No reply; walk path cleared | Hanging "ok" with nothing to answer; redundant thanks after "you're welcome"; repeat goodbyes after exchange concluded |
 | **DEFER** | No reply; utterance buffered for later | "Actually...", "wait no I", trailing ellipsis — accumulates until a complete thought |
 
 ## Architecture
@@ -43,6 +43,7 @@ User Utterance → InteractWalker → ResponseGatingInteractAction (weight=-200)
 ### Prompts
 
 - **File**: `prompts.py`
+- **Conversation progression tracing**: The classifier traces the flow from history to the current message (last assistant message type, last user message, how current message relates) before classifying
 - Context-aware classification: conversation position (OPENING / MID-CONVERSATION / CLOSING) informs posture rules
 - **Progressive fragment completeness**: When prior deferred fragments exist, the prompt evaluates the combined sequence (fragments + current) for intelligible intent
 
@@ -92,9 +93,9 @@ The directive instructs downstream actions (e.g. PersonaAction) to treat prior f
 
 ## Posture Rules (Summary)
 
-**RESPOND** — Greetings/openers always; questions; requests; short but contextually coherent messages ("yes" after a question, "pricing" after discussing products); when in doubt.
+**RESPOND** — Greetings/openers always; questions; requests; affirmative answers to assistant questions/offers ("ok", "yes", "sure" after "Would you like X?"); gratitude for directly preceding assistant help (permit "you're welcome"); short but contextually coherent messages; when in doubt.
 
-**SUPPRESS** — Only when the message is a social closing *and* history shows the exchange has concluded or the same closing was already exchanged.
+**SUPPRESS** — Only when the message is a hanging/contextually devoid acknowledgment ("ok" with nothing to answer); redundant gratitude after thanks already acknowledged; or a social closing *and* history shows the exchange has concluded or the same closing was already exchanged.
 
 **DEFER** — Only when the utterance is genuinely unintelligible/fragmentary *and* history does not provide enough context. Short messages that make sense in context are RESPOND.
 

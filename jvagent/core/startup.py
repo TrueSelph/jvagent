@@ -40,7 +40,7 @@ async def run_app_startup() -> bool:
             )
         else:
             logger.info("App startup completed successfully")
-        
+
         _startup_completed = True
         return True
         

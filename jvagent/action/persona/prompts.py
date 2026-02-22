@@ -37,8 +37,18 @@ Generate a natural response executing all directives naturally within your perso
 
 {response_protocol}
 
+{response_length_section}
+
 {channel_formatting_section}
 """
+
+# ============================================================================
+# Response Length Section
+# ============================================================================
+
+RESPONSE_LENGTH_PROMPT = """### RESPONSE LENGTH
+
+Keep your response within {limit} words maximum. Be concise; prioritize essential information. Do not exceed this limit."""
 
 # ============================================================================
 # Directives Section
