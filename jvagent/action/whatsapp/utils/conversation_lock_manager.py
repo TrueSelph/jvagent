@@ -36,57 +36,57 @@ CONVERSATION_LOCK_CLEANUP_INTERVAL = 120  # Run cleanup every 2 minutes
 
 class ConversationLockManager:
     """Thread-safe manager for conversation access locks.
-    
+
     Prevents race conditions when multiple messages from the same user
     trigger concurrent conversation lookups that could create duplicates.
     """
-    
+
     def __init__(self):
         self._locks: Dict[str, asyncio.Lock] = {}
         self._lock_timestamps: Dict[str, float] = {}
         self._global_lock = asyncio.Lock()
         self._last_cleanup = time.time()
-    
+
     async def acquire_lock(self, user_id: str) -> asyncio.Lock:
         """Get or create a lock for a specific user (thread-safe).
-        
+
         Lambda-compatible: Runs cleanup inline when needed (no background tasks).
-        
+
         Returns the lock - caller must use it with `async with` pattern.
         """
         async with self._global_lock:
             if user_id not in self._locks:
                 self._locks[user_id] = asyncio.Lock()
             self._lock_timestamps[user_id] = time.time()
-            
+
             # Run cleanup inline if needed (Lambda-compatible: no background task)
             current_time = time.time()
             if current_time - self._last_cleanup > CONVERSATION_LOCK_CLEANUP_INTERVAL:
                 self._last_cleanup = current_time
                 # Cleanup inline rather than in background task
                 await self._cleanup_stale_locks_inline()
-            
+
             return self._locks[user_id]
-    
+
     async def _cleanup_stale_locks_inline(self) -> None:
         """Remove locks that haven't been used recently (inline, no global lock needed).
-        
+
         Lambda-compatible: Runs in the same request rather than background task.
         Called from within acquire_lock which already holds _global_lock.
         """
         current_time = time.time()
         stale_users = []
-        
+
         # Already have _global_lock from acquire_lock, so don't re-acquire
         for user_id, timestamp in list(self._lock_timestamps.items()):
             if current_time - timestamp > CONVERSATION_LOCK_TTL_SECONDS:
                 # Only remove if lock is not currently held
                 if user_id in self._locks and not self._locks[user_id].locked():
                     stale_users.append(user_id)
-        
+
         for user_id in stale_users:
             del self._locks[user_id]
             del self._lock_timestamps[user_id]
-        
+
         if stale_users:
             logger.debug(f"Cleaned up {len(stale_users)} stale conversation locks")

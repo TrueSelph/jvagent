@@ -192,7 +192,12 @@ async def query_model_action(
 
     # Execute query
     result = await action.query(
-        prompt=prompt, stream=stream, system=system, history=history, tools=tools, **kwargs
+        prompt=prompt,
+        stream=stream,
+        system=system,
+        history=history,
+        tools=tools,
+        **kwargs,
     )
 
     # Handle streaming response
@@ -336,7 +341,9 @@ async def get_model_action_metrics(action_id: str) -> Dict[str, Any]:
 
     # Calculate average duration
     average_duration = (
-        action.total_duration / action.total_requests if action.total_requests > 0 else 0.0
+        action.total_duration / action.total_requests
+        if action.total_requests > 0
+        else 0.0
     )
 
     return {
@@ -347,7 +354,9 @@ async def get_model_action_metrics(action_id: str) -> Dict[str, Any]:
         "average_duration": average_duration,
         "model": action.model,
         "provider": getattr(
-            action, "provider", action.get_class_name().replace("LanguageModelAction", "").lower()
+            action,
+            "provider",
+            action.get_class_name().replace("LanguageModelAction", "").lower(),
         ),
     }
 

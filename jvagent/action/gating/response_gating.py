@@ -13,10 +13,10 @@ from typing import TYPE_CHECKING, Any, Dict, List
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.gating.gating_result import (
-    GatingResult,
     POSTURE_DEFER,
     POSTURE_RESPOND,
     POSTURE_SUPPRESS,
+    GatingResult,
     parse_gating_response,
 )
 from jvagent.action.gating.prompts import (
@@ -105,7 +105,9 @@ class ResponseGatingInteractAction(InteractAction):
         try:
             model_action = await self.get_model_action()
             if not model_action:
-                logger.warning("ResponseGatingInteractAction: Model action not found, proceeding as RESPOND")
+                logger.warning(
+                    "ResponseGatingInteractAction: Model action not found, proceeding as RESPOND"
+                )
                 return
 
             interaction_history = await conversation.get_interaction_history(
@@ -120,7 +122,9 @@ class ResponseGatingInteractAction(InteractAction):
             history_text = self._format_history(interaction_history)
 
             buffer = list(conversation.context.get(BUFFER_KEY, []))
-            prior_fragments = [b.get("utterance", "").strip() for b in buffer if b.get("utterance")]
+            prior_fragments = [
+                b.get("utterance", "").strip() for b in buffer if b.get("utterance")
+            ]
 
             prompt = self._build_gating_prompt(
                 history_text=history_text,
@@ -154,11 +158,16 @@ class ResponseGatingInteractAction(InteractAction):
                 await self._handle_respond(visitor, interaction, conversation)
                 return
 
-            logger.debug(f"ResponseGatingInteractAction: Unknown posture {result.posture}, proceeding as RESPOND")
+            logger.debug(
+                f"ResponseGatingInteractAction: Unknown posture {result.posture}, proceeding as RESPOND"
+            )
             await self._handle_respond(visitor, interaction, conversation)
 
         except Exception as e:
-            logger.error(f"ResponseGatingInteractAction: Error during execution: {e}", exc_info=True)
+            logger.error(
+                f"ResponseGatingInteractAction: Error during execution: {e}",
+                exc_info=True,
+            )
             await visitor.unrecord_action_execution()
 
     def _build_gating_prompt(
@@ -169,7 +178,9 @@ class ResponseGatingInteractAction(InteractAction):
     ) -> str:
         """Build the gating prompt, including prior fragments and combined-completeness task when applicable."""
         if prior_fragments:
-            fragments_list = "\n".join(f'  {i + 1}. "{f}"' for i, f in enumerate(prior_fragments))
+            fragments_list = "\n".join(
+                f'  {i + 1}. "{f}"' for i, f in enumerate(prior_fragments)
+            )
             prior_fragments_section = GATING_PRIOR_FRAGMENTS_SECTION.format(
                 fragments_list=fragments_list,
             )
@@ -211,7 +222,9 @@ class ResponseGatingInteractAction(InteractAction):
     async def _handle_suppress(self, visitor: "InteractWalker") -> None:
         """Clear walk path so no response is emitted."""
         await visitor.set_walk_path([])
-        logger.info("ResponseGatingInteractAction: SUPPRESS - cleared walk path, no response")
+        logger.info(
+            "ResponseGatingInteractAction: SUPPRESS - cleared walk path, no response"
+        )
 
     async def _handle_defer(
         self,
@@ -221,13 +234,15 @@ class ResponseGatingInteractAction(InteractAction):
     ) -> None:
         """Append utterance to buffer and clear walk path."""
         buffer = list(conversation.context.get(BUFFER_KEY, []))
-        buffer.append({
-            "utterance": interaction.utterance or "",
-            "interaction_id": interaction.id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        buffer.append(
+            {
+                "utterance": interaction.utterance or "",
+                "interaction_id": interaction.id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
         if len(buffer) > self.max_fragment_buffer:
-            buffer = buffer[-self.max_fragment_buffer:]
+            buffer = buffer[-self.max_fragment_buffer :]
         await conversation.update_context({BUFFER_KEY: buffer})
         await visitor.set_walk_path([])
         logger.info(
@@ -243,7 +258,9 @@ class ResponseGatingInteractAction(InteractAction):
         """Consume buffer if non-empty, inject directive, let pipeline proceed."""
         buffer = list(conversation.context.get(BUFFER_KEY, []))
         if buffer:
-            fragments = [b.get("utterance", "").strip() for b in buffer if b.get("utterance")]
+            fragments = [
+                b.get("utterance", "").strip() for b in buffer if b.get("utterance")
+            ]
             if fragments:
                 directive = (
                     f"The user's current message completes a fragmented thought. "

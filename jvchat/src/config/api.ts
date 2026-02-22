@@ -32,7 +32,7 @@ class ApiClient {
     const baseURL = getJvagentUrl()
     this.baseUrls = this._buildBaseUrls(baseURL)
     console.log('API Client initialized with baseURLs:', this.baseUrls)
-    
+
     this.client = axios.create({
       baseURL: baseURL,
       timeout: getJvagentTimeout(),
@@ -42,7 +42,7 @@ class ApiClient {
       // Enable cookies for session-based auth; harmless for bearer-token flows.
       withCredentials: true,
     })
-    
+
     // Update baseURL when async config loads
     getConfigAsync().then((config) => {
       if (config.jvagent.url !== baseURL) {
@@ -65,21 +65,21 @@ class ApiClient {
         // Skip Authorization header for auth-related and anonymous paths
         const authPaths = ['/auth/login', '/api/auth/login', '/auth/refresh', '/api/auth/refresh']
         const isAuth = authPaths.some(path => config.url?.includes(path))
-        
+
         // Strictly skip anonymous interact endpoint: /api/agents/{id}/interact
         const isAnonymousInteract = config.url && (
-          config.url.endsWith('/interact') || 
-          config.url.includes('/interact?') || 
+          config.url.endsWith('/interact') ||
+          config.url.includes('/interact?') ||
           /\/agents\/[^/]+\/interact($|\?)/.test(config.url)
         )
-        
+
         if (isAuth || isAnonymousInteract) {
           console.log('Skipping Authorization header for:', config.url)
           return config
         }
 
         let token = getToken()
-        
+
         // Proactive token refresh if expired or about to expire
         if (token && isTokenExpired(token)) {
           console.log('Token expired or expiring soon, triggering proactive refresh for:', config.url)
@@ -111,11 +111,11 @@ class ApiClient {
       (response) => response,
       async (error: AxiosError) => {
         const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
-        
+
         // Handle 401 errors with token refresh (fallback if proactive check missed it)
         if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
           originalRequest._retry = true
-          
+
           try {
             console.log('Received 401, entering retry refresh flow...')
             const token = await this._refreshAuth()
@@ -136,7 +136,7 @@ class ApiClient {
             url: error.config?.url,
             baseURL: error.config?.baseURL
           })
-          // We don't automatically retry here to avoid loops, 
+          // We don't automatically retry here to avoid loops,
           // but the proactive check in the request interceptor should prevent this mostly.
         }
 
@@ -148,7 +148,7 @@ class ApiClient {
           url: error.config?.url,
           baseURL: error.config?.baseURL,
         })
-        
+
         // Network errors (no response)
         if (!error.response) {
           console.error('Network Error - No response from server. Possible causes:')
@@ -157,7 +157,7 @@ class ApiClient {
           console.error('3. Wrong URL:', this.client.defaults.baseURL)
           console.error('4. Network connectivity issue')
         }
-        
+
         return Promise.reject(error)
       }
     )
@@ -172,9 +172,9 @@ class ApiClient {
     // If already refreshing, wait for it to complete
     if (this.isRefreshing) {
       return new Promise((resolve, reject) => {
-        this.failedQueue.push({ 
-          resolve: () => resolve(getToken()!), 
-          reject 
+        this.failedQueue.push({
+          resolve: () => resolve(getToken()!),
+          reject
         })
       })
     }
@@ -204,7 +204,7 @@ class ApiClient {
             setRefreshToken(refreshResponse.refresh_token)
           }
           console.log('Token refresh successful')
-          
+
           this.failedQueue.forEach(({ resolve }) => resolve())
           this.failedQueue = []
           this.isRefreshing = false
@@ -225,7 +225,7 @@ class ApiClient {
             setRefreshToken(loginResponse.refresh_token)
           }
           console.log('Auto-login successful')
-          
+
           this.failedQueue.forEach(({ resolve }) => resolve())
           this.failedQueue = []
           this.isRefreshing = false
@@ -244,7 +244,7 @@ class ApiClient {
   }
 
   /**
-   * Manually set the access token. 
+   * Manually set the access token.
    * Useful for explicit auth flows in components.
    */
   setToken(token: string | LoginResponse): void {
@@ -494,22 +494,22 @@ class ApiClient {
       console.log('Agents API response:', response.data)
       // Handle different response structures
       const data = response.data
-      
+
       // Case 1: { success: true, agents: [...], ... } - direct structure
       if (data && data.success && data.agents) {
         return data as AgentsResponse
       }
-      
+
       // Case 2: { success: true, data: { agents: [...], ... } } - nested structure
       if (data && data.success && data.data && data.data.agents) {
         return data.data as AgentsResponse
       }
-      
+
       // Case 3: { agents: [...], ... } - unwrapped structure
       if (data && data.agents) {
         return data as AgentsResponse
       }
-      
+
       // Fallback: return as-is
       return data as AgentsResponse
     } catch (error: any) {
@@ -537,7 +537,7 @@ class ApiClient {
           },
           body: JSON.stringify(request),
         })
-        
+
         if (!fetchResponse.ok) {
           if (fetchResponse.status === 404) {
             // Try without /api prefix
@@ -549,7 +549,7 @@ class ApiClient {
               },
               body: JSON.stringify(request),
             })
-            
+
             if (!fallbackResponse.ok) {
               const errorText = await fallbackResponse.text()
               let errorMessage = `HTTP error! status: ${fallbackResponse.status}`
@@ -561,10 +561,10 @@ class ApiClient {
               }
               throw new Error(errorMessage)
             }
-            
+
             return { data: await fallbackResponse.json() }
           }
-          
+
           const errorText = await fetchResponse.text()
           let errorMessage = `HTTP error! status: ${fetchResponse.status}`
           try {
@@ -575,7 +575,7 @@ class ApiClient {
           }
           throw new Error(errorMessage)
         }
-        
+
         return { data: await fetchResponse.json() }
       } catch (err: any) {
         throw err
@@ -816,7 +816,7 @@ class ApiClient {
 
     const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents`
     const response = await this._withFallback((baseURL) =>
-      this.client.post(path, formData, { 
+      this.client.post(path, formData, {
         baseURL,
         timeout: 1000000 // 5 minutes for file uploads
       })

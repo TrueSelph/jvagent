@@ -91,10 +91,10 @@ class ReportInterviewInteractAction(InterviewInteractAction):
                     "description": "The exact location where the incident occurred, including street address, area name, or landmark. Must be specific, not vague references.",
                     "type": "string",
                 },
-                
+
                 "required": True,
             },
-            
+
             {
                 "name": "incident_media",
                 "question": "Do you have any photos or videos of the incident you'd like to include? You can upload them now or skip this step.",
@@ -517,7 +517,7 @@ def adapt_review(
         else:
             result[field_name] = value
 
-    # add items at the end of the dict 
+    # add items at the end of the dict
     result.update(result_ending)
 
     return result

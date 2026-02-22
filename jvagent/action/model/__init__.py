@@ -8,19 +8,23 @@ LanguageModelAction implementations support both text-only and multimodal
 """
 
 from jvagent.action.model.base import BaseModelAction
-from jvagent.action.model.language.base import (
-    ContentPart,
-    LanguageModelAction,
-    MessageContent,
-    ModelActionResult,
-)
+
+# Alias for backward compatibility
+ModelAction = BaseModelAction
 from jvagent.action.model.embedding import (
     EmbeddingModelAction,
     GenericEmbeddingModelAction,
     HuggingFaceEmbeddingModelAction,
-    OpenRouterEmbeddingModelAction,
     OpenAIEmbeddingModelAction,
+    OpenRouterEmbeddingModelAction,
 )
+from jvagent.action.model.embedding import (  # noqa: F401
+    endpoints as embedding_endpoints,
+)
+
+# Import endpoints modules to ensure endpoints are discovered and registered
+# This must be imported for endpoint discovery to work
+from jvagent.action.model.language import endpoints  # noqa: F401
 from jvagent.action.model.language import (
     OpenAILanguageModelAction,
     OpenRouterLanguageModelAction,
@@ -29,15 +33,17 @@ from jvagent.action.model.language import (
     ToolDefinition,
     ToolManager,
 )
-
-# Import endpoints modules to ensure endpoints are discovered and registered
-# This must be imported for endpoint discovery to work
-from jvagent.action.model.language import endpoints  # noqa: F401
-from jvagent.action.model.embedding import endpoints as embedding_endpoints  # noqa: F401
+from jvagent.action.model.language.base import (
+    ContentPart,
+    LanguageModelAction,
+    MessageContent,
+    ModelActionResult,
+)
 
 __all__ = [
     # Base classes
     "BaseModelAction",
+    "ModelAction",
     "LanguageModelAction",
     "EmbeddingModelAction",
     # Result types

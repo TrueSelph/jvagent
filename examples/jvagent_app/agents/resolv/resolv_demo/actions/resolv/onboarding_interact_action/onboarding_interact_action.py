@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class OnboardingInteractAction(InteractAction):
     """Detects new users and adds their details to the default subscriber list and/or specified groups by ID on Resolv IS.
-    
+
     This action automatically onboards new users by:
     1. Detecting first-time users
     2. Subscribing them to default groups
@@ -21,7 +21,7 @@ class OnboardingInteractAction(InteractAction):
         default_factory=list,
         description="Default group IDs for new subscribers"
     )
-    
+
     prompt: str = attribute(
         default="Introduce yourself and present the link to the channels page for the user to select the channels they want to join: {channels_page}",
         description="Welcome message template with channels page link"
@@ -36,7 +36,7 @@ class OnboardingInteractAction(InteractAction):
     async def execute(self, visitor: InteractWalker) -> None:
         """Execute onboarding process for new users."""
 
-        
+
         # CHECK IF TO EXECUTE ACTION
         interaction = visitor.interaction
         user = await interaction.get_user()
@@ -60,7 +60,7 @@ class OnboardingInteractAction(InteractAction):
                     group_id=group
                 )
 
-        
+
         # Get channels page and add directive
         channels_page = await api.get_channels_page(subscriber_phone, subscriber_display_name)
         if channels_page:
@@ -77,7 +77,7 @@ class OnboardingInteractAction(InteractAction):
 
     async def update_default_contact_groups(self, group: list[str]) -> list[str]:
         """Update default contact groups."""
-        
+
         self.default_groups = group
         await self.save()
         return self.default_groups

@@ -41,14 +41,13 @@ class GenericEmbeddingModelAction(EmbeddingModelAction):
         default="openai",
         description="API format: 'openai', 'huggingface', or 'generic'",
     )
-    provider: str = attribute(
-        default="generic", description="Provider name"
-    )
+    provider: str = attribute(default="generic", description="Provider name")
     request_path: str = attribute(
         default="", description="API path (defaults based on format if empty)"
     )
     request_key: str = attribute(
-        default="", description="Key for text in request payload (defaults based on format if empty)"
+        default="",
+        description="Key for text in request payload (defaults based on format if empty)",
     )
     response_path: str = attribute(
         default="",
@@ -57,7 +56,7 @@ class GenericEmbeddingModelAction(EmbeddingModelAction):
 
     async def on_register(self) -> None:
         """Called when action is registered during installation.
-        
+
         Validates configuration. HTTP client initialization is handled
         by the base class. This method should only be called once during
         action registration.
@@ -182,4 +181,3 @@ class GenericEmbeddingModelAction(EmbeddingModelAction):
         except Exception as e:
             logger.error(f"Generic embedding failed: {e}", exc_info=True)
             raise
-

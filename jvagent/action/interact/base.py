@@ -68,10 +68,7 @@ class InteractAction(Action, ABC):
             "traversed in graph-based arrangement without weight consideration."
         ),
     )
-    description: str = attribute(
-        default_factory=str,
-        description="Action description"
-    )
+    description: str = attribute(default_factory=str, description="Action description")
 
     # Routing behavior hint: if True, this InteractAction should always be
     # allowed to execute regardless of routing results. InteractRouter will
@@ -149,8 +146,6 @@ class InteractAction(Action, ABC):
         """
         pass
 
-
-
     async def publish(
         self,
         visitor: "InteractWalker",
@@ -221,7 +216,7 @@ class InteractAction(Action, ABC):
         visitor: "InteractWalker",
         directives: Optional[List[str]] = None,
         parameters: Optional[List[Dict[str, Any]]] = None,
-        *, 
+        *,
         # Defaults match PersonaAction.respond() defaults
         use_history: bool = True,
         history_limit: int = 3,
@@ -266,10 +261,10 @@ class InteractAction(Action, ABC):
         Examples:
             # Basic response generation
             response = await self.respond(visitor)
-            
+
             # With conversation history
             response = await self.respond(visitor, use_history=True, history_limit=5)
-            
+
             # Include interpretations and events in history
             response = await self.respond(
                 visitor,
@@ -278,14 +273,14 @@ class InteractAction(Action, ABC):
                 with_event=True,
                 history_limit=10
             )
-            
+
             # With truncation for long conversations
             response = await self.respond(
                 visitor,
                 use_history=True,
                 max_statement_length=500
             )
-            
+
             # With directives and parameters (simplified API)
             response = await self.respond(
                 visitor,
@@ -311,9 +306,12 @@ class InteractAction(Action, ABC):
                 await visitor.add_parameters(parameters)
 
             from jvagent.action.persona.persona_action import PersonaAction
+
             persona = await self.get_action(PersonaAction)
             if not persona:
-                logger.debug("InteractAction.respond: PersonaAction not found; skipping response generation")
+                logger.debug(
+                    "InteractAction.respond: PersonaAction not found; skipping response generation"
+                )
                 return None
 
             # PersonaAction.respond uses visitor.stream to determine streaming behavior
@@ -336,9 +334,10 @@ class InteractAction(Action, ABC):
                 transient=transient,
             )
 
-
             return response
         except Exception as e:
-            logger.error(f"InteractAction.respond: Error calling PersonaAction: {e}", exc_info=True)
+            logger.error(
+                f"InteractAction.respond: Error calling PersonaAction: {e}",
+                exc_info=True,
+            )
             return None
-

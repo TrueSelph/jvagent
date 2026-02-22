@@ -13,9 +13,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
-from jvagent.action.base import Action
 from jvagent.action.action_loader import ActionLoader
 from jvagent.action.actions import Actions
+from jvagent.action.base import Action
 from jvagent.core.agent import Agent
 from jvagent.core.agents import Agents
 from jvagent.core.app import App
@@ -68,22 +68,24 @@ class AgentDescriptor:
         if not isinstance(context, dict):
             context = {}
 
-        self.alias = context.get("alias", self.name.replace("_", " ").title() if self.name else "")
+        self.alias = context.get(
+            "alias", self.name.replace("_", " ").title() if self.name else ""
+        )
         self.enabled = context.get("enabled", True)
         self.description = context.get("description", "")
 
         # Additional properties from context (excluding reserved fields)
         self.properties = {
-            k: v for k, v in context.items() if k not in ["alias", "enabled", "description"]
+            k: v
+            for k, v in context.items()
+            if k not in ["alias", "enabled", "description"]
         }
 
         # Actions list
         self.actions = data.get("actions", [])
 
     def __repr__(self) -> str:
-        return (
-            f"AgentDescriptor(namespace={self.namespace}, name={self.name}, version={self.version})"
-        )
+        return f"AgentDescriptor(namespace={self.namespace}, name={self.name}, version={self.version})"
 
 
 class AgentLoader:
@@ -98,7 +100,9 @@ class AgentLoader:
         self.base_path = Path(base_path or os.getcwd())
         self.action_loader = ActionLoader(str(self.base_path))
 
-    def load_agent_descriptor(self, namespace: str, agent_name: str) -> Optional[AgentDescriptor]:
+    def load_agent_descriptor(
+        self, namespace: str, agent_name: str
+    ) -> Optional[AgentDescriptor]:
         """Load agent descriptor from agent.yaml.
 
         Args:
@@ -131,7 +135,9 @@ class AgentLoader:
             return AgentDescriptor(data, agent_path, namespace=namespace)
 
         except Exception as e:
-            logger.error(f"Error loading agent descriptor from {agent_file}: {e}", exc_info=True)
+            logger.error(
+                f"Error loading agent descriptor from {agent_file}: {e}", exc_info=True
+            )
             return None
 
     def discover_agents(self) -> List[tuple[str, str]]:
@@ -201,7 +207,10 @@ class AgentLoader:
         try:
             # Check if agent already exists (by namespace and name)
             existing_agent = await Agent.find_one(
-                {"context.name": descriptor.name, "context.namespace": descriptor.namespace}
+                {
+                    "context.name": descriptor.name,
+                    "context.namespace": descriptor.namespace,
+                }
             )
 
             if existing_agent:
@@ -233,7 +242,11 @@ class AgentLoader:
                 if descriptor.properties:
                     for key, value in descriptor.properties.items():
                         # Only override if it's a valid field (don't override private fields)
-                        if not key.startswith("_") and key not in ["id", "namespace", "name"]:
+                        if not key.startswith("_") and key not in [
+                            "id",
+                            "namespace",
+                            "name",
+                        ]:
                             agent_data[key] = value
 
                 agent = await Agent.create(**agent_data)
@@ -269,7 +282,10 @@ class AgentLoader:
                 self.action_loader._core_action_cache = None
 
                 await self._install_actions(
-                    agent, descriptor, actions_manager, update_if_exists=update_if_exists
+                    agent,
+                    descriptor,
+                    actions_manager,
+                    update_if_exists=update_if_exists,
                 )
 
             return agent
@@ -278,7 +294,9 @@ class AgentLoader:
             logger.error(f"Error installing agent {agent_name}: {e}", exc_info=True)
             return None
 
-    def _apply_agent_properties(self, agent: Agent, descriptor: AgentDescriptor) -> None:
+    def _apply_agent_properties(
+        self, agent: Agent, descriptor: AgentDescriptor
+    ) -> None:
         """Apply property overrides from descriptor to agent instance.
 
         Args:
@@ -290,7 +308,11 @@ class AgentLoader:
 
         for key, value in descriptor.properties.items():
             # Only set public properties (not private, not id, not name - name is static)
-            if not key.startswith("_") and key not in ["id", "name"] and hasattr(agent, key):
+            if (
+                not key.startswith("_")
+                and key not in ["id", "name"]
+                and hasattr(agent, key)
+            ):
                 try:
                     setattr(agent, key, value)
                 except Exception as e:
@@ -396,17 +418,16 @@ class AgentLoader:
             - 'to_add': Actions in agent.yaml but not in DB
         """
         existing_set = {(action.namespace, action.label) for action in existing_actions}
-        existing_map = {(action.namespace, action.label): action for action in existing_actions}
+        existing_map = {
+            (action.namespace, action.label): action for action in existing_actions
+        }
 
         to_remove = [
             action
             for action in existing_actions
             if (action.namespace, action.label) not in expected_actions
         ]
-        to_update = [
-            existing_map[key]
-            for key in expected_actions & existing_set
-        ]
+        to_update = [existing_map[key] for key in expected_actions & existing_set]
         to_add_keys = expected_actions - existing_set
 
         return {
@@ -448,10 +469,14 @@ class AgentLoader:
             expected_actions = self._get_expected_actions_from_descriptor(descriptor)
 
             # Get existing actions using graph connections (finds all Action subclasses)
-            existing_actions = await self._get_existing_actions_for_agent(agent, actions_manager)
+            existing_actions = await self._get_existing_actions_for_agent(
+                agent, actions_manager
+            )
 
             # Compare and categorize
-            sync_result = self._sync_actions_with_descriptor(expected_actions, existing_actions)
+            sync_result = self._sync_actions_with_descriptor(
+                expected_actions, existing_actions
+            )
 
             # Remove actions not in agent.yaml
             for action_to_remove in sync_result["to_remove"]:
@@ -471,7 +496,7 @@ class AgentLoader:
             }
 
             # Reload modules for actions that exist and are in agent.yaml (will be updated)
-            for (namespace, label) in expected_actions:
+            for namespace, label in expected_actions:
                 if (namespace, label) in existing_map:
                     existing_action = existing_map[(namespace, label)]
                     try:
@@ -508,7 +533,9 @@ class AgentLoader:
         for action in actions:
             if (action.namespace, action.label) in expected_actions:
                 actions_to_register.append(action)
-        results = await actions_manager.register_actions(actions_to_register, update_if_exists=update_if_exists)
+        results = await actions_manager.register_actions(
+            actions_to_register, update_if_exists=update_if_exists
+        )
 
         # Report results
         registered_count = 0
@@ -551,7 +578,9 @@ class AgentLoader:
                 f"Actions for {agent.name}: {registered_count} registered, {updated_count} updated, {failed_count} failed"
             )
 
-    async def _dedupe_agent_actions(self, agent: Agent, actions_manager: Actions) -> None:
+    async def _dedupe_agent_actions(
+        self, agent: Agent, actions_manager: Actions
+    ) -> None:
         """Ensure only one action node exists per (namespace, label) for the agent."""
         try:
             connected_nodes = await actions_manager.nodes(direction="out", node=Action)
@@ -590,7 +619,9 @@ class AgentLoader:
             # Remove orphan actions that still reference the agent but are not connected
             # Use graph connections to find all Action subclasses (including distant descendants)
             all_connected_actions = await actions_manager.nodes(node=Action)
-            orphan_candidates = [a for a in all_connected_actions if a.id not in connected_ids]
+            orphan_candidates = [
+                a for a in all_connected_actions if a.id not in connected_ids
+            ]
             for orphan in orphan_candidates:
                 if orphan.id in connected_ids:
                     continue
@@ -614,7 +645,8 @@ class AgentLoader:
                 await actions_manager.save()
         except Exception as exc:
             logger.error(
-                f"Failed to deduplicate actions for agent {agent.id}: {exc}", exc_info=True
+                f"Failed to deduplicate actions for agent {agent.id}: {exc}",
+                exc_info=True,
             )
 
     async def install_all_agents(self, update_if_exists: bool = False) -> List[Agent]:
@@ -679,7 +711,9 @@ class AgentLoader:
             if agents_manager:
                 agents_manager.total_agents = max(0, agents_manager.total_agents - 1)
                 if was_enabled:
-                    agents_manager.active_agents = max(0, agents_manager.active_agents - 1)
+                    agents_manager.active_agents = max(
+                        0, agents_manager.active_agents - 1
+                    )
                 await agents_manager.save()
 
             return True

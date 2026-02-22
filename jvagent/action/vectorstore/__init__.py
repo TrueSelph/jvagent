@@ -5,10 +5,9 @@ storage, semantic search, and retrieval. It supports multiple vector database
 backends through pluggable implementations.
 """
 
-from jvagent.action.vectorstore.base import VectorStore
-
 # Import endpoints to register them
 from jvagent.action.vectorstore import endpoints  # noqa: F401
+from jvagent.action.vectorstore.base import VectorStore
 
 # Conditionally export TypesenseVectorStore if available
 try:

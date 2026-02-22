@@ -64,10 +64,10 @@ def install_pip_dependencies(
         for dep in dependencies:
             if not check_pip_dependency_installed(dep):
                 packages_to_install.append(dep)
-        
+
         if not packages_to_install:
             return True
-        
+
         dependencies = packages_to_install
 
     logger.info(
@@ -76,7 +76,14 @@ def install_pip_dependencies(
 
     try:
         # Build pip install command
-        cmd = [sys.executable, "-m", "pip", "install", "--quiet", "--no-warn-script-location"]
+        cmd = [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--quiet",
+            "--no-warn-script-location",
+        ]
 
         if upgrade:
             cmd.append("--upgrade")
@@ -93,7 +100,9 @@ def install_pip_dependencies(
         )
 
         if result.returncode == 0:
-            logger.debug(f"Successfully installed dependencies for action {action_name}")
+            logger.debug(
+                f"Successfully installed dependencies for action {action_name}"
+            )
             return True
         else:
             logger.error(
@@ -103,11 +112,16 @@ def install_pip_dependencies(
             return False
 
     except Exception as e:
-        logger.error(f"Error installing dependencies for action {action_name}: {e}", exc_info=True)
+        logger.error(
+            f"Error installing dependencies for action {action_name}: {e}",
+            exc_info=True,
+        )
         return False
 
 
-def install_action_dependencies(metadata: Dict[str, Any], action_name: str, action_path: Path) -> bool:
+def install_action_dependencies(
+    metadata: Dict[str, Any], action_name: str, action_path: Path
+) -> bool:
     """Install dependencies for an action from its metadata.
 
     Extracts pip dependencies from the dependencies.pip field in the action's
@@ -149,7 +163,15 @@ def check_pip_dependency_installed(package_spec: str) -> bool:
         True if package is installed and meets requirements, False otherwise
     """
     # Extract package name (remove version specifiers)
-    package_name = package_spec.split(">=")[0].split("==")[0].split("!=")[0].split("<=")[0].split(">")[0].split("<")[0].strip()
+    package_name = (
+        package_spec.split(">=")[0]
+        .split("==")[0]
+        .split("!=")[0]
+        .split("<=")[0]
+        .split(">")[0]
+        .split("<")[0]
+        .strip()
+    )
 
     try:
         # Try importing the package to check if it's installed
@@ -175,4 +197,3 @@ def check_pip_dependency_installed(package_spec: str) -> bool:
             return False
         except Exception:
             return False
-

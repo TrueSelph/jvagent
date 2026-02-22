@@ -26,4 +26,3 @@ __all__ = [
     "format_sse_chunk",
     "stream_messages",
 ]
-

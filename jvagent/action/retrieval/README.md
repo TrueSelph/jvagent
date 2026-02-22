@@ -122,9 +122,9 @@ You can provide a custom template using the `directive_template` attribute:
 ```yaml
 directive_template: |
   Relevant information from knowledge base:
-  
+
   {results}
-  
+
   Please incorporate this information into your response.
 ```
 

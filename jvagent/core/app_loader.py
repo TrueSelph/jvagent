@@ -99,10 +99,14 @@ class AppDescriptor:
                 # Simple string format: namespace/agent_name
                 self.agents.append(agent_ref)
             else:
-                print(f"Warning: Invalid agent reference format (expected string): {agent_ref}")
+                print(
+                    f"Warning: Invalid agent reference format (expected string): {agent_ref}"
+                )
 
     def __repr__(self) -> str:
-        return f"AppDescriptor(id={self.app_id}, name={self.name}, version={self.version})"
+        return (
+            f"AppDescriptor(id={self.app_id}, name={self.name}, version={self.version})"
+        )
 
 
 class AppLoader:
@@ -148,7 +152,9 @@ class AppLoader:
             print(f"Error loading app descriptor from {app_file}: {e}")
             return None
 
-    async def bootstrap_application(self, update_if_exists: bool = False) -> Optional[App]:
+    async def bootstrap_application(
+        self, update_if_exists: bool = False
+    ) -> Optional[App]:
         """Bootstrap the application from app.yaml.
 
         This method:
@@ -247,7 +253,9 @@ class AppLoader:
 
             # Deduplicate if multiple App nodes exist (corruption from prior buggy runs)
             if len(app_nodes) > 1:
-                app_nodes = await self._deduplicate_app_nodes(root, app_nodes, descriptor)
+                app_nodes = await self._deduplicate_app_nodes(
+                    root, app_nodes, descriptor
+                )
                 if not app_nodes:
                     return None
 
@@ -366,7 +374,11 @@ class AppLoader:
 
         for key, value in properties.items():
             # Only set public properties (not private, not id, not name - name is static)
-            if not key.startswith("_") and key not in ["id", "name"] and hasattr(app, key):
+            if (
+                not key.startswith("_")
+                and key not in ["id", "name"]
+                and hasattr(app, key)
+            ):
                 try:
                     setattr(app, key, value)
                     logger.debug(f"Set app.{key} = {value}")
@@ -402,7 +414,9 @@ class AppLoader:
             logger.error(f"Error in _ensure_agents_node: {e}", exc_info=True)
             return None
 
-    async def _install_agents(self, descriptor: AppDescriptor, update_if_exists: bool) -> None:
+    async def _install_agents(
+        self, descriptor: AppDescriptor, update_if_exists: bool
+    ) -> None:
         """Install agents specified in app.yaml.
 
         Agents are referenced using the format: namespace/agent_name
@@ -436,7 +450,9 @@ class AppLoader:
 
             # Install the agent (this will also load actions from agent.yaml)
             # Pass update_if_exists to ensure agent properties are updated
-            agent = await self.agent_loader.install_agent(namespace, agent_name, update_if_exists)
+            agent = await self.agent_loader.install_agent(
+                namespace, agent_name, update_if_exists
+            )
 
             if agent:
                 if was_existing and update_if_exists:
@@ -489,7 +505,9 @@ class AppLoader:
 
             # Get agent statistics
             agents_list = (
-                await agents_manager.list_agents() if hasattr(agents_manager, "list_agents") else []
+                await agents_manager.list_agents()
+                if hasattr(agents_manager, "list_agents")
+                else []
             )
 
             return {

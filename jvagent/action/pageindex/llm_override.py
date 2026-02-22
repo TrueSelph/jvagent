@@ -29,23 +29,35 @@ for _name in dir(_real):
     if not _name.startswith("_"):
         setattr(_override, _name, getattr(_real, _name))
 
+
 # Override the three LLM functions with bridge wrappers
 async def _ChatGPT_API_async(model, prompt, api_key=None):
     return await llm_bridge.ChatGPT_API_async(
         model, prompt, api_key, _real_impl=_real.ChatGPT_API_async
     )
 
+
 def _ChatGPT_API(model, prompt, api_key=None, chat_history=None):
     return llm_bridge.ChatGPT_API(
-        model, prompt, api_key, chat_history,
-        _real_impl=lambda m, p, k, h=None: _real.ChatGPT_API(m, p, k, h)
+        model,
+        prompt,
+        api_key,
+        chat_history,
+        _real_impl=lambda m, p, k, h=None: _real.ChatGPT_API(m, p, k, h),
     )
+
 
 def _ChatGPT_API_with_finish_reason(model, prompt, api_key=None, chat_history=None):
     return llm_bridge.ChatGPT_API_with_finish_reason(
-        model, prompt, api_key, chat_history,
-        _real_impl=lambda m, p, k, h=None: _real.ChatGPT_API_with_finish_reason(m, p, k, h)
+        model,
+        prompt,
+        api_key,
+        chat_history,
+        _real_impl=lambda m, p, k, h=None: _real.ChatGPT_API_with_finish_reason(
+            m, p, k, h
+        ),
     )
+
 
 setattr(_override, "ChatGPT_API_async", _ChatGPT_API_async)
 setattr(_override, "ChatGPT_API", _ChatGPT_API)

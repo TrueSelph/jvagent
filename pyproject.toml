@@ -28,7 +28,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "jvspatial>=0.0.2",
+    "jvspatial>=0.0.3",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.0",
     "httpx>=0.27.0",
@@ -42,13 +42,24 @@ dev = [
     "httpx>=0.24.0",
     "pre-commit>=3.0.0",
     "black>=23.9.0",
-    "ruff>=0.1.0",
+    "isort>=6.0.0",
+    "flake8>=6.0.0",
+    "pep8-naming",
+    "flake8-docstrings",
+    "flake8-comprehensions",
+    "flake8-bugbear",
+    "flake8-annotations",
+    "flake8-simplify",
     "mypy>=1.6.0",
+    "pytest-cov>=4.0.0",
+    "coverage>=7.0.0",
+    "detect-secrets>=1.5.0",
 ]
 test = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21.0",
     "httpx>=0.24.0",
+    "pytest-cov>=4.0.0",
 ]
 
 [project.scripts]
@@ -72,18 +83,94 @@ asyncio_mode = "auto"
 markers = [
     "asyncio: mark test as an asyncio test",
 ]
+filterwarnings = [
+    "ignore::DeprecationWarning:pydantic.*",
+    "ignore::PendingDeprecationWarning",
+    "ignore::DeprecationWarning:starlette.*",
+]
 
 [tool.black]
-line-length = 100
+line-length = 88
 target-version = ["py38", "py39", "py310", "py311", "py312"]
 
-[tool.ruff]
-line-length = 100
-target-version = "py38"
+[tool.isort]
+profile = "black"
+line_length = 88
 
 [tool.mypy]
-python_version = "3.8"
-warn_return_any = true
+python_version = "3.9"
+warn_return_any = false
 warn_unused_configs = true
 disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_any_generics = false
+disallow_subclassing_any = false
+disallow_untyped_calls = false
+disallow_untyped_decorators = false
+check_untyped_defs = false
+no_implicit_optional = false
+warn_redundant_casts = false
+warn_unused_ignores = false
+warn_no_return = false
+show_error_codes = true
+exclude = ["examples/", "tests/"]
+
+[[tool.mypy.overrides]]
+module = [
+    "httpx.*",
+    "jinja2.*",
+    "jvspatial.*",
+    "tiktoken",
+    "aiohttp.*",
+    "filetype.*",
+    "elevenlabs.*",
+    "openai.*",
+    "pymupdf.*",
+    "PyPDF2.*",
+    "yaml",
+    "mcp.*",
+    "typesense.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "jvagent.action.model.*",
+    "jvagent.action.gating.prompts.*",
+    "jvagent.action.persona.*",
+    "jvagent.action.whatsapp.*",
+    "jvagent.action.stt_action.*",
+    "jvagent.action.tts_action.*",
+    "jvagent.action.pageindex.*",
+    "jvagent.action.interview.*",
+    "jvagent.action.response.*",
+    "jvagent.action.router.*",
+    "jvagent.action.vectorstore.*",
+    "jvagent.action.base",
+    "jvagent.action.actions",
+    "jvagent.action.action_loader",
+    "jvagent.action.endpoints",
+    "jvagent.action.interact.*",
+    "jvagent.action.user_model.*",
+    "jvagent.action.retrieval.*",
+    "jvagent.action.intro.*",
+    "jvagent.action.mcp.*",
+    "jvagent.core.*",
+    "jvagent.memory.*",
+    "jvagent.cli",
+]
+ignore_errors = true
+
+[tool.coverage.run]
+source = ["jvagent"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
 

@@ -39,7 +39,7 @@ class TestEnvironmentMode:
             else:
                 os.environ.pop("JVAGENT_ENVIRONMENT", None)
 
-    def test_get_environment_mode_case_insensitive(self):
+    def test_get_environment_mode_case_insensitive(self, mock_app_config):
         """Verify JVAGENT_ENVIRONMENT is case-insensitive."""
         original = os.environ.get("JVAGENT_ENVIRONMENT")
         try:
@@ -71,19 +71,26 @@ class TestEnvironmentMode:
             else:
                 os.environ.pop("JVAGENT_ENVIRONMENT", None)
 
-    @patch("jvagent.utils.env._get_environment_from_app_config", return_value="production")
     def test_get_environment_mode_from_app_config_production(self, mock_app_config):
         """Verify app config config.development.environment: production yields production mode."""
         original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
         try:
-            mode = get_environment_mode()
-            assert mode == "production"
+            with patch(
+                "jvagent.utils.env._get_environment_from_app_config",
+                return_value="production",
+            ):
+                mode = get_environment_mode()
+                assert mode == "production"
         finally:
             if original:
                 os.environ["JVAGENT_ENVIRONMENT"] = original
 
-    @patch("jvagent.utils.env._get_environment_from_app_config", return_value="development")
-    def test_get_environment_mode_from_app_config_development(self, mock_app_config):
+    @patch(
+        "jvagent.utils.env._get_environment_from_app_config", return_value="development"
+    )
+    def test_get_environment_mode_from_app_config_development(
+        self, mock_app_config_development, mock_app_config
+    ):
         """Verify app config config.development.environment: development yields development mode."""
         original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
         try:
@@ -93,8 +100,12 @@ class TestEnvironmentMode:
             if original:
                 os.environ["JVAGENT_ENVIRONMENT"] = original
 
-    @patch("jvagent.utils.env._get_environment_from_app_config", return_value="production")
-    def test_env_var_overrides_app_config(self, mock_app_config):
+    @patch(
+        "jvagent.utils.env._get_environment_from_app_config", return_value="production"
+    )
+    def test_env_var_overrides_app_config(
+        self, mock_app_config_production, mock_app_config
+    ):
         """Verify JVAGENT_ENVIRONMENT overrides app config when both are set."""
         original = os.environ.get("JVAGENT_ENVIRONMENT")
         try:
@@ -298,4 +309,3 @@ class TestResponseBuilder:
                 os.environ["JVAGENT_ENVIRONMENT"] = original
             else:
                 os.environ.pop("JVAGENT_ENVIRONMENT", None)
-

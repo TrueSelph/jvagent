@@ -3,4 +3,3 @@
 from .typesense import TypesenseVectorStore
 
 __all__ = ["TypesenseVectorStore"]
-

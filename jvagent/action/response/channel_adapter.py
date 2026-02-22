@@ -58,10 +58,11 @@ class ChannelAdapter(ABC):
         """
         if self._initialized:
             return True
-        
+
         # Get ResponseBus from App
         try:
             from jvagent.core.app import App
+
             app = await App.get()
             if app:
                 response_bus = await app.get_response_bus()

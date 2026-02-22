@@ -87,7 +87,7 @@ After installing jvagent, you can run this example application:
    ```bash
    # Recommended: Specify app root path
    jvagent /path/to/my_agent_app
-   
+
    # Or change to the directory first
    cd /path/to/my_agent_app
    jvagent
@@ -235,15 +235,15 @@ from jvagent.action.base import Action
 
 class MyAction(Action):
     """My custom action implementation."""
-    
+
     async def on_register(self):
         """Called when action is registered."""
         pass
-    
+
     async def on_enable(self):
         """Called when action is enabled."""
         pass
-    
+
     # Implement other lifecycle hooks as needed
 ```
 
@@ -255,23 +255,23 @@ Each action must include an `info.yaml` file:
 package:
   # Action name in namespace/action_name format
   name: jvagent/my_action
-  
+
   # Package author
   author: Your Name/Organization
-  
+
   # Archetype: The main Action class name (same as the Action Node class)
   archetype: MyAction
-  
+
   # Package version
 version: 1.0.0
-  
+
   # Package metadata
   meta:
     title: My Custom Action
 description: A description of what this action does
     group: jvagent
     type: action
-  
+
   # Package dependencies
 dependencies:
     # jvagent version requirement
@@ -407,7 +407,7 @@ You can override any `app.yaml` configuration using environment variables if nee
 - `JVSPATIAL_MONGODB_DB_NAME` - Override database name
 - `JVAGENT_LOG_LEVEL` - Override log level (`debug`, `info`, `warning`, `error`)
 
-**Important**: 
+**Important**:
 - Add `.env` to `.gitignore` to prevent committing secrets
 - In production, use secure secret management (environment variables, secret managers, etc.)
 - Non-sensitive configuration should be in `app.yaml`, not `.env`
@@ -485,7 +485,7 @@ When jvagent starts with an app directory (either specified as a path or from wi
    touch agents/my_agent/actions/jvagent/my_new_action/__init__.py
    touch agents/my_agent/actions/jvagent/my_new_action/endpoints.py
    ```
-   
+
    In `__init__.py`, import the action class and endpoints:
    ```python
    from .my_new_action import MyNewAction

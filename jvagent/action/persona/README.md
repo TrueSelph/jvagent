@@ -52,7 +52,7 @@ You have 1 directive(s). Your response is NON-COMPLIANT if any is missing.
 
 Execution rules:
 - Each directive MUST be executed regardless of conversation history
-- If a directive asks you to request/present information, do so even if 
+- If a directive asks you to request/present information, do so even if
   the topic was partially discussed
 ...
 ```
@@ -67,7 +67,7 @@ Directive reminders are injected into the user message itself, placing them at t
 """
 Eldon Marks
 
-[SYSTEM: You MUST execute in your response: Make a request to the user: 
+[SYSTEM: You MUST execute in your response: Make a request to the user:
 What times are you available?]
 """
 ```
@@ -183,17 +183,17 @@ class PersonaAction(Action):
     persona_name: str = "Agent"
     persona_description: str = "You are friendly and helpful"
     persona_capabilities: List[str] = []
-    
+
     # Model configuration
     model_action_type: str = "OpenAILanguageModelAction"
     model: str = "gpt-4o"
     model_temperature: float = 0.3
     model_max_tokens: int = 4096
-    
+
     # Prompt configuration
     system_prompt: str = SYSTEM_PROMPT_TEMPLATE  # Override for custom prompts
     parameters: List[Dict[str, Any]] = [...]      # Default behavioral parameters
-    
+
     # Optional features
     use_structured_output: bool = False  # Enable JSON output with insights
 ```
@@ -312,7 +312,7 @@ async def execute(self, interaction, visitor):
         action_name=self.get_class_name(),
         content="Explain the three-step process"
     )
-    
+
     # Get persona and respond with streaming
     persona = await self.get_action(PersonaAction)
     response = await persona.respond(
@@ -528,7 +528,7 @@ The "NON-COMPLIANT" framing is more effective than "priority" language:
 The most critical rule for preventing directive skipping:
 
 ```
-If a directive asks you to request/present information, do so even if 
+If a directive asks you to request/present information, do so even if
 the topic was partially discussed
 ```
 
@@ -781,19 +781,19 @@ async def execute(self, interaction, visitor):
             action_name=self.get_class_name(),
             content="Ask the user about their budget range for this project"
         )
-    
+
     # Present options
     if interaction.get_response("budget"):
         budget = interaction.get_response("budget")
         options = self._get_options_for_budget(budget)
-        
+
         interaction.add_directive(
             action_name=self.get_class_name(),
             content=f"""Present these options to the user:
                 {', '.join(options)}
                 Ask which option interests them most."""
         )
-    
+
     # Generate response with directives
     persona = await self.get_action(PersonaAction)
     response = await persona.respond(interaction, visitor=visitor)

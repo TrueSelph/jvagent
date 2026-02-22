@@ -40,26 +40,31 @@ class Conversation(DeferredSaveMixin, Node):
         context: Conversation context dictionary for storing state
     """
 
-    session_id: str = attribute(indexed=True, index_unique=True, default="", description="Session identifier")
+    session_id: str = attribute(
+        indexed=True, index_unique=True, default="", description="Session identifier"
+    )
     user_id: str = attribute(indexed=True, default="", description="Owning user ID")
     status: str = attribute(
-        indexed=True, default="active", description="Conversation status: active, archived, closed"
+        indexed=True,
+        default="active",
+        description="Conversation status: active, archived, closed",
     )
     channel: str = attribute(default="default", description="Communication channel")
     created_at: datetime = attribute(
-        default_factory=lambda: datetime.now(timezone.utc), description="Timestamp of creation"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Timestamp of creation",
     )
     last_interaction_at: Optional[datetime] = attribute(
         default=None, description="Timestamp of last interaction"
     )
-    interaction_count: int = attribute(
-        default=0, description="Number of interactions"
-    )
+    interaction_count: int = attribute(default=0, description="Number of interactions")
     interaction_limit: int = attribute(
-        default=0, description="Maximum number of interactions to keep (0 = disabled, no pruning)"
+        default=0,
+        description="Maximum number of interactions to keep (0 = disabled, no pruning)",
     )
     last_interaction_id: Optional[str] = attribute(
-        default=None, description="ID of the last interaction in the chain (for optimized access)"
+        default=None,
+        description="ID of the last interaction in the chain (for optimized access)",
     )
     context: Dict[str, Any] = attribute(
         default_factory=dict, description="Conversation context dictionary"
@@ -131,7 +136,7 @@ class Conversation(DeferredSaveMixin, Node):
 
         # Directly access the last interaction using the cached reference
         last_interaction = await Interaction.get(self.last_interaction_id)
-        
+
         # If the reference is stale (interaction was deleted), rebuild by traversal
         if not last_interaction:
             last = await self._find_last_interaction()
@@ -215,7 +220,10 @@ class Conversation(DeferredSaveMixin, Node):
             await self.save()
 
         # Apply rolling window pruning if limit is set and exceeded
-        if self.interaction_limit > 0 and self.interaction_count > self.interaction_limit:
+        if (
+            self.interaction_limit > 0
+            and self.interaction_count > self.interaction_limit
+        ):
             await self._prune_old_interactions()
 
         return interaction
@@ -267,6 +275,7 @@ class Conversation(DeferredSaveMixin, Node):
         # But verify it still exists
         if self.last_interaction_id:
             from jvagent.memory.interaction import Interaction
+
             last = await Interaction.get(self.last_interaction_id)
             if not last:
                 # Reference is stale, rebuild it by traversal
@@ -300,7 +309,9 @@ class Conversation(DeferredSaveMixin, Node):
             session_id=session_id,
         )
 
-    async def get_interactions(self, limit: int = 0, reverse: bool = False) -> List["Interaction"]:
+    async def get_interactions(
+        self, limit: int = 0, reverse: bool = False
+    ) -> List["Interaction"]:
         """Get Interactions by traversing the chain in chronological order.
 
         Args:
@@ -313,7 +324,7 @@ class Conversation(DeferredSaveMixin, Node):
         from jvagent.memory.interaction import Interaction
 
         interactions: List[Interaction] = []
-        
+
         if reverse:
             # Start from last interaction and traverse backward
             current = await self.get_last_interaction()
@@ -408,17 +419,19 @@ class Conversation(DeferredSaveMixin, Node):
             List of dictionaries with 'role' and 'content' keys formatted for language models
         """
         history: List[Dict[str, Any]] = []
-        
+
         for interaction in interactions:
             # Add interpretation as system message (if present and requested)
             # Note: interpretations are not truncated
             if with_interpretation and interaction.interpretation:
                 content_parts = [interaction.interpretation]
                 content = " | ".join(content_parts)
-                history.append({
-                    "role": "system",
-                    "content": f"[INTERPRETATION] {content}",
-                })
+                history.append(
+                    {
+                        "role": "system",
+                        "content": f"[INTERPRETATION] {content}",
+                    }
+                )
 
             # Add posture context (if requested and set) - explains why no assistant reply followed
             if with_posture and getattr(interaction, "response_posture", None):
@@ -428,40 +441,44 @@ class Conversation(DeferredSaveMixin, Node):
                     utterance, max_statement_length, interaction=interaction
                 )
                 if posture == "SUPPRESS":
-                    history.append({
-                        "role": "system",
-                        "content": f'[SUPPRESSED] User said: "{truncated}"',
-                    })
+                    history.append(
+                        {
+                            "role": "system",
+                            "content": f'[SUPPRESSED] User said: "{truncated}"',
+                        }
+                    )
                 elif posture == "DEFER":
-                    history.append({
-                        "role": "system",
-                        "content": f'[DEFERRED] User said: "{truncated}"',
-                    })
-            
+                    history.append(
+                        {
+                            "role": "system",
+                            "content": f'[DEFERRED] User said: "{truncated}"',
+                        }
+                    )
+
             # Add user utterance (if requested) - truncated if max_statement_length is set
             if with_utterance:
                 truncated_utterance = await Conversation.truncate_statement(
-                    interaction.utterance,
-                    max_statement_length,
-                    interaction=interaction
+                    interaction.utterance, max_statement_length, interaction=interaction
                 )
-                history.append({
-                    "role": "user",
-                    "content": truncated_utterance,
-                })
-            
+                history.append(
+                    {
+                        "role": "user",
+                        "content": truncated_utterance,
+                    }
+                )
+
             # Add assistant response (if present and requested) - truncated if max_statement_length is set
             if with_response and interaction.response:
                 truncated_response = await Conversation.truncate_statement(
-                    interaction.response,
-                    max_statement_length,
-                    interaction=interaction
+                    interaction.response, max_statement_length, interaction=interaction
                 )
-                history.append({
-                    "role": "assistant",
-                    "content": truncated_response,
-                })
-            
+                history.append(
+                    {
+                        "role": "assistant",
+                        "content": truncated_response,
+                    }
+                )
+
             # Add events as system messages (if present and requested)
             # Note: events are not truncated
             if with_event and interaction.events:
@@ -471,11 +488,13 @@ class Conversation(DeferredSaveMixin, Node):
                         event_str = event.get("content", str(event))
                     else:
                         event_str = str(event)
-                    history.append({
-                        "role": "system",
-                        "content": f"[EVENT] {event_str}",
-                    })
-        
+                    history.append(
+                        {
+                            "role": "system",
+                            "content": f"[EVENT] {event_str}",
+                        }
+                    )
+
         return history
 
     async def get_interaction_history(
@@ -496,10 +515,10 @@ class Conversation(DeferredSaveMixin, Node):
         over which elements to include and whether to format for language models.
 
         Args:
-            limit: Maximum number of interactions to include (most recent). The limit is 
-                applied to the number of interactions fetched, then with_xxx flags control 
+            limit: Maximum number of interactions to include (most recent). The limit is
+                applied to the number of interactions fetched, then with_xxx flags control
                 which fields are included in the output for each interaction.
-            excluded: Interaction ID(s) to exclude from results. Can be a single string, 
+            excluded: Interaction ID(s) to exclude from results. Can be a single string,
                 a list of strings, or False (default) for no exclusion.
             with_utterance: If True, include user utterances (default: True)
             with_response: If True, include AI responses (default: True)
@@ -515,10 +534,10 @@ class Conversation(DeferredSaveMixin, Node):
         Returns:
             If formatted=True: List of dictionaries with 'role' and 'content' keys
             If formatted=False: List of dictionaries with selected elements and metadata
-            
+
         Note:
-            The with_xxx flags control field inclusion, not interaction filtering. 
-            All interactions within the limit are included in results; interactions 
+            The with_xxx flags control field inclusion, not interaction filtering.
+            All interactions within the limit are included in results; interactions
             without requested fields will have those fields omitted from the entry.
         """
         # Normalize excluded to a set of IDs for efficient lookup
@@ -528,28 +547,27 @@ class Conversation(DeferredSaveMixin, Node):
                 excluded_ids.add(excluded)
             elif isinstance(excluded, list):
                 excluded_ids.update(excluded)
-        
+
         # Fetch enough interactions to account for exclusions, ensuring we get exactly 'limit' non-excluded ones
         # If we need to exclude some, fetch extra to compensate
         fetch_limit = limit + len(excluded_ids) if excluded_ids else limit
-        
+
         # Get most recent interactions (reverse=True gives newest first)
         interactions = await self.get_interactions(
-            limit=fetch_limit if fetch_limit > 0 else 0, 
-            reverse=True
+            limit=fetch_limit if fetch_limit > 0 else 0, reverse=True
         )
-        
+
         # Filter out excluded interactions if specified
         if excluded_ids:
             interactions = [i for i in interactions if i.id not in excluded_ids]
-        
+
         # Strictly limit to requested number (defensive: ensure we never exceed limit)
         # This handles cases where get_interactions might return more than requested
         interactions = interactions[:limit]
-        
+
         # Reverse to chronological order (oldest first)
         interactions.reverse()
-        
+
         if formatted:
             # Use formatter utility
             return await self._format_interactions(
@@ -567,38 +585,42 @@ class Conversation(DeferredSaveMixin, Node):
             for interaction in interactions:
                 entry: Dict[str, Any] = {
                     "interaction_id": interaction.id,
-                    "started_at": interaction.started_at.isoformat() if interaction.started_at else None,
+                    "started_at": (
+                        interaction.started_at.isoformat()
+                        if interaction.started_at
+                        else None
+                    ),
                 }
-                
+
                 if with_utterance:
                     entry["utterance"] = await Conversation.truncate_statement(
                         interaction.utterance,
                         max_statement_length,
-                        interaction=interaction
+                        interaction=interaction,
                     )
-                
+
                 if with_response and interaction.response:
                     entry["response"] = await Conversation.truncate_statement(
                         interaction.response,
                         max_statement_length,
-                        interaction=interaction
+                        interaction=interaction,
                     )
-                
+
                 if with_interpretation and interaction.interpretation:
                     # Note: interpretations are not truncated
                     entry["interpretation"] = interaction.interpretation
                     if interaction.anchors:
                         entry["anchors"] = interaction.anchors
-                
+
                 if with_event and interaction.events:
                     # Note: events are not truncated
                     entry["events"] = interaction.events
 
                 if with_posture and getattr(interaction, "response_posture", None):
                     entry["response_posture"] = interaction.response_posture
-                
+
                 history.append(entry)
-            
+
             return history
 
     async def get_conversation_history(
@@ -612,7 +634,7 @@ class Conversation(DeferredSaveMixin, Node):
 
         Args:
             limit: Maximum number of interactions to include (most recent)
-            excluded: Interaction ID(s) to exclude from results. Can be a single string, 
+            excluded: Interaction ID(s) to exclude from results. Can be a single string,
                 a list of strings, or False (default) for no exclusion.
             formatted: If True, format as role/content pairs for language models.
                 If False, return raw format with 'utterance' and 'response' keys. Default: True.
@@ -646,7 +668,7 @@ class Conversation(DeferredSaveMixin, Node):
 
         Args:
             limit: Maximum number of interactions to include (most recent)
-            excluded: Interaction ID(s) to exclude from results. Can be a single string, 
+            excluded: Interaction ID(s) to exclude from results. Can be a single string,
                 a list of strings, or False (default) for no exclusion.
             formatted: If True, format as role/content pairs for language models.
                 If False, return raw format with metadata. Default: True.
@@ -681,7 +703,7 @@ class Conversation(DeferredSaveMixin, Node):
 
         Args:
             limit: Maximum number of interactions to include (most recent)
-            excluded: Interaction ID(s) to exclude from results. Can be a single string, 
+            excluded: Interaction ID(s) to exclude from results. Can be a single string,
                 a list of strings, or False (default) for no exclusion.
             formatted: If True, format as role/content pairs for language models.
                 If False, return raw format with metadata. Default: True.
@@ -692,7 +714,7 @@ class Conversation(DeferredSaveMixin, Node):
 
         Returns:
             If formatted=True: List of dictionaries with 'role' and 'content' keys
-            If formatted=False: List of dictionaries with 'interaction_id', 'started_at', 'interpretation', 
+            If formatted=False: List of dictionaries with 'interaction_id', 'started_at', 'interpretation',
             and 'anchors' keys
         """
         return await self.get_interaction_history(
@@ -717,7 +739,7 @@ class Conversation(DeferredSaveMixin, Node):
 
         Args:
             limit: Maximum number of interactions to include (most recent)
-            excluded: Interaction ID(s) to exclude from results. Can be a single string, 
+            excluded: Interaction ID(s) to exclude from results. Can be a single string,
                 a list of strings, or False (default) for no exclusion.
             formatted: If True, format as role/content pairs for language models.
                 Includes user utterance, AI response, events, and interpretations. Default: True.
@@ -728,7 +750,7 @@ class Conversation(DeferredSaveMixin, Node):
         Returns:
             If formatted=True: List of dictionaries with 'role' and 'content' keys
                 (includes user, assistant, system messages for interpretations and events)
-            If formatted=False: List of dictionaries containing conversation, events, 
+            If formatted=False: List of dictionaries containing conversation, events,
                 and interpretation data with metadata
         """
         return await self.get_interaction_history(
@@ -815,7 +837,10 @@ class Conversation(DeferredSaveMixin, Node):
 
         for interaction in interactions:
             # Aggregate metrics from observability_metrics entries
-            if hasattr(interaction, "observability_metrics") and interaction.observability_metrics:
+            if (
+                hasattr(interaction, "observability_metrics")
+                and interaction.observability_metrics
+            ):
                 for event in interaction.observability_metrics:
                     if event.get("event_type") in ("model_call", "embedding_call"):
                         event_data = event.get("data", {})

@@ -110,11 +110,11 @@ class ReportAction(InteractAction):
         "User asks about report status",
         "User wants to check report progress"
     ]
-    
+
     async def execute(self, visitor):
         if "ReportAction" not in visitor.interaction.anchors:
             return
-        
+
         # Use intent_type for context
         intent = visitor.interaction.intent_type
         interpretation = visitor.interaction.interpretation
@@ -145,12 +145,12 @@ Conversation:
   [EVENT] Ongoing Activity: NewsInteractAction
   Assistant: "Here are today's top headlines..."
   User: "Cool thanks"
-  
+
 Analysis:
   - User is expressing gratitude (SOCIAL)
   - NOT directly engaging with NewsInteractAction
   - No specific need from the system
-  
+
 Result:
   intent_type: SOCIAL
   actions: []
@@ -163,12 +163,12 @@ Conversation:
   [EVENT] Ongoing Activity: SignupInterviewInteractAction
   Assistant: "What is your email?"
   User: "What's the weather like?"
-  
+
 Analysis:
   - User is asking a question (QUERY)
   - NOT answering the signup question
   - Needs weather information
-  
+
 Result:
   intent_type: QUERY
   actions: ["WeatherAction"]
@@ -181,11 +181,11 @@ Conversation:
   [EVENT] Ongoing Activity: SignupInterviewInteractAction
   Assistant: "What is your name?"
   User: "John Doe"
-  
+
 Analysis:
   - User is providing information (RESPONSE)
   - Directly answering SignupInterviewInteractAction's question
-  
+
 Result:
   intent_type: RESPONSE
   actions: ["SignupInterviewInteractAction"]

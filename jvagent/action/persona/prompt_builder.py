@@ -1,7 +1,7 @@
 """Structured prompt builder for PersonaAction.
 
 This module provides PersonaPromptBuilder, a structured approach to building
-prompts with named sections, priorities, and clear hierarchy. 
+prompts with named sections, priorities, and clear hierarchy.
 """
 
 from typing import List, Optional

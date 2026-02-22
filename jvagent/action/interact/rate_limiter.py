@@ -214,4 +214,3 @@ def extract_client_ip(request) -> Optional[str]:
         return request.client.host
 
     return None
-

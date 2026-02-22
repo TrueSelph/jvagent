@@ -13,4 +13,3 @@ DIRECTIVE_TEMPLATE = """Context retrieved from knowledge base:
 {results}
 
 Use this context to inform your response to the user's query."""
-

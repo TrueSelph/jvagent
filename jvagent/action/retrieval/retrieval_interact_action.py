@@ -8,13 +8,13 @@ utterance as fallback) and composes a structured directive for PersonaAction.
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from jvspatial.core.annotations import attribute
 from jvspatial.core import on_visit
+from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
-from jvagent.action.vectorstore.base import VectorStore
 from jvagent.action.retrieval.prompts import DIRECTIVE_TEMPLATE
+from jvagent.action.vectorstore.base import VectorStore
 
 if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
@@ -68,8 +68,13 @@ class RetrievalInteractAction(InteractAction):
         le=1.0,
     )
     parameters: List[Dict[str, Any]] = attribute(
-        default=[{"condition":"There is no data in the context or anywhere else in the prompt that can answer the user request","response": "Answer based on your own knowledge but mention that the information might be inaccurate or out of date and encourage them to seek external sources of information."}],
-        description="A list of conditions and response to customize behavior based on parameters."
+        default=[
+            {
+                "condition": "There is no data in the context or anywhere else in the prompt that can answer the user request",
+                "response": "Answer based on your own knowledge but mention that the information might be inaccurate or out of date and encourage them to seek external sources of information.",
+            }
+        ],
+        description="A list of conditions and response to customize behavior based on parameters.",
     )
 
     async def execute(self, visitor: "InteractWalker") -> None:
@@ -87,18 +92,26 @@ class RetrievalInteractAction(InteractAction):
             # Get search query (interpretation or utterance fallback)
             query = self._get_search_query(interaction)
             if not query:
-                logger.debug("RetrievalInteractAction: No query available, skipping retrieval")
+                logger.debug(
+                    "RetrievalInteractAction: No query available, skipping retrieval"
+                )
                 return
 
             # Get VectorStore action
             vectorstore = await self._get_vectorstore_action()
             if not vectorstore:
-                logger.warning("RetrievalInteractAction: VectorStore action not found, skipping retrieval")
+                logger.warning(
+                    "RetrievalInteractAction: VectorStore action not found, skipping retrieval"
+                )
                 return
 
             # Perform search
-            resolved_collection = await vectorstore._resolve_collection_name(self.collection)
-            logger.debug(f"RetrievalInteractAction: Searching collection '{resolved_collection}' with query: {query[:100]}")
+            resolved_collection = await vectorstore._resolve_collection_name(
+                self.collection
+            )
+            logger.debug(
+                f"RetrievalInteractAction: Searching collection '{resolved_collection}' with query: {query[:100]}"
+            )
             results = await vectorstore.search(
                 collection=resolved_collection,
                 query=query,
@@ -108,7 +121,8 @@ class RetrievalInteractAction(InteractAction):
             # Filter results by score threshold if configured
             if self.min_score_threshold and results:
                 filtered_results = [
-                    r for r in results
+                    r
+                    for r in results
                     if r.get("score", 0.0) >= self.min_score_threshold
                 ]
                 if len(filtered_results) < len(results):
@@ -126,7 +140,9 @@ class RetrievalInteractAction(InteractAction):
                     f"RetrievalInteractAction: Prepared directive with {len(results)} retrieved context items"
                 )
             else:
-                logger.debug("RetrievalInteractAction: No results found, no directive prepared")
+                logger.debug(
+                    "RetrievalInteractAction: No results found, no directive prepared"
+                )
 
             # Generate response via PersonaAction with directives and parameters
             # Only call respond if we have a directive or parameters to add
@@ -144,7 +160,9 @@ class RetrievalInteractAction(InteractAction):
                 await visitor.add_parameters(self.parameters)
 
         except Exception as e:
-            logger.error(f"RetrievalInteractAction: Error during retrieval: {e}", exc_info=True)
+            logger.error(
+                f"RetrievalInteractAction: Error during retrieval: {e}", exc_info=True
+            )
             # Don't raise - allow other actions to continue
 
     async def _get_vectorstore_action(self) -> Optional[VectorStore]:

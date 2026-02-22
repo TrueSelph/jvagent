@@ -22,10 +22,10 @@ _STANDARD_VALIDATORS: Dict[str, Callable] = {}
 
 def standard_validator(name: str):
     """Decorator to register a standard validator by name.
-    
+
     Args:
         name: Unique name for this validator (e.g., "email", "phone", "url")
-        
+
     Example:
         @standard_validator("email")
         def validate_email(value: Any, constraints: Dict[str, Any]) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
@@ -33,19 +33,21 @@ def standard_validator(name: str):
                 return ValidationStatus.INVALID, "Invalid email format", None
             return None  # Valid
     """
+
     def decorator(func: Callable) -> Callable:
         _STANDARD_VALIDATORS[name] = func
         logger.debug(f"Registered standard validator: {name}")
         return func
+
     return decorator
 
 
 def get_standard_validator(name: str) -> Optional[Callable]:
     """Get a standard validator by name.
-    
+
     Args:
         name: Name of the validator
-        
+
     Returns:
         Validator function if found, None otherwise
     """
@@ -54,7 +56,7 @@ def get_standard_validator(name: str) -> Optional[Callable]:
 
 def get_all_standard_validators() -> Dict[str, Callable]:
     """Get all registered standard validators.
-    
+
     Returns:
         Dictionary of validator name -> validator function
     """
@@ -65,21 +67,26 @@ def get_all_standard_validators() -> Dict[str, Callable]:
 # Standard Validators
 # ============================================================================
 
+
 @standard_validator("string")
 def validate_string_type(
     value: Any, constraints: Dict[str, Any]
 ) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
     """Validate value is a string.
-    
+
     Args:
         value: Value to validate
         constraints: Question constraints
-        
+
     Returns:
         Validation result tuple if invalid, None if valid
     """
     if not isinstance(value, str):
-        return ValidationStatus.INVALID, f"Expected a string value, got {type(value).__name__}", None
+        return (
+            ValidationStatus.INVALID,
+            f"Expected a string value, got {type(value).__name__}",
+            None,
+        )
     return None
 
 
@@ -88,11 +95,11 @@ def validate_number_type(
     value: Any, constraints: Dict[str, Any]
 ) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
     """Validate value is a number.
-    
+
     Args:
         value: Value to validate
         constraints: Question constraints
-        
+
     Returns:
         Validation result tuple if invalid, None if valid
     """
@@ -108,11 +115,11 @@ def validate_integer_type(
     value: Any, constraints: Dict[str, Any]
 ) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
     """Validate value is an integer.
-    
+
     Args:
         value: Value to validate
         constraints: Question constraints
-        
+
     Returns:
         Validation result tuple if invalid, None if valid
     """
@@ -128,21 +135,21 @@ def validate_email_format(
     value: Any, constraints: Dict[str, Any]
 ) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
     """Validate email address format.
-    
+
     Args:
         value: Value to validate
         constraints: Question constraints
-        
+
     Returns:
         Validation result tuple if invalid, None if valid
     """
     if not isinstance(value, str):
         return ValidationStatus.INVALID, "Email must be a string", None
-    
-    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+    email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
     if not re.match(email_pattern, value):
         return ValidationStatus.INVALID, "Please provide a valid email address", None
-    
+
     return None
 
 
@@ -151,29 +158,33 @@ def validate_phone_format(
     value: Any, constraints: Dict[str, Any]
 ) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
     """Validate phone number format (basic validation).
-    
+
     Accepts various formats: (123) 456-7890, 123-456-7890, 1234567890, +1-123-456-7890
-    
+
     Args:
         value: Value to validate
         constraints: Question constraints
-        
+
     Returns:
         Validation result tuple if invalid, None if valid
     """
     if not isinstance(value, str):
         return ValidationStatus.INVALID, "Phone number must be a string", None
-    
+
     # Remove common separators and spaces
-    digits = re.sub(r'[\s\-\(\)\+\.]', '', value)
-    
+    digits = re.sub(r"[\s\-\(\)\+\.]", "", value)
+
     # Check if remaining characters are digits and length is reasonable
     if not digits.isdigit():
-        return ValidationStatus.INVALID, "Phone number should contain only digits and separators", None
-    
+        return (
+            ValidationStatus.INVALID,
+            "Phone number should contain only digits and separators",
+            None,
+        )
+
     if len(digits) < 10 or len(digits) > 15:
         return ValidationStatus.INVALID, "Phone number should be 10-15 digits", None
-    
+
     return None
 
 
@@ -182,22 +193,26 @@ def validate_url_format(
     value: Any, constraints: Dict[str, Any]
 ) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
     """Validate URL format.
-    
+
     Args:
         value: Value to validate
         constraints: Question constraints
-        
+
     Returns:
         Validation result tuple if invalid, None if valid
     """
     if not isinstance(value, str):
         return ValidationStatus.INVALID, "URL must be a string", None
-    
+
     # Basic URL pattern - supports http, https, ftp
-    url_pattern = r'^(https?|ftp)://[^\s/$.?#].[^\s]*$'
+    url_pattern = r"^(https?|ftp)://[^\s/$.?#].[^\s]*$"
     if not re.match(url_pattern, value, re.IGNORECASE):
-        return ValidationStatus.INVALID, "Please provide a valid URL (e.g., https://example.com)", None
-    
+        return (
+            ValidationStatus.INVALID,
+            "Please provide a valid URL (e.g., https://example.com)",
+            None,
+        )
+
     return None
 
 
@@ -206,27 +221,33 @@ def validate_pattern_constraint(
     value: Any, constraints: Dict[str, Any]
 ) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
     """Validate value matches a regex pattern from constraints.
-    
+
     Uses constraints['pattern'] and optional constraints['pattern_error'].
-    
+
     Args:
         value: Value to validate
         constraints: Question constraints with 'pattern' and optional 'pattern_error'
-        
+
     Returns:
         Validation result tuple if invalid, None if valid
     """
     pattern = constraints.get("pattern")
     if not pattern:
         return None
-    
+
     if not isinstance(value, str):
-        return ValidationStatus.INVALID, "Value must be a string for pattern matching", None
-    
+        return (
+            ValidationStatus.INVALID,
+            "Value must be a string for pattern matching",
+            None,
+        )
+
     if not re.match(pattern, value):
-        error_msg = constraints.get("pattern_error", "Value doesn't match required format")
+        error_msg = constraints.get(
+            "pattern_error", "Value doesn't match required format"
+        )
         return ValidationStatus.INVALID, error_msg, None
-    
+
     return None
 
 
@@ -235,28 +256,38 @@ def validate_no_disposable_email(
     value: Any, constraints: Dict[str, Any]
 ) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
     """Validate email is not from a disposable email provider.
-    
+
     Args:
         value: Value to validate
         constraints: Question constraints
-        
+
     Returns:
         Validation result tuple if invalid, None if valid
     """
     if not isinstance(value, str):
         return None
-    
+
     # Common disposable email domains
     disposable_domains = [
-        'tempmail.com', 'throwaway.email', '10minutemail.com',
-        'guerrillamail.com', 'mailinator.com', 'trashmail.com',
-        'temp-mail.org', 'fakeinbox.com', 'maildrop.cc'
+        "tempmail.com",
+        "throwaway.email",
+        "10minutemail.com",
+        "guerrillamail.com",
+        "mailinator.com",
+        "trashmail.com",
+        "temp-mail.org",
+        "fakeinbox.com",
+        "maildrop.cc",
     ]
-    
-    domain = value.split('@')[1].lower() if '@' in value else ''
+
+    domain = value.split("@")[1].lower() if "@" in value else ""
     if domain in disposable_domains:
-        return ValidationStatus.INVALID, "Please use a permanent email address, not a disposable one", None
-    
+        return (
+            ValidationStatus.INVALID,
+            "Please use a permanent email address, not a disposable one",
+            None,
+        )
+
     return None
 
 
@@ -265,21 +296,25 @@ def validate_no_test_domain(
     value: Any, constraints: Dict[str, Any]
 ) -> Optional[Tuple[ValidationStatus, Optional[str], Optional[Any]]]:
     """Validate email is not from a test domain.
-    
+
     Args:
         value: Value to validate
         constraints: Question constraints
-        
+
     Returns:
         Validation result tuple if invalid, None if valid
     """
     if not isinstance(value, str):
         return None
-    
-    test_domains = ['example.com', 'test.com', 'invalid.com', 'localhost']
-    domain = value.split('@')[1].lower() if '@' in value else ''
-    
+
+    test_domains = ["example.com", "test.com", "invalid.com", "localhost"]
+    domain = value.split("@")[1].lower() if "@" in value else ""
+
     if domain in test_domains:
-        return ValidationStatus.INVALID, "Please provide a real email address, not a test domain", None
-    
+        return (
+            ValidationStatus.INVALID,
+            "Please provide a real email address, not a test domain",
+            None,
+        )
+
     return None

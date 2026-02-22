@@ -42,9 +42,9 @@ actions:
       description: "Fallback action for smalltalk and casual conversation"
       weight: 100  # Runs last as a safety net
       directive: |
-        Offer a simple, friendly response to smalltalk and casual conversation. 
-        NEVER attempt to answer knowledge-based questions without having certainty 
-        about the context. If the conversation does not warrant a reply or you 
+        Offer a simple, friendly response to smalltalk and casual conversation.
+        NEVER attempt to answer knowledge-based questions without having certainty
+        about the context. If the conversation does not warrant a reply or you
         lack sufficient information, politely opt out rather than guessing.
       parameters:
         - condition: "User asks a knowledge-based or factual question"
@@ -59,12 +59,12 @@ actions:
 
 ## Execution Semantics
 
-- **Weight and Ordering**  
+- **Weight and Ordering**
   The default weight is `100`, so it runs after other InteractActions. It
   proceeds if `interaction.has_response()` is `False` OR if there are unexecuted
   directives present.
 
-- **Routing Exception**  
+- **Routing Exception**
   The action defines:
   ```python
   always_execute: bool = attribute(
@@ -76,7 +76,7 @@ actions:
   `ConverseInteractAction` to `interaction.anchors` as a routing exception, so
   `InteractWalker` will not skip it due to routing.
 
-- **Fallback Logic**  
+- **Fallback Logic**
   In `execute()`:
   - If there is no `Interaction`, it calls `visitor.unrecord_action_execution()`
     and returns.

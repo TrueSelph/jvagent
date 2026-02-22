@@ -5,8 +5,9 @@ Uses QuestionPathWalker's _prune_session directly.
 """
 
 import pytest
-from jvagent.action.interview.core.session.interview_session import InterviewSession
+
 from jvagent.action.interview.core.graph.question_path_walker import QuestionPathWalker
+from jvagent.action.interview.core.session.interview_session import InterviewSession
 from jvagent.action.interview.core.utils.cache_utils import BranchCache
 
 
@@ -22,10 +23,14 @@ async def test_path_change_prunes_unreachable_responses():
     session.interview_type = "TestInterview"
 
     session.question_graph = [
-        {"name": "qA", "branches": [
-            {"condition": {"op": "equals", "value": "b"}, "target": "qB"},
-            {"condition": {"op": "equals", "value": "c"}, "target": "qC"},
-        ], "default_next": "qD"},
+        {
+            "name": "qA",
+            "branches": [
+                {"condition": {"op": "equals", "value": "b"}, "target": "qB"},
+                {"condition": {"op": "equals", "value": "c"}, "target": "qC"},
+            ],
+            "default_next": "qD",
+        },
         {"name": "qB", "default_next": "qD"},
         {"name": "qC", "default_next": "qD"},
         {"name": "qD", "default_next": "REVIEW"},
@@ -78,4 +83,6 @@ async def test_update_queue_pruned_for_unreachable():
 
     remaining_fields = [e["field"] for e in session.update_queue]
     assert "qA" in remaining_fields
-    assert "qX" not in remaining_fields, "Unreachable update_queue entry should be removed"
+    assert (
+        "qX" not in remaining_fields
+    ), "Unreachable update_queue entry should be removed"

@@ -7,7 +7,11 @@ and persists to the PageIndex database.
 import logging
 from typing import Any, Dict, List, Optional
 
-from jvspatial.core.context import GraphContext, get_default_context, set_default_context
+from jvspatial.core.context import (
+    GraphContext,
+    get_default_context,
+    set_default_context,
+)
 from jvspatial.db import get_database_manager
 
 from .config import PAGEINDEX_DB_NAME

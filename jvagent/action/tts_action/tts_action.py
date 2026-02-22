@@ -1,9 +1,11 @@
 """TTS Action Implementation."""
+
 import logging
 from typing import Dict, List, Optional, Union
 
-from jvagent.action.base import Action
 from jvspatial.core.annotations import attribute
+
+from jvagent.action.base import Action
 
 from .modules.elevenlabs_module import ElevenLabsTTSModule
 
@@ -14,23 +16,15 @@ class TTSAction(Action):
     """Text-to-Speech action for converting text to speech using multiple providers."""
 
     provider: str = attribute(
-        default="elevenlabs",
-        description="TTS provider (elevenlabs)"
+        default="elevenlabs", description="TTS provider (elevenlabs)"
     )
 
-    api_key: Optional[str] = attribute(
-        default=None,
-        description="TTS API Key"
-    )
+    api_key: Optional[str] = attribute(default=None, description="TTS API Key")
 
-    model: str = attribute(
-        default="eleven_turbo_v2",
-        description="TTS model to use"
-    )
+    model: str = attribute(default="eleven_turbo_v2", description="TTS model to use")
 
     voice: str = attribute(
-        default="Sarah",
-        description="Voice to use for speech synthesis"
+        default="Sarah", description="Voice to use for speech synthesis"
     )
 
     def __init__(self, **kwargs):
@@ -45,7 +39,9 @@ class TTSAction(Action):
         """Called when action is enabled."""
         if not self.api_key:
             logger.warning("TTS API key not configured")
-        logger.info(f"TTSAction enabled (provider: {self.provider}, model: {self.model}, voice: {self.voice})")
+        logger.info(
+            f"TTSAction enabled (provider: {self.provider}, model: {self.model}, voice: {self.voice})"
+        )
         # Initialize TTS module for caching
         self._tts_module = None
 
@@ -57,13 +53,15 @@ class TTSAction(Action):
                     api_key=self.api_key,
                     model=self.model,
                     voice=self.voice,
-                    action=self  
+                    action=self,
                 )
             else:
                 raise ValueError(f"Unsupported TTS provider: {self.provider}")
         return self._tts_module
 
-    async def invoke(self, text: str, as_base64: bool = False, as_url: bool = False) -> Optional[Union[str, bytes]]:
+    async def invoke(
+        self, text: str, as_base64: bool = False, as_url: bool = False
+    ) -> Optional[Union[str, bytes]]:
         """Convert text to speech and save the audio file.
 
         Args:
@@ -77,7 +75,7 @@ class TTSAction(Action):
         if not text or not isinstance(text, str) or not text.strip():
             logger.warning("Invalid text input for TTS synthesis")
             return None
-            
+
         try:
             tts_module = self._get_tts_module()
             return await tts_module.invoke(text, as_base64, as_url)
@@ -85,7 +83,9 @@ class TTSAction(Action):
             logger.error(f"TTS invoke failed: {e}", exc_info=True)
             return None
 
-    def get_audio_as(self, audio: bytes, as_base64: bool = False, as_url: bool = False) -> Optional[Union[str, bytes]]:
+    def get_audio_as(
+        self, audio: bytes, as_base64: bool = False, as_url: bool = False
+    ) -> Optional[Union[str, bytes]]:
         """Prepare audio bytes as base64 string or URL for download.
 
         Args:
@@ -98,7 +98,7 @@ class TTSAction(Action):
         """
         if not audio:
             return None
-            
+
         try:
             tts_module = self._get_tts_module()
             return tts_module.get_audio_as(audio, as_base64, as_url)
@@ -121,7 +121,7 @@ class TTSAction(Action):
         except Exception as e:
             logger.error(f"TTS get_voices failed: {e}", exc_info=True)
             return []
-    
+
     async def get_voice_by_name(self, name: str) -> Optional[Dict[str, str]]:
         """Get voice information by name for the current provider.
 
@@ -167,7 +167,7 @@ class TTSAction(Action):
             return {
                 "status": False,
                 "message": "TTS API key is not set",
-                "severity": "error"
+                "severity": "error",
             }
 
         try:
@@ -178,5 +178,5 @@ class TTSAction(Action):
             return {
                 "status": False,
                 "message": f"TTS service error: {e}",
-                "severity": "error"
+                "severity": "error",
             }

@@ -8,7 +8,7 @@ EnvironmentMode = Literal["development", "production"]
 
 def _get_environment_from_app_config() -> Optional[str]:
     """Read environment mode from app.yaml config.development.environment.
-    
+
     Returns:
         'production' or 'development' if found in config, None otherwise
     """
@@ -31,12 +31,12 @@ def _get_environment_from_app_config() -> Optional[str]:
 
 def get_environment_mode() -> EnvironmentMode:
     """Get the current environment mode.
-    
+
     Configuration priority:
     1. JVAGENT_ENVIRONMENT env var (highest)
     2. app.yaml config.development.environment
     3. Default: development
-    
+
     Returns:
         'production' if configured as production (case-insensitive),
         'development' otherwise
@@ -63,4 +63,3 @@ def is_development_mode() -> bool:
 def is_production_mode() -> bool:
     """Check if running in production mode."""
     return get_environment_mode() == "production"
-

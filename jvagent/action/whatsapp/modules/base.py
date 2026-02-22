@@ -8,13 +8,12 @@ import mimetypes
 import os
 import time
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Dict, List, Optional, Any, ClassVar
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, ClassVar, Dict, List, Optional
 
 import aiohttp
 import filetype
-
 
 # ============================================================================
 # CONNECTION POOL MANAGER
@@ -48,22 +47,22 @@ SESSION_TIMEOUT_SECONDS = 300  # Session idle timeout (5 minutes)
 
 class ConnectionPoolManager:
     """Manages shared aiohttp ClientSession instances for connection pooling.
-    
+
     Instead of creating a new ClientSession for each request (which involves
     TCP handshakes and SSL negotiations), this manager provides shared sessions
     that can be reused across multiple requests.
-    
+
     Thread-safe for concurrent access from multiple async tasks.
     """
-    
+
     _instance: ClassVar[Optional["ConnectionPoolManager"]] = None
     _lock: ClassVar[asyncio.Lock] = asyncio.Lock()
-    
+
     def __init__(self):
         # Keyed by (api_url, timeout) for isolation between different API endpoints
         self._sessions: Dict[tuple, aiohttp.ClientSession] = {}
         self._session_lock = asyncio.Lock()
-    
+
     @classmethod
     async def get_instance(cls) -> "ConnectionPoolManager":
         """Get the singleton instance (thread-safe)."""
@@ -72,29 +71,30 @@ class ConnectionPoolManager:
                 if cls._instance is None:
                     cls._instance = cls()
         return cls._instance
-    
+
     async def get_session(
         self,
         api_url: str,
         timeout: float = 10.0,
     ) -> aiohttp.ClientSession:
         """Get or create a shared ClientSession for the given API URL.
-        
+
         Sessions are keyed by (api_url, timeout) to ensure proper isolation
         between different API endpoints while enabling connection reuse.
-        
+
         Args:
             api_url: Base URL for the API (used as pool key)
             timeout: Request timeout in seconds
-            
+
         Returns:
             Shared aiohttp ClientSession
         """
         # Use domain as key to allow connection reuse for same host
         from urllib.parse import urlparse
+
         parsed = urlparse(api_url)
         pool_key = (parsed.netloc, int(timeout))
-        
+
         async with self._session_lock:
             # Check if session exists and is still open
             if pool_key in self._sessions:
@@ -103,7 +103,7 @@ class ConnectionPoolManager:
                     return session
                 # Session was closed, remove it
                 del self._sessions[pool_key]
-            
+
             # Create new session with connection pooling
             connector = aiohttp.TCPConnector(
                 limit=CONNECTION_POOL_LIMIT,
@@ -111,17 +111,17 @@ class ConnectionPoolManager:
                 ttl_dns_cache=300,  # Cache DNS for 5 minutes
                 enable_cleanup_closed=True,
             )
-            
+
             client_timeout = aiohttp.ClientTimeout(total=timeout)
-            
+
             session = aiohttp.ClientSession(
                 connector=connector,
                 timeout=client_timeout,
             )
-            
+
             self._sessions[pool_key] = session
             return session
-    
+
     async def close_all(self) -> None:
         """Close all sessions (call during shutdown)."""
         async with self._session_lock:
@@ -129,13 +129,14 @@ class ConnectionPoolManager:
                 if not session.closed:
                     await session.close()
             self._sessions.clear()
-    
+
     async def close_session(self, api_url: str, timeout: float = 10.0) -> None:
         """Close a specific session."""
         from urllib.parse import urlparse
+
         parsed = urlparse(api_url)
         pool_key = (parsed.netloc, int(timeout))
-        
+
         async with self._session_lock:
             if pool_key in self._sessions:
                 session = self._sessions.pop(pool_key)
@@ -152,6 +153,7 @@ async def get_connection_pool() -> ConnectionPoolManager:
 @dataclass
 class MessagePayload:
     """Structured message payload."""
+
     message_id: str
     event_type: str
     message_type: str
@@ -189,13 +191,14 @@ class MessagePayload:
 # STANDARD ERROR RESPONSE HELPERS
 # ============================================================================
 
+
 def error_response(error: str, status_code: Optional[int] = None) -> Dict[str, Any]:
     """Create a standardized error response.
-    
+
     Args:
         error: Error message
         status_code: Optional HTTP status code
-        
+
     Returns:
         Standardized error dict with ok=False
     """
@@ -207,10 +210,10 @@ def error_response(error: str, status_code: Optional[int] = None) -> Dict[str, A
 
 def success_response(data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Create a standardized success response.
-    
+
     Args:
         data: Optional additional data to include
-        
+
     Returns:
         Standardized success dict with ok=True
     """
@@ -274,11 +277,11 @@ class BaseWhatsAppAPI(ABC):
         json_body: bool = True,
     ) -> dict:
         """Internal helper for making HTTP requests with connection pooling.
-        
+
         Uses a shared ClientSession from the connection pool manager to
         enable TCP connection reuse across multiple requests, significantly
         improving performance for high-frequency API calls.
-        
+
         Includes retry logic with fresh session on connection failures to
         handle aiohttp/Python 3.12+ compatibility issues.
         """
@@ -287,7 +290,7 @@ class BaseWhatsAppAPI(ABC):
             kwargs["json"] = data
         elif data:
             kwargs["data"] = data
-        
+
         # Helper to safely make request (catches aiohttp/Python 3.12+ bugs)
         async def safe_request(sess, meth, req_url, **kw):
             """Wrapper to catch aiohttp errors that bypass normal exception handling."""
@@ -296,7 +299,11 @@ class BaseWhatsAppAPI(ABC):
                     status = resp.status
                     if status >= 400:
                         err_text = await resp.text()
-                        return {"ok": False, "error": f"HTTP {status}: {err_text}", "status_code": status}
+                        return {
+                            "ok": False,
+                            "error": f"HTTP {status}: {err_text}",
+                            "status_code": status,
+                        }
                     if resp.content_length and resp.content_length > 0:
                         try:
                             return await resp.json()
@@ -307,8 +314,12 @@ class BaseWhatsAppAPI(ABC):
                 # Catch ALL exceptions including TypeError from aiohttp bugs
                 exc_str = str(e) if e else "None"
                 exc_type = type(e).__name__ if e else "None"
-                return {"ok": False, "error": exc_str if exc_str else "Unknown error", "_exception_type": exc_type}
-        
+                return {
+                    "ok": False,
+                    "error": exc_str if exc_str else "Unknown error",
+                    "_exception_type": exc_type,
+                }
+
         # Try with pooled session first, then retry with fresh session on failure
         for attempt in range(2):
             session = None
@@ -323,11 +334,13 @@ class BaseWhatsAppAPI(ABC):
                     self.logger.debug(f"Retrying {method} {url} with fresh session")
                     connector = aiohttp.TCPConnector(limit=10, force_close=True)
                     timeout_obj = aiohttp.ClientTimeout(total=self.timeout)
-                    session = aiohttp.ClientSession(connector=connector, timeout=timeout_obj)
+                    session = aiohttp.ClientSession(
+                        connector=connector, timeout=timeout_obj
+                    )
                     fresh_session = True
-                
+
                 result = await safe_request(session, method, url, **kwargs)
-                
+
                 # Check if request succeeded at HTTP level
                 # If we got a response (no exception), it's a successful HTTP request
                 # Note: A 200 response with {"success": false} is still a successful HTTP request
@@ -335,23 +348,27 @@ class BaseWhatsAppAPI(ABC):
                 if not result.get("_exception_type"):
                     # HTTP request succeeded (got a response, even if API indicates business logic failure)
                     return result
-                
+
                 # Request failed at HTTP level (exception or connection error), check if we should retry
                 error = result.get("error", "Unknown error")
                 exc_type = result.get("_exception_type", "")
-                
+
                 if exc_type == "TypeError" and "BaseException" in error:
                     # aiohttp/Python 3.12+ connection bug - retry with fresh session
-                    self.logger.debug(f"Connection issue for {method} {url}, attempt {attempt + 1}")
+                    self.logger.debug(
+                        f"Connection issue for {method} {url}, attempt {attempt + 1}"
+                    )
                     continue
                 elif attempt == 0:
                     # First attempt failed, try again with fresh session
-                    self.logger.debug(f"Request failed for {method} {url}: {error}, retrying...")
+                    self.logger.debug(
+                        f"Request failed for {method} {url}: {error}, retrying..."
+                    )
                     continue
                 else:
                     # Second attempt also failed
                     return result
-                    
+
             except BaseException as e:
                 # Catch any exception during session setup
                 self.logger.error(f"Error setting up session for {method} {url}: {e}")
@@ -363,7 +380,7 @@ class BaseWhatsAppAPI(ABC):
                         await session.close()
                     except:
                         pass
-        
+
         # Should not reach here, but just in case
         return {"ok": False, "error": "Request failed after all retries"}
 
@@ -434,26 +451,26 @@ class BaseWhatsAppAPI(ABC):
         """Parse message content based on type."""
         if payload.message_type == "chat":
             payload.body = request.get("content", request.get("body", ""))
-        
+
         elif payload.message_type in ["image", "video", "document"]:
             payload.media = request.get("body", "")
             payload.filename = request.get("filename", "")
             payload.mime_type = request.get("mimetype", "")
             if not payload.mime_type:
                 payload.message_type = "ignored"
-        
+
         elif payload.message_type == "location":
             payload.location = {
                 "latitude": request.get("lat", ""),
                 "longitude": request.get("lng", ""),
             }
-        
+
         elif payload.message_type in ["audio", "ptt", "sticker"]:
             payload.media = request.get("body", "")
-        
+
         elif payload.message_type in ["contacts", "vcard"]:
             payload.contact = request.get("body", {})
-        
+
         elif payload.message_type == "poll" or payload.event_type == "onpollresponse":
             payload.poll_id = request.get("msgId", {}).get("_serialized", "")
             payload.selectedOptions = request.get("selectedOptions", "")
@@ -468,9 +485,26 @@ class BaseWhatsAppAPI(ABC):
     ) -> dict:
         """Determines the MIME type and category of a file."""
         mime_categories = {
-            "image": ["image/jpeg", "image/png", "image/gif", "image/webp", "image/heic"],
-            "document": ["application/pdf", "application/msword", "text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
-            "audio": ["audio/mpeg", "audio/wav", "audio/ogg", "audio/mp3", "audio/webm"],
+            "image": [
+                "image/jpeg",
+                "image/png",
+                "image/gif",
+                "image/webp",
+                "image/heic",
+            ],
+            "document": [
+                "application/pdf",
+                "application/msword",
+                "text/plain",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ],
+            "audio": [
+                "audio/mpeg",
+                "audio/wav",
+                "audio/ogg",
+                "audio/mp3",
+                "audio/webm",
+            ],
             "video": ["video/mp4", "video/mpeg", "video/webm", "video/quicktime"],
             "poll": ["application/poll", "application/vnd.jivas.poll"],
         }
@@ -526,9 +560,11 @@ class BaseWhatsAppAPI(ABC):
         return "application/octet-stream"
 
     @staticmethod
-    async def file_url_to_base64(file_url: str, force_prefix: bool = True) -> Optional[str]:
+    async def file_url_to_base64(
+        file_url: str, force_prefix: bool = True
+    ) -> Optional[str]:
         """Downloads a file from a URL and returns its base64-encoded content.
-        
+
         Uses connection pooling for efficient HTTP requests.
         """
         try:
@@ -563,7 +599,11 @@ class BaseWhatsAppAPI(ABC):
         for file in dir_path.iterdir():
             if file.is_file():
                 if within_seconds > 0:
-                    created = os.path.getctime(file) if os.name == "nt" else file.stat().st_ctime
+                    created = (
+                        os.path.getctime(file)
+                        if os.name == "nt"
+                        else file.stat().st_ctime
+                    )
                     if (current_time - created) <= within_seconds:
                         recent_files.append(file.name)
                 else:

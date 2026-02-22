@@ -20,14 +20,14 @@ Key Components:
 import logging
 from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple, Union
 
-from pydantic import Field, PrivateAttr
 from jvspatial.core import Walker, on_visit
+from pydantic import Field, PrivateAttr
 
+from ..foundation.enums import Intent, InterviewState, ValidationStatus
+from ..utils.handler_utils import invoke_async_with_optional_context
 from .question_node import QuestionNode
 from .question_path_walker import QuestionPathWalker
 from .state_node import StateNode
-from ..foundation.enums import ValidationStatus, InterviewState, Intent
-from ..utils.handler_utils import invoke_async_with_optional_context
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ class InterviewWalker(Walker):
         "COMPLETED": InterviewState.COMPLETED,
         "CANCELLED": InterviewState.CANCELLED,
     }
-    
+
     def _get_state_from_target(self, target: str) -> Optional[InterviewState]:
         """Get InterviewState from state target name.
 
@@ -162,6 +162,7 @@ class InterviewWalker(Walker):
             return node
         # Fallback: query graph for the node by label
         from jvspatial.core import Node as SpatialNode
+
         try:
             results = await SpatialNode.find(label=first_name)
             if results:
@@ -259,7 +260,9 @@ class InterviewWalker(Walker):
             visitor=self.interact_visitor,
             interview_action=self.interview_action,
         )
-        final_value = corrected_value if corrected_value is not None else processed_value
+        final_value = (
+            corrected_value if corrected_value is not None else processed_value
+        )
 
         is_valid = validation_status == ValidationStatus.VALID
         return is_valid, final_value, feedback
@@ -329,7 +332,9 @@ class InterviewWalker(Walker):
         """
         if not self.interview_action:
             return
-        override_func = self.interview_action.get_input_directive_override(question_name)
+        override_func = self.interview_action.get_input_directive_override(
+            question_name
+        )
         if not override_func or not callable(override_func):
             return
         try:
@@ -369,7 +374,7 @@ class InterviewWalker(Walker):
             question_name: Name of the question field (used as implicit question for conditions)
         """
         from .question_edge import QuestionEdge
-        
+
         edges = await here.edges(direction="out")
         ordered = QuestionEdge.sort_by_priority(edges)
         for edge in ordered:
@@ -397,7 +402,7 @@ class InterviewWalker(Walker):
             True if traversal continued to a target node, False if no edge found
         """
         from .question_edge import QuestionEdge
-        
+
         edges = await here.edges(direction="out")
         if not edges:
             logger.warning(
@@ -405,7 +410,7 @@ class InterviewWalker(Walker):
                 f"Session will remain on {here.label}."
             )
             return False
-        
+
         ordered = QuestionEdge.sort_by_priority(edges)
         for edge in ordered:
             # For StateNode edges, use the node's label as implicit_question
@@ -419,7 +424,7 @@ class InterviewWalker(Walker):
             if target is not None:
                 await self.visit(target)
                 return True
-        
+
         logger.warning(
             f"StateNode {here.label} has outgoing edges but none evaluated to a valid target. "
             f"Session will remain on {here.label}."
@@ -459,11 +464,12 @@ class InterviewWalker(Walker):
             here: QuestionNode being visited
         """
 
-        
         if not self.interview_session:
             return
 
-        question_name = here.state.get("name", here.label) if hasattr(here, "state") else here.label
+        question_name = (
+            here.state.get("name", here.label) if hasattr(here, "state") else here.label
+        )
 
         # Prevent infinite loops
         if here.id in self._visited_nodes:
@@ -472,7 +478,9 @@ class InterviewWalker(Walker):
 
         # Branch 1: No extracted value - delegate to QuestionNode for inference
         if question_name not in self.interview_session.responses:
-            should_continue = await self._handle_unanswered_question(here, question_name)
+            should_continue = await self._handle_unanswered_question(
+                here, question_name
+            )
             if not should_continue:
                 return
             # QuestionNode handled the response without a directive (e.g. optional DECLINE)
@@ -534,8 +542,11 @@ class InterviewWalker(Walker):
             )
             if first_node:
                 await QuestionPathWalker.sync(
-                    self.interview_session, first_node, self.interact_visitor, self.interview_action,
-                    invalidate_cache=False
+                    self.interview_session,
+                    first_node,
+                    self.interact_visitor,
+                    self.interview_action,
+                    invalidate_cache=False,
                 )
 
         # Execute state node - handles transition and returns directive

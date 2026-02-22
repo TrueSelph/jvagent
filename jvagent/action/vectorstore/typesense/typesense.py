@@ -112,7 +112,9 @@ class TypesenseVectorStore(VectorStore):
                     "connection_timeout_seconds": self.connection_timeout_seconds,
                 }
             )
-            logger.debug(f"Typesense client initialized: {self.protocol}://{self.host}:{self.port}")
+            logger.debug(
+                f"Typesense client initialized: {self.protocol}://{self.host}:{self.port}"
+            )
         except Exception as e:
             logger.error(f"Failed to initialize Typesense client: {e}", exc_info=True)
             raise RuntimeError(f"Could not initialize Typesense client: {e}")
@@ -126,7 +128,9 @@ class TypesenseVectorStore(VectorStore):
         """
         await super().on_register()
 
-        logger.info(f"TypesenseVectorStore registered: {self.protocol}://{self.host}:{self.port}")
+        logger.info(
+            f"TypesenseVectorStore registered: {self.protocol}://{self.host}:{self.port}"
+        )
 
     async def _cleanup_client(self) -> None:
         """Clean up Typesense client connection.
@@ -184,7 +188,9 @@ class TypesenseVectorStore(VectorStore):
             self._collections[collection] = True
             logger.debug(f"Created Typesense collection: {collection}")
         except Exception as e:
-            logger.error(f"Failed to create collection {collection}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to create collection {collection}: {e}", exc_info=True
+            )
             raise
 
     async def _generate_embedding(self, text: str) -> List[float]:
@@ -327,17 +333,21 @@ class TypesenseVectorStore(VectorStore):
             # Use multi_search endpoint for vector queries to avoid query string length limits
             # The multi_search endpoint sends the request in the body as JSON, avoiding URL query string limits
             # This is necessary because vector queries with embeddings can be very long
-            multi_search_request = {
-                "searches": [search_parameters]
-            }
+            multi_search_request = {"searches": [search_parameters]}
 
             # Perform multi_search - this sends the request in the body, not the URL
             # The vector_query string is sent as part of the JSON body, not in the URL
-            results_response = self._client.multi_search.perform(multi_search_request, {})
+            results_response = self._client.multi_search.perform(
+                multi_search_request, {}
+            )
 
             # Extract results from multi_search response
             # multi_search returns {"results": [{"hits": [...], ...}]}
-            if results_response and "results" in results_response and len(results_response["results"]) > 0:
+            if (
+                results_response
+                and "results" in results_response
+                and len(results_response["results"]) > 0
+            ):
                 results = results_response["results"][0]
             else:
                 logger.warning("Typesense multi_search returned no results")
@@ -354,12 +364,16 @@ class TypesenseVectorStore(VectorStore):
                 # Convert rank to similarity score (higher rank = lower similarity)
                 # Use inverse rank as similarity score
                 max_results = len(results.get("hits", []))
-                similarity_score = 1.0 - (rank - 1) / max_results if max_results > 0 else 0.0
+                similarity_score = (
+                    1.0 - (rank - 1) / max_results if max_results > 0 else 0.0
+                )
 
                 # If there's a vector distance in the hit, use that
                 if "vector_distance" in hit:
                     distance = hit["vector_distance"]
-                    similarity_score = 1.0 / (1.0 + distance)  # Convert distance to similarity
+                    similarity_score = 1.0 / (
+                        1.0 + distance
+                    )  # Convert distance to similarity
 
                 formatted_results.append(
                     {
@@ -419,7 +433,9 @@ class TypesenseVectorStore(VectorStore):
             await self._get_or_create_collection(collection)
             return True
         except Exception as e:
-            logger.error(f"Failed to create collection {collection}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to create collection {collection}: {e}", exc_info=True
+            )
             return False
 
     async def delete_collection(self, collection: str) -> bool:
@@ -444,7 +460,9 @@ class TypesenseVectorStore(VectorStore):
                 del self._collections[collection]
             return True
         except Exception as e:
-            logger.error(f"Failed to delete collection {collection}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to delete collection {collection}: {e}", exc_info=True
+            )
             return False
 
     async def healthcheck(self) -> Dict[str, Any]:
@@ -498,7 +516,11 @@ class TypesenseVectorStore(VectorStore):
         collection = await self._resolve_collection_name(collection)
 
         try:
-            doc = self._client.collections[collection].documents[str(document_id)].retrieve()
+            doc = (
+                self._client.collections[collection]
+                .documents[str(document_id)]
+                .retrieve()
+            )
             result = {
                 "id": doc.get("id", document_id),
                 "content": doc.get("content", ""),
@@ -508,7 +530,9 @@ class TypesenseVectorStore(VectorStore):
                 result["vector"] = doc.get("vector", [])
             return result
         except Exception as e:
-            logger.debug(f"Document {document_id} not found in collection {collection}: {e}")
+            logger.debug(
+                f"Document {document_id} not found in collection {collection}: {e}"
+            )
             return None
 
     async def list_documents(
@@ -558,7 +582,9 @@ class TypesenseVectorStore(VectorStore):
                 search_params["filter_by"] = filter_by
 
             # Use search endpoint to list all documents
-            results = self._client.collections[collection].documents.search(search_params)
+            results = self._client.collections[collection].documents.search(
+                search_params
+            )
 
             # Extract documents and pagination info
             hits = results.get("hits", [])
@@ -569,15 +595,19 @@ class TypesenseVectorStore(VectorStore):
             items = []
             for hit in hits:
                 doc = hit.get("document", {})
-                items.append({
-                    "id": doc.get("id", ""),
-                    "content": doc.get("content", ""),
-                    "metadata": doc.get("metadata", {}),
-                })
+                items.append(
+                    {
+                        "id": doc.get("id", ""),
+                        "content": doc.get("content", ""),
+                        "metadata": doc.get("metadata", {}),
+                    }
+                )
 
             total_pages = (found + per_page - 1) // per_page if found > 0 else 0
             start_index = (page_num - 1) * per_page
-            end_index = min(start_index + len(items) - 1, found - 1) if found > 0 else None
+            end_index = (
+                min(start_index + len(items) - 1, found - 1) if found > 0 else None
+            )
 
             return {
                 "items": items,
@@ -595,7 +625,10 @@ class TypesenseVectorStore(VectorStore):
                 },
             }
         except Exception as e:
-            logger.error(f"Error listing documents from collection {collection}: {e}", exc_info=True)
+            logger.error(
+                f"Error listing documents from collection {collection}: {e}",
+                exc_info=True,
+            )
             raise RuntimeError(f"Failed to list documents: {e}") from e
 
     async def update_document(
@@ -623,7 +656,9 @@ class TypesenseVectorStore(VectorStore):
 
         try:
             # Get existing document with vector
-            existing_doc = await self.get_document(collection, document_id, include_vector=True)
+            existing_doc = await self.get_document(
+                collection, document_id, include_vector=True
+            )
             if not existing_doc:
                 return False
 
@@ -649,8 +684,13 @@ class TypesenseVectorStore(VectorStore):
                 update_doc["metadata"] = existing_doc.get("metadata", {})
 
             # Upsert the updated document
-            self._client.collections[collection].documents[str(document_id)].update(update_doc)
+            self._client.collections[collection].documents[str(document_id)].update(
+                update_doc
+            )
             return True
         except Exception as e:
-            logger.error(f"Error updating document {document_id} in collection {collection}: {e}", exc_info=True)
+            logger.error(
+                f"Error updating document {document_id} in collection {collection}: {e}",
+                exc_info=True,
+            )
             return False

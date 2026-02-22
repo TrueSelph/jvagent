@@ -12,22 +12,24 @@ from .question_node import QuestionNode
 from .state_node import StateNode
 
 if TYPE_CHECKING:
-    from jvagent.action.interview.interview_interact_action import InterviewInteractAction
+    from jvagent.action.interview.interview_interact_action import (
+        InterviewInteractAction,
+    )
 
 logger = logging.getLogger(__name__)
 
 
 class QuestionGraphBuilder:
     """Builds QuestionNode and StateNode graphs from question_graph configurations."""
-    
+
     def __init__(self, action: "InterviewInteractAction"):
         """Initialize question graph builder with action instance.
-        
+
         Args:
             action: InterviewInteractAction instance
         """
         self.action = action
-    
+
     async def build_question_graph(self) -> None:
         """Build QuestionNode and StateNode graph from question_graph with conditional branches.
 
@@ -39,7 +41,11 @@ class QuestionGraphBuilder:
 
         # Create StateNodes for interview states
         state_node_map = {}
-        for state in [InterviewState.REVIEW, InterviewState.COMPLETED, InterviewState.CANCELLED]:
+        for state in [
+            InterviewState.REVIEW,
+            InterviewState.COMPLETED,
+            InterviewState.CANCELLED,
+        ]:
             state_node = await StateNode.create(
                 agent_id=self.action.agent_id,
                 interview_type=self.action.get_class_name(),
@@ -103,9 +109,9 @@ class QuestionGraphBuilder:
                             edge=QuestionEdge,
                             condition=condition,
                             branch_index=branch_idx,
-                            is_default=False
+                            is_default=False,
                         )
-                
+
                 # IMPORTANT: Also create default edge when branches exist but might not match
                 # This ensures the graph has a path when no branch condition matches
                 if default_next:
@@ -116,40 +122,48 @@ class QuestionGraphBuilder:
                             target_node,
                             edge=QuestionEdge,
                             branch_index=-1,
-                            is_default=True
+                            is_default=True,
                         )
                 else:
                     # No default_next specified, create edge to next question in sequence
                     current_idx = next(
-                        (i for i, q in enumerate(question_graph) if q.get("name") == question_name),
-                        -1
+                        (
+                            i
+                            for i, q in enumerate(question_graph)
+                            if q.get("name") == question_name
+                        ),
+                        -1,
                     )
                     if current_idx >= 0 and current_idx + 1 < len(question_graph):
                         next_question_name = question_graph[current_idx + 1].get("name")
-                        if next_question_name and next_question_name in question_node_map:
+                        if (
+                            next_question_name
+                            and next_question_name in question_node_map
+                        ):
                             target_node = question_node_map[next_question_name]
                             # Create unconditional edge (no condition) for default path
                             await source_node.connect(
                                 target_node,
                                 edge=QuestionEdge,
                                 branch_index=-1,
-                                is_default=True
+                                is_default=True,
                             )
             elif default_next:
                 # No branches, just default_next
                 target_node = resolve_target(default_next)
                 if target_node:
                     await source_node.connect(
-                        target_node,
-                        edge=QuestionEdge,
-                        branch_index=-1,
-                        is_default=True
+                        target_node, edge=QuestionEdge, branch_index=-1, is_default=True
                     )
             else:
                 # No branches, no default_next - sequential flow
                 current_idx = next(
-                    (i for i, q in enumerate(question_graph) if q.get("name") == question_name),
-                    -1
+                    (
+                        i
+                        for i, q in enumerate(question_graph)
+                        if q.get("name") == question_name
+                    ),
+                    -1,
                 )
                 if current_idx >= 0 and current_idx + 1 < len(question_graph):
                     next_question_name = question_graph[current_idx + 1].get("name")
@@ -159,7 +173,7 @@ class QuestionGraphBuilder:
                             target_node,
                             edge=QuestionEdge,
                             branch_index=-1,
-                            is_default=True
+                            is_default=True,
                         )
 
         # Ensure terminal questions (those without outgoing edges to other questions) transition to REVIEW
@@ -167,37 +181,43 @@ class QuestionGraphBuilder:
         if review_state_node:
             for question_name, question_node in question_node_map.items():
                 # Get all outgoing edges from this question node
-                outgoing_question_nodes = await question_node.nodes(direction="out", node=QuestionNode)
-                outgoing_state_nodes = await question_node.nodes(direction="out", node=StateNode)
-                
+                outgoing_question_nodes = await question_node.nodes(
+                    direction="out", node=QuestionNode
+                )
+                outgoing_state_nodes = await question_node.nodes(
+                    direction="out", node=StateNode
+                )
+
                 # Check if this question is terminal (no outgoing edges to other questions)
                 is_terminal = len(outgoing_question_nodes) == 0
-                
+
                 if is_terminal:
                     # Check if it already has a transition to REVIEW
                     has_review_transition = any(
-                        state_node.id == review_state_node.id 
+                        state_node.id == review_state_node.id
                         for state_node in outgoing_state_nodes
                     )
-                    
+
                     # If no REVIEW transition exists, add one
                     if not has_review_transition:
                         await question_node.connect(
                             review_state_node,
                             edge=QuestionEdge,
                             branch_index=-1,
-                            is_default=True
+                            is_default=True,
                         )
-        
+
         # Add REVIEW -> COMPLETED edge for auto_confirm traversal
         # This edge is always created regardless of auto_confirm config.
         # When auto_confirm is False, the edge is inert (REVIEW returns a directive).
         # When auto_confirm is True, the walker follows it to COMPLETED.
-        completed_state_node = state_node_map.get(InterviewState.COMPLETED.value.upper())
+        completed_state_node = state_node_map.get(
+            InterviewState.COMPLETED.value.upper()
+        )
         if review_state_node and completed_state_node:
             await review_state_node.connect(
                 completed_state_node,
                 edge=QuestionEdge,
                 branch_index=-1,
-                is_default=True
+                is_default=True,
             )

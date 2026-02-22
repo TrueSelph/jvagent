@@ -12,15 +12,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import Query, Request
-
-from pydantic import Field
-
-from python_multipart.multipart import FormParser, parse_options_header
-
 from jvspatial.api import endpoint
 from jvspatial.api.decorators import EndpointField
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
+from pydantic import Field
+from python_multipart.multipart import FormParser, parse_options_header
 
 from .documents import (
     assimilate_document,
@@ -49,15 +46,26 @@ def _parse_metadata(value: Optional[str]) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _parse_multipart_safe(
-    body: bytes, content_type: str
-) -> tuple[bytes, str, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
+    bytes,
+    str,
+    Optional[str],
+    Optional[str],
+    Optional[str],
+    Optional[str],
+    Optional[str],
+    Optional[str],
+]:
     """Parse multipart form-data from raw body without decoding file content.
 
     Returns (file_content, filename, doc_name, model, if_add_node_summary, collection_name, metadata, doc_description).
     Uses latin-1 for headers to avoid UTF-8 decode errors on non-ASCII filenames or field values.
     """
-    content_type_bytes = content_type.encode("latin-1") if isinstance(content_type, str) else content_type
+    content_type_bytes = (
+        content_type.encode("latin-1")
+        if isinstance(content_type, str)
+        else content_type
+    )
     ctype, params = parse_options_header(content_type_bytes)
     if ctype != b"multipart/form-data":
         raise ValidationError("Expected multipart/form-data")
@@ -119,7 +127,16 @@ def _parse_multipart_safe(
             break
         parser.write(chunk)
     parser.finalize()
-    return file_content, filename, doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description
+    return (
+        file_content,
+        filename,
+        doc_name,
+        model,
+        if_add_node_summary,
+        collection_name,
+        metadata_raw,
+        doc_description,
+    )
 
 
 async def _do_assimilate(
@@ -220,9 +237,16 @@ async def ingest_document_endpoint(
         raise ValidationError("Expected multipart/form-data")
 
     body = await request.body()
-    content, filename, doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description = _parse_multipart_safe(
-        body, content_type
-    )
+    (
+        content,
+        filename,
+        doc_name,
+        model,
+        if_add_node_summary,
+        collection_name,
+        metadata_raw,
+        doc_description,
+    ) = _parse_multipart_safe(body, content_type)
     collection_name = collection_name or agent_id
     metadata = _parse_metadata(metadata_raw)
 
@@ -286,7 +310,9 @@ async def ingest_document_endpoint(
 )
 async def list_documents_endpoint(
     agent_id: str,
-    metadata: Optional[str] = Query(default=None, description="Metadata filter as JSON, e.g. {\"topic\": \"finance\"}"),
+    metadata: Optional[str] = Query(
+        default=None, description='Metadata filter as JSON, e.g. {"topic": "finance"}'
+    ),
 ) -> Dict[str, Any]:
     """List documents in the agent's PageIndex collection.
 
@@ -315,12 +341,16 @@ async def list_documents_endpoint(
     tags=["PageIndex"],
     response=success_response(
         data={
-            "doc_name": ResponseField(field_type=str, description="Document identifier"),
+            "doc_name": ResponseField(
+                field_type=str, description="Document identifier"
+            ),
             "doc_description": ResponseField(
                 field_type=Optional[str],
                 description="Document description",
             ),
-            "root_id": ResponseField(field_type=str, description="Document root node ID"),
+            "root_id": ResponseField(
+                field_type=str, description="Document root node ID"
+            ),
         }
     ),
 )
@@ -414,13 +444,19 @@ async def delete_document_endpoint(agent_id: str, doc_name: str) -> Dict[str, An
 async def search_documents_endpoint(
     agent_id: str,
     query: str = Field(..., description="Search query text"),
-    doc_name: Optional[str] = Field(None, description="Scope search to a single document"),
+    doc_name: Optional[str] = Field(
+        None, description="Scope search to a single document"
+    ),
     strategy: str = Field(
         default="tree_search",
         description="Strategy: `tree_search` (LLM reasoning, recommended), `direct` (regex), or `walker` (graph traversal)",
     ),
-    limit: int = Field(default=10, ge=1, le=200, description="Maximum number of results to return"),
-    metadata: Optional[str] = Field(None, description="Metadata filter as JSON, e.g. {\"topic\": \"finance\"}"),
+    limit: int = Field(
+        default=10, ge=1, le=200, description="Maximum number of results to return"
+    ),
+    metadata: Optional[str] = Field(
+        None, description='Metadata filter as JSON, e.g. {"topic": "finance"}'
+    ),
 ) -> Dict[str, Any]:
     """Search documents in the agent's PageIndex collection using vectorless retrieval.
 
@@ -466,20 +502,23 @@ async def search_documents_endpoint(
 )
 async def export_documents_endpoint(
     agent_id: str,
-    doc_name: Optional[str] = Query(default=None, description="Optional document name to export single document"),
+    doc_name: Optional[str] = Query(
+        default=None, description="Optional document name to export single document"
+    ),
     format: str = Query(default="json", description="Export format: json or yaml"),
 ) -> Dict[str, Any]:
     """Export PageIndex graph data."""
     data = await export_documents(collection_name=agent_id, doc_name=doc_name)
-    
+
     if format.lower() == "yaml":
         try:
             import yaml
+
             data_str = yaml.dump(data, default_flow_style=False)
             return {"data": data_str, "format": "yaml"}
         except ImportError:
             logger.warning("PyYAML not available, falling back to JSON")
-    
+
     return {"data": data, "format": "json"}
 
 
@@ -500,13 +539,16 @@ async def export_documents_endpoint(
 async def import_documents_endpoint(
     agent_id: str,
     data: Any = EndpointField(description="Graph data (JSON object or YAML string)"),
-    purge: bool = EndpointField(default=False, description="Purge existing documents before import"),
+    purge: bool = EndpointField(
+        default=False, description="Purge existing documents before import"
+    ),
 ) -> Dict[str, str]:
     """Import PageIndex graph data."""
     try:
         if isinstance(data, str):
             try:
                 import yaml
+
                 parsed = yaml.safe_load(data)
             except (ImportError, yaml.YAMLError):
                 try:
@@ -517,14 +559,14 @@ async def import_documents_endpoint(
             parsed = data
         else:
             raise ValidationError("Data must be a JSON object or YAML string")
-        
+
         if not isinstance(parsed, dict):
             raise ValidationError("Data must be a dictionary")
-        
+
         await import_documents(parsed, purge=purge, collection_name=agent_id)
-        
+
         return {"message": "Documents imported successfully"}
-        
+
     except Exception as e:
         logger.error(f"Error importing documents: {e}")
         raise ValidationError(f"Import failed: {str(e)}")

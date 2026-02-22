@@ -4,8 +4,8 @@ Traverses DocumentNode graph, collecting nodes that match the search query
 via text/substring matching (no embeddings, no vector store).
 """
 
-import re
 import logging
+import re
 from typing import Optional
 
 from jvspatial.core import Walker, on_visit
@@ -30,9 +30,7 @@ class DocumentWalker(Walker):
         self._query_regex: Optional[re.Pattern] = None
         if self._query:
             try:
-                self._query_regex = re.compile(
-                    re.escape(self._query), re.IGNORECASE
-                )
+                self._query_regex = re.compile(re.escape(self._query), re.IGNORECASE)
             except re.error:
                 self._query_regex = None
 
@@ -70,17 +68,13 @@ class DocumentWalker(Walker):
                 }
             )
 
-        children = await here.outgoing(
-            node=DocumentNode, edge=DocumentContentEdge
-        )
+        children = await here.outgoing(node=DocumentNode, edge=DocumentContentEdge)
         if children:
             await self.visit(children)
 
     @on_visit(DocumentRootNode)
     async def on_root_node(self, here: DocumentRootNode) -> None:
         """Visit DocumentRootNode: queue top-level section nodes."""
-        children = await here.outgoing(
-            node=DocumentNode, edge=DocumentContentEdge
-        )
+        children = await here.outgoing(node=DocumentNode, edge=DocumentContentEdge)
         if children:
             await self.visit(children)

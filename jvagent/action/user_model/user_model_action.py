@@ -3,15 +3,18 @@
 Collects user preferences using an LLM to analyze conversation history and update
 the user's profile.
 """
+
 import json
 import logging
 from typing import Any, Dict, List, Optional
+
+from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.memory import Interaction
-from jvspatial.core.annotations import attribute
+
 from .prompts import USER_MODEL_UPDATE_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -27,8 +30,7 @@ class UserModelAction(InteractAction):
         description="Weight for when this action should be executed.",
     )
     always_execute: bool = attribute(
-        default=True,
-        description="Whether to execute this action on every interaction."
+        default=True, description="Whether to execute this action on every interaction."
     )
 
     # Model Configuration
@@ -61,15 +63,17 @@ class UserModelAction(InteractAction):
         # For now, we run every turn as requested, but maybe check if there is meaningful content.
         utterance = (visitor.utterance or interaction.utterance or "").strip()
         if not utterance and not interaction.response:
-             # If there's literally no text to analyze from this turn, skip
-             return
+            # If there's literally no text to analyze from this turn, skip
+            return
 
         try:
             # Get model action
             model_action = await self.get_action(self.model_action_type)
             if not model_action:
-                 logger.warning(f"UserModelAction: Model action '{self.model_action_type}' not found.")
-                 return
+                logger.warning(
+                    f"UserModelAction: Model action '{self.model_action_type}' not found."
+                )
+                return
 
             # Get conversation history
             history = await self._get_conversation_history(interaction, history_limit=5)
@@ -77,7 +81,9 @@ class UserModelAction(InteractAction):
                 return
 
             # Format history for prompt
-            history_text = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in history])
+            history_text = "\n".join(
+                [f"{msg['role'].upper()}: {msg['content']}" for msg in history]
+            )
 
             # Get current user model
             current_model = user.user_model if user.user_model else {}
@@ -94,7 +100,7 @@ class UserModelAction(InteractAction):
                 history=history_text,
                 temperature=self.model_temperature,
                 max_tokens=self.model_max_tokens,
-                response_format={"type": "json_object"}
+                response_format={"type": "json_object"},
             )
 
             if not response:
@@ -114,7 +120,9 @@ class UserModelAction(InteractAction):
 
                 new_model = json.loads(response_clean)
             except json.JSONDecodeError:
-                logger.warning(f"UserModelAction: Failed to parse JSON response: {response}")
+                logger.warning(
+                    f"UserModelAction: Failed to parse JSON response: {response}"
+                )
                 return
 
             # Check if model changed
@@ -125,7 +133,9 @@ class UserModelAction(InteractAction):
                 user.user_model = new_model
 
                 # Log event
-                interaction.add_event(f"UserModelAction: updated profile", self.get_class_name())
+                interaction.add_event(
+                    f"UserModelAction: updated profile", self.get_class_name()
+                )
                 await interaction.save()
 
         except Exception as e:
@@ -192,20 +202,26 @@ class UserModelAction(InteractAction):
         # Important: Add utterance BEFORE response to maintain chronological order
         if with_utterance and with_response and interaction.response:
             # Add current utterance first
-            history.append({
-                "role": "user",
-                "content": _truncate(interaction.utterance),
-            })
+            history.append(
+                {
+                    "role": "user",
+                    "content": _truncate(interaction.utterance),
+                }
+            )
             # Then add current response
-            history.append({
-                "role": "assistant",
-                "content": _truncate(interaction.response),
-            })
+            history.append(
+                {
+                    "role": "assistant",
+                    "content": _truncate(interaction.response),
+                }
+            )
         elif with_response and interaction.response:
             # Only add response if utterance not requested
-            history.append({
-                "role": "assistant",
-                "content": _truncate(interaction.response),
-            })
+            history.append(
+                {
+                    "role": "assistant",
+                    "content": _truncate(interaction.response),
+                }
+            )
 
         return history if history else []

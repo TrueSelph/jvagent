@@ -41,7 +41,7 @@ async function loadConfigFromFile(): Promise<Partial<AppConfig>> {
 
 function loadConfigFromStorage(): Partial<AppConfig> {
   if (typeof window === 'undefined') return {}
-  
+
   try {
     const stored = localStorage.getItem('jvchat_config')
     if (stored) {
@@ -50,7 +50,7 @@ function loadConfigFromStorage(): Partial<AppConfig> {
   } catch (error) {
     console.warn('Failed to load config from localStorage:', error)
   }
-  
+
   return {}
 }
 
@@ -58,15 +58,15 @@ export async function getConfigAsync(): Promise<AppConfig> {
   if (cachedConfig) {
     return cachedConfig
   }
-  
+
   if (configLoadPromise) {
     return configLoadPromise
   }
-  
+
   configLoadPromise = (async () => {
     const fileConfig = await loadConfigFromFile()
     const storedConfig = loadConfigFromStorage()
-    
+
     cachedConfig = {
       jvagent: {
         ...DEFAULT_CONFIG.jvagent,
@@ -79,10 +79,10 @@ export async function getConfigAsync(): Promise<AppConfig> {
         ...storedConfig.ui,
       },
     }
-    
+
     return cachedConfig
   })()
-  
+
   return configLoadPromise
 }
 
@@ -109,7 +109,7 @@ export function getConfig(): AppConfig {
 
 export function saveConfig(config: { jvagent?: Partial<JvagentConfig>; ui?: Partial<UIConfig> }): void {
   if (typeof window === 'undefined') return
-  
+
   try {
     const current = getConfig()
     const updated = {

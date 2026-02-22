@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from jvspatial.core import Edge, Node
 from jvspatial.core.annotations import attribute
 
-from .question_branch_evaluator import QuestionBranchEvaluator
 from ..utils.cache_utils import BranchCache
+from .question_branch_evaluator import QuestionBranchEvaluator
 
 if TYPE_CHECKING:
     from ..session.interview_session import InterviewSession
@@ -37,29 +37,28 @@ class QuestionEdge(Edge):
 
     condition: Optional[Dict[str, Any]] = attribute(
         default=None,
-        description="Condition dict for conditional traversal (e.g., {'op': 'equals', 'value': 'premium'})"
+        description="Condition dict for conditional traversal (e.g., {'op': 'equals', 'value': 'premium'})",
     )
 
     branch_index: Optional[int] = attribute(
         default=None,
-        description="Position in source question's branches list; -1 for default"
+        description="Position in source question's branches list; -1 for default",
     )
 
     is_default: bool = attribute(
-        default=False,
-        description="True for default_next / sequential fallback edges"
+        default=False, description="True for default_next / sequential fallback edges"
     )
 
     @classmethod
     def sort_by_priority(cls, edges: List["QuestionEdge"]) -> List["QuestionEdge"]:
         """Sort edges by priority: conditional edges first (by branch_index), then defaults.
-        
+
         This ensures that conditional branches are evaluated before default branches,
         and within each category, edges are ordered by their branch_index.
-        
+
         Args:
             edges: List of QuestionEdge instances to sort
-            
+
         Returns:
             Sorted list of edges
         """
@@ -83,7 +82,9 @@ class QuestionEdge(Edge):
         try:
             return await Node.get(target_id)
         except Exception as e:
-            logger.warning(f"QuestionEdge: Failed to resolve target node {target_id}: {e}")
+            logger.warning(
+                f"QuestionEdge: Failed to resolve target node {target_id}: {e}"
+            )
             return None
 
     async def evaluate(
@@ -164,4 +165,3 @@ class QuestionEdge(Edge):
             target_node.label,
             is_default=self.is_default,
         )
-

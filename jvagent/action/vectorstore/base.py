@@ -9,8 +9,9 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
-from jvagent.action.base import Action
 from jvspatial.core.annotations import attribute
+
+from jvagent.action.base import Action
 
 logger = logging.getLogger(__name__)
 
@@ -76,13 +77,13 @@ class VectorStore(Action, ABC):
     @abstractmethod
     async def _initialize_client(self) -> None:
         """Initialize the vector store client connection.
-        
+
         This method should be implemented by subclasses to initialize their
         specific client (e.g., Typesense, Pinecone, Weaviate). This method
         can be called multiple times safely - it should only initialize the
         client if it doesn't already exist. Called automatically during
         on_register() and when client is needed for operations.
-        
+
         Subclasses should implement this to:
         - Check if client is already initialized (idempotent)
         - Validate required configuration (API keys, endpoints, etc.)
@@ -93,25 +94,25 @@ class VectorStore(Action, ABC):
 
     async def on_register(self) -> None:
         """Called when action is registered during installation.
-        
+
         Validates configuration and initializes client. This method
         should only be called once during action registration.
         Client initialization is handled automatically via _initialize_client().
         """
         await super().on_register()
-        
+
         # Initialize client automatically
         await self._initialize_client()
 
     @abstractmethod
     async def _cleanup_client(self) -> None:
         """Clean up the vector store client connection.
-        
+
         This method should be implemented by subclasses to clean up their
         specific client (e.g., Typesense, Pinecone, Weaviate). This method
         is called automatically during on_disable() to ensure proper cleanup
         of client connections and resources.
-        
+
         Subclasses should implement this to:
         - Close any open connections
         - Clear client references
@@ -122,14 +123,14 @@ class VectorStore(Action, ABC):
 
     async def on_disable(self) -> None:
         """Called when action is disabled.
-        
+
         Cleans up client connection and resources. This method
         is called when the action is disabled. Client cleanup is
         handled automatically via _cleanup_client().
         """
         # Cleanup client automatically
         await self._cleanup_client()
-        
+
         await super().on_disable()
 
     @abstractmethod
@@ -352,10 +353,14 @@ class VectorStore(Action, ABC):
             )
 
         try:
-            vector = await embedding_model.embed(text, calling_action_name=self.get_class_name())
+            vector = await embedding_model.embed(
+                text, calling_action_name=self.get_class_name()
+            )
             return vector
         except Exception as e:
-            logger.error(f"VectorStore: Failed to generate embedding: {e}", exc_info=True)
+            logger.error(
+                f"VectorStore: Failed to generate embedding: {e}", exc_info=True
+            )
             raise RuntimeError(f"Failed to generate embedding: {e}") from e
 
     async def healthcheck(self) -> Dict[str, Any]:

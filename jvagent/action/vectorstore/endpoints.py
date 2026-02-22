@@ -137,6 +137,7 @@ async def add_documents_endpoint(
         if not doc_id:
             # Generate ID if not provided
             import uuid
+
             doc_id = f"doc_{uuid.uuid4().hex[:12]}"
             doc["id"] = doc_id
 
@@ -144,11 +145,13 @@ async def add_documents_endpoint(
         if not content:
             raise ValidationError(f"Document {doc_id} must have 'content' field")
 
-        prepared_docs.append({
-            "id": str(doc_id),
-            "content": str(content),
-            **{k: v for k, v in doc.items() if k not in ("id", "content")},
-        })
+        prepared_docs.append(
+            {
+                "id": str(doc_id),
+                "content": str(content),
+                **{k: v for k, v in doc.items() if k not in ("id", "content")},
+            }
+        )
 
     # Store documents (collection resolution happens in store method via _resolve_collection_name)
     document_ids = await action.store(
@@ -456,4 +459,3 @@ async def delete_document_endpoint(
         "document_id": document_id,
         "collection": resolved_collection,
     }
-

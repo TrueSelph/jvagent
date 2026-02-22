@@ -15,7 +15,9 @@ Respond with exactly one JSON object: {"tool_name": "...", "arguments": {...}}
 """
 
 
-def build_tool_selection_prompt(natural_language_command: str, tools_description: str) -> str:
+def build_tool_selection_prompt(
+    natural_language_command: str, tools_description: str
+) -> str:
     """Build the user prompt for tool selection.
 
     Args:

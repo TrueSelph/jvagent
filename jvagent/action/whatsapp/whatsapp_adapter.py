@@ -2,8 +2,8 @@
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
 import re
+from typing import Any, Dict, List, Optional
 
 from jvagent.action.response.channel_adapter import ChannelAdapter
 from jvagent.action.response.message import ResponseMessage
@@ -15,7 +15,7 @@ class WhatsAppAdapter(ChannelAdapter):
     """WhatsApp channel adapter for response bus.
 
     This adapter sends adhoc messages to WhatsApp via the WhatsApp API.
-    
+
     WhatsApp uses non-streaming mode (stream=False), so messages are published
     as complete 'adhoc' messages. ResponseBus only calls send() for adhoc messages.
 
@@ -44,7 +44,7 @@ class WhatsAppAdapter(ChannelAdapter):
 
     def _get_user_lock(self, user_id: str) -> asyncio.Lock:
         """Get or create a lock for a specific user to serialize message sends.
-        
+
         Implements LRU-style eviction to prevent unbounded memory growth.
         Keeps at most 1000 locks cached.
         """
@@ -62,33 +62,38 @@ class WhatsAppAdapter(ChannelAdapter):
         self, interaction_id: str, key: str, default: Any = None
     ) -> Any:
         """Retrieve channel metadata from interaction events.
-        
+
         Args:
             interaction_id: Interaction ID to look up
             key: Metadata key to retrieve (e.g., "isGroup")
             default: Default value if not found
-            
+
         Returns:
             Metadata value or default
         """
         try:
-            from jvagent.memory.interaction import Interaction
-            from jvspatial.db import get_prime_database
             from jvspatial.core.context import GraphContext
-            
+            from jvspatial.db import get_prime_database
+
+            from jvagent.memory.interaction import Interaction
+
             prime_db = get_prime_database()
             context = GraphContext(database=prime_db)
             interaction = await context.get(Interaction, interaction_id)
-            
+
             if interaction and interaction.events:
                 # Look for channel metadata event
                 for event in interaction.events:
-                    if isinstance(event, dict) and event.get("content", "").startswith("channel_metadata:whatsapp"):
+                    if isinstance(event, dict) and event.get("content", "").startswith(
+                        "channel_metadata:whatsapp"
+                    ):
                         channel_data = event.get("data", {})
                         return channel_data.get(key, default)
         except Exception as e:
-            logger.debug(f"WhatsAppAdapter: Could not retrieve channel metadata from interaction {interaction_id}: {e}")
-        
+            logger.debug(
+                f"WhatsAppAdapter: Could not retrieve channel metadata from interaction {interaction_id}: {e}"
+            )
+
         return default
 
     async def send(self, message: ResponseMessage) -> bool:
@@ -107,7 +112,7 @@ class WhatsAppAdapter(ChannelAdapter):
             f"WhatsAppAdapter: send() called - message_id={message.id}, "
             f"session_id={message.session_id}, interaction_id={message.interaction_id}"
         )
-        
+
         if not self.action or not self.action.is_configured():
             logger.debug(
                 "WhatsAppAdapter: Skipping message - WhatsApp action is not configured. "
@@ -133,22 +138,31 @@ class WhatsAppAdapter(ChannelAdapter):
         logger.debug(
             f"WhatsAppAdapter: Processing adhoc message {message.id} for user {message.user_id}"
         )
-        
+
         api = self.action.api()
 
         # Extract is_group from message metadata or interaction
         is_group = message.metadata.get("isGroup", False)
-        
+
         # If not in metadata, try to get it from the interaction
-        if message.interaction_id and (not is_group or message.metadata.get("isGroup") is None):
-            is_group = await self._get_channel_metadata_from_interaction(message.interaction_id, "isGroup", False)
+        if message.interaction_id and (
+            not is_group or message.metadata.get("isGroup") is None
+        ):
+            is_group = await self._get_channel_metadata_from_interaction(
+                message.interaction_id, "isGroup", False
+            )
 
         # Handle media messages
         if media_url and media_type:
-            logger.debug(f"WhatsAppAdapter: Sending media message - type={media_type}, url={media_url}")
+            logger.debug(
+                f"WhatsAppAdapter: Sending media message - type={media_type}, url={media_url}"
+            )
             try:
-                send_result = {"ok": False, "error": f"Unsupported media type: {media_type}"}
-                
+                send_result = {
+                    "ok": False,
+                    "error": f"Unsupported media type: {media_type}",
+                }
+
                 if media_type == "image":
                     send_result = await api.send_image(
                         phone=message.user_id,
@@ -157,7 +171,9 @@ class WhatsAppAdapter(ChannelAdapter):
                         is_group=is_group,
                     )
                 elif media_type in ["document", "file", "docs"]:
-                    filename = message.metadata.get("filename") or media_url.split("/")[-1]
+                    filename = (
+                        message.metadata.get("filename") or media_url.split("/")[-1]
+                    )
                     send_result = await api.send_file(
                         phone=message.user_id,
                         file_url=media_url,
@@ -186,27 +202,34 @@ class WhatsAppAdapter(ChannelAdapter):
                         file_url=media_url,
                         is_group=is_group,
                     )
-                
+
                 if send_result.get("ok", True):
-                    logger.debug(f"WhatsAppAdapter: Media sent successfully to {message.user_id}")
+                    logger.debug(
+                        f"WhatsAppAdapter: Media sent successfully to {message.user_id}"
+                    )
                     # Clear typing status after sending
                     await self._clear_typing_status(api, message.user_id, is_group)
                     return True
                 else:
                     error_msg = send_result.get("error", "Unknown error")
-                    logger.error(f"WhatsAppAdapter: Media send failed for {message.user_id}: {error_msg}")
+                    logger.error(
+                        f"WhatsAppAdapter: Media send failed for {message.user_id}: {error_msg}"
+                    )
                     await self._clear_typing_status(api, message.user_id, is_group)
                     return False
             except Exception as e:
-                logger.error(f"WhatsAppAdapter: Exception sending media to {message.user_id}: {e}", exc_info=True)
+                logger.error(
+                    f"WhatsAppAdapter: Exception sending media to {message.user_id}: {e}",
+                    exc_info=True,
+                )
                 await self._clear_typing_status(api, message.user_id, is_group)
                 return False
 
         # Message content is already transformed by filters before reaching the adapter
         chunks = self.chunk_long_message(
-            message.content, 
-            max_length=self.action.chunk_length, 
-            chunk_length=self.action.chunk_length
+            message.content,
+            max_length=self.action.chunk_length,
+            chunk_length=self.action.chunk_length,
         )
 
         if not chunks or all(not chunk.strip() for chunk in chunks):
@@ -223,7 +246,7 @@ class WhatsAppAdapter(ChannelAdapter):
                     message=chunk,
                     is_group=is_group,
                 )
-                
+
                 # Check if send was successful
                 if not send_result.get("ok", True):
                     error_msg = send_result.get("error", "Unknown error")
@@ -233,7 +256,7 @@ class WhatsAppAdapter(ChannelAdapter):
                         f"Message ID: {message.id}, is_group: {is_group}"
                     )
                     return False
-            
+
             logger.debug(
                 f"WhatsAppAdapter: Message sent successfully to {message.user_id} "
                 f"(is_group: {is_group}, chunks: {len(chunks)})"
@@ -243,7 +266,7 @@ class WhatsAppAdapter(ChannelAdapter):
             logger.error(
                 f"WhatsAppAdapter: Failed to send message to WhatsApp for user {message.user_id}: {e}. "
                 f"Message ID: {message.id}, Chunks: {len(chunks)}, is_group: {is_group}",
-                exc_info=True
+                exc_info=True,
             )
             raise
         finally:
@@ -254,13 +277,11 @@ class WhatsAppAdapter(ChannelAdapter):
     async def _clear_typing_status(self, api, phone, is_group):
         """Helper to clear typing status."""
         try:
-            await api.set_typing_status(
-                phone=phone,
-                value=False,
-                is_group=is_group
-            )
+            await api.set_typing_status(phone=phone, value=False, is_group=is_group)
         except Exception as e:
-            logger.debug(f"WhatsAppAdapter: Failed to clear typing status for {phone}: {e}")
+            logger.debug(
+                f"WhatsAppAdapter: Failed to clear typing status for {phone}: {e}"
+            )
 
     def chunk_long_message(
         self, message: str, max_length: int = 1024, chunk_length: int = 1024

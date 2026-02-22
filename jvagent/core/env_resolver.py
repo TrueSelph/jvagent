@@ -35,10 +35,10 @@ def resolve_env_placeholders(value: Any) -> Any:
 
     Examples:
         >>> resolve_env_placeholders("${OPENAI_API_KEY}")
-        "sk-..."  # or "" if OPENAI_API_KEY not set
+        "sk-..."  # or "" if OPENAI_API_KEY not set  # pragma: allowlist secret
 
         >>> resolve_env_placeholders({"api_key": "${API_KEY}"})
-        {"api_key": "actual-key-value"}  # or {"api_key": ""} if API_KEY not set
+        {"api_key": "actual-key-value"}  # or {"api_key": ""} if API_KEY not set  # pragma: allowlist secret
 
         >>> resolve_env_placeholders(["${VAR1}", "${VAR2}"])
         ["value1", "value2"]  # or ["", ""] if vars not set

@@ -1,7 +1,7 @@
 """Context variables for model action observability."""
 
 import contextvars
-from typing import Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
@@ -73,4 +73,3 @@ def set_calling_action_name(action_name: Optional[str]) -> None:
         action_name: Action name (camelCase class name) to set (e.g., "PersonaAction", "ExampleInteractAction")
     """
     current_action_name.set(action_name)
-

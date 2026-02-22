@@ -50,7 +50,9 @@ async def ChatGPT_API_async(
             result = await action.query_sync(prompt, **{"model": model})
             return await result.get_response() if result else "Error"
         except Exception as e:
-            logger.warning(f"PageIndex jvagent LLM call failed, falling back to direct: {e}")
+            logger.warning(
+                f"PageIndex jvagent LLM call failed, falling back to direct: {e}"
+            )
             return await _real_impl(model, prompt, api_key)
     if _real_impl:
         return await _real_impl(model, prompt, api_key)
@@ -68,12 +70,12 @@ def ChatGPT_API(
     action = get_pageindex_model_action()
     if action and _real_impl:
         try:
-            result = _run_async_from_sync(
-                action.query_sync(prompt, **{"model": model})
-            )
+            result = _run_async_from_sync(action.query_sync(prompt, **{"model": model}))
             return _run_async_from_sync(result.get_response()) if result else "Error"
         except Exception as e:
-            logger.warning(f"PageIndex jvagent LLM call failed, falling back to direct: {e}")
+            logger.warning(
+                f"PageIndex jvagent LLM call failed, falling back to direct: {e}"
+            )
             return _real_impl(model, prompt, api_key, chat_history)
     if _real_impl:
         return _real_impl(model, prompt, api_key, chat_history)
@@ -91,16 +93,16 @@ def ChatGPT_API_with_finish_reason(
     action = get_pageindex_model_action()
     if action and _real_impl:
         try:
-            result = _run_async_from_sync(
-                action.query_sync(prompt, **{"model": model})
-            )
+            result = _run_async_from_sync(action.query_sync(prompt, **{"model": model}))
             if not result:
                 return "Error", "error"
             text = _run_async_from_sync(result.get_response())
             reason = getattr(result, "finish_reason", None) or "stop"
             return text, "finished" if reason == "stop" else "max_output_reached"
         except Exception as e:
-            logger.warning(f"PageIndex jvagent LLM call failed, falling back to direct: {e}")
+            logger.warning(
+                f"PageIndex jvagent LLM call failed, falling back to direct: {e}"
+            )
             return _real_impl(model, prompt, api_key, chat_history)
     if _real_impl:
         return _real_impl(model, prompt, api_key, chat_history)

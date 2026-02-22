@@ -15,19 +15,20 @@ logger = logging.getLogger(__name__)
 @dataclass
 class VerificationTrace:
     """Verification trace from Chain of Verification process.
-    
+
     Captures the model's self-verification reasoning for debugging
     and observability purposes.
-    
+
     Attributes:
         intent_check: Reasoning confirming or correcting intent classification
         action_check: Reasoning confirming action selection matches anchors
         issues_found: List of problems identified during verification
     """
+
     intent_check: str = ""
     action_check: str = ""
     issues_found: List[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation."""
         return {
@@ -35,7 +36,7 @@ class VerificationTrace:
             "action_check": self.action_check,
             "issues_found": self.issues_found,
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "VerificationTrace":
         """Create from dictionary."""
@@ -55,10 +56,10 @@ ExtractedEntities = Dict[str, Any]
 @dataclass
 class RoutingResult:
     """Structured routing result from InteractRouter.
-    
+
     Encapsulates all outputs from the routing process including interpretation,
     matched actions, confidence, extracted entities, and optional canned response.
-    
+
     Attributes:
         interpretation: Rich synopsis of user intent with extracted values
         intent_type: Classified intent (CONVERSATIONAL, INFORMATIONAL, INTERACTIVE, DIRECTIVE, UNCLEAR)
@@ -70,6 +71,7 @@ class RoutingResult:
         needs_clarification: True if confidence below threshold
         raw_response: Original LLM response for debugging
     """
+
     interpretation: str = ""
     intent_type: str = "UNCLEAR"
     actions: List[str] = field(default_factory=list)
@@ -79,7 +81,7 @@ class RoutingResult:
     canned_response: str = ""
     needs_clarification: bool = False
     raw_response: str = ""
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation."""
         result = {
@@ -94,41 +96,45 @@ class RoutingResult:
         if self.verification:
             result["verification"] = self.verification.to_dict()
         return result
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any], raw_response: str = "") -> "RoutingResult":
         """Create from dictionary (parsed LLM response).
-        
+
         Args:
             data: Parsed JSON from LLM response
             raw_response: Original LLM response string for debugging
-            
+
         Returns:
             RoutingResult instance
         """
         verification_data = data.get("verification")
         entities_data = data.get("extracted_entities", {})
-        
+
         return cls(
             interpretation=data.get("interpretation", ""),
             intent_type=cls._normalize_intent_type(data.get("intent_type", "UNCLEAR")),
             actions=cls._parse_actions(data.get("actions", [])),
             confidence=cls._parse_confidence(data.get("confidence", 0.0)),
-            verification=VerificationTrace.from_dict(verification_data) if verification_data else None,
+            verification=(
+                VerificationTrace.from_dict(verification_data)
+                if verification_data
+                else None
+            ),
             extracted_entities=entities_data if isinstance(entities_data, dict) else {},
             canned_response=data.get("canned_response", ""),
             needs_clarification=False,
             raw_response=raw_response,
         )
-    
+
     @classmethod
     def error_result(cls, error_message: str, utterance: str = "") -> "RoutingResult":
         """Create an error result when routing fails.
-        
+
         Args:
             error_message: Description of what went wrong
             utterance: Original user utterance for fallback interpretation
-            
+
         Returns:
             RoutingResult with UNCLEAR intent and zero confidence
         """
@@ -140,51 +146,53 @@ class RoutingResult:
             verification=None,
             needs_clarification=True,
         )
-    
+
     @staticmethod
     def _normalize_intent_type(intent_value: Any) -> str:
         """Normalize and validate intent type.
-        
+
         Clean break - only accepts new declarative intent types.
         No backward compatibility with legacy types.
-        
+
         Args:
             intent_value: Raw intent type from LLM response
-            
+
         Returns:
             Validated intent type string, defaults to UNCLEAR
         """
         from jvagent.action.router.prompts import INTENT_TYPES
-        
+
         if not intent_value:
             return "UNCLEAR"
-        
+
         intent_str = str(intent_value).strip().upper()
-        
+
         # Only accept the new declarative intent types
         if intent_str in INTENT_TYPES:
             return intent_str
-        
+
         # No backward compatibility - return UNCLEAR for unrecognized types
-        logger.warning(f"Unrecognized intent type '{intent_str}', defaulting to UNCLEAR")
+        logger.warning(
+            f"Unrecognized intent type '{intent_str}', defaulting to UNCLEAR"
+        )
         return "UNCLEAR"
-    
+
     @staticmethod
     def _parse_actions(actions_value: Any) -> List[str]:
         """Parse actions from various formats into a clean list of strings.
-        
+
         Args:
             actions_value: Raw actions from LLM response
-            
+
         Returns:
             List of action name strings
         """
         if not actions_value:
             return []
-        
+
         if isinstance(actions_value, list):
             return [str(a).strip() for a in actions_value if a and str(a).strip()]
-        
+
         if isinstance(actions_value, str):
             # Try to parse as JSON
             try:
@@ -194,46 +202,46 @@ class RoutingResult:
                 return [actions_value.strip()] if actions_value.strip() else []
             except (json.JSONDecodeError, ValueError):
                 return [actions_value.strip()] if actions_value.strip() else []
-        
+
         return []
-    
+
     @staticmethod
     def _parse_confidence(confidence_value: Any) -> float:
         """Parse and clamp confidence value.
-        
+
         Args:
             confidence_value: Raw confidence from LLM response
-            
+
         Returns:
             Float between 0.0 and 1.0
         """
         if confidence_value is None:
             return 0.0
-        
+
         try:
             confidence = float(confidence_value)
             return max(0.0, min(1.0, confidence))
         except (TypeError, ValueError):
             return 0.0
-    
+
     def has_issues(self) -> bool:
         """Check if verification found any issues."""
         return self.verification and len(self.verification.issues_found) > 0
-    
+
     def is_conversational(self) -> bool:
         """Check if this is a conversational intent."""
         return self.intent_type == "CONVERSATIONAL"
-    
+
     def is_unclear(self) -> bool:
         """Check if intent is unclear."""
         return self.intent_type == "UNCLEAR"
-    
+
     def should_clarify(self, threshold: float = 0.7) -> bool:
         """Check if clarification should be requested.
-        
+
         Args:
             threshold: Confidence threshold below which to clarify
-            
+
         Returns:
             True if confidence is below threshold or needs_clarification is set
         """
@@ -242,22 +250,22 @@ class RoutingResult:
 
 def parse_routing_response(response: str) -> RoutingResult:
     """Parse LLM response string into RoutingResult.
-    
+
     Handles JSON extraction from potentially wrapped responses
     and provides fallback for malformed responses.
-    
+
     Args:
         response: Raw LLM response string
-        
+
     Returns:
         RoutingResult instance
     """
     if not response:
         return RoutingResult.error_result("Empty response from LLM")
-    
+
     # Try to extract JSON from the response
     json_str = response.strip()
-    
+
     # Handle markdown code blocks
     if "```json" in json_str:
         start = json_str.find("```json") + 7
@@ -269,7 +277,7 @@ def parse_routing_response(response: str) -> RoutingResult:
         end = json_str.find("```", start)
         if end > start:
             json_str = json_str[start:end].strip()
-    
+
     # Find JSON object boundaries
     if "{" in json_str:
         start = json_str.find("{")
@@ -285,18 +293,20 @@ def parse_routing_response(response: str) -> RoutingResult:
                     end = i + 1
                     break
         json_str = json_str[start:end]
-    
+
     try:
         data = json.loads(json_str)
         result = RoutingResult.from_dict(data, raw_response=response)
-        
+
         # Enforce CONVERSATIONAL intent rule
         if result.intent_type == "CONVERSATIONAL" and result.actions:
-            logger.debug("RoutingResult: Enforcing CONVERSATIONAL intent rule - clearing actions")
+            logger.debug(
+                "RoutingResult: Enforcing CONVERSATIONAL intent rule - clearing actions"
+            )
             result.actions = []
-        
+
         return result
-        
+
     except json.JSONDecodeError as e:
         logger.warning(f"Failed to parse routing response as JSON: {e}")
         logger.debug(f"Raw response: {response[:500]}")

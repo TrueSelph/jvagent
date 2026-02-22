@@ -12,9 +12,9 @@ Key components:
 
 from .interact_router import InteractRouter
 from .routing_result import (
+    ExtractedEntities,
     RoutingResult,
     VerificationTrace,
-    ExtractedEntities,
     parse_routing_response,
 )
 

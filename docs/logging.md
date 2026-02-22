@@ -23,38 +23,38 @@ graph TB
         PrimeDB -->|Stores| App[App Node]
         PrimeDB -->|Stores| Interactions[Interactions]
     end
-    
+
     subgraph "Logging Database"
         LogDB[(Log DB)]
         LogDB -->|Stores| LogEntries[Log Entries]
         LogDB -->|Stores| ErrorLogs[Error Logs]
     end
-    
+
     subgraph "Logging Service"
         LogService[LoggingService]
         LogService -->|Async Write| LogDB
         LogService -->|Read| LogDB
     end
-    
+
     subgraph "Automatic Logging"
         Logger[Python Logger]
         DBHandler[DBLogHandler]
         Logger -->|Intercepts| DBHandler
         DBHandler -->|Async Write| LogService
     end
-    
+
     subgraph "API Endpoints"
         LogEndpoints[Log Endpoints]
         LogEndpoints -->|Query| LogService
         LogEndpoints -->|Archive| ArchiveService[Archive Service]
         LogEndpoints -->|Purge| LogService
     end
-    
+
     subgraph "Background Tasks"
         RetentionTask[Retention Task]
         RetentionTask -->|Check & Delete| LogService
     end
-    
+
     Interactions -->|On Complete| LogService
     App -->|Config| RetentionTask
     Logger -->|All ERROR/CRITICAL| DBHandler
@@ -100,7 +100,7 @@ Add logging defaults to the `config` section:
 ```yaml
 config:
   # ... existing config ...
-  
+
   # Logging configuration (defaults - production will override)
   logging:
     enabled: true  # Global enable/disable flag

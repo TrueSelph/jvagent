@@ -132,11 +132,11 @@ from jvagent.memory import Interaction
 
 class MyPersonaAction(Action):
     model_action_id: str = attribute(default="")
-    
+
     async def respond(self, interaction: Interaction, visitor: Any):
         model = await OpenAILanguageModelAction.get(self.model_action_id)
         response_bus = getattr(visitor, "response_bus", None) if visitor else None
-        
+
         # generate() will automatically publish to ResponseBus if provided
         response = await model.generate(
             prompt=interaction.utterance,
@@ -146,7 +146,7 @@ class MyPersonaAction(Action):
             interaction=interaction,
             calling_action_name=self.get_class_name(),
         )
-        
+
         return response
 ```
 
@@ -159,10 +159,10 @@ from jvagent.action.model import OpenAILanguageModelAction
 
 class MyRouterAction(Action):
     model_action_id: str = attribute(default="")
-    
+
     async def route(self, prompt: str):
         model = await OpenAILanguageModelAction.get(self.model_action_id)
-        
+
         # generate() without ResponseBus - just returns the response
         response = await model.generate(
             prompt=prompt,
@@ -170,7 +170,7 @@ class MyRouterAction(Action):
             system="You are a routing assistant",
             calling_action_name=self.get_class_name(),
         )
-        
+
         return response
 ```
 
@@ -183,22 +183,22 @@ from jvagent.action.model import OpenAILanguageModelAction
 
 class MyAnalysisAction(Action):
     model_action_id: str = attribute(default="")
-    
+
     async def analyze_text(self, text: str):
         # Get model action instance
         model = await OpenAILanguageModelAction.get(self.model_action_id)
-        
+
         # Make synchronous query
         result = await model.query_sync(
             prompt=f"Analyze this text: {text}",
             system="You are an expert analyst"
         )
-        
+
         # Get complete response
         analysis = await result.get_response()
         tokens_used = result.metrics['total_tokens']
         duration = result.metrics.get('duration', 0)
-        
+
         return {"analysis": analysis, "tokens": tokens_used, "duration": duration}
 ```
 
@@ -208,18 +208,18 @@ class MyAnalysisAction(Action):
 class MyStreamingAction(Action):
     async def generate_report(self, topic: str):
         model = await OpenAILanguageModelAction.get(self.model_action_id)
-        
+
         # Make streaming query
         result = await model.query_stream(
             prompt=f"Write a detailed report on: {topic}",
             temperature=0.7
         )
-        
+
         # Stream chunks back to caller
         async for chunk in result.iter_stream():
             # Process chunk in real-time
             print(chunk, end="", flush=True)
-        
+
         # Get metrics after streaming (tokens are estimated after stream completes)
         tokens = result.metrics.get('total_tokens', 'N/A')
         duration = result.metrics.get('duration', 'N/A')
@@ -235,7 +235,7 @@ from datetime import datetime
 class MyTemplatedAction(Action):
     async def query_with_context(self, query: str, context: str):
         model = await OpenAILanguageModelAction.get(self.model_action_id)
-        
+
         # Apply template
         formatted_prompt = await model.apply_template(
             "contextual_query",
@@ -243,7 +243,7 @@ class MyTemplatedAction(Action):
             context=context,
             timestamp=datetime.now()
         )
-        
+
         result = await model.query_sync(formatted_prompt)
         return await result.get_response()
 ```
@@ -256,24 +256,24 @@ from jvagent.action.model.language.tools import create_weather_tool
 class MyToolAction(Action):
     async def answer_with_tools(self, query: str):
         model = await OpenAILanguageModelAction.get(self.model_action_id)
-        
+
         # Define tools
         weather_tool = create_weather_tool()
         tools = [weather_tool.to_dict()]
-        
+
         # Query with tools
         result = await model.query_sync(
             prompt=query,
             tools=tools
         )
-        
+
         # Check for tool calls
         if result.tool_calls:
             for call in result.tool_calls:
                 # Execute tool and get result
                 tool_result = await self.execute_tool(call)
                 # Continue conversation with tool results...
-        
+
         return await result.get_response()
 ```
 
@@ -585,7 +585,7 @@ class CustomModelAction(LanguageModelAction):
     provider: str = attribute(
         default="custom", description="Provider name"
     )
-    
+
     async def _query(self, messages, tools=None, **kwargs):
         # Implement sync query
         response = await self.call_custom_api(messages)
@@ -596,13 +596,13 @@ class CustomModelAction(LanguageModelAction):
             provider=self.provider,
             duration=0.0
         )
-    
+
     async def _query_stream(self, messages, tools=None, **kwargs):
         # Implement streaming query
         async def stream_gen():
             async for chunk in self.stream_custom_api(messages):
                 yield chunk
-        
+
         result = ModelActionResult(
             stream=stream_gen(),
             usage={},  # Empty for streaming - will be estimated after completion

@@ -335,7 +335,7 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
    ```bash
    # Recommended: Always specify the app root path
    jvagent /path/to/my_jvagent_app
-   
+
    # This makes it clear which app you're running and works from any directory
    ```
 
@@ -358,7 +358,7 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
    ```bash
    # Clear and explicit
    jvagent /absolute/path/to/my_jvagent_app
-   
+
    # Relative paths also work
    jvagent ./my_jvagent_app
    jvagent ../other_app
@@ -648,21 +648,21 @@ config:
   server:
     host: 0.0.0.0
     port: 8000
-  
+
   database:
     type: json
     path: ./jvagent_db
-  
+
   file_storage:
     provider: local
     root_dir: ./.files
     enabled: true
-  
+
   # Interact endpoint configuration
   interact:
     rate_limit_per_minute: 60  # per IP+agent_id combination
     max_utterance_length: 2000  # maximum characters for utterance input (set to null to disable)
-  
+
   # Performance optimization
   performance:
     enable_profiling: false      # Enable request latency profiling
@@ -713,7 +713,7 @@ actions:
     context:
       enabled: true
       model_action_type: "OpenAILanguageModelAction"
-  
+
   # Local custom action
   - action: jvagent/example_action
     context:
@@ -722,7 +722,7 @@ actions:
       timeout: 60
       retries: 5
       api_endpoint: "https://prod.api.example.com"
-  
+
   # Another custom action from different namespace
   - action: contrib/slack_notifier
     context:
@@ -748,7 +748,7 @@ config:
     # Default: 60 requests per minute
     # This prevents abuse by limiting how many requests a single IP can make to a specific agent
     rate_limit_per_minute: 60
-    
+
     # Input validation: Maximum character length for the 'utterance' parameter
     # Default: 2000 characters (typical chat message length)
     # Set to null to disable length validation
@@ -843,28 +843,28 @@ package:
   # Action name in namespace/action_name format
   # Note: The namespace is also determined by the folder structure
   name: jvagent/example_action
-  
+
   # Package author
   author: Your Name/Organization
-  
+
   # Archetype: The main Action class name (same as the Action Node class)
   archetype: ExampleAction
-  
+
   # Package version
   version: 1.0.0
-  
+
   # Package metadata
   meta:
     title: Example Action
     description: A boilerplate action demonstrating jvagent action structure
     group: jvagent
     type: action
-  
+
   # Package configuration
   config:
     order:
       weight: 0
-  
+
   # Package dependencies
   dependencies:
     # jvagent version requirement
@@ -926,7 +926,7 @@ class MyTopLevelAction(InteractAction):
     async def execute(self, visitor: InteractWalker) -> None:
         # Perform action logic
         # ...
-        
+
         # Explicitly route to child actions conditionally
         if some_condition:
             child_action = await self.node(node="ChildInteractAction")
@@ -953,7 +953,7 @@ actions:
     context:
       enabled: true
       model_action_type: "OpenAILanguageModelAction"
-  
+
   - action: jvagent/openai_lm
     context:
       enabled: true
@@ -1003,28 +1003,28 @@ cd jvagent/my_action
 package:
   # Action name in namespace/action_name format
   name: jvagent/my_action
-  
+
   # Package author
   author: Your Name/Organization
-  
+
   # Archetype: The main Action class name (same as the Action Node class)
   archetype: MyAction
-  
+
   # Package version
   version: 1.0.0
-  
+
   # Package metadata
   meta:
     title: My Action
     description: Does something useful
     group: jvagent
     type: action
-  
+
   # Package configuration
   config:
     order:
       weight: 0
-  
+
   # Package dependencies
   dependencies:
     # jvagent version requirement
@@ -1045,39 +1045,39 @@ from jvspatial.core.annotations import attribute
 
 class MyAction(Action):
     """My custom action implementation."""
-    
+
     # Define type-safe configuration properties
     timeout: int = attribute(default=30, description="Operation timeout in seconds", ge=1)
     retries: int = attribute(default=3, description="Number of retry attempts", ge=0, le=10)
     api_endpoint: str = attribute(default="https://api.example.com", description="API endpoint URL")
-    
+
     async def on_register(self) -> None:
         """Called when action is registered."""
         print(f"MyAction registered:")
         print(f"  Timeout: {self.timeout}s")
         print(f"  Retries: {self.retries}")
         print(f"  API Endpoint: {self.api_endpoint}")
-    
+
     async def on_enable(self) -> None:
         """Called when action is enabled."""
         print(f"MyAction enabled (timeout={self.timeout}s)")
-    
+
     async def on_disable(self) -> None:
         """Called when action is disabled."""
         print("MyAction disabled")
-    
+
     async def execute(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the action with input data."""
         # Use configuration properties directly
         print(f"Executing with timeout: {self.timeout}s, retries: {self.retries}")
-        
+
         result = {
             "processed": True,
             "input": input_data,
             "output": "Action executed successfully",
             "timeout_used": self.timeout
         }
-        
+
         return result
 ```
 
@@ -1121,11 +1121,11 @@ logger = logging.getLogger(__name__)
 )
 async def custom_endpoint(action_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """Custom endpoint for my action.
-    
+
     Args:
         action_id: ID of the action instance
         data: Request data
-        
+
     Returns:
         Result dictionary
     """
@@ -1135,10 +1135,10 @@ async def custom_endpoint(action_id: str, data: Dict[str, Any]) -> Dict[str, Any
             message=f"Action with ID '{action_id}' not found",
             details={"action_id": action_id},
         )
-    
+
     # Use action instance to perform operations
     result = await action.execute(data)
-    
+
     return {"result": result}
 ```
 
@@ -1209,7 +1209,7 @@ Actions have well-defined lifecycle hooks:
    - Final cleanup
    - Release resources
    - Close connections
-   
+
    **Note**: The deregistration process automatically handles:
    - Unregistering all API endpoints associated with the action
    - Unloading action-specific modules from memory (when safe)
@@ -1433,17 +1433,35 @@ config:
 pip install -e ".[dev]"
 ```
 
+### Pre-commit Hooks
+
+Install pre-commit hooks to run checks before each commit:
+
+```bash
+pre-commit install
+```
+
+Run all checks manually on the entire codebase:
+
+```bash
+pre-commit run --all-files
+```
+
 ### Run Tests
 
 ```bash
-pytest
+pytest tests/
 ```
 
-### Code Formatting
+### Code Formatting and Linting
+
+Manual runs (pre-commit runs these automatically):
 
 ```bash
 black jvagent/
-ruff check jvagent/
+isort jvagent/ --profile black
+flake8 jvagent/ --config=.flake8
+mypy jvagent/
 ```
 
 ### Project Structure
@@ -1691,7 +1709,7 @@ from jvspatial.core.annotations import attribute
 class MyAction(Action):
     # Good: Always provide defaults
     timeout: int = attribute(default=30, description="Operation timeout")
-    
+
     # Not recommended: Forces user to always provide value
     # required_setting: str = attribute(...)  # No default
 ```

@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 # to traverse InteractActions. PersonaAction is now a tool-based action
 # and does not participate in the interact subsystem directly.
 
+
 @endpoint(
     "/actions/{action_id}/parameters",
     methods=["GET"],
@@ -81,11 +82,11 @@ async def list_parameters_endpoint(
 
     # Get parameters from the action's parameters attribute
     parameters = action.parameters or []
-    
+
     # Filter by enabled if requested (parameters may have 'enabled' key)
     if enabled_only:
         parameters = [p for p in parameters if p.get("enabled", True)]
-    
+
     return {
         "parameters": parameters,
         "count": len(parameters),
@@ -167,7 +168,7 @@ async def create_parameter_endpoint(
     # Add parameter to the parameters list
     if action_node.parameters is None:
         action_node.parameters = []
-    
+
     new_param = {
         "condition": condition.strip(),
         "response": response.strip(),
@@ -177,7 +178,7 @@ async def create_parameter_endpoint(
         new_param["action"] = action
     if metadata:
         new_param["metadata"] = metadata
-    
+
     action_node.parameters.append(new_param)
     await action_node.save()
 
@@ -284,7 +285,7 @@ async def update_parameter_endpoint(
     # Get parameters list
     if action_node.parameters is None:
         action_node.parameters = []
-    
+
     if param_index < 0 or param_index >= len(action_node.parameters):
         raise ResourceNotFoundError(
             message=f"Parameter with ID '{param_id}' not found",
@@ -360,7 +361,7 @@ async def delete_parameter_endpoint(
     # Get parameters list
     if action_node.parameters is None:
         action_node.parameters = []
-    
+
     if param_index < 0 or param_index >= len(action_node.parameters):
         raise ResourceNotFoundError(
             message=f"Parameter with ID '{param_id}' not found",
@@ -435,19 +436,19 @@ async def import_parameters_endpoint(
     # Initialize parameters list if needed
     if action_node.parameters is None:
         action_node.parameters = []
-    
+
     # Add all parameters
     imported_count = 0
     for param in parameters:
         # Validate required fields
         if not param.get("condition") or not param.get("response"):
             continue
-        
+
         action_node.parameters.append(param)
         imported_count += 1
-    
+
     await action_node.save()
-    
+
     return {
         "imported": imported_count,
         "message": f"Imported {imported_count} parameters",

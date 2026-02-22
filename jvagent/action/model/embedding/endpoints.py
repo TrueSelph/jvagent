@@ -143,7 +143,9 @@ async def embed_text(
 
     # Get provider name
     provider = getattr(
-        action, "provider", action.get_class_name().replace("EmbeddingModelAction", "").lower()
+        action,
+        "provider",
+        action.get_class_name().replace("EmbeddingModelAction", "").lower(),
     )
 
     return {
@@ -308,7 +310,9 @@ async def embed_batch(
 
     # Get provider name
     provider = getattr(
-        action, "provider", action.get_class_name().replace("EmbeddingModelAction", "").lower()
+        action,
+        "provider",
+        action.get_class_name().replace("EmbeddingModelAction", "").lower(),
     )
 
     # Determine dimensions from first embedding
@@ -431,12 +435,16 @@ async def get_embedding_model_action_metrics(action_id: str) -> Dict[str, Any]:
 
     # Calculate average duration
     average_duration = (
-        action.total_duration / action.total_requests if action.total_requests > 0 else 0.0
+        action.total_duration / action.total_requests
+        if action.total_requests > 0
+        else 0.0
     )
 
     # Get provider name
     provider = getattr(
-        action, "provider", action.get_class_name().replace("EmbeddingModelAction", "").lower()
+        action,
+        "provider",
+        action.get_class_name().replace("EmbeddingModelAction", "").lower(),
     )
 
     return {
@@ -449,4 +457,3 @@ async def get_embedding_model_action_metrics(action_id: str) -> Dict[str, Any]:
         "provider": provider,
         "embedding_dimensions": action.embedding_dimensions,
     }
-

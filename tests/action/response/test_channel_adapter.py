@@ -1,7 +1,8 @@
 """Unit tests for ChannelAdapter."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from jvagent.action.response.channel_adapter import ChannelAdapter
 from jvagent.action.response.message import ResponseMessage
@@ -23,7 +24,7 @@ class TestChannelAdapterInitialize:
         """initialize() returns False when App.get() returns None."""
         adapter = StubChannelAdapter(channel="test")
 
-        with patch("jvagent.action.response.channel_adapter.App") as mock_app_class:
+        with patch("jvagent.core.app.App") as mock_app_class:
             mock_app_class.get = AsyncMock(return_value=None)
 
             result = await adapter.initialize()
@@ -38,7 +39,7 @@ class TestChannelAdapterInitialize:
         mock_app = MagicMock()
         mock_app.get_response_bus = AsyncMock(return_value=None)
 
-        with patch("jvagent.action.response.channel_adapter.App") as mock_app_class:
+        with patch("jvagent.core.app.App") as mock_app_class:
             mock_app_class.get = AsyncMock(return_value=mock_app)
 
             result = await adapter.initialize()
@@ -55,7 +56,7 @@ class TestChannelAdapterInitialize:
         mock_app = MagicMock()
         mock_app.get_response_bus = AsyncMock(return_value=mock_response_bus)
 
-        with patch("jvagent.action.response.channel_adapter.App") as mock_app_class:
+        with patch("jvagent.core.app.App") as mock_app_class:
             mock_app_class.get = AsyncMock(return_value=mock_app)
 
             result = await adapter.initialize()

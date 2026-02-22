@@ -114,8 +114,8 @@ class ResolvAPIAction(Action):
         use_persistent = self._session is not None and not self._session.closed
         session = self._session if use_persistent else None
 
-        
-        
+
+
         # If no persistent session, create a temporary one for this request
         if not use_persistent:
             timeout_obj = aiohttp.ClientTimeout(total=effective_timeout)
@@ -138,7 +138,7 @@ class ResolvAPIAction(Action):
         try:
             for attempt in range(effective_retries + 1):
                 try:
-                    
+
                     async with session.request(
                         method,
                         url,
@@ -155,7 +155,7 @@ class ResolvAPIAction(Action):
                             json_res = await response.json()
                         except (aiohttp.ContentTypeError, json.JSONDecodeError):
                             json_res = None
-                        
+
                         return {'status': status, 'json': json_res, 'text': text}
 
                 except (aiohttp.ClientError, asyncio.TimeoutError) as e:
@@ -187,7 +187,7 @@ class ResolvAPIAction(Action):
             A list of contact group dictionaries.
         """
         base_endpoint = f"{self.api_url.rstrip('/')}/organizations/{self.organization_slug}/contact-groups"
-        
+
         if project_groups:
             agent_id = self.get_agent_identifier()
             projects = await self.get_projects(agent_id)
@@ -197,14 +197,14 @@ class ResolvAPIAction(Action):
                 endpoint = base_endpoint
         else:
             endpoint = base_endpoint
-        
+
         try:
             res = await self.http_request('GET', endpoint)
 
             if res['status'] == 200:
                 data = res['json']
                 return data.get('groups', [])
-            
+
             logger.error(f"Failed to get contact groups. Status: {res['status']}, Response: {res['text']}")
             return []
         except Exception as e:
@@ -231,7 +231,7 @@ class ResolvAPIAction(Action):
                 return True
             elif res['status'] == 400:
                 return True
-            
+
             logger.error(f"Failed to subscribe contact to group. Status: {res['status']}, Response: {res['text']}")
             return False
         except Exception as e:
@@ -256,7 +256,7 @@ class ResolvAPIAction(Action):
             res = await self.http_request('POST', endpoint, json_data=payload)
             if res['status'] in [200, 201]:
                 return True
-            
+
             logger.error(f"Failed to unsubscribe contact from group. Status: {res['status']}, Response: {res['text']}")
             return False
         except Exception as e:
@@ -286,7 +286,7 @@ class ResolvAPIAction(Action):
         """
         project_id = await self.get_project_id_by_agent_identifier()
         endpoint = f"{self.api_url.rstrip('/')}/organizations/{self.organization_slug}/projects/{project_id}/issues"
-        
+
         payload = {"isAnonymous": is_anonymous}
 
         if description:
@@ -300,7 +300,7 @@ class ResolvAPIAction(Action):
             res = await self.http_request('POST', endpoint, json_data=payload, show_curl_for_function="")
             if res['status'] in [200, 201]:
                 return res['json'].get('issue', {})
-            
+
             logger.error(f"Failed to create issue. Status: {res['status']}, Response: {res['text']}")
             return {}
         except Exception as e:
@@ -327,7 +327,7 @@ class ResolvAPIAction(Action):
             True if successful, False otherwise.
         """
         endpoint = f"{self.api_url.rstrip('/')}/organizations/{self.organization_slug}/files/upload"
-        
+
         data = {
             "entityType": entity_type,
             "entityId": entity_id,
@@ -342,7 +342,7 @@ class ResolvAPIAction(Action):
             res = await self.http_request('POST', endpoint, data=data, headers=headers)
             if res['status'] == 200:
                 return True
-            
+
             logger.error(f"Failed to upload file. Status: {res['status']}, Response: {res['text']}")
             return False
         except Exception as e:
@@ -377,7 +377,7 @@ class ResolvAPIAction(Action):
         """
         project_id = await self.get_project_id_by_agent_identifier()
         endpoint = f"{self.api_url.rstrip('/')}/organizations/{self.organization_slug}/projects/{project_id}/issues/{issue_id}"
-        
+
         payload = {}
         if title is not None: payload["title"] = title
         if description is not None: payload["description"] = description
@@ -390,7 +390,7 @@ class ResolvAPIAction(Action):
             res = await self.http_request('PUT', endpoint, json_data=payload)
             if res['status'] in [200, 201]:
                 return True
-            
+
             logger.error(f"Failed to update issue. Status: {res['status']}, Response: {res['text']}")
             return False
         except Exception as e:
@@ -409,12 +409,12 @@ class ResolvAPIAction(Action):
         """
         project_id = await self.get_project_id_by_agent_identifier()
         endpoint = f"{self.api_url.rstrip('/')}/organizations/{self.organization_slug}/projects/{project_id}/issues/{issue_id}"
-        
+
         try:
             res = await self.http_request('GET', endpoint)
             if res['status'] == 200:
                 return res['json'].get('issue', {})
-            
+
             logger.error(f"Failed to get issue {issue_id}. Status: {res['status']}, Response: {res['text']}")
             return {}
         except Exception as e:
@@ -434,12 +434,12 @@ class ResolvAPIAction(Action):
         project_id = await self.get_project_id_by_agent_identifier()
         endpoint = f"{self.api_url.rstrip('/')}/organizations/{self.organization_slug}/projects/{project_id}/issues"
         params = {"query": query} if query else {}
-        
+
         try:
             res = await self.http_request('GET', endpoint, params=params)
             if res['status'] == 200:
                 return res['json'].get('issues', [])
-            
+
             logger.error(f"Failed to list issues. Status: {res['status']}, Response: {res['text']}")
             return []
         except Exception as e:
@@ -472,12 +472,12 @@ class ResolvAPIAction(Action):
             A list of category dictionaries.
         """
         endpoint = f"{self.api_url.rstrip('/')}/organizations/{self.organization_slug}/issue-categories"
-        
+
         try:
             res = await self.http_request('GET', endpoint)
             if res['status'] == 200:
                 return res['json'].get('categories', [])
-            
+
             logger.error(f"Failed to get issue categories. Status: {res['status']}, Response: {res['text']}")
             return []
         except Exception as e:
@@ -499,7 +499,7 @@ class ResolvAPIAction(Action):
             The contact dictionary.
         """
         endpoint = f"{self.api_url.rstrip('/')}/organizations/{self.organization_slug}/contacts/lookup?phone={phone}"
-        
+
         try:
             res = await self.http_request('GET', endpoint)
 
@@ -508,7 +508,7 @@ class ResolvAPIAction(Action):
             elif res['status'] == 404:
                 create_result = await self.create_contact(phone=phone, name=name or f"User_{phone}", email=email)
                 return create_result.get('contact', {})
-            
+
             logger.error(f"Failed to get contact by phone. Status: {res['status']}, Response: {res['text']}")
             return {}
         except Exception as e:
@@ -536,12 +536,12 @@ class ResolvAPIAction(Action):
             "email": email,
             "projectId": project_id
         }
-        
+
         try:
             res = await self.http_request('PUT', endpoint, json_data=data)
             if res['status'] == 200:
                 return True
-            
+
             logger.error(f"Failed to update contact. Status: {res['status']}, Response: {res['text']}")
             return False
         except Exception as e:
@@ -568,12 +568,12 @@ class ResolvAPIAction(Action):
             "email": email,
             "projectId": project_id
         }
-        
+
         try:
             res = await self.http_request('POST', endpoint, json_data=data)
             if res['status'] == 201:
                 return res['json']
-            
+
             logger.error(f"Failed to create contact. Status: {res['status']}, Response: {res['text']}")
             return {}
         except Exception as e:
@@ -593,12 +593,12 @@ class ResolvAPIAction(Action):
             The notice dictionary.
         """
         endpoint = f"{self.api_url.rstrip('/')}/organizations/{self.organization_slug}/notices/{notice_id}"
-        
+
         try:
             res = await self.http_request('GET', endpoint)
             if res['status'] == 200:
                 return res['json']
-            
+
             logger.error(f"Failed to get notice. Status: {res['status']}, Response: {res['text']}")
             return {}
         except Exception as e:
@@ -624,7 +624,7 @@ class ResolvAPIAction(Action):
             res = await self.http_request('GET', endpoint, params=params)
             if res['status'] == 200:
                 return res['json'].get('notices', [])
-            
+
             logger.error(f"Failed to get notices. Status: {res['status']}, Response: {res['text']}")
             return []
         except Exception as e:
@@ -671,12 +671,12 @@ class ResolvAPIAction(Action):
         """
         reported_for_contact_id = None
         reported_by_contact_id = None
-        
+
         if str(reporting_on_behalf).lower() == "yes":
             reported_for_contact = await self.get_contact_by_phone(phone=stakeholder_phone, name=stakeholder_name)
             if reported_for_contact:
                 reported_for_contact_id = reported_for_contact.get('id')
-            
+
             reported_by_contact = await self.get_contact_by_phone(phone=reporter_phone, name=reporter_name)
             if reported_by_contact:
                 reported_by_contact_id = reported_by_contact.get('id')
@@ -691,7 +691,7 @@ class ResolvAPIAction(Action):
             reported_for_contact_id=reported_for_contact_id,
             is_anonymous=is_anonymous
         )
-        
+
         if attachments and result and 'id' in result:
             for attachment_url in attachments:
                 await self.upload_file_url(
@@ -791,7 +791,7 @@ class ResolvAPIAction(Action):
         """
         endpoint = f"{self.api_url.rstrip('/')}/organizations/{self.organization_slug}/projects/{project_id}/comments"
         payload = {"content": content, "type": "feedback"}
-        
+
         try:
             res = await self.http_request('POST', endpoint, json_data=payload, show_curl_for_function="")
             if res['status'] in [200, 201]:
@@ -845,7 +845,7 @@ class ResolvAPIAction(Action):
             res = await self.http_request('GET', endpoint)
             if res['status'] == 200:
                 return res['json'].get('projects', [])
-            
+
             logger.error(f"Failed to get projects. Status: {res['status']}, Response: {res['text']}")
             return []
         except Exception as e:
@@ -878,12 +878,12 @@ class ResolvAPIAction(Action):
         """
         endpoint = f"{self.api_url.rstrip('/')}/organizations/{self.organization_slug}/issues"
         params = {"projectId": project_id}
-        
+
         try:
             res = await self.http_request('GET', endpoint, params=params)
             if res['status'] == 200:
                 return res['json'].get('issues', [])
-            
+
             logger.error(f"Failed to get issues by project. Status: {res['status']}, Response: {res['text']}")
             return []
         except Exception as e:
@@ -908,13 +908,13 @@ class ResolvAPIAction(Action):
             res = await self.http_request('POST', endpoint, json_data=payload)
             if res['status'] == 200:
                 return res['json'].get('url', '')
-            
+
             logger.error(f"Failed to get channels page. Status: {res['status']}, Response: {res['text']}")
             return ""
         except Exception as e:
             logger.error(f"Error getting channels page: {e}")
             return ""
-    
+
     async def submit_comment(
         self,
         content: str,
@@ -951,5 +951,4 @@ class ResolvAPIAction(Action):
 
         return result
 
-    
-    
+

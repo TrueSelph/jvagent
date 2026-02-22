@@ -20,23 +20,23 @@ logger = logging.getLogger(__name__)
 
 class QuestionBranchEvaluator:
     """Evaluates conditions for conditional question branching.
-    
+
     Provides unified condition matching logic used throughout the interview system.
     Supports enhanced operators for flexible condition evaluation.
     Also supports custom branch functions for complex condition evaluation with
     full access to session data and graph context.
-    
+
     Branch functions are only evaluated after the question is answered to prevent
     premature execution during graph traversal.
     """
-    
+
     @staticmethod
     async def matches(
         condition: Dict[str, Any],
         session: InterviewSession,
         implicit_question: str,
         visitor: Optional["InteractWalker"] = None,
-        interview_action: Optional[Any] = None
+        interview_action: Optional[Any] = None,
     ) -> bool:
         """Check if a condition matches the current session state.
 
@@ -64,7 +64,9 @@ class QuestionBranchEvaluator:
 
         # Question is always implicit from branch context
         if not implicit_question:
-            logger.error("implicit_question is required for branch condition evaluation")
+            logger.error(
+                "implicit_question is required for branch condition evaluation"
+            )
             return False
 
         question_name = implicit_question
@@ -86,7 +88,7 @@ class QuestionBranchEvaluator:
         session: InterviewSession,
         question_name: str,
         visitor: Optional["InteractWalker"],
-        interview_action: Optional[Any] = None
+        interview_action: Optional[Any] = None,
     ) -> bool:
         """Evaluate a function-based branch condition.
 
@@ -109,7 +111,12 @@ class QuestionBranchEvaluator:
             return False
 
         operator = condition.get("op")
-        is_existence_check = operator in ("exists", "is_set", "not_exists", "is_not_set")
+        is_existence_check = operator in (
+            "exists",
+            "is_set",
+            "not_exists",
+            "is_not_set",
+        )
         if not is_existence_check:
             if question_name not in session.responses:
                 logger.debug(
@@ -136,7 +143,9 @@ class QuestionBranchEvaluator:
                 expected_value = condition.get("value")
                 op = condition.get("op")
                 try:
-                    evaluation_result = ConditionOperator.evaluate(op, result, expected_value)
+                    evaluation_result = ConditionOperator.evaluate(
+                        op, result, expected_value
+                    )
                     logger.debug(
                         f"Function '{function_name}' returned {result!r}, operator '{op}' "
                         f"evaluation: {evaluation_result}"
@@ -158,16 +167,13 @@ class QuestionBranchEvaluator:
         except Exception as e:
             logger.error(
                 f"Error executing branch function '{function_name}' for question '{question_name}': {e}",
-                exc_info=True
+                exc_info=True,
             )
             return False
 
-
     @staticmethod
     def _evaluate_operator_condition(
-        condition: Dict[str, Any],
-        session: InterviewSession,
-        question_name: str
+        condition: Dict[str, Any], session: InterviewSession, question_name: str
     ) -> bool:
         """Evaluate a legacy operator-based branch condition.
 
@@ -208,7 +214,9 @@ class QuestionBranchEvaluator:
                 )
                 return result
             except ValueError:
-                logger.warning(f"Invalid operator '{operator}' in condition for question '{question_name}'")
+                logger.warning(
+                    f"Invalid operator '{operator}' in condition for question '{question_name}'"
+                )
                 return False
 
         # For other operators, we need a value to compare
@@ -230,5 +238,7 @@ class QuestionBranchEvaluator:
             )
             return result
         except ValueError as e:
-            logger.warning(f"Invalid operator '{operator}' in condition for question '{question_name}': {e}")
+            logger.warning(
+                f"Invalid operator '{operator}' in condition for question '{question_name}': {e}"
+            )
             return False

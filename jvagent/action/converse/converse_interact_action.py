@@ -141,7 +141,9 @@ class ConverseInteractAction(InteractAction):
             # Check for existing unexecuted directives/parameters
             unexecuted_directives = interaction.get_unexecuted_directives()
             unexecuted_parameters = interaction.get_unexecuted_parameters()
-            has_unexecuted = len(unexecuted_directives) > 0 or len(unexecuted_parameters) > 0
+            has_unexecuted = (
+                len(unexecuted_directives) > 0 or len(unexecuted_parameters) > 0
+            )
 
             # If unexecuted directives/parameters exist, defer to them
             if has_unexecuted:
@@ -172,7 +174,9 @@ class ConverseInteractAction(InteractAction):
             # The refined directive and parameters will ensure PersonaAction does not
             # attempt to respond to knowledge/capability questions
             if not self.directive:
-                logger.warning("ConverseInteractAction: Directive not configured, skipping")
+                logger.warning(
+                    "ConverseInteractAction: Directive not configured, skipping"
+                )
                 await visitor.unrecord_action_execution()
                 return
 

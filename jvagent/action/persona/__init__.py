@@ -11,10 +11,9 @@ Note: PersonaAction is a tool-based action, not an InteractAction.
 It is typically called by InteractActions via the InteractWalker.
 """
 
-from jvagent.action.persona.persona_action import PersonaAction
-
 # Import endpoints for automatic discovery
 from jvagent.action.persona import endpoints  # noqa: F401
+from jvagent.action.persona.persona_action import PersonaAction
 
 __all__ = [
     "PersonaAction",

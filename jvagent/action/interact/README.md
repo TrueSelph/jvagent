@@ -30,7 +30,7 @@ class MyTopLevelAction(InteractAction):
     async def execute(self, visitor: InteractWalker) -> None:
         # Perform action logic
         # ...
-        
+
         # Explicitly route to child actions conditionally
         if some_condition:
             child_action = await self.node(node="ChildInteractAction")
@@ -166,7 +166,7 @@ async def respond(
     with_event: bool = False,
     with_response: bool = True,
     max_statement_length: Optional[int] = None
-    
+
 ) -> Optional[str]
 ```
 
@@ -384,13 +384,13 @@ await self.respond(visitor, parameters=[self.parameters])  # ❌ Creates nested 
 InteractActions participate in routing via **anchors** and an optional
 **always_execute** flag:
 
-- `anchors: List[str]`  
+- `anchors: List[str]`
   Describe when the action should be used. `InteractRouter` collects these and
   uses them in its LLM prompt.
 
-- `always_execute: bool`  
+- `always_execute: bool`
   If `True`, the action is treated as a **routing exception** and is always
-  allowed to execute, even if it is not explicitly selected by routing.  
+  allowed to execute, even if it is not explicitly selected by routing.
   `InteractRouter` will automatically include the class name of such actions in
   `interaction.anchors`, so `InteractWalker` will not skip them.
 

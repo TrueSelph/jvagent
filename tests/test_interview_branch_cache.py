@@ -1,7 +1,9 @@
 import pytest
 
+from jvagent.action.interview.core.graph.question_branch_evaluator import (
+    QuestionBranchEvaluator,
+)
 from jvagent.action.interview.core.session.interview_session import InterviewSession
-from jvagent.action.interview.core.graph.question_branch_evaluator import QuestionBranchEvaluator
 from jvagent.action.interview.core.utils.cache_utils import BranchCache
 
 

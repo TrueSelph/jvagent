@@ -151,48 +151,50 @@ class App(Node):
         # Always get the singleton instance to ensure we're using the same instance
         # even if _response_bus was cleared or this App instance was recreated
         from jvagent.action.response.response_bus import ResponseBus
+
         response_bus = await ResponseBus.get_instance()
-        
+
         # Cache it for faster subsequent access
         self._response_bus = response_bus
         return response_bus
 
     async def initialize_actions(self) -> Dict[str, bool]:
         """Initialize all actions by calling their on_startup() hooks.
-        
+
         This method should be called when the app starts to ensure all actions
         are properly initialized, including their runtime components like
         channel adapters.
-        
+
         Returns:
             Dict mapping action IDs to initialization status
         """
         import logging
-        from jvagent.core.agent import Agent
+
         from jvagent.action.base import Action
-        
+        from jvagent.core.agent import Agent
+
         logger = logging.getLogger(__name__)
         results = {}
-        
+
         try:
             # Get all agents via App -> Agents -> Agent path
             # Agents are connected to the Agents node, which is connected to App
             from jvagent.core.agents import Agents as AgentsNode
-            
+
             agents_node = await AgentsNode.get()
             if not agents_node:
                 return results
-            
+
             agents = await agents_node.get_connected_agents()
-            
+
             # For each agent, get all actions and call on_startup
             for agent in agents:
                 actions_manager = await agent.get_actions_manager()
                 if not actions_manager:
                     continue
-                
+
                 actions = await actions_manager.get_actions()
-                
+
                 for action in actions:
                     try:
                         await action.on_startup()
@@ -200,10 +202,10 @@ class App(Node):
                     except Exception as e:
                         logger.error(
                             f"Error in on_startup for {action.label}: {e}",
-                            exc_info=True
+                            exc_info=True,
                         )
                         results[action.id] = False
-            
+
             return results
         except Exception as e:
             logger.error(f"Error initializing actions: {e}", exc_info=True)
@@ -440,7 +442,10 @@ class App(Node):
 
         try:
             proxy = await proxy_manager.create_proxy(
-                file_path=path, expires_in=expires_in, one_time=one_time, metadata=metadata
+                file_path=path,
+                expires_in=expires_in,
+                one_time=one_time,
+                metadata=metadata,
             )
 
             if proxy and hasattr(proxy, "code"):

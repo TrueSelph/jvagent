@@ -39,9 +39,7 @@ class HuggingFaceEmbeddingModelAction(EmbeddingModelAction):
         default="sentence-transformers/all-MiniLM-L6-v2",
         description="HuggingFace model identifier",
     )
-    provider: str = attribute(
-        default="huggingface", description="Provider name"
-    )
+    provider: str = attribute(default="huggingface", description="Provider name")
 
     # Model dimension mapping (for auto-detection)
     _model_dimensions: Dict[str, int] = attribute(
@@ -55,7 +53,7 @@ class HuggingFaceEmbeddingModelAction(EmbeddingModelAction):
 
     async def on_register(self) -> None:
         """Called when action is registered during installation.
-        
+
         Validates configuration. HTTP client initialization is handled
         by the base class. This method should only be called once during
         action registration.
@@ -129,4 +127,3 @@ class HuggingFaceEmbeddingModelAction(EmbeddingModelAction):
         except Exception as e:
             logger.error(f"HuggingFace embedding failed: {e}", exc_info=True)
             raise
-

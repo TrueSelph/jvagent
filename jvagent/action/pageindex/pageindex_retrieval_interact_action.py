@@ -47,7 +47,9 @@ def _push_ingestion_config(ingestion: Dict[str, Any]) -> None:
     set_pageindex_summary_token_threshold(ingestion.get("summary_token_threshold"))
 
 
-def _get_ingestion_config(config: Dict[str, Any], node_summary_attr: bool) -> Dict[str, Any]:
+def _get_ingestion_config(
+    config: Dict[str, Any], node_summary_attr: bool
+) -> Dict[str, Any]:
     """Resolve ingestion config from action config (with attribute fallback for node_summary)."""
     cfg = config or {}
     node_summary = (
@@ -60,7 +62,8 @@ def _get_ingestion_config(config: Dict[str, Any], node_summary_attr: bool) -> Di
         "node_text": _bool_from_config(cfg.get("node_text"), True),
         "doc_description": _bool_from_config(cfg.get("doc_description"), False),
         "max_token_num_each_node": cfg.get("max_token_num_each_node"),
-        "summary_token_threshold": cfg.get("summary_token_threshold") or cfg.get("max_node_tokens"),
+        "summary_token_threshold": cfg.get("summary_token_threshold")
+        or cfg.get("max_node_tokens"),
     }
 
 
@@ -74,7 +77,7 @@ async def ensure_ingestion_config_for_agent(agent_id: str) -> None:
     from jvagent.core.cache import get_cached_actions
 
     actions = await get_cached_actions(agent_id, enabled_only=True)
-    for action in (actions or []):
+    for action in actions or []:
         if isinstance(action, PageIndexRetrievalInteractAction):
             config = getattr(action, "config", None) or {}
             node_summary_attr = getattr(action, "node_summary", False)
@@ -82,13 +85,15 @@ async def ensure_ingestion_config_for_agent(agent_id: str) -> None:
             _push_ingestion_config(ingestion)
             return
     # Fallback: default to summaries for agent-scoped routes
-    _push_ingestion_config({
-        "node_summary": True,
-        "node_text": True,
-        "doc_description": False,
-        "max_token_num_each_node": None,
-        "summary_token_threshold": None,
-    })
+    _push_ingestion_config(
+        {
+            "node_summary": True,
+            "node_text": True,
+            "doc_description": False,
+            "max_token_num_each_node": None,
+            "summary_token_threshold": None,
+        }
+    )
 
 
 class PageIndexRetrievalInteractAction(InteractAction):

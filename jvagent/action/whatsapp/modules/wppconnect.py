@@ -1,14 +1,15 @@
 """Async API module for interacting with the WPPConnect HTTP API."""
 
 import base64
+import logging
 from typing import Dict, List, Optional
 
 import aiohttp
 
 from .base import BaseWhatsAppAPI
-import logging
 
 logger = logging.getLogger(__name__)
+
 
 class WPPConnectAPI(BaseWhatsAppAPI):
     """Async class for interacting with the WPPConnect API."""
@@ -77,7 +78,9 @@ class WPPConnectAPI(BaseWhatsAppAPI):
                 # ONLY update if we haven't already registered this webhook for this session in this process
                 try:
                     await self.close_session()
-                    start_res = await self.start_session(webhook=webhook_url, wait_qr_code=wait_qr_code)
+                    start_res = await self.start_session(
+                        webhook=webhook_url, wait_qr_code=wait_qr_code
+                    )
                     if start_res.get("status") == "CONNECTED":
                         logger.debug(
                             f"Updated webhook URL for existing session '{self.session}'"
@@ -91,7 +94,7 @@ class WPPConnectAPI(BaseWhatsAppAPI):
                     logger.debug(
                         f"Error updating webhook for existing session '{self.session}': {e}"
                     )
-            
+
             # Return success regardless - session is connected
             device_info = await self.get_host_device()
             return {
@@ -104,10 +107,12 @@ class WPPConnectAPI(BaseWhatsAppAPI):
 
         # Handle disconnected states
         if status in {"QRCODE", "DISCONNECTED", "CLOSED", ""} and auto_register:
-            start_res = await self.start_session(webhook=webhook_url, wait_qr_code=wait_qr_code)
-            
+            start_res = await self.start_session(
+                webhook=webhook_url, wait_qr_code=wait_qr_code
+            )
+
             qrcode_b64 = start_res.get("qrcode") or (await self.qrcode()).get("qrcode")
-            
+
             return {
                 "status": "AWAITING_QR_SCAN",
                 "message": "Session created or started. Awaiting QR Code scan.",
@@ -138,11 +143,17 @@ class WPPConnectAPI(BaseWhatsAppAPI):
         """GET /api/{session}/check-connection-session"""
         return await self.send_rest_request("check-connection-session", method="GET")
 
-    async def start_session(self, webhook: str = "", wait_qr_code: bool = False) -> dict:
+    async def start_session(
+        self, webhook: str = "", wait_qr_code: bool = False
+    ) -> dict:
         """POST /start-session"""
         data = {"webhook": webhook, "waitQrCode": wait_qr_code}
         result = await self.send_rest_request("start-session", data=data)
-        return result if result.get("status") else await self.send_rest_request("start-session", data=data)
+        return (
+            result
+            if result.get("status")
+            else await self.send_rest_request("start-session", data=data)
+        )
 
     async def close_session(self) -> dict:
         """POST /close-session"""
@@ -154,14 +165,14 @@ class WPPConnectAPI(BaseWhatsAppAPI):
 
     async def qrcode(self) -> dict:
         """GET /qrcode-session (base64 encoded image returned)
-        
+
         Uses connection pooling for efficient HTTP requests.
         """
         from .base import get_connection_pool
-        
+
         url = f"{self.api_url}/{self.session}/qrcode-session"
         headers = {"Authorization": f"Bearer {self.token}"}
-        
+
         try:
             pool = await get_connection_pool()
             session = await pool.get_session(self.api_url, self.timeout)
@@ -184,7 +195,9 @@ class WPPConnectAPI(BaseWhatsAppAPI):
         url = f"{self.api_url}/{self.session}/{self.secret_key}/generate-token"
         return await self.send_rest_request(url, method="POST", use_full_url=True)
 
-    async def set_typing_status(self, phone: str, value: bool = True, is_group: bool = False) -> dict:
+    async def set_typing_status(
+        self, phone: str, value: bool = True, is_group: bool = False
+    ) -> dict:
         """
         POST /api/{session}/typing
         Sets the typing status for a chat.
@@ -223,6 +236,7 @@ class WPPConnectAPI(BaseWhatsAppAPI):
             "value": value,
         }
         return await self.send_rest_request("recording", method="POST", data=data)
+
     # ========================================================================
     # MESSAGING
     # ========================================================================
@@ -243,16 +257,15 @@ class WPPConnectAPI(BaseWhatsAppAPI):
             "isNewsletter": is_newsletter,
             "message": message,
         }
-        
+
         if options:
             data["options"] = options
-        
+
         if message_id:
             data["messageId"] = message_id
             return await self.send_rest_request("send-reply", data=data)
-        
-        return await self.send_rest_request("send-message", data=data)
 
+        return await self.send_rest_request("send-message", data=data)
 
     async def send_image(self, phone: str, file_url: str = "", **kwargs) -> dict:
         """POST /send-image"""
@@ -263,14 +276,14 @@ class WPPConnectAPI(BaseWhatsAppAPI):
         return await self.send_media(phone, "send-file", file_url=file_url, **kwargs)
 
     async def send_media(
-        self, 
-        phone: str, 
-        endpoint: str, 
-        file_url: str = "", 
+        self,
+        phone: str,
+        endpoint: str,
+        file_url: str = "",
         caption: str = "",
         filename: str = "",
         is_group: bool = False,
-        **kwargs
+        **kwargs,
     ) -> dict:
         """Generic media sending method."""
         data = {
@@ -324,11 +337,17 @@ class WPPConnectAPI(BaseWhatsAppAPI):
 
     async def create_group(self, name: str, participants: List[str]) -> dict:
         """POST /create-group"""
-        return await self.send_rest_request("create-group", data={"name": name, "participants": participants})
+        return await self.send_rest_request(
+            "create-group", data={"name": name, "participants": participants}
+        )
 
     async def group_members(self, group_id: str) -> dict:
         """GET /group-members/{group_id}"""
-        return await self.send_rest_request(f"group-members/{group_id}", method="GET") if group_id else {}
+        return (
+            await self.send_rest_request(f"group-members/{group_id}", method="GET")
+            if group_id
+            else {}
+        )
 
     async def manage_group_participant(
         self, action: str, group_id: str, phone: str
@@ -367,7 +386,9 @@ class WPPConnectAPI(BaseWhatsAppAPI):
 
     async def list_chats(self, options: Optional[dict] = None) -> dict:
         """POST /list-chats"""
-        return await self.send_rest_request("list-chats", method="POST", data=options or {})
+        return await self.send_rest_request(
+            "list-chats", method="POST", data=options or {}
+        )
 
     async def get_chat_by_id(self, phone: str) -> dict:
         """GET /chat-by-id/{phone}"""
@@ -387,7 +408,9 @@ class WPPConnectAPI(BaseWhatsAppAPI):
 
     async def get_profile_picture(self, phone: str) -> dict:
         """GET /profile-pic"""
-        return await self.send_rest_request("profile-pic", method="GET", params={"phone": phone})
+        return await self.send_rest_request(
+            "profile-pic", method="GET", params={"phone": phone}
+        )
 
     async def health_check(self) -> dict:
         """GET /healthz"""

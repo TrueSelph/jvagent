@@ -85,13 +85,13 @@ export function PageIndexDocumentsModal({
 
   const handleUpload = async () => {
     if (!selectedFile) return
-    
+
     // Validate file size
     if (selectedFile.size > MAX_FILE_SIZE) {
       setUploadError(`File size exceeds ${MAX_FILE_SIZE / (1024 * 1024)}MB limit`)
       return
     }
-    
+
     setUploading(true)
     setUploadError(null)
     try {
@@ -111,7 +111,7 @@ export function PageIndexDocumentsModal({
       console.error('Upload failed:', err)
       const errorMsg = err.message || 'Upload failed'
       setUploadError(
-        errorMsg.includes('timeout') 
+        errorMsg.includes('timeout')
           ? 'Upload timed out. File may be too large or server is slow.'
           : errorMsg
       )
@@ -213,7 +213,7 @@ export function PageIndexDocumentsModal({
           {/* Import/Export section */}
           <div className="space-y-3 border-b border-gray-200 pb-6">
             <h3 className="text-sm font-medium text-gray-700">Import / Export</h3>
-            
+
             {/* Export */}
             <div className="flex flex-col sm:flex-row gap-3 items-end">
               <div className="flex-1">

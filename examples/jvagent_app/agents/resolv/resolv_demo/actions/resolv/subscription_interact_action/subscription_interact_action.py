@@ -11,13 +11,13 @@ logger = logging.getLogger(__name__)
 
 class SubscriptionInteractAction(InteractAction):
     """Provides users with subscription management capabilities for Resolv IMS channels.
-    
+
     This action allows users to:
     1. View their current subscriptions
     2. Subscribe to new channels or groups
     3. Unsubscribe from existing channels or groups
     4. Access the subscription management page
-    
+
     The action is triggered when users express intent to manage their subscriptions.
     """
 
@@ -38,10 +38,10 @@ class SubscriptionInteractAction(InteractAction):
 
     async def execute(self, visitor: InteractWalker) -> None:
         """Execute subscription management process.
-        
+
         Retrieves the user's subscription page link and provides it to the user
         via a directive for PersonaAction to incorporate into the response.
-        
+
         Args:
             visitor: InteractWalker instance containing interaction context
         """
@@ -50,10 +50,10 @@ class SubscriptionInteractAction(InteractAction):
         user = await interaction.get_user()
         subscriber_display_name = user.get_display_name() if user else "user"
         subscriber_phone = user.user_id
-        
+
         # Get Resolv API action
         api = await self.get_action("ResolvAPIAction")
-        
+
         # Get channels page and add directive
         subscription_page = await api.get_channels_page(subscriber_phone, subscriber_display_name)
         if subscription_page:

@@ -41,7 +41,9 @@ class Bundler:
             base_template_path = bundle_dir / "Dockerfile.base"
 
             if not base_template_path.exists():
-                logger.error(f"Base Dockerfile template not found: {base_template_path}")
+                logger.error(
+                    f"Base Dockerfile template not found: {base_template_path}"
+                )
                 return False
 
             # Generate Dockerfile

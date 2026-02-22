@@ -132,25 +132,25 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
     async def _call_model(self, user_prompt: str, system_prompt: str, json_response: bool = False):
         """
         Call the language model and return the response.
-        
+
         Args:
             user_prompt: The user's input/question
             system_prompt: System instruction defining model behavior
             json_response: If True, parse response as JSON (default: False)
-        
+
         Returns:
             - If json_response=True: Parsed JSON dict on success
             - If json_response=False: Raw string response
             - False if model action unavailable
             - None if exception occurs
-        
+
         Example:
             # Text response
             response = await self._call_model(
                 user_prompt="What is Python?",
                 system_prompt="You are a programming expert."
             )
-            
+
             # JSON response
             data = await self._call_model(
                 user_prompt="List 3 Python frameworks",
@@ -162,7 +162,7 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
             model_action = await self.get_model_action()
             if not model_action:
                 return False
-            
+
             if json_response:
                 result_str = await model_action.generate(
                     prompt=user_prompt,
@@ -182,7 +182,7 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
                 else:
                     json_match = re.search(r'{.*}', result_str, re.DOTALL)
                     result_str = json_match.group(0) if json_match else result_str.strip()
-                    
+
                 return json.loads(result_str)
             else:
                 return await model_action.generate(
@@ -200,7 +200,7 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
 
     @branch_function()
     async def can_ask_for_media(
-        session: InterviewSession, 
+        session: InterviewSession,
         visitor: Optional[InteractWalker] = None,
         interview_action: Optional[Any] = None,
     ) -> bool:
@@ -214,7 +214,7 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
                 result_json = await interview_action._call_model(user_prompt, interview_action.can_ask_for_media_prompt, json_response=True)
                 if result_json and isinstance(result_json, dict):
                     logger.warning(f"Should ask for media: {result_json}")
-                    should_ask = result_json.get("should_ask", False)    
+                    should_ask = result_json.get("should_ask", False)
                     logger.warning(f"Should ask for media: {type(should_ask)}")
                     return should_ask
             except Exception as e:
@@ -223,7 +223,7 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
         return False
 
 
-    # input validator 
+    # input validator
     @input_validator("feedback_content")
     async def validate_feedback_content(
         value: str,
@@ -258,7 +258,7 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
             return ValidationStatus.INVALID, "Ask: Please share your feedback."
 
         return ValidationStatus.VALID, None
-        
+
 
 
 # input review override
@@ -287,10 +287,10 @@ def adapt_review(
             result_ending[field_name] = media_links
         else:
             result[field_name] = value
-    
-    # add items at the end of the dict 
+
+    # add items at the end of the dict
     result.update(result_ending)
-    
+
     return result
 
 
@@ -302,9 +302,9 @@ async def handle_interview_completion(
     action: InteractAction
 ) -> None:
     """Handle completion of feedback interview."""
-    
+
     # logger.warning(f"Interview responses: {json.dumps(session.responses, indent=4)}")
-    
+
     feedback_content = session.responses.get('feedback_content', '')
     reference_number = session.responses.get('reference_number', '')
     if reference_number == "N/A":

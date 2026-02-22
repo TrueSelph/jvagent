@@ -21,15 +21,15 @@ from jvspatial.api.config_groups import (
 )
 from jvspatial.core import Root
 
+# Configure logging (will be updated based on --debug flag)
+from jvspatial.logging import configure_standard_logging
+
 from jvagent import __version__
 from jvagent.core import Agents
 from jvagent.core.app import App
 from jvagent.core.app_loader import AppLoader
 from jvagent.core.bootstrap_logger import BootstrapLogger
 from jvagent.utils.env import is_development_mode
-
-# Configure logging (will be updated based on --debug flag)
-from jvspatial.logging import configure_standard_logging
 
 configure_standard_logging(
     level=os.getenv("JVAGENT_LOG_LEVEL", "INFO"),
@@ -70,7 +70,9 @@ def load_app_env(app_root: str = None) -> None:
             logger.debug(f"No .env file found in app root: {app_root}")
 
 
-async def bootstrap_application_graph(update_if_exists: bool = False, app_root: str = None) -> None:
+async def bootstrap_application_graph(
+    update_if_exists: bool = False, app_root: str = None
+) -> None:
     """Bootstrap the application graph with App and Agents nodes.
 
     If an app.yaml file is found in the app root directory, uses AppLoader to
@@ -107,7 +109,9 @@ async def bootstrap_application_graph(update_if_exists: bool = False, app_root: 
         if app:
             bootstrap_log.complete("Application graph ready")
         else:
-            bootstrap_log.error("Declarative bootstrap failed - falling back to manual bootstrap")
+            bootstrap_log.error(
+                "Declarative bootstrap failed - falling back to manual bootstrap"
+            )
             await _manual_bootstrap()
     else:
         bootstrap_log.start("Application graph (manual mode, no app.yaml)")
@@ -195,7 +199,9 @@ async def ensure_admin_user() -> bool:
     admin_email = os.getenv("JVAGENT_ADMIN_EMAIL", f"{admin_username}@jvagent.example")
 
     if not admin_password:
-        logger.warning("JVAGENT_ADMIN_PASSWORD not set in .env. " "Admin user will not be created.")
+        logger.warning(
+            "JVAGENT_ADMIN_PASSWORD not set in .env. " "Admin user will not be created."
+        )
         return False
 
     # Check if admin user already exists by email
@@ -214,14 +220,19 @@ async def ensure_admin_user() -> bool:
 
     # Create user
     admin_user = await User.create(
-        email=admin_email, password_hash=password_hash, name=admin_username, is_active=True
+        email=admin_email,
+        password_hash=password_hash,
+        name=admin_username,
+        is_active=True,
     )
 
     logger.info(f"Created admin user: {admin_email} (ID: {admin_user.id})")
     return True
 
 
-def _get_config_value(config: dict, path: str, env_var: str = None, default: Any = None) -> Any:
+def _get_config_value(
+    config: dict, path: str, env_var: str = None, default: Any = None
+) -> Any:
     """Get configuration value from nested dict path with environment variable fallback.
 
     Args:
@@ -287,6 +298,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         app_yaml_path = Path(app_root) / "app.yaml"
         if app_yaml_path.exists():
             import yaml
+
             from jvagent.core.env_resolver import resolve_env_placeholders
 
             with open(app_yaml_path, "r", encoding="utf-8") as f:
@@ -300,23 +312,35 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
 
     # Get configuration with priority: env var > app.yaml > default
     # Server configuration
-    title = _get_config_value(app_config, "server.title", "JVAGENT_TITLE", "jvagent API")
-    description = _get_config_value(
-        app_config, "server.description", "JVAGENT_DESCRIPTION", "jvagent Agentive Platform API"
+    title = _get_config_value(
+        app_config, "server.title", "JVAGENT_TITLE", "jvagent API"
     )
-    version = _get_config_value(app_config, "server.version", "JVAGENT_VERSION", __version__)
+    description = _get_config_value(
+        app_config,
+        "server.description",
+        "JVAGENT_DESCRIPTION",
+        "jvagent Agentive Platform API",
+    )
+    version = _get_config_value(
+        app_config, "server.version", "JVAGENT_VERSION", __version__
+    )
     host = _get_config_value(app_config, "server.host", "JVAGENT_HOST", "127.0.0.1")
     port = int(_get_config_value(app_config, "server.port", "JVAGENT_PORT", 8000))
 
     # Database configuration
-    db_type = _get_config_value(app_config, "database.type", "JVSPATIAL_DB_TYPE", "json")
-    db_path = _get_config_value(app_config, "database.path", "JVSPATIAL_DB_PATH", "./jvagent_db")
+    db_type = _get_config_value(
+        app_config, "database.type", "JVSPATIAL_DB_TYPE", "json"
+    )
+    db_path = _get_config_value(
+        app_config, "database.path", "JVSPATIAL_DB_PATH", "./jvagent_db"
+    )
     # Ensure db_path is never None or empty (jvspatial falls back to "./jvdb" if None)
     if not db_path or db_path.strip() == "":
         db_path = "./jvagent_db"
 
     # Resolve relative database path against app_root
     from pathlib import Path
+
     app_root_path = Path(app_root).resolve()
     db_path_obj = Path(db_path)
     if not db_path_obj.is_absolute():
@@ -391,17 +415,26 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
 
     # Graph endpoint configuration
     graph_endpoint_enabled = _get_config_value(
-        app_config, "api.graph_endpoint_enabled", "JVSPATIAL_GRAPH_ENDPOINT_ENABLED", False
+        app_config,
+        "api.graph_endpoint_enabled",
+        "JVSPATIAL_GRAPH_ENDPOINT_ENABLED",
+        False,
     )
 
     # Authentication configuration (enabled by default for jvagent)
-    auth_enabled = _get_config_value(app_config, "auth.enabled", "JVAGENT_AUTH_ENABLED", True)
-    jwt_auth_enabled = os.getenv("JVSPATIAL_JWT_AUTH_ENABLED", "true").lower() == "true"
-    jwt_secret = os.getenv("JVSPATIAL_JWT_SECRET", "jvagent-secret-key-change-in-production")
-    jwt_expire_minutes = int(
-        _get_config_value(app_config, "auth.jwt_expire_minutes", "JVSPATIAL_JWT_EXPIRE_MINUTES", 60)
+    auth_enabled = _get_config_value(
+        app_config, "auth.enabled", "JVAGENT_AUTH_ENABLED", True
     )
-    
+    jwt_auth_enabled = os.getenv("JVSPATIAL_JWT_AUTH_ENABLED", "true").lower() == "true"
+    jwt_secret = os.getenv(
+        "JVSPATIAL_JWT_SECRET", "jvagent-secret-key-change-in-production"
+    )
+    jwt_expire_minutes = int(
+        _get_config_value(
+            app_config, "auth.jwt_expire_minutes", "JVSPATIAL_JWT_EXPIRE_MINUTES", 60
+        )
+    )
+
     # API Key authentication configuration (enabled by default when auth is enabled)
     api_key_auth_enabled = _get_config_value(
         app_config, "auth.api_key_enabled", "JVAGENT_API_KEY_AUTH_ENABLED", auth_enabled
@@ -428,7 +461,9 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         logger.debug(f"Authentication: {'enabled' if auth_enabled else 'disabled'}")
         if auth_enabled:
             logger.debug(f"  JWT Auth: {'enabled' if jwt_auth_enabled else 'disabled'}")
-            logger.debug(f"  API Key Auth: {'enabled' if api_key_auth_enabled else 'disabled'}")
+            logger.debug(
+                f"  API Key Auth: {'enabled' if api_key_auth_enabled else 'disabled'}"
+            )
             if api_key_auth_enabled:
                 logger.debug(f"    API Key Prefix: {api_key_prefix}")
                 logger.debug(f"    API Key Header: {api_key_header}")
@@ -437,15 +472,23 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     log_level = os.getenv("JVAGENT_LOG_LEVEL", "debug" if debug else "info")
 
     # Override with app.yaml development.debug if available
-    debug_mode = _get_config_value(app_config, "development.debug", "JVSPATIAL_DEBUG", False)
+    debug_mode = _get_config_value(
+        app_config, "development.debug", "JVSPATIAL_DEBUG", False
+    )
     if debug_mode:
         log_level = "debug"
 
     # CORS configuration
-    cors_enabled = _get_config_value(app_config, "cors.enabled", "JVSPATIAL_CORS_ENABLED", True)
-    cors_origins_str = _get_config_value(app_config, "cors.origins", "JVSPATIAL_CORS_ORIGINS", None)
+    cors_enabled = _get_config_value(
+        app_config, "cors.enabled", "JVSPATIAL_CORS_ENABLED", True
+    )
+    cors_origins_str = _get_config_value(
+        app_config, "cors.origins", "JVSPATIAL_CORS_ORIGINS", None
+    )
     if cors_origins_str and isinstance(cors_origins_str, str):
-        cors_origins = [origin.strip() for origin in cors_origins_str.split(",") if origin.strip()]
+        cors_origins = [
+            origin.strip() for origin in cors_origins_str.split(",") if origin.strip()
+        ]
     else:
         # Default CORS origins
         cors_origins = [
@@ -467,8 +510,12 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         dynamodb_table_name=dynamodb_table_name if db_type == "dynamodb" else None,
         dynamodb_region=dynamodb_region if db_type == "dynamodb" else None,
         dynamodb_endpoint_url=dynamodb_endpoint_url if db_type == "dynamodb" else None,
-        dynamodb_access_key_id=dynamodb_access_key_id if db_type == "dynamodb" else None,
-        dynamodb_secret_access_key=dynamodb_secret_access_key if db_type == "dynamodb" else None,
+        dynamodb_access_key_id=(
+            dynamodb_access_key_id if db_type == "dynamodb" else None
+        ),
+        dynamodb_secret_access_key=(
+            dynamodb_secret_access_key if db_type == "dynamodb" else None
+        ),
     )
 
     # Auth configuration - merge default exempt paths with app-specific (auth.exempt_paths)
@@ -526,10 +573,11 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
 
     # Initialize logging database (automatically installs DBLogHandler)
     # Import INTERACTION level to ensure it's registered before initialization
-    from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
     import logging
 
     from jvspatial.logging.config import initialize_logging_database
+
+    from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
 
     # Get logging configuration from app.yaml if available
     logging_enabled = _get_config_value(
@@ -541,7 +589,9 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
             app_config, "logging.levels", "JVAGENT_DB_LOGGING_LEVELS", "ERROR,CRITICAL"
         )
         if isinstance(log_levels_str, str):
-            log_level_names = [level.strip().upper() for level in log_levels_str.split(",")]
+            log_level_names = [
+                level.strip().upper() for level in log_levels_str.split(",")
+            ]
         else:
             log_level_names = ["ERROR", "CRITICAL"]
 
@@ -577,19 +627,28 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
 
         # DynamoDB logging database configuration
         log_dynamodb_table_name = _get_config_value(
-            app_config, "logging.database.table_name", "JVSPATIAL_LOG_DB_TABLE_NAME", None
+            app_config,
+            "logging.database.table_name",
+            "JVSPATIAL_LOG_DB_TABLE_NAME",
+            None,
         )
         log_dynamodb_region = _get_config_value(
             app_config, "logging.database.region", "JVSPATIAL_LOG_DB_REGION", None
         )
         log_dynamodb_endpoint_url = _get_config_value(
-            app_config, "logging.database.endpoint_url", "JVSPATIAL_LOG_DB_ENDPOINT_URL", None
+            app_config,
+            "logging.database.endpoint_url",
+            "JVSPATIAL_LOG_DB_ENDPOINT_URL",
+            None,
         )
         log_dynamodb_access_key_id = _get_config_value(
             app_config, "logging.database.access_key_id", "AWS_ACCESS_KEY_ID", None
         )
         log_dynamodb_secret_access_key = _get_config_value(
-            app_config, "logging.database.secret_access_key", "AWS_SECRET_ACCESS_KEY", None
+            app_config,
+            "logging.database.secret_access_key",
+            "AWS_SECRET_ACCESS_KEY",
+            None,
         )
 
         # Handle empty strings from unresolved placeholders
@@ -612,7 +671,10 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
             log_dynamodb_endpoint_url = None
         if log_dynamodb_access_key_id and log_dynamodb_access_key_id.strip() == "":
             log_dynamodb_access_key_id = None
-        if log_dynamodb_secret_access_key and log_dynamodb_secret_access_key.strip() == "":
+        if (
+            log_dynamodb_secret_access_key
+            and log_dynamodb_secret_access_key.strip() == ""
+        ):
             log_dynamodb_secret_access_key = None
 
         # Set logging database environment variables if specified
@@ -649,9 +711,9 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     # Core endpoints (logging, core, action base endpoints) are always needed
     # Optional action endpoints (interact, persona, vectorstore, model, whatsapp, etc.)
     # are loaded conditionally via pre_import_action_modules_for_agents() based on agent.yaml
-    from jvagent.logging import endpoints  # noqa: F401
-    from jvagent.core import endpoints as core_endpoints  # noqa: F401
     from jvagent.action import endpoints as action_endpoints  # noqa: F401
+    from jvagent.core import endpoints as core_endpoints  # noqa: F401
+    from jvagent.logging import endpoints  # noqa: F401
 
     return server
 
@@ -675,11 +737,14 @@ async def pre_startup_bootstrap(
     """
     try:
         # Bootstrap application graph
-        await bootstrap_application_graph(update_if_exists=update_if_exists, app_root=app_root)
+        await bootstrap_application_graph(
+            update_if_exists=update_if_exists, app_root=app_root
+        )
 
         # Initialize all actions by calling their on_startup() hooks
         # This ensures runtime components like channel adapters are initialized
         from jvagent.core.startup import run_app_startup
+
         await run_app_startup()
 
         # Ensure admin user exists
@@ -710,7 +775,10 @@ def disable_register_endpoint(server: Server) -> None:
         if not success:
             # If the endpoint wasn't found, check if auth is enabled
             # This might happen if auth is disabled or the endpoint wasn't registered
-            if hasattr(server, "_auth_endpoints_registered") and server._auth_endpoints_registered:
+            if (
+                hasattr(server, "_auth_endpoints_registered")
+                and server._auth_endpoints_registered
+            ):
                 logger.warning(
                     "Could not find /auth/register endpoint to disable "
                     "even though auth endpoints are registered. "
@@ -747,6 +815,7 @@ def purge_app_data(app_root: str) -> None:
         app_yaml_path = app_root_path / "app.yaml"
         if app_yaml_path.exists():
             import yaml
+
             from jvagent.core.env_resolver import resolve_env_placeholders
 
             with open(app_yaml_path, "r", encoding="utf-8") as f:
@@ -764,7 +833,9 @@ def purge_app_data(app_root: str) -> None:
     # Get log database path from config
     log_db_path = os.getenv("JVAGENT_LOG_DB_PATH")
     if not log_db_path:
-        log_db_path = _get_config_value(app_config, "logging.database.path", None, "./jvagent_logs")
+        log_db_path = _get_config_value(
+            app_config, "logging.database.path", None, "./jvagent_logs"
+        )
 
     # Resolve paths relative to app_root if they are relative
     paths_to_purge = []
@@ -826,11 +897,13 @@ def main() -> None:
 
     # Set the global app root for config loading in other modules
     from jvagent.core.app_context import set_app_root
+
     set_app_root(app_root)
 
     # Reload performance configs now that app root is set
     from jvagent.core.cache import reload_performance_config
     from jvagent.core.profiling import reload_profiling_config
+
     reload_performance_config()
     reload_profiling_config()
 
@@ -840,6 +913,7 @@ def main() -> None:
     # Set database path environment variables BEFORE any database initialization
     # This must happen before any database operations to prevent jvspatial from using defaults
     from pathlib import Path
+
     app_root_path = Path(app_root).resolve()
 
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
@@ -882,7 +956,9 @@ def main() -> None:
 
         if not is_development_mode():
             logger.error("The --purge flag is only allowed in development mode.")
-            logger.error("Set JVAGENT_ENVIRONMENT=development or ensure you are not in production mode.")
+            logger.error(
+                "Set JVAGENT_ENVIRONMENT=development or ensure you are not in production mode."
+            )
             sys.exit(1)
 
         purge_app_data(app_root=app_root)
@@ -1039,7 +1115,9 @@ class StartupLogCounter(logging.Handler):
         }
 
 
-def run_server(update_if_exists: bool = False, debug: bool = False, app_root: str = None) -> None:
+def run_server(
+    update_if_exists: bool = False, debug: bool = False, app_root: str = None
+) -> None:
     """Start the jvagent server.
 
     Args:
@@ -1070,7 +1148,9 @@ def run_server(update_if_exists: bool = False, debug: bool = False, app_root: st
 
         # Perform bootstrap tasks before server starts
         admin_exists = asyncio.run(
-            pre_startup_bootstrap(server, update_if_exists=update_if_exists, app_root=app_root)
+            pre_startup_bootstrap(
+                server, update_if_exists=update_if_exists, app_root=app_root
+            )
         )
 
         # If admin user exists, disable the register endpoint
@@ -1157,6 +1237,7 @@ async def show_status(app_root: str = None) -> None:
         app_root: Path to the app root directory. If None, uses current working directory.
     """
     from pathlib import Path
+
     from jvagent.core.app_loader import AppLoader
 
     if app_root is None:
@@ -1267,13 +1348,16 @@ async def bootstrap_only(update_if_exists: bool = False, app_root: str = None) -
     root_logger.addHandler(log_counter)
 
     try:
-        await bootstrap_application_graph(update_if_exists=update_if_exists, app_root=app_root)
-        
+        await bootstrap_application_graph(
+            update_if_exists=update_if_exists, app_root=app_root
+        )
+
         # Initialize all actions by calling their on_startup() hooks
         # This ensures runtime components like channel adapters are initialized
         from jvagent.core.startup import run_app_startup
+
         await run_app_startup()
-        
+
         await ensure_admin_user()
 
         # Display bootstrap summary
@@ -1334,7 +1418,9 @@ def handle_agent_command(args: List[str], app_root: str = None) -> None:
     # Initialize database context - use JVSPATIAL_JSONDB_PATH which is set by main()
     # with the path already resolved against app_root
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
-    db_path = os.getenv("JVSPATIAL_JSONDB_PATH") or os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
+    db_path = os.getenv("JVSPATIAL_JSONDB_PATH") or os.getenv(
+        "JVSPATIAL_DB_PATH", "./jvagent_db"
+    )
 
     from jvspatial.db import set_current_db_path, set_current_db_type
 
@@ -1387,7 +1473,9 @@ def handle_action_command(args: List[str], app_root: str = None) -> None:
     # Initialize database context - use JVSPATIAL_JSONDB_PATH which is set by main()
     # with the path already resolved against app_root
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
-    db_path = os.getenv("JVSPATIAL_JSONDB_PATH") or os.getenv("JVSPATIAL_DB_PATH", "./jvagent_db")
+    db_path = os.getenv("JVSPATIAL_JSONDB_PATH") or os.getenv(
+        "JVSPATIAL_DB_PATH", "./jvagent_db"
+    )
 
     from jvspatial.db import set_current_db_path, set_current_db_type
 
@@ -1446,7 +1534,9 @@ async def list_agents() -> None:
         print()
 
 
-async def uninstall_agent(namespace: str, agent_name: str, app_root: str = None) -> None:
+async def uninstall_agent(
+    namespace: str, agent_name: str, app_root: str = None
+) -> None:
     """Uninstall an agent.
 
     Args:

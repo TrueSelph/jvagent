@@ -14,36 +14,36 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Set, Tuple, Union
 
 if TYPE_CHECKING:
-    from jvagent.action.interview.core.session.interview_session import InterviewSession
-    from jvagent.action.interact.interact_walker import InteractWalker
     from jvagent.action.interact.base import InteractAction
+    from jvagent.action.interact.interact_walker import InteractWalker
+    from jvagent.action.interview.core.session.interview_session import InterviewSession
     from jvagent.memory import Interaction
 
 logger = logging.getLogger(__name__)
 
 # Thread-safe context variable for tracking response accesses during branch function execution
 # Used by the dependency tracking wrapper to capture which responses were accessed
-_response_access_tracker: contextvars.ContextVar[Optional[Set[str]]] = contextvars.ContextVar(
-    '_response_access_tracker',
-    default=None
+_response_access_tracker: contextvars.ContextVar[Optional[Set[str]]] = (
+    contextvars.ContextVar("_response_access_tracker", default=None)
 )
 
 
 @contextmanager
 def track_response_access():
     """Context manager to track which response keys are accessed during execution.
-    
+
     Usage:
         with track_response_access() as tracked:
             # ... execute code that accesses session.responses ...
             accessed_keys = tracked.get()  # Returns set of accessed keys
-    
+
     Yields:
         Object with get() method returning set of accessed response keys
     """
     accessed = set()
     token = _response_access_tracker.set(accessed)
     try:
+
         class AccessTracker:
             def get(self_inner):
                 return accessed
@@ -55,7 +55,7 @@ def track_response_access():
 
 def get_tracked_responses() -> Optional[Set[str]]:
     """Get the current response access tracker if one is active.
-    
+
     Returns:
         Set of accessed response keys if tracking is active, None otherwise
     """
@@ -64,9 +64,9 @@ def get_tracked_responses() -> Optional[Set[str]]:
 
 def record_response_access(key: str) -> None:
     """Record access to a response key during tracking.
-    
+
     Called by instrumented session.responses access to track which keys are read.
-    
+
     Args:
         key: Response key being accessed
     """
@@ -170,12 +170,18 @@ class RegistryManager:
     @staticmethod
     def get_input_directive_override(interview_type: str, question_name: str):
         with _registry_lock:
-            return _registries["input_directive_override"].get((interview_type, question_name))
+            return _registries["input_directive_override"].get(
+                (interview_type, question_name)
+            )
 
     @staticmethod
-    def set_input_directive_override(interview_type: str, question_name: str, func: Callable):
+    def set_input_directive_override(
+        interview_type: str, question_name: str, func: Callable
+    ):
         with _registry_lock:
-            _registries["input_directive_override"][(interview_type, question_name)] = func
+            _registries["input_directive_override"][
+                (interview_type, question_name)
+            ] = func
 
     @staticmethod
     def get_input_review_override(interview_type: str):
@@ -198,44 +204,56 @@ class RegistryManager:
             _registries[registry_name][interview_type] = data
 
     @staticmethod
-    def register_branch_function(interview_type: str, function_name: str, func: Callable):
+    def register_branch_function(
+        interview_type: str, function_name: str, func: Callable
+    ):
         with _registry_lock:
             _registries["branch_function"][(interview_type, function_name)] = func
 
     @staticmethod
-    def register_input_context_provider(interview_type: str, function_name: str, func: Callable):
+    def register_input_context_provider(
+        interview_type: str, function_name: str, func: Callable
+    ):
         with _registry_lock:
-            _registries["input_context_provider"][(interview_type, function_name)] = func
+            _registries["input_context_provider"][
+                (interview_type, function_name)
+            ] = func
 
 
-
-def _detect_interview_type(func: Callable, interview_type: Optional[str] = None) -> Optional[str]:
+def _detect_interview_type(
+    func: Callable, interview_type: Optional[str] = None
+) -> Optional[str]:
     """Detect the interview type from the function's module or use provided type.
-    
+
     Args:
         func: The function being decorated
         interview_type: Optional explicitly provided interview type
-        
+
     Returns:
         The determined interview type, or None if not found
     """
     if interview_type:
         return interview_type
-    
+
     try:
         module = inspect.getmodule(func)
         if module:
             # Import here to avoid circular dependency
-            from jvagent.action.interview.interview_interact_action import InterviewInteractAction
+            from jvagent.action.interview.interview_interact_action import (
+                InterviewInteractAction,
+            )
+
             # Look for InterviewInteractAction subclasses in the module
             for name, obj in vars(module).items():
-                if (inspect.isclass(obj) and
-                    issubclass(obj, InterviewInteractAction) and
-                    obj is not InterviewInteractAction):
+                if (
+                    inspect.isclass(obj)
+                    and issubclass(obj, InterviewInteractAction)
+                    and obj is not InterviewInteractAction
+                ):
                     return obj.__name__
     except Exception as e:
         logger.debug(f"Could not detect interview type for '{func.__name__}': {e}")
-    
+
     return None
 
 
@@ -245,12 +263,12 @@ def _register_decorator_function(
     handler_type: str,
     interview_type: Optional[str],
     registry: Dict[Tuple[str, str], Callable],
-    pending_registry: Dict[str, Dict[str, Callable]]
+    pending_registry: Dict[str, Dict[str, Callable]],
 ) -> None:
     """Common registration logic for all decorators.
-    
+
     Thread-safe registration using a module-level lock.
-    
+
     Args:
         func: The function being decorated
         identifier: Question name or function name
@@ -262,16 +280,18 @@ def _register_decorator_function(
     # Store metadata on the function
     func._interview_question_name = identifier  # type: ignore
     func._interview_handler_type = handler_type  # type: ignore
-    
+
     try:
         # Determine the interview type
         determined_type = _detect_interview_type(func, interview_type)
-        
+
         with _registry_lock:
             if determined_type:
                 # Register in module-level registry
                 registry[(determined_type, identifier)] = func
-                logger.debug(f"Registered {handler_type} '{identifier}' for interview type '{determined_type}'")
+                logger.debug(
+                    f"Registered {handler_type} '{identifier}' for interview type '{determined_type}'"
+                )
             else:
                 # Store in pending registry if interview_type is provided but class not yet defined
                 # Otherwise, rely on class attribute scanning in __init_subclass__
@@ -279,7 +299,9 @@ def _register_decorator_function(
                     if interview_type not in pending_registry:
                         pending_registry[interview_type] = {}
                     pending_registry[interview_type][identifier] = func
-                    logger.debug(f"Stored {handler_type} '{identifier}' in pending registry for '{interview_type}'")
+                    logger.debug(
+                        f"Stored {handler_type} '{identifier}' in pending registry for '{interview_type}'"
+                    )
     except Exception as e:
         logger.warning(f"Error registering {handler_type} '{func.__name__}': {e}")
 
@@ -305,6 +327,7 @@ def input_handler(question_name: str, interview_type: Optional[str] = None):
                                  visitor=None, interview_action=None) -> str:
             return normalized_time
     """
+
     def decorator(func: Callable) -> Callable:
         _register_decorator_function(
             func,
@@ -312,9 +335,10 @@ def input_handler(question_name: str, interview_type: Optional[str] = None):
             "input_handler",
             interview_type,
             _input_handler_registry,
-            _pending_input_handlers
+            _pending_input_handlers,
         )
         return func
+
     return decorator
 
 
@@ -339,6 +363,7 @@ def input_validator(question_name: str, interview_type: Optional[str] = None):
                            visitor=None, interview_action=None) -> Tuple[ValidationStatus, Optional[str]]:
             return ValidationStatus.VALID, None
     """
+
     def decorator(func: Callable) -> Callable:
         _register_decorator_function(
             func,
@@ -346,9 +371,10 @@ def input_validator(question_name: str, interview_type: Optional[str] = None):
             "input_validator",
             interview_type,
             _input_validator_registry,
-            _pending_input_validators
+            _pending_input_validators,
         )
         return func
+
     return decorator
 
 
@@ -387,6 +413,7 @@ def input_directive_override(question_name: str, interview_type: Optional[str] =
                 return "Tell the user: Thank you for using your work email!"
             return None  # Use default directive
     """
+
     def decorator(func: Callable) -> Callable:
         _register_decorator_function(
             func,
@@ -394,9 +421,10 @@ def input_directive_override(question_name: str, interview_type: Optional[str] =
             "input_directive_override",
             interview_type,
             _input_directive_override_registry,
-            _pending_input_directive_overrides
+            _pending_input_directive_overrides,
         )
         return func
+
     return decorator
 
 
@@ -412,10 +440,10 @@ def on_interview_complete(interview_type: str):
     Handler Signature:
         The handler may accept (session, visitor, interview_action) or any subset.
         Parameters are passed only when the callable signature accepts them (backward compatible).
-        
+
         Recommended: (session: InterviewSession, visitor: InteractWalker, interview_action: InteractAction)
         Minimal: (session: InterviewSession)
-        
+
         - session: InterviewSession - The completed interview session with all collected responses
         - visitor: InteractWalker - The walker for accessing context and responding (optional)
         - interview_action: InteractAction - The action instance (optional, use interview_action.respond() to send responses)
@@ -434,11 +462,13 @@ def on_interview_complete(interview_type: str):
             await interview_action.respond(visitor, directives=["Thank you for signing up!"])
             # Trigger downstream actions, send notifications, etc.
     """
+
     def decorator(func: Callable) -> Callable:
         # Register the handler in the module-level registry
         with _registry_lock:
             _completion_handlers[interview_type] = func
         return func
+
     return decorator
 
 
@@ -454,10 +484,10 @@ def on_interview_cancelled(interview_type: str):
     Handler Signature:
         The handler may accept (session, visitor, interview_action) or any subset.
         Parameters are passed only when the callable signature accepts them (backward compatible).
-        
+
         Recommended: (session: InterviewSession, visitor: InteractWalker, interview_action: InteractAction)
         Minimal: (session: InterviewSession)
-        
+
         - session: InterviewSession - The cancelled interview session with partial responses
         - visitor: InteractWalker - The walker for accessing context and responding (optional)
         - interview_action: InteractAction - The action instance (optional, use interview_action.respond() to send responses)
@@ -476,10 +506,12 @@ def on_interview_cancelled(interview_type: str):
             # Send custom cancellation message
             await interview_action.respond(visitor, directives=["No problem! Feel free to start again anytime."])
     """
+
     def decorator(func: Callable) -> Callable:
         with _registry_lock:
             _cancelled_handlers[interview_type] = func
         return func
+
     return decorator
 
 
@@ -499,10 +531,10 @@ def on_interview_review(interview_type: str):
     Handler Signature:
         The handler may accept (session, visitor, interview_action) or any subset.
         Parameters are passed only when the callable signature accepts them (backward compatible).
-        
+
         Recommended: (session: InterviewSession, visitor: InteractWalker, interview_action: InteractAction)
         Minimal: (session: InterviewSession)
-        
+
         - session: InterviewSession - The interview session with all collected responses
         - visitor: InteractWalker - The walker for accessing context and responding (optional)
         - interview_action: InteractAction - The action instance (optional)
@@ -521,10 +553,12 @@ def on_interview_review(interview_type: str):
             user_name = session.responses.get('user_name', 'there')
             return f"Great job, {user_name}! Let's review your information."
     """
+
     def decorator(func: Callable) -> Callable:
         with _registry_lock:
             _review_handlers[interview_type] = func
         return func
+
     return decorator
 
 
@@ -565,7 +599,9 @@ def input_review_override(func: Callable) -> Callable:
                         f"Stored input_review_override in pending registry for module '{module.__name__}'"
                     )
     except Exception as e:
-        logger.warning(f"Error registering input_review_override '{func.__name__}': {e}")
+        logger.warning(
+            f"Error registering input_review_override '{func.__name__}': {e}"
+        )
 
     return func
 
@@ -596,7 +632,9 @@ def get_input_validator(interview_type: str, question_name: str) -> Optional[Cal
     return RegistryManager.get_input_validator(interview_type, question_name)
 
 
-def get_input_directive_override(interview_type: str, question_name: str) -> Optional[Callable]:
+def get_input_directive_override(
+    interview_type: str, question_name: str
+) -> Optional[Callable]:
     """Get input directive override for a question (thread-safe)."""
     return RegistryManager.get_input_directive_override(interview_type, question_name)
 
@@ -618,7 +656,9 @@ def get_pending_input_validators(interview_type: str) -> Dict[str, Callable]:
 
 def get_pending_input_directive_overrides(interview_type: str) -> Dict[str, Callable]:
     """Get pending input directive overrides for an interview type (thread-safe)."""
-    return RegistryManager.get_pending("pending_input_directive_overrides", interview_type)
+    return RegistryManager.get_pending(
+        "pending_input_directive_overrides", interview_type
+    )
 
 
 def flush_module_registrations_for_class(interview_type: str, module: Any) -> None:
@@ -658,7 +698,9 @@ def flush_module_registrations_for_class(interview_type: str, module: Any) -> No
                     )
 
 
-def clear_pending_registrations(interview_type: str, module_name: Optional[str] = None) -> None:
+def clear_pending_registrations(
+    interview_type: str, module_name: Optional[str] = None
+) -> None:
     """Clear pending registrations for an interview type after class is defined (thread-safe).
 
     If module_name is provided, any pending input_review_override for that module is
@@ -671,17 +713,19 @@ def clear_pending_registrations(interview_type: str, module_name: Optional[str] 
         _pending_branch_functions.pop(interview_type, None)
         _pending_input_context_providers.pop(interview_type, None)
         if module_name is not None and module_name in _pending_input_review_overrides:
-            _input_review_override_registry[interview_type] = _pending_input_review_overrides.pop(
-                module_name
+            _input_review_override_registry[interview_type] = (
+                _pending_input_review_overrides.pop(module_name)
             )
 
 
-def branch_function(function_name: Optional[str] = None, interview_type: Optional[str] = None):
+def branch_function(
+    function_name: Optional[str] = None, interview_type: Optional[str] = None
+):
     """Decorator to register a branch function for conditional branching.
 
     Branch functions evaluate complex conditions with full access to session and visitor.
     They can return bool (direct branching) or any value (for operator evaluation).
-    
+
     Functions automatically have dependency tracking enabled: response keys accessed
     during execution are recorded and used for efficient caching and invalidation.
 
@@ -701,50 +745,57 @@ def branch_function(function_name: Optional[str] = None, interview_type: Optiona
         async def check_similarity(session: InterviewSession, visitor: InteractWalker, interview_action: InteractAction) -> bool:
             description = session.responses.get('report_description', '')
             return similarity_score > 0.8
-        
+
         # Explicit name (optional, for backward compatibility)
         @branch_function('check_similarity')
         async def check_similarity(session: InterviewSession, visitor: InteractWalker, interview_action: InteractAction) -> bool:
             return similarity_score > 0.8
     """
+
     def decorator(func: Callable) -> Callable:
         # Use function name if not explicitly provided
         name = function_name if function_name is not None else func.__name__
-        
+
         # Wrap function with dependency tracking (only if not already wrapped)
-        if not hasattr(func, '_branch_function_wrapped'):
+        if not hasattr(func, "_branch_function_wrapped"):
             wrapped_func = _wrap_branch_function_with_tracking(func)
             wrapped_func._branch_function_wrapped = True
             wrapped_func._original_function = func
         else:
             wrapped_func = func
-        
+
         _register_decorator_function(
             wrapped_func,
             name,
             "branch_function",
             interview_type,
             _branch_function_registry,
-            _pending_branch_functions
+            _pending_branch_functions,
         )
         return wrapped_func
+
     return decorator
 
 
 def _wrap_branch_function_with_tracking(func: Callable) -> Callable:
     """Wrap a branch function to automatically track response accesses.
-    
+
     Creates a wrapper that instruments session.responses access to record
     which response keys are read during function execution.
-    
+
     Args:
         func: The branch function to wrap
-        
+
     Returns:
         Wrapped function that tracks response dependencies
     """
     if inspect.iscoroutinefunction(func):
-        async def async_wrapper(session: "InterviewSession", visitor: "InteractWalker", interview_action: Optional[Any] = None) -> Any:
+
+        async def async_wrapper(
+            session: "InterviewSession",
+            visitor: "InteractWalker",
+            interview_action: Optional[Any] = None,
+        ) -> Any:
             if visitor is None:
                 raise ValueError("branch function requires a visitor to be provided")
             with track_response_access() as tracker:
@@ -752,20 +803,25 @@ def _wrap_branch_function_with_tracking(func: Callable) -> Callable:
                 original_responses = session.responses
                 instrumented = _InstrumentedResponses(original_responses)
                 session.responses = instrumented  # type: ignore
-                
+
                 try:
                     result = await func(session, visitor, interview_action)
                     # Store accessed keys in context for branch evaluator to retrieve
-                    if not hasattr(session, '_branch_function_accessed_keys'):
+                    if not hasattr(session, "_branch_function_accessed_keys"):
                         session._branch_function_accessed_keys = set()  # type: ignore
                     session._branch_function_accessed_keys.update(tracker.get())  # type: ignore
                     return result
                 finally:
                     session.responses = original_responses
-        
+
         return async_wrapper
     else:
-        def sync_wrapper(session: "InterviewSession", visitor: "InteractWalker", interview_action: Optional[Any] = None) -> Any:
+
+        def sync_wrapper(
+            session: "InterviewSession",
+            visitor: "InteractWalker",
+            interview_action: Optional[Any] = None,
+        ) -> Any:
             if visitor is None:
                 raise ValueError("branch function requires a visitor to be provided")
             with track_response_access() as tracker:
@@ -773,106 +829,106 @@ def _wrap_branch_function_with_tracking(func: Callable) -> Callable:
                 original_responses = session.responses
                 instrumented = _InstrumentedResponses(original_responses)
                 session.responses = instrumented  # type: ignore
-                
+
                 try:
                     result = func(session, visitor, interview_action)
                     # Store accessed keys in context for branch evaluator to retrieve
-                    if not hasattr(session, '_branch_function_accessed_keys'):
+                    if not hasattr(session, "_branch_function_accessed_keys"):
                         session._branch_function_accessed_keys = set()  # type: ignore
                     session._branch_function_accessed_keys.update(tracker.get())  # type: ignore
                     return result
                 finally:
                     session.responses = original_responses
-        
+
         return sync_wrapper
 
 
 class _InstrumentedResponses(dict):
     """Dictionary proxy that tracks read access and writes through to original.
-    
+
     This proxy wraps session.responses during branch function execution to:
     1. Track which response keys are accessed (reads)
     2. Pass all modifications through to the original dict (writes)
-    
+
     This ensures that session.set_response() works correctly from within
     branch functions - modifications persist to the session even after
     the instrumented wrapper is discarded.
     """
-    
+
     def __init__(self, original_dict: Dict[str, Any]):
         """Initialize with reference to original responses dict.
-        
+
         Args:
             original_dict: The original session.responses dict to proxy
         """
         super().__init__()  # Don't copy data - we proxy to original
         # Store reference to original dict (not a copy)
-        object.__setattr__(self, '_original', original_dict)
-    
+        object.__setattr__(self, "_original", original_dict)
+
     # Read operations (with tracking)
-    
+
     def get(self, key: str, default: Any = None) -> Any:
         """Get with access tracking."""
         record_response_access(key)
         return self._original.get(key, default)
-    
+
     def __getitem__(self, key: str) -> Any:
         """Index access with tracking."""
         record_response_access(key)
         return self._original[key]
-    
+
     def __contains__(self, key: Any) -> bool:
         """Containment check with tracking."""
         if isinstance(key, str):
             record_response_access(key)
         return key in self._original
-    
+
     def keys(self):
         """Return keys from original."""
         return self._original.keys()
-    
+
     def values(self):
         """Return values from original."""
         return self._original.values()
-    
+
     def items(self):
         """Return items from original."""
         return self._original.items()
-    
+
     def __len__(self) -> int:
         """Return length of original."""
         return len(self._original)
-    
+
     def __iter__(self):
         """Iterate over original keys."""
         return iter(self._original)
-    
+
     # Write operations (write-through to original)
-    
+
     def __setitem__(self, key: str, value: Any) -> None:
         """Set item on original dict (write-through)."""
         self._original[key] = value
-    
+
     def __delitem__(self, key: str) -> None:
         """Delete item from original dict (write-through)."""
         del self._original[key]
-    
+
     def pop(self, key: str, *args) -> Any:
         """Pop from original dict (write-through)."""
         return self._original.pop(key, *args)
-    
+
     def popitem(self) -> tuple:
         """Pop item from original dict (write-through)."""
         return self._original.popitem()
-    
+
     def clear(self) -> None:
         """Clear original dict (write-through)."""
         self._original.clear()
-    
+
     def update(self, *args, **kwargs) -> None:
         """Update original dict (write-through)."""
         self._original.update(*args, **kwargs)
-    
+
     def setdefault(self, key: str, default: Any = None) -> Any:
         """Set default on original dict (write-through)."""
         return self._original.setdefault(key, default)
@@ -892,7 +948,9 @@ def get_branch_function(interview_type: str, function_name: str) -> Optional[Cal
         return _branch_function_registry.get((interview_type, function_name))
 
 
-def register_branch_function(interview_type: str, function_name: str, func: Callable) -> None:
+def register_branch_function(
+    interview_type: str, function_name: str, func: Callable
+) -> None:
     """Register a branch function programmatically (thread-safe).
 
     This can be used by classes that define branch functions as methods
@@ -906,7 +964,9 @@ def register_branch_function(interview_type: str, function_name: str, func: Call
     )
 
 
-def register_input_context_provider(interview_type: str, function_name: str, func: Callable) -> None:
+def register_input_context_provider(
+    interview_type: str, function_name: str, func: Callable
+) -> None:
     """Register an input context provider programmatically (thread-safe)."""
     RegistryManager.register_input_context_provider(interview_type, function_name, func)
     logger.debug(
@@ -927,7 +987,9 @@ def get_pending_branch_functions(interview_type: str) -> Dict[str, Callable]:
         return _pending_branch_functions.get(interview_type, {}).copy()
 
 
-def input_context_provider(function_name: Optional[str] = None, interview_type: Optional[str] = None):
+def input_context_provider(
+    function_name: Optional[str] = None, interview_type: Optional[str] = None
+):
     """Decorator to register an input context provider function.
 
     Input context provider functions supply dynamic context data to questions
@@ -944,7 +1006,7 @@ def input_context_provider(function_name: Optional[str] = None, interview_type: 
         # Name automatically derived from function name (recommended)
         @input_context_provider()
         async def get_available_times(
-            session: InterviewSession, 
+            session: InterviewSession,
             visitor: InteractWalker,
             interview_action: InteractAction
         ) -> Dict[str, Any]:
@@ -953,16 +1015,17 @@ def input_context_provider(function_name: Optional[str] = None, interview_type: 
                 "available_times": times,
                 "timezone": "America/New_York"
             }
-        
+
         # Explicit name (optional, for backward compatibility)
         @input_context_provider('get_available_times')
         async def get_available_times(
-            session: InterviewSession, 
+            session: InterviewSession,
             visitor: InteractWalker,
             interview_action: InteractAction
         ) -> Dict[str, Any]:
             return {"available_times": times}
     """
+
     def decorator(func: Callable) -> Callable:
         # Use function name if not explicitly provided
         name = function_name if function_name is not None else func.__name__
@@ -972,13 +1035,16 @@ def input_context_provider(function_name: Optional[str] = None, interview_type: 
             "input_context_provider",
             interview_type,
             _input_context_provider_registry,
-            _pending_input_context_providers
+            _pending_input_context_providers,
         )
         return func
+
     return decorator
 
 
-def get_input_context_provider(interview_type: str, function_name: str) -> Optional[Callable]:
+def get_input_context_provider(
+    interview_type: str, function_name: str
+) -> Optional[Callable]:
     """Get registered input context provider function (thread-safe).
 
     Args:

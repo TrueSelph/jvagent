@@ -7,19 +7,23 @@ No vector store, no embeddings.
 
 import asyncio
 import json
+import logging
 import os
 import re
-import logging
 from typing import Any, Dict, List, Optional
 
-from jvspatial.core.context import GraphContext, get_default_context, set_default_context
+from jvspatial.core.context import (
+    GraphContext,
+    get_default_context,
+    set_default_context,
+)
 from jvspatial.db import get_database_manager
 
 from .config import PAGEINDEX_DB_NAME
 from .document_walker import DocumentWalker
+from .documents import get_document_root, get_document_roots
 from .llm_bridge import get_pageindex_model_action
 from .models import DocumentContentEdge, DocumentNode, DocumentRootNode
-from .documents import get_document_root, get_document_roots
 
 logger = logging.getLogger(__name__)
 
@@ -51,15 +55,11 @@ async def _graph_to_tree(root: DocumentRootNode) -> List[Dict[str, Any]]:
     """
 
     async def _node_to_dict(node: DocumentNode) -> Dict[str, Any]:
-        children = await node.outgoing(
-            node=DocumentNode, edge=DocumentContentEdge
-        )
+        children = await node.outgoing(node=DocumentNode, edge=DocumentContentEdge)
         summary_val = node.summary or node.prefix_summary
         if summary_val is None and node.text:
             summary_val = (
-                (node.text[:300] + "\u2026")
-                if len(node.text) > 300
-                else node.text
+                (node.text[:300] + "\u2026") if len(node.text) > 300 else node.text
             )
         d: Dict[str, Any] = {
             "title": node.title or "",
@@ -76,9 +76,7 @@ async def _graph_to_tree(root: DocumentRootNode) -> List[Dict[str, Any]]:
     async def _gather(coros):
         return await asyncio.gather(*coros)
 
-    children = await root.outgoing(
-        node=DocumentNode, edge=DocumentContentEdge
-    )
+    children = await root.outgoing(node=DocumentNode, edge=DocumentContentEdge)
     if not children:
         return []
     return await _gather([_node_to_dict(c) for c in children])
@@ -121,7 +119,10 @@ async def _search_via_tree_search(
             "(or model_action in context); falling back to direct search"
         )
         return await _search_via_direct(
-            context, query, doc_name, limit,
+            context,
+            query,
+            doc_name,
+            limit,
             collection_name=collection_name,
             metadata_filter=metadata_filter,
         )
@@ -138,7 +139,7 @@ async def _search_via_tree_search(
             if not tree:
                 continue
             tree_no_text = remove_fields(tree, fields=["text"])
-            
+
             seen = set()
             deduped = []
             for n in tree_no_text:
@@ -166,9 +167,14 @@ Directly return the final JSON structure. Do not output anything else.
 
             response = await ChatGPT_API_async(model, prompt, api_key=api_key)
             if not response or response == "Error":
-                logger.warning("PageIndex tree search LLM call failed; falling back to direct")
+                logger.warning(
+                    "PageIndex tree search LLM call failed; falling back to direct"
+                )
                 return await _search_via_direct(
-                    context, query, doc_name, limit,
+                    context,
+                    query,
+                    doc_name,
+                    limit,
                     collection_name=collection_name,
                     metadata_filter=metadata_filter,
                 )
@@ -185,23 +191,27 @@ Directly return the final JSON structure. Do not output anything else.
                 key = (nid_str, doc_name_val)
                 if key in seen:
                     continue
-                nodes = await DocumentNode.find({
-                    "context.node_id": nid_str,
-                    "context.doc_name": doc_name_val,
-                    "context.collection_name": collection_name,
-                })
+                nodes = await DocumentNode.find(
+                    {
+                        "context.node_id": nid_str,
+                        "context.doc_name": doc_name_val,
+                        "context.collection_name": collection_name,
+                    }
+                )
                 for node in nodes:
                     seen.add(key)
                     content = node.summary or node.text or node.title or ""
-                    all_results.append({
-                        "node_id": node.id,
-                        "title": node.title,
-                        "text": node.text,
-                        "summary": node.summary,
-                        "doc_name": node.doc_name,
-                        "structure": node.structure,
-                        "content": content[:2000] if content else "",
-                    })
+                    all_results.append(
+                        {
+                            "node_id": node.id,
+                            "title": node.title,
+                            "text": node.text,
+                            "summary": node.summary,
+                            "doc_name": node.doc_name,
+                            "structure": node.structure,
+                            "content": content[:2000] if content else "",
+                        }
+                    )
                     if len(all_results) >= limit:
                         break
                 if len(all_results) >= limit:
@@ -212,7 +222,10 @@ Directly return the final JSON structure. Do not output anything else.
                 f"PageIndex tree search parse error: {e}; falling back to direct"
             )
             return await _search_via_direct(
-                context, query, doc_name, limit,
+                context,
+                query,
+                doc_name,
+                limit,
                 collection_name=collection_name,
                 metadata_filter=metadata_filter,
             )
@@ -222,7 +235,10 @@ Directly return the final JSON structure. Do not output anything else.
                 exc_info=True,
             )
             return await _search_via_direct(
-                context, query, doc_name, limit,
+                context,
+                query,
+                doc_name,
+                limit,
                 collection_name=collection_name,
                 metadata_filter=metadata_filter,
             )
@@ -230,10 +246,17 @@ Directly return the final JSON structure. Do not output anything else.
         if len(all_results) >= limit:
             break
 
-    return all_results[:limit] if all_results else await _search_via_direct(
-        context, query, doc_name, limit,
-        collection_name=collection_name,
-        metadata_filter=metadata_filter,
+    return (
+        all_results[:limit]
+        if all_results
+        else await _search_via_direct(
+            context,
+            query,
+            doc_name,
+            limit,
+            collection_name=collection_name,
+            metadata_filter=metadata_filter,
+        )
     )
 
 
@@ -265,9 +288,7 @@ async def search_documents(
         manager = get_database_manager()
         db = manager.get_database(PAGEINDEX_DB_NAME)
     except (ValueError, KeyError):
-        logger.warning(
-            f"PageIndex database '{PAGEINDEX_DB_NAME}' not registered"
-        )
+        logger.warning(f"PageIndex database '{PAGEINDEX_DB_NAME}' not registered")
         return []
 
     context = GraphContext(database=db)
@@ -278,19 +299,28 @@ async def search_documents(
 
         if strategy == "tree_search":
             return await _search_via_tree_search(
-                context, query, doc_name, limit,
+                context,
+                query,
+                doc_name,
+                limit,
                 collection_name=collection_name,
                 metadata_filter=metadata_filter,
                 model=model,
             )
         if strategy == "walker":
             return await _search_via_walker(
-                context, query, doc_name, limit,
+                context,
+                query,
+                doc_name,
+                limit,
                 collection_name=collection_name,
                 metadata_filter=metadata_filter,
             )
         return await _search_via_direct(
-            context, query, doc_name, limit,
+            context,
+            query,
+            doc_name,
+            limit,
             collection_name=collection_name,
             metadata_filter=metadata_filter,
         )

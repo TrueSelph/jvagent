@@ -52,7 +52,7 @@ stateDiagram-v2
     REVIEW --> CANCELLED: User cancels
     COMPLETED --> [*]
     CANCELLED --> [*]
-    
+
     note right of REVIEW
         With auto_confirm=true,
         REVIEW→COMPLETED happens
@@ -375,10 +375,10 @@ actions:
       review_confirmation: |
         Here's a summary of your responses:
         {summary}
-        
+
         {instructions}
         {prompt}
-      
+
       # Classification (InterviewConfig.classification)
       classification:
         context_list_compact_threshold: 10
@@ -388,7 +388,7 @@ actions:
         max_examples: 5
         enable_reference_resolution: true
         enable_composition: true
-      
+
       # Auto-confirm (InterviewConfig.auto_confirm)
       auto_confirm: true  # Skip REVIEW confirmation prompt, go directly to COMPLETED
 ```
@@ -402,10 +402,10 @@ class CustomInterviewAction(InterviewInteractAction):
     async def custom_method(self, session, visitor):
         # Access templates
         templates = self.config.templates
-        
+
         # Use template
         message = templates.completion_message
-        
+
         # Format template
         directive = templates.question_directive.format(
             question="What is your name?",
@@ -413,7 +413,7 @@ class CustomInterviewAction(InterviewInteractAction):
             context_section="",
             instructions="Please provide first and last name"
         )
-        
+
         # Get state event message
         event = templates.get_state_event_message("ACTIVE", self.get_class_name())
 ```
@@ -483,9 +483,9 @@ from typing import Any, Dict, List
 
 class RegistrationInterviewAction(InterviewInteractAction):
     """User registration interview."""
-    
+
     description: str = "User registration interview flow"
-    
+
     # Anchors for InteractRouter routing
     # Standard interview anchors (cancellation, correction, review confirmation, etc.) are
     # automatically included. You only need to specify implementation-specific anchors.
@@ -506,7 +506,7 @@ class RegistrationInterviewAction(InterviewInteractAction):
         ],
         description="Anchor statements for InteractRouter routing. Standard interview anchors are automatically included."
     )
-    
+
     question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {
@@ -699,16 +699,16 @@ def check_contains_sensitive_info(
     visitor: InteractWalker
 ) -> bool:
     """Check if report contains sensitive keywords.
-    
+
     Returns True to branch to is_sensitive question, False to continue normal flow.
     """
     description = session.responses.get('report_description', '').lower()
     sensitive_keywords = ['abuse', 'assault', 'violence', 'threat', 'harassment']
-    
+
     # Use session.context to store analysis for later use
     has_sensitive = any(keyword in description for keyword in sensitive_keywords)
     session.context['contains_sensitive_keywords'] = has_sensitive
-    
+
     return has_sensitive
 ```
 
@@ -811,7 +811,7 @@ async def check_duplicate_report(
     """Check if similar report exists using graph traversal."""
     description = session.responses.get('report_description', '')
     location = session.responses.get('report_location', '')
-    
+
     # Access conversation via visitor
     from jvagent.memory import Conversation
     conversation = await visitor.nodes(direction="out", node=Conversation)
@@ -820,7 +820,7 @@ async def check_duplicate_report(
         # similar_reports = await search_reports(description, location)
         # return len(similar_reports) > 0
         pass
-    
+
     return False
 
 @branch_function()
@@ -829,20 +829,20 @@ async def calculate_risk_score(
     visitor: InteractWalker
 ) -> int:
     """Calculate risk score 1-10 based on multiple factors.
-    
+
     Returns numeric score to be evaluated with >= operator.
     """
     description = session.responses.get('report_description', '').lower()
     location = session.responses.get('report_location', '')
-    
+
     score = 5  # base score
-    
+
     # Content analysis
     if 'emergency' in description or 'urgent' in description:
         score += 3
     if 'immediate' in description or 'danger' in description:
         score += 2
-    
+
     # Store in context for later use
     session.context['risk_score'] = score
     return score
@@ -895,7 +895,7 @@ async def analyze_report(session: InterviewSession, visitor: InteractWalker) -> 
     # These accesses are automatically tracked:
     description = session.responses.get('report_description')  # Dependency tracked
     location = session.responses.get('report_location')        # Dependency tracked
-    
+
     # Compute complex analysis...
     return len(description) > 100
 ```
@@ -915,11 +915,11 @@ For expensive operations (ML inference, external APIs, complex computation):
 async def check_sentiment_risk(session: InterviewSession, visitor: InteractWalker) -> bool:
     """Expensive ML operation - automatically cached."""
     description = session.responses.get('report_description')
-    
+
     # Call ML model (expensive operation)
     sentiment = await ml_service.analyze_sentiment(description)  # Called once, cached
     risk_score = sentiment['negative_score']
-    
+
     return risk_score > 0.7
 ```
 
@@ -1172,7 +1172,7 @@ from jvagent.memory import Interaction
 
 @input_handler('available_times')
 def normalize_time_expression(
-    raw_input: str, 
+    raw_input: str,
     session: InterviewSession,
     interaction: Interaction
 ) -> str:
@@ -1401,13 +1401,13 @@ def validate_credit_card(
     """Validate credit card number format."""
     if not isinstance(value, str):
         return ValidationStatus.INVALID, "Credit card must be a string", None
-    
+
     # Remove spaces and dashes
     digits = value.replace(" ", "").replace("-", "")
-    
+
     if not digits.isdigit() or len(digits) not in (13, 15, 16):
         return ValidationStatus.INVALID, "Invalid credit card number", None
-    
+
     return None  # Valid
 ```
 
@@ -1554,13 +1554,13 @@ async def get_available_times(
     visitor: InteractWalker
 ) -> Dict[str, Any]:
     """Dynamically fetch available training times.
-    
+
     This could query an external calendar API, database, or compute
     availability based on session data.
     """
     # Example: Fetch from external calendar API
     # available_slots = await calendar_api.get_availability()
-    
+
     # For demonstration, return static data
     return {
         "available_times": [
@@ -1610,13 +1610,13 @@ The context data dictionary supports flexible structure:
 {
     # List of options (most common use case)
     "available_options": ["Option A", "Option B", "Option C"],
-    
+
     # Structured data
     "time_slots": [
         {"time": "9:00 AM", "available": True, "spots": 5},
         {"time": "2:00 PM", "available": False, "spots": 0}
     ],
-    
+
     # Metadata
     "timezone": "America/New_York",
     "last_updated": "2024-01-15T10:00:00Z",
@@ -1655,7 +1655,7 @@ async def get_personalized_courses(
     """Provide course options based on user's skill level."""
     # Get user's skill level from previous answer
     skill_level = session.responses.get('skill_level', 'beginner')
-    
+
     # Fetch appropriate courses
     if skill_level == 'beginner':
         courses = ["Intro to Python", "Web Development Basics", "Git Fundamentals"]
@@ -1663,7 +1663,7 @@ async def get_personalized_courses(
         courses = ["Advanced Python", "React Deep Dive", "System Design"]
     else:  # advanced
         courses = ["Machine Learning", "Distributed Systems", "Performance Optimization"]
-    
+
     return {
         "available_courses": courses,
         "skill_level": skill_level,
@@ -1681,11 +1681,11 @@ async def get_shipping_options(
 ) -> Dict[str, Any]:
     """Fetch real-time shipping options based on destination."""
     destination = session.responses.get('shipping_address', '')
-    
+
     # Call external shipping API
     # shipping_api = await get_shipping_api()
     # options = await shipping_api.get_rates(destination)
-    
+
     # Example return
     return {
         "shipping_methods": [
@@ -2003,7 +2003,7 @@ Create a separate `InteractAction` that processes completed sessions:
 ```python
 class AppointmentDataHandlerAction(InteractAction):
     weight: int = -30  # Runs after interview
-    
+
     async def execute(self, visitor: InteractWalker) -> None:
         conversation = await visitor.interaction.get_conversation()
         session = await conversation.node(
@@ -2284,7 +2284,7 @@ async def analyze_sentiment(session: InterviewSession, visitor: InteractWalker) 
    # Good: Access only what's needed
    description = session.responses.get('report_description')
    return len(description) > 100
-   
+
    # Avoid: Accessing unnecessary data
    # for key in session.responses:
    #     # This would track all responses as dependencies
@@ -2295,10 +2295,10 @@ async def analyze_sentiment(session: InterviewSession, visitor: InteractWalker) 
    @branch_function()
    async def classify_report(session: InterviewSession, visitor: InteractWalker) -> str:
        description = session.responses.get('report_description')
-       
+
        # Perform expensive classification
        category = await classifier.classify(description)
-       
+
        # Store for other handlers to reuse
        session.context['report_category'] = category
        return category
@@ -2308,7 +2308,7 @@ async def analyze_sentiment(session: InterviewSession, visitor: InteractWalker) 
    ```python
    # Good: Use operator-based for simple comparisons (no caching overhead)
    {"condition": {"op": "equals", "value": "premium"}, "target": "premium_flow"}
-   
+
    # Good: Use function-based for complex logic
    {"condition": {"function": "check_fraud_risk"}, "target": "verification"}
    ```
@@ -2353,15 +2353,15 @@ from typing import Any, Dict, List
 
 class RegistrationInterviewAction(InterviewInteractAction):
     """User registration interview with default state behavior.
-    
+
     Sessions are identified by interview_type='RegistrationInterviewAction'
     and attached to Conversation nodes for per-user persistence.
-    
+
     Note: question_graph can also be defined in agent.yaml to override this.
     """
-    
+
     description: str = "User registration interview flow"
-    
+
     # Anchors for InteractRouter routing
     # Standard interview anchors (cancellation, correction, review confirmation, etc.)
     # are automatically included - you only need to specify implementation-specific anchors
@@ -2378,7 +2378,7 @@ class RegistrationInterviewAction(InterviewInteractAction):
         ],
         description="Anchor statements for InteractRouter routing. Standard interview anchors are automatically included."
     )
-    
+
     question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {
@@ -2431,11 +2431,11 @@ async def handle_onboarding_completion(
 ) -> None:
     """Process onboarding data when interview completes."""
     data = session.extract_data()
-    
+
     # Example: Store in user profile
     conversation = await visitor.interaction.get_conversation()
     user = await conversation.get_user()
-    
+
     if user:
         # Store preferences from onboarding
         user.preferences = {
@@ -2445,23 +2445,23 @@ async def handle_onboarding_completion(
         }
         await user.save()
         logger.info(f"Onboarding data saved to user profile: {user.id}")
-    
+
     # Send custom completion message
     await action.respond(visitor, directives=["Welcome aboard! Your preferences have been saved."])
-    
+
     # Clean up session after processing
     await session.cleanup()
 
 
 class OnboardingInterviewAction(InterviewInteractAction):
     """Onboarding interview with custom completion handling.
-    
+
     Sessions identified by interview_type='OnboardingInterviewAction'.
     Uses @on_interview_complete decorator to process data on completion.
     """
-    
+
     description: str = "User onboarding interview flow"
-    
+
     question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {
@@ -2512,48 +2512,48 @@ logger = logging.getLogger(__name__)
 
 class AppointmentDataHandlerAction(InteractAction):
     """Separate action to process appointment data after interview.
-    
+
     This demonstrates Pattern B: handling interview data in a separate
     InteractAction that runs after the interview completes.
     """
-    
+
     description: str = "Process appointment booking data from completed interviews"
     weight: int = -30  # Runs after interview actions
-    
+
     async def execute(self, visitor: InteractWalker) -> None:
         """Process completed appointment interview sessions."""
         conversation = await visitor.interaction.get_conversation()
         if not conversation:
             return
-        
+
         # Query for completed appointment interview session
         session = await conversation.node(
             node=InterviewSession,
             interview_type="AppointmentInterviewAction",
             state=InterviewState.COMPLETED,
         )
-        
+
         if session:
             # Check if already processed
             if session.context.get("processed"):
                 return
-            
+
             # Extract and process appointment data
             data = session.extract_data()
             await self.create_appointment(data["responses"])
-            
+
             # Mark as processed
             session.context["processed"] = True
             await session.save()
-            
+
             logger.info(f"Processed appointment from session {session.id}")
-    
+
     async def create_appointment(self, responses: dict) -> None:
         """Create appointment from interview data."""
         appointment_time = responses.get("preferred_time")
         service_type = responses.get("service_type")
         contact_info = responses.get("contact_email")
-        
+
         logger.info(f"Creating appointment: {service_type} at {appointment_time}")
         # Create appointment in external system
         # await appointment_service.create(...)
@@ -2561,13 +2561,13 @@ class AppointmentDataHandlerAction(InteractAction):
 
 class AppointmentInterviewAction(InterviewInteractAction):
     """Appointment booking interview.
-    
+
     Data is processed by separate AppointmentDataHandlerAction.
     Sessions identified by interview_type='AppointmentInterviewAction'.
     """
-    
+
     description: str = "Appointment booking interview flow"
-    
+
     question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {

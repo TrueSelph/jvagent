@@ -18,4 +18,3 @@ INTERACTION_LEVEL_NUMBER = add_custom_log_level("INTERACTION", 22, "interaction"
 __all__ = [
     "INTERACTION_LEVEL_NUMBER",
 ]
-

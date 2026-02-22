@@ -1,9 +1,11 @@
 """STT Action Implementation."""
+
 import logging
 from typing import Dict, Optional, Union
 
-from jvagent.action.base import Action
 from jvspatial.core.annotations import attribute
+
+from jvagent.action.base import Action
 
 from .modules.deepgram import DeepgramSTTModule
 
@@ -13,24 +15,16 @@ logger = logging.getLogger(__name__)
 class STTAction(Action):
     """Speech-to-Text action for converting audio to text using multiple providers."""
 
-    provider: str = attribute(
-        default="deepgram",
-        description="STT provider (deepgram)"
-    )
+    provider: str = attribute(default="deepgram", description="STT provider (deepgram)")
 
-    api_key: Optional[str] = attribute(
-        default=None,
-        description="STT API Key"
-    )
+    api_key: Optional[str] = attribute(default=None, description="STT API Key")
 
     model: str = attribute(
-        default="nova-2",
-        description="STT model to use (enhanced, nova, base, nova-2)"
+        default="nova-2", description="STT model to use (enhanced, nova, base, nova-2)"
     )
 
     smart_format: bool = attribute(
-        default=True,
-        description="Enable smart formatting for transcripts"
+        default=True, description="Enable smart formatting for transcripts"
     )
 
     def __init__(self, **kwargs):
@@ -45,7 +39,9 @@ class STTAction(Action):
         """Called when action is enabled."""
         if not self.api_key:
             logger.warning("STT API key not configured")
-        logger.info(f"STTAction enabled (provider: {self.provider}, model: {self.model})")
+        logger.info(
+            f"STTAction enabled (provider: {self.provider}, model: {self.model})"
+        )
         # Initialize STT module for caching
         self._stt_module = None
 
@@ -56,7 +52,7 @@ class STTAction(Action):
                 self._stt_module = DeepgramSTTModule(
                     api_key=self.api_key,
                     model=self.model,
-                    smart_format=self.smart_format
+                    smart_format=self.smart_format,
                 )
             else:
                 raise ValueError(f"Unsupported STT provider: {self.provider}")
@@ -78,7 +74,9 @@ class STTAction(Action):
             logger.error(f"STT invoke failed: {e}", exc_info=True)
             return None
 
-    async def invoke_base64(self, audio_base64: str, audio_type: str = "audio/mp3") -> Optional[str]:
+    async def invoke_base64(
+        self, audio_base64: str, audio_type: str = "audio/mp3"
+    ) -> Optional[str]:
         """Convert audio from base64 string to text.
 
         Args:
@@ -95,7 +93,9 @@ class STTAction(Action):
             logger.error(f"STT invoke_base64 failed: {e}", exc_info=True)
             return None
 
-    async def invoke_file(self, audio_content: bytes, audio_type: str = "audio/mp3") -> Optional[Dict[str, Union[str, float]]]:
+    async def invoke_file(
+        self, audio_content: bytes, audio_type: str = "audio/mp3"
+    ) -> Optional[Dict[str, Union[str, float]]]:
         """Convert audio file content to text.
 
         Args:
@@ -112,7 +112,8 @@ class STTAction(Action):
             else:
                 # For other providers, fall back to base64 conversion
                 import base64
-                audio_base64 = base64.b64encode(audio_content).decode('utf-8')
+
+                audio_base64 = base64.b64encode(audio_content).decode("utf-8")
                 transcript = await self.invoke_base64(audio_base64, audio_type)
                 return {"transcript": transcript, "duration": 0} if transcript else None
         except Exception as e:
@@ -129,7 +130,7 @@ class STTAction(Action):
             return {
                 "status": False,
                 "message": "STT API key is not set",
-                "severity": "error"
+                "severity": "error",
             }
 
         try:
@@ -140,5 +141,5 @@ class STTAction(Action):
             return {
                 "status": False,
                 "message": f"STT service error: {e}",
-                "severity": "error"
+                "severity": "error",
             }

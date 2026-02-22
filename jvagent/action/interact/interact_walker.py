@@ -7,11 +7,13 @@ for agent interactions, replacing the PersonaAction interact endpoint.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
 from jvspatial.core import Walker, on_visit
-from jvagent.memory.interaction import Interaction
+
 from jvagent.action.interact.base import InteractAction
-from jvagent.core.cache import get_cached_actions, cache_actions
+from jvagent.core.cache import cache_actions, get_cached_actions
+from jvagent.memory.interaction import Interaction
 
 if TYPE_CHECKING:
     from jvagent.action.actions import Actions
@@ -73,10 +75,16 @@ class InteractWalker(Walker):
     conversation: Optional["Conversation"] = None
     stream: bool = False
     response_bus: Optional[Any] = None
-    _current_action: Optional["InteractAction"] = None  # Track current executing action for convenience methods
-    _skip_current_action_record: bool = False  # Allow actions to opt-out of being recorded as executed
+    _current_action: Optional["InteractAction"] = (
+        None  # Track current executing action for convenience methods
+    )
+    _skip_current_action_record: bool = (
+        False  # Allow actions to opt-out of being recorded as executed
+    )
 
-    async def record_action_execution(self, action_name: Optional[str] = None) -> Optional[str]:
+    async def record_action_execution(
+        self, action_name: Optional[str] = None
+    ) -> Optional[str]:
         """Record an executed action on the active interaction.
 
         If called from within an InteractAction execution and no action_name is
@@ -105,7 +113,9 @@ class InteractWalker(Walker):
         await self.interaction.save()
         return name
 
-    async def unrecord_action_execution(self, action_name: Optional[str] = None) -> Optional[str]:
+    async def unrecord_action_execution(
+        self, action_name: Optional[str] = None
+    ) -> Optional[str]:
         """Remove or prevent recording of a previously/currently executed action.
 
         If called from within an InteractAction execution and no action_name is
@@ -163,13 +173,12 @@ class InteractWalker(Walker):
             # Get memory from agent
             memory = await here.get_memory()
             if not memory:
-                await self.report(
-                    {"error": "Agent has no Memory node"}
-                )
+                await self.report({"error": "Agent has no Memory node"})
                 return
 
             # Get ResponseBus instance from app
             from jvagent.core.app import App
+
             app = await App.get()
             if app:
                 self.response_bus = await app.get_response_bus()
@@ -193,23 +202,24 @@ class InteractWalker(Walker):
 
                 # Enable deferred saves on conversation to batch metadata updates (if enabled)
                 from jvspatial.core.mixins import ENABLE_DEFERRED_SAVES
+
                 if ENABLE_DEFERRED_SAVES:
                     conversation.enable_deferred_saves()
 
                 # Create interaction
-                from jvagent.memory.interaction import Interaction
                 from jvagent.action.model.context import set_interaction
+                from jvagent.memory.interaction import Interaction
 
                 self.interaction = await conversation.create_interaction(
                     utterance=self.utterance,
                     channel=self.channel,
                     session_id=self.session_id,
                 )
-                
+
                 # Enable deferred saves to batch all interaction updates (if enabled)
                 if ENABLE_DEFERRED_SAVES:
                     self.interaction.enable_deferred_saves()
-                
+
                 # Set interaction object in context for automatic observability
                 set_interaction(self.interaction)
 
@@ -223,9 +233,7 @@ class InteractWalker(Walker):
                     }
                 )
             except Exception as e:
-                await self.report(
-                    {"error": f"Failed to initialize interaction: {e}"}
-                )
+                await self.report({"error": f"Failed to initialize interaction: {e}"})
                 logger.error(f"Error initializing interaction: {e}", exc_info=True)
                 return
 
@@ -276,8 +284,8 @@ class InteractWalker(Walker):
         Args:
             here: The Actions node being visited
         """
-        from jvagent.action.interact.base import InteractAction
         from jvagent.action.base import Action
+        from jvagent.action.interact.base import InteractAction
 
         # Debug: Get all actions first to see what's available
         all_actions = await here.nodes(node=Action)
@@ -294,19 +302,19 @@ class InteractWalker(Walker):
 
         # Try to get enabled InteractActions from cache first
         cached_actions = await get_cached_actions(self.agent_id, enabled_only=True)
-        
+
         if cached_actions is not None:
             # Cache hit - use cached actions
             enabled_actions: List[InteractAction] = cached_actions
-            logger.debug(f"InteractWalker: Using {len(enabled_actions)} cached actions for agent {self.agent_id}")
+            logger.debug(
+                f"InteractWalker: Using {len(enabled_actions)} cached actions for agent {self.agent_id}"
+            )
         else:
             # Cache miss - query database
             # Get all enabled InteractActions (forward direction from Actions node)
             # Use class type instead of string to match by isinstance() (includes subclasses like InteractRouter)
             # Filter by enabled=True directly in the query using kwargs
-            enabled_actions = await here.nodes(
-                node=InteractAction, enabled=True
-            )
+            enabled_actions = await here.nodes(node=InteractAction, enabled=True)
             # Cache the result for future requests
             await cache_actions(self.agent_id, enabled_actions, enabled_only=True)
 
@@ -388,11 +396,11 @@ class InteractWalker(Walker):
 
         except Exception as e:
             # Log to console (database logging handled automatically by DBLogHandler)
-            agent_id = here.agent_id if hasattr(here, 'agent_id') else None
+            agent_id = here.agent_id if hasattr(here, "agent_id") else None
             interaction_id = self.interaction.id if self.interaction else None
             session_id = self.session_id
             user_id = self.user_id
-            
+
             logger.error(
                 f"Error processing InteractAction {here.label}: {e}",
                 exc_info=True,
@@ -401,14 +409,18 @@ class InteractWalker(Walker):
                     "interaction_id": interaction_id,
                     "session_id": session_id,
                     "user_id": user_id,
-                    "action_class": here.get_class_name() if hasattr(here, 'get_class_name') else here.__class__.__name__,
+                    "action_class": (
+                        here.get_class_name()
+                        if hasattr(here, "get_class_name")
+                        else here.__class__.__name__
+                    ),
                     "action_id": here.id,
                     "action_label": here.label,
                     "context": "execute",
                     "error_code": "interact_action_execute_error",
-                }
+                },
             )
-            
+
             await self.report(
                 {
                     "error": f"Failed to process {here.label}",
@@ -426,44 +438,44 @@ class InteractWalker(Walker):
                     )
                 except Exception as e:
                     logger.error(f"Failed to commit pending adhoc: {e}")
-            
+
             # Always clear current action and skip flag after execution
             self._current_action = None
             self._skip_current_action_record = False
 
-    async def curate_walk_path(self, actions: List["InteractAction"]) -> List["InteractAction"]:
+    async def curate_walk_path(
+        self, actions: List["InteractAction"]
+    ) -> List["InteractAction"]:
         """Curate the walker's current walk path to only include specified actions.
-        
+
         This method filters the current queue to only include the provided actions,
         maintaining the order of the provided list. Actions not in the provided list
         are removed from the queue.
-        
+
         Args:
             actions: List of InteractActions to keep in the walk path
-            
+
         Returns:
             List of actions that were successfully curated (found in queue)
         """
         # Get current queue
         current_queue = await self.get_queue()
-        
+
         # Filter to only InteractActions and create a set for fast lookup
         interact_actions_in_queue = [
-            item for item in current_queue 
-            if isinstance(item, InteractAction)
+            item for item in current_queue if isinstance(item, InteractAction)
         ]
         actions_set = {a.id for a in actions}
-        
+
         # Find which provided actions are in the queue
         actions_to_keep = [
-            item for item in interact_actions_in_queue 
-            if item.id in actions_set
+            item for item in interact_actions_in_queue if item.id in actions_set
         ]
-        
+
         # Remove all InteractActions from queue
         if interact_actions_in_queue:
             await self.dequeue(interact_actions_in_queue)
-        
+
         # Re-add only the curated actions in the order provided
         # Maintain relative order: if action A comes before B in provided list,
         # and both are in queue, A should come before B in curated queue
@@ -474,40 +486,41 @@ class InteractWalker(Walker):
                 if queued_action.id == action.id:
                     curated_order.append(queued_action)
                     break
-        
+
         # Add curated actions back to queue
         if curated_order:
             await self.prepend(curated_order)
-        
+
         return curated_order
 
-    async def set_walk_path(self, actions: List["InteractAction"]) -> List["InteractAction"]:
+    async def set_walk_path(
+        self, actions: List["InteractAction"]
+    ) -> List["InteractAction"]:
         """Replace the walker's current walk path with the provided actions.
-        
+
         This method clears all InteractActions from the queue and replaces them
         with the provided actions in the specified order.
-        
+
         Args:
             actions: List of InteractActions to set as the new walk path
-            
+
         Returns:
             List of actions that were added to the queue
         """
         # Get current queue
         current_queue = await self.get_queue()
-        
+
         # Remove all InteractActions from queue
         interact_actions_in_queue = [
-            item for item in current_queue 
-            if isinstance(item, InteractAction)
+            item for item in current_queue if isinstance(item, InteractAction)
         ]
         if interact_actions_in_queue:
             await self.dequeue(interact_actions_in_queue)
-        
+
         # Add new actions to queue in the order provided
         if actions:
             await self.prepend(actions)
-        
+
         return actions
 
     async def add_directives(self, directives: List[str]) -> None:
@@ -526,7 +539,9 @@ class InteractWalker(Walker):
         if not self.interaction:
             raise RuntimeError("No interaction available")
         if not self._current_action:
-            raise RuntimeError("add_directives() must be called from within InteractAction.execute()")
+            raise RuntimeError(
+                "add_directives() must be called from within InteractAction.execute()"
+            )
 
         if not directives:
             return
@@ -570,7 +585,9 @@ class InteractWalker(Walker):
         if not self.interaction:
             raise RuntimeError("No interaction available")
         if not self._current_action:
-            raise RuntimeError("add_event() must be called from within InteractAction.execute()")
+            raise RuntimeError(
+                "add_event() must be called from within InteractAction.execute()"
+            )
 
         action_name = self._current_action.get_class_name()
         # Only save if event was actually added (not invalid)
@@ -593,7 +610,9 @@ class InteractWalker(Walker):
         if not self.interaction:
             raise RuntimeError("No interaction available")
         if not self._current_action:
-            raise RuntimeError("add_parameters() must be called from within InteractAction.execute()")
+            raise RuntimeError(
+                "add_parameters() must be called from within InteractAction.execute()"
+            )
 
         if not parameters:
             return
@@ -605,8 +624,10 @@ class InteractWalker(Walker):
             if parameter and isinstance(parameter, dict):
                 valid_parameters.append(parameter)
             elif parameter:
-                logger.warning(f"add_parameters: Skipping invalid parameter type: {type(parameter)}, value: {parameter}")
-        
+                logger.warning(
+                    f"add_parameters: Skipping invalid parameter type: {type(parameter)}, value: {parameter}"
+                )
+
         if valid_parameters:
             self.interaction.add_parameters(valid_parameters, action_name)
             await self.interaction.save()

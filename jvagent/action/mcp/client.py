@@ -68,7 +68,9 @@ class MCPClientWrapper:
         """Establish MCP session (transport + ClientSession + initialize)."""
         if self._session is not None:
             return
-        ClientSession, StdioServerParameters, stdio_client, streamable_http_client = self._ensure_imports()
+        ClientSession, StdioServerParameters, stdio_client, streamable_http_client = (
+            self._ensure_imports()
+        )
         stack = AsyncExitStack()
         try:
             if self._transport == "stdio":
@@ -121,7 +123,9 @@ class MCPClientWrapper:
         )
         return list(getattr(list_result, "tools", []) or [])
 
-    async def call_tool(self, name: str, arguments: Optional[Dict[str, Any]] = None) -> Any:
+    async def call_tool(
+        self, name: str, arguments: Optional[Dict[str, Any]] = None
+    ) -> Any:
         """Call an MCP tool by name with optional arguments.
 
         Args:

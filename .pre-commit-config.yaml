@@ -1,0 +1,71 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v2.3.0
+    hooks:
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-json
+      - id: trailing-whitespace
+        exclude: "^venv/"
+  - repo: https://github.com/psf/black
+    rev: 24.8.0
+    hooks:
+      - id: black
+        exclude: "^(venv|examples)/"
+  - repo: https://github.com/PyCQA/isort
+    rev: 6.0.0
+    hooks:
+      - id: isort
+        exclude: "^(venv|examples)/"
+        args: ["--profile", "black"]
+  - repo: https://github.com/PyCQA/flake8
+    rev: 6.1.0
+    hooks:
+      - id: flake8
+        args: ["--config=.flake8"]
+        additional_dependencies:
+          [
+            pep8-naming,
+            flake8_docstrings,
+            flake8_comprehensions,
+            flake8_bugbear,
+            flake8_annotations,
+            flake8_simplify,
+          ]
+        exclude: "^(venv|examples|tests)/"
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.1
+    hooks:
+      - id: mypy
+        exclude: "^(venv|tests|examples)/"
+        pass_filenames: false
+        args:
+          - --follow-imports=silent
+          - --ignore-missing-imports
+          - --explicit-package-bases
+          - --no-warn-return-any
+          - --no-strict-optional
+          - --allow-redefinition
+          - --show-error-codes
+          - jvagent
+        additional_dependencies:
+          - types-PyYAML
+          - types-requests
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: pytest
+        language: system
+        pass_filenames: false
+        always_run: true
+        args: [tests/, -v, --tb=short]
+        stages: [manual]
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        name: Detect Secrets
+        args: ['scan', '.']
+        files: \.(py|txt|yaml|json)$
+        exclude: "^(venv|.mypy_cache|.test_dbs|tests|examples)/"

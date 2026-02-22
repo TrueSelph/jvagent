@@ -35,15 +35,14 @@ class OpenRouterEmbeddingModelAction(EmbeddingModelAction):
     """
 
     api_endpoint: str = attribute(
-        default="https://openrouter.ai/api/v1", description="OpenRouter API endpoint URL"
+        default="https://openrouter.ai/api/v1",
+        description="OpenRouter API endpoint URL",
     )
     model: str = attribute(
         default="openai/text-embedding-3-small",
         description="OpenRouter model identifier (provider/model format)",
     )
-    provider: str = attribute(
-        default="openrouter", description="Provider name"
-    )
+    provider: str = attribute(default="openrouter", description="Provider name")
     http_referer: str = attribute(
         default="", description="HTTP Referer header for OpenRouter (optional)"
     )
@@ -53,7 +52,7 @@ class OpenRouterEmbeddingModelAction(EmbeddingModelAction):
 
     async def on_register(self) -> None:
         """Called when action is registered during installation.
-        
+
         Validates configuration. HTTP client initialization is handled
         by the base class. This method should only be called once during
         action registration.
@@ -132,4 +131,3 @@ class OpenRouterEmbeddingModelAction(EmbeddingModelAction):
         except Exception as e:
             logger.error(f"OpenRouter embedding failed: {e}", exc_info=True)
             raise
-

@@ -4,27 +4,27 @@
 package:
   # Action name in namespace/action_name format
   name: jvagent/persona
-  
+
   # Package author
   author: jvagent
-  
+
   # Archetype: The main Action class name (same as the Action Node class)
   archetype: PersonaAction
-  
+
   # Package version
   version: 0.0.1
-  
+
   # Package metadata
   meta:
     title: Persona Action
     description: Simplified tool-based action for applying agent prompts with configurable parameters
     group: jvagent
     type: action
-  
+
   # Package configuration
   config:
     singleton: true  # Only one persona action per agent
-  
+
   # Package dependencies
   dependencies:
     # jvagent version requirement

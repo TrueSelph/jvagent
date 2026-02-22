@@ -2,22 +2,22 @@
 
 from typing import Any, Dict, Optional
 
-from jvagent.utils.env import is_production_mode
 from jvagent.memory.interaction import Interaction
+from jvagent.utils.env import is_production_mode
 
 
 def build_interaction_payload(interaction: Interaction) -> Dict[str, Any]:
     """Build interaction payload, filtering debug data in production.
-    
+
     In production mode (JVAGENT_ENVIRONMENT or config.development.environment), returns
     minimal payload with only: id, utterance, response.
-    
+
     In development mode, returns full payload with: id, utterance, response,
     actions, directives, parameters, events, observability_metrics, streamed.
-    
+
     Args:
         interaction: Interaction node instance
-        
+
     Returns:
         Dictionary with interaction data (filtered based on environment)
     """
@@ -50,20 +50,20 @@ def build_interact_response(
     report: Optional[list] = None,
 ) -> Dict[str, Any]:
     """Build complete interact endpoint response with environment-based filtering.
-    
+
     Always includes:
     - user_id, session_id, response
-    
+
     Only in development mode:
     - interaction (full payload with id, utterance, response, actions, etc.)
     - report (walker traversal report)
-    
+
     Args:
         user_id: User identifier
         session_id: Session identifier
         interaction: Interaction node instance
         report: Optional walker report (only included in development)
-        
+
     Returns:
         Dictionary with complete response payload
     """
@@ -79,6 +79,5 @@ def build_interact_response(
     # In production mode, omit the field entirely (not set to None)
     if not is_production_mode() and report is not None:
         response["report"] = report
-    
-    return response
 
+    return response

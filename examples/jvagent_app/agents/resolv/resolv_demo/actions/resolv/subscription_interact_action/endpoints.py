@@ -40,7 +40,7 @@ async def endpoint_get_contact_groups(action_id: str) -> dict[str, Any]:
                 "message": f"OnboardingInteractAction with ID '{action_id}' not found",
                 "details": {"action_id": action_id}
             }
-        
+
         groups = await action.get_contact_groups()
         if groups is None:
             return {
@@ -87,7 +87,7 @@ async def update_default_contact_groups(action_id: str, group: list[str]) -> dic
                 "message": f"OnboardingInteractAction with ID '{action_id}' not found",
                 "details": {"action_id": action_id}
             }
-        
+
         result = await action.update_default_contact_groups(group)
         logger.warning("result")
         logger.warning(result)

@@ -20,93 +20,95 @@ from ..foundation.enums import InterviewState
 from ..foundation.exceptions import InvalidStateTransitionError
 
 if TYPE_CHECKING:
+    from jvagent.action.interact.interact_walker import InteractWalker
+
     from ...interview_interact_action import InterviewInteractAction
     from ..graph.interview_walker import InterviewWalker
     from ..session.interview_session import InterviewSession
-    from jvagent.action.interact.interact_walker import InteractWalker
 
 logger = logging.getLogger(__name__)
 
 
 class StateNode(Node):
     """Node representing an interview state transition point in the question graph.
-    
+
     StateNodes are first-class graph citizens that represent interview states
     (REVIEW, COMPLETED, CANCELLED). They can be targets of conditional branches
     from questions and can have outgoing edges for state-to-state transitions
     or re-entry into the question flow.
-    
+
     StateNode also manages state transition validation, replacing the need for
     a separate InterviewStateMachine class.
-    
+
     Attributes:
         state_type: The InterviewState this node represents
         label: Human-readable label (typically the state name in uppercase)
     """
-    
+
     description: str = "Interview state transition node"
-    
+
     # Valid state transitions: {from_state: {to_states}}
     VALID_TRANSITIONS: ClassVar[Dict[InterviewState, Set[InterviewState]]] = {
         InterviewState.ACTIVE: {
-            InterviewState.REVIEW,      # All questions answered
-            InterviewState.CANCELLED,   # User cancels
+            InterviewState.REVIEW,  # All questions answered
+            InterviewState.CANCELLED,  # User cancels
         },
         InterviewState.REVIEW: {
-            InterviewState.ACTIVE,      # User wants to edit
-            InterviewState.COMPLETED,   # User confirms
-            InterviewState.CANCELLED,   # User cancels
+            InterviewState.ACTIVE,  # User wants to edit
+            InterviewState.COMPLETED,  # User confirms
+            InterviewState.CANCELLED,  # User cancels
         },
         InterviewState.COMPLETED: set(),  # Terminal state
         InterviewState.CANCELLED: set(),  # Terminal state
     }
-    
+
     agent_id: str = attribute(
-        default=None,
-        description="ID of the agent this question belongs to"
+        default=None, description="ID of the agent this question belongs to"
     )
-        
+
     interview_type: str = attribute(
         default=None,
-        description="Type of interview this question belongs to (e.g., 'SignupInterviewInteractAction')"
+        description="Type of interview this question belongs to (e.g., 'SignupInterviewInteractAction')",
     )
-        
+
     state_type: InterviewState = attribute(
         default=InterviewState.ACTIVE,
-        description="The interview state this node represents (REVIEW, COMPLETED, CANCELLED)"
+        description="The interview state this node represents (REVIEW, COMPLETED, CANCELLED)",
     )
-    
+
     label: str = attribute(
         default_factory=str,
-        description="Human-readable label for the node (typically state name in uppercase)"
+        description="Human-readable label for the node (typically state name in uppercase)",
     )
-    
+
     @classmethod
-    def can_transition(cls, from_state: InterviewState, to_state: InterviewState) -> bool:
+    def can_transition(
+        cls, from_state: InterviewState, to_state: InterviewState
+    ) -> bool:
         """Check if transition from from_state to to_state is valid.
-        
+
         Args:
             from_state: Current state
             to_state: Target state
-            
+
         Returns:
             True if transition is valid, False otherwise
         """
         valid_targets = cls.VALID_TRANSITIONS.get(from_state, set())
         return to_state in valid_targets
-    
+
     @classmethod
     def get_valid_transitions(cls, from_state: InterviewState) -> Set[InterviewState]:
         """Get valid transitions from a given state.
-        
+
         Args:
             from_state: Current state
-            
+
         Returns:
             Set of valid target states
         """
         return cls.VALID_TRANSITIONS.get(from_state, set()).copy()
-    
+
     async def execute(self, walker: "InterviewWalker") -> Optional[str]:
         """Execute state node to trigger state transition and return directive.
 
@@ -131,22 +133,26 @@ class StateNode(Node):
             logger.debug(
                 f"StateNode: Transitioning session from {session.state.value} to {self.state_type.value}"
             )
-            
+
             # Validate transition
             if not self.can_transition(session.state, self.state_type):
-                valid_transitions = [s.value for s in self.VALID_TRANSITIONS.get(session.state, set())]
+                valid_transitions = [
+                    s.value for s in self.VALID_TRANSITIONS.get(session.state, set())
+                ]
                 error = InvalidStateTransitionError(
                     session.state.value,
                     self.state_type.value,
-                    f"Valid transitions from {session.state.value}: {valid_transitions}"
+                    f"Valid transitions from {session.state.value}: {valid_transitions}",
                 )
-                logger.error(f"StateNode: Invalid state transition: {error}", exc_info=True)
+                logger.error(
+                    f"StateNode: Invalid state transition: {error}", exc_info=True
+                )
                 raise error
-            
+
             # Perform transition
             session.transition_to(self.state_type)
             await session.save()
-            
+
             logger.debug(
                 f"State transition: {session.state.value} -> {self.state_type.value} "
                 f"(reason: StateNode execution: {self.label})"
@@ -164,6 +170,7 @@ class StateNode(Node):
                 )
             else:
                 from ..utils.session_utils import cleanup_session
+
                 action_name = "InterviewAction"
                 if interview_action and hasattr(interview_action, "get_class_name"):
                     action_name = interview_action.get_class_name()
@@ -185,7 +192,7 @@ class StateNode(Node):
             if getattr(session, "auto_confirm", False):
                 # Return None to allow walker to follow REVIEW->COMPLETED edge
                 return None
-            
+
             return await self.build_confirmation_directive(
                 session, visitor=visitor, interview_action=interview_action
             )
@@ -292,15 +299,15 @@ class StateNode(Node):
 
     def is_terminal(self) -> bool:
         """Check if this state is terminal (no outgoing transitions allowed).
-        
+
         COMPLETED and CANCELLED are terminal states. REVIEW can have outgoing
         edges back to questions for editing.
-        
+
         Returns:
             True if state is terminal, False otherwise
         """
         return self.state_type in (InterviewState.COMPLETED, InterviewState.CANCELLED)
-    
+
     def allows_reentry(self) -> bool:
         """Check if this state allows re-entry into question flow.
 
