@@ -260,6 +260,5 @@ Interaction logs include:
 
 - [Logging System](logging.md) - Comprehensive logging system documentation
 - [Error Logging](error-logging.md) - Error logging and querying
-- [jvspatial Logging Service](../../jvspatial/docs/md/logging-service.md) - Base logging service
-- [jvspatial Custom Log Levels](../../jvspatial/docs/md/custom-log-levels.md) - Custom log level system
+- For jvspatial logging service and custom log levels, see the jvspatial documentation.
 

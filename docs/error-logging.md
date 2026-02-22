@@ -400,5 +400,4 @@ JVAGENT_LOG_DB_ENDPOINT_URL=http://localhost:8000  # For local testing
 
 - [Logging System](logging.md) - Comprehensive logging system documentation
 - [Interaction Logging](interaction-logging.md) - INTERACTION log level and interaction logging
-- [jvspatial Logging Service](../../jvspatial/docs/md/logging-service.md) - Base logging service
-- [jvspatial Custom Log Levels](../../jvspatial/docs/md/custom-log-levels.md) - Custom log level system
+- For jvspatial logging service and custom log levels, see the jvspatial documentation.
