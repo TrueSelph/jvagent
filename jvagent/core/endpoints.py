@@ -5,11 +5,13 @@ This module provides endpoints for:
 - Updating agents (alias, enabled status, description, interaction_limit)
 - Deleting agents
 - Listing agents with pagination and filtering
+- Graph repair (admin)
 """
 
 import asyncio
 from typing import Any, Dict, List, Optional
 
+from fastapi import Query
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
@@ -17,6 +19,7 @@ from jvspatial.core.pager import ObjectPager
 
 from jvagent.core.agent import Agent
 from jvagent.core.agents import Agents
+from jvagent.core.graph_repair import repair_agent_graph
 
 
 @endpoint(
@@ -561,3 +564,80 @@ async def get_storage_file(file_path: str):
             "Cache-Control": "public, max-age=3600",
         },
     )
+
+
+@endpoint(
+    "/graph/repair",
+    methods=["POST"],
+    auth=True,
+    roles=["admin"],
+    tags=["App"],
+    response=success_response(
+        data={
+            "dead_edges_removed": ResponseField(
+                field_type=int,
+                description="Number of dead edges removed",
+                example=2,
+            ),
+            "orphaned_nodes_reattached": ResponseField(
+                field_type=int,
+                description="Number of orphaned nodes reattached",
+                example=1,
+            ),
+            "orphaned_nodes_deleted": ResponseField(
+                field_type=int,
+                description="Number of orphaned nodes deleted",
+                example=0,
+            ),
+            "node_edge_ids_synced": ResponseField(
+                field_type=int,
+                description="Number of nodes with edge_ids synced",
+                example=3,
+            ),
+            "duplicate_edges_removed": ResponseField(
+                field_type=int,
+                description="Number of duplicate edges removed",
+                example=0,
+            ),
+            "message": ResponseField(
+                field_type=str,
+                description="Success message",
+                example="Repair completed: 2 dead edge(s) removed, 3 node(s) edge_ids synced",
+            ),
+        }
+    ),
+)
+async def repair_graph(
+    agent_id: Optional[str] = Query(
+        None,
+        description="If provided, scope repair to that agent's subgraph and run memory repair",
+    ),
+    dry_run: bool = Query(
+        False,
+        description="If True, report issues without making changes",
+    ),
+    recent_minutes: Optional[int] = Query(
+        None,
+        description="When agent_id set: only clean orphan interactions from last N minutes (None = all)",
+    ),
+) -> Dict[str, Any]:
+    """Run agent graph repair (admin only, manually triggered).
+
+    Validates structure, removes dead edges, syncs node edge_ids, reattaches
+    or removes orphaned nodes, and removes duplicate edges. When agent_id
+    is provided, also runs memory repair for that agent.
+
+    Args:
+        agent_id: Optional - scope repair to that agent's subgraph and run memory repair
+        dry_run: Optional - report issues without making changes
+        recent_minutes: Optional - when agent_id set, passed to memory repair
+
+    Returns:
+        Dictionary with repair counts and message
+    """
+    result = await repair_agent_graph(
+        agent_id=agent_id,
+        dry_run=dry_run,
+        recent_minutes=recent_minutes,
+    )
+    return result
