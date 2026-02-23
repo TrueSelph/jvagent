@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
     "/actions/{action_id}/query",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["Model Action"],
     response=success_response(
         data={
@@ -254,6 +255,7 @@ async def query_model_action(
     "/actions/{action_id}/metrics",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["Model Action"],
     response=success_response(
         data={
@@ -370,6 +372,7 @@ async def get_model_action_metrics(action_id: str) -> Dict[str, Any]:
     "/actions/{action_id}/templates",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["Model Action"],
     response=success_response(
         data={
@@ -428,6 +431,7 @@ async def list_model_action_templates(action_id: str) -> Dict[str, Any]:
     "/actions/{action_id}/templates/{template_name}/render",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["Model Action"],
     response=success_response(
         data={

@@ -11,7 +11,7 @@ from typing import Any, List
 
 from dotenv import load_dotenv
 from jvspatial.api import Server
-from jvspatial.api.auth.models import User
+from jvspatial.api.auth.models import UserCreate, UserCreateAdmin
 from jvspatial.api.auth.service import AuthenticationService
 from jvspatial.api.config_groups import (
     AuthConfig,
@@ -185,15 +185,15 @@ async def _manual_bootstrap() -> None:
 async def ensure_admin_user() -> bool:
     """Ensure a single admin user exists.
 
-    Creates an admin user if one doesn't exist, using credentials from .env.
+    Uses jvspatial RBAC: when no users exist, first registration becomes admin
+    (bootstrap). When users exist, verifies admin by email and role.
 
     Returns:
         True if admin user exists (either already existed or was just created),
-        False if admin user could not be created (missing password).
+        False if admin user could not be created (missing password or no admin).
     """
     logger.debug("Checking for admin user...")
 
-    # Get admin credentials from environment
     admin_username = os.getenv("JVAGENT_ADMIN_USERNAME", "admin")
     admin_password = os.getenv("JVAGENT_ADMIN_PASSWORD")
     admin_email = os.getenv("JVAGENT_ADMIN_EMAIL", f"{admin_username}@jvagent.example")
@@ -204,30 +204,61 @@ async def ensure_admin_user() -> bool:
         )
         return False
 
-    # Check if admin user already exists by email
-    existing_user = await User.find_one({"context.email": admin_email})
-
-    if existing_user:
-        logger.debug(f"Admin user already exists: {admin_email}")
-        return True
-
-    # Create admin user
-    # Use AuthenticationService to hash password properly
     auth_service = AuthenticationService()
+    user_count = await auth_service._user_count()
 
-    # Hash the password
-    password_hash = auth_service._hash_password(admin_password)
+    if user_count == 0:
+        try:
+            user_response = await auth_service.register_user(
+                UserCreate(email=admin_email, password=admin_password)
+            )
+            logger.info(
+                f"Created admin user via bootstrap: {admin_email} (ID: {user_response.id})"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to create admin user: {e}", exc_info=True)
+            return False
 
-    # Create user
-    admin_user = await User.create(
-        email=admin_email,
-        password_hash=password_hash,
-        name=admin_username,
-        is_active=True,
-    )
+    existing_user = await auth_service._find_user_by_email(admin_email)
+    if existing_user:
+        roles = getattr(existing_user, "roles", None) or []
+        if "admin" in roles:
+            logger.debug(f"Admin user already exists: {admin_email}")
+            return True
+        logger.warning(
+            f"User {admin_email} exists but lacks admin role. "
+            "Use admin endpoint to assign admin role."
+        )
+        return False
 
-    logger.info(f"Created admin user: {admin_email} (ID: {admin_user.id})")
-    return True
+    # Recovery: users exist but configured admin email not found - create admin via
+    # create_user_with_roles (trusted bootstrap context; no HTTP caller check)
+    try:
+        user_response = await auth_service.create_user_with_roles(
+            UserCreateAdmin(
+                email=admin_email,
+                password=admin_password,
+                roles=["admin"],
+                permissions=[],
+            )
+        )
+        logger.info(
+            f"Created admin user (recovery): {admin_email} (ID: {user_response.id})"
+        )
+        return True
+    except ValueError as e:
+        if "already exists" in str(e).lower():
+            existing_user = await auth_service._find_user_by_email(admin_email)
+            if existing_user:
+                roles = getattr(existing_user, "roles", None) or []
+                if "admin" in roles:
+                    return True
+        logger.error(f"Failed to create admin user: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to create admin user: {e}", exc_info=True)
+        return False
 
 
 def _get_config_value(
@@ -546,6 +577,11 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         api_key_prefix=api_key_prefix,
         api_key_header=api_key_header,
         auth_exempt_paths=auth_exempt_paths,
+        role_permission_mapping={
+            "admin": ["*"],
+            "user": [],
+            "system": [],
+        },
     )
 
     # CORS configuration
@@ -754,43 +790,6 @@ async def pre_startup_bootstrap(
     except Exception as e:
         logger.error(f"❌ Bootstrap failed: {e}", exc_info=True)
         raise
-
-
-def disable_register_endpoint(server: Server) -> None:
-    """Disable the /auth/register endpoint if admin user exists.
-
-    Uses the server's disable_auth_endpoint method to remove the endpoint
-    from the auth router before the app is created.
-
-    Args:
-        server: Server instance
-    """
-    try:
-        # Use server's disable_auth_endpoint method to remove the register endpoint
-        # This works with auth endpoints registered through the auth router
-        # The path should be relative to the router prefix ("/auth")
-        # The method will automatically build the full path "/auth/register"
-        success = server.disable_auth_endpoint("/register")
-        # Endpoint disabling is logged by server.disable_auth_endpoint()
-        if not success:
-            # If the endpoint wasn't found, check if auth is enabled
-            # This might happen if auth is disabled or the endpoint wasn't registered
-            if (
-                hasattr(server, "_auth_endpoints_registered")
-                and server._auth_endpoints_registered
-            ):
-                logger.warning(
-                    "Could not find /auth/register endpoint to disable "
-                    "even though auth endpoints are registered. "
-                    "The endpoint may have already been disabled or removed."
-                )
-            else:
-                logger.debug(
-                    "Could not find /auth/register endpoint to disable "
-                    "(auth may not be enabled or endpoint not yet registered)"
-                )
-    except Exception as e:
-        logger.warning(f"Could not disable register endpoint: {e}")
 
 
 def purge_app_data(app_root: str) -> None:
@@ -1153,15 +1152,13 @@ def run_server(
             )
         )
 
-        # If admin user exists, disable the register endpoint
         if admin_exists:
-            disable_register_endpoint(server)
             if debug:
-                bootstrap_log.info("Admin user configured - registration disabled")
+                bootstrap_log.info("Admin user configured")
         else:
             bootstrap_log.warning(
-                "Admin user not found - registration enabled. "
-                "Set JVAGENT_ADMIN_PASSWORD in .env to create admin user."
+                "Admin user not found. "
+                "Set JVAGENT_ADMIN_PASSWORD in .env to create admin user on first run."
             )
 
         # Register startup event to display summary after server has started

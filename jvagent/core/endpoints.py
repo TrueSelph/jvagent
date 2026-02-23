@@ -26,6 +26,7 @@ from jvagent.core.graph_repair import repair_agent_graph
     "/agents/{agent_id}",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["Agent"],
     response=success_response(
         data={
@@ -88,6 +89,7 @@ async def get_agent(agent_id: str) -> Dict[str, Any]:
     "/agents/{agent_id}",
     methods=["PUT"],
     auth=True,
+    roles=["admin"],
     tags=["Agent"],
     response=success_response(
         data={
@@ -209,6 +211,7 @@ async def update_agent(
     "/agents/{agent_id}",
     methods=["DELETE"],
     auth=True,
+    roles=["admin"],
     tags=["Agent"],
     response=success_response(
         data={
@@ -283,6 +286,7 @@ async def delete_agent(agent_id: str) -> Dict[str, Any]:
     "/agents",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["Agent"],
     response=success_response(
         data={
@@ -426,6 +430,7 @@ async def list_agents(
     "/agents/{agent_id}/conversations/{user_id}/{session_id}",
     methods=["DELETE"],
     auth=True,
+    roles=["admin"],
     tags=["Agent"],
     response=success_response(
         data={

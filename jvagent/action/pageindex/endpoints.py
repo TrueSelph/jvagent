@@ -191,6 +191,7 @@ async def _do_assimilate(
     "/agents/{agent_id}/pageindex/documents",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["PageIndex"],
     response=success_response(
         data={
@@ -289,6 +290,7 @@ async def ingest_document_endpoint(
     "/agents/{agent_id}/pageindex/documents",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["PageIndex"],
     response=success_response(
         data={
@@ -338,6 +340,7 @@ async def list_documents_endpoint(
     "/agents/{agent_id}/pageindex/documents/{doc_name}",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["PageIndex"],
     response=success_response(
         data={
@@ -385,6 +388,7 @@ async def get_document_endpoint(agent_id: str, doc_name: str) -> Dict[str, Any]:
     "/agents/{agent_id}/pageindex/documents/{doc_name}",
     methods=["DELETE"],
     auth=True,
+    roles=["admin"],
     tags=["PageIndex"],
     response=success_response(
         data={
@@ -423,6 +427,7 @@ async def delete_document_endpoint(agent_id: str, doc_name: str) -> Dict[str, An
     "/agents/{agent_id}/pageindex/documents/search",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["PageIndex"],
     response=success_response(
         data={
@@ -490,6 +495,7 @@ async def search_documents_endpoint(
     "/agents/{agent_id}/pageindex/export",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["PageIndex"],
     response=success_response(
         data={
@@ -526,6 +532,7 @@ async def export_documents_endpoint(
     "/agents/{agent_id}/pageindex/import",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["PageIndex"],
     response=success_response(
         data={

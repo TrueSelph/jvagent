@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
     "/actions/{action_id}/contact-groups",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={
@@ -42,6 +43,7 @@ async def get_contact_groups(action_id: str, project_groups: bool = True) -> Dic
     "/actions/{action_id}/contact-groups/{group_id}/subscribe",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={
@@ -62,6 +64,7 @@ async def subscribe_contact_to_group(action_id: str, group_id: int, contact_id: 
     "/actions/{action_id}/contact-groups/{group_id}/unsubscribe",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={
@@ -84,6 +87,7 @@ async def unsubscribe_contact_from_group(action_id: str, group_id: int, contact_
     "/actions/{action_id}/issues",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={
@@ -127,6 +131,7 @@ async def create_issue(
     "/actions/{action_id}/issues/{issue_id}",
     methods=["PUT"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={
@@ -164,6 +169,7 @@ async def update_issue(
     "/actions/{action_id}/issues",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={
@@ -184,6 +190,7 @@ async def list_issues(action_id: str, query: str = "") -> Dict[str, Any]:
     "/actions/{action_id}/issues/{issue_id}",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={
@@ -204,6 +211,7 @@ async def get_issue(action_id: str, issue_id: str) -> Dict[str, Any]:
     "/actions/{action_id}/issue-categories",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={
@@ -226,6 +234,7 @@ async def get_issue_categories(action_id: str) -> Dict[str, Any]:
     "/actions/{action_id}/contacts/lookup",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={
@@ -246,6 +255,7 @@ async def lookup_contact(action_id: str, phone: str, name: str = "", email: str 
     "/actions/{action_id}/contacts",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={
@@ -266,6 +276,7 @@ async def create_contact(action_id: str, name: str, phone: str, email: str) -> D
     "/actions/{action_id}/contacts/{contact_id}",
     methods=["PUT"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={
@@ -286,6 +297,7 @@ async def update_contact(action_id: str, contact_id: int, name: str, phone: str,
     "/actions/{action_id}/contacts/subscription-link",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={
@@ -308,6 +320,7 @@ async def get_subscription_link(action_id: str, phone: str, name: str) -> Dict[s
     "/actions/{action_id}/notices",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={
@@ -330,6 +343,7 @@ async def list_notices(action_id: str, status: Optional[str] = None) -> Dict[str
     "/actions/{action_id}/projects",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={
@@ -352,6 +366,7 @@ async def list_projects(action_id: str, query: str = "") -> Dict[str, Any]:
     "/actions/{action_id}/projects/{project_id}/comments",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={
@@ -372,6 +387,7 @@ async def post_project_comment(action_id: str, project_id: str, content: str) ->
     "/actions/{action_id}/projects/{project_id}/issues/{issue_id}/comments",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={
@@ -392,6 +408,7 @@ async def post_issue_comment(action_id: str, project_id: str, issue_id: str, con
     "/actions/{action_id}/comments",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["ResolvAPIAction"],
     response=success_response(
         data={

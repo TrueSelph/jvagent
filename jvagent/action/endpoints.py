@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
     "/actions/{action_id}",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["Action"],
     response=success_response(
         data={
@@ -89,6 +90,7 @@ async def get_action(action_id: str) -> Dict[str, Any]:
     "/actions/{action_id}",
     methods=["PUT"],
     auth=True,
+    roles=["admin"],
     tags=["Action"],
     response=success_response(
         data={
@@ -256,6 +258,7 @@ async def update_action(
     "/agents/{agent_id}/actions",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["Action"],
     response=success_response(
         data={
@@ -364,6 +367,7 @@ async def list_agent_actions(
     "/actions/{action_id}/enable",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["Action"],
     response=success_response(
         data={
@@ -406,6 +410,7 @@ async def enable_action_endpoint(action_id: str) -> Dict[str, Any]:
     "/actions/{action_id}/disable",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["Action"],
     response=success_response(
         data={
@@ -448,6 +453,7 @@ async def disable_action_endpoint(action_id: str) -> Dict[str, Any]:
     "/actions/{action_id}/reload",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["Action"],
     response=success_response(
         data={
@@ -490,6 +496,7 @@ async def reload_action_endpoint(action_id: str) -> Dict[str, Any]:
     "/actions/{action_id}/health",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["Action"],
     response=success_response(
         data={

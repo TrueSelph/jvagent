@@ -197,6 +197,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
     "/actions/{action_id}/send_message",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -249,6 +250,7 @@ async def send_message(
     "/actions/{action_id}/send_image",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -292,6 +294,7 @@ async def send_image(
     "/actions/{action_id}/send_file",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -335,6 +338,7 @@ async def send_file(
     "/actions/{action_id}/send_voice",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -375,6 +379,7 @@ async def send_voice(
     "/actions/{action_id}/send_location",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -419,6 +424,7 @@ async def send_location(
     "/actions/{action_id}/group/create",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -452,6 +458,7 @@ async def create_group(
     "/actions/{action_id}/group/add_participant",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -485,6 +492,7 @@ async def add_group_participant(
     "/actions/{action_id}/group/remove_participant",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -518,6 +526,7 @@ async def remove_group_participant(
     "/actions/{action_id}/profile_picture/{phone}",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -551,6 +560,7 @@ async def get_profile_picture(
     "/actions/{action_id}/status",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -577,6 +587,7 @@ async def get_session_status(
     "/actions/{action_id}/session/register",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -627,6 +638,7 @@ async def register_session(
     "/actions/{action_id}/qrcode",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -655,6 +667,7 @@ async def get_qrcode(
     "/actions/{action_id}/device",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -681,6 +694,7 @@ async def get_device_info(
     "/actions/{action_id}/logout",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -708,6 +722,7 @@ async def logout(
     "/actions/{action_id}/close",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     response=success_response(
         data={

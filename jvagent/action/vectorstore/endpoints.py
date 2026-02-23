@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
     "/actions/{action_id}/documents",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["VectorStore"],
     response=success_response(
         data={
@@ -172,6 +173,7 @@ async def add_documents_endpoint(
     "/actions/{action_id}/documents",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["VectorStore"],
     response=success_response(
         data={
@@ -263,6 +265,7 @@ async def list_documents_endpoint(
     "/actions/{action_id}/documents/{document_id}",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["VectorStore"],
     response=success_response(
         data={
@@ -330,6 +333,7 @@ async def get_document_endpoint(
     "/actions/{action_id}/documents/{document_id}",
     methods=["PUT"],
     auth=True,
+    roles=["admin"],
     tags=["VectorStore"],
     response=success_response(
         data={
@@ -402,6 +406,7 @@ async def update_document_endpoint(
     "/actions/{action_id}/documents/{document_id}",
     methods=["DELETE"],
     auth=True,
+    roles=["admin"],
     tags=["VectorStore"],
     response=success_response(
         data={

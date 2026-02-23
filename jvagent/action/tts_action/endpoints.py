@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
     "/actions/{action_id}/tts/synthesize",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["TTS Action"],
 )
 async def synthesize_speech(action_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -61,6 +62,7 @@ async def synthesize_speech(action_id: str, data: Dict[str, Any]) -> Dict[str, A
     "/actions/{action_id}/tts/voices",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["TTS Action"],
 )
 async def get_voices(action_id: str) -> Dict[str, Any]:
@@ -92,6 +94,7 @@ async def get_voices(action_id: str) -> Dict[str, Any]:
     "/actions/{action_id}/tts/models",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["TTS Action"],
 )
 async def get_models(action_id: str) -> Dict[str, Any]:
@@ -123,6 +126,7 @@ async def get_models(action_id: str) -> Dict[str, Any]:
     "/actions/{action_id}/tts/health",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["TTS Action"],
 )
 async def tts_health_check(action_id: str) -> Dict[str, Any]:
