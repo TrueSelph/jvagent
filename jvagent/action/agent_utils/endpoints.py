@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
     "/actions/{action_id}/interactions",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["AgentUtils"],
     response=success_response(
         data={

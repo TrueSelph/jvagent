@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
     "/actions/{action_id}/embed",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["Embedding Model Action"],
     response=success_response(
         data={
@@ -169,6 +170,7 @@ async def embed_text(
     "/actions/{action_id}/embed/batch",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["Embedding Model Action"],
     response=success_response(
         data={
@@ -341,6 +343,7 @@ async def embed_batch(
     "/actions/{action_id}/embedding/metrics",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["Embedding Model Action"],
     response=success_response(
         data={

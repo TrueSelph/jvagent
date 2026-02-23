@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
     "/actions/{action_id}/access",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["Access Control"],
     response=success_response(
         data={
@@ -48,6 +49,7 @@ async def check_action_access_endpoint(
     "/actions/{action_id}/config/export",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["Access Control"],
     response=success_response(
         data={
@@ -85,6 +87,7 @@ async def export_config_endpoint(
     "/actions/{action_id}/config/import",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["Access Control"],
     response=success_response(
         data={

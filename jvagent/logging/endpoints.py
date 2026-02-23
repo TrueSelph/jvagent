@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
     "/logs/agents/{agent_id}",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["App"],
     response=success_response(
         data={

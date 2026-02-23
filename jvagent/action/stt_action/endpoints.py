@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
     "/actions/{action_id}/stt/transcribe",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["STT Action"],
 )
 async def transcribe_audio(action_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -64,6 +65,7 @@ async def transcribe_audio(action_id: str, data: Dict[str, Any]) -> Dict[str, An
     "/actions/{action_id}/stt/health",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["STT Action"],
 )
 async def stt_health_check(action_id: str) -> Dict[str, Any]:

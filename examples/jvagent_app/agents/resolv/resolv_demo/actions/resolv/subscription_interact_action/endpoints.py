@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
     "/actions/{action_id}/get_contact_groups",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["OnboardingInteractAction"],
     response=success_response(
         data={
@@ -67,6 +68,7 @@ async def endpoint_get_contact_groups(action_id: str) -> dict[str, Any]:
     "/actions/{action_id}/update_default_contact_groups",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["OnboardingInteractAction"],
     response=success_response(
         data={

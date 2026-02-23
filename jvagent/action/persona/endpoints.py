@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
     "/actions/{action_id}/parameters",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["Persona Action"],
     response=success_response(
         data={
@@ -97,6 +98,7 @@ async def list_parameters_endpoint(
     "/actions/{action_id}/parameters",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["Persona Action"],
     response=success_response(
         data={
@@ -192,6 +194,7 @@ async def create_parameter_endpoint(
     "/actions/{action_id}/parameters/{param_id}",
     methods=["PUT"],
     auth=True,
+    roles=["admin"],
     tags=["Persona Action"],
     response=success_response(
         data={
@@ -306,6 +309,7 @@ async def update_parameter_endpoint(
     "/actions/{action_id}/parameters/{param_id}",
     methods=["DELETE"],
     auth=True,
+    roles=["admin"],
     tags=["Persona Action"],
     response=success_response(
         data={
@@ -379,6 +383,7 @@ async def delete_parameter_endpoint(
     "/actions/{action_id}/parameters/import",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["Persona Action"],
     response=success_response(
         data={
