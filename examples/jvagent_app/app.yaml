@@ -19,6 +19,7 @@ jvagent: ~0.0.1
 context:
   name: jvagent Demo App
   description: A demo application showcasing jvagent capabilities
+  timezone: America/New_York
   file_storage_provider: local
   file_storage_root_dir: ./.files
   file_storage_enabled: true

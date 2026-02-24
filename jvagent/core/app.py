@@ -1,8 +1,10 @@
 """App node - Root application node for jvagent."""
 
 import asyncio
+import logging
 import os
-from typing import Any, ClassVar, Dict, Optional, Type
+from datetime import datetime
+from typing import Any, ClassVar, Dict, Optional, Type, Union
 
 from jvspatial.api.context import get_current_server
 from jvspatial.core import Node, Root
@@ -57,6 +59,11 @@ class App(Node):
     )
     log_retention_days: int = attribute(
         default=60, description="Log retention window in days (default: 60)"
+    )
+
+    timezone: Optional[str] = attribute(
+        default=None,
+        description="IANA timezone for app-level datetime (e.g. America/New_York)",
     )
 
     # Runtime instances (private, transient)
@@ -133,6 +140,35 @@ class App(Node):
         or when you want to force a fresh lookup on the next get() call.
         """
         cls._cached_app = None
+
+    # ============================================================================
+    # Datetime (App Timezone)
+    # ============================================================================
+
+    async def now(self, fmt: Optional[str] = None) -> Union[datetime, str]:
+        """Current datetime in app timezone (or server local if unset).
+
+        Args:
+            fmt: Optional strftime format; if provided, returns formatted string.
+
+        Returns:
+            datetime object if fmt is None, else formatted string.
+        """
+        logger = logging.getLogger(__name__)
+        tz = None
+        if self.timezone:
+            try:
+                from zoneinfo import ZoneInfo
+
+                tz = ZoneInfo(self.timezone)
+            except Exception as e:
+                logger.warning(
+                    f"Invalid timezone '{self.timezone}', using server time: {e}"
+                )
+        now_dt = datetime.now(tz) if tz else datetime.now()
+        if fmt:
+            return now_dt.strftime(fmt)
+        return now_dt
 
     # ============================================================================
     # Response Bus Operations

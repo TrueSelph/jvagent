@@ -65,13 +65,17 @@ class Memory(Node):
         Returns:
             User node if found or created, None otherwise
         """
+        from jvagent.core.app import App
         from jvagent.memory.user import User
+
+        app = await App.get()
+        now = await app.now() if app else datetime.now(timezone.utc)
 
         # Use node() to get a single connected user (no need to dereference list)
         user = await self.node(node=User, user_id=user_id)
         if user:
             # Update last seen
-            user.last_seen = datetime.now(timezone.utc)
+            user.last_seen = now
             await user.save()
             return user
 
@@ -81,12 +85,12 @@ class Memory(Node):
         if existing_user:
             # Reconnect the orphaned user to this Memory node
             await self.connect(existing_user)
-            existing_user.last_seen = datetime.now(timezone.utc)
+            existing_user.last_seen = now
             await existing_user.save()
             return existing_user
 
         if create_if_missing:
-            user = await User.create(user_id=user_id)
+            user = await User.create(user_id=user_id, created_at=now, last_seen=now)
             await self.connect(user)  # Creates edge: Memory --> User
             self.total_users += 1
             await self.save()
@@ -433,7 +437,10 @@ class Memory(Node):
         dual_removed, first_restored = await self._repair_interaction_chain_invariants()
         reconnected = await self._reconnect_orphaned_users()
 
-        self.last_cleanup = datetime.now(timezone.utc)
+        from jvagent.core.app import App
+
+        app = await App.get()
+        self.last_cleanup = await app.now() if app else datetime.now(timezone.utc)
         await self.save()
 
         return {
@@ -528,9 +535,14 @@ class Memory(Node):
         remaining_conversations = await Conversation.find()
         valid_conv_ids = list({c.id for c in remaining_conversations}) + [""]
 
+        from jvagent.core.app import App
+
+        app = await App.get()
+        now = await app.now() if app else datetime.now(timezone.utc)
+
         query: Dict[str, Any] = {"context.conversation_id": {"$nin": valid_conv_ids}}
         if recent_minutes is not None and recent_minutes > 0:
-            cutoff = datetime.now(timezone.utc) - timedelta(minutes=recent_minutes)
+            cutoff = now - timedelta(minutes=recent_minutes)
             query["context.started_at"] = {"$gte": cutoff}
 
         orphaned = await Interaction.find(query)

@@ -75,6 +75,7 @@ class User(Node):
         Returns:
             Newly created Conversation node connected to this User
         """
+        from jvagent.core.app import App
         from jvagent.memory.conversation import Conversation
         from jvagent.memory.manager import Memory
 
@@ -84,11 +85,15 @@ class User(Node):
             if agent and hasattr(agent, "interaction_limit"):
                 interaction_limit = agent.interaction_limit
 
+        app = await App.get()
+        now = await app.now() if app else datetime.now(timezone.utc)
+
         conv = await Conversation.create(
             session_id=session_id or f"sess_{uuid.uuid4().hex[:16]}",
             user_id=self.user_id,
             channel=channel,
             interaction_limit=interaction_limit or 0,
+            created_at=now,
         )
         await self.connect(conv)  # Creates edge: User --> Conversation
 
@@ -176,7 +181,10 @@ class User(Node):
 
     async def record_activity(self) -> None:
         """Update last_seen timestamp to current time."""
-        self.last_seen = datetime.now(timezone.utc)
+        from jvagent.core.app import App
+
+        app = await App.get()
+        self.last_seen = await app.now() if app else datetime.now(timezone.utc)
         await self.save()
 
     def get_name(self) -> Optional[str]:
@@ -217,7 +225,12 @@ class User(Node):
         if preferences:
             self.user_model["preferences"].update(preferences)
 
-        self.user_model["last_updated"] = datetime.now(timezone.utc)
+        from jvagent.core.app import App
+
+        app = await App.get()
+        self.user_model["last_updated"] = (
+            await app.now() if app else datetime.now(timezone.utc)
+        )
         await self.save()
 
     def get_user_model(self) -> Dict[str, Any]:

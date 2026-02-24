@@ -14,6 +14,9 @@ The root application node that manages:
 - Application-wide configuration
 - File storage operations
 - Global settings
+- App-level datetime via `timezone` (app.yaml context) and `now()` method
+
+**App.now()** returns the current datetime in the configured timezone (or server local if unset). Use for consistent timestamps across actions, memory, and logging. Access via `await App.get()` then `await app.now()`, or from actions via `await self.now()`.
 
 ### Agents Node
 

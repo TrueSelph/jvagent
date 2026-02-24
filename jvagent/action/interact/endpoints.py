@@ -450,7 +450,7 @@ async def interact_endpoint(
 
                 set_interaction(None)
 
-                interaction.close_interaction()
+                await interaction.close_interaction()
 
                 # Flush deferred saves (interaction and conversation) with error handling
                 async with profile.measure("flush_saves"):
@@ -623,7 +623,7 @@ async def _stream_interaction(
             set_interaction(None)
 
             # Close interaction
-            interaction.close_interaction()
+            await interaction.close_interaction()
             # Flush deferred saves (interaction and conversation) with error handling
             await flush_deferred_saves(interaction, walker.conversation)
 
@@ -680,7 +680,7 @@ async def _stream_interaction(
             set_interaction(None)
 
             # Close interaction
-            interaction.close_interaction()
+            await interaction.close_interaction()
             # Flush deferred saves (interaction and conversation) with error handling
             await flush_deferred_saves(interaction, walker.conversation)
 

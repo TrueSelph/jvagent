@@ -66,6 +66,7 @@ class AppDescriptor:
         self.file_storage_enabled = context.get("file_storage_enabled", True)
         self.logging_enabled = context.get("logging_enabled", True)
         self.log_retention_days = context.get("log_retention_days", 60)
+        self.timezone = context.get("timezone")
 
         # Additional properties from context (excluding reserved fields)
         self.properties = {
@@ -80,6 +81,7 @@ class AppDescriptor:
                 "file_storage_enabled",
                 "logging_enabled",
                 "log_retention_days",
+                "timezone",
             ]
         }
 
@@ -270,6 +272,7 @@ class AppLoader:
                     app.file_storage_enabled = descriptor.file_storage_enabled
                     app.logging_enabled = descriptor.logging_enabled
                     app.log_retention_days = descriptor.log_retention_days
+                    app.timezone = descriptor.timezone
 
                     app.app_id = descriptor.app_id
 
@@ -290,6 +293,7 @@ class AppLoader:
                 "file_storage_enabled": descriptor.file_storage_enabled,
                 "logging_enabled": descriptor.logging_enabled,
                 "log_retention_days": descriptor.log_retention_days,
+                "timezone": descriptor.timezone,
             }
             app_data["app_id"] = descriptor.app_id
 

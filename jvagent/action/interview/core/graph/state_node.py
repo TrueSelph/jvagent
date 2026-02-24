@@ -150,7 +150,7 @@ class StateNode(Node):
                 raise error
 
             # Perform transition
-            session.transition_to(self.state_type)
+            await session.transition_to(self.state_type)
             await session.save()
 
             logger.debug(

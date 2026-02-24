@@ -16,7 +16,6 @@ is handled within the main InterviewInteractAction class.
 import logging
 import sys
 from abc import ABC
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
 from jvspatial.core import Node
@@ -683,7 +682,7 @@ class InterviewInteractAction(InteractAction, ABC):
                 state=InterviewState.ACTIVE,
                 auto_confirm=self.config.auto_confirm,
             )
-            session.started_at = datetime.now()
+            session.started_at = await self.now()
             await session.save()
             await conversation.connect(session)
         else:

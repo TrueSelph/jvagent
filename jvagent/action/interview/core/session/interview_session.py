@@ -269,11 +269,14 @@ class InterviewSession(Node):
                 return None
         return None
 
-    def transition_to(self, new_state: InterviewState) -> None:
+    async def transition_to(self, new_state: InterviewState) -> None:
         """Transition to a new state."""
+        from jvagent.core.app import App
+
         self.state = new_state
         if new_state == InterviewState.COMPLETED and not self.completed_at:
-            self.completed_at = datetime.now()
+            app = await App.get()
+            self.completed_at = await app.now() if app else datetime.now()
 
     async def reset(self) -> None:
         """Reset session to initial state, clearing all responses.
@@ -292,7 +295,10 @@ class InterviewSession(Node):
     async def save(self, *args, **kwargs):
         """Override save to update last_modified timestamp before persisting."""
         try:
-            self.last_modified = datetime.now()
+            from jvagent.core.app import App
+
+            app = await App.get()
+            self.last_modified = await app.now() if app else datetime.now()
         except Exception:
             # Best-effort; do not block save on timestamp issues
             pass

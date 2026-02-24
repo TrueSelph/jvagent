@@ -79,7 +79,8 @@ class MediaManager:
             return None
 
         # Generate unique path: whatsapp_media/user_id/timestamp_uuid.ext
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        now_dt = await app.now()
+        timestamp = now_dt.strftime("%Y%m%d_%H%M%S")
         import uuid
 
         unique_id = uuid.uuid4().hex[:8]
@@ -91,7 +92,7 @@ class MediaManager:
             "original_filename": filename,
             "mime_type": validation["mime_type"],
             "size": validation["size_bytes"],
-            "created_at": datetime.datetime.now().isoformat(),
+            "created_at": now_dt.isoformat(),
         }
 
         try:
@@ -182,7 +183,7 @@ class MediaManager:
         if not file_interface:
             return
 
-        now = datetime.datetime.now()
+        now = await app.now()
         threshold = now - datetime.timedelta(days=days)
 
         try:

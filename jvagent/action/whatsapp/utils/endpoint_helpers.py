@@ -194,7 +194,7 @@ async def finalize_whatsapp_interaction(
         return
 
     try:
-        interaction.close_interaction()
+        await interaction.close_interaction()
 
         # Flush deferred saves (interaction and conversation) with error handling
         await flush_deferred_saves(interaction, walker.conversation)

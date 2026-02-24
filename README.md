@@ -465,7 +465,7 @@ Root -> App -> Agents -> Agent
                 Agent -> Actions -> Action (registered)
 ```
 
-- **App**: Root application node; connects to Root. Manages file storage, logging config.
+- **App**: Root application node; connects to Root. Manages file storage, logging config, and app-level datetime via `timezone` and `now()`.
 - **Agents**: Structural branchpoint; connects to App. Aggregates all Agent nodes.
 - **Agent**: Individual agent; connects to Agents. Has one Memory and one Actions child.
 - **Memory**: Connects to Agent. Manages User nodes (User -> Conversation -> Interaction chain).
@@ -635,6 +635,7 @@ context:
   file_storage_provider: local
   file_storage_root_dir: ./.files
   file_storage_enabled: true
+  timezone: America/New_York  # Optional IANA timezone for app-level datetime
 
 # Application metadata (not stored in App node)
 license: MIT
@@ -677,6 +678,45 @@ config:
 agents:
   - jvagent/example_agent
   - contrib/another_agent
+```
+
+#### App Node API
+
+The App node provides singleton access and app-level utilities:
+
+**`App.get()`** – Get the App node (cached):
+
+```python
+from jvagent.core.app import App
+
+app = await App.get()
+if app:
+    # Use app utilities
+    content = await app.get_file("path/to/file")
+```
+
+**`App.now()`** – Current datetime in app timezone (or server local if unset). Configure `timezone` in `app.yaml` context (e.g. `America/New_York`) for consistent timestamps across the application:
+
+```python
+from jvagent.core.app import App
+
+app = await App.get()
+if app:
+    # Get datetime object
+    now = await app.now()
+
+    # Get formatted string
+    timestamp = await app.now("%Y-%m-%d %H:%M:%S")
+    iso_str = (await app.now()).isoformat()
+```
+
+**Actions** can use `self.now()` and `self.get_app()` from the Action base class:
+
+```python
+# In any Action subclass
+now = await self.now()
+date_str = (await self.now()).strftime("%A, %d %B, %Y")
+app = await self.get_app()
 ```
 
 ### agent.yaml

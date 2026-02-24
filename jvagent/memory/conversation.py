@@ -184,6 +184,11 @@ class Conversation(DeferredSaveMixin, Node):
         if interaction is None and utterance is None:
             raise ValueError("Must provide either interaction or utterance")
 
+        from jvagent.core.app import App
+
+        app = await App.get()
+        now = await app.now() if app else datetime.now(timezone.utc)
+
         if interaction is None:
             interaction = await Interaction.create(
                 conversation_id=self.id,
@@ -191,6 +196,7 @@ class Conversation(DeferredSaveMixin, Node):
                 utterance=utterance or "",
                 channel=channel or self.channel,
                 session_id=session_id,
+                started_at=now,
             )
 
         last_interaction = await self.get_last_interaction()
@@ -205,7 +211,7 @@ class Conversation(DeferredSaveMixin, Node):
         # Update the last interaction reference
         self.last_interaction_id = interaction.id
         self.interaction_count += 1
-        self.last_interaction_at = datetime.now(timezone.utc)
+        self.last_interaction_at = now
         await self.save()
 
         # Sync limit from agent when missing or when agent limit changed (e.g. after --update)
