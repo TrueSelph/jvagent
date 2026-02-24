@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { apiClient } from '../config/api'
-import { saveMessages, getUserId } from '../utils/storage'
+import { saveMessages, getMessages, getUserId } from '../utils/storage'
 import type { InteractionRequest, SSEChunk } from '../types/api'
 import type { Message } from '../types/message'
 
@@ -11,9 +11,9 @@ export function useStreaming(agentId: string, sessionId?: string) {
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(sessionId)
   const streamingMessageRef = useRef<string>('')
   const interactionIdRef = useRef<string | null>(null)
+  const streamSessionIdRef = useRef<string | undefined>(undefined)
+  const streamUserMessageRef = useRef<Message | null>(null)
 
-  // Update currentSessionId when sessionId prop changes
-  // Use a ref to track the prop value and only update state when it actually changes
   const sessionIdRef = useRef<string | undefined>(sessionId)
   const messagesRef = useRef<Message[]>(messages)
 
@@ -25,9 +25,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
   useEffect(() => {
     if (sessionId !== sessionIdRef.current) {
       const oldSessionId = sessionIdRef.current
-      const newSessionId = sessionId
 
-      console.log(`useStreaming: Session changing from ${oldSessionId || 'none'} to ${newSessionId || 'none'}`)
 
       // CRITICAL: Save current messages to OLD session BEFORE updating refs
       // This ensures messages are saved to the correct session and prevents loss
@@ -37,7 +35,6 @@ export function useStreaming(agentId: string, sessionId?: string) {
         // This prevents any reference issues or duplication
         const messagesToSave = currentMessages.map(msg => ({ ...msg }))
         saveMessages(oldSessionId, messagesToSave)
-        console.log(`Saved ${messagesToSave.length} messages to old session ${oldSessionId} before switching`)
       }
 
       // NOW update the session ID refs - this prevents any further saves to old session
@@ -53,7 +50,6 @@ export function useStreaming(agentId: string, sessionId?: string) {
       // Update state after clearing messages
       setCurrentSessionId(sessionId)
 
-      console.log(`useStreaming: Session updated to ${sessionId || 'none'}, messages cleared`)
     }
   }, [sessionId])
 
@@ -63,14 +59,15 @@ export function useStreaming(agentId: string, sessionId?: string) {
 
       setIsStreaming(true)
       setError(null)
+      streamSessionIdRef.current = sessionIdRef.current
 
-      // Add user message
       const userMessage: Message = {
         id: `user-${Date.now()}`,
         role: 'user',
         content: utterance,
         timestamp: new Date().toISOString(),
       }
+      streamUserMessageRef.current = userMessage
 
       // CRITICAL: Get the current session ID from ref (most up-to-date)
       // This ensures we use the correct session_id even if session changed
@@ -121,7 +118,6 @@ export function useStreaming(agentId: string, sessionId?: string) {
         // send the correct session_id when switching conversations
         const sessionIdToSend = sessionIdRef.current || undefined
 
-        console.log(`Sending message with session_id: ${sessionIdToSend || 'none (new conversation)'}, user_id: ${userId}`)
 
         const request: InteractionRequest = {
           utterance,
@@ -138,14 +134,12 @@ export function useStreaming(agentId: string, sessionId?: string) {
             // Note: We no longer capture user_id from chunks since we use the logged-in user's ID
             // The user_id is set from the login response and used from the first chat
             // If chunk provides a different user_id, log it for debugging but don't overwrite
-            if (chunk.user_id && chunk.user_id !== getUserId()) {
-              console.log('Backend returned user_id:', chunk.user_id, 'but using logged-in user_id:', getUserId())
-            }
 
             if (chunk.type === 'start') {
               interactionIdRef.current = chunk.interaction_id || null
               if (chunk.session_id) {
                 receivedSessionId = chunk.session_id
+                streamSessionIdRef.current = chunk.session_id
               }
             } else if (chunk.type === 'message' && chunk.message && typeof chunk.message === 'object') {
               // Type guard: chunk.message is ResponseMessageData (not string)
@@ -153,15 +147,46 @@ export function useStreaming(agentId: string, sessionId?: string) {
               // Handle stream_chunk messages during streaming
               // Group by message.id (sequence identifier) - all chunks in same sequence share same id
               if (msg.message_type === 'stream_chunk') {
-                const messageId = msg.id || assistantMessageId // Fallback to assistantMessageId if id missing
-                setMessages((prev) => {
-                  // Remove any placeholder bubbles with assistantMessageId when first real message arrives
-                  const filtered = prev.filter((m) => m.id !== assistantMessageId || m.content !== '')
+                const messageId = msg.id || assistantMessageId
+                const streamSessionId = streamSessionIdRef.current
+                const currentView = sessionIdRef.current
+                const viewingStreamSession = currentView === streamSessionId || (currentView === undefined && streamSessionId !== undefined)
 
-                  // Find existing message with this id, or create new one
+                if (!viewingStreamSession && streamSessionId) {
+                  let stored = getMessages(streamSessionId)
+                  if (stored.length === 0 && streamUserMessageRef.current) {
+                    stored = [streamUserMessageRef.current]
+                  }
+                  const filtered = stored.filter((m) => m.id !== assistantMessageId || m.content !== '')
+                  const existingIndex = filtered.findIndex((m) => m.id === messageId)
+                  let updated: Message[]
+                  if (existingIndex >= 0) {
+                    const existing = filtered[existingIndex]
+                    const updatedContent = (existing.content || '') + (msg.content || '')
+                    updated = filtered.map((m, idx) =>
+                      idx === existingIndex
+                        ? { ...m, content: updatedContent, streaming: true, interactionId: m.interactionId || msg.interaction_id }
+                        : m
+                    )
+                  } else {
+                    const newMessage: Message = {
+                      id: messageId,
+                      role: 'assistant',
+                      content: msg.content || '',
+                      interactionId: msg.interaction_id,
+                      timestamp: msg.timestamp || new Date().toISOString(),
+                      streaming: true,
+                    }
+                    updated = [...filtered, newMessage]
+                  }
+                  saveMessages(streamSessionId, updated)
+                  return
+                }
+
+                setMessages((prev) => {
+                  const filtered = prev.filter((m) => m.id !== assistantMessageId || m.content !== '')
                   const existingIndex = filtered.findIndex((m) => m.id === messageId)
                   if (existingIndex >= 0) {
-                    // Update existing message - accumulate content
                     const existing = filtered[existingIndex]
                     const updatedContent = (existing.content || '') + (msg.content || '')
                     return filtered.map((m, idx) =>
@@ -175,7 +200,6 @@ export function useStreaming(agentId: string, sessionId?: string) {
                         : m
                     )
                   } else {
-                    // Create new message bubble for this sequence
                     const newMessage: Message = {
                       id: messageId,
                       role: 'assistant',
@@ -183,16 +207,27 @@ export function useStreaming(agentId: string, sessionId?: string) {
                       interactionId: msg.interaction_id,
                       timestamp: msg.timestamp || new Date().toISOString(),
                       streaming: true,
-                      // Don't add debugData to stream chunks - only last message gets it
                     }
                     return [...filtered, newMessage]
                   }
                 })
               } else if (msg.message_type === 'final') {
-                // Handle final message - use message.id to find matching sequence
-                // Final message is just a completion signal - NEVER update bubble content
-                // Message bubbles should ONLY contain their respective message_type content (stream_chunk, adhoc)
-                const messageId = msg.id || assistantMessageId // Fallback to assistantMessageId if id missing
+                const messageId = msg.id || assistantMessageId
+                const streamSessionId = streamSessionIdRef.current
+                const currentView = sessionIdRef.current
+                const viewingStreamSession = currentView === streamSessionId || (currentView === undefined && streamSessionId !== undefined)
+
+                if (!viewingStreamSession && streamSessionId) {
+                  const stored = getMessages(streamSessionId)
+                  const existingIndex = stored.findIndex((m) => m.id === messageId)
+                  if (existingIndex >= 0) {
+                    const updated = stored.map((m, idx) =>
+                      idx === existingIndex && m.streaming ? { ...m, streaming: false } : m
+                    )
+                    saveMessages(streamSessionId, updated)
+                  }
+                  return
+                }
 
                 setMessages((prev) => {
                   // Find existing message with this id
@@ -265,8 +300,6 @@ export function useStreaming(agentId: string, sessionId?: string) {
                 })
                 // Don't set isStreaming to false here - wait for chunk.type='final' for complete payload
               } else if (msg.message_type === 'adhoc') {
-                // Handle adhoc messages as separate message bubbles
-                // Each adhoc message gets its own unique ID
                 const adhocMessage: Message = {
                   id: msg.id || `adhoc-${Date.now()}-${Math.random()}`,
                   role: 'assistant',
@@ -274,8 +307,18 @@ export function useStreaming(agentId: string, sessionId?: string) {
                   content: msg.content || '',
                   timestamp: msg.timestamp || new Date().toISOString(),
                   streaming: false,
-                  // Don't add debugData to adhoc messages - only last message gets it
                 }
+                const streamSessionId = streamSessionIdRef.current
+                const currentView = sessionIdRef.current
+                const viewingStreamSession = currentView === streamSessionId || (currentView === undefined && streamSessionId !== undefined)
+
+                if (!viewingStreamSession && streamSessionId) {
+                  const stored = getMessages(streamSessionId)
+                  const updated = [...stored, adhocMessage]
+                  saveMessages(streamSessionId, updated)
+                  return
+                }
+
                 setMessages((prev) => {
                   // Append as new message (don't update existing messages)
                   let updated = [...prev, adhocMessage]
@@ -313,45 +356,53 @@ export function useStreaming(agentId: string, sessionId?: string) {
                 })
               }
             } else if (chunk.type === 'final') {
-              // Full SSE final chunk (type="final") - contains interaction and report data
-              // This is ONLY for storing debugData - DO NOT update message bubble content
-              // Message bubbles should only contain their respective message_type content (stream_chunk, adhoc)
+              const streamSessionId = streamSessionIdRef.current
+              const currentView = sessionIdRef.current
+              const viewingStreamSession = currentView === streamSessionId || (currentView === undefined && streamSessionId !== undefined)
+              const sessionIdForSave = receivedSessionId || streamSessionId
 
-              // CRITICAL: Determine the session ID to use for saving
-              // Priority: receivedSessionId > sessionIdRef.current
-              // If we received a new session_id, use it; otherwise use the current active one
-              let sessionIdForSave: string | undefined
-
-              if (receivedSessionId) {
-                // We received a session_id from the backend - use it
-                sessionIdForSave = receivedSessionId
-
-                // Update refs if this is a new session_id
-                if (receivedSessionId !== sessionIdRef.current) {
-                  console.log(`Backend returned new session_id: ${receivedSessionId} (was ${sessionIdRef.current})`)
-                  // Save current messages to old session before switching
-                  const currentMessages = messagesRef.current
-                  const oldSessionId = sessionIdRef.current
-                  if (oldSessionId && currentMessages.length > 0) {
-                    // Filter out any placeholder messages
-                    const messagesToSave = currentMessages
-                      .filter(msg => msg.id !== assistantMessageId || msg.content !== '')
-                      .map(msg => ({ ...msg })) // Deep copy
-                    if (messagesToSave.length > 0) {
-                      saveMessages(oldSessionId, messagesToSave)
-                      console.log(`Saved ${messagesToSave.length} messages to old session ${oldSessionId}`)
-                    }
+              if (!viewingStreamSession && sessionIdForSave) {
+                const stored = getMessages(sessionIdForSave)
+                const interactionIdForFinal = chunk.interaction?.id || interactionIdRef.current || undefined
+                const findLastIndex = (arr: Message[], predicate: (m: Message) => boolean): number => {
+                  for (let i = arr.length - 1; i >= 0; i--) {
+                    if (predicate(arr[i])) return i
                   }
-
-                  // Now update to new session
-                  sessionIdRef.current = receivedSessionId
-                  prevSessionIdRef.current = receivedSessionId
-                  setCurrentSessionId(receivedSessionId)
+                  return -1
                 }
-              } else {
-                // No new session_id received - use the current active one
-                sessionIdForSave = sessionIdRef.current
+                const filtered = stored.filter((m) => m.id !== assistantMessageId || m.content !== '')
+                const targetIndex = interactionIdForFinal
+                  ? findLastIndex(filtered, (m) => m.role === 'assistant' && m.interactionId === interactionIdForFinal)
+                  : findLastIndex(filtered, (m) => m.role === 'assistant')
+                if (targetIndex >= 0) {
+                  const updated = filtered.map((m, idx) =>
+                    idx === targetIndex && m.streaming
+                      ? { ...m, streaming: false, debugData: chunk, interactionId: m.interactionId || interactionIdForFinal }
+                      : idx === targetIndex ? { ...m, debugData: chunk } : m
+                  )
+                  saveMessages(sessionIdForSave, updated)
+                }
+                setIsStreaming(false)
+                return
               }
+
+              if (receivedSessionId && receivedSessionId !== sessionIdRef.current && viewingStreamSession) {
+                const currentMessages = messagesRef.current
+                const oldSessionId = sessionIdRef.current
+                if (oldSessionId && currentMessages.length > 0) {
+                  const messagesToSave = currentMessages
+                    .filter(msg => msg.id !== assistantMessageId || msg.content !== '')
+                    .map(msg => ({ ...msg }))
+                  if (messagesToSave.length > 0) {
+                    saveMessages(oldSessionId, messagesToSave)
+                  }
+                }
+                sessionIdRef.current = receivedSessionId
+                prevSessionIdRef.current = receivedSessionId
+                setCurrentSessionId(receivedSessionId)
+              }
+
+              const sessionIdForUiSave = receivedSessionId || sessionIdRef.current
 
               setMessages((prev) => {
                 // Remove any placeholder bubbles
@@ -446,44 +497,63 @@ export function useStreaming(agentId: string, sessionId?: string) {
                   }
                 }
 
-                // CRITICAL: Save messages to storage using the CORRECT session ID
-                if (sessionIdForSave) {
-                  // Create a deep copy to prevent reference issues
+                if (sessionIdForUiSave) {
                   const messagesToSave = updated.map(msg => ({ ...msg }))
-                  saveMessages(sessionIdForSave, messagesToSave)
-                  console.log(`Saved ${messagesToSave.length} messages (including final) to session ${sessionIdForSave}`)
+                  saveMessages(sessionIdForUiSave, messagesToSave)
                   // Update prev refs to match
                   prevMessagesRef.current = messagesToSave
-                  prevSessionIdRef.current = sessionIdForSave
+                  prevSessionIdRef.current = sessionIdForUiSave
                 }
                 return updated
               })
               setIsStreaming(false)
             } else if (chunk.type === 'error') {
+              const streamSessionId = streamSessionIdRef.current
+              const currentView = sessionIdRef.current
+              const viewingStreamSession = currentView === streamSessionId || (currentView === undefined && streamSessionId !== undefined)
+
+              if (!viewingStreamSession && streamSessionId) {
+                const stored = getMessages(streamSessionId)
+                const updated = stored
+                  .filter((m) => m.id !== assistantMessageId || m.content !== '')
+                  .map((msg) => (msg.streaming ? { ...msg, streaming: false } : msg))
+                saveMessages(streamSessionId, updated)
+                setIsStreaming(false)
+                return
+              }
+
               const errorMessage = typeof chunk.message === 'string' ? chunk.message : 'An error occurred'
               setError(errorMessage)
               setIsStreaming(false)
-              setMessages((prev) => {
-                // Remove placeholder bubbles and update any streaming messages
-                return prev
+              setMessages((prev) =>
+                prev
                   .filter((m) => m.id !== assistantMessageId || m.content !== '')
-                  .map((msg) =>
-                    msg.streaming ? { ...msg, streaming: false } : msg
-                  )
-              })
+                  .map((msg) => (msg.streaming ? { ...msg, streaming: false } : msg))
+              )
             }
           },
           (err: Error) => {
+            const streamSessionId = streamSessionIdRef.current
+            const currentView = sessionIdRef.current
+            const viewingStreamSession = currentView === streamSessionId || (currentView === undefined && streamSessionId !== undefined)
+
+            if (!viewingStreamSession && streamSessionId) {
+              const stored = getMessages(streamSessionId)
+              const updated = stored
+                .filter((m) => m.id !== assistantMessageId || m.content !== '')
+                .map((msg) => (msg.streaming ? { ...msg, streaming: false } : msg))
+              saveMessages(streamSessionId, updated)
+              setIsStreaming(false)
+              return
+            }
+
             setError(err.message)
             setIsStreaming(false)
-            setMessages((prev) => {
-              // Remove placeholder bubbles and update any streaming messages
-              return prev
+            setMessages((prev) =>
+              prev
                 .filter((m) => m.id !== assistantMessageId || m.content !== '')
-                .map((msg) =>
-                  msg.streaming ? { ...msg, streaming: false } : msg
-                )
-            })
+                .map((msg) => (msg.streaming ? { ...msg, streaming: false } : msg))
+            )
           }
         )
       } catch (err: any) {
@@ -525,7 +595,6 @@ export function useStreaming(agentId: string, sessionId?: string) {
       return
     }
 
-    console.log(`Loading ${loadedMessages.length} messages for session ${activeSessionId}`)
 
     isLoadingRef.current = true
 
@@ -573,7 +642,6 @@ export function useStreaming(agentId: string, sessionId?: string) {
 
       if (!sessionMatches) {
         // Session changed - don't save to old session
-        console.log(`Session mismatch: prev=${prevSessionIdRef.current}, active=${activeSessionId} - skipping save`)
         return
       }
 
@@ -601,7 +669,6 @@ export function useStreaming(agentId: string, sessionId?: string) {
         // CRITICAL: Save messages to the ACTIVE session ID
         // This ensures messages are isolated by session_id and prevents duplication
         saveMessages(activeSessionId, messagesToSave)
-        console.log(`Saved ${messagesToSave.length} messages to session ${activeSessionId}`)
 
         // Reset flag after save completes
         setTimeout(() => {

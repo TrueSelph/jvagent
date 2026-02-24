@@ -2,8 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Login } from './components/Login'
 import { AgentSelector } from './components/AgentSelector'
 import { ChatInterface } from './components/ChatInterface'
-import { GraphViewer } from './components/GraphViewer'
 import { DebugInteractions } from './components/DebugInteractions'
+import { AppLayout } from './components/AppLayout'
 import { getToken } from './utils/storage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -20,19 +20,19 @@ function App() {
           path="/agents"
           element={
             <PrivateRoute>
-              <AgentSelector />
+              <AppLayout>
+                <AgentSelector />
+              </AppLayout>
             </PrivateRoute>
           }
         />
         <Route
           path="/chat/:agentId"
-          element={<ChatInterface />}
-        />
-        <Route
-          path="/graph"
           element={
             <PrivateRoute>
-              <GraphViewer />
+              <AppLayout>
+                <ChatInterface />
+              </AppLayout>
             </PrivateRoute>
           }
         />
@@ -40,17 +40,19 @@ function App() {
           path="/debug"
           element={
             <PrivateRoute>
-              <DebugInteractions />
+              <AppLayout>
+                <DebugInteractions />
+              </AppLayout>
             </PrivateRoute>
           }
         />
         <Route path="/" element={<Navigate to="/agents" replace />} />
         <Route path="*" element={
-          <div className="min-h-screen flex items-center justify-center">
+          <div className="h-full min-h-0 overflow-y-auto flex items-center justify-center bg-gray-50 dark:bg-gray-900">
             <div className="text-center">
-              <h1 className="text-2xl font-bold text-gray-900 mb-2">404 - Page Not Found</h1>
-              <p className="text-gray-600 mb-4">The page you're looking for doesn't exist.</p>
-              <a href="/agents" className="text-indigo-600 hover:text-indigo-700">Go to Agents</a>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">404 - Page Not Found</h1>
+              <p className="text-gray-600 dark:text-gray-400 mb-4">The page you're looking for doesn't exist.</p>
+              <a href="/agents" className="text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300">Go to Agents</a>
             </div>
           </div>
         } />

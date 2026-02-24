@@ -6,7 +6,8 @@ import {
   useCallback,
 } from "react";
 import { apiClient } from "../config/api";
-import { getAuthCreds, getSelectedAgent } from "../utils/storage";
+import { getSelectedAgent } from "../utils/storage";
+import { useTheme } from "../context/ThemeContext";
 
 interface DebugInteractionsProps {
   onClose?: () => void;
@@ -39,6 +40,7 @@ export function DebugInteractions({
   const [testResult, setTestResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(false);
+  const { theme: appTheme } = useTheme();
   const [historyText, setHistoryText] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [improveInstruction, setImproveInstruction] = useState("");
@@ -162,35 +164,15 @@ export function DebugInteractions({
 
     let agentsData;
     try {
-      // First attempt to get agents to check if token is valid
       agentsData = await apiClient.getAgents();
-    } catch (error) {
-      console.log(
-        "Token invalid or expired, attempting auto-login fallback...",
-      );
-      try {
-        const authCreds = getAuthCreds();
-        if (authCreds) {
-          const loginResponse = await apiClient.login({
-            email: authCreds.email,
-            password: authCreds.password,
-            serverUrl: authCreds.serverUrl,
-          });
-
-          // Save the new token
-          apiClient.setToken(loginResponse);
-
-          // Retry fetching agents after successful login
-          agentsData = await apiClient.getAgents();
-        } else {
-          throw new Error("No authentication credentials found");
-        }
-      } catch (loginError: any) {
-        console.error("Auto-login failed:", loginError);
-        setError(loginError.message || "Authentication failed");
-        setLoading(false);
-        return;
+    } catch (error: any) {
+      if (error.response?.status === 401 || error.message?.includes("401")) {
+        setError("Session expired. Please log in again.");
+      } else {
+        setError(error.message || "Authentication failed");
       }
+      setLoading(false);
+      return;
     }
 
     try {
@@ -474,7 +456,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
     return str.length > length ? str.substring(0, length) + "..." : str;
   };
 
-  const effectiveDarkMode = isEmbedded ? false : darkMode;
+  const effectiveDarkMode = isEmbedded ? appTheme === "dark" : darkMode;
 
   useEffect(() => {
     if (!isEmbedded || !onClose) return;
@@ -500,7 +482,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
         disabled={loading}
         className={
           isEmbedded
-            ? "px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            ? `px-3 py-2 text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 ${effectiveDarkMode ? "text-slate-300 bg-slate-700 hover:bg-slate-600" : "text-gray-700 bg-gray-100 hover:bg-gray-200"}`
             : `px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`
         }
         title="Refresh"
@@ -531,7 +513,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
         disabled={!selectedInteraction}
         className={
           isEmbedded
-            ? "px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            ? `px-3 py-2 text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${effectiveDarkMode ? "text-slate-300 bg-slate-700 hover:bg-slate-600" : "text-gray-700 bg-gray-100 hover:bg-gray-200"}`
             : `px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`
         }
         title="Export"
@@ -541,7 +523,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
       <label
         className={
           isEmbedded
-            ? "px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 cursor-pointer transition-colors"
+            ? `px-3 py-2 text-sm rounded-lg cursor-pointer transition-colors ${effectiveDarkMode ? "text-slate-300 bg-slate-700 hover:bg-slate-600" : "text-gray-700 bg-gray-100 hover:bg-gray-200"}`
             : `px-3 py-1.5 rounded text-sm cursor-pointer ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`
         }
       >
@@ -556,7 +538,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
       {isEmbedded && onClose && (
         <button
           onClick={onClose}
-          className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+          className={`p-2 rounded-lg transition-colors ${effectiveDarkMode ? "text-slate-400 hover:text-slate-100 hover:bg-slate-700" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"}`}
           title="Close"
           aria-label="Close debug interactions"
         >
@@ -580,21 +562,21 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
 
   const content = (
     <div
-      className={`${isEmbedded ? "bg-white rounded-lg shadow-xl w-full h-full max-w-[95vw] max-h-[95vh] flex flex-col" : `min-h-screen p-6 ${effectiveDarkMode ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-gray-900"}`}`}
+      className={`${isEmbedded ? `rounded-lg shadow-xl w-full h-full max-w-[95vw] max-h-[95vh] flex flex-col ${effectiveDarkMode ? "bg-slate-900 text-slate-100" : "bg-white"}` : `min-h-screen p-6 ${effectiveDarkMode ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-gray-900"}`}`}
       onClick={(e) => isEmbedded && e.stopPropagation()}
     >
       {/* Header - matches GraphViewer when embedded */}
       <div
         className={
           isEmbedded
-            ? "flex-shrink-0 border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center justify-between"
+            ? `flex-shrink-0 border-b px-4 sm:px-6 py-4 flex items-center justify-between ${effectiveDarkMode ? "border-slate-700" : "border-gray-200"}`
             : "flex justify-between items-center mb-6"
         }
       >
         <h2
           className={
             isEmbedded
-              ? "text-xl sm:text-2xl font-semibold text-gray-900"
+              ? `text-xl sm:text-2xl font-semibold ${effectiveDarkMode ? "text-slate-100" : "text-gray-900"}`
               : "text-2xl font-bold"
           }
         >
@@ -610,27 +592,27 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
         }
       >
         {isEmbedded && loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white">
+          <div className={`absolute inset-0 flex items-center justify-center ${effectiveDarkMode ? "bg-slate-900" : "bg-white"}`}>
             <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto" />
-              <p className="mt-4 text-gray-600">Loading interactions...</p>
+              <div className={`animate-spin rounded-full h-12 w-12 border-b-2 mx-auto ${effectiveDarkMode ? "border-indigo-400" : "border-indigo-600"}`} />
+              <p className={`mt-4 ${effectiveDarkMode ? "text-slate-400" : "text-gray-600"}`}>Loading interactions...</p>
             </div>
           </div>
         )}
 
         {isEmbedded && error && !loading && parentInteractions.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white p-4">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md w-full">
-              <h3 className="text-lg font-semibold text-red-800 mb-2">
+          <div className={`absolute inset-0 flex items-center justify-center p-4 ${effectiveDarkMode ? "bg-slate-900" : "bg-white"}`}>
+            <div className={`rounded-lg p-6 max-w-md w-full ${effectiveDarkMode ? "bg-red-900/30 border border-red-800" : "bg-red-50 border border-red-200"}`}>
+              <h3 className={`text-lg font-semibold mb-2 ${effectiveDarkMode ? "text-red-300" : "text-red-800"}`}>
                 Error Loading Interactions
               </h3>
-              <p className="text-red-700 mb-4">{error}</p>
+              <p className={`mb-4 ${effectiveDarkMode ? "text-red-300" : "text-red-700"}`}>{error}</p>
               <button
                 onClick={() => {
                   setError(null);
                   initializeDebugSession();
                 }}
-                className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                className={`w-full px-4 py-2 text-white rounded-lg transition-colors ${effectiveDarkMode ? "bg-red-600 hover:bg-red-500" : "bg-red-600 hover:bg-red-700"}`}
               >
                 Retry
               </button>
@@ -651,11 +633,11 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
         >
           {/* Error Display - inline for transient errors or when not embedded */}
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-4 flex justify-between items-center">
+            <div className={`border p-4 rounded-lg mb-4 flex justify-between items-center ${effectiveDarkMode ? "bg-red-900/30 border-red-800 text-red-300" : "bg-red-50 border-red-200 text-red-700"}`}>
               <span>{error}</span>
               <button
                 onClick={() => setError(null)}
-                className="text-red-700 hover:text-red-900 font-bold"
+                className={`font-bold ${effectiveDarkMode ? "text-red-300 hover:text-red-100" : "text-red-700 hover:text-red-900"}`}
               >
                 ×
               </button>
@@ -665,15 +647,15 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
           {/* Interaction Selector */}
           {!loading && parentInteractions.length > 0 && (
             <div
-              className={`${effectiveDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow-sm p-4 mb-6 border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"}`}
+              className={`rounded-lg shadow-sm p-4 mb-6 border ${effectiveDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"}`}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">
+                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
                     Interaction
                   </label>
                   <select
-                    className={`w-full p-2 border rounded text-sm ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                    className={`w-full p-2 border rounded text-sm ${effectiveDarkMode ? "bg-slate-700 border-slate-600 text-slate-100" : "bg-white border-gray-300"}`}
                     value={selectedParentIndex ?? ""}
                     onChange={(e) =>
                       selectInteraction(
@@ -693,11 +675,11 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">
+                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
                     Response
                   </label>
                   <select
-                    className={`w-full p-2 border rounded text-sm ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                    className={`w-full p-2 border rounded text-sm ${effectiveDarkMode ? "bg-slate-700 border-slate-600 text-slate-100" : "bg-white border-gray-300"}`}
                     value={selectedMetricIndex ?? ""}
                     onChange={(e) =>
                       selectInteraction(
@@ -730,7 +712,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                   <button
                     onClick={loadMore}
                     disabled={loadingMore}
-                    className={`px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${isEmbedded ? "text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200" : `rounded ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-100 hover:bg-gray-200"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`}`}
+                    className={`px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${isEmbedded ? (effectiveDarkMode ? "text-slate-300 bg-slate-700 rounded-lg hover:bg-slate-600" : "text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200") : `rounded ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-100 hover:bg-gray-200"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`}`}
                   >
                     {loadingMore ? "Loading..." : "Load more"}
                   </button>
@@ -751,7 +733,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
           {/* Main Content */}
           {!loading && selectedInteraction && (
             <div
-              className={`${effectiveDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow-sm p-6 border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"}`}
+              className={`rounded-lg shadow-sm p-6 border ${effectiveDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"}`}
             >
               <div className="space-y-6">
                 {/* Original Response */}
@@ -771,7 +753,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                 )}
                 {/* User Prompt */}
                 <div>
-                  <label className="block text-sm font-medium mb-2">
+                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
                     User Prompt
                   </label>
                   <textarea
@@ -786,13 +768,13 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                         },
                       });
                     }}
-                    className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-blue-900 border-blue-700 text-gray-100" : "bg-blue-50 border-blue-200 text-gray-900"}`}
+                    className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-slate-800 border-slate-600 text-slate-100" : "bg-blue-50 border-blue-200 text-gray-900"}`}
                     style={{ overflow: "hidden" }}
                   />
                 </div>
                 {/* System Prompt */}
                 <div>
-                  <label className="block text-sm font-medium mb-2">
+                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
                     System Prompt
                   </label>
                   <textarea
@@ -807,14 +789,14 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                         },
                       });
                     }}
-                    className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-yellow-900 border-yellow-700 text-gray-100" : "bg-yellow-50 border-yellow-200 text-gray-900"}`}
+                    className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-slate-800 border-slate-600 text-slate-100" : "bg-yellow-50 border-yellow-200 text-gray-900"}`}
                     style={{ overflow: "hidden" }}
                   />
                 </div>
                 {/* History - Only show if exists */}
                 {showHistory && (
                   <div>
-                    <label className="block text-sm font-medium mb-2">
+                    <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
                       History (JSON)
                     </label>
                     <textarea
@@ -835,14 +817,14 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                           console.error("Invalid JSON for history:", err);
                         }
                       }}
-                      className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-gray-900 border-gray-700 text-gray-100" : "bg-gray-100 border-gray-200 text-gray-900"}`}
+                      className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-slate-900 border-slate-700 text-slate-100" : "bg-gray-100 border-gray-200 text-gray-900"}`}
                       style={{ overflow: "hidden" }}
                     />
                   </div>
                 )}
                 {/* Model */}
                 <div>
-                  <label className="block text-sm font-medium mb-2">
+                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
                     Model
                   </label>
                   <input
@@ -857,7 +839,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                         },
                       })
                     }
-                    className={`w-full p-2 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                    className={`w-full p-2 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-slate-700 border-slate-600 text-slate-100" : "bg-white border-gray-300"}`}
                   />
                 </div>
                 {/* Test Button */}
@@ -920,9 +902,9 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
           {/* Improve Prompt Section */}
           {!loading && selectedInteraction && (
             <div
-              className={`${effectiveDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow-sm p-6 border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"} mt-6`}
+              className={`rounded-lg shadow-sm p-6 border mt-6 ${effectiveDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"}`}
             >
-              <h2 className="text-xl font-semibold mb-4">Improve Prompt</h2>
+              <h2 className={`text-xl font-semibold mb-4 ${effectiveDarkMode ? "text-slate-100" : ""}`}>Improve Prompt</h2>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">
@@ -933,7 +915,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     value={improveInstruction}
                     onChange={(e) => setImproveInstruction(e.target.value)}
                     placeholder="Describe how you want to improve the prompts..."
-                    className={`w-full p-3 border rounded text-sm ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                    className={`w-full p-3 border rounded text-sm ${effectiveDarkMode ? "bg-slate-700 border-slate-600 text-slate-100" : "bg-white border-gray-300"}`}
                     style={{ overflow: "hidden" }}
                   />
                 </div>
@@ -945,7 +927,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     type="text"
                     value={improveModel}
                     onChange={(e) => setImproveModel(e.target.value)}
-                    className={`w-full p-2 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-gray-700 border-gray-600 text-gray-100" : "bg-white border-gray-300"}`}
+                    className={`w-full p-2 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-slate-700 border-slate-600 text-slate-100" : "bg-white border-gray-300"}`}
                   />
                 </div>
                 <div className="flex justify-end gap-2">
@@ -992,7 +974,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                       ref={improveResultRef}
                       value={improveResult}
                       onChange={(e) => setImproveResult(e.target.value)}
-                      className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-purple-900 border-purple-700 text-gray-100" : "bg-purple-50 border-purple-200 text-gray-900"}`}
+                      className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-slate-800 border-slate-600 text-slate-100" : "bg-purple-50 border-purple-200 text-gray-900"}`}
                       style={{ overflow: "hidden" }}
                     />
                   </div>
@@ -1020,7 +1002,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
   if (isEmbedded) {
     return (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50"
+        className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${effectiveDarkMode ? "bg-black/70" : "bg-black/50"}`}
         onClick={(e) => {
           if (e.target === e.currentTarget && onClose) {
             onClose();

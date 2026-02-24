@@ -1,17 +1,17 @@
 import { useState, FormEvent, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { useTheme } from "../context/ThemeContext";
 import { getConfigAsync, saveConfig } from "../config/config";
-import { saveAuthCreds, cleanupOldStorage } from "../utils/storage";
+import { cleanupOldStorage } from "../utils/storage";
 
 export function Login() {
-  const [email, setEmail] = useState("admin@jvagent.example");
-  const [password, setPassword] = useState("your-admin-password-here");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [serverUrl, setServerUrl] = useState("");
-  const [autoAuth, setAutoAuth] = useState(true);
   const { login, loading, error } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [localError, setLocalError] = useState<string | null>(null);
 
-  // Load saved URL from config on mount
   useEffect(() => {
     cleanupOldStorage();
     getConfigAsync()
@@ -19,7 +19,6 @@ export function Login() {
         if (config.jvagent.url) {
           setServerUrl(config.jvagent.url);
         }
-        setAutoAuth(config.ui.auto_authenticate);
       })
       .catch((err) => {
         console.warn("Failed to load config:", err);
@@ -61,13 +60,7 @@ export function Login() {
       setServerUrl(validatedUrl);
     }
 
-    // Save the URL to config before attempting login
-    saveConfig({ jvagent: { url: validatedUrl }, ui: { auto_authenticate: autoAuth } });
-
-    // Save credentials if auto_authenticate is enabled
-    if (autoAuth) {
-      saveAuthCreds(email, password, validatedUrl);
-    }
+    saveConfig({ jvagent: { url: validatedUrl } });
 
     try {
       await login({ email, password, serverUrl: validatedUrl });
@@ -75,8 +68,9 @@ export function Login() {
       let errorMsg =
         err.response?.data?.detail || err.message || "Login failed";
 
-      // Check for network errors
-      if (
+      if (err.response?.status === 401) {
+        errorMsg = "Invalid email or password.";
+      } else if (
         err.code === "ERR_NETWORK" ||
         err.message?.includes("Network Error") ||
         err.message?.includes("Failed to fetch")
@@ -92,13 +86,28 @@ export function Login() {
   const displayError = localError || error;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="h-full min-h-0 overflow-y-auto flex items-center justify-center bg-gray-50 dark:bg-slate-950 py-12 px-4 sm:px-6 lg:px-8 relative">
+      <button
+        onClick={toggleTheme}
+        className="absolute top-4 right-4 p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+        aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+      >
+        {theme === "dark" ? (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+          </svg>
+        ) : (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+          </svg>
+        )}
+      </button>
       <div className="max-w-md w-full space-y-8">
         <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900 dark:text-gray-100">
             Sign in to jvchat
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
+          <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
             Enter your jvagent admin credentials
           </p>
         </div>
@@ -113,7 +122,7 @@ export function Login() {
                 name="server-url"
                 type="text"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-500 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 dark:[color-scheme:dark] rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
                 placeholder="Server URL (e.g., localhost:8000 or http://localhost:8000)"
                 value={serverUrl}
                 onChange={(e) => setServerUrl(e.target.value)}
@@ -130,8 +139,8 @@ export function Login() {
                 type="email"
                 autoComplete="email"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Email address"
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-500 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 dark:[color-scheme:dark] focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={loading}
@@ -147,8 +156,8 @@ export function Login() {
                 type="password"
                 autoComplete="current-password"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Password"
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-500 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 dark:[color-scheme:dark] rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={loading}
@@ -156,49 +165,11 @@ export function Login() {
             </div>
           </div>
 
-          <div className="flex items-center">
-            <input
-              id="auto-auth"
-              name="auto-auth"
-              type="checkbox"
-              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-              checked={autoAuth}
-              onChange={(e) => setAutoAuth(e.target.checked)}
-            />
-            <label
-              htmlFor="auto-auth"
-              className="ml-2 block text-sm text-gray-900"
-            >
-              Auto Authenticate
-            </label>
-          </div>
-
-          {/* <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <input
-                id="auto-auth"
-                name="auto-auth"
-                type="checkbox"
-                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                checked={getConfig().ui.auto_authenticate}
-                onChange={(e) =>
-                  saveConfig({ ui: { auto_authenticate: e.target.checked } })
-                }
-              />
-              <label
-                htmlFor="auto-auth"
-                className="ml-2 block text-sm text-gray-900"
-              >
-                Auto Authenticate
-              </label>
-            </div>
-          </div> */}
-
           {displayError && (
-            <div className="rounded-md bg-red-50 p-4">
+            <div className="rounded-md bg-red-50 dark:bg-red-900/30 p-4">
               <div className="flex">
                 <div className="ml-3">
-                  <h3 className="text-sm font-medium text-red-800">
+                  <h3 className="text-sm font-medium text-red-800 dark:text-red-300">
                     {displayError}
                   </h3>
                 </div>
@@ -210,7 +181,7 @@ export function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Signing in..." : "Sign in"}
             </button>

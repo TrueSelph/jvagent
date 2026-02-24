@@ -9,12 +9,10 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAgents } from "../hooks/useAgents";
 import { useStreaming } from "../hooks/useStreaming";
 import { useConversations } from "../hooks/useConversations";
-import { useAuth } from "../hooks/useAuth";
 import { MessageList } from "./MessageList";
 import { MessageInput } from "./MessageInput";
 import { WelcomeScreen } from "./WelcomeScreen";
 import { ConversationList } from "./ConversationList";
-import { GraphViewer } from "./GraphViewer";
 import { DebugInteractions } from "./DebugInteractions";
 import { PageIndexDocumentsModal } from "./PageIndexDocumentsModal";
 import {
@@ -52,23 +50,13 @@ export function ChatInterface() {
     error,
     sessionId: streamSessionId,
   } = useStreaming(agentId || "", sessionId);
-  const { logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isGraphViewerOpen, setIsGraphViewerOpen] = useState(false);
   const [isDebugModalOpen, setIsDebugModalOpen] = useState(false);
   const [isPageIndexModalOpen, setIsPageIndexModalOpen] = useState(false);
   const [hasPageIndexAction, setHasPageIndexAction] = useState(false);
 
   const handleMobileMenuClose = useCallback(() => {
     setIsMobileMenuOpen(false);
-  }, []);
-
-  const handleToggleGraphViewer = useCallback(() => {
-    setIsGraphViewerOpen((prev) => !prev);
-  }, []);
-
-  const handleCloseGraphViewer = useCallback(() => {
-    setIsGraphViewerOpen(false);
   }, []);
 
   const handleToggleDebugModal = useCallback(() => {
@@ -383,36 +371,35 @@ export function ChatInterface() {
 
   if (!agent) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading agent...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading agent...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
-      <div className="flex flex-1 overflow-hidden relative">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden relative">
         <ConversationList
           conversations={conversations}
           currentSessionId={sessionId}
           onSelectConversation={handleSelectConversation}
           onNewConversation={handleNewConversation}
           onDeleteConversation={handleDeleteConversation}
-          onLogout={logout}
           isMobileMenuOpen={isMobileMenuOpen}
           onMobileMenuClose={handleMobileMenuClose}
         />
 
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-          <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 flex-shrink-0">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden min-w-0">
+          <div className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700 px-4 sm:px-6 py-3 sm:py-4 flex-shrink-0">
             <div className="flex items-center gap-2 sm:gap-4">
               {/* Mobile menu button */}
               <button
                 onClick={() => setIsMobileMenuOpen(true)}
-                className="md:hidden flex-shrink-0 text-gray-600 hover:text-gray-900 transition-colors p-2 rounded-lg hover:bg-gray-100 touch-manipulation"
+                className="md:hidden flex-shrink-0 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 touch-manipulation"
                 aria-label="Open menu"
                 title="Open menu"
               >
@@ -434,7 +421,7 @@ export function ChatInterface() {
               {/* Back to agents button - desktop only */}
               <button
                 onClick={() => navigate("/agents")}
-                className="hidden md:flex flex-shrink-0 text-gray-600 hover:text-gray-900 transition-colors p-1 rounded-lg hover:bg-gray-100"
+                className="hidden md:flex flex-shrink-0 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
                 aria-label="Back to agents"
                 title="Back to agents"
               >
@@ -454,11 +441,23 @@ export function ChatInterface() {
               </button>
 
               <div className="flex-1 min-w-0">
-                <h1 className="text-lg sm:text-xl font-semibold text-gray-900 truncate">
+                <h1 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-100 truncate">
                   {agent.alias || agent.name || "Agent"}
                 </h1>
+                {sessionId && (
+                  <button
+                    onClick={() => navigator.clipboard.writeText(sessionId)}
+                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 mt-0.5"
+                    title="Copy session ID"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Copy session ID
+                  </button>
+                )}
                 {agent.description && (
-                  <p className="text-xs sm:text-sm text-gray-600 mt-1 line-clamp-1">
+                  <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-1">
                     {agent.description}
                   </p>
                 )}
@@ -467,7 +466,7 @@ export function ChatInterface() {
               {/* Debug interactions button */}
               <button
                 onClick={handleToggleDebugModal}
-                className="flex-shrink-0 text-gray-600 hover:text-gray-900 transition-colors p-2 rounded-lg hover:bg-gray-100"
+                className="flex-shrink-0 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
                 aria-label="Debug"
                 title="Debug"
               >
@@ -486,33 +485,11 @@ export function ChatInterface() {
                 </svg>
               </button>
 
-              {/* Graph viewer button */}
-              <button
-                onClick={handleToggleGraphViewer}
-                className="flex-shrink-0 text-gray-600 hover:text-gray-900 transition-colors p-2 rounded-lg hover:bg-gray-100"
-                aria-label="View app graph"
-                title="View app graph"
-              >
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"
-                  />
-                </svg>
-              </button>
-
               {/* PageIndex document index button - only when agent has pageindex action */}
               {hasPageIndexAction && (
                 <button
                   onClick={handleTogglePageIndexModal}
-                  className="flex-shrink-0 text-gray-600 hover:text-gray-900 transition-colors p-2 rounded-lg hover:bg-gray-100"
+                  className="flex-shrink-0 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
                   aria-label="Document index"
                   title="Document index"
                 >
@@ -534,35 +511,34 @@ export function ChatInterface() {
             </div>
           </div>
 
-          {messages.length === 0 ? (
-            <WelcomeScreen agentName={agent.alias || agent.name || "Agent"} />
-          ) : (
-            <MessageList
-              messages={messages}
-              showThinking={
-                isStreaming &&
-                !messages.some((m) => m.role === "assistant" && m.streaming)
-              }
-            />
-          )}
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            {messages.length === 0 ? (
+              <WelcomeScreen agentName={agent.alias || agent.name || "Agent"} />
+            ) : (
+              <MessageList
+                messages={messages}
+                showThinking={
+                  isStreaming &&
+                  !messages.some((m) => m.role === "assistant" && m.streaming)
+                }
+              />
+            )}
+          </div>
 
           {error && (
-            <div className="px-4 py-2 bg-red-50 border-t border-red-200">
-              <p className="text-sm text-red-800">{error}</p>
+            <div className="flex-shrink-0 px-4 py-2 bg-red-50 dark:bg-red-900/30 border-t border-red-200 dark:border-red-800">
+              <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
             </div>
           )}
 
-          <MessageInput
+          <div className="flex-shrink-0">
+            <MessageInput
             onSend={handleSendMessage}
             disabled={isStreaming}
             placeholder={`Message ${agent.alias || agent.name || "Agent"}...`}
           />
+          </div>
         </div>
-
-        {/* Graph Viewer Modal Dialog */}
-        {isGraphViewerOpen && (
-          <GraphViewer onClose={handleCloseGraphViewer} isEmbedded={true} />
-        )}
 
         {/* Debug Interactions Modal Dialog */}
         {isDebugModalOpen && (

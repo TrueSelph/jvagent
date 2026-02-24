@@ -7,7 +7,6 @@ export interface UIConfig {
   theme: 'light' | 'dark'
   messages_per_page: number
   auto_scroll: boolean
-  auto_authenticate: boolean
 }
 
 export interface AppConfig {
@@ -24,7 +23,6 @@ const DEFAULT_CONFIG: AppConfig = {
     theme: 'light',
     messages_per_page: 50,
     auto_scroll: true,
-    auto_authenticate: true,
   },
 }
 
