@@ -34,6 +34,7 @@ dependencies = [
     "httpx>=0.27.0",
     "jinja2>=3.1.0",
     "pypdf>=4.0.0",
+    "pymupdf>=1.24.0",
 ]
 
 [project.optional-dependencies]
@@ -89,6 +90,7 @@ filterwarnings = [
     "ignore::PendingDeprecationWarning",
     "ignore::DeprecationWarning:starlette.*",
     "ignore:builtin type.*has no __module__:DeprecationWarning",
+    "ignore:enable_cleanup_closed ignored:DeprecationWarning:aiohttp.*",
 ]
 
 [tool.black]
