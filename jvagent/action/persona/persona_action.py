@@ -7,7 +7,6 @@ action for applying agent prompts with configurable parameters.
 import json
 import logging
 import re
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
@@ -452,7 +451,7 @@ class PersonaAction(Action):
         Returns:
             Composed system prompt string
         """
-        now = datetime.now()
+        now = await self.now()
         date_str = now.strftime("%A, %d %B, %Y")
         time_str = now.strftime("%I:%M %p")
 

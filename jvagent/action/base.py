@@ -11,6 +11,7 @@ and have relationships with other components.
 import logging
 import os
 import traceback
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type, TypeVar, Union
 
 from jvspatial.core import Node
@@ -612,6 +613,35 @@ class Action(Node):
             return await Agent.get(self.agent_id)
         except Exception:
             return None
+
+    async def get_app(self) -> Optional[Any]:
+        """Get the App node for app-level operations.
+
+        Returns:
+            App node if found, None otherwise
+        """
+        from jvagent.core.app import App
+
+        return await App.get()
+
+    async def now(self, fmt: Optional[str] = None) -> Union[datetime, str]:
+        """Current datetime in app timezone (or server local if App unavailable).
+
+        Delegates to App.now(); falls back to datetime.now() if App unavailable.
+
+        Args:
+            fmt: Optional strftime format; if provided, returns formatted string.
+
+        Returns:
+            datetime object if fmt is None, else formatted string.
+        """
+        from jvagent.core.app import App
+
+        app = await App.get()
+        if app:
+            return await app.now(fmt=fmt)
+        now_dt = datetime.now()
+        return now_dt.strftime(fmt) if fmt else now_dt
 
     async def get_action(
         self,

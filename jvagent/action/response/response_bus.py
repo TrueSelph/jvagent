@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 from jvagent.action.response.message import ResponseMessage
+from jvagent.core.app import App
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,13 @@ class ResponseBus:
 
         # Cleanup state
         self._last_cleanup_time: float = 0.0
+
+    async def _get_now(self) -> datetime:
+        """Current datetime in app timezone, or UTC if App unavailable."""
+        app = await App.get()
+        if app:
+            return await app.now()
+        return datetime.now(timezone.utc)
 
     @classmethod
     async def get_instance(cls) -> "ResponseBus":
@@ -253,6 +261,8 @@ class ResponseBus:
         # Throttled TTL-based cleanup
         self._maybe_cleanup()
 
+        now = await self._get_now()
+
         if not stream:
             # Non-streaming: immediate filters, adapter, accumulation, one adhoc message
             message = ResponseMessage(
@@ -263,6 +273,7 @@ class ResponseBus:
                 channel=channel,
                 message_type="adhoc",
                 metadata=metadata or {},
+                timestamp=now,
             )
             filter_ok = await self._apply_channel_filters(message, channel)
             if filter_ok:
@@ -293,6 +304,7 @@ class ResponseBus:
                 channel=channel,
                 message_type="adhoc",
                 metadata=metadata or {},
+                timestamp=now,
             )
             filter_ok = await self._apply_channel_filters(message, channel)
             if filter_ok:
@@ -331,6 +343,7 @@ class ResponseBus:
                     channel=channel,
                     message_type="stream_chunk",
                     metadata=metadata or {},
+                    timestamp=now,
                 )
                 await self._enqueue_and_notify(chunk_message, session_id)
                 self._append_to_message_buffers(interaction_id, chunk_message)
@@ -344,6 +357,7 @@ class ResponseBus:
                 channel=acc.channel,
                 message_type="adhoc",
                 metadata=acc.metadata or {},
+                timestamp=now,
             )
             filter_ok = await self._apply_channel_filters(flush_message, acc.channel)
             if filter_ok:
@@ -367,6 +381,7 @@ class ResponseBus:
                 channel=acc.channel,
                 message_type="final",
                 metadata=acc.metadata or {},
+                timestamp=now,
             )
             await self._enqueue_and_notify(final_message, session_id)
             self._append_to_message_buffers(interaction_id, final_message)
@@ -383,6 +398,7 @@ class ResponseBus:
             )
             acc.chunks.append(content)
 
+            now = await self._get_now()
             if not streaming_complete:
                 # Emit chunk to subscribers only
                 chunk_message = ResponseMessage(
@@ -394,6 +410,7 @@ class ResponseBus:
                     channel=channel,
                     message_type="stream_chunk",
                     metadata=metadata or {},
+                    timestamp=now,
                 )
                 await self._enqueue_and_notify(chunk_message, session_id)
                 self._append_to_message_buffers(interaction_id, chunk_message)
@@ -409,6 +426,7 @@ class ResponseBus:
                 channel=acc.channel,
                 message_type="adhoc",
                 metadata=acc.metadata or {},
+                timestamp=now,
             )
             filter_ok = await self._apply_channel_filters(flush_message, acc.channel)
             if filter_ok:
@@ -433,6 +451,7 @@ class ResponseBus:
                 channel=acc.channel,
                 message_type="final",
                 metadata=acc.metadata or {},
+                timestamp=now,
             )
             await self._enqueue_and_notify(final_message, session_id)
             self._append_to_message_buffers(interaction_id, final_message)
@@ -461,6 +480,7 @@ class ResponseBus:
             self._adhoc_accumulation.pop(interaction_id, None)
             return
         full_content = "".join(acc.chunks)
+        now = await self._get_now()
         message = ResponseMessage(
             session_id=acc.session_id,
             user_id=acc.user_id or "",
@@ -469,6 +489,7 @@ class ResponseBus:
             channel=acc.channel,
             message_type="adhoc",
             metadata=acc.metadata or {},
+            timestamp=now,
         )
         filter_ok = await self._apply_channel_filters(message, acc.channel)
         if filter_ok:
@@ -494,6 +515,7 @@ class ResponseBus:
         message_id: Optional[str] = None,
     ) -> None:
         """Internal: enqueue a final ResponseMessage and notify subscribers (no filters/adapters)."""
+        now = await self._get_now()
         final_message = ResponseMessage(
             id=message_id or f"o.ResponseMessage.{uuid.uuid4().hex[:24]}",
             session_id=session_id,
@@ -503,6 +525,7 @@ class ResponseBus:
             channel=channel,
             message_type="final",
             metadata=metadata or {},
+            timestamp=now,
         )
         await self._enqueue_and_notify(final_message, session_id)
 
@@ -709,7 +732,8 @@ class ResponseBus:
             return
 
         queue = self._session_queues[session_id]
-        cutoff_dt = datetime.now(timezone.utc) - timedelta(minutes=5)
+        now = await self._get_now()
+        cutoff_dt = now - timedelta(minutes=5)
 
         # ResponseMessage.timestamp is timezone-aware datetime; keep any messages newer than cutoff.
         filtered_queue = [

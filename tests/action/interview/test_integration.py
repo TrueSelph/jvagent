@@ -75,12 +75,12 @@ class TestIntegration:
         assert "user_email" in answered
 
         # Transition to REVIEW
-        test_session.transition_to(InterviewState.REVIEW)
+        await test_session.transition_to(InterviewState.REVIEW)
         await test_session.save()
         assert test_session.state == InterviewState.REVIEW
 
         # Transition to COMPLETED
-        test_session.transition_to(InterviewState.COMPLETED)
+        await test_session.transition_to(InterviewState.COMPLETED)
         await test_session.save()
         assert test_session.state == InterviewState.COMPLETED
         assert test_session.completed_at is not None

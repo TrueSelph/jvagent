@@ -10,6 +10,19 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+async def _get_now() -> datetime:
+    """Current datetime in app timezone, or UTC if App unavailable."""
+    try:
+        from jvagent.core.app import App
+
+        app = await App.get()
+        if app:
+            return await app.now()
+    except Exception:
+        pass
+    return datetime.now(timezone.utc)
+
+
 # ============================================================================
 # Performance Configuration Loader
 # ============================================================================
@@ -169,7 +182,8 @@ async def get_cached_agent(agent_id: str) -> Optional[Any]:
         # Check cache
         if agent_id in _agent_cache:
             agent, cached_at = _agent_cache[agent_id]
-            age = (datetime.now(timezone.utc) - cached_at).total_seconds()
+            now = await _get_now()
+            age = (now - cached_at).total_seconds()
 
             if age < AGENT_CACHE_TTL:
                 # Cache hit and still valid
@@ -188,7 +202,8 @@ async def get_cached_agent(agent_id: str) -> Optional[Any]:
     if agent:
         # Update cache
         async with _cache_lock:
-            _agent_cache[agent_id] = (agent, datetime.now(timezone.utc))
+            now = await _get_now()
+            _agent_cache[agent_id] = (agent, now)
             logger.debug(f"Agent cached for {agent_id}")
 
     return agent
@@ -234,7 +249,7 @@ async def get_cache_stats() -> Dict[str, Any]:
     Returns:
         Dictionary with cache statistics including size, TTL, and enabled status
     """
-    now = datetime.now(timezone.utc)
+    now = await _get_now()
 
     async with _cache_lock:
         agent_cache_size = len(_agent_cache)
@@ -295,7 +310,8 @@ async def get_cached_actions(
     async with _action_cache_lock:
         if cache_key in _action_cache:
             actions, cached_at = _action_cache[cache_key]
-            age = (datetime.now(timezone.utc) - cached_at).total_seconds()
+            now = await _get_now()
+            age = (now - cached_at).total_seconds()
 
             if age < ACTION_CACHE_TTL:
                 logger.debug(f"Action cache hit for {cache_key} (age: {age:.1f}s)")
@@ -324,7 +340,8 @@ async def cache_actions(
     cache_key = f"{agent_id}:{'enabled' if enabled_only else 'all'}"
 
     async with _action_cache_lock:
-        _action_cache[cache_key] = (actions, datetime.now(timezone.utc))
+        now = await _get_now()
+        _action_cache[cache_key] = (actions, now)
         logger.debug(f"Actions cached for {cache_key} ({len(actions)} actions)")
 
 
@@ -368,7 +385,7 @@ async def cleanup_expired_entries() -> bool:
     Returns:
         True if any entries were cleaned, False otherwise
     """
-    now = datetime.now(timezone.utc)
+    now = await _get_now()
     agent_cleaned = 0
     action_cleaned = 0
     profiles_cleaned = 0

@@ -32,7 +32,7 @@ class TestStateNodeTransitions:
         assert StateNode.can_transition(test_session.state, InterviewState.REVIEW)
 
         # Perform transition
-        test_session.transition_to(InterviewState.REVIEW)
+        await test_session.transition_to(InterviewState.REVIEW)
 
         assert test_session.state == InterviewState.REVIEW
 
@@ -41,7 +41,7 @@ class TestStateNodeTransitions:
         """Test valid transition from ACTIVE to CANCELLED."""
         assert StateNode.can_transition(test_session.state, InterviewState.CANCELLED)
 
-        test_session.transition_to(InterviewState.CANCELLED)
+        await test_session.transition_to(InterviewState.CANCELLED)
 
         assert test_session.state == InterviewState.CANCELLED
 
@@ -51,7 +51,7 @@ class TestStateNodeTransitions:
         test_session.state = InterviewState.REVIEW
 
         assert StateNode.can_transition(test_session.state, InterviewState.ACTIVE)
-        test_session.transition_to(InterviewState.ACTIVE)
+        await test_session.transition_to(InterviewState.ACTIVE)
 
         assert test_session.state == InterviewState.ACTIVE
 
@@ -61,7 +61,7 @@ class TestStateNodeTransitions:
         test_session.state = InterviewState.REVIEW
 
         assert StateNode.can_transition(test_session.state, InterviewState.COMPLETED)
-        test_session.transition_to(InterviewState.COMPLETED)
+        await test_session.transition_to(InterviewState.COMPLETED)
 
         assert test_session.state == InterviewState.COMPLETED
         assert test_session.completed_at is not None
@@ -96,12 +96,12 @@ class TestStateNodeTransitions:
         """Test multiple valid transitions."""
         # ACTIVE -> REVIEW
         assert StateNode.can_transition(test_session.state, InterviewState.REVIEW)
-        test_session.transition_to(InterviewState.REVIEW)
+        await test_session.transition_to(InterviewState.REVIEW)
         assert test_session.state == InterviewState.REVIEW
 
         # REVIEW -> COMPLETED
         assert StateNode.can_transition(test_session.state, InterviewState.COMPLETED)
-        test_session.transition_to(InterviewState.COMPLETED)
+        await test_session.transition_to(InterviewState.COMPLETED)
         assert test_session.state == InterviewState.COMPLETED
 
     @pytest.mark.asyncio

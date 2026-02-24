@@ -91,6 +91,7 @@ context:
   description: My jvagent application
   logging_enabled: true  # Enable/disable logging for this app
   log_retention_days: 60  # Retention window in days (default: 60)
+  timezone: America/New_York  # Optional IANA timezone for app-level datetime (used by App.now())
 ```
 
 #### Config Section (Application Defaults)

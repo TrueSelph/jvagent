@@ -27,6 +27,7 @@ from jvagent.action.gating.prompts import (
     GATING_TASK_WITH_FRAGMENTS,
 )
 from jvagent.action.interact.base import InteractAction
+from jvagent.core.app import App
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -234,11 +235,17 @@ class ResponseGatingInteractAction(InteractAction):
     ) -> None:
         """Append utterance to buffer and clear walk path."""
         buffer = list(conversation.context.get(BUFFER_KEY, []))
+        app = await App.get()
+        if app:
+            now_dt = await app.now()
+            now = now_dt.isoformat() if isinstance(now_dt, datetime) else now_dt
+        else:
+            now = datetime.now(timezone.utc).isoformat()
         buffer.append(
             {
                 "utterance": interaction.utterance or "",
                 "interaction_id": interaction.id,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": now,
             }
         )
         if len(buffer) > self.max_fragment_buffer:

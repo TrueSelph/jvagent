@@ -449,10 +449,13 @@ class Interaction(DeferredSaveMixin, Node):
         """
         return self.directives
 
-    def close_interaction(self) -> None:
+    async def close_interaction(self) -> None:
         """Close the interaction."""
+        from jvagent.core.app import App
+
         self.closed = True
-        self.completed_at = datetime.now(timezone.utc)
+        app = await App.get()
+        self.completed_at = await app.now() if app else datetime.now(timezone.utc)
 
     def get_duration(self) -> float:
         """Get interaction duration in seconds.
