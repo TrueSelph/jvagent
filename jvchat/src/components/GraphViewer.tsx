@@ -14,7 +14,7 @@ function applyDarkModeDot(dot: string): string {
   return dot
     .replace(
       /\{/,
-      '{ bgcolor="#0f172a" fontcolor="#f8fafc" fontname="sans-serif" edge [color="#94a3b8"] node [fontcolor="#f8fafc" fillcolor="#475569" color="#94a3b8"] '
+      '{ bgcolor="#0f172a" fontcolor="#f8fafc" fontname="sans-serif" edge [color="#94a3b8" fontcolor="#ffffff"] node [fontcolor="#f8fafc" fillcolor="#475569" color="#94a3b8"] '
     )
     .replace(
       /("n\.Root\.root"[^\]]*?)fillcolor="[^"]*"/,
