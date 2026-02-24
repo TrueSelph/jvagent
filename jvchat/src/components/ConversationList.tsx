@@ -7,7 +7,6 @@ interface ConversationListProps {
   onSelectConversation: (sessionId: string) => void
   onNewConversation: () => void
   onDeleteConversation?: (sessionId: string) => void
-  onLogout?: () => void
   isMobileMenuOpen?: boolean
   onMobileMenuClose?: () => void
 }
@@ -18,11 +17,11 @@ export const ConversationList = memo(function ConversationList({
   onSelectConversation,
   onNewConversation,
   onDeleteConversation,
-  onLogout,
   isMobileMenuOpen,
   onMobileMenuClose,
 }: ConversationListProps) {
   const [isOpen, setIsOpen] = useState(true)
+  const [sessionIdToDelete, setSessionIdToDelete] = useState<string | null>(null)
 
   // On mobile, start with sidebar closed
   useEffect(() => {
@@ -49,6 +48,24 @@ export const ConversationList = memo(function ConversationList({
       setIsOpen(false)
     }
   }
+
+  const handleDeleteClick = useCallback((sessionId: string) => {
+    setSessionIdToDelete(sessionId)
+  }, [])
+
+  const handleDeleteConfirm = useCallback(() => {
+    if (sessionIdToDelete && onDeleteConversation) {
+      onDeleteConversation(sessionIdToDelete)
+      setSessionIdToDelete(null)
+      if (isMobile && onMobileMenuClose) {
+        onMobileMenuClose()
+      }
+    }
+  }, [sessionIdToDelete, onDeleteConversation, isMobile, onMobileMenuClose])
+
+  const handleDeleteCancel = useCallback(() => {
+    setSessionIdToDelete(null)
+  }, [])
 
   const handleSelect = useCallback((sessionId: string) => {
     // Prevent selecting the same conversation
@@ -135,7 +152,7 @@ export const ConversationList = memo(function ConversationList({
       {!isMobile && !isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="fixed left-0 top-1/2 -translate-y-1/2 z-10 bg-white border-r border-y border-gray-200 rounded-r-lg px-2 py-4 text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-colors hidden md:block"
+          className="fixed left-0 top-1/2 -translate-y-1/2 z-10 bg-white dark:bg-slate-900 border-r border-y border-gray-200 dark:border-slate-700 rounded-r-lg px-2 py-4 text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors hidden md:block"
           aria-label="Show sidebar"
         >
           →
@@ -151,13 +168,13 @@ export const ConversationList = memo(function ConversationList({
             : isMobile
             ? 'hidden'
             : 'w-0'
-        } border-r border-gray-200 bg-white transition-all duration-300 overflow-hidden flex flex-col shadow-lg md:shadow-none`}
+        } border-r border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 transition-all duration-300 overflow-hidden flex flex-col shadow-lg md:shadow-none`}
       >
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-          <h2 className="font-semibold text-gray-900">Conversations</h2>
+        <div className="px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between flex-shrink-0">
+          <h2 className="font-semibold text-gray-900 dark:text-gray-100">Conversations</h2>
           <button
             onClick={handleClose}
-            className="text-gray-500 hover:text-gray-700 p-2 -mr-2 touch-manipulation"
+            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 p-2 -mr-2 touch-manipulation"
             aria-label="Close sidebar"
           >
             <svg
@@ -184,19 +201,22 @@ export const ConversationList = memo(function ConversationList({
               onMobileMenuClose()
             }
           }}
-          className="w-full px-4 py-3 text-left text-indigo-600 hover:bg-indigo-50 font-medium border-b border-gray-200 flex-shrink-0 touch-manipulation"
+          className="w-full px-4 sm:px-6 py-3 text-left text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 font-medium border-b border-gray-200 dark:border-slate-700 flex-shrink-0 touch-manipulation flex items-center gap-2"
         >
-          + New Conversation
+          <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          New Conversation
         </button>
 
-        <div className="divide-y divide-gray-200">
+        <div className="divide-y divide-gray-200 dark:divide-slate-700">
           {sortedConversations.length === 0 ? (
-            <div className="px-4 py-8 text-center text-gray-500 text-sm">
+            <div className="px-4 sm:px-6 py-8 text-center text-gray-500 dark:text-gray-400 text-sm">
               No conversations yet. Start a new conversation to begin.
             </div>
           ) : (
             <>
-              <div className="px-4 py-2 text-xs text-gray-500 border-b border-gray-200">
+              <div className="px-4 sm:px-6 py-2 text-xs text-gray-500 dark:text-slate-400 border-b border-gray-200 dark:border-slate-700">
                 {sortedConversations.length} conversation{sortedConversations.length !== 1 ? 's' : ''}
               </div>
               {sortedConversations.map((conv) => (
@@ -205,7 +225,7 @@ export const ConversationList = memo(function ConversationList({
                   conversation={conv}
                   isActive={activeSessionIdMap.get(conv.session_id) || false}
                   onSelect={handleSelect}
-                  onDelete={onDeleteConversation}
+                  onDelete={onDeleteConversation ? handleDeleteClick : undefined}
                 />
               ))}
             </>
@@ -213,27 +233,26 @@ export const ConversationList = memo(function ConversationList({
         </div>
       </div>
 
-      {onLogout && (
-        <div className="border-t border-gray-200 flex-shrink-0">
-          <button
-            onClick={onLogout}
-            className="w-full px-4 py-3 text-left text-red-600 hover:bg-red-50 font-medium transition-colors flex items-center gap-2"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-              />
-            </svg>
-            Logout
-          </button>
+      {sessionIdToDelete && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 dark:bg-black/70">
+          <div className="bg-white dark:bg-slate-900 rounded-lg shadow-xl max-w-sm w-full p-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Delete conversation?</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">This cannot be undone.</p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={handleDeleteCancel}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -286,7 +305,6 @@ export const ConversationList = memo(function ConversationList({
     prevProps.onSelectConversation === nextProps.onSelectConversation &&
     prevProps.onNewConversation === nextProps.onNewConversation &&
     prevProps.onDeleteConversation === nextProps.onDeleteConversation &&
-    prevProps.onLogout === nextProps.onLogout &&
     prevProps.onMobileMenuClose === nextProps.onMobileMenuClose
 
   // Return true if all props are equal (no re-render needed)
@@ -316,19 +334,19 @@ const ConversationItem = memo(({
 
   return (
     <div
-      className={`px-4 py-3 cursor-pointer hover:bg-gray-50 border-l-4 transition-colors duration-150 ${
+      className={`px-4 sm:px-6 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 border-l-4 transition-colors duration-150 ${
         isActive
-          ? 'bg-indigo-50 border-indigo-600'
+          ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-600 dark:border-indigo-500'
           : 'border-transparent'
       }`}
       onClick={handleClick}
     >
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0 pr-2">
-          <p className="text-sm font-medium text-gray-900 truncate">
+          <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
             {conversation.last_message || 'New conversation'}
           </p>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             {conversation.last_message_at
               ? new Date(conversation.last_message_at).toLocaleDateString()
               : new Date(conversation.created_at).toLocaleDateString()}
@@ -337,7 +355,7 @@ const ConversationItem = memo(({
         {onDelete && (
           <button
             onClick={handleDelete}
-            className="ml-2 text-gray-400 hover:text-red-600 flex-shrink-0 p-1 touch-manipulation"
+            className="ml-2 text-gray-400 hover:text-red-600 dark:text-gray-500 dark:hover:text-red-400 flex-shrink-0 p-1 touch-manipulation"
             aria-label="Delete conversation"
           >
             ×

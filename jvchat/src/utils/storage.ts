@@ -3,7 +3,6 @@ const REFRESH_TOKEN_KEY = 'jvchat_refresh_token'
 const USER_ID_KEY = 'jvchat_user_id'
 const CONVERSATIONS_KEY = 'jvchat_conversations'
 const MESSAGES_KEY = 'jvchat_messages'
-const AUTH_CREDS_KEY = 'jvchat_auth_creds'
 const SELECTED_AGENT_KEY = 'jvchat_selected_agent'
 
 export function getToken(): string | null {
@@ -92,7 +91,6 @@ export function getConversations(userId?: string | null): any[] {
       (conv: any) => conv && typeof conv === 'object' && conv.session_id
     ) as any[]
 
-    console.log(`Retrieved ${conversations.length} conversations for user ${userId}`)
     return conversations
   } catch (error) {
     console.error('Error getting conversations:', error)
@@ -170,7 +168,6 @@ export function addConversation(conversation: any, userId?: string | null): void
     }
 
     localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(parsed))
-    console.log(`Conversation ${conversation.session_id} saved for user ${userId}. Total conversations: ${Object.keys(parsed[userId]).length}`)
   } catch (error) {
     console.error('Failed to add conversation:', error)
   }
@@ -276,7 +273,6 @@ export function getMessages(sessionId: string): any[] {
     // Create a deep copy to prevent reference issues
     const messages = parsed[sessionId]
     const result = messages ? JSON.parse(JSON.stringify(messages)) : []
-    console.log(`Retrieved ${result.length} messages for session ${sessionId}`)
     return result
   } catch (error) {
     console.error('Error getting messages:', error)
@@ -297,7 +293,6 @@ export function saveMessages(sessionId: string, messages: any[]): void {
     // Create a deep copy to prevent reference issues
     parsed[sessionId] = JSON.parse(JSON.stringify(messages))
     localStorage.setItem(MESSAGES_KEY, JSON.stringify(parsed))
-    console.log(`Saved ${messages.length} messages for session ${sessionId}`)
   } catch (error) {
     console.error('Failed to save messages:', error)
   }
@@ -324,35 +319,9 @@ export function clearAllStorage(): void {
     removeUserId()
     localStorage.removeItem(CONVERSATIONS_KEY)
     localStorage.removeItem(MESSAGES_KEY)
-    console.log('All local storage cleared')
   } catch (error) {
     console.error('Failed to clear all storage:', error)
   }
-}
-
-export function saveAuthCreds(email: string, password: string, serverUrl: string): void {
-  if (typeof window === 'undefined') return
-  try {
-    localStorage.setItem(AUTH_CREDS_KEY, JSON.stringify({ email, password, serverUrl }))
-  } catch (error) {
-    console.error('Failed to save auth creds:', error)
-  }
-}
-
-export function getAuthCreds(): { email: string; password: string; serverUrl: string } | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const data = localStorage.getItem(AUTH_CREDS_KEY)
-    return data ? JSON.parse(data) : null
-  } catch (error) {
-    console.error('Failed to get auth creds:', error)
-    return null
-  }
-}
-
-export function removeAuthCreds(): void {
-  if (typeof window === 'undefined') return
-  localStorage.removeItem(AUTH_CREDS_KEY)
 }
 
 export function saveSelectedAgent(agentName: string): void {
@@ -394,5 +363,6 @@ export function isTokenExpired(token: string | null): boolean {
 export function cleanupOldStorage(): void {
   if (typeof window === 'undefined') return
   localStorage.removeItem('jvchat_saved_credentials')
+  localStorage.removeItem('jvchat_auth_creds')
 }
 

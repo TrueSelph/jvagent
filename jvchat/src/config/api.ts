@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios'
 import { getJvagentUrl, getJvagentTimeout, getConfigAsync } from './config'
-import { getToken, removeToken, getUserId, getRefreshToken, setToken, setRefreshToken, removeRefreshToken, getAuthCreds, isTokenExpired } from '../utils/storage'
+import { getToken, removeToken, getUserId, getRefreshToken, setToken as setStorageToken, setRefreshToken, removeRefreshToken, isTokenExpired } from '../utils/storage'
 import type {
   LoginRequest,
   LoginResponse,
@@ -199,7 +199,7 @@ class ApiClient {
         try {
           console.log('Attempting token refresh...')
           const refreshResponse = await this.refreshToken({ refresh_token: refreshToken })
-          setToken(refreshResponse.access_token)
+          setStorageToken(refreshResponse.access_token)
           if (refreshResponse.refresh_token) {
             setRefreshToken(refreshResponse.refresh_token)
           }
@@ -210,33 +210,11 @@ class ApiClient {
           this.isRefreshing = false
           return refreshResponse.access_token
         } catch (refreshErr) {
-          console.warn('Refresh token failed, attempting auto-login fallback...')
+          console.warn('Refresh token failed')
         }
       }
 
-      // Auto-login fallback
-      const authCreds = getAuthCreds()
-      if (authCreds) {
-        try {
-          console.log('Attempting auto-login...')
-          const loginResponse = await this.login(authCreds)
-          setToken(loginResponse.access_token)
-          if (loginResponse.refresh_token) {
-            setRefreshToken(loginResponse.refresh_token)
-          }
-          console.log('Auto-login successful')
-
-          this.failedQueue.forEach(({ resolve }) => resolve())
-          this.failedQueue = []
-          this.isRefreshing = false
-          return loginResponse.access_token
-        } catch (loginErr) {
-          console.error('Auto-login fallback failed')
-          return cleanUpAndRedirect(loginErr)
-        }
-      }
-
-      console.warn('No refresh token or credentials available for recovery')
+      console.warn('No refresh token available for recovery')
       return cleanUpAndRedirect(new Error('Authentication expired and no recovery credentials found'))
     } catch (err) {
       return cleanUpAndRedirect(err)
@@ -249,9 +227,9 @@ class ApiClient {
    */
   setToken(token: string | LoginResponse): void {
     if (typeof token === 'string') {
-      setToken(token)
+      setStorageToken(token)
     } else if (token && token.access_token) {
-      setToken(token.access_token)
+      setStorageToken(token.access_token)
       if (token.refresh_token) {
         setRefreshToken(token.refresh_token)
       }
@@ -713,8 +691,8 @@ class ApiClient {
     }
   }
 
-  async getGraph(format: string = 'mermaid', include_attributes: boolean = true): Promise<string> {
-    // Endpoint returns plain text (mermaid diagram syntax)
+  async getGraph(format: string = 'dot', include_attributes: boolean = true): Promise<string> {
+    // Endpoint returns plain text (DOT or Mermaid diagram syntax)
     // Try /api/graph first, fallback to /graph, with baseURL fallbacks
     try {
       const params = {

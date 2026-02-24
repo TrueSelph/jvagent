@@ -32,19 +32,19 @@ export function MessageList({
 
   return (
     <>
-      <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4">
         {messages.map((message) => (
           <div
             key={message.id}
             className={`flex ${
               message.role === "user" ? "justify-end" : "justify-start"
-            }`}
+            } animate-fade-in`}
           >
             <div
-              className={`max-w-[85%] sm:max-w-3xl rounded-lg px-3 sm:px-4 py-2 sm:py-3 relative ${
+              className={`max-w-[85%] sm:max-w-3xl rounded-2xl px-3 sm:px-4 py-2 sm:py-3 relative shadow-sm ${
                 message.role === "user"
-                  ? "bg-indigo-600 text-white"
-                  : "bg-gray-200 text-gray-900"
+                  ? "bg-slate-600 text-white dark:bg-indigo-900/40 dark:text-indigo-200"
+                  : "bg-gray-200 text-gray-900 dark:bg-slate-800 dark:text-slate-100 dark:border dark:border-slate-700"
               }`}
             >
               <div className="break-words text-sm sm:text-base">
@@ -63,8 +63,8 @@ export function MessageList({
                           <pre
                             className={`overflow-x-auto rounded p-2 sm:p-3 my-2 ${
                               message.role === "user"
-                                ? "bg-indigo-500/20 text-indigo-100"
-                                : "bg-gray-800 text-gray-100"
+                                ? "bg-slate-700/70 text-slate-100 dark:bg-indigo-900/60 dark:text-indigo-100"
+                                : "bg-slate-800 text-slate-100 dark:bg-slate-900 dark:text-slate-200"
                             }`}
                             {...props}
                           >
@@ -76,8 +76,8 @@ export function MessageList({
                           <code
                             className={`px-1 py-0.5 rounded ${
                               message.role === "user"
-                                ? "bg-indigo-500/30 text-indigo-100"
-                                : "bg-gray-300 text-gray-800"
+                                ? "bg-slate-700/70 text-slate-100 dark:bg-indigo-900/60 dark:text-indigo-100"
+                                : "bg-slate-200 text-slate-800 dark:bg-slate-600 dark:text-slate-200"
                             }`}
                             {...props}
                           >
@@ -90,8 +90,8 @@ export function MessageList({
                         <blockquote
                           className={`border-l-4 pl-3 sm:pl-4 my-2 ${
                             message.role === "user"
-                              ? "border-indigo-300 text-indigo-100"
-                              : "border-gray-400 text-gray-700"
+                              ? "border-slate-400 text-slate-200 dark:border-indigo-500/60 dark:text-indigo-200"
+                              : "border-slate-400 text-slate-700 dark:border-slate-500 dark:text-slate-300"
                           }`}
                           {...props}
                         >
@@ -103,8 +103,8 @@ export function MessageList({
                         <a
                           className={`underline ${
                             message.role === "user"
-                              ? "text-indigo-200 hover:text-indigo-100"
-                              : "text-indigo-600 hover:text-indigo-700"
+                              ? "text-slate-300 hover:text-white dark:text-indigo-200 dark:hover:text-indigo-100"
+                              : "text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
                           }`}
                           {...props}
                         >
@@ -194,8 +194,8 @@ export function MessageList({
                         <th
                           className={`border px-2 sm:px-4 py-1 sm:py-2 ${
                             message.role === "user"
-                              ? "bg-indigo-500/30 border-indigo-300"
-                              : "bg-gray-300 border-gray-400"
+                              ? "bg-slate-700/70 border-slate-500 dark:bg-indigo-900/60 dark:border-indigo-500/60"
+                              : "bg-slate-200 border-slate-400 dark:bg-slate-700 dark:border-slate-600"
                           }`}
                           {...props}
                         >
@@ -206,8 +206,8 @@ export function MessageList({
                         <td
                           className={`border px-2 sm:px-4 py-1 sm:py-2 ${
                             message.role === "user"
-                              ? "border-indigo-300"
-                              : "border-gray-400"
+                              ? "border-slate-500 dark:border-indigo-500/60"
+                              : "border-slate-400 dark:border-slate-600"
                           }`}
                           {...props}
                         >
@@ -224,8 +224,8 @@ export function MessageList({
                 <div
                   className={`text-xs ${
                     message.role === "user"
-                      ? "text-indigo-200"
-                      : "text-gray-500"
+                      ? "text-slate-300 dark:text-indigo-200"
+                      : "text-slate-500 dark:text-slate-400"
                   }`}
                 >
                   {new Date(message.timestamp).toLocaleTimeString()}
@@ -264,8 +264,8 @@ export function MessageList({
                       }}
                       className={`text-xs px-2 py-1 rounded touch-manipulation ${
                         message.role === "user"
-                          ? "bg-indigo-500 hover:bg-indigo-400 text-white"
-                          : "bg-gray-300 hover:bg-gray-400 text-gray-700"
+                          ? "bg-slate-700 hover:bg-slate-600 text-white dark:bg-indigo-900/60 dark:hover:bg-indigo-800/60 dark:text-indigo-100"
+                          : "bg-slate-200 hover:bg-slate-300 text-slate-700 dark:bg-slate-600 dark:hover:bg-slate-500 dark:text-slate-200"
                       }`}
                     >
                       Debug
@@ -278,11 +278,15 @@ export function MessageList({
         ))}
 
         {showThinking && (
-          <div className="flex justify-start">
-            <div className="max-w-[85%] sm:max-w-3xl rounded-lg px-3 sm:px-4 py-2 sm:py-3 bg-gray-200 text-gray-900">
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                <span className="text-xs sm:text-sm text-gray-600">
+          <div className="flex justify-start animate-fade-in">
+            <div className="max-w-[85%] sm:max-w-3xl rounded-2xl px-4 sm:px-5 py-3 sm:py-4 bg-gray-200 text-gray-900 dark:bg-slate-800 dark:text-slate-100 dark:border dark:border-slate-700 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="flex gap-1.5 items-center">
+                  <span className="w-2 h-2 rounded-full bg-slate-500 animate-bounce [animation-delay:0ms]" />
+                  <span className="w-2 h-2 rounded-full bg-slate-500 animate-bounce [animation-delay:150ms]" />
+                  <span className="w-2 h-2 rounded-full bg-slate-500 animate-bounce [animation-delay:300ms]" />
+                </div>
+                <span className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
                   {thinkingText}
                 </span>
               </div>
@@ -296,20 +300,20 @@ export function MessageList({
       {/* Debug Modal */}
       {debugMessage && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4"
+          className="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50 p-2 sm:p-4"
           onClick={() => setDebugMessage(null)}
         >
           <div
-            className="bg-white rounded-lg max-w-4xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col"
+            className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-              <h3 className="text-base sm:text-lg font-semibold text-gray-900">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between flex-shrink-0">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
                 Debug View - Message {debugMessage.id.substring(0, 20)}...
               </h3>
               <button
                 onClick={() => setDebugMessage(null)}
-                className="text-gray-400 hover:text-gray-600 text-2xl touch-manipulation p-1"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-2xl touch-manipulation p-1"
                 aria-label="Close"
               >
                 ×
@@ -317,11 +321,11 @@ export function MessageList({
             </div>
             <div className="flex-1 overflow-y-auto p-3 sm:p-6">
               <div className="mb-4">
-                <h4 className="text-xs sm:text-sm font-semibold text-gray-700 mb-2">
+                <h4 className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                   Message Content:
                 </h4>
-                <div className="bg-gray-50 p-2 sm:p-3 rounded border border-gray-200">
-                  <pre className="whitespace-pre-wrap text-xs sm:text-sm text-gray-800">
+                <div className="bg-gray-50 dark:bg-gray-900 p-2 sm:p-3 rounded border border-gray-200 dark:border-gray-600">
+                  <pre className="whitespace-pre-wrap text-xs sm:text-sm text-gray-800 dark:text-gray-200">
                     {debugMessage.debugData?.interaction?.response ||
                       debugMessage.content}
                   </pre>
@@ -329,7 +333,7 @@ export function MessageList({
               </div>
               {debugMessage.debugData ? (
                 <div>
-                  <h4 className="text-xs sm:text-sm font-semibold text-gray-700 mb-2">
+                  <h4 className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                     Full JSON Response (type=final):
                   </h4>
                   <div className="bg-gray-900 p-2 sm:p-4 rounded border border-gray-700 overflow-x-auto">
@@ -339,20 +343,20 @@ export function MessageList({
                   </div>
                 </div>
               ) : (
-                <div className="text-xs sm:text-sm text-gray-500 italic">
+                <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 italic">
                   Debug data not available yet. Waiting for final interaction
                   data...
                 </div>
               )}
             </div>
-            <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 flex justify-end flex-shrink-0">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end flex-shrink-0">
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(
                     JSON.stringify(debugMessage.debugData, null, 2),
                   );
                 }}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 touch-manipulation text-sm sm:text-base"
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 touch-manipulation text-sm sm:text-base"
               >
                 Copy JSON
               </button>
