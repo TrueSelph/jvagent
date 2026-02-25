@@ -176,7 +176,7 @@ CLASSIFICATION_INTENT_RULES = """INTENT CLASSIFICATION (choose exactly one):
    - When the utterance is a bare value matching an unanswered field's type (email format for email field, digits for phone, etc.), treat as SUBMISSION and extract the value. Do not ask for clarification.
 
 4. UPDATE
-   - User changes, corrects, or re-provides a value for an **ALREADY-ANSWERED field**
+   - User changes, corrects, or re-provides a value for an **ALREADY-ANSWERED field within 'Answered fields' only**
    - Field must be in Answered fields
    - DOES NOT require explicit change language
    - Trigger UPDATE when:

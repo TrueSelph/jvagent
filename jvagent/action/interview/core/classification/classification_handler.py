@@ -384,6 +384,7 @@ class ClassificationHandler:
             answered_fields
         )  # Mutual exclusion: unanswered only in entities_to_extract
         entities_list = []
+        answered_entities_list = []
         allowed_field_names: Set[str] = set()
         required_fields = set(session.get_required_questions())
 
@@ -397,9 +398,6 @@ class ClassificationHandler:
             if key in excluded_set:
                 continue
 
-            # Skip answered fields so Answered and Unanswered are mutually exclusive
-            if key in answered_set:
-                continue
 
             desc = constraints.get("description", "")
             other_constraints = {
@@ -475,9 +473,14 @@ class ClassificationHandler:
                 item, session, visitor
             )
 
-            entities_list.append(
-                f'- {key} {required_marker} {mode_marker} — Expected: "{desc}" | Constraints: {constraints_display}{options_note}{context_data_note}'
-            )
+            if key in answered_fields:
+                answered_entities_list.append(
+                    f'- {key} {required_marker} {mode_marker} — Expected: "{desc}" | Value: {value_str}'
+                )
+            else:
+                entities_list.append(
+                    f'- {key} {required_marker} {mode_marker} — Expected: "{desc}" | Constraints: {constraints_display}{options_note}{context_data_note}'
+                )
             allowed_field_names.add(key)
 
         # Include answered fields for UPDATE intent; DECLINE uses unanswered
@@ -487,6 +490,12 @@ class ClassificationHandler:
             "\n".join(entities_list)
             if entities_list
             else "None (all questions answered)"
+        )
+
+        extracted_entities = (
+            "\n".join(answered_entities_list)
+            if answered_entities_list
+            else ""
         )
 
         # Get current question (first reachable unanswered) for context
@@ -504,8 +513,8 @@ class ClassificationHandler:
         return {
             "current_state": current_state,
             "current_question": current_question,
-            "answered_fields": answered_fields_str,
-            "entities_to_extract": entities_to_extract,
+            "answered_fields": f"{answered_fields_str}\n{extracted_entities}\n",
+            "entities_to_extract": f"\n{entities_to_extract}",
             "allowed_field_names": allowed_field_names,
         }
 
