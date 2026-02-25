@@ -87,15 +87,14 @@ class SerperWebSearchAction(BaseWebSearchAction):
             import json
 
             conn = http.client.HTTPSConnection("google.serper.dev")
-            payload = json.dumps({
-            "q": query,
-            "gl": self.gl,
-            "hl": self.hl,
-            })
-            headers = {
-            'X-API-KEY': self.api_key,
-            'Content-Type': 'application/json'
-            }
+            payload = json.dumps(
+                {
+                    "q": query,
+                    "gl": self.gl,
+                    "hl": self.hl,
+                }
+            )
+            headers = {"X-API-KEY": self.api_key, "Content-Type": "application/json"}
             conn.request("POST", "/search", payload, headers)
             res = conn.getresponse()
             data = res.read()
