@@ -584,7 +584,10 @@ class WWebJSAPI(BaseWhatsAppAPI):
 
     async def convert_lid_to_phone_number(self, lid: str) -> str:
         """POST /client/getContactLidAndPhone/{sessionId}"""
-        data = {"userIds": [f"{lid}@lid"]}
+        if "@" not in lid:
+            lid = f"{lid}@lid"
+
+        data = {"userIds": [lid]}
         result = await self.send_rest_request(
             f"client/getContactLidAndPhone/{self.session}", data=data
         )
