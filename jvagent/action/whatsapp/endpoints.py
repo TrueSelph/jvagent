@@ -100,9 +100,11 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         # MessagePayload is a dataclass, access attributes directly
         utterance = data.body or data.caption
         utterance = utterance.strip() if utterance else None
-        
+
         if "@" in data.sender:
-            data.sender = await whatsapp_action.api().convert_lid_to_phone_number(data.sender)
+            data.sender = await whatsapp_action.api().convert_lid_to_phone_number(
+                data.sender
+            )
 
         sender = data.sender
         sender_name = data.sender_name

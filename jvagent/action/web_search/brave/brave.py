@@ -79,9 +79,7 @@ class BraveWebSearchAction(BaseWebSearchAction):
         }
 
         try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(self.timeout)
-            ) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout)) as client:
                 response = await client.get(
                     self.api_endpoint, params=params, headers=headers
                 )

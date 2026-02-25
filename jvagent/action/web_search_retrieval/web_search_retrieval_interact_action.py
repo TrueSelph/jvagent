@@ -14,6 +14,7 @@ from jvspatial.core.annotations import attribute
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.web_search.base import BaseWebSearchAction
+
 from .prompts import DIRECTIVE_TEMPLATE
 
 if TYPE_CHECKING:
@@ -168,7 +169,9 @@ class WebSearchRetrievalInteractAction(InteractAction):
         Mirrors ``RetrievalInteractAction._get_vectorstore_action()``.
         """
         if self.web_search_action_type:
-            action = await self.get_action(self.web_search_action_type)
+            action: Optional[BaseWebSearchAction] = await self.get_action(
+                self.web_search_action_type
+            )
             if action:
                 return action
 

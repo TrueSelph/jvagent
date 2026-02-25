@@ -398,7 +398,6 @@ class ClassificationHandler:
             if key in excluded_set:
                 continue
 
-
             desc = constraints.get("description", "")
             other_constraints = {
                 k: v
@@ -493,9 +492,7 @@ class ClassificationHandler:
         )
 
         extracted_entities = (
-            "\n".join(answered_entities_list)
-            if answered_entities_list
-            else ""
+            "\n".join(answered_entities_list) if answered_entities_list else ""
         )
 
         # Get current question (first reachable unanswered) for context

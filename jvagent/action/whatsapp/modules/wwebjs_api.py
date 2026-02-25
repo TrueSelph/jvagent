@@ -111,7 +111,7 @@ class WWebJSAPI(BaseWhatsAppAPI):
                 "name": msg_data.get("notifyName", ""),
                 "pushname": msg_data.get("notifyName", ""),
             },
-            "quotedMsg": msg_data.get("quotedMsg", {})
+            "quotedMsg": msg_data.get("quotedMsg", {}),
         }
 
         # Handle special message types
