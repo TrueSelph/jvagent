@@ -1,0 +1,17 @@
+package:
+  name: jvagent/brave_web_search
+  author: V75 Inc.
+  archetype: BraveWebSearchAction
+  version: 1.0.0
+  meta:
+    title: Brave Web Search Action
+    description: Web search action using the Brave Search REST API.
+    group: jvagent
+    type: web_search_action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - httpx>=0.24.0
