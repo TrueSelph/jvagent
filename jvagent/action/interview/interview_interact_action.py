@@ -174,7 +174,11 @@ class InterviewInteractAction(InteractAction, ABC):
     @property
     def config(self) -> InterviewConfig:
         """Interview config from metadata (always InterviewConfig, not raw dict)."""
+        logger = logging.getLogger(__name__)
         raw = super().config
+        logger.warning("raw")
+        logger.warning(type(raw))
+        logger.warning(raw)
         return InterviewConfig.from_dict(raw if isinstance(raw, dict) else {})
 
     def __init_subclass__(cls, **kwargs):
