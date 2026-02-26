@@ -294,9 +294,8 @@ class ClassificationHandler:
 
         # Format context data for LLM - focus on lists of options
         # Use configurable threshold for compact display
-        classification_config = self.action.config.classification
-        compact_threshold = classification_config.context_list_compact_threshold
-        options_text = classification_config.context_options_text
+        compact_threshold = self.action.context_list_compact_threshold
+        options_text = self.action.context_options_text
 
         context_notes = []
         for key, value in context_data.items():
@@ -582,30 +581,29 @@ class ClassificationHandler:
 
             # Get conversation history for model API (passed as separate messages, not embedded in prompt)
             conversation_history_list = None
-            if self.action.config.model.use_history:
+            if self.action.use_history:
                 conversation_history_list = await self.action._get_conversation_history(
                     interaction,
-                    self.action.config.model.history_limit,
+                    self.action.history_limit,
                     with_utterance=True,
                     with_response=True,
                     with_interpretation=False,
                     with_event=False,
-                    max_statement_length=self.action.config.model.max_statement_length,
+                    max_statement_length=self.action.max_statement_length,
                 )
 
             # Build classification rules using configuration options
             from ..foundation.prompts import build_classification_rules
 
-            classification_config = self.action.config.classification
             classification_rules_core = build_classification_rules(
-                include_reasoning=classification_config.require_structured_reasoning,
-                include_examples=classification_config.include_few_shot_examples,
-                include_reference_resolution=classification_config.enable_reference_resolution,
-                include_composition=classification_config.enable_composition,
-                max_examples=classification_config.max_examples,
+                include_reasoning=self.action.require_structured_reasoning,
+                include_examples=self.action.include_few_shot_examples,
+                include_reference_resolution=self.action.enable_reference_resolution,
+                include_composition=self.action.enable_composition,
+                max_examples=self.action.max_examples,
             )
 
-            prompt = self.action.config.templates.interview_prompt.format(
+            prompt = self.action.interview_prompt.format(
                 user_input=user_input,
                 current_state=context["current_state"],
                 current_question=context["current_question"],
@@ -641,9 +639,9 @@ class ClassificationHandler:
                 system=prompt,
                 history=conversation_history,
                 calling_action_name=self.action.get_class_name(),
-                model=self.action.config.model.model,
-                temperature=self.action.config.model.model_temperature,
-                max_tokens=self.action.config.model.model_max_tokens,
+                model=self.action.model,
+                temperature=self.action.model_temperature,
+                max_tokens=self.action.model_max_tokens,
                 response_format={"type": "json_object"},
             )
 

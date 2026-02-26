@@ -378,7 +378,7 @@ class QuestionNode(Node):
                 # REQUIRED: return directive insisting on answer
                 if self._interview_action:
                     decline_template = (
-                        self._interview_action.config.templates.required_field_decline
+                        self._interview_action.required_field_decline
                     )
                     if decline_template:
                         field_display = question_key.replace("_", " ").title()
@@ -396,7 +396,7 @@ class QuestionNode(Node):
         if not self._interview_action:
             return None
 
-        directive_template = self._interview_action.config.templates.question_directive
+        directive_template = self._interview_action.question_directive
         if not directive_template:
             return None
 
