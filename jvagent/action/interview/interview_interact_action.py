@@ -28,9 +28,23 @@ from .core.classification.classification_handler import (
     ClassificationHandler,
     ClassificationResult,
 )
-from .core.foundation.config import InterviewConfig, ModelConfig, TemplateConfig
 from .core.foundation.enums import Intent, InterviewState
 from .core.foundation.exceptions import QuestionNotFoundError
+from .core.foundation.prompts import (
+    CANCELLATION_MESSAGE,
+    COMPLETION_MESSAGE,
+    INTERVIEW_PROMPT,
+    QUESTION_DIRECTIVE,
+    REQUIRED_FIELD_DECLINE,
+    REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS,
+    REVIEW_CONFIRMATION_DEFAULT_PROMPT,
+    REVIEW_CONFIRMATION_DIRECTIVE,
+    REVIEW_SUMMARY_HEADER,
+    REVIEW_SUMMARY_ITEM,
+    REVIEW_UNCLEAR_EDIT_DIRECTIVE,
+    REVIEW_UNCLEAR_GENERAL_DIRECTIVE,
+    UPDATE_PROMPT_FOR_VALUE,
+)
 from .core.graph.interview_walker import InterviewWalker
 from .core.graph.question_edge import QuestionEdge
 from .core.graph.question_graph_builder import QuestionGraphBuilder
@@ -171,15 +185,115 @@ class InterviewInteractAction(InteractAction, ABC):
         ),
     )
 
-    @property
-    def config(self) -> InterviewConfig:
-        """Interview config from metadata (always InterviewConfig, not raw dict)."""
-        logger = logging.getLogger(__name__)
-        raw = super().config
-        logger.warning("raw")
-        logger.warning(type(raw))
-        logger.warning(raw)
-        return InterviewConfig.from_dict(raw if isinstance(raw, dict) else {})
+    # =========================================================================
+    # Model Configuration Attributes
+    # =========================================================================
+    model_action_type: str = attribute(
+        default="OpenAILanguageModelAction",
+        description="Type of language model action to use",
+    )
+    model: str = attribute(
+        default="gpt-4o", description="Name of the language model to use"
+    )
+    model_temperature: float = attribute(
+        default=0.1, description="Sampling temperature for the model"
+    )
+    model_max_tokens: int = attribute(
+        default=8192, description="Maximum tokens for model response"
+    )
+    use_history: bool = attribute(
+        default=True, description="Whether to include conversation history"
+    )
+    max_statement_length: int = attribute(
+        default=500, description="Maximum length of history statements"
+    )
+    history_limit: int = attribute(
+        default=3, description="Maximum number of history turns to include"
+    )
+
+    # =========================================================================
+    # Template Configuration Attributes
+    # =========================================================================
+    summary_header: str = attribute(
+        default=REVIEW_SUMMARY_HEADER, description="Header for interview summary"
+    )
+    summary_item: str = attribute(
+        default=REVIEW_SUMMARY_ITEM, description="Template for summary items"
+    )
+    review_confirmation: str = attribute(
+        default=REVIEW_CONFIRMATION_DIRECTIVE,
+        description="Template for review confirmation prompt",
+    )
+    confirmation_instructions: str = attribute(
+        default=REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS,
+        description="Default instructions for review confirmation",
+    )
+    confirmation_prompt: str = attribute(
+        default=REVIEW_CONFIRMATION_DEFAULT_PROMPT,
+        description="Default prompt for review confirmation",
+    )
+    review_unclear_edit: str = attribute(
+        default=REVIEW_UNCLEAR_EDIT_DIRECTIVE,
+        description="Directive for unclear edit requests",
+    )
+    review_unclear_general: str = attribute(
+        default=REVIEW_UNCLEAR_GENERAL_DIRECTIVE,
+        description="Directive for general unclear review feedback",
+    )
+    update_prompt_for_value: str = attribute(
+        default=UPDATE_PROMPT_FOR_VALUE, description="Template for update prompt"
+    )
+    completion_message: str = attribute(
+        default=COMPLETION_MESSAGE, description="Message shown on completion"
+    )
+    cancellation_message: str = attribute(
+        default=CANCELLATION_MESSAGE, description="Message shown on cancellation"
+    )
+    question_directive: str = attribute(
+        default=QUESTION_DIRECTIVE, description="Directive for asking questions"
+    )
+    required_field_decline: str = attribute(
+        default=REQUIRED_FIELD_DECLINE, description="Template for required field decline"
+    )
+    interview_prompt: str = attribute(
+        default=INTERVIEW_PROMPT, description="Base prompt for interview orchestration"
+    )
+
+    # =========================================================================
+    # Classification Configuration Attributes
+    # =========================================================================
+    context_list_compact_threshold: int = attribute(
+        default=5, description="Max list length for inline display"
+    )
+    context_options_text: str = attribute(
+        default="options available", description="Text for long option lists"
+    )
+    decline_value: str = attribute(
+        default="n/a", description="Value stored when an optional field is declined"
+    )
+    require_structured_reasoning: bool = attribute(
+        default=True, description="Require structured reasoning from LLM"
+    )
+    include_few_shot_examples: bool = attribute(
+        default=True, description="Include examples in prompt"
+    )
+    max_examples: int = attribute(
+        default=5, description="Max number of examples to include"
+    )
+    enable_reference_resolution: bool = attribute(
+        default=True, description="Enable reference resolution section"
+    )
+    enable_composition: bool = attribute(
+        default=True, description="Enable multi-turn composition section"
+    )
+
+    # =========================================================================
+    # Interview Execution Attributes
+    # =========================================================================
+    auto_confirm: bool = attribute(
+        default=False, description="Skip confirmation prompt in REVIEW state"
+    )
+
 
     def __init_subclass__(cls, **kwargs):
         """Initialize subclass and collect decorator-registered handlers/validators."""
@@ -413,6 +527,19 @@ class InterviewInteractAction(InteractAction, ABC):
 
         # Update the anchors attribute
         self.anchors = merged_anchors
+
+    def get_state_event_message(self, state: str) -> str:
+        """Get formatted state event message for the current interview.
+
+        Args:
+            state: Interview state (ACTIVE, REVIEW, COMPLETED, CANCELLED)
+
+        Returns:
+            Formatted event message string
+        """
+        from .core.foundation.prompts import get_state_event_message
+
+        return get_state_event_message(state, self.get_class_name())
 
     async def _get_question_node(
         self, field: str, session: InterviewSession
@@ -684,7 +811,7 @@ class InterviewInteractAction(InteractAction, ABC):
                 interview_type=interview_type,
                 question_graph=question_graph,
                 state=InterviewState.ACTIVE,
-                auto_confirm=self.config.auto_confirm,
+                auto_confirm=self.auto_confirm,
             )
             session.started_at = await self.now()
             await session.save()
