@@ -11,7 +11,6 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
 import yaml
 
 from jvagent.action.base import Action
-from jvagent.core.dependency_installer import install_action_dependencies
 from jvagent.core.env_resolver import resolve_env_placeholders
 
 logger = logging.getLogger(__name__)
@@ -442,6 +441,8 @@ class ActionLoader:
             action_dir: Action directory path
         """
         try:
+            from jvagent.core.dependency_installer import install_action_dependencies
+
             install_action_dependencies(data, action_name, action_dir)
         except Exception as e:
             logger.warning(f"Error installing dependencies for {action_name}: {e}")
@@ -2091,8 +2092,8 @@ class ActionLoader:
                     ):
                         loaded_modules.append(parent_module)
 
-            # Store metadata in private field (including agent_name for path construction)
-            action._metadata = {
+            # Store metadata in public field (including agent_name for path construction)
+            action.metadata = {
                 "name": metadata.name,
                 "title": metadata.title,
                 "namespace": metadata.namespace,
