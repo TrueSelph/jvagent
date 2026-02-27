@@ -166,28 +166,26 @@ actions:
         ), "description not overridden"
         # Note: Custom attributes may not persist after database round-trip
         # They are set during creation but may be lost when deserialized as base Action class
-        # Check if attribute exists before asserting (it may be in _metadata or context)
+        # Check if attribute exists before asserting (it may be in metadata or context)
         if hasattr(action, "custom_timeout"):
             assert action.custom_timeout == 60, "custom_timeout not overridden"
         if hasattr(action, "custom_retries"):
             assert action.custom_retries == 5, "custom_retries not overridden"
-        # Config is stored in _metadata which may not persist after database round-trip
-        # Check if config is available (either through property or _metadata)
+        # Config is stored in metadata which may not persist after database round-trip
+        # Check if config is available (either through property or metadata)
         config_value = None
         if action.config:
             config_value = action.config.get("api_key")
-        if not config_value and action._metadata:
+        if not config_value and action.metadata:
             merged_config = {
-                **action._metadata.get("config", {}),
-                **action._metadata.get("config_overrides", {}),
+                **action.metadata.get("config", {}),
+                **action.metadata.get("config_overrides", {}),
             }
             config_value = merged_config.get("api_key")
-        # Note: Config may not persist after database round-trip due to _metadata being private
-        # This test verifies the override mechanism works, even if persistence has limitations
         if config_value:
             assert (
                 config_value == "override_key"
-            ), f"config not overridden. config={action.config}, _metadata={action._metadata}"
+            ), f"config not overridden. config={action.config}, metadata={action.metadata}"
 
     @pytest.mark.asyncio
     async def test_property_vs_config_distinction(self, temp_dir, test_db):
@@ -274,16 +272,14 @@ actions:
         # They are set during creation but may be lost when deserialized as base Action class
         if hasattr(action, "max_retries"):
             assert action.max_retries == 10, "Property not overridden"
-        # Config is stored in _metadata which may not persist after database round-trip
-        # Check if config is available (either through property or _metadata)
+        # Config is stored in metadata which may not persist after database round-trip
+        # Check if config is available (either through property or metadata)
         merged_config = {}
         if action.config:
             merged_config.update(action.config)
-        if action._metadata:
-            merged_config.update(action._metadata.get("config", {}))
-            merged_config.update(action._metadata.get("config_overrides", {}))
-        # Note: Config may not persist after database round-trip due to _metadata being private
-        # This test verifies the override mechanism works, even if persistence has limitations
+        if action.metadata:
+            merged_config.update(action.metadata.get("config", {}))
+            merged_config.update(action.metadata.get("config_overrides", {}))
         if merged_config:
             assert (
                 merged_config.get("api_key") == "agent_key"

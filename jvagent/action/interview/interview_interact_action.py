@@ -52,10 +52,11 @@ from .core.graph.question_node import QuestionNode
 from .core.graph.question_path_walker import QuestionPathWalker
 from .core.graph.state_node import StateNode
 from .core.processing.directive_builder import DirectiveBuilder
+from .core.processing.target_resolver import TargetResolver
 from .core.session.interview_session import InterviewSession
 from .core.utils.cache_utils import BranchCache, QuestionNodeCache
 from .core.utils.constants import CACHE_KEY_QUESTION_NODES
-from .core.utils.session_utils import cleanup_session
+from .core.utils.session_utils import cleanup_session, get_graph_order
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -253,7 +254,8 @@ class InterviewInteractAction(InteractAction, ABC):
         default=QUESTION_DIRECTIVE, description="Directive for asking questions"
     )
     required_field_decline: str = attribute(
-        default=REQUIRED_FIELD_DECLINE, description="Template for required field decline"
+        default=REQUIRED_FIELD_DECLINE,
+        description="Template for required field decline",
     )
     interview_prompt: str = attribute(
         default=INTERVIEW_PROMPT, description="Base prompt for interview orchestration"
@@ -293,7 +295,6 @@ class InterviewInteractAction(InteractAction, ABC):
     auto_confirm: bool = attribute(
         default=False, description="Skip confirmation prompt in REVIEW state"
     )
-
 
     def __init_subclass__(cls, **kwargs):
         """Initialize subclass and collect decorator-registered handlers/validators."""
@@ -631,140 +632,29 @@ class InterviewInteractAction(InteractAction, ABC):
         question_node = await self.node(node=QuestionNode)
         return question_node
 
+    @property
+    def _target_resolver(self) -> TargetResolver:
+        """Lazy-instantiated TargetResolver for target node resolution."""
+        if not hasattr(self, "_target_resolver_instance"):
+            self._target_resolver_instance = TargetResolver(self)
+        return self._target_resolver_instance
+
     async def _resolve_target_node(
         self,
         session: InterviewSession,
         intent: Intent,
         visitor: Optional["InteractWalker"] = None,
     ) -> None:
-        """Determine and set session.target_node based on intent, state, and interview progress.
+        """Determine and set session.target_node based on intent, state, and progress.
 
-        Rules (evaluated in order):
-        - CANCELLATION intent → CancelledStateNode
-        - CONFIRMATION in REVIEW state → CompletedStateNode
-        - UPDATE intent → First question node (re-evaluate from beginning)
-        - ACTIVE + all answered → ReviewStateNode
-        - ACTIVE + DECLINE → Keep current target_node (QuestionNode handles logic)
-        - ACTIVE + NONE → First unanswered (if target not set)
-        - ACTIVE + SUBMISSION → Last answered question node
-        - REVIEW + other → ReviewStateNode (re-show summary)
-        - Fallback → First question node
+        Delegates to TargetResolver for resolution logic.
 
         Args:
             session: Interview session
             intent: Detected user intent
             visitor: Optional InteractWalker for branch function evaluation
         """
-        current_state = session.state
-
-        changed = False
-
-        # CANCELLATION — always goes to cancelled state
-        if intent == Intent.CANCELLATION:
-            node = await self.get_state_node(InterviewState.CANCELLED)
-            session.target_node = node.id if node else None
-            changed = True
-
-        # CONFIRMATION in REVIEW state — goes to completed
-        elif intent == Intent.CONFIRMATION and current_state == InterviewState.REVIEW:
-            node = await self.get_state_node(InterviewState.COMPLETED)
-            session.target_node = node.id if node else None
-            changed = True
-
-        # UPDATE or pending update queue — resolve to earliest queue entry
-        elif intent == Intent.UPDATE or (
-            session.update_queue and intent in (Intent.SUBMISSION, Intent.NONE)
-        ):
-            if session.update_queue:
-                earliest_field = session.update_queue[0]["field"]
-
-                # If there are unanswered questions BEFORE the earliest queued field,
-                # start from the first question to collect them before reaching the queue entry.
-                # This handles premature data_input_field submissions.
-                first_node = await self._get_first_question_node(session)
-                next_unanswered = await QuestionPathWalker.find_next_target(
-                    session, first_node, visitor, self
-                )
-                if next_unanswered:
-                    graph_order = {
-                        q["name"]: i
-                        for i, q in enumerate(session.question_graph)
-                        if q.get("name")
-                    }
-                    first_unanswered_idx = graph_order.get(
-                        (
-                            next_unanswered.state.get("name", next_unanswered.label)
-                            if hasattr(next_unanswered, "state")
-                            else next_unanswered.label
-                        ),
-                        999,
-                    )
-                    earliest_queue_idx = graph_order.get(earliest_field, 999)
-
-                    if first_unanswered_idx < earliest_queue_idx:
-                        # Premature submission: start from beginning so walker collects
-                        # unanswered questions before reaching the queued field
-                        session.target_node = first_node.id if first_node else None
-                    else:
-                        node = await self._get_question_node(earliest_field, session)
-                        session.target_node = node.id if node else None
-                else:
-                    node = await self._get_question_node(earliest_field, session)
-                    session.target_node = node.id if node else None
-            else:
-                first_question = await self._get_first_question_node(session)
-                session.target_node = first_question.id if first_question else None
-            session.state = InterviewState.ACTIVE  # Return to ACTIVE if was in REVIEW
-            changed = True
-
-        # Handle ACTIVE state intents
-        elif current_state == InterviewState.ACTIVE:
-            # Check if all reachable questions answered → REVIEW
-            first_node = await self._get_first_question_node(session)
-            next_unanswered = await QuestionPathWalker.find_next_target(
-                session, first_node, visitor, self
-            )
-            if not next_unanswered:  # All reachable questions answered
-                node = await self.get_state_node(InterviewState.REVIEW)
-                session.target_node = node.id if node else None
-                changed = True
-            elif intent == Intent.DECLINE:
-                # Keep current target_node — QuestionNode handles DECLINE logic
-                # (required: returns decline directive, optional: sets N/A and continues)
-                if not session.target_node:
-                    session.target_node = next_unanswered.id
-                    changed = True
-            elif intent == Intent.NONE:
-                if not session.target_node:
-                    session.target_node = next_unanswered.id
-                    changed = True
-            elif intent == Intent.SUBMISSION:
-                # SUBMISSION: Start from first question to ensure sequential flow.
-                # The walker traverses forward, skipping answered questions and
-                # stopping at the first unanswered (or reaching REVIEW if all answered).
-                # Reuse first_node from the check above to avoid redundant call.
-                session.target_node = first_node.id if first_node else None
-                changed = True
-            else:
-                # Other intents: start from first question
-                first_question = await self._get_first_question_node(session)
-                session.target_node = first_question.id if first_question else None
-                changed = True
-
-        # Handle REVIEW state (non-CONFIRMATION, non-UPDATE)
-        elif current_state == InterviewState.REVIEW:
-            node = await self.get_state_node(InterviewState.REVIEW)
-            session.target_node = node.id if node else None
-            changed = True
-
-        # Fallback — start from first question
-        else:
-            first_question = await self._get_first_question_node(session)
-            session.target_node = first_question.id if first_question else self.id
-            changed = True
-
-        if changed:
-            await session.save()
+        await self._target_resolver.resolve(session, intent, visitor)
 
     def _get_question_graph(self) -> List[Dict[str, Any]]:
         """Get question graph.
@@ -773,6 +663,61 @@ class InterviewInteractAction(InteractAction, ABC):
             List of question configuration dictionaries
         """
         return self.question_graph
+
+    def _build_and_apply_update_queue(
+        self,
+        session: InterviewSession,
+        updates: Dict[str, Any],
+        merge_existing: bool,
+    ) -> bool:
+        """Build update queue entries from updates dict and apply to session.
+
+        Sets session responses, appends or merges into update_queue by graph order,
+        and invalidates branch cache when merge_existing is True.
+
+        Args:
+            session: Interview session
+            updates: Dict of field -> value to apply
+            merge_existing: If True, merge with existing queue (replace by field)
+                           and invalidate branch cache. If False, append only.
+
+        Returns:
+            True if any updates were applied, False otherwise
+        """
+        if not updates:
+            return False
+
+        graph_order = get_graph_order(session.question_graph)
+        sorted_fields = sorted(updates.keys(), key=lambda f: graph_order.get(f, 999))
+
+        queue_entries = []
+        for field in sorted_fields:
+            old_value = session.get_response(field)
+            session.set_response(field, updates[field])
+            queue_entries.append(
+                {"field": field, "value": updates[field], "old_value": old_value}
+            )
+
+        if merge_existing:
+            existing_fields = {e["field"] for e in session.update_queue}
+            for entry in queue_entries:
+                if entry["field"] in existing_fields:
+                    session.update_queue = [
+                        entry if e["field"] == entry["field"] else e
+                        for e in session.update_queue
+                    ]
+                else:
+                    session.update_queue.append(entry)
+            session.update_queue.sort(key=lambda e: graph_order.get(e["field"], 999))
+            if session.update_queue:
+                BranchCache(session).invalidate_from(
+                    session.update_queue[0]["field"], session.question_graph
+                )
+        else:
+            for entry in queue_entries:
+                session.update_queue.append(entry)
+
+        return True
 
     async def _get_or_create_session(self, conversation: Any) -> InterviewSession:
         """Load existing active session or create and attach a new one.
@@ -922,6 +867,9 @@ class InterviewInteractAction(InteractAction, ABC):
         session = await self._get_or_create_session(conversation)
         visitor.interview_session = session
 
+        # Reset directive builder event tracking for this execution
+        self.directive_builder.reset_event_tracking()
+
         # Get utterance
         utterance = visitor.utterance if visitor.utterance else ""
 
@@ -940,28 +888,9 @@ class InterviewInteractAction(InteractAction, ABC):
         had_updates = False
         if intent == Intent.SUBMISSION and classification_result.extracted_data:
             # Route SUBMISSION values through update_queue to ensure validation pipeline runs
-            # This ensures @input_validator decorators fire for newly submitted values
-            graph_order = {
-                q["name"]: i
-                for i, q in enumerate(session.question_graph)
-                if q.get("name")
-            }
-            sorted_fields = sorted(
-                classification_result.extracted_data.keys(),
-                key=lambda f: graph_order.get(f, 999),
+            had_updates = self._build_and_apply_update_queue(
+                session, classification_result.extracted_data, merge_existing=False
             )
-            for field in sorted_fields:
-                value = classification_result.extracted_data[field]
-                old_value = session.get_response(field)
-                session.set_response(field, value)
-                session.update_queue.append(
-                    {
-                        "field": field,
-                        "value": value,
-                        "old_value": old_value,
-                    }
-                )
-            had_updates = bool(sorted_fields)
         elif intent == Intent.UPDATE:
             # Collect updates from extracted_data (multi-field) or field/value (single-field)
             updates = {}
@@ -971,50 +900,9 @@ class InterviewInteractAction(InteractAction, ABC):
                 updates = {classification_result.field: classification_result.value}
 
             if updates:
-                had_updates = True
-                # Build queue entries sorted by graph order
-                graph_order = {
-                    q["name"]: i
-                    for i, q in enumerate(session.question_graph)
-                    if q.get("name")
-                }
-                sorted_fields = sorted(
-                    updates.keys(), key=lambda f: graph_order.get(f, 999)
+                had_updates = self._build_and_apply_update_queue(
+                    session, updates, merge_existing=True
                 )
-
-                queue_entries = []
-                for field in sorted_fields:
-                    old_value = session.get_response(field)
-                    queue_entries.append(
-                        {
-                            "field": field,
-                            "value": updates[field],
-                            "old_value": old_value,
-                        }
-                    )
-                    session.set_response(field, updates[field])
-
-                # Merge with any existing pending queue entries (from previous failed validation)
-                existing_fields = {e["field"] for e in session.update_queue}
-                for entry in queue_entries:
-                    if entry["field"] in existing_fields:
-                        session.update_queue = [
-                            entry if e["field"] == entry["field"] else e
-                            for e in session.update_queue
-                        ]
-                    else:
-                        session.update_queue.append(entry)
-
-                # Re-sort merged queue by graph order
-                session.update_queue.sort(
-                    key=lambda e: graph_order.get(e["field"], 999)
-                )
-
-                # Invalidate branch cache from earliest update onward
-                if session.update_queue:
-                    BranchCache(session).invalidate_from(
-                        session.update_queue[0]["field"], session.question_graph
-                    )
 
         # 4. Determine target node based on intent and state
         await self._resolve_target_node(session, intent, visitor)

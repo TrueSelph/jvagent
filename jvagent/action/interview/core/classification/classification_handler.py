@@ -472,6 +472,10 @@ class ClassificationHandler:
             )
 
             if key in answered_fields:
+                val = session.get_response(key)
+                value_str = str(val) if val is not None else "None"
+                if len(value_str) > 100:
+                    value_str = value_str[:97] + "..."
                 answered_entities_list.append(
                     f'- {key} {required_marker} {mode_marker} — Expected: "{desc}" | Value: {value_str}'
                 )
@@ -741,32 +745,30 @@ class ClassificationHandler:
                 return self._build_result_from_data_inputs(data_input_values, session)
             return ClassificationResult(intent=Intent.NONE)
 
-    def _format_conversation_history_for_prompt(
+    def _partition_data_input_fields(
         self,
-        history: Optional[List[Dict[str, Any]]],
-    ) -> str:
-        """Format conversation history for inclusion in the classification prompt.
+        data_input_values: Dict[str, Any],
+        session: InterviewSession,
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """Partition data input values into UPDATE vs SUBMISSION based on session.
 
-        Adds turn numbers to help the LLM reason about multi-turn composition
-        and reference resolution.
+        Fields with existing session values are UPDATE; fields without are SUBMISSION.
 
         Args:
-            history: List of message dicts with 'role' and 'content' (from get_interaction_history formatted=True).
+            data_input_values: Dict mapping question names to values from visitor.data
+            session: Interview session
 
         Returns:
-            String suitable for the conversation_history prompt placeholder; "(none)" if empty.
+            Tuple of (update_fields, submission_fields)
         """
-        if not history:
-            return "(none)"
-        lines = []
-        turn_number = 1
-        for msg in history:
-            role = (msg.get("role") or "unknown").strip().lower()
-            content = (msg.get("content") or "").strip()
-            if content:
-                lines.append(f"[{turn_number}] {role}: {content}")
-                turn_number += 1
-        return "\n".join(lines) if lines else "(none)"
+        update_fields: Dict[str, Any] = {}
+        submission_fields: Dict[str, Any] = {}
+        for field_name, value in data_input_values.items():
+            if session.get_response(field_name) is not None:
+                update_fields[field_name] = value
+            else:
+                submission_fields[field_name] = value
+        return update_fields, submission_fields
 
     def _build_result_from_data_inputs(
         self, data_input_values: Dict[str, Any], session: InterviewSession
@@ -791,18 +793,9 @@ class ClassificationHandler:
         if not data_input_values:
             return ClassificationResult(intent=Intent.NONE)
 
-        # Separate fields into UPDATE (existing value) and SUBMISSION (no existing value)
-        update_fields = {}  # Fields that already have values - treat as UPDATE
-        submission_fields = {}  # Fields without values - treat as SUBMISSION
-
-        for field_name, value in data_input_values.items():
-            existing_value = session.get_response(field_name)
-            if existing_value is not None:
-                # Field already has a value - treat as UPDATE
-                update_fields[field_name] = value
-            else:
-                # Field doesn't have a value - treat as SUBMISSION
-                submission_fields[field_name] = value
+        update_fields, submission_fields = self._partition_data_input_fields(
+            data_input_values, session
+        )
 
         # Handle UPDATE fields (fields with existing values)
         if update_fields:
@@ -870,18 +863,9 @@ class ClassificationHandler:
         # Mark that data_input_field contributed to this result
         classification_result.from_data_input_field = True
 
-        # Separate fields into UPDATE (existing value) and SUBMISSION (no existing value)
-        update_fields = {}  # Fields that already have values - treat as UPDATE
-        submission_fields = {}  # Fields without values - treat as SUBMISSION
-
-        for field_name, value in data_input_values.items():
-            existing_value = session.get_response(field_name)
-            if existing_value is not None:
-                # Field already has a value - treat as UPDATE
-                update_fields[field_name] = value
-            else:
-                # Field doesn't have a value - treat as SUBMISSION
-                submission_fields[field_name] = value
+        update_fields, submission_fields = self._partition_data_input_fields(
+            data_input_values, session
+        )
 
         # Handle UPDATE fields (fields with existing values)
         if update_fields:

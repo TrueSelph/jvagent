@@ -2092,7 +2092,7 @@ class ActionLoader:
                     ):
                         loaded_modules.append(parent_module)
 
-            # Store metadata in public field (including agent_name for path construction)
+            # Store metadata (including agent_name for path construction)
             action.metadata = {
                 "name": metadata.name,
                 "title": metadata.title,

@@ -11,10 +11,15 @@ from .handler_utils import (
     invoke_with_optional_context,
 )
 from .json_utils import extract_json
-from .session_utils import cleanup_session, sort_fields_by_question_order
+from .session_utils import (
+    cleanup_session,
+    get_graph_order,
+    sort_fields_by_question_order,
+)
 
 __all__ = [
     "cleanup_session",
+    "get_graph_order",
     "sort_fields_by_question_order",
     "QuestionNodeCache",
     "CACHE_KEY_QUESTION_NODES",
