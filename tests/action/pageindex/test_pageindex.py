@@ -1,9 +1,12 @@
 """Tests for PageIndex named collections and metadata."""
 
+import pytest
+
+pytest.importorskip("openai")
+
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from jvspatial.db import unregister_database
 
 from jvagent.action.pageindex.adapter import persist_structure
