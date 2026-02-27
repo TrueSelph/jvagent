@@ -1,5 +1,6 @@
 """InterviewSession node for managing interview state."""
 
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -448,8 +449,6 @@ class InterviewSession(Node):
             "completed_at": self.completed_at,
             "validation_results": self.validation_results.copy(),
         }
-
-    from contextlib import asynccontextmanager
 
     @asynccontextmanager
     async def batch_save(self):

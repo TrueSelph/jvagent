@@ -128,8 +128,10 @@ class Action(Node):
     description: str = attribute(
         default="basic agent action", description="Description of what the action does"
     )
-    # Package metadata Information (loaded from info.yaml)
-    metadata: Dict[str, Any] = attribute(default_factory=dict)
+    metadata: Dict[str, Any] = attribute(
+        default_factory=dict,
+        description="Package metadata from info.yaml (name, version, config, etc.)",
+    )
 
     def get_class_name(self) -> str:
         """Get the class name of this action.

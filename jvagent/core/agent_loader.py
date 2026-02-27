@@ -502,7 +502,7 @@ class AgentLoader:
                     existing_action = existing_map[(namespace, label)]
                     try:
                         # Get metadata to determine if this is a core action
-                        metadata_dict = existing_action._metadata
+                        metadata_dict = existing_action.metadata
                         is_core = metadata_dict.get("is_core_action", False)
                         core_module_path = metadata_dict.get("core_module_path")
 

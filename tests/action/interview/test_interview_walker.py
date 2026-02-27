@@ -7,6 +7,7 @@ import pytest
 from jvagent.action.interview.core.foundation.enums import Intent, InterviewState
 from jvagent.action.interview.core.graph.interview_walker import InterviewWalker
 from jvagent.action.interview.core.graph.question_node import QuestionNode
+from jvagent.action.interview.core.processing.target_resolver import TargetResolver
 from jvagent.action.interview.core.session.interview_session import InterviewSession
 from jvagent.action.interview.interview_interact_action import InterviewInteractAction
 
@@ -198,9 +199,8 @@ class TestResolveTargetNodeOutOfOrder:
             new_callable=AsyncMock,
             return_value=first_node,
         ):
-            await InterviewInteractAction._resolve_target_node(
-                action, session, Intent.SUBMISSION
-            )
+            resolver = TargetResolver(action)
+            await resolver.resolve(session, Intent.SUBMISSION)
 
         assert session.target_node == "first_question_node_id"
         action._get_first_question_node.assert_called_once_with(session)

@@ -4,7 +4,7 @@ Extracted from duplicate session cleanup and helper code.
 """
 
 import logging
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -12,6 +12,18 @@ if TYPE_CHECKING:
     from ..session.interview_session import InterviewSession
 
 logger = logging.getLogger(__name__)
+
+
+def get_graph_order(question_graph: List[dict]) -> Dict[str, int]:
+    """Get mapping of question names to their index in question_graph.
+
+    Args:
+        question_graph: List of question configuration dicts
+
+    Returns:
+        Dict mapping question name to index (0-based). Unknown names use 999.
+    """
+    return {q["name"]: i for i, q in enumerate(question_graph) if q.get("name")}
 
 
 async def cleanup_session(

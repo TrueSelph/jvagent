@@ -19,11 +19,6 @@ package:
     group: jvagent
     type: interact_action
 
-  # Package configuration
-  config:
-    order:
-      weight: -50
-
   # Package dependencies
   dependencies:
     # jvagent version requirement

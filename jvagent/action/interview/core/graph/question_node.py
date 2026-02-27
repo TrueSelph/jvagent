@@ -377,9 +377,7 @@ class QuestionNode(Node):
             if is_required:
                 # REQUIRED: return directive insisting on answer
                 if self._interview_action:
-                    decline_template = (
-                        self._interview_action.required_field_decline
-                    )
+                    decline_template = self._interview_action.required_field_decline
                     if decline_template:
                         field_display = question_key.replace("_", " ").title()
                         question = self.state.get("question", "")
