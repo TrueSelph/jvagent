@@ -229,6 +229,13 @@ class WhatsAppAction(Action):
         if not self.is_configured() or not self.enabled:
             return
 
+        agent = await self.get_agent()
+        if not agent:
+            logger.warning(
+                "WhatsAppAction: agent not found, skipping filter/adapter initialization"
+            )
+            return
+
         try:
             timeout_str = os.environ.get(
                 "WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS", "120"
@@ -238,7 +245,7 @@ class WhatsAppAction(Action):
             desired_timeout = 120
 
         filter = WhatsAppFilter(channels=["whatsapp"], priority=100)
-        if not await filter.initialize():
+        if not await filter.initialize(agent=agent):
             logger.warning("WhatsAppFilter initialization failed")
 
         original_timeout = self.request_timeout
@@ -267,7 +274,7 @@ class WhatsAppAction(Action):
             self.request_timeout = original_timeout
 
         adapter = WhatsAppAdapter(action=self)
-        if not await adapter.initialize():
+        if not await adapter.initialize(agent=agent):
             logger.error("WhatsAppAdapter initialization failed")
 
     def is_session_registered(self) -> bool:
@@ -280,13 +287,11 @@ class WhatsAppAction(Action):
             return False
 
         try:
-            from jvagent.core.app import App
-
-            app = await App.get()
-            if not app:
+            agent = await self.get_agent()
+            if not agent:
                 return False
 
-            response_bus = await app.get_response_bus()
+            response_bus = await agent.get_response_bus()
             if not response_bus:
                 return False
 
@@ -295,7 +300,7 @@ class WhatsAppAction(Action):
                 return True
 
             adapter = WhatsAppAdapter(action=self)
-            return await adapter.initialize()
+            return await adapter.initialize(agent=agent)
 
         except Exception as e:
             logger.error(f"Error ensuring adapter registration: {e}", exc_info=True)
@@ -532,11 +537,9 @@ class WhatsAppAction(Action):
 
         adapter_initialized = False
         try:
-            from jvagent.core.app import App
-
-            app = await App.get()
-            if app:
-                response_bus = await app.get_response_bus()
+            agent = await self.get_agent()
+            if agent:
+                response_bus = await agent.get_response_bus()
                 if response_bus:
                     adapter = response_bus._channel_adapters.get("whatsapp")
                     if adapter:
