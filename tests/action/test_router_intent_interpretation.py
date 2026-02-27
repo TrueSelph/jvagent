@@ -7,9 +7,19 @@ question (not earlier questions), and accurately assesses conversational state.
 Since the router module has circular dependencies, we test the core formatting logic directly.
 """
 
+from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest
+
+# Resolve prompts.py path relative to project (works in CI and locally)
+_PROMPTS_FILE = (
+    Path(__file__).resolve().parent.parent.parent
+    / "jvagent"
+    / "action"
+    / "router"
+    / "prompts.py"
+)
 
 
 def format_history_for_test(interaction_history: List[Dict[str, Any]]) -> str:
@@ -390,10 +400,7 @@ class TestRouterPromptStructure:
         # Expected: CONVERSATION STATE: first, then CURRENT USER MESSAGE:
 
         # Read the file directly to verify structure
-        import os
-
-        prompts_file = "/Users/eldonmarks/Briefcase/dev/jv/jvagent/jvagent/action/router/prompts.py"
-        with open(prompts_file, "r") as f:
+        with open(_PROMPTS_FILE, "r") as f:
             content = f.read()
 
         # Verify the key structural elements are in the correct order
@@ -415,10 +422,7 @@ class TestRouterPromptStructure:
     def test_prompt_rules_reference_most_recent_assistant(self):
         """Test that routing rules explicitly mention 'most recent' assistant message."""
         # Check directly without importing due to circular dependency
-        import os
-
-        prompts_file = "/Users/eldonmarks/Briefcase/dev/jv/jvagent/jvagent/action/router/prompts.py"
-        with open(prompts_file, "r") as f:
+        with open(_PROMPTS_FILE, "r") as f:
             content = f.read()
 
         # Rules should mention "most recent" to be explicit
@@ -427,10 +431,7 @@ class TestRouterPromptStructure:
     def test_prompt_includes_user_responds_now_marker(self):
         """Test that the prompt includes the USER RESPONDS NOW marker instruction."""
         # Check directly without importing due to circular dependency
-        import os
-
-        prompts_file = "/Users/eldonmarks/Briefcase/dev/jv/jvagent/jvagent/action/router/prompts.py"
-        with open(prompts_file, "r") as f:
+        with open(_PROMPTS_FILE, "r") as f:
             content = f.read()
 
         # Instructions should mention the transition marker or related concept
