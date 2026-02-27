@@ -3,6 +3,7 @@
 import pytest
 
 pytest.importorskip("openai")
+pytest.importorskip("tiktoken")
 
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
