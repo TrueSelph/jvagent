@@ -64,6 +64,7 @@ test = [
     "pytest-cov>=4.0.0",
     "openai>=1.0.0",
     "filetype>=1.2.0",
+    "tiktoken>=0.5.0",
 ]
 
 [project.scripts]
