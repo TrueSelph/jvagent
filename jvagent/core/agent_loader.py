@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
-from jvagent.action.action_loader import ActionLoader
 from jvagent.action.actions import Actions
 from jvagent.action.base import Action
 from jvagent.core.agent import Agent
@@ -97,6 +96,8 @@ class AgentLoader:
         Args:
             base_path: Base path to search for agents. If None, uses current directory.
         """
+        from jvagent.action.action_loader import ActionLoader
+
         self.base_path = Path(base_path or os.getcwd())
         self.action_loader = ActionLoader(str(self.base_path))
 
@@ -501,7 +502,7 @@ class AgentLoader:
                     existing_action = existing_map[(namespace, label)]
                     try:
                         # Get metadata to determine if this is a core action
-                        metadata_dict = existing_action._metadata
+                        metadata_dict = existing_action.metadata
                         is_core = metadata_dict.get("is_core_action", False)
                         core_module_path = metadata_dict.get("core_module_path")
 

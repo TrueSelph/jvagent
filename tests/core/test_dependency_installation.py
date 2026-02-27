@@ -206,7 +206,7 @@ class TestActionLoaderDependencyInstallation:
         }
 
         with patch(
-            "jvagent.action.action_loader.install_action_dependencies"
+            "jvagent.core.dependency_installer.install_action_dependencies"
         ) as mock_install:
             mock_install.return_value = True
             action_loader._ensure_dependencies_installed(

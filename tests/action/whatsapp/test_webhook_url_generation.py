@@ -1,8 +1,17 @@
 """Tests for WhatsApp webhook URL generation with API key authentication."""
 
+import pytest
+
+pytest.importorskip("filetype")
+try:
+    from jvspatial.api.auth.models import UserCreateAdmin
+except ImportError:
+    pytest.skip(
+        "UserCreateAdmin not available in installed jvspatial", allow_module_level=True
+    )
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from jvspatial.api.auth.models import APIKey
 from jvspatial.core.context import GraphContext
 
