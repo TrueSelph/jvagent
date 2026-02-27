@@ -12,6 +12,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+pytest.importorskip("filetype")
+try:
+    from jvspatial.api.auth.models import UserCreateAdmin
+except ImportError:
+    pytest.skip(
+        "UserCreateAdmin not available in installed jvspatial", allow_module_level=True
+    )
+
 from jvagent.action.whatsapp.utils.endpoint_helpers import (
     ConversationLockManager,
     MediaBatchManager,

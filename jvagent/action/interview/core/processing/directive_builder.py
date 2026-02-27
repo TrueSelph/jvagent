@@ -69,10 +69,10 @@ class DirectiveBuilder:
         Returns:
             Formatted summary string
         """
-        templates = self.action.config.templates
+        action = interview_action or self.action
         data = self._build_review_data(session)
 
-        override = self.action.get_input_review_override()
+        override = action.get_input_review_override()
         if override:
             result = await invoke_async_with_optional_context(
                 override,
@@ -84,11 +84,11 @@ class DirectiveBuilder:
             data = result if result is not None else data
 
         lines: List[str] = []
-        if templates.summary_header and templates.summary_header.strip():
-            lines.append(templates.summary_header)
+        if action.summary_header and action.summary_header.strip():
+            lines.append(action.summary_header)
         for field_name, value in data.items():
             display_name = field_name.replace("_", " ").title()
-            line = templates.summary_item.format(
+            line = action.summary_item.format(
                 display_name=display_name,
                 value=value,
             )
@@ -138,13 +138,12 @@ class DirectiveBuilder:
             visitor=visitor,
             interview_action=action,
         )
-        templates = action.config.templates
 
         # Build confirmation directive
-        confirmation = templates.review_confirmation.format(
+        confirmation = action.review_confirmation.format(
             summary=summary,
-            instructions=templates.confirmation_instructions,
-            prompt=templates.confirmation_prompt,
+            instructions=action.confirmation_instructions,
+            prompt=action.confirmation_prompt,
         )
 
         # Prepend custom prefix if provided by review handler
@@ -174,17 +173,13 @@ class DirectiveBuilder:
                         # Skip to avoid duplicate events
                         event_name = None
                     else:
-                        # Use helper function to get state-specific event message
-                        event_name = (
-                            self.action.config.templates.get_state_event_message(
-                                session.state.value, self.action.get_class_name()
-                            )
+                        # Use action helper to get state-specific event message
+                        event_name = self.action.get_state_event_message(
+                            session.state.value
                         )
                 else:
                     # No session available, default to active event
-                    event_name = self.action.config.templates.get_state_event_message(
-                        "ACTIVE", self.action.get_class_name()
-                    )
+                    event_name = self.action.get_state_event_message("ACTIVE")
 
                 # Only add event if one was determined (skip if COMPLETED state already handled)
                 if event_name:
@@ -214,9 +209,7 @@ class DirectiveBuilder:
         # Explicitly add completion event BEFORE cleaning up the session
         # This ensures the event is recorded even if the session is removed
         # Mark event as added to prevent queue_directive from adding it again
-        completion_event = self.action.config.templates.get_state_event_message(
-            "COMPLETED", self.action.get_class_name()
-        )
+        completion_event = self.action.get_state_event_message("COMPLETED")
         await visitor.add_event(completion_event)
         self._event_added = True  # Prevent duplicate event addition in queue_directive
 
@@ -239,14 +232,10 @@ class DirectiveBuilder:
                     exc_info=True,
                 )
                 # Send generic completion message on error
-                await self.queue_directive(
-                    visitor, self.action.config.templates.completion_message
-                )
+                await self.queue_directive(visitor, self.action.completion_message)
         else:
             # No completion handler registered, send generic message
-            await self.queue_directive(
-                visitor, self.action.config.templates.completion_message
-            )
+            await self.queue_directive(visitor, self.action.completion_message)
 
         # Clean up and remove the session (always, regardless of handler success/failure)
         from ..utils.session_utils import cleanup_session
@@ -267,9 +256,7 @@ class DirectiveBuilder:
         # Explicitly add cancellation event BEFORE queue_directive and cleanup
         # This ensures the event is recorded even if the session is removed
         # Mark event as added to prevent queue_directive from adding it again
-        cancellation_event = self.action.config.templates.get_state_event_message(
-            "CANCELLED", self.action.get_class_name()
-        )
+        cancellation_event = self.action.get_state_event_message("CANCELLED")
         await visitor.add_event(cancellation_event)
         self._event_added = True  # Prevent duplicate event addition in queue_directive
 
@@ -292,14 +279,10 @@ class DirectiveBuilder:
                     exc_info=True,
                 )
                 # Send generic cancellation message on error
-                await self.queue_directive(
-                    visitor, self.action.config.templates.cancellation_message
-                )
+                await self.queue_directive(visitor, self.action.cancellation_message)
         else:
             # No cancellation handler registered, send generic message
-            await self.queue_directive(
-                visitor, self.action.config.templates.cancellation_message
-            )
+            await self.queue_directive(visitor, self.action.cancellation_message)
 
         # Clean up and remove the session (always, regardless of handler success/failure)
         from ..utils.session_utils import cleanup_session

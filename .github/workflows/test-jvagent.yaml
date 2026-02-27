@@ -23,7 +23,7 @@ jobs:
           python -m pip install --upgrade pip
 
       - name: Install jvagent package with test dependencies
-        run: pip install -e '.[test]'
+        run: python -m pip install -e '.[test]'
 
       - name: Run tests
         run: pytest tests/ -v --tb=short

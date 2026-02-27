@@ -14,8 +14,8 @@ from .constants import (
 )
 
 if TYPE_CHECKING:
-    from ..interview_session import InterviewSession
-    from ..question_node import QuestionNode
+    from ..graph.question_node import QuestionNode
+    from ..session.interview_session import InterviewSession
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,7 @@ class QuestionNodeCache:
                 cached_node = await Node.get(cached_id)
                 if cached_node:
                     # Check if it's a QuestionNode
-                    from ..question_node import QuestionNode
+                    from ..graph.question_node import QuestionNode
 
                     if isinstance(cached_node, QuestionNode):
                         return cached_node
@@ -146,7 +146,7 @@ class QuestionNodeCache:
 
             cached_node = await Node.get(cached_id)
             if cached_node:
-                from ..question_node import QuestionNode
+                from ..graph.question_node import QuestionNode
 
                 if isinstance(cached_node, QuestionNode):
                     return cached_node

@@ -46,7 +46,7 @@ class Action(Node):
         label: Human-readable label for the action (used as identifier)
         description: Description of what the action does
         enabled: Whether the action is currently enabled
-        _metadata: Package metadata dictionary (private, from info.yaml)
+        metadata: Package metadata dictionary (from info.yaml)
 
     Configuration:
         All action-specific configuration should be defined as typed attributes
@@ -128,8 +128,10 @@ class Action(Node):
     description: str = attribute(
         default="basic agent action", description="Description of what the action does"
     )
-    # Package metadata Information (private - loaded from info.yaml)
-    _metadata: Dict[str, Any] = attribute(private=True, default_factory=dict)
+    metadata: Dict[str, Any] = attribute(
+        default_factory=dict,
+        description="Package metadata from info.yaml (name, version, config, etc.)",
+    )
 
     def get_class_name(self) -> str:
         """Get the class name of this action.
@@ -151,9 +153,9 @@ class Action(Node):
         Returns:
             Configuration dictionary
         """
-        base_config = self._metadata.get("config", {})
-        # Config overrides from agent.yaml are stored separately in _metadata
-        overrides = self._metadata.get("config_overrides", {})
+        base_config = self.metadata.get("config", {})
+        # Config overrides from agent.yaml are stored separately in metadata
+        overrides = self.metadata.get("config_overrides", {})
         # Merge: overrides take precedence
         merged = {**base_config, **overrides}
         return merged
@@ -413,10 +415,10 @@ class Action(Node):
             logger = logging.getLogger(__name__)
 
             # Get list of loaded modules from metadata
-            if not hasattr(self, "_metadata") or not self._metadata:
+            if not hasattr(self, "metadata") or not self.metadata:
                 return 0
 
-            loaded_modules = self._metadata.get("loaded_modules", [])
+            loaded_modules = self.metadata.get("loaded_modules", [])
             if not loaded_modules:
                 return 0
 
@@ -447,7 +449,7 @@ class Action(Node):
                         # Local action modules can be safely unloaded
                         # But check if other actions might be using it
                         # For now, we'll be conservative and only unload if it's clearly this action's module
-                        action_module_pattern = f"jvagent.actions.{self._metadata.get('namespace', '')}.{self._metadata.get('name', '')}"
+                        action_module_pattern = f"jvagent.actions.{self.metadata.get('namespace', '')}.{self.metadata.get('name', '')}"
                         if module_name.startswith(action_module_pattern):
                             # This is this action's specific module, safe to unload
                             del sys.modules[module_name]
@@ -813,7 +815,7 @@ class Action(Node):
         Returns:
             Namespace string from package info, or None
         """
-        return self._metadata.get("namespace")
+        return self.metadata.get("namespace")
 
     async def get_module(self) -> Optional[str]:
         """Get the module name of the action.
@@ -821,7 +823,7 @@ class Action(Node):
         Returns:
             Module name from package info, or None
         """
-        return self._metadata.get("module")
+        return self.metadata.get("module")
 
     async def get_module_root(self) -> Optional[str]:
         """Get the root directory of the action module.
@@ -829,7 +831,7 @@ class Action(Node):
         Returns:
             Module root path from package info, or None
         """
-        return self._metadata.get("module_root")
+        return self.metadata.get("module_root")
 
     async def get_package_path(self) -> Optional[str]:
         """Get the filesystem path to the action package.
@@ -843,7 +845,7 @@ class Action(Node):
             return None
 
         # Get package name from metadata or use label
-        package_name = self._metadata.get("name") or self.label
+        package_name = self.metadata.get("name") or self.label
 
         # Get namespace (defaults to "default" if not set)
         namespace = self.namespace or "default"
@@ -852,7 +854,7 @@ class Action(Node):
         base_path = os.getenv("JVAGENT_BASE_PATH", ".")
 
         # Get agent name from metadata if available
-        agent_name = self._metadata.get("agent_name")
+        agent_name = self.metadata.get("agent_name")
         if not agent_name:
             # If not in metadata, we can't construct the path
             return None
@@ -873,7 +875,7 @@ class Action(Node):
         Returns:
             Version string (from attribute or package info)
         """
-        return self._metadata.get("version", "")
+        return self.metadata.get("version", "")
 
     async def get_package_name(self) -> Optional[str]:
         """Get the package name.
@@ -881,7 +883,7 @@ class Action(Node):
         Returns:
             Package name from package info, or label if not available
         """
-        return self._metadata.get("name") or self.label
+        return self.metadata.get("name") or self.label
 
     async def get_type(self) -> str:
         """Get the type/category of the action.
@@ -889,7 +891,7 @@ class Action(Node):
         Returns:
             Action type from package info, or "generic" if not specified
         """
-        return self._metadata.get("type", "generic")
+        return self.metadata.get("type", "generic")
 
     # ============================================================================
     # File Management
@@ -906,7 +908,7 @@ class Action(Node):
         Returns:
             Full storage path for the file
         """
-        package_name = self._metadata.get("name") or self.label
+        package_name = self.metadata.get("name") or self.label
         if not self.agent_id or not package_name:
             return path
 
