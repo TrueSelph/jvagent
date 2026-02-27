@@ -21,7 +21,7 @@ _STANDARD_VALIDATORS: Dict[str, Callable] = {}
 
 
 def standard_validator(name: str):
-    """Decorator to register a standard validator by name.
+    r"""Decorator to register a standard validator by name.
 
     Args:
         name: Unique name for this validator (e.g., "email", "phone", "url")
