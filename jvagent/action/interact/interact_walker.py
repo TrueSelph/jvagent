@@ -176,14 +176,8 @@ class InteractWalker(Walker):
                 await self.report({"error": "Agent has no Memory node"})
                 return
 
-            # Get ResponseBus instance from app
-            from jvagent.core.app import App
-
-            app = await App.get()
-            if app:
-                self.response_bus = await app.get_response_bus()
-            else:
-                logger.warning("App node not found - ResponseBus unavailable")
+            # Get ResponseBus instance from agent (agent-scoped)
+            self.response_bus = await here.get_response_bus()
 
             # Resolve user and conversation via memory.get_session()
             try:

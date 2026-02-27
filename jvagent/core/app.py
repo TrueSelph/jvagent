@@ -69,7 +69,6 @@ class App(Node):
     # Runtime instances (private, transient)
     _file_interface: Any = attribute(private=True, default=None)
     _proxy_manager: Any = attribute(private=True, default=None)
-    _response_bus: Any = attribute(private=True, default=None)
 
     # Class-level cache and lock for singleton access
     _cached_app: ClassVar[Optional["App"]] = None
@@ -171,28 +170,8 @@ class App(Node):
         return now_dt
 
     # ============================================================================
-    # Response Bus Operations
+    # Action Initialization
     # ============================================================================
-
-    async def get_response_bus(self) -> Any:
-        """Get or initialize the app-scoped ResponseBus instance.
-
-        This method ensures that all calls return the same singleton ResponseBus instance.
-        The ResponseBus is a true singleton (class-level), so even if _response_bus is None,
-        get_instance() will return the existing singleton if one was already created.
-
-        Returns:
-            ResponseBus singleton instance
-        """
-        # Always get the singleton instance to ensure we're using the same instance
-        # even if _response_bus was cleared or this App instance was recreated
-        from jvagent.action.response.response_bus import ResponseBus
-
-        response_bus = await ResponseBus.get_instance()
-
-        # Cache it for faster subsequent access
-        self._response_bus = response_bus
-        return response_bus
 
     async def initialize_actions(self) -> Dict[str, bool]:
         """Initialize all actions by calling their on_startup() hooks.

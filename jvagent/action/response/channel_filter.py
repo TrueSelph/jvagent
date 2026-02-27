@@ -48,14 +48,18 @@ class ChannelFilter(ABC):
         self.response_bus: Optional[ResponseBus] = None
         self._initialized: bool = False
 
-    async def initialize(self) -> bool:
+    async def initialize(self, agent=None) -> bool:
         """Initialize the channel filter by getting ResponseBus and registering itself.
 
         This method should be called after instantiation to:
-        1. Get the ResponseBus instance from App
+        1. Get the ResponseBus instance from the agent
         2. Register itself with the response bus
 
-        This is typically called from an action's on_register() method.
+        This is typically called from an action's on_startup() method.
+        Callers must pass the agent (e.g., agent=await self.get_agent()).
+
+        Args:
+            agent: Agent node that owns the ResponseBus. Required for agent-scoped registration.
 
         Returns:
             True if initialization and registration succeeded, False otherwise
@@ -63,31 +67,27 @@ class ChannelFilter(ABC):
         if self._initialized:
             return True
 
-        # Get ResponseBus from App
-        try:
-            from jvagent.core.app import App
+        if not agent:
+            logger.warning(
+                f"ChannelFilter for channels {self.channels}: agent is required"
+            )
+            return False
 
-            app = await App.get()
-            if app:
-                response_bus = await app.get_response_bus()
-                if response_bus:
-                    self.response_bus = response_bus
-                    await response_bus.register_channel_filter(self)
-                    self._initialized = True
-                    channel_list = ", ".join(self.channels)
-                    logger.info(
-                        f"ChannelFilter for channels [{channel_list}] initialized and registered "
-                        f"(priority: {self.priority})"
-                    )
-                    return True
-                else:
-                    logger.warning(
-                        f"ChannelFilter for channels {self.channels}: ResponseBus not available"
-                    )
-                    return False
+        try:
+            response_bus = await agent.get_response_bus()
+            if response_bus:
+                self.response_bus = response_bus
+                await response_bus.register_channel_filter(self)
+                self._initialized = True
+                channel_list = ", ".join(self.channels)
+                logger.info(
+                    f"ChannelFilter for channels [{channel_list}] initialized and registered "
+                    f"(priority: {self.priority})"
+                )
+                return True
             else:
                 logger.warning(
-                    f"ChannelFilter for channels {self.channels}: App not available"
+                    f"ChannelFilter for channels {self.channels}: ResponseBus not available"
                 )
                 return False
         except Exception as e:

@@ -10,7 +10,7 @@ except ImportError:
         "UserCreateAdmin not available in installed jvspatial", allow_module_level=True
     )
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from jvagent.action.response.channel_filter import ChannelFilter
 from jvagent.action.response.message import ResponseMessage
@@ -45,51 +45,42 @@ class TestChannelFilter:
         """Test filter initialization with ResponseBus."""
         filter = WhatsAppFilter(channels=["whatsapp"], priority=100)
 
-        # Mock App and ResponseBus
+        # Mock Agent and ResponseBus
         mock_response_bus = MagicMock(spec=ResponseBus)
         mock_response_bus.register_channel_filter = AsyncMock()
 
-        mock_app = MagicMock()
-        mock_app.get_response_bus = AsyncMock(return_value=mock_response_bus)
+        mock_agent = MagicMock()
+        mock_agent.get_response_bus = AsyncMock(return_value=mock_response_bus)
 
-        with patch("jvagent.core.app.App") as mock_app_class:
-            mock_app_class.get = AsyncMock(return_value=mock_app)
+        result = await filter.initialize(agent=mock_agent)
 
-            result = await filter.initialize()
-
-            assert result is True
-            assert filter._initialized is True
-            assert filter.response_bus is mock_response_bus
-            mock_response_bus.register_channel_filter.assert_called_once_with(filter)
+        assert result is True
+        assert filter._initialized is True
+        assert filter.response_bus is mock_response_bus
+        mock_response_bus.register_channel_filter.assert_called_once_with(filter)
 
     @pytest.mark.asyncio
-    async def test_filter_initialization_no_app(self):
-        """Test filter initialization when App is not available."""
+    async def test_filter_initialization_no_agent(self):
+        """Test filter initialization when agent is not provided."""
         filter = WhatsAppFilter(channels=["whatsapp"], priority=100)
 
-        with patch("jvagent.core.app.App") as mock_app_class:
-            mock_app_class.get = AsyncMock(return_value=None)
+        result = await filter.initialize(agent=None)
 
-            result = await filter.initialize()
-
-            assert result is False
-            assert filter._initialized is False
+        assert result is False
+        assert filter._initialized is False
 
     @pytest.mark.asyncio
     async def test_filter_initialization_no_response_bus(self):
         """Test filter initialization when ResponseBus is not available."""
         filter = WhatsAppFilter(channels=["whatsapp"], priority=100)
 
-        mock_app = MagicMock()
-        mock_app.get_response_bus = AsyncMock(return_value=None)
+        mock_agent = MagicMock()
+        mock_agent.get_response_bus = AsyncMock(return_value=None)
 
-        with patch("jvagent.core.app.App") as mock_app_class:
-            mock_app_class.get = AsyncMock(return_value=mock_app)
+        result = await filter.initialize(agent=mock_agent)
 
-            result = await filter.initialize()
-
-            assert result is False
-            assert filter._initialized is False
+        assert result is False
+        assert filter._initialized is False
 
     @pytest.mark.asyncio
     async def test_filter_initialization_idempotent(self):
@@ -99,22 +90,19 @@ class TestChannelFilter:
         mock_response_bus = MagicMock(spec=ResponseBus)
         mock_response_bus.register_channel_filter = AsyncMock()
 
-        mock_app = MagicMock()
-        mock_app.get_response_bus = AsyncMock(return_value=mock_response_bus)
+        mock_agent = MagicMock()
+        mock_agent.get_response_bus = AsyncMock(return_value=mock_response_bus)
 
-        with patch("jvagent.core.app.App") as mock_app_class:
-            mock_app_class.get = AsyncMock(return_value=mock_app)
+        # First initialization
+        result1 = await filter.initialize(agent=mock_agent)
+        assert result1 is True
 
-            # First initialization
-            result1 = await filter.initialize()
-            assert result1 is True
+        # Second initialization should return True without re-registering
+        result2 = await filter.initialize(agent=mock_agent)
+        assert result2 is True
 
-            # Second initialization should return True without re-registering
-            result2 = await filter.initialize()
-            assert result2 is True
-
-            # Should only register once
-            assert mock_response_bus.register_channel_filter.call_count == 1
+        # Should only register once
+        assert mock_response_bus.register_channel_filter.call_count == 1
 
 
 class TestWhatsAppFilter:

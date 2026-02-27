@@ -8,6 +8,7 @@ from jvspatial.core.annotations import attribute
 
 if TYPE_CHECKING:
     from jvagent.action.actions import Actions
+    from jvagent.action.response.response_bus import ResponseBus
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,9 @@ class Agent(Node):
         default=None,
         description="Default maximum length for truncating utterances and responses in conversation history. Can be overridden when calling methods that accept max_statement_length parameter. None = no truncation.",
     )
+
+    # Runtime instances (private, transient)
+    _response_bus: Any = attribute(private=True, default=None)
 
     # =========================================================================
     # Graph Navigation Helpers
@@ -109,6 +113,25 @@ class Agent(Node):
             Memory node if found, None otherwise
         """
         return await self.node(node="Memory")
+
+    # =========================================================================
+    # Response Bus (Agent-Scoped)
+    # =========================================================================
+
+    async def get_response_bus(self) -> "ResponseBus":
+        """Get or initialize the agent-scoped ResponseBus instance.
+
+        Each agent owns exactly one ResponseBus instance. Channel adapters and
+        filters from this agent's actions register with this bus.
+
+        Returns:
+            ResponseBus instance for this agent
+        """
+        if self._response_bus is None:
+            from jvagent.action.response.response_bus import ResponseBus
+
+            self._response_bus = ResponseBus()
+        return self._response_bus
 
     async def save(self, *args, **kwargs):
         """Save the agent and invalidate cache.

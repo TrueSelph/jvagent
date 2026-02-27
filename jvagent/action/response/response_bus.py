@@ -1,4 +1,4 @@
-"""ResponseBus - Centralized response bus service (app-scoped)."""
+"""ResponseBus - Centralized response bus service (agent-scoped)."""
 
 import asyncio
 import logging
@@ -35,14 +35,15 @@ if TYPE_CHECKING:
 
 
 class ResponseBus:
-    """Centralized response bus service (app-scoped singleton).
+    """Centralized response bus service (agent-scoped).
 
     The ResponseBus manages message queues per session and handles subscriptions
     from channel adapters. It provides a publishing interface for InteractActions
     to send adhoc messages and stream chunks.
 
-    The bus is app-scoped (single shared instance across all agents) and manages
-    ephemeral message queues that are cleared after delivery. Isolation is provided
+    The bus is agent-scoped: each agent owns one ResponseBus instance. Channel
+    adapters and filters from that agent's actions register with their agent's bus.
+    Ephemeral message queues are cleared after delivery. Isolation is provided
     via session_id and interaction_id tagging.
 
     Attributes:
@@ -51,7 +52,6 @@ class ResponseBus:
         _subscriber_preferences: Subscription preferences per callback (receive_chunks)
         _message_buffers: Unified buffer for all ResponseMessage objects per interaction_id (in-order)
         _adhoc_accumulation: Streaming adhoc chunks per interaction_id until streaming_complete (AdhocAccumulator)
-        _lock: Async lock for thread-safe operations
     """
 
     # Cleanup configuration
@@ -59,14 +59,10 @@ class ResponseBus:
     BUFFER_TTL_SECONDS = 3600  # 1 hour TTL for message/observability buffers
     ACCUMULATOR_TIMEOUT_SECONDS = 120  # 2 min timeout for incomplete streams
 
-    _instance: Optional["ResponseBus"] = None
-    _lock: asyncio.Lock = asyncio.Lock()
-
     def __init__(self):
-        """Initialize ResponseBus (app-scoped singleton).
+        """Initialize ResponseBus (agent-scoped instance).
 
-        Note: Use get_instance() to obtain the singleton instance.
-        This should only be called once via get_instance().
+        Each agent creates one ResponseBus via Agent.get_response_bus().
         """
         self._session_queues: Dict[str, List[ResponseMessage]] = {}
         self._subscribers: Dict[str, List[Callable[[ResponseMessage], Any]]] = {}
@@ -108,23 +104,6 @@ class ResponseBus:
         if app:
             return await app.now()
         return datetime.now(timezone.utc)
-
-    @classmethod
-    async def get_instance(cls) -> "ResponseBus":
-        """Get the singleton ResponseBus instance.
-
-        This ensures only ONE ResponseBus instance exists across the entire application.
-        The instance is created on first access and reused for all subsequent calls.
-
-        Returns:
-            ResponseBus singleton instance
-        """
-        if cls._instance is None:
-            async with cls._lock:
-                # Double-check pattern to prevent race conditions
-                if cls._instance is None:
-                    cls._instance = cls()
-        return cls._instance
 
     def _maybe_cleanup(self) -> None:
         """Lazy cleanup - evict expired entries only. Runs at most once per CLEANUP_INTERVAL_SECONDS.
