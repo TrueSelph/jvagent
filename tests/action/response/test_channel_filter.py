@@ -1,8 +1,10 @@
 """Unit tests for ChannelFilter system."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
+
+pytest.importorskip("filetype")
+
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from jvagent.action.response.channel_filter import ChannelFilter
 from jvagent.action.response.message import ResponseMessage

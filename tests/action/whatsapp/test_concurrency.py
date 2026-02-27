@@ -12,6 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+pytest.importorskip("filetype")
+
 from jvagent.action.whatsapp.utils.endpoint_helpers import (
     ConversationLockManager,
     MediaBatchManager,

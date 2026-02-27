@@ -1,8 +1,11 @@
 """Tests for WhatsApp webhook URL generation with API key authentication."""
 
+import pytest
+
+pytest.importorskip("filetype")
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from jvspatial.api.auth.models import APIKey
 from jvspatial.core.context import GraphContext
 
