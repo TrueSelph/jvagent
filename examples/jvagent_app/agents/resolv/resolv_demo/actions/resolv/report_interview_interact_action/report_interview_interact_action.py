@@ -58,19 +58,17 @@ class ReportInterviewInteractAction(InterviewInteractAction):
 
     # REQUIRED when using InteractRouter: Anchors for intelligent routing
     # Must cover both initial entry and intermediate states (when answering questions)
-    # anchors: List[str] = attribute(
-    #     default_factory=lambda: [
-    #         "User wants to file a new complaint.",
-    #         "User is reporting an incident for the first time.",
-    #         "User describes a problem that has not been formally reported.",
-    #         "User provides: Incident description, Location, Media or evidence, Privacy preference, Reporting on behalf of someone, Name, email, phone number",
-    #         "User uploads photos or evidence for a new issue.",
-    #         "User updates details of a report that has **not yet been confirmed or submitted**.",
-    #         "User confirms or cancels a report being created.",
-    #     ],
-    #     description="Anchor statements for InteractRouter routing",
-    # )
-    # _standard_interview_anchor_templates: List[str] = []
+    anchors: List[str] = attribute(
+        default_factory=lambda: [
+            "User wants to file a new complaint.",
+            "User is reporting an incident for the first time.",
+            "User describes a problem that has not been formally reported.",
+            "User provides: Incident description, Location, Media or evidence, Privacy preference, Reporting on behalf of someone, Name, email, phone number",
+            "User uploads photos or evidence for a new issue.",
+            "User updates details of a report that has **not yet been confirmed or submitted**.",
+        ],
+        description="Anchor statements for InteractRouter routing",
+    )
 
     question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [

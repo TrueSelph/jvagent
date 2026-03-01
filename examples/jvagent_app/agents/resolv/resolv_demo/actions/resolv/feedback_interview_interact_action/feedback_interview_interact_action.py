@@ -59,20 +59,17 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
 
     # REQUIRED when using InteractRouter: Anchors for intelligent routing
     # Must cover both initial entry and intermediate states (when answering questions)
-    # anchors: List[str] = attribute(
-    #     default_factory=lambda: [
-    #         "User requests to create feedback",
-    #         "User provides a reference number.",
-    #         "User follows up on a previously submitted issue.",
-    #         "User gives feedback on completed work or a resolved report.",
-    #         "User provides additional details after a report was confirmed.",
-    #         "User uploads new evidence or details for an existing report.",
-    #         "User corrects previously submitted feedback.",
-    #         "User confirms or cancels feedback submission.",
-    #     ],
-    #     description="Anchor statements for InteractRouter routing",
-    # )
-    # _standard_interview_anchor_templates: List[str] = []
+    anchors: List[str] = attribute(
+        default_factory=lambda: [
+            "User provides a reference number.",
+            "User follows up on a previously submitted issue.",
+            "User gives feedback on completed work or a resolved report.",
+            "User provides additional details after a report was confirmed.",
+            "User uploads new evidence or details for an existing report.",
+            "User corrects previously submitted feedback.",
+        ],
+        description="Anchor statements for InteractRouter routing",
+    )
 
     question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
