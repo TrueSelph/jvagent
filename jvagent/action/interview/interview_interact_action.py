@@ -55,8 +55,7 @@ from .core.processing.directive_builder import DirectiveBuilder
 from .core.processing.target_resolver import TargetResolver
 from .core.session.interview_session import InterviewSession
 from .core.utils.cache_utils import BranchCache, QuestionNodeCache
-from .core.utils.constants import CACHE_KEY_QUESTION_NODES
-from .core.utils.session_utils import cleanup_session, get_graph_order
+from .core.utils.session_utils import get_graph_order
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -921,8 +920,9 @@ class InterviewInteractAction(InteractAction, ABC):
             logger.exception(
                 f"{self.get_class_name()}: Failed to load target node {target_node_id}: {exc}"
             )
+            session.target_node = None
+            await session.save()
             raise
-        node_label = getattr(target_node, "label", None)
 
         interview_walker = InterviewWalker(
             interview_session=session,

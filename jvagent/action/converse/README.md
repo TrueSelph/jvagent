@@ -82,13 +82,18 @@ actions:
     and returns.
   - If `interaction.has_response()` is true AND there are no unexecuted directives,
     it unrecords itself and returns.
-  - If there are unexecuted directives (even if a response exists), or if no
-    response exists, it proceeds to execute:
+  - If there are unexecuted directives (even if a response exists), it defers to
+    them by calling `respond()` with parameters only (no directives added):
+    ```python
+    await self.respond(visitor, parameters=params_to_pass)
+    ```
+  - If no response exists and no unexecuted directives, it proceeds with its own
+    directive and parameters:
     ```python
     await self.respond(
         visitor,
         directives=[self.directive],
-        parameters=self.parameters if self.parameters else None,
+        parameters=params_to_pass,
     )
     ```
   This ensures that directives furnished by other actions without generating

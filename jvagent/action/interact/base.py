@@ -100,6 +100,15 @@ class InteractAction(Action, ABC):
         ),
     )
 
+    def _ensure_interaction(self, visitor: "InteractWalker") -> bool:
+        """Check that visitor has a valid interaction.
+
+        Returns:
+            True if interaction is available, False otherwise.
+            When False, caller should unrecord and return.
+        """
+        return visitor.interaction is not None
+
     @abstractmethod
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute the action's logic on the interaction.

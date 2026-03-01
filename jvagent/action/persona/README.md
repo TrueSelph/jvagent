@@ -224,7 +224,7 @@ Optimized prompt templates designed for directive compliance:
 
 #### 3. PersonaPromptBuilder (`prompt_builder.py`)
 
-Alternative builder for advanced use cases requiring custom section ordering:
+Optional/experimental builder for advanced use cases requiring custom section ordering. **Not used by PersonaAction by default**; the main flow uses string templates in `prompts.py` directly.
 
 ```python
 from jvagent.action.persona.prompt_builder import PersonaPromptBuilder
@@ -393,7 +393,7 @@ PersonaAction includes 6 default parameters for common scenarios:
 3. **Out of Scope**: Admit when requests are outside your role
 4. **Repetitive Information**: Remind user of previously provided info
 5. **Circular Conversations**: Bring repetition to user's attention
-6. **Diverged Activity**: Remind user to complete ongoing activities
+6. **Knowledge cutoff**: Avoid explicit knowledge cutoff details; use general statement
 
 These can be overridden by providing custom `parameters`.
 
@@ -662,6 +662,7 @@ required_placeholders = [
     '{user}',
     '{date}',
     '{time}',
+    '{timezone}',
     '{parameters_section}',
     '{interpretation_section}',
     '{continuation_guidance}',

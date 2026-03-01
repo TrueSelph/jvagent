@@ -23,11 +23,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Keys in LLM response that are metadata, not extracted field values
-EXTRACTION_METADATA_KEYS = frozenset(
-    {"intent", "confidence", "field", "value", "reasoning", "extracted"}
-)
-
 
 @dataclass
 class ClassificationResult:
@@ -737,8 +732,14 @@ class ClassificationHandler:
                 return self._build_result_from_data_inputs(data_input_values, session)
             return ClassificationResult(intent=Intent.NONE)
         except Exception as e:
+            prompt_preview = (
+                user_input[:200] + "..."
+                if user_input and len(user_input) > 200
+                else (user_input or "")
+            )
             logger.error(
-                f"{self.action.get_class_name()}: Failed to classify/extract via unified prompt: {e}",
+                f"{self.action.get_class_name()}: Failed to classify/extract via unified prompt: {e} "
+                f"(user_input_preview={prompt_preview!r})",
                 exc_info=True,
             )
             # If LLM failed but we have data input values, process them

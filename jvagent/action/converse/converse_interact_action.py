@@ -64,39 +64,28 @@ class ConverseInteractAction(InteractAction):
         description="Always execute as a last-resort smalltalk fallback regardless of routing.",
     )
 
-    # Default behavioral parameters to enforce / offset the directive
+    # Default behavioral parameters (condition/response dicts per InteractAction.parameters)
     parameters: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
-            # PRIORITY: Knowledge/capability questions - evaluate these first
             {
                 "condition": "The user message has diverged from user-specific ACTIVE TASKS (if any).",
-                "response": "Respond but in closing, remind the user to return to complete the pending task(s).",
+                "response": "Respond but in closing, remind the user to return to complete the active task(s).",
             },
             {
-                "condition": "User asks a fact-based or knowledge-based question (what, how, why, when, where, who questions about facts, information, or concepts) and there is no context provided in the directives",
-                "response": (
-                    "Check your internal knowldge and answer the question to the best of your ability while giving disclaimers that "
-                    "it might not be the most acurate or up to date information."
-                    "If you cannot answer the question, politely decline and explain that you don't have the information or ability "
-                    "to respond at the moment."
-                ),
+                "condition": "User asks a fact-based or knowledge-based question (what, how, why, when, where, who questions about facts, information, or concepts) and there is no context provided to confidently respond",
+                "response": "politely decline and explain that you don't have the information to respond at the moment",
             },
             {
-                "condition": "User invokes a capability-based response (can you, do you know, are you able to, tell me about, explain, define) and there is no context provided in the directives",
-                "response": (
-                    "politely decline and explain that you don't have the information or ability to respond at the moment."
-                ),
+                "condition": "User invokes a capability-based response (can you, do you know, are you able to, tell me about, explain, define) and there is no context provided to confidently respond",
+                "response": "politely decline and explain that you don't have the ability to respond at the moment",
             },
-            # Then handle appropriate smalltalk scenarios
             {
                 "condition": "User engages in smalltalk, greetings, or casual conversation",
-                "response": (
-                    "Respond naturally and conversationally, keeping it brief and aligned with the persona's tone and style."
-                ),
+                "response": "Respond naturally and conversationally, keeping it brief and aligned with the persona's tone and style",
             },
             {
-                "condition": "The user message does not warrant a substantive reply and there is no context provided in the directives",
-                "response": ("Do not respond to the user message."),
+                "condition": "The user message does not warrant a substantive reply and there is no context provided to confidently respond",
+                "response": "Do not respond to the user message.",
             },
         ],
         description=(
@@ -116,27 +105,35 @@ class ConverseInteractAction(InteractAction):
         to them by calling respond() without adding its own directives/parameters.
         Otherwise, it proceeds with its own refined directive and parameters.
         """
-        interaction: Interaction | None = visitor.interaction
-        if not interaction:
+        if not self._ensure_interaction(visitor):
             logger.warning("ConverseInteractAction: No interaction available")
             await visitor.unrecord_action_execution()
             return
 
+        interaction = visitor.interaction
         try:
             # Check for existing unexecuted directives/parameters
             unexecuted_directives = interaction.get_unexecuted_directives()
-            has_unexecuted = len(unexecuted_directives) > 0
+            unexecuted_parameters = interaction.get_unexecuted_parameters()
+            has_unexecuted = (
+                len(unexecuted_directives) > 0 or len(unexecuted_parameters) > 0
+            )
             has_response = interaction.has_response()
             params_to_pass = self.parameters if self.parameters else None
 
-            # If unexecuted directives exist, defer to them
+            # If unexecuted directives/parameters exist, defer to them
             if has_unexecuted:
                 # Call respond() without adding our own directives
                 # This allows PersonaAction to execute the existing unexecuted items
-                await self.respond(
+                response = await self.respond(
                     visitor,
                     parameters=params_to_pass,
                 )
+                if response is None:
+                    logger.debug(
+                        "ConverseInteractAction: respond() returned None on defer "
+                        "(PersonaAction not found or error)"
+                    )
                 return
 
             # No unexecuted items - check if we should proceed
@@ -150,11 +147,16 @@ class ConverseInteractAction(InteractAction):
                 return
 
             # No response or directives exist - proceed with our directive and parameters
-            await self.respond(
+            response = await self.respond(
                 visitor,
                 directives=[self.directive],
                 parameters=params_to_pass,
             )
+            if response is None:
+                logger.debug(
+                    "ConverseInteractAction: respond() returned None "
+                    "(PersonaAction not found or error)"
+                )
 
         except Exception as e:
             logger.error(
