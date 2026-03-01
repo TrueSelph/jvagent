@@ -4,7 +4,7 @@ Text-to-Speech action for jvagent that provides speech synthesis capabilities us
 
 ## Overview
 
-The TTS Action converts text to speech using various text-to-speech providers. It follows jvagent action patterns with proper lifecycle hooks, error handling, and API endpoints.
+The TTS Action converts text to speech using various text-to-speech providers. It is a generic, provider-agnostic action usable by any adapter (WhatsApp, Telegram, web, etc.). It follows jvagent action patterns with proper lifecycle hooks, error handling, and API endpoints.
 
 ## Features
 
@@ -49,10 +49,10 @@ tts_action = await self.get_action(TTSAction)
 # Generate speech as bytes
 audio_bytes = await tts_action.invoke("Hello, world!")
 
-# Generate speech as base64
+# Generate speech as base64 (for inline use, e.g. web players)
 audio_base64 = await tts_action.invoke("Hello, world!", as_base64=True)
 
-# Generate speech as file URL
+# Generate speech as file URL (for adapters that fetch and send the file)
 audio_url = await tts_action.invoke("Hello, world!", as_url=True)
 ```
 
@@ -166,10 +166,10 @@ Check TTS service health.
 ## API Methods
 
 ### `invoke(text: str, as_base64: bool = False, as_url: bool = False) -> Optional[Union[str, bytes]]`
-Convert text to speech audio.
+Convert text to speech audio. Use `as_url=True` when the output will be sent to adapters (e.g. WhatsApp) that need a URL to fetch the file. Use `as_base64=True` when the caller needs inline audio (e.g. web players).
 
 ### `get_audio_as(audio: bytes, as_base64: bool = False, as_url: bool = False) -> Optional[Union[str, bytes]]`
-Convert audio bytes to different formats.
+Convert audio bytes to different formats. Same usage as `invoke`: `as_url` for adapters, `as_base64` for inline.
 
 ### `get_voices() -> List[Dict[str, str]]`
 Get all available voices for the current provider.

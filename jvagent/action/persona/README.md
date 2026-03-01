@@ -424,12 +424,15 @@ PersonaAction automatically formats responses for different channels:
 **Supported Channels:**
 - `web`: Markdown (headers, bold, italic, links, code blocks)
 - `whatsapp`: Limited markdown (bold, italic, bullets)
+- `voice`: TTS-optimized (short replies, no markdown, phonetic substitutions, word limit)
 - `facebook`: Basic formatting (bold, italic, strikethrough)
 - `instagram`: Minimal formatting (bold, italic, hashtags)
 - `twitter`: Character limits, thread indicators
 - `linkedin`: Professional formatting
 - `email`: Formal greetings/closings
 - `sms`: Plain text, 160 character limit
+
+Voice formatting applies when `channel="voice"` or when the response will be spoken via adapter-driven TTS (e.g. `respond_with_voice` for WhatsApp PTT). In both cases, PersonaAction uses the voice word limit, strips markdown, and applies phonetic substitutions.
 
 ```python
 interaction.channel = "whatsapp"

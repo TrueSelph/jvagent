@@ -4,7 +4,7 @@ Speech-to-Text action for jvagent that provides audio transcription capabilities
 
 ## Overview
 
-The STT Action converts audio to text using various speech recognition providers. It follows jvagent action patterns with proper lifecycle hooks, error handling, and API endpoints.
+The STT Action converts audio to text using various speech recognition providers. It is a generic, provider-agnostic action usable by any adapter (WhatsApp, Telegram, web, etc.). Callers are responsible for passing the correct `audio_type` when known, since different sources use different formats (e.g. WhatsApp voice uses OGG-Opus). It follows jvagent action patterns with proper lifecycle hooks, error handling, and API endpoints.
 
 ## Features
 
@@ -49,8 +49,8 @@ stt_action = await self.get_action(STTAction)
 # Transcribe from URL
 transcript = await stt_action.invoke("https://example.com/audio.mp3")
 
-# Transcribe from base64
-transcript = await stt_action.invoke_base64(audio_base64, "audio/mp3")
+# Transcribe from base64 (pass audio_type when known for best results)
+transcript = await stt_action.invoke_base64(audio_base64, "audio/ogg")  # e.g. WhatsApp PTT
 
 # Transcribe from file content with duration
 result = await stt_action.invoke_file(audio_bytes, "audio/wav")
@@ -107,7 +107,7 @@ Check STT service health.
 Convert speech from audio URL to text.
 
 ### `invoke_base64(audio_base64: str, audio_type: str = "audio/mp3") -> Optional[str]`
-Convert speech from base64 encoded audio to text.
+Convert speech from base64 encoded audio to text. Callers should pass `audio_type` when known; different sources use different formats (e.g. WhatsApp voice = `audio/ogg`). The default is for legacy use.
 
 ### `invoke_file(audio_content: bytes, audio_type: str = "audio/mp3") -> Optional[Dict]`
 Convert speech from audio file content to text with duration info.

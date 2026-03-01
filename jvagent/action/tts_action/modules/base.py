@@ -28,8 +28,9 @@ class TTSModule(ABC):
 
         Args:
             text: Text to convert to speech
-            as_base64: Return audio as base64 encoded string
-            as_url: Return URL for downloading audio file
+            as_base64: Return audio as base64 encoded string (for inline use, e.g. web players)
+            as_url: Return URL for downloading. Callers should pass True when output will be
+                sent to adapters (e.g. WhatsApp) that need a URL.
 
         Returns:
             Audio data as bytes, base64 string, URL, or None if failed
@@ -37,7 +38,7 @@ class TTSModule(ABC):
         pass
 
     @abstractmethod
-    def get_audio_as(
+    async def get_audio_as(
         self, audio: bytes, as_base64: bool = False, as_url: bool = False
     ) -> Optional[Union[str, bytes]]:
         """Prepare audio bytes as base64 string or URL for download.
@@ -45,7 +46,7 @@ class TTSModule(ABC):
         Args:
             audio: Audio data as bytes
             as_base64: Return as base64 encoded string
-            as_url: Return URL for downloading
+            as_url: Return URL for downloading (requires storage; use for adapter delivery)
 
         Returns:
             Audio data as bytes, base64 string, URL, or None if failed

@@ -83,7 +83,7 @@ class TTSAction(Action):
             logger.error(f"TTS invoke failed: {e}", exc_info=True)
             return None
 
-    def get_audio_as(
+    async def get_audio_as(
         self, audio: bytes, as_base64: bool = False, as_url: bool = False
     ) -> Optional[Union[str, bytes]]:
         """Prepare audio bytes as base64 string or URL for download.
@@ -101,9 +101,9 @@ class TTSAction(Action):
 
         try:
             tts_module = self._get_tts_module()
-            return tts_module.get_audio_as(audio, as_base64, as_url)
+            return await tts_module.get_audio_as(audio, as_base64, as_url)
         except Exception as e:
-            logger.error(f"TTS get_audio_as failed: {e}", exc_info=True)
+            logger.error("TTS get_audio_as failed: %s", e, exc_info=True)
             return None
 
     async def get_voices(self) -> List[Dict[str, str]]:
@@ -113,13 +113,12 @@ class TTSAction(Action):
             List of voice information dictionaries
         """
         try:
-            if self.provider == "elevenlabs":
-                tts_module = self._get_tts_module()
+            tts_module = self._get_tts_module()
+            if hasattr(tts_module, "get_voices"):
                 return await tts_module.get_voices()
-            else:
-                return []
+            return []
         except Exception as e:
-            logger.error(f"TTS get_voices failed: {e}", exc_info=True)
+            logger.error("TTS get_voices failed: %s", e, exc_info=True)
             return []
 
     async def get_voice_by_name(self, name: str) -> Optional[Dict[str, str]]:
@@ -132,13 +131,12 @@ class TTSAction(Action):
             Voice information dictionary or None if not found
         """
         try:
-            if self.provider == "elevenlabs":
-                tts_module = self._get_tts_module()
+            tts_module = self._get_tts_module()
+            if hasattr(tts_module, "get_voice_by_name"):
                 return await tts_module.get_voice_by_name(name)
-            else:
-                return None
+            return None
         except Exception as e:
-            logger.error(f"TTS get_voice_by_name failed: {e}", exc_info=True)
+            logger.error("TTS get_voice_by_name failed: %s", e, exc_info=True)
             return None
 
     async def get_models(self) -> List[Dict[str, str]]:
@@ -148,13 +146,12 @@ class TTSAction(Action):
             List of model information dictionaries
         """
         try:
-            if self.provider == "elevenlabs":
-                tts_module = self._get_tts_module()
+            tts_module = self._get_tts_module()
+            if hasattr(tts_module, "get_models"):
                 return await tts_module.get_models()
-            else:
-                return []
+            return []
         except Exception as e:
-            logger.error(f"TTS get_models failed: {e}", exc_info=True)
+            logger.error("TTS get_models failed: %s", e, exc_info=True)
             return []
 
     async def healthcheck(self) -> Union[bool, Dict[str, str]]:
