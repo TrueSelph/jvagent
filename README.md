@@ -430,6 +430,7 @@ See the [InteractAction API Guide](jvagent/action/interact/README.md) for comple
 - Tasks have unique IDs, descriptions, and optional `action_name` for management
 - Used by interviews (ACTIVE/REVIEW), PersonaAction (reminder when user strays), and InteractRouter (context signals)
 - See [Task Tracking](docs/task-tracking.md) for details
+- See [Memory System](jvagent/memory/README.md) for full API reference
 
 ### Namespaces
 
@@ -1905,6 +1906,7 @@ For more details, see [jvagent/bundle/README.md](jvagent/bundle/README.md).
 
 ### Core Documentation
 
+- [Memory System](jvagent/memory/README.md) - Conversation, Interaction, User, and Memory APIs
 - [Logging System](docs/logging.md) - Interaction logging, archiving, retention
 - [Interaction Logging](docs/interaction-logging.md) - INTERACTION log level
 - [Error Logging](docs/error-logging.md) - Error logging and querying

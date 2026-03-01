@@ -99,14 +99,16 @@ descriptions = conversation.get_active_tasks_for_context()
 
 Returns list of descriptions for active tasks (status=active). Used by InteractRouter for context signals.
 
-### Optional lookup (get_active_task_by_description, get_active_task_by_action)
+### Task lookup (get_active_task)
 
 ```python
-task = conversation.get_active_task_by_description("Guide user to complete SignupInterviewInteractAction")
-task = conversation.get_active_task_by_action("SignupInterviewInteractAction")
+task = conversation.get_active_task(description="Guide user to complete SignupInterviewInteractAction")
+task = conversation.get_active_task(action_name="SignupInterviewInteractAction")
+task = conversation.get_active_task(task_type="INTERVIEW", status="active")
+task = conversation.get_active_task(task_id="SignupInterviewInteractAction:abc123")
 ```
 
-Returns the matching task dict if found, `None` otherwise. Useful for lookup before update or conditional logic.
+Returns the first matching task dict if found, `None` otherwise. Optional filters: `task_id`, `task_type`, `description`, `action_name`, `status`. Use `task.get("action_name")` when you need the action name. Useful for lookup before update or conditional logic.
 
 ## InteractWalker Helpers
 

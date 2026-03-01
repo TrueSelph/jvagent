@@ -27,7 +27,7 @@ RetrievalInteractAction (weight: -50)
     ↓
 PersonaAction (weight: 0+)
     ↓
-    - Consumes directive via interaction.get_directives()
+    - Consumes directive via interaction.directives
     - Includes in prompt
     - Generates response
 ```
@@ -35,7 +35,7 @@ PersonaAction (weight: 0+)
 ### Integration Points
 
 - **InteractRouter**: Uses `interaction.interpretation` if available (preferred)
-- **PersonaAction**: Consumes directives via `interaction.get_directives()`
+- **PersonaAction**: Consumes directives via `interaction.directives`
 - **VectorStore**: Retrieved using `await self.get_action(VectorStore)` or `await self.get_action(vectorstore_action_type)`. Uses `search()` method with collection, query, and k parameters
 
 ## Configuration
