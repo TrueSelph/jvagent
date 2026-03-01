@@ -565,6 +565,7 @@ class Memory(Node):
         Returns:
             Dictionary with exported memory data
         """
+        from jvagent.memory.conversation import Conversation
         from jvagent.memory.interaction import Interaction
         from jvagent.memory.user import User
 
@@ -581,7 +582,7 @@ class Memory(Node):
             user_data["conversations"] = []
 
             # Use nodes() to get connected conversations (leverages graph structure)
-            conversations = await user.nodes(node="Conversation")
+            conversations = await user.nodes(node=Conversation)
             for conv in conversations:
                 conv_data = await conv.export()
                 conv_data["interactions"] = []

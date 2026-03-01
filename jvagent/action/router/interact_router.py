@@ -567,7 +567,12 @@ class InteractRouter(InteractAction):
 
         # When an interview is active, filter out other interview actions (safety net)
         if conversation:
-            active_interview_name = conversation.get_active_interview_action_name()
+            active_task = conversation.get_active_task(
+                task_type="INTERVIEW", status="active"
+            )
+            active_interview_name = (
+                active_task.get("action_name") if active_task else None
+            )
             if active_interview_name:
                 actions_manager = await agent.get_actions_manager()
                 if actions_manager:
@@ -713,7 +718,12 @@ class InteractRouter(InteractAction):
         # When an interview is active, only allow that interview's anchors
         active_interview_name: Optional[str] = None
         if conversation:
-            active_interview_name = conversation.get_active_interview_action_name()
+            active_task = conversation.get_active_task(
+                task_type="INTERVIEW", status="active"
+            )
+            active_interview_name = (
+                active_task.get("action_name") if active_task else None
+            )
 
         logger.debug(f"InteractRouter: Found {len(interact_actions)} InteractActions")
 

@@ -355,7 +355,7 @@ class Conversation(DeferredSaveMixin, Node):
                     break
                 current = await current.get_next_interaction()
 
-        # Defensive check: ensure we never exceed limit when limit > 0
+        # Invariant: never exceed limit (defensive)
         if limit > 0 and len(interactions) > limit:
             interactions = interactions[:limit]
 
@@ -435,8 +435,7 @@ class Conversation(DeferredSaveMixin, Node):
             # Add interpretation as system message (if present and requested)
             # Note: interpretations are not truncated
             if with_interpretation and interaction.interpretation:
-                content_parts = [interaction.interpretation]
-                content = " | ".join(content_parts)
+                content = interaction.interpretation
                 history.append(
                     {
                         "role": "system",
@@ -784,26 +783,6 @@ class Conversation(DeferredSaveMixin, Node):
         self.context.update(updates)
         await self.save()
 
-    def data_get(self, key: str) -> Any:
-        """Get value from context.
-
-        Args:
-            key: Context key to retrieve
-
-        Returns:
-            Value from context, or None if not found
-        """
-        return self.context.get(key)
-
-    def data_set(self, key: str, value: Any) -> None:
-        """Set value in context.
-
-        Args:
-            key: Context key to set
-            value: Value to store
-        """
-        self.context[key] = value
-
     async def add_active_task(
         self,
         description: str,
@@ -934,34 +913,43 @@ class Conversation(DeferredSaveMixin, Node):
             tasks = [t for t in tasks if t.get("action_name") == action_name]
         return tasks
 
-    def get_active_task_by_description(
-        self, description: str
+    def get_active_task(
+        self,
+        *,
+        task_id: Optional[str] = None,
+        task_type: Optional[str] = None,
+        description: Optional[str] = None,
+        action_name: Optional[str] = None,
+        status: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Get specific task by description.
+        """Get first task matching all provided filters.
+
+        Replaces get_active_task_by_description, get_active_task_by_action,
+        and get_active_task_action_name. Use task.get("action_name") when
+        you need the action name.
 
         Args:
-            description: Task description to match
+            task_id: Optional filter by task_id
+            task_type: Optional filter by task_type (e.g. "INTERVIEW")
+            description: Optional filter by description
+            action_name: Optional filter by action_name
+            status: Optional filter by status (e.g. "active")
 
         Returns:
-            Task dict if found, None otherwise
+            First matching task dict, or None
         """
         for t in self.active_tasks:
-            if t.get("description") == description:
-                return t
-        return None
-
-    def get_active_task_by_action(self, action_name: str) -> Optional[Dict[str, Any]]:
-        """Get specific task by action_name.
-
-        Args:
-            action_name: Action class name to match
-
-        Returns:
-            Task dict if found, None otherwise
-        """
-        for t in self.active_tasks:
-            if t.get("action_name") == action_name:
-                return t
+            if task_id is not None and t.get("task_id") != task_id:
+                continue
+            if task_type is not None and t.get("task_type") != task_type:
+                continue
+            if description is not None and t.get("description") != description:
+                continue
+            if action_name is not None and t.get("action_name") != action_name:
+                continue
+            if status is not None and t.get("status") != status:
+                continue
+            return t
         return None
 
     def get_active_tasks_for_context(self) -> List[str]:
@@ -970,20 +958,7 @@ class Conversation(DeferredSaveMixin, Node):
         Returns:
             List of descriptions for active tasks (status=active)
         """
-        return [
-            t["description"] for t in self.active_tasks if t.get("status") == "active"
-        ]
-
-    def get_active_interview_action_name(self) -> Optional[str]:
-        """Return action_name of the active task with task_type='INTERVIEW', or None.
-
-        Used by InteractRouter to gate routing: when an interview is active,
-        only that interview action may be routed to.
-        """
-        for t in self.active_tasks:
-            if t.get("status") == "active" and t.get("task_type") == "INTERVIEW":
-                return t.get("action_name")
-        return None
+        return [t["description"] for t in self.get_active_tasks(status="active")]
 
     async def archive(self) -> None:
         """Archive the conversation."""

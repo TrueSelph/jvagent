@@ -53,7 +53,7 @@ TASK: Analyze the current user message in context of the conversation history an
 INTENT TYPES:
 - CONVERSATIONAL: Greeting, thanks, smalltalk only; no request, no information given
 - INFORMATIONAL: Question, lookup, knowledge retrieval
-- INTERACTIVE: Multi-turn process (signup, interview, form)—starting or answering/continuing
+- INTERACTIVE: Multi-turn process (interview) — starting or answering/continuing
 - DIRECTIVE: Direct command to perform action
 - UNCLEAR: Cannot determine
 

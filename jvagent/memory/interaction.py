@@ -417,8 +417,8 @@ class Interaction(DeferredSaveMixin, Node):
 
     def set_to_executed(
         self,
-        parameters: List[Dict[str, Any]] = [],
-        directives: List[Dict[str, Any]] = [],
+        parameters: Optional[List[Dict[str, Any]]] = None,
+        directives: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         """Mark directives and parameters as executed.
 
@@ -429,6 +429,8 @@ class Interaction(DeferredSaveMixin, Node):
             parameters: Parameter entries to mark as executed
             directives: Directive entries to mark as executed
         """
+        parameters = parameters or []
+        directives = directives or []
         # Mark matching directives as executed
         for directive_entry in directives:
             action_name = directive_entry.get("action_name")
@@ -461,14 +463,6 @@ class Interaction(DeferredSaveMixin, Node):
                         }
                         if p_copy == param_copy:
                             p["executed"] = True
-
-    def get_directives(self) -> List[Dict[str, Any]]:
-        """Get all directives.
-
-        Returns:
-            List of directive entries (dicts with action_name, content, executed)
-        """
-        return self.directives
 
     async def close_interaction(self) -> None:
         """Close the interaction."""

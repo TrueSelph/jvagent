@@ -8,15 +8,12 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Sequence
 
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.gating.gating_result import (
-    POSTURE_DEFER,
     POSTURE_RESPOND,
-    POSTURE_SUPPRESS,
-    GatingResult,
     parse_gating_response,
 )
 from jvagent.action.gating.prompts import (
@@ -88,6 +85,11 @@ class ResponseGatingInteractAction(InteractAction):
         default=True,
         description="Always execute regardless of routing",
     )
+    pass_through_task_types: Sequence[str] = attribute(
+        default=("INTERVIEW",),
+        description="Task types that bypass gating (pass-through mode). When an active "
+        "task has one of these types, gating is skipped and the pipeline proceeds.",
+    )
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute posture classification and apply gating logic."""
@@ -102,6 +104,20 @@ class ResponseGatingInteractAction(InteractAction):
             logger.warning("ResponseGatingInteractAction: No conversation available")
             await visitor.unrecord_action_execution()
             return
+
+        # Pass-through mode: bypass gating when an active task has a pass-through type
+        if self.pass_through_task_types:
+            active_tasks = conversation.get_active_tasks(status="active")
+            for t in active_tasks:
+                if t.get("task_type") in self.pass_through_task_types:
+                    action_name = t.get("action_name", "")
+                    logger.debug(
+                        f"ResponseGatingInteractAction: Pass-through (active {t.get('task_type')}: {action_name})"
+                    )
+                    interaction.response_posture = POSTURE_RESPOND
+                    await interaction.save()
+                    await self._handle_respond(visitor, interaction, conversation)
+                    return
 
         try:
             model_action = await self.get_model_action()
