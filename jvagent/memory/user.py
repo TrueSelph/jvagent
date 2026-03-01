@@ -28,6 +28,7 @@ class User(Node):
 
     Attributes:
         user_id: Unique user identifier (external reference)
+        usage: Cumulative token spend and model call metrics across all interactions
         created_at: Timestamp of user creation
         last_seen: Timestamp of last user activity
     """
@@ -47,6 +48,10 @@ class User(Node):
     user_model: Dict[str, Any] = attribute(
         default_factory=dict,
         description="Compressed collection of facts and preferences about the user",
+    )
+    usage: Dict[str, Any] = attribute(
+        default_factory=dict,
+        description="Cumulative token spend and model call metrics across all interactions",
     )
     created_at: datetime = attribute(
         default_factory=lambda: datetime.now(timezone.utc),
@@ -238,3 +243,77 @@ class User(Node):
         if not self.user_model:
             return {"facts": [], "preferences": {}, "last_updated": None}
         return self.user_model
+
+    async def add_usage_from_interaction(self, usage: Dict[str, Any]) -> None:
+        """Increment cumulative usage stats from an interaction's usage.
+
+        Args:
+            usage: Usage dict from Interaction.compute_usage()
+        """
+        if not usage:
+            return
+
+        from jvagent.core.app import App
+
+        if not self.usage:
+            self.usage = {
+                "total_tokens": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "model_call_count": 0,
+                "estimated_cost_usd": 0.0,
+                "total_duration_seconds": 0.0,
+                "interaction_count": 0,
+                "last_updated": None,
+            }
+
+        self.usage["total_tokens"] = (
+            self.usage.get("total_tokens", 0)
+            + usage.get("total_tokens", 0)
+        )
+        self.usage["prompt_tokens"] = (
+            self.usage.get("prompt_tokens", 0)
+            + usage.get("prompt_tokens", 0)
+        )
+        self.usage["completion_tokens"] = (
+            self.usage.get("completion_tokens", 0)
+            + usage.get("completion_tokens", 0)
+        )
+        self.usage["model_call_count"] = (
+            self.usage.get("model_call_count", 0)
+            + usage.get("model_call_count", 0)
+        )
+        self.usage["estimated_cost_usd"] = round(
+            self.usage.get("estimated_cost_usd", 0.0)
+            + usage.get("estimated_cost_usd", 0.0),
+            6,
+        )
+        self.usage["total_duration_seconds"] = round(
+            self.usage.get("total_duration_seconds", 0.0)
+            + usage.get("total_duration_seconds", 0.0),
+            3,
+        )
+        self.usage["interaction_count"] = (
+            self.usage.get("interaction_count", 0) + 1
+        )
+
+        app = await App.get()
+        self.usage["last_updated"] = (
+            await app.now() if app else datetime.now(timezone.utc)
+        ).isoformat()
+        await self.save()
+
+    def get_usage_statistics(self) -> Dict[str, Any]:
+        """Return usage stats with sensible defaults."""
+        if not self.usage:
+            return {
+                "total_tokens": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "model_call_count": 0,
+                "estimated_cost_usd": 0.0,
+                "total_duration_seconds": 0.0,
+                "interaction_count": 0,
+                "last_updated": None,
+            }
+        return self.usage

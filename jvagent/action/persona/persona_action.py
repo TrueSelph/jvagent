@@ -13,6 +13,7 @@ from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
 from jvagent.action.persona.prompts import (
+    ACTIVE_TASKS_SECTION_PROMPT,
     CHANNEL_OVERRIDE_PREAMBLE,
     CONTINUATION_GUIDANCE_PROMPT,
     DIRECTIVE_COMPLIANCE_CHECK_PROMPT,
@@ -92,6 +93,11 @@ class PersonaAction(Action):
         description="Maximum words for voice channel (TTS). Used when channel=voice.",
     )
 
+    remind_on_active_tasks: bool = attribute(
+        default=True,
+        description="When True and active tasks require user intervention, include reminder to return if conversation strays",
+    )
+
     # System prompt (default property)
     system_prompt: str = attribute(
         default=SYSTEM_PROMPT_TEMPLATE,
@@ -126,10 +132,6 @@ class PersonaAction(Action):
             {
                 "condition": "The conversation seems repetitive.",
                 "response": "Bring the circular conversation to the user's attention.",
-            },
-            {
-                "condition": "The user has diverged from the ongoing activity highlghted in conversation history",
-                "response": "Respond but in closing, remind the user to return to complete the ongoing activity",
             },
             {
                 "condition": "You are likely to mention how recent your knowledge cutoff is",
@@ -513,6 +515,19 @@ class PersonaAction(Action):
         else:
             parameters_section = ""
 
+        # Build active tasks section (when tasks require user intervention)
+        active_tasks_section = ""
+        if self.remind_on_active_tasks:
+            tasks = await self._get_active_tasks_requiring_intervention(interaction)
+            if tasks:
+                task_list = "\n".join(f"- {t.get('description', str(t))}" for t in tasks)
+                active_tasks_section = ACTIVE_TASKS_SECTION_PROMPT.format(
+                    task_list=task_list
+                )
+        active_tasks_section = format_conditional_section(
+            active_tasks_section, bool(active_tasks_section)
+        )
+
         # Build response length section (channel-aware)
         channel = interaction.channel or "default"
         if channel == "voice":
@@ -570,6 +585,7 @@ class PersonaAction(Action):
             response_protocol=RESPONSE_PROTOCOL_PROMPT,
             directives_section=directives_section,
             parameters_section=parameters_section,
+            active_tasks_section=active_tasks_section,
             channel_formatting_section=channel_formatting_section,
             continuation_guidance=continuation_guidance,
             response_length_section=response_length_section,
@@ -586,6 +602,31 @@ class PersonaAction(Action):
             )
 
         return composed
+
+    async def _get_active_tasks_requiring_intervention(
+        self, interaction: Interaction
+    ) -> List[Dict[str, Any]]:
+        """Get active tasks that require user intervention.
+
+        Filters tasks by metadata.requires_user_intervention (default True).
+
+        Args:
+            interaction: Current interaction with conversation_id
+
+        Returns:
+            List of task dicts requiring user intervention
+        """
+        from jvagent.memory.conversation import Conversation
+
+        conversation = await Conversation.get(interaction.conversation_id)
+        if not conversation:
+            return []
+        tasks = conversation.get_active_tasks(status="active")
+        return [
+            t
+            for t in tasks
+            if t.get("metadata", {}).get("requires_user_intervention", True)
+        ]
 
     async def _get_conversation_history(
         self,
@@ -779,7 +820,7 @@ class PersonaAction(Action):
                 temperature=self.model_temperature,
                 max_tokens=max_tokens,
                 response_bus=response_bus if streaming else None,
-                interaction=interaction if streaming else None,
+                interaction=interaction,
                 response_format=response_format,
                 transient=transient,
             )

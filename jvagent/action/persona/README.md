@@ -328,6 +328,7 @@ async def execute(self, interaction, visitor):
 ```python
 custom_prompt = """
 {directives_section}
+{active_tasks_section}
 
 ### MY CUSTOM IDENTITY
 I am {agent_name}, a specialized technical support agent.
@@ -571,7 +572,7 @@ Token reduction improves response latency:
 
 **Possible Causes**:
 1. Directive marked as `executed: True` before PersonaAction called
-2. Custom `system_prompt` without `{directives_section}` placeholder
+2. Custom `system_prompt` without `{directives_section}` or `{active_tasks_section}` placeholder
 3. Very long conversation history pushing directives out of context
 
 **Solutions**:
@@ -583,6 +584,7 @@ print(f"Unexecuted directives: {len(directives)}")
 # Ensure custom prompts include directives
 custom_prompt = """
 {directives_section}  # REQUIRED
+{active_tasks_section}  # REQUIRED for task reminders
 ...
 """
 
@@ -653,6 +655,7 @@ response = await persona.respond(
 # Ensure all required placeholders are present
 required_placeholders = [
     '{directives_section}',  # REQUIRED
+    '{active_tasks_section}',  # REQUIRED for task reminders (when remind_on_active_tasks=True)
     '{agent_name}',
     '{agent_description}',
     '{agent_capabilities}',

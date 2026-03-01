@@ -70,6 +70,10 @@ class ConverseInteractAction(InteractAction):
         default_factory=lambda: [
             # PRIORITY: Knowledge/capability questions - evaluate these first
             {
+                "condition": "The user message has diverged from user-specific ACTIVE TASKS (if any).",
+                "response": "Respond but in closing, remind the user to return to complete the pending task(s).",
+            },
+            {
                 "condition": "User asks a knowledge-based question (what, how, why, when, where, who questions about facts, information, or concepts)",
                 "response": (
                     "If there you are not provided with the knowledge to answer the user's question, check your internal knowldge "

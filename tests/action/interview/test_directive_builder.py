@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from jvagent.action.interview.core.foundation.enums import InterviewState
 from jvagent.action.interview.core.foundation.prompts import (
     CANCELLATION_EVENT_MESSAGE_TEMPLATE,
     CANCELLATION_MESSAGE_TEMPLATE,
@@ -11,63 +12,66 @@ from jvagent.action.interview.core.foundation.prompts import (
 from jvagent.action.interview.core.processing.directive_builder import DirectiveBuilder
 
 
-class TestDirectiveBuilderResetEventTracking:
-    """Test reset_event_tracking."""
+class TestDirectiveBuilderResetTaskTracking:
+    """Test reset_task_tracking."""
 
-    def test_reset_event_tracking_clears_event_added(self):
-        """reset_event_tracking sets _event_added to False."""
+    def test_reset_task_tracking_clears_task_added(self):
+        """reset_task_tracking sets _task_added to False."""
         action = MagicMock()
         builder = DirectiveBuilder(action)
-        builder._event_added = True
-        builder.reset_event_tracking()
-        assert builder._event_added is False
+        builder._task_added = True
+        builder.reset_task_tracking()
+        assert builder._task_added is False
 
 
 class TestDirectiveBuilderEventOncePerRun:
     """Test that event is added only once per execution."""
 
     @pytest.mark.asyncio
-    async def test_queue_directive_adds_event_once(self):
-        """First queue_directive adds event; second does not."""
+    async def test_queue_directive_adds_active_task_once(self):
+        """First queue_directive adds active task; second does not."""
         action = MagicMock()
         action.get_class_name.return_value = "TestInterview"
-        action.get_state_event_message.return_value = "Ongoing Activity: TestInterview"
 
         visitor = MagicMock()
-        visitor.add_event = AsyncMock()
+        visitor.add_active_task = AsyncMock()
         visitor.add_directive = AsyncMock()
         visitor.interview_session = MagicMock()
-        visitor.interview_session.state.value = "ACTIVE"
+        visitor.interview_session.state = InterviewState.ACTIVE
+        visitor.interview_session.interview_type = "TestInterview"
 
         builder = DirectiveBuilder(action)
 
         await builder.queue_directive(visitor, "First directive")
         await builder.queue_directive(visitor, "Second directive")
 
-        visitor.add_event.assert_called_once()
+        visitor.add_active_task.assert_called_once()
+        call_kwargs = visitor.add_active_task.call_args[1]
+        assert call_kwargs["description"] == "Guide user to complete TestInterview"
+        assert call_kwargs["action_name"] == "TestInterview"
         assert visitor.add_directive.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_reset_allows_event_on_next_run(self):
-        """After reset_event_tracking, event is added again."""
+    async def test_reset_allows_active_task_on_next_run(self):
+        """After reset_task_tracking, active task is added again."""
         action = MagicMock()
         action.get_class_name.return_value = "TestInterview"
-        action.get_state_event_message.return_value = "Ongoing Activity: TestInterview"
 
         visitor = MagicMock()
-        visitor.add_event = AsyncMock()
+        visitor.add_active_task = AsyncMock()
         visitor.add_directive = AsyncMock()
         visitor.interview_session = MagicMock()
-        visitor.interview_session.state.value = "ACTIVE"
+        visitor.interview_session.state = InterviewState.ACTIVE
+        visitor.interview_session.interview_type = "TestInterview"
 
         builder = DirectiveBuilder(action)
 
         await builder.queue_directive(visitor, "First run")
-        assert visitor.add_event.call_count == 1
+        assert visitor.add_active_task.call_count == 1
 
-        builder.reset_event_tracking()
+        builder.reset_task_tracking()
         await builder.queue_directive(visitor, "Second run")
-        assert visitor.add_event.call_count == 2
+        assert visitor.add_active_task.call_count == 2
 
 
 class TestDirectiveBuilderGenerateCancelledDirective:
@@ -89,6 +93,7 @@ class TestDirectiveBuilderGenerateCancelledDirective:
         visitor = MagicMock()
         visitor.add_event = AsyncMock()
         visitor.add_directive = AsyncMock()
+        visitor.update_task = AsyncMock()
 
         session = MagicMock()
         session.interview_type = "default"
@@ -105,4 +110,44 @@ class TestDirectiveBuilderGenerateCancelledDirective:
             class_name="SignupInterviewInteractAction"
         )
         visitor.add_event.assert_called_once_with(expected_event)
+        visitor.update_task.assert_called_once_with(
+            status="cancelled",
+            description="Guide user to complete SignupInterviewInteractAction",
+            action_name="SignupInterviewInteractAction",
+        )
         visitor.add_directive.assert_called_once_with(CANCELLATION_MESSAGE_TEMPLATE)
+
+
+class TestDirectiveBuilderGenerateCompletedDirective:
+    """Test generate_completed_directive uses update_task."""
+
+    @pytest.mark.asyncio
+    async def test_generate_completed_directive_updates_task_to_completed(self):
+        """When interview completes, update_task is called with completed."""
+        action = MagicMock()
+        action.get_class_name.return_value = "ReportInterviewInteractAction"
+        action.get_completion_handler.return_value = None
+        action.get_state_event_message.return_value = "Task completed"
+        action.completion_message = "Thanks for completing the report"
+
+        visitor = MagicMock()
+        visitor.add_event = AsyncMock()
+        visitor.add_directive = AsyncMock()
+        visitor.update_task = AsyncMock()
+
+        session = MagicMock()
+        session.interview_type = "default"
+
+        builder = DirectiveBuilder(action)
+
+        with patch(
+            "jvagent.action.interview.core.utils.session_utils.cleanup_session",
+            new_callable=AsyncMock,
+        ):
+            await builder.generate_completed_directive(session, visitor)
+
+        visitor.update_task.assert_called_once_with(
+            status="completed",
+            description="Guide user to complete ReportInterviewInteractAction",
+            action_name="ReportInterviewInteractAction",
+        )

@@ -33,13 +33,39 @@ logger = logging.getLogger(__name__)
 from jvagent.action.interact.utils import flush_deferred_saves
 
 # Import profiling utilities
+
+
+async def _finalize_usage(interaction: Any) -> None:
+    """Compute usage from observability_metrics and update user stats.
+
+    Runs after walker completes and flush, so all model_call events are present.
+    """
+    if not interaction:
+        return
+    if hasattr(interaction, "compute_usage"):
+        interaction.compute_usage()
+        await interaction.save()
+    if hasattr(interaction, "usage") and interaction.usage:
+        try:
+            user = await interaction.get_user()
+            if user and hasattr(user, "add_usage_from_interaction"):
+                await user.add_usage_from_interaction(interaction.usage)
+        except Exception as e:
+            logger.warning(
+                "Failed to update user usage stats: interaction_id=%s user_id=%s error=%s",
+                getattr(interaction, "id", None),
+                getattr(interaction, "user_id", None),
+                e,
+            )
+
+
 from jvagent.core.profiling import profile_enabled, profiled_request
 
 # Import INTERACTION level to ensure it's registered and available for logging
 from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
 
 
-def _build_interaction_log_data(interaction, app_id, agent_id=None):
+def _build_interaction_log_data(interaction, app_id, agent_id=None, active_tasks=None):
     """Build comprehensive log data dictionary for interaction logging.
 
     This function extracts all available interaction data and builds a complete
@@ -49,6 +75,7 @@ def _build_interaction_log_data(interaction, app_id, agent_id=None):
         interaction: Interaction node instance
         app_id: Application ID
         agent_id: Optional agent ID
+        active_tasks: Optional list of active tasks from conversation (conversation-level)
 
     Returns:
         Tuple of (log_data_dict, message_string) for logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
@@ -78,6 +105,7 @@ def _build_interaction_log_data(interaction, app_id, agent_id=None):
     )
     streamed = interaction.streamed if hasattr(interaction, "streamed") else False
     closed = interaction.closed if hasattr(interaction, "closed") else False
+    usage = getattr(interaction, "usage", None) or {}
     started_at = (
         interaction.started_at.isoformat()
         if hasattr(interaction, "started_at") and interaction.started_at
@@ -107,6 +135,7 @@ def _build_interaction_log_data(interaction, app_id, agent_id=None):
             "parameters": parameters,
             "events": events,
             "observability_metrics": observability_metrics,
+            "usage": usage,
             "interpretation": interpretation,
             "anchors": anchors,
             "started_at": started_at,
@@ -156,7 +185,7 @@ def _build_interaction_log_data(interaction, app_id, agent_id=None):
         "directives": directives,
         "parameters": parameters,
         "events": events,
-        "observability_metrics": observability_metrics,
+        "active_tasks": active_tasks if active_tasks is not None else [],
         "interpretation": interpretation,
         "anchors": anchors,
         "streamed": streamed,
@@ -254,7 +283,7 @@ _initialize_rate_limiter_from_config()
                 description=(
                     "Interaction details (development mode only). Excluded in production mode. "
                     "Includes: id, utterance, response, actions, directives, parameters, "
-                    "events, observability_metrics, streamed."
+                    "events, active_tasks, observability_metrics, streamed."
                 ),
                 example={
                     "id": "int_123",
@@ -265,6 +294,7 @@ _initialize_rate_limiter_from_config()
                     "directives": [],
                     "parameters": [],
                     "events": [],
+                    "active_tasks": [],
                     "observability_metrics": [],
                 },
                 default=None,
@@ -456,14 +486,22 @@ async def interact_endpoint(
                 async with profile.measure("flush_saves"):
                     await flush_deferred_saves(interaction, walker.conversation)
 
+                # Compute usage after flush so all model_call events are present
+                await _finalize_usage(interaction)
+
                 # Log interaction using INTERACTION level
                 try:
                     from jvagent.core.app import App
 
                     app = await App.get()
                     if app:
+                        active_tasks = []
+                        if walker.conversation:
+                            active_tasks = walker.conversation.get_active_tasks(
+                                status="active"
+                            )
                         log_data, message = _build_interaction_log_data(
-                            interaction, app.id, agent_id
+                            interaction, app.id, agent_id, active_tasks=active_tasks
                         )
                         # Use logger.log() directly to ensure extra parameter is passed correctly
                         logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
@@ -473,7 +511,7 @@ async def interact_endpoint(
 
                 # Build response with environment-based filtering
                 async with profile.measure("build_response"):
-                    result = build_interact_response(
+                    result = await build_interact_response(
                         user_id=walker.user_id or "",
                         session_id=walker.session_id or "",
                         interaction=interaction,
@@ -627,18 +665,25 @@ async def _stream_interaction(
             # Flush deferred saves (interaction and conversation) with error handling
             await flush_deferred_saves(interaction, walker.conversation)
 
+            # Compute usage after flush so all model_call events are present
+            await _finalize_usage(interaction)
+
             # Log interaction using INTERACTION level
             try:
                 from jvagent.core.app import App
 
                 app = await App.get()
                 if app:
-                    # Get agent_id from walker or agent
+                    active_tasks = []
+                    if walker.conversation:
+                        active_tasks = walker.conversation.get_active_tasks(
+                            status="active"
+                        )
                     agent_id_for_logging = (
                         walker.agent_id if hasattr(walker, "agent_id") else agent.id
                     )
                     log_data, message = _build_interaction_log_data(
-                        interaction, app.id, agent_id_for_logging
+                        interaction, app.id, agent_id_for_logging, active_tasks=active_tasks
                     )
                     # Use logger.log() directly to ensure extra parameter is passed correctly
                     logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
@@ -649,7 +694,7 @@ async def _stream_interaction(
             # Send final consolidated response (filtered for production)
             report_start = time.time()
             report = await walker.get_report()
-            final_response = build_interact_response(
+            final_response = await build_interact_response(
                 user_id=walker.user_id or "",
                 session_id=walker.session_id or "",
                 interaction=interaction,
@@ -684,18 +729,25 @@ async def _stream_interaction(
             # Flush deferred saves (interaction and conversation) with error handling
             await flush_deferred_saves(interaction, walker.conversation)
 
+            # Compute usage after flush so all model_call events are present
+            await _finalize_usage(interaction)
+
             # Log interaction using INTERACTION level
             try:
                 from jvagent.core.app import App
 
                 app = await App.get()
                 if app:
-                    # Get agent_id from walker
+                    active_tasks = []
+                    if walker.conversation:
+                        active_tasks = walker.conversation.get_active_tasks(
+                            status="active"
+                        )
                     agent_id_from_walker = (
                         walker.agent_id if hasattr(walker, "agent_id") else None
                     )
                     log_data, message = _build_interaction_log_data(
-                        interaction, app.id, agent_id_from_walker
+                        interaction, app.id, agent_id_from_walker, active_tasks=active_tasks
                     )
                     # Use logger.log() directly to ensure extra parameter is passed correctly
                     logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
@@ -705,7 +757,7 @@ async def _stream_interaction(
 
             report_start = time.time()
             report = await walker.get_report()
-            final_response = build_interact_response(
+            final_response = await build_interact_response(
                 user_id=walker.user_id or "",
                 session_id=walker.session_id or "",
                 interaction=interaction,

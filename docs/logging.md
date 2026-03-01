@@ -451,7 +451,7 @@ Each log entry contains:
 - `session_id`: Session identifier
 - `user_id`: User ID
 - `logged_at`: Timestamp when logged
-- `interaction_data`: Complete interaction export structure (includes all interaction fields, actions, directives, parameters, events, observability metrics, etc.)
+- `interaction_data`: Complete interaction export structure (includes all interaction fields, actions, directives, parameters, events, observability metrics, usage, etc.)
 
 The `interaction_data` field contains the complete exported structure from the interaction, including all metadata, making it suitable for full audit trails and debugging.
 

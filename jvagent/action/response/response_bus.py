@@ -645,6 +645,9 @@ class ResponseBus:
         # Commit any pending streaming content
         await self.commit_pending_adhoc(interaction_id, interaction)
 
+        # Token spend is computed in the endpoint after flush, when all model_call
+        # events are present in observability_metrics.
+
         # Emit final signal
         user_id = getattr(interaction, "user_id", None) if interaction else None
         await self._emit_final_signal(

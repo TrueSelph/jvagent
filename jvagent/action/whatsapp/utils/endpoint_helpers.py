@@ -199,6 +199,11 @@ async def finalize_whatsapp_interaction(
         # Flush deferred saves (interaction and conversation) with error handling
         await flush_deferred_saves(interaction, walker.conversation)
 
+        # Compute usage after flush so all model_call events are present
+        from jvagent.action.interact.endpoints import _finalize_usage
+
+        await _finalize_usage(interaction)
+
         # Log interaction
         try:
             from jvagent.action.interact.endpoints import _build_interaction_log_data
@@ -206,8 +211,13 @@ async def finalize_whatsapp_interaction(
 
             app = await App.get()
             if app:
+                active_tasks = []
+                if walker.conversation:
+                    active_tasks = walker.conversation.get_active_tasks(
+                        status="active"
+                    )
                 log_data, message = _build_interaction_log_data(
-                    interaction, app.id, agent_id
+                    interaction, app.id, agent_id, active_tasks=active_tasks
                 )
                 logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
         except Exception as log_err:

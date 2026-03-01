@@ -368,6 +368,10 @@ class InteractWalker(Walker):
             self._current_action = here
             self._skip_current_action_record = False
 
+            # Add action parameters so they are merged into persona prompt (rule: if executed, parameters shape response)
+            if self.interaction and here.parameters:
+                await self.add_parameters(here.parameters)
+
             # Record action execution BEFORE execution to ensure it appears before
             # any actions it calls (like PersonaAction). This preserves the call order
             # in the actions list - the calling action appears before the called action.
@@ -640,6 +644,123 @@ class InteractWalker(Walker):
             RuntimeError: If called outside of action execution context or no interaction available
         """
         await self.add_parameters([parameter])
+
+    async def add_active_task(
+        self,
+        description: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        task_id: Optional[str] = None,
+        action_name: Optional[str] = None,
+        task_type: Optional[str] = None,
+    ) -> None:
+        """Add or update an active task on the conversation (task tracker).
+
+        Delegates to conversation.add_active_task. Requires self.conversation.
+
+        Args:
+            description: Human/AI-readable task description (action name can be included)
+            metadata: Optional metadata (interview_type, current_question, etc.)
+            task_id: Optional unique ID; defaults to description when not provided
+            action_name: Optional action class name for actions that manage their tasks
+            task_type: Optional task type (e.g. 'INTERVIEW') for router gating
+
+        Raises:
+            RuntimeError: If no conversation available
+        """
+        if not self.conversation:
+            raise RuntimeError("No conversation available for task tracker")
+        await self.conversation.add_active_task(
+            description=description,
+            metadata=metadata,
+            task_id=task_id,
+            action_name=action_name,
+            task_type=task_type,
+        )
+
+    async def update_task(
+        self,
+        status: str,
+        task_id: Optional[str] = None,
+        description: Optional[str] = None,
+        action_name: Optional[str] = None,
+    ) -> bool:
+        """Update task status on the conversation. Preserves task for audit log.
+
+        Delegates to conversation.update_task. Requires self.conversation.
+        When multiple tasks per action, use task_id or description to distinguish.
+
+        Args:
+            status: New status (e.g. "cancelled", "completed")
+            task_id: Task ID for exact match (optional)
+            description: Description of task to update (optional)
+            action_name: Action class name of task to update (optional)
+
+        Returns:
+            True if task was updated, False if not found
+
+        Raises:
+            RuntimeError: If no conversation available
+        """
+        if not self.conversation:
+            raise RuntimeError("No conversation available for task tracker")
+        return await self.conversation.update_task(
+            status=status,
+            task_id=task_id,
+            description=description,
+            action_name=action_name,
+        )
+
+    async def remove_active_task(
+        self,
+        task_id: Optional[str] = None,
+        description: Optional[str] = None,
+        action_name: Optional[str] = None,
+    ) -> bool:
+        """Transition task to completed status. Preserves task for audit log.
+
+        Delegates to conversation.remove_active_task (which transitions to completed).
+
+        Args:
+            task_id: Task ID for exact match (optional)
+            description: Description of task (optional)
+            action_name: Action class name of task (optional)
+
+        Returns:
+            True if task was updated, False if not found
+
+        Raises:
+            RuntimeError: If no conversation available
+        """
+        if not self.conversation:
+            raise RuntimeError("No conversation available for task tracker")
+        return await self.conversation.remove_active_task(
+            task_id=task_id, description=description, action_name=action_name
+        )
+
+    async def get_active_tasks(
+        self,
+        status: Optional[str] = None,
+        action_name: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get active tasks from the conversation, optionally filtered.
+
+        Delegates to conversation.get_active_tasks. Requires self.conversation.
+
+        Args:
+            status: Optional filter ("active", "inactive", "upcoming")
+            action_name: Optional filter by action class name for actions managing tasks
+
+        Returns:
+            List of task dicts
+
+        Raises:
+            RuntimeError: If no conversation available
+        """
+        if not self.conversation:
+            raise RuntimeError("No conversation available for task tracker")
+        return self.conversation.get_active_tasks(
+            status=status, action_name=action_name
+        )
 
 
 # Rebuild Pydantic model to resolve forward references
