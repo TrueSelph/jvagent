@@ -20,6 +20,7 @@ from .utils.typing_state_manager import TypingStateManager
 from .webhook_auth import get_or_create_system_user
 from .whatsapp_adapter import WhatsAppAdapter
 from .whatsapp_filter import WhatsAppFilter
+from .whatsapp_voice_filter import WhatsAppVoiceResponseFilter
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +248,13 @@ class WhatsAppAction(Action):
         filter = WhatsAppFilter(channels=["whatsapp"], priority=100)
         if not await filter.initialize(agent=agent):
             logger.warning("WhatsAppFilter initialization failed")
+
+        if self.tts_action:
+            voice_filter = WhatsAppVoiceResponseFilter(
+                action=self, channels=["whatsapp"], priority=105
+            )
+            if not await voice_filter.initialize(agent=agent):
+                logger.warning("WhatsAppVoiceResponseFilter initialization failed")
 
         original_timeout = self.request_timeout
         try:

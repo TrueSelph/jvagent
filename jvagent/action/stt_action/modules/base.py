@@ -40,7 +40,9 @@ class STTModule(ABC):
 
         Args:
             audio_base64: Base64 representation of the audio file
-            audio_type: MIME type of the audio file
+            audio_type: MIME type of the audio (e.g. audio/ogg, audio/mp3).
+                Callers should pass this when known; different sources use different
+                formats (e.g. WhatsApp voice = audio/ogg). Default is for legacy use.
 
         Returns:
             Text transcript of audio or None if failed

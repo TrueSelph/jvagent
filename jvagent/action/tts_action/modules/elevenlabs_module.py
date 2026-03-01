@@ -2,10 +2,9 @@
 
 import base64
 import logging
-import traceback
+import uuid
 from typing import Dict, List, Optional, Union
 
-# from elevenlabs import ElevenLabs
 from elevenlabs.client import ElevenLabs
 
 from .base import TTSModule
@@ -68,12 +67,12 @@ class ElevenLabsTTSModule(TTSModule):
                 audio = b"".join(response)
 
         except Exception as e:
-            self.logger.error(f"An exception occurred: {traceback.format_exc()}")
+            self.logger.error("ElevenLabs API error: %s", e, exc_info=True)
             return None
 
-        return self.get_audio_as(audio, as_base64, as_url)
+        return await self.get_audio_as(audio, as_base64, as_url)
 
-    def get_audio_as(
+    async def get_audio_as(
         self, audio: bytes, as_base64: bool = False, as_url: bool = False
     ) -> Optional[Union[str, bytes]]:
         """Prepare audio bytes as base64 string or URL for download.
@@ -93,40 +92,18 @@ class ElevenLabsTTSModule(TTSModule):
             return base64.b64encode(audio).decode("utf-8")
 
         if as_url and self.action:
-            import uuid
-
             filename = f"tts_audio_{uuid.uuid4().hex}.mp3"
             storage_path = f"tts_audio/{filename}"
 
             try:
-                # Use action's save_file method which uses jvspatial storage
-                import asyncio
-
-                if asyncio.iscoroutinefunction(self.action.save_file):
-                    # Run async save_file
-                    loop = asyncio.get_event_loop()
-                    success = loop.run_until_complete(
-                        self.action.save_file(
-                            storage_path, audio, metadata={"type": "tts_audio"}
-                        )
-                    )
-                else:
-                    success = self.action.save_file(
-                        storage_path, audio, metadata={"type": "tts_audio"}
-                    )
-
+                success = await self.action.save_file(
+                    storage_path, audio, metadata={"type": "tts_audio"}
+                )
                 if success:
-                    # Get URL using action's get_file_url method
-                    if asyncio.iscoroutinefunction(self.action.get_file_url):
-                        url = loop.run_until_complete(
-                            self.action.get_file_url(storage_path)
-                        )
-                    else:
-                        url = self.action.get_file_url(storage_path)
+                    url = await self.action.get_file_url(storage_path)
                     return url
-
             except Exception as e:
-                self.logger.error(f"Error saving audio file: {e}")
+                self.logger.error("Error saving audio file: %s", e, exc_info=True)
                 return None
 
         # Return raw bytes
@@ -250,9 +227,7 @@ class ElevenLabsTTSModule(TTSModule):
                     "severity": "error",
                 }
         except Exception as e:
-            self.logger.error(
-                f"An exception occurred in healthcheck: {traceback.format_exc()}"
-            )
+            self.logger.error("ElevenLabs healthcheck error: %s", e, exc_info=True)
             return {
                 "status": False,
                 "message": f"Check ElevenLabs TTS Action configuration: {e}",

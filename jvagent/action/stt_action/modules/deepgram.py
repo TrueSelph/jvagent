@@ -1,8 +1,8 @@
 """Deepgram STT implementation."""
 
 import base64
+import json
 import logging
-import traceback
 from typing import Dict, Optional, Union
 
 import aiohttp
@@ -61,18 +61,23 @@ class DeepgramSTTModule(STTModule):
                     json=data,
                     params=params,
                 ) as response:
-                    response.raise_for_status()
-                    result = await response.json()
-
+                    body = await response.text()
+                    if response.status >= 400:
+                        logger.error(
+                            "Deepgram API error: HTTP %d - %s",
+                            response.status,
+                            body[:500] if body else "(empty)",
+                        )
+                        return None
+                    result = json.loads(body) if body else {}
                     if result:
                         channels = result.get("results", {}).get("channels", [])
                         if channels:
                             alternatives = channels[0].get("alternatives", [])
                             if alternatives:
                                 return alternatives[0].get("transcript", "")
-
         except Exception as e:
-            logger.error(f"Deepgram API error: {traceback.format_exc()}")
+            logger.error("Deepgram API error: %s", e, exc_info=True)
 
         return None
 
@@ -103,18 +108,23 @@ class DeepgramSTTModule(STTModule):
                     data=data,
                     params=params,
                 ) as response:
-                    response.raise_for_status()
-                    result = await response.json()
-
+                    body = await response.text()
+                    if response.status >= 400:
+                        logger.error(
+                            "Deepgram API error: HTTP %d - %s",
+                            response.status,
+                            body[:500] if body else "(empty)",
+                        )
+                        return None
+                    result = json.loads(body) if body else {}
                     if result:
                         channels = result.get("results", {}).get("channels", [])
                         if channels:
                             alternatives = channels[0].get("alternatives", [])
                             if alternatives:
                                 return alternatives[0].get("transcript", "")
-
         except Exception as e:
-            logger.error(f"Deepgram API error: {traceback.format_exc()}")
+            logger.error("Deepgram API error: %s", e, exc_info=True)
 
         return None
 
@@ -144,9 +154,15 @@ class DeepgramSTTModule(STTModule):
                     data=audio_content,
                     params=params,
                 ) as response:
-                    response.raise_for_status()
-                    result = await response.json()
-
+                    body = await response.text()
+                    if response.status >= 400:
+                        logger.error(
+                            "Deepgram API error: HTTP %d - %s",
+                            response.status,
+                            body[:500] if body else "(empty)",
+                        )
+                        return None
+                    result = json.loads(body) if body else {}
                     if result:
                         channels = result.get("results", {}).get("channels", [])
                         if channels:
@@ -155,9 +171,8 @@ class DeepgramSTTModule(STTModule):
                                 transcript = alternatives[0].get("transcript", "")
                                 duration = result.get("metadata", {}).get("duration", 0)
                                 return {"transcript": transcript, "duration": duration}
-
         except Exception as e:
-            logger.error(f"Deepgram API error: {traceback.format_exc()}")
+            logger.error("Deepgram API error: %s", e, exc_info=True)
 
         return None
 
@@ -199,7 +214,7 @@ class DeepgramSTTModule(STTModule):
                         }
 
         except Exception as e:
-            logger.error(f"Deepgram healthcheck error: {traceback.format_exc()}")
+            logger.error("Deepgram healthcheck error: %s", e, exc_info=True)
             return {
                 "status": False,
                 "message": f"Deepgram API error: {e}",

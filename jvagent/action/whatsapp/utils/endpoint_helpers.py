@@ -6,7 +6,7 @@ messages, creating walkers, handling media, and managing interactions.
 
 import base64
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.exceptions import DatabaseError, ValidationError
@@ -401,6 +401,36 @@ async def _handle_media_message(
     return {"status": "ignored", "response": "No media to process"}
 
 
+def _prepare_voice_for_stt(data: Any) -> Optional[Tuple[str, str]]:
+    """Prepare WhatsApp voice message for STT action.
+
+    Extracts raw base64 and resolves audio MIME type. Encapsulates
+    WhatsApp-specific format knowledge; STT action remains generic.
+
+    Args:
+        data: MessagePayload object with media and optional mime_type
+
+    Returns:
+        (audio_base64, audio_type) or None if no valid media
+    """
+    if not data.media or not data.media.strip():
+        return None
+
+    media = data.media.strip()
+    if "," in media:
+        media = media.split(",")[1]
+
+    if not media:
+        return None
+
+    if data.mime_type and data.mime_type.startswith("audio/"):
+        audio_type = data.mime_type.split(";")[0].strip()
+    else:
+        audio_type = "audio/ogg"
+
+    return (media, audio_type)
+
+
 async def _handle_voice_message(
     data: Any, sender: str, whatsapp_action: Any
 ) -> Dict[str, Any]:
@@ -451,11 +481,15 @@ async def _handle_voice_message(
 
         # Transcribe with validation
         try:
-            if not data.media:
+            prepared = _prepare_voice_for_stt(data)
+            if not prepared:
                 logger.debug(f"No media data in voice message from {sender}")
                 return {"status": "ignored", "response": "no audio data"}
 
-            transcript = await stt_action.invoke_base64(audio_base64=data.media)
+            audio_b64, audio_type = prepared
+            transcript = await stt_action.invoke_base64(
+                audio_base64=audio_b64, audio_type=audio_type
+            )
 
             if transcript and transcript.strip():
                 logger.debug(f"Transcribed voice message from {sender}: {transcript}")
@@ -519,6 +553,15 @@ async def _process_interaction_async(
         # Convert MessagePayload to dict for InteractWalker
         data_dict = _convert_message_payload_to_dict(data)
         is_group = is_group or data_dict.get("isGroup", False)
+
+        # When user sends PTT and TTS is configured, respond with voice
+        whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
+        if (
+            data_dict.get("message_type") == "ptt"
+            and whatsapp_action
+            and whatsapp_action.tts_action
+        ):
+            data_dict["respond_with_voice"] = True
 
         # Create walker using helper function
         walker = await create_whatsapp_walker(
