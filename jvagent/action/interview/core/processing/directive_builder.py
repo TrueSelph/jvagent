@@ -8,6 +8,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from ..foundation.enums import InterviewState
+from ..foundation.prompts import ACTIVE_TASK_DESCRIPTION_TEMPLATE
 from ..session.interview_session import InterviewSession
 from ..utils.handler_utils import invoke_async_with_optional_context
 
@@ -30,11 +31,11 @@ class DirectiveBuilder:
             action: InterviewInteractAction instance
         """
         self.action = action
-        self._event_added = False
+        self._task_added = False
 
-    def reset_event_tracking(self) -> None:
-        """Reset event tracking flag for new execution."""
-        self._event_added = False
+    def reset_task_tracking(self) -> None:
+        """Reset task tracking flag for new execution."""
+        self._task_added = False
 
     def _build_review_data(self, session: InterviewSession) -> Dict[str, Any]:
         """Build key-value dict of collected interview data from session (display only)."""
@@ -155,39 +156,45 @@ class DirectiveBuilder:
     async def queue_directive(self, visitor: "InteractWalker", directive: str) -> None:
         """Queue a directive for later response generation.
 
-        The event is determined automatically based on the session state and added only once
-        per execution, even if multiple directives are queued.
+        Registers active task in task tracker when session is ACTIVE or REVIEW (once per
+        execution). COMPLETED/CANCELLED events are added explicitly in their handlers.
 
         Args:
             visitor: InteractWalker
             directive: Directive string to queue
         """
         if directive and directive.strip():
-            # Add event only once per execution, determined by session state
-            if not self._event_added:
-                # Determine event based on session state from visitor
+            # Register active task only once per execution when session is ACTIVE or REVIEW
+            if not self._task_added:
                 session = getattr(visitor, "interview_session", None)
                 if session:
-                    if session.state == InterviewState.COMPLETED:
-                        # Completion event is already added explicitly in generate_completed_directive
-                        # Skip to avoid duplicate events
-                        event_name = None
-                    else:
-                        # Use action helper to get state-specific event message
-                        event_name = self.action.get_state_event_message(
-                            session.state.value
+                    if session.state in (InterviewState.ACTIVE, InterviewState.REVIEW):
+                        action_name = self.action.get_class_name()
+                        description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(
+                            action_name=action_name
+                        )
+                        metadata = {
+                            "interview_type": session.interview_type,
+                            "state": session.state.value,
+                        }
+                        await visitor.add_active_task(
+                            description=description,
+                            metadata=metadata,
+                            action_name=action_name,
+                            task_type="INTERVIEW",
                         )
                 else:
-                    # No session available, default to active event
-                    event_name = self.action.get_state_event_message("ACTIVE")
-
-                # Only add event if one was determined (skip if COMPLETED state already handled)
-                if event_name:
-                    await visitor.add_event(event_name)
-                    self._event_added = True
-                else:
-                    # Event already added explicitly, just mark as added
-                    self._event_added = True
+                    # No session available, default to active task
+                    action_name = self.action.get_class_name()
+                    description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(
+                        action_name=action_name
+                    )
+                    await visitor.add_active_task(
+                        description=description,
+                        action_name=action_name,
+                        task_type="INTERVIEW",
+                    )
+                self._task_added = True
 
             await visitor.add_directive(directive)
         else:
@@ -211,7 +218,18 @@ class DirectiveBuilder:
         # Mark event as added to prevent queue_directive from adding it again
         completion_event = self.action.get_state_event_message("COMPLETED")
         await visitor.add_event(completion_event)
-        self._event_added = True  # Prevent duplicate event addition in queue_directive
+        self._task_added = True  # Prevent duplicate task addition in queue_directive
+
+        # Update task to completed (preserves task for audit log)
+        action_name = self.action.get_class_name()
+        description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(
+            action_name=action_name
+        )
+        await visitor.update_task(
+            status="completed",
+            description=description,
+            action_name=action_name,
+        )
 
         # Get completion handler for this interview type
         interview_type = session.interview_type
@@ -258,7 +276,18 @@ class DirectiveBuilder:
         # Mark event as added to prevent queue_directive from adding it again
         cancellation_event = self.action.get_state_event_message("CANCELLED")
         await visitor.add_event(cancellation_event)
-        self._event_added = True  # Prevent duplicate event addition in queue_directive
+        self._task_added = True  # Prevent duplicate task addition in queue_directive
+
+        # Update task to cancelled (preserves task for audit log)
+        action_name = self.action.get_class_name()
+        description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(
+            action_name=action_name
+        )
+        await visitor.update_task(
+            status="cancelled",
+            description=description,
+            action_name=action_name,
+        )
 
         # Get cancellation handler for this interview type
         interview_type = session.interview_type

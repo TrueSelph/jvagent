@@ -21,7 +21,7 @@ class TargetResolver:
     """Resolves session.target_node based on intent and interview state.
 
     Rules (evaluated in order):
-    - CANCELLATION intent → CancelledStateNode
+    - CANCELLATION intent → CancelledStateNode (always, prioritizes intent follow-through)
     - CONFIRMATION in REVIEW state → CompletedStateNode
     - UPDATE intent → First question node (re-evaluate from beginning)
     - ACTIVE + all answered → ReviewStateNode
@@ -58,7 +58,7 @@ class TargetResolver:
         current_state = session.state
         changed = False
 
-        # CANCELLATION — always goes to cancelled state
+        # CANCELLATION — always route to cancelled state (prioritize intent follow-through)
         if intent == Intent.CANCELLATION:
             node = await self.action.get_state_node(InterviewState.CANCELLED)
             session.target_node = node.id if node else None

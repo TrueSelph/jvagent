@@ -425,6 +425,12 @@ See the [InteractAction API Guide](jvagent/action/interact/README.md) for comple
 - Automatic database indexes on frequently queried fields
 - Cached reference to last interaction for O(1) access
 
+**Task Tracking:**
+- Conversations maintain an `active_tasks` list for ongoing activities requiring user input
+- Tasks have unique IDs, descriptions, and optional `action_name` for management
+- Used by interviews (ACTIVE/REVIEW), PersonaAction (reminder when user strays), and InteractRouter (context signals)
+- See [Task Tracking](docs/task-tracking.md) for details
+
 ### Namespaces
 
 **Namespaces** organize actions to prevent naming conflicts:
@@ -1902,6 +1908,7 @@ For more details, see [jvagent/bundle/README.md](jvagent/bundle/README.md).
 - [Logging System](docs/logging.md) - Interaction logging, archiving, retention
 - [Interaction Logging](docs/interaction-logging.md) - INTERACTION log level
 - [Error Logging](docs/error-logging.md) - Error logging and querying
+- [Task Tracking](docs/task-tracking.md) - Active tasks on Conversation, API, and integrations
 
 ### Action Modules
 

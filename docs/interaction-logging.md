@@ -147,6 +147,7 @@ Interaction logs include:
   - `parameters`: List of parameters
   - `events`: List of events
   - `observability_metrics`: Observability data
+  - `usage`: Aggregated usage (tokens, model_call_count, estimated_cost_usd, etc.)
   - `has_response`: Boolean indicating if response exists
   - `action_count`: Number of actions executed
   - `duration_seconds`: Interaction duration (if available)
@@ -190,6 +191,7 @@ Interaction logs include:
     "streamed": false,
     "actions": ["InteractRouter", "PersonaAction"],
     "directives": [],
+    "active_tasks": [],
     "parameters": [],
     "events": [],
     "observability_metrics": [],
@@ -205,6 +207,15 @@ Interaction logs include:
       "parameters": [],
       "events": [],
       "observability_metrics": [],
+      "usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "model_call_count": 0,
+        "estimated_cost_usd": 0.0,
+        "total_duration_seconds": 0.0,
+        "last_updated": null
+      },
       "started_at": "2025-01-02T12:00:00Z",
       "completed_at": "2025-01-02T12:00:01.5Z",
       "closed": true,

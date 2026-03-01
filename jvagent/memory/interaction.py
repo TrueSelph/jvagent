@@ -46,6 +46,7 @@ class Interaction(DeferredSaveMixin, Node):
         events: System events
         parameters: Applicable parameters for this interaction
         observability_metrics: Aggregated observability events (model calls, embeddings, etc.)
+        usage: Aggregated usage (tokens, model calls) for this interaction
         started_at: Interaction start timestamp
         completed_at: Interaction completion timestamp
         closed: Whether the interaction is closed
@@ -115,6 +116,10 @@ class Interaction(DeferredSaveMixin, Node):
     observability_metrics: List[Dict[str, Any]] = attribute(
         default_factory=list,
         description="Aggregated observability events (model calls, embeddings, etc.)",
+    )
+    usage: Dict[str, Any] = attribute(
+        default_factory=dict,
+        description="Aggregated usage (tokens, model calls) for this interaction",
     )
 
     # Timestamps
@@ -457,6 +462,63 @@ class Interaction(DeferredSaveMixin, Node):
         app = await App.get()
         self.completed_at = await app.now() if app else datetime.now(timezone.utc)
 
+    def compute_usage(self) -> Dict[str, Any]:
+        """Compute usage from observability_metrics and populate usage.
+
+        Iterates observability_metrics, sums tokens and duration, counts
+        model_call events (embedding_call contributes to tokens/cost but is not
+        counted separately), and estimates cost per event.
+
+        Returns:
+            The computed usage dict
+        """
+        from jvagent.action.model.cost_estimator import estimate_cost
+
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens = 0
+        model_call_count = 0
+        estimated_cost_usd = 0.0
+        total_duration_seconds = 0.0
+
+        for event in self.observability_metrics or []:
+            event_type = event.get("event_type")
+            if event_type not in ("model_call", "embedding_call"):
+                continue
+
+            if event_type == "model_call":
+                model_call_count += 1
+
+            data = event.get("data", {})
+            usage = data.get("usage", {})
+            pt = usage.get("prompt_tokens", 0) or 0
+            ct = usage.get("completion_tokens", 0) or 0
+            tt = usage.get("total_tokens", 0) or 0
+            if tt == 0 and (pt or ct):
+                tt = pt + ct
+            prompt_tokens += pt
+            completion_tokens += ct
+            total_tokens += tt
+            duration = data.get("duration") or 0.0
+            if isinstance(duration, (int, float)):
+                total_duration_seconds += float(duration)
+
+            model = data.get("model", "")
+            provider = data.get("provider", "unknown")
+            estimated_cost_usd += estimate_cost(model, provider, usage, event_type)
+
+        now = datetime.now(timezone.utc)
+        self.usage = {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "model_call_count": model_call_count,
+            "estimated_cost_usd": round(estimated_cost_usd, 6),
+            "total_duration_seconds": round(total_duration_seconds, 3),
+            "last_updated": now.isoformat(),
+        }
+        return self.usage
+
     def get_duration(self) -> float:
         """Get interaction duration in seconds.
 
@@ -491,6 +553,7 @@ class Interaction(DeferredSaveMixin, Node):
             "parameters": self.parameters,  # Includes executed status
             "events": self.events,  # Logs - no execution status
             "observability_metrics": self.observability_metrics,
+            "usage": self.usage,
             "interpretation": self.interpretation,
             "anchors": self.anchors,
             "started_at": self.started_at.isoformat() if self.started_at else None,

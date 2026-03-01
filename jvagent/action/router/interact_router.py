@@ -18,9 +18,9 @@ from jvspatial.core.annotations import attribute
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.router.prompts import (
+    CLARIFICATION_PARAPHRASE_PROMPT_TEMPLATE,
     CLARIFICATION_PROMPT_TEMPLATE,
     DEFAULT_CLARIFICATION_MESSAGES,
-    HISTORY_SECTION_TEMPLATE,
     ROUTER_SYSTEM_PROMPT,
     ROUTING_PROMPT_TEMPLATE,
 )
@@ -166,8 +166,11 @@ class InteractRouter(InteractAction):
                 logger.error("InteractRouter: Model action not found")
                 return
 
-            # Collect anchors from all InteractActions
-            anchors_dict = await self._collect_anchors(agent)
+            # Fetch conversation first (needed for anchor filtering and history)
+            conversation = await Conversation.get(interaction.conversation_id)
+
+            # Collect anchors from all InteractActions (filtered by active interview when applicable)
+            anchors_dict = await self._collect_anchors(agent, conversation=conversation)
 
             # Get dynamic exceptions (actions with always_execute=True)
             dynamic_exceptions = await self._get_dynamic_exceptions(agent)
@@ -179,12 +182,16 @@ class InteractRouter(InteractAction):
                     "No actions available for routing", interaction.utterance or ""
                 )
                 await self._finalize_routing(
-                    visitor, interaction, agent, result, combined_exceptions
+                    visitor,
+                    interaction,
+                    agent,
+                    result,
+                    combined_exceptions,
+                    conversation=conversation,
                 )
                 return
 
             # Get conversation history
-            conversation = await Conversation.get(interaction.conversation_id)
             interaction_history = []
             if conversation:
                 interaction_history = await conversation.get_interaction_history(
@@ -203,6 +210,7 @@ class InteractRouter(InteractAction):
                 interaction,
                 anchors_dict,
                 interaction_history,
+                conversation=conversation,
             )
 
             # Publish canned response if enabled and appropriate
@@ -213,7 +221,12 @@ class InteractRouter(InteractAction):
 
             # Finalize routing
             await self._finalize_routing(
-                visitor, interaction, agent, result, combined_exceptions
+                visitor,
+                interaction,
+                agent,
+                result,
+                combined_exceptions,
+                conversation=conversation,
             )
 
         except Exception as e:
@@ -224,6 +237,7 @@ class InteractRouter(InteractAction):
         interaction: "Interaction",
         anchors_dict: Dict[str, List[str]],
         interaction_history: List[Dict[str, Any]],
+        conversation: Optional[Conversation] = None,
     ) -> RoutingResult:
         """Route using direct LLM call with Chain of Verification.
 
@@ -231,6 +245,7 @@ class InteractRouter(InteractAction):
             interaction: The current interaction
             anchors_dict: Dictionary of action names to anchor lists
             interaction_history: Formatted conversation history
+            conversation: Optional Conversation for task tracker context
 
         Returns:
             RoutingResult with verified routing data
@@ -247,6 +262,7 @@ class InteractRouter(InteractAction):
                 utterance=interaction.utterance or "",
                 anchors_dict=anchors_dict,
                 interaction_history=interaction_history,
+                conversation=conversation,
             )
 
             # Single LLM call with Chain of Verification
@@ -257,6 +273,7 @@ class InteractRouter(InteractAction):
                 max_tokens=self.model_max_tokens,
                 model=self.model,
                 calling_action_name=self.get_class_name(),
+                interaction=interaction,
             )
 
             # Parse the response into RoutingResult
@@ -273,6 +290,7 @@ class InteractRouter(InteractAction):
         utterance: str,
         anchors_dict: Dict[str, List[str]],
         interaction_history: List[Dict[str, Any]],
+        conversation: Optional[Conversation] = None,
     ) -> str:
         """Build the routing prompt with optional entity extraction.
 
@@ -287,11 +305,22 @@ class InteractRouter(InteractAction):
         # Format anchors as JSON
         anchors_json = json.dumps(anchors_dict, indent=2)
 
-        # Format history section
-        history_section = ""
-        if interaction_history:
-            history_text = self._format_history(interaction_history)
-            history_section = HISTORY_SECTION_TEMPLATE.format(history=history_text)
+        # Format conversation history
+        history_section = (
+            self._format_history(
+                interaction_history, conversation=conversation
+            )
+            if interaction_history
+            else "(No previous conversation)"
+        )
+
+        # Build ACTIVE TASKS section only when there are active tasks
+        active_tasks_section = ""
+        if conversation:
+            active_descriptions = conversation.get_active_tasks_for_context()
+            if active_descriptions:
+                task_lines = "\n".join(f"- {desc}" for desc in active_descriptions)
+                active_tasks_section = f"ACTIVE TASKS:\n{task_lines}\n\n"
 
         # Conditional entity extraction field
         entity_field = ',\n  "extracted_entities": {}' if self.extract_entities else ""
@@ -315,6 +344,7 @@ class InteractRouter(InteractAction):
         prompt = ROUTING_PROMPT_TEMPLATE.format(
             utterance=utterance,
             anchors_json=anchors_json,
+            active_tasks_section=active_tasks_section,
             history_section=history_section,
             entity_field=entity_field,
             canned_field=canned_field,
@@ -323,12 +353,15 @@ class InteractRouter(InteractAction):
 
         return prompt
 
-    def _format_history(self, interaction_history: List[Dict[str, Any]]) -> str:
+    def _format_history(
+        self,
+        interaction_history: List[Dict[str, Any]],
+        conversation: Optional[Conversation] = None,
+    ) -> str:
         """Format interaction history for the prompt with context signals.
 
         Prepends a context line highlighting key signals from the conversation:
         - Whether the MOST RECENT assistant message was a question
-        - Any ongoing activity markers
 
         Appends a clear transition marker to indicate where the current user message follows.
 
@@ -338,6 +371,7 @@ class InteractRouter(InteractAction):
 
         Args:
             interaction_history: List of interaction history entries (chronological order: oldest → newest)
+            conversation: Optional Conversation (unused; kept for API compatibility)
 
         Returns:
             Formatted history string with context line and transition marker
@@ -368,21 +402,6 @@ class InteractRouter(InteractAction):
             if last_assistant_msg and last_assistant_msg.strip().endswith("?"):
                 context_signals.append("Most recent assistant message is a question")
 
-            # Look for ongoing activity markers (most recent one)
-            for e in reversed(interaction_history):
-                if isinstance(e, dict) and (e.get("content") or "").startswith(
-                    "[EVENT]"
-                ):
-                    ev = e["content"]
-                    if "Ongoing Activity:" in ev:
-                        activity_name = (
-                            ev.replace("[EVENT] ", "")
-                            .replace("Ongoing Activity:", "")
-                            .strip()
-                        )
-                        context_signals.append(f"Ongoing activity: {activity_name}")
-                        break
-
             # Look for gating posture (SUPPRESSED/DEFERRED) in most recent system messages
             for e in reversed(interaction_history):
                 if isinstance(e, dict) and e.get("role") == "system":
@@ -404,23 +423,6 @@ class InteractRouter(InteractAction):
                         context_signals.append(
                             "Most recent assistant message is a question"
                         )
-                        break
-
-            # Look for ongoing activity in most recent entry
-            if interaction_history and "events" in interaction_history[-1]:
-                for event in interaction_history[-1]["events"]:
-                    ev_str = (
-                        event.get("content", event)
-                        if isinstance(event, dict)
-                        else str(event)
-                    )
-                    if "Ongoing Activity:" in ev_str:
-                        activity_name = (
-                            ev_str.replace("[EVENT] ", "")
-                            .replace("Ongoing Activity:", "")
-                            .strip()
-                        )
-                        context_signals.append(f"Ongoing activity: {activity_name}")
                         break
 
         # Build the history lines
@@ -448,12 +450,7 @@ class InteractRouter(InteractAction):
                             lines.append(f"Assistant: {content}")
                     elif role == "system":
                         if (content or "").startswith("[EVENT]"):
-                            if "Ongoing Activity:" in content:
-                                lines.append(
-                                    f"[Ongoing] {content.replace('[EVENT] ', '').replace('Ongoing Activity:', '').strip()}"
-                                )
-                            else:
-                                lines.append(content)
+                            lines.append(content)
                         elif (content or "").startswith("[SUPPRESSED]") or (
                             content or ""
                         ).startswith("[DEFERRED]"):
@@ -486,12 +483,7 @@ class InteractRouter(InteractAction):
                                 if isinstance(event, dict)
                                 else str(event)
                             )
-                            if "Ongoing Activity:" in ev_str:
-                                lines.append(
-                                    f"[Ongoing] {ev_str.replace('Ongoing Activity:', '').strip()}"
-                                )
-                            else:
-                                lines.append(f"[EVENT] {ev_str}")
+                            lines.append(f"[EVENT] {ev_str}")
             elif isinstance(entry, str):
                 lines.append(entry)
 
@@ -589,6 +581,7 @@ class InteractRouter(InteractAction):
                 result.intent_type,
                 result.confidence,
                 issues,
+                interaction=interaction,
             )
 
             if clarification:
@@ -615,6 +608,8 @@ class InteractRouter(InteractAction):
         intent_type: str,
         confidence: float,
         issues: List[str],
+        *,
+        interaction: Optional["Interaction"] = None,
     ) -> str:
         """Generate a clarification message.
 
@@ -628,9 +623,31 @@ class InteractRouter(InteractAction):
         Returns:
             Clarification message string
         """
-        # Use fast template-based clarification unless dynamic generation is enabled
+        # Template-based: LLM paraphrases the template to match user's language
         if not self.generate_dynamic_clarification:
-            return random.choice(DEFAULT_CLARIFICATION_MESSAGES)
+            template = random.choice(DEFAULT_CLARIFICATION_MESSAGES)
+            try:
+                model_action = await self.get_model_action()
+                if model_action:
+                    prompt = CLARIFICATION_PARAPHRASE_PROMPT_TEMPLATE.format(
+                        utterance=utterance,
+                        template=template,
+                    )
+                    clarification = await model_action.generate(
+                        prompt=prompt,
+                        temperature=0.7,
+                        max_tokens=100,
+                        model=self.model,
+                        calling_action_name=f"{self.get_class_name()}_clarification_paraphrase",
+                        interaction=interaction,
+                    )
+                    if clarification and clarification.strip():
+                        return clarification.strip()
+            except Exception as e:
+                logger.warning(
+                    f"InteractRouter: Paraphrase failed, using template: {e}"
+                )
+            return template
 
         # LLM-based clarification generation (adds latency)
         try:
@@ -650,6 +667,7 @@ class InteractRouter(InteractAction):
                     max_tokens=100,
                     model=self.model,
                     calling_action_name=f"{self.get_class_name()}_clarification",
+                    interaction=interaction,
                 )
 
                 if clarification and clarification.strip():
@@ -668,6 +686,7 @@ class InteractRouter(InteractAction):
         agent: Any,
         result: RoutingResult,
         combined_exceptions: List[str],
+        conversation: Optional[Conversation] = None,
     ) -> None:
         """Finalize routing by storing results and updating walk path.
 
@@ -677,6 +696,7 @@ class InteractRouter(InteractAction):
             agent: The agent instance
             result: The routing result
             combined_exceptions: Actions that always execute
+            conversation: Optional Conversation for interview gating
         """
         routed_actions = result.actions
 
@@ -689,6 +709,26 @@ class InteractRouter(InteractAction):
 
         # Combine with exceptions
         all_allowed = list(set(routed_actions + combined_exceptions))
+
+        # When an interview is active, filter out other interview actions (safety net)
+        if conversation:
+            active_interview_name = conversation.get_active_interview_action_name()
+            if active_interview_name:
+                actions_manager = await agent.get_actions_manager()
+                if actions_manager:
+                    all_interact_actions = await actions_manager.get_actions(
+                        enabled_only=True, entity=InteractAction
+                    )
+                    interview_names = {
+                        a.get_class_name()
+                        for a in all_interact_actions
+                        if getattr(a, "task_type", None) == "INTERVIEW"
+                    }
+                    all_allowed = [
+                        name
+                        for name in all_allowed
+                        if name not in interview_names or name == active_interview_name
+                    ]
 
         # Store routing results on interaction
         await self._store_routing_result(
@@ -785,11 +825,18 @@ class InteractRouter(InteractAction):
             if getattr(a, "always_execute", False)
         ]
 
-    async def _collect_anchors(self, agent: Any) -> Dict[str, List[str]]:
+    async def _collect_anchors(
+        self, agent: Any, conversation: Optional[Conversation] = None
+    ) -> Dict[str, List[str]]:
         """Collect anchors from all InteractActions.
+
+        When an interview task is active, only that interview action's anchors
+        are included; other interview actions are excluded to prevent routing
+        to multiple interviews.
 
         Args:
             agent: Agent instance
+            conversation: Optional Conversation for active task gating
 
         Returns:
             Dictionary mapping entity names to anchor statement lists
@@ -806,6 +853,11 @@ class InteractRouter(InteractAction):
         # Exclude this router
         interact_actions = [a for a in all_interact_actions if a.id != self.id]
 
+        # When an interview is active, only allow that interview's anchors
+        active_interview_name: Optional[str] = None
+        if conversation:
+            active_interview_name = conversation.get_active_interview_action_name()
+
         logger.debug(f"InteractRouter: Found {len(interact_actions)} InteractActions")
 
         anchors_dict: Dict[str, List[str]] = {}
@@ -821,6 +873,16 @@ class InteractRouter(InteractAction):
                     f"InteractRouter: Skipping {entity_name} (always_execute or exception)"
                 )
                 continue
+
+            # When an interview is active, exclude other interview actions
+            if active_interview_name:
+                if getattr(action, "task_type", None) == "INTERVIEW":
+                    if entity_name != active_interview_name:
+                        logger.debug(
+                            f"InteractRouter: Skipping {entity_name} "
+                            f"(interview gating: active is {active_interview_name})"
+                        )
+                        continue
 
             # Get anchors
             anchors = getattr(action, "anchors", None)

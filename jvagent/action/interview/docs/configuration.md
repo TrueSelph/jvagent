@@ -105,8 +105,8 @@ class CustomInterviewAction(InterviewInteractAction):
             instructions="Please provide first and last name"
         )
 
-        # Get state event message
-        event = templates.get_state_event_message("ACTIVE", self.get_class_name())
+        # Get state event message (COMPLETED, CANCELLED; ACTIVE/REVIEW use active tasks)
+        event = templates.get_state_event_message("COMPLETED", self.get_class_name())
 ```
 
 ## Auto-Confirm Mode

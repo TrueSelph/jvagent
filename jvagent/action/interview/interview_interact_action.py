@@ -64,6 +64,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+TASK_TYPE_INTERVIEW = "INTERVIEW"
+
 # Import registry access functions (decorators are in separate module)
 from .core.foundation.decorators import (
     RegistryManager,
@@ -120,11 +122,14 @@ class InterviewInteractAction(InteractAction, ABC):
 
     description: str = "Unified orchestrator for interview system"
 
+    # Task type for router gating (ensures at most one interview runs at a time)
+    task_type: str = TASK_TYPE_INTERVIEW
+
     # Standard anchors that are automatically included for all interview implementations
     # Base anchor templates - will be contextualized with class name in _merge_standard_anchors
     # Covers: cancellation, update, confirmation, decline, submission
     _standard_interview_anchor_templates: List[str] = [
-        "User cancels or abandons {interview_type}",
+        "IF {interview_type} entry is listed under ACTIVE TASKS AND the user requests to cancel or abandon the task.",
         "User corrects or updates {interview_type}",
         "User confirms {interview_type}",
         "User skips {interview_type} question",
@@ -509,6 +514,9 @@ class InterviewInteractAction(InteractAction, ABC):
 
         Standard anchors are contextualized with the class name to help distinguish
         multiple interview instances coexisting in a single agent.
+
+        Subclasses may override _standard_interview_anchor_templates to customize
+        or suppress standard anchors (e.g., set to [] for implementation-specific only).
         """
         # Get current anchors value (may be from agent.yaml override)
         current_anchors = getattr(self, "anchors", [])
@@ -867,8 +875,8 @@ class InterviewInteractAction(InteractAction, ABC):
         session = await self._get_or_create_session(conversation)
         visitor.interview_session = session
 
-        # Reset directive builder event tracking for this execution
-        self.directive_builder.reset_event_tracking()
+        # Reset directive builder task tracking for this execution
+        self.directive_builder.reset_task_tracking()
 
         # Get utterance
         utterance = visitor.utterance if visitor.utterance else ""

@@ -647,6 +647,7 @@ class ClassificationHandler:
                 temperature=self.action.model_temperature,
                 max_tokens=self.action.model_max_tokens,
                 response_format={"type": "json_object"},
+                interaction=interaction,
             )
 
             # Parse JSON response
