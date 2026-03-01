@@ -204,8 +204,11 @@ class Interaction(DeferredSaveMixin, Node):
         """Remove an action execution from the processing log.
 
         Removes the last occurrence of the action name to preserve execution
-        order for other actions. This is used when an action needs to opt out
-        of being recorded (e.g., if it determines it shouldn't have executed).
+        order for other actions. Also removes that action's parameters and
+        directives from the interaction so they do not shape the persona prompt.
+
+        This is used when an action needs to opt out of being recorded
+        (e.g., if it determines it shouldn't have executed).
 
         Args:
             action_name: Class name (camelCase) of the action to unrecord
@@ -220,6 +223,14 @@ class Interaction(DeferredSaveMixin, Node):
                         f"Interaction.unrecord_action_execution: Unrecorded action {action_name}"
                     )
                     break
+
+            # Remove parameters and directives from this action so they do not shape the persona prompt
+            self.parameters = [
+                p for p in self.parameters if p.get("action_name") != action_name
+            ]
+            self.directives = [
+                d for d in self.directives if d.get("action_name") != action_name
+            ]
 
     def add_parameter(self, parameter: Dict[str, Any], action_name: str) -> bool:
         """Add a parameter to the applicable parameters list.
@@ -254,13 +265,18 @@ class Interaction(DeferredSaveMixin, Node):
                     if k not in ("executed", "action_name")
                 }
                 if existing_copy == param_copy:
-                    return False  # Duplicate found, skip adding
+                    # Duplicate found - reset executed so it is included in get_unexecuted_parameters.
+                    # This handles the case where params were marked executed by a prior persona.respond()
+                    # (e.g. from another action) but the current action needs them for this response.
+                    existing["executed"] = False
+                    return True  # Changed state, caller should save
 
         # Not a duplicate, add it
         parameter["action_name"] = action_name
-        # Ensure executed key is set to False if not already present
-        if "executed" not in parameter:
-            parameter["executed"] = False
+        # Always set executed=False when adding. Callers may pass the same dict refs that were
+        # previously marked executed by Persona (e.g. Converse's self.parameters); we must reset
+        # so they qualify for get_unexecuted_parameters.
+        parameter["executed"] = False
         self.parameters.append(parameter)
         return True  # Added
 

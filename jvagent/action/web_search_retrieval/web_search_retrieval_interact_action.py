@@ -156,6 +156,9 @@ class WebSearchRetrievalInteractAction(InteractAction):
                 f"WebSearchRetrievalInteractAction: no results for query {query!r}"
             )
 
+        if self.parameters:
+            await visitor.add_parameters(self.parameters)
+
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #

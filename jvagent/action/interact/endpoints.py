@@ -683,7 +683,10 @@ async def _stream_interaction(
                         walker.agent_id if hasattr(walker, "agent_id") else agent.id
                     )
                     log_data, message = _build_interaction_log_data(
-                        interaction, app.id, agent_id_for_logging, active_tasks=active_tasks
+                        interaction,
+                        app.id,
+                        agent_id_for_logging,
+                        active_tasks=active_tasks,
                     )
                     # Use logger.log() directly to ensure extra parameter is passed correctly
                     logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
@@ -747,7 +750,10 @@ async def _stream_interaction(
                         walker.agent_id if hasattr(walker, "agent_id") else None
                     )
                     log_data, message = _build_interaction_log_data(
-                        interaction, app.id, agent_id_from_walker, active_tasks=active_tasks
+                        interaction,
+                        app.id,
+                        agent_id_from_walker,
+                        active_tasks=active_tasks,
                     )
                     # Use logger.log() directly to ensure extra parameter is passed correctly
                     logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)

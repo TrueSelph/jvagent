@@ -520,7 +520,9 @@ class PersonaAction(Action):
         if self.remind_on_active_tasks:
             tasks = await self._get_active_tasks_requiring_intervention(interaction)
             if tasks:
-                task_list = "\n".join(f"- {t.get('description', str(t))}" for t in tasks)
+                task_list = "\n".join(
+                    f"- {t.get('description', str(t))}" for t in tasks
+                )
                 active_tasks_section = ACTIVE_TASKS_SECTION_PROMPT.format(
                     task_list=task_list
                 )

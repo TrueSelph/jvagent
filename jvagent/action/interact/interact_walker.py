@@ -368,10 +368,6 @@ class InteractWalker(Walker):
             self._current_action = here
             self._skip_current_action_record = False
 
-            # Add action parameters so they are merged into persona prompt (rule: if executed, parameters shape response)
-            if self.interaction and here.parameters:
-                await self.add_parameters(here.parameters)
-
             # Record action execution BEFORE execution to ensure it appears before
             # any actions it calls (like PersonaAction). This preserves the call order
             # in the actions list - the calling action appears before the called action.

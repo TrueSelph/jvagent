@@ -307,9 +307,7 @@ class InteractRouter(InteractAction):
 
         # Format conversation history
         history_section = (
-            self._format_history(
-                interaction_history, conversation=conversation
-            )
+            self._format_history(interaction_history, conversation=conversation)
             if interaction_history
             else "(No previous conversation)"
         )
