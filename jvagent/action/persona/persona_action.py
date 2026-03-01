@@ -177,7 +177,7 @@ class PersonaAction(Action):
                 - parameters: Applicable parameters for this interaction
             visitor: Optional InteractWalker for streaming support
             use_history: Whether to include conversation history (default: True)
-            history_limit: Number of past interactions to include in history (default: 3)
+            history_limit: Number of past interactions to include in history (default: 4)
             with_utterance: Whether to include the user's utterance in the prompt (default: True)
             with_interpretation: Include interpretations in history (default: False)
             with_event: Include events in history (default: True)
@@ -233,7 +233,7 @@ class PersonaAction(Action):
                 "or PersonaAction's own parameters."
             )
 
-        # Generate response using direct prompt approach
+        # Generate response using direct prompt approach (pass model_action to avoid second lookup)
         return await self._generate_response(
             interaction,
             visitor,
@@ -247,6 +247,7 @@ class PersonaAction(Action):
             with_response,
             max_statement_length,
             transient,
+            model_action=model_action,
         )
 
     async def _get_user_display_name(self, interaction: Interaction) -> str:
@@ -259,13 +260,17 @@ class PersonaAction(Action):
             logger.debug(f"PersonaAction: failed to resolve user display name: {e}")
         return "user"
 
-    def _sanitize_voice_response(self, response: str, max_words: int = 100) -> str:
+    def _sanitize_voice_response(
+        self, response: str, max_words: Optional[int] = None
+    ) -> str:
         """Sanitize response for voice/TTS: strip markdown, collapse whitespace, truncate.
 
         Fallback when the model disobeys voice format rules.
+        Uses voice_response_limit when max_words is None.
         """
         if not response or not response.strip():
             return response
+        limit = max_words if max_words is not None else self.voice_response_limit
         text = response.strip()
         # Strip markdown: **bold** -> bold, *italic* -> italic
         text = re.sub(r"\*\*([^*]*)\*\*", r"\1", text)
@@ -281,11 +286,11 @@ class PersonaAction(Action):
         # Collapse double newlines and extra whitespace
         text = re.sub(r"\n\n+", ". ", text)
         text = re.sub(r"\s+", " ", text).strip()
-        # Truncate to max_words
+        # Truncate to limit
         words = text.split()
-        if len(words) <= max_words:
+        if len(words) <= limit:
             return text
-        truncated = words[:max_words]
+        truncated = words[:limit]
         # Prefer sentence boundary
         last_sentence_end = -1
         for i in range(len(truncated) - 1, -1, -1):
@@ -293,7 +298,7 @@ class PersonaAction(Action):
             if w and w[-1] in ".!?":
                 last_sentence_end = i
                 break
-        if last_sentence_end > max_words // 2:
+        if last_sentence_end > limit // 2:
             truncated = truncated[: last_sentence_end + 1]
         return " ".join(truncated).strip()
 
@@ -456,6 +461,8 @@ class PersonaAction(Action):
         now = await self.now()
         date_str = now.strftime("%A, %d %B, %Y")
         time_str = now.strftime("%I:%M %p")
+        app = await self.get_app()
+        timezone_str = (app.timezone or "UTC") if app else "UTC"
 
         # Build continuation guidance if in multi-call mode
         continuation_guidance = ""
@@ -550,6 +557,7 @@ class PersonaAction(Action):
             phonetic_substitutions=(
                 self.phonetic_substitutions if channel == "voice" else None
             ),
+            voice_max_words=self.voice_response_limit,
         )
         if channel_directive:
             channel_formatting_section = f"### CHANNEL FORMATTING\n{CHANNEL_OVERRIDE_PREAMBLE}\n\n{channel_directive}"
@@ -583,6 +591,7 @@ class PersonaAction(Action):
             user=await self._get_user_display_name(interaction),
             date=date_str,
             time=time_str,
+            timezone=timezone_str,
             interpretation_section=interpretation_section,
             response_protocol=RESPONSE_PROTOCOL_PROMPT,
             directives_section=directives_section,
@@ -729,6 +738,7 @@ class PersonaAction(Action):
         with_response: bool,
         max_statement_length: Optional[int],
         transient: bool,
+        model_action: Optional[Any] = None,
     ) -> str:
         """Generate response using direct prompt approach.
 
@@ -748,12 +758,13 @@ class PersonaAction(Action):
             with_response: Include AI responses in history
             max_statement_length: Truncate to this length
             transient: If True, skip appending response to interaction.response
+            model_action: Pre-fetched model action (avoids second lookup when passed from respond())
 
         Returns:
             Generated response string
         """
-        # Get model action (required=True raises error if not found)
-        model_action = await self.get_model_action(required=True)
+        if model_action is None:
+            model_action = await self.get_model_action(required=True)
 
         conversation_history = None
         if use_history:
@@ -798,7 +809,7 @@ class PersonaAction(Action):
         # When channel=voice, inject format reminder for peak-attention reinforcement
         channel = interaction.channel or "default"
         if channel == "voice" and prompt:
-            prompt = f"{prompt}\n\n[VOICE: Plain text only. Max 100 words. No markdown, lists, or **bold**.]"
+            prompt = f"{prompt}\n\n[VOICE: Plain text only. Max {self.voice_response_limit} words. No markdown, lists, or **bold**.]"
 
         # Make the language model call
         try:

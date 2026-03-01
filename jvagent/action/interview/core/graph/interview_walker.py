@@ -140,8 +140,8 @@ class InterviewWalker(Walker):
     async def _resolve_first_node(self, session: Any) -> Optional[QuestionNode]:
         """Resolve the first QuestionNode from the session's question_graph.
 
-        Uses Node.get to look up the first question by name from the
-        QuestionNodeCache, falling back to a graph query when necessary.
+        Delegates to interview_action._get_first_question_node for consistent
+        first-node resolution across the interview system.
 
         Args:
             session: InterviewSession with question_graph populated.
@@ -149,31 +149,37 @@ class InterviewWalker(Walker):
         Returns:
             First QuestionNode or None.
         """
-        from ..utils.cache_utils import QuestionNodeCache
-
-        if not session.question_graph:
-            return None
-        first_name = session.question_graph[0].get("name")
-        if not first_name:
-            return None
-        cache = QuestionNodeCache(session)
-        node = await cache.get_cached_node_by_id(first_name)
-        if node:
-            return node
-        # Fallback: query graph for the node by label
-        from jvspatial.core import Node as SpatialNode
-
-        try:
-            results = await SpatialNode.find(label=first_name)
-            if results:
-                return results[0]
-        except Exception:
-            pass
+        if self.interview_action:
+            return await self.interview_action._get_first_question_node(session)
         return None
 
     # =========================================================================
     # Helper Methods for on_question_node() - Extracted for clarity
     # =========================================================================
+
+    def _apply_pending_directive_override(self, directive: Optional[str]) -> bool:
+        """Apply _pending_directive_override or directive to self.directives.
+
+        If _pending_directive_override is set, applies it (replace or append mode)
+        and clears it. Otherwise appends directive if present.
+
+        Returns:
+            True if a directive was queued, False otherwise.
+        """
+        if self._pending_directive_override:
+            mode, override_directive = self._pending_directive_override
+            self._pending_directive_override = None
+            if mode == "replace":
+                self.directives.append(override_directive)
+            else:
+                if directive:
+                    self.directives.append(directive)
+                self.directives.append(override_directive)
+            return True
+        if directive:
+            self.directives.append(directive)
+            return True
+        return False
 
     async def _handle_unanswered_question(
         self, here: QuestionNode, question_name: str
@@ -197,18 +203,7 @@ class InterviewWalker(Walker):
         """
         directive = await here.execute(self)
         if directive or self._pending_directive_override:
-            # Apply @input_directive_override from previous question if any
-            if self._pending_directive_override:
-                mode, override_directive = self._pending_directive_override
-                self._pending_directive_override = None
-                if mode == "replace":
-                    self.directives.append(override_directive)
-                else:  # append
-                    if directive:
-                        self.directives.append(directive)
-                    self.directives.append(override_directive)
-            elif directive:
-                self.directives.append(directive)
+            self._apply_pending_directive_override(directive)
             self.interview_session.target_node = here.id
             await self.interview_session.save()
             return False
@@ -551,20 +546,7 @@ class InterviewWalker(Walker):
 
         # Execute state node - handles transition and returns directive
         directive = await here.execute(self)
-        directive_queued = False
-        if directive or self._pending_directive_override:
-            if self._pending_directive_override:
-                mode, override_directive = self._pending_directive_override
-                self._pending_directive_override = None
-                if mode == "replace":
-                    self.directives.append(override_directive)
-                else:  # append
-                    if directive:
-                        self.directives.append(directive)
-                    self.directives.append(override_directive)
-            elif directive:
-                self.directives.append(directive)
-            directive_queued = True
+        directive_queued = self._apply_pending_directive_override(directive)
 
         # Update position — skip for terminal states (COMPLETED/CANCELLED) where
         # the session has been removed by cleanup. Calling save() on a deleted

@@ -3,14 +3,14 @@
 These tests verify that the router correctly interprets user intent based on conversation
 history, particularly ensuring it matches current user inputs to the most recent assistant
 question (not earlier questions), and accurately assesses conversational state.
-
-Since the router module has circular dependencies, we test the core formatting logic directly.
 """
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pytest
+
+from jvagent.action.router.formatting import format_interaction_history
 
 # Resolve prompts.py path relative to project (works in CI and locally)
 _PROMPTS_FILE = (
@@ -26,122 +26,16 @@ def format_history_for_test(
     interaction_history: List[Dict[str, Any]],
     conversation: Optional[Any] = None,
 ) -> str:
-    """Test implementation matching InteractRouter CONVERSATION STATE section.
-
-    Produces the history content for the routing prompt (context signals + messages).
-    Extracted to avoid circular import issues while testing the same logic.
-    """
-    if not interaction_history:
-        return "(No previous conversation)"
-    return _format_history_content(interaction_history, conversation=conversation)
+    """Format history for tests using shared router formatting."""
+    return format_interaction_history(interaction_history, conversation=conversation)
 
 
 def _format_history_content(
     interaction_history: List[Dict[str, Any]],
     conversation: Optional[Any] = None,
 ) -> str:
-    """Format conversation history (context signals + messages)."""
-    first_entry = interaction_history[0] if interaction_history else {}
-    is_role_content = (
-        isinstance(first_entry, dict)
-        and "role" in first_entry
-        and "content" in first_entry
-    )
-
-    context_signals = []
-    last_assistant_msg = None
-
-    if is_role_content:
-        for entry in reversed(interaction_history):
-            if isinstance(entry, dict) and entry.get("role") == "assistant":
-                last_assistant_msg = entry.get("content") or ""
-                break
-
-        if last_assistant_msg and last_assistant_msg.strip().endswith("?"):
-            context_signals.append("Most recent assistant message is a question")
-
-        for e in reversed(interaction_history):
-            if isinstance(e, dict) and e.get("role") == "system":
-                content = e.get("content") or ""
-                if content.startswith("[SUPPRESSED]"):
-                    context_signals.append(
-                        "Agent did not respond to recent message (suppressed)"
-                    )
-                    break
-                if content.startswith("[DEFERRED]"):
-                    context_signals.append("Deferred fragment(s) pending from user")
-                    break
-    else:
-        for entry in reversed(interaction_history):
-            if isinstance(entry, dict) and "ai" in entry:
-                ai_msg = entry["ai"]
-                if ai_msg and ai_msg.strip().endswith("?"):
-                    context_signals.append(
-                        "Most recent assistant message is a question"
-                    )
-                    break
-
-    # Build the history lines
-    lines = []
-
-    # Add context line if we have signals
-    if context_signals:
-        context_line = "Context: " + ". ".join(context_signals) + "."
-        lines.append(context_line)
-        lines.append("")  # Empty line for readability
-
-    # Add the full history (chronological order: oldest to newest)
-    for i, entry in enumerate(interaction_history):
-        if isinstance(entry, dict):
-            if is_role_content:
-                role = entry.get("role", "")
-                content = entry.get("content") or ""
-                if role == "user":
-                    lines.append(f"User: {content}")
-                elif role == "assistant":
-                    # Mark as question only if it ends with ?
-                    if content.strip().endswith("?"):
-                        lines.append(f"Assistant (question): {content}")
-                    else:
-                        lines.append(f"Assistant: {content}")
-                elif role == "system" and (content or "").startswith("[EVENT]"):
-                    lines.append(content)
-            else:
-                if "human" in entry:
-                    lines.append(f"User: {entry['human']}")
-                elif "utterance" in entry:
-                    lines.append(f"User: {entry['utterance']}")
-                if "ai" in entry:
-                    ai_msg = entry["ai"]
-                    if ai_msg and ai_msg.strip().endswith("?"):
-                        lines.append(f"Assistant (question): {ai_msg}")
-                    else:
-                        lines.append(f"Assistant: {ai_msg}")
-                elif "response" in entry and entry["response"]:
-                    resp = entry["response"]
-                    if resp.strip().endswith("?"):
-                        lines.append(f"Assistant (question): {resp}")
-                    else:
-                        lines.append(f"Assistant: {resp}")
-                if "events" in entry:
-                    for event in entry["events"]:
-                        ev_str = (
-                            event.get("content", event)
-                            if isinstance(event, dict)
-                            else str(event)
-                        )
-                        lines.append(f"[EVENT] {ev_str}")
-        elif isinstance(entry, str):
-            lines.append(entry)
-
-    # Add transition marker before current user message
-    if lines:
-        lines.append("")  # Empty line for separation
-        lines.append("---")
-        lines.append(">>> USER RESPONDS NOW <<<")
-        lines.append("---")
-
-    return "\n".join(lines) if lines else "(No previous conversation)"
+    """Format conversation history. Alias for format_interaction_history."""
+    return format_interaction_history(interaction_history, conversation=conversation)
 
 
 class TestRouterConversationalStateInterpretation:

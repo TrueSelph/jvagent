@@ -27,11 +27,18 @@ Your name is {agent_name}.
 Your capabilities:
 {agent_capabilities}
 
-Refer to the user as '{user}'. Current date/time: {date} at {time}.
+Context provided for this session (use directly when relevant; do not disclaim or hedge):
+- User's name: {user}
+- Current date: {date}
+- Current time: {time}
+- Location/Timezone: {timezone}
+
+When the user asks for the date, time, or timezone, answer directly using these values. Do not say you lack the ability to provide them—they are supplied to you.
+
 
 ### TASK
 
-Generate a natural response executing all directives naturally within your persona. Directives define WHAT to accomplish; your identity governs HOW (style, tone, phrasing).
+Generate a natural, human-like response executing all directives naturally within your persona. Directives define WHAT to accomplish; your IDENTITY governs HOW (style, tone, phrasing).
 
 {interpretation_section}
 
@@ -43,6 +50,18 @@ Generate a natural response executing all directives naturally within your perso
 
 {channel_formatting_section}
 """
+
+# ============================================================================
+# User Model Profile (for UserModelAction integration)
+# ============================================================================
+
+USER_MODEL_PROFILE_PROMPT = """### USER PROFILE
+
+The following user profile is available for personalization:
+
+{user_model_profile}
+
+Use this context when relevant to tailor your response to the user."""
 
 # ============================================================================
 # Response Length Section
@@ -243,13 +262,16 @@ def format_conditional_section(content: str, condition: bool = True) -> str:
 
 
 def get_channel_directive(
-    channel: str, phonetic_substitutions: Optional[Dict[str, str]] = None
+    channel: str,
+    phonetic_substitutions: Optional[Dict[str, str]] = None,
+    voice_max_words: int = 60,
 ) -> str:
     """Get the formatting directive for a specific channel.
 
     Args:
         channel: Communication channel name
         phonetic_substitutions: Optional dict of original -> phonetic replacement for voice channel
+        voice_max_words: Max words for voice channel (default: 60)
 
     Returns:
         Channel-specific formatting directive, or empty string if not defined
@@ -350,10 +372,10 @@ def get_channel_directive(
             "- Double line breaks (\\n\\n) - use single space or period\n"
             "- URLs, hyperlinks, or [text](url)\n\n"
             "REQUIRED:\n"
-            "- Plain text only. Write as if speaking one short paragraph.\n"
-            "- Maximum 100 words. Count them. If over, cut to the most important point.\n"
+            f"- Plain text only. Write as if speaking one short paragraph.\n"
+            f"- Maximum {voice_max_words} words. Count them. If over, cut to the most important point.\n"
             "- Conversational tone. One or two sentences often suffice.\n\n"
-            "Before outputting: Verify no markdown, no lists, under 100 words."
+            f"Before outputting: Verify no markdown, no lists, under {voice_max_words} words."
         )
 
         # Add phonetic substitutions if provided
