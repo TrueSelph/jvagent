@@ -33,9 +33,7 @@ def format_history_for_test(
     """
     if not interaction_history:
         return "(No previous conversation)"
-    return _format_history_content(
-        interaction_history, conversation=conversation
-    )
+    return _format_history_content(interaction_history, conversation=conversation)
 
 
 def _format_history_content(
@@ -71,9 +69,7 @@ def _format_history_content(
                     )
                     break
                 if content.startswith("[DEFERRED]"):
-                    context_signals.append(
-                        "Deferred fragment(s) pending from user"
-                    )
+                    context_signals.append("Deferred fragment(s) pending from user")
                     break
     else:
         for entry in reversed(interaction_history):
@@ -328,6 +324,7 @@ class TestRouterConversationalStateInterpretation:
 
 class TestRouterActionMatching:
     """Tests for correct action matching based on anchors and conversation state."""
+
 
 class TestRouterPromptStructure:
     """Tests for proper structure of the routing prompt sent to LLM."""

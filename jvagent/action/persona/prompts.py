@@ -201,10 +201,8 @@ def format_parameter(param: dict, index: Optional[int] = None) -> str:
         rationale = param.get("rationale", "")
 
         if condition and response:
-            prefix = (
-                f"Parameter #{index}) " if index is not None else ""
-            )  # "IF {condition}, THEN {response}"
-            formatted = f"{prefix}IF {condition}, THEN {response}"
+            # "IF {condition}, THEN {response}"
+            formatted = f"- IF {condition}, THEN {response}"
 
             # Add description if available
             if description:

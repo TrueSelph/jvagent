@@ -222,9 +222,7 @@ class DirectiveBuilder:
 
         # Update task to completed (preserves task for audit log)
         action_name = self.action.get_class_name()
-        description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(
-            action_name=action_name
-        )
+        description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(action_name=action_name)
         await visitor.update_task(
             status="completed",
             description=description,
@@ -280,9 +278,7 @@ class DirectiveBuilder:
 
         # Update task to cancelled (preserves task for audit log)
         action_name = self.action.get_class_name()
-        description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(
-            action_name=action_name
-        )
+        description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(action_name=action_name)
         await visitor.update_task(
             status="cancelled",
             description=description,

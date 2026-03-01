@@ -213,9 +213,7 @@ async def finalize_whatsapp_interaction(
             if app:
                 active_tasks = []
                 if walker.conversation:
-                    active_tasks = walker.conversation.get_active_tasks(
-                        status="active"
-                    )
+                    active_tasks = walker.conversation.get_active_tasks(status="active")
                 log_data, message = _build_interaction_log_data(
                     interaction, app.id, agent_id, active_tasks=active_tasks
                 )

@@ -267,22 +267,18 @@ class User(Node):
                 "last_updated": None,
             }
 
-        self.usage["total_tokens"] = (
-            self.usage.get("total_tokens", 0)
-            + usage.get("total_tokens", 0)
+        self.usage["total_tokens"] = self.usage.get("total_tokens", 0) + usage.get(
+            "total_tokens", 0
         )
-        self.usage["prompt_tokens"] = (
-            self.usage.get("prompt_tokens", 0)
-            + usage.get("prompt_tokens", 0)
+        self.usage["prompt_tokens"] = self.usage.get("prompt_tokens", 0) + usage.get(
+            "prompt_tokens", 0
         )
-        self.usage["completion_tokens"] = (
-            self.usage.get("completion_tokens", 0)
-            + usage.get("completion_tokens", 0)
-        )
-        self.usage["model_call_count"] = (
-            self.usage.get("model_call_count", 0)
-            + usage.get("model_call_count", 0)
-        )
+        self.usage["completion_tokens"] = self.usage.get(
+            "completion_tokens", 0
+        ) + usage.get("completion_tokens", 0)
+        self.usage["model_call_count"] = self.usage.get(
+            "model_call_count", 0
+        ) + usage.get("model_call_count", 0)
         self.usage["estimated_cost_usd"] = round(
             self.usage.get("estimated_cost_usd", 0.0)
             + usage.get("estimated_cost_usd", 0.0),
@@ -293,9 +289,7 @@ class User(Node):
             + usage.get("total_duration_seconds", 0.0),
             3,
         )
-        self.usage["interaction_count"] = (
-            self.usage.get("interaction_count", 0) + 1
-        )
+        self.usage["interaction_count"] = self.usage.get("interaction_count", 0) + 1
 
         app = await App.get()
         self.usage["last_updated"] = (

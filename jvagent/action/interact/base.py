@@ -301,9 +301,15 @@ class InteractAction(Action, ABC):
             if directives:
                 await visitor.add_directives(directives)
 
-            # Add parameters if provided (using bulk method for efficiency)
+            # Add parameters if provided. Use caller's action name explicitly so parameters
+            # are attributed correctly even when visitor._current_action may not match
+            # (e.g. when another action's context is active).
             if parameters:
-                await visitor.add_parameters(parameters)
+                action_name = getattr(
+                    self, "get_class_name", lambda: self.__class__.__name__
+                )()
+                if interaction.add_parameters(parameters, action_name):
+                    await interaction.save()
 
             from jvagent.action.persona.persona_action import PersonaAction
 

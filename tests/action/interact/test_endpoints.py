@@ -183,7 +183,8 @@ class TestResponseBuilder:
             interaction.streamed = False
 
             payload = build_interaction_payload(
-                interaction, active_tasks=[{"description": "Guide user to complete Signup"}]
+                interaction,
+                active_tasks=[{"description": "Guide user to complete Signup"}],
             )
 
             # Development should include all fields including usage
@@ -360,8 +361,7 @@ class TestFinalizeUsage:
             await _finalize_usage(interaction)
 
         assert any(
-            "Failed to update user usage stats" in rec.message
-            for rec in caplog.records
+            "Failed to update user usage stats" in rec.message for rec in caplog.records
         )
         assert any("int_123" in rec.message for rec in caplog.records)
         assert any("usr_456" in rec.message for rec in caplog.records)

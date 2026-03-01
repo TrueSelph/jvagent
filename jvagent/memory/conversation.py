@@ -950,9 +950,7 @@ class Conversation(DeferredSaveMixin, Node):
                 return t
         return None
 
-    def get_active_task_by_action(
-        self, action_name: str
-    ) -> Optional[Dict[str, Any]]:
+    def get_active_task_by_action(self, action_name: str) -> Optional[Dict[str, Any]]:
         """Get specific task by action_name.
 
         Args:
@@ -973,9 +971,7 @@ class Conversation(DeferredSaveMixin, Node):
             List of descriptions for active tasks (status=active)
         """
         return [
-            t["description"]
-            for t in self.active_tasks
-            if t.get("status") == "active"
+            t["description"] for t in self.active_tasks if t.get("status") == "active"
         ]
 
     def get_active_interview_action_name(self) -> Optional[str]:
@@ -1035,9 +1031,7 @@ class Conversation(DeferredSaveMixin, Node):
         for interaction in interactions:
             if hasattr(interaction, "usage") and interaction.usage:
                 total_tokens += interaction.usage.get("total_tokens", 0)
-                total_duration += interaction.usage.get(
-                    "total_duration_seconds", 0.0
-                )
+                total_duration += interaction.usage.get("total_duration_seconds", 0.0)
             elif (
                 hasattr(interaction, "observability_metrics")
                 and interaction.observability_metrics

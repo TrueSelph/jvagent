@@ -29,7 +29,10 @@ async def test_add_active_task_adds_new_task(test_db):
         assert t["description"] == "SignupInterviewInteractAction"
         assert t["action_name"] == "SignupInterviewInteractAction"
         assert t["status"] == "active"
-        assert t["task_id"].startswith("SignupInterviewInteractAction:") and len(t["task_id"]) > 35
+        assert (
+            t["task_id"].startswith("SignupInterviewInteractAction:")
+            and len(t["task_id"]) > 35
+        )
         assert "created_at" in t
         assert "updated_at" in t
     finally:
@@ -192,8 +195,18 @@ def test_get_active_tasks_returns_all():
     """get_active_tasks returns all tasks when no filters provided."""
     conv = Conversation(session_id="", user_id="", channel="default")
     conv.active_tasks = [
-        {"task_id": "1", "description": "Task1", "action_name": "Action1", "status": "active"},
-        {"task_id": "2", "description": "Task2", "action_name": "Action2", "status": "inactive"},
+        {
+            "task_id": "1",
+            "description": "Task1",
+            "action_name": "Action1",
+            "status": "active",
+        },
+        {
+            "task_id": "2",
+            "description": "Task2",
+            "action_name": "Action2",
+            "status": "inactive",
+        },
     ]
     result = conv.get_active_tasks()
     assert len(result) == 2
@@ -203,8 +216,18 @@ def test_get_active_tasks_filters_by_status():
     """get_active_tasks filters by status when provided."""
     conv = Conversation(session_id="", user_id="", channel="default")
     conv.active_tasks = [
-        {"task_id": "1", "description": "Task1", "action_name": "Action1", "status": "active"},
-        {"task_id": "2", "description": "Task2", "action_name": "Action2", "status": "inactive"},
+        {
+            "task_id": "1",
+            "description": "Task1",
+            "action_name": "Action1",
+            "status": "active",
+        },
+        {
+            "task_id": "2",
+            "description": "Task2",
+            "action_name": "Action2",
+            "status": "inactive",
+        },
     ]
     result = conv.get_active_tasks(status="active")
     assert len(result) == 1
@@ -215,8 +238,18 @@ def test_get_active_tasks_filters_by_action_name():
     """get_active_tasks filters by action_name when provided."""
     conv = Conversation(session_id="", user_id="", channel="default")
     conv.active_tasks = [
-        {"task_id": "1", "description": "Task1", "action_name": "Action1", "status": "active"},
-        {"task_id": "2", "description": "Task2", "action_name": "Action2", "status": "active"},
+        {
+            "task_id": "1",
+            "description": "Task1",
+            "action_name": "Action1",
+            "status": "active",
+        },
+        {
+            "task_id": "2",
+            "description": "Task2",
+            "action_name": "Action2",
+            "status": "active",
+        },
     ]
     result = conv.get_active_tasks(action_name="Action2")
     assert len(result) == 1
@@ -247,8 +280,18 @@ def test_get_active_task_by_action():
     """get_active_task_by_action returns matching task by action_name."""
     conv = Conversation(session_id="", user_id="", channel="default")
     conv.active_tasks = [
-        {"task_id": "1", "description": "Task1", "action_name": "Action1", "status": "active"},
-        {"task_id": "2", "description": "Task2", "action_name": "Action2", "status": "active"},
+        {
+            "task_id": "1",
+            "description": "Task1",
+            "action_name": "Action1",
+            "status": "active",
+        },
+        {
+            "task_id": "2",
+            "description": "Task2",
+            "action_name": "Action2",
+            "status": "active",
+        },
     ]
     t = conv.get_active_task_by_action("Action2")
     assert t is not None
@@ -258,7 +301,14 @@ def test_get_active_task_by_action():
 def test_get_active_task_by_action_returns_none_when_not_found():
     """get_active_task_by_action returns None when no match."""
     conv = Conversation(session_id="", user_id="", channel="default")
-    conv.active_tasks = [{"task_id": "1", "description": "Task1", "action_name": "Action1", "status": "active"}]
+    conv.active_tasks = [
+        {
+            "task_id": "1",
+            "description": "Task1",
+            "action_name": "Action1",
+            "status": "active",
+        }
+    ]
     t = conv.get_active_task_by_action("Action2")
     assert t is None
 
@@ -294,7 +344,12 @@ def test_get_active_interview_action_name_returns_none_when_no_interview():
     """get_active_interview_action_name returns None when no active interview task."""
     conv = Conversation(session_id="", user_id="", channel="default")
     conv.active_tasks = [
-        {"task_id": "1", "description": "Task1", "action_name": "OtherAction", "status": "active"},
+        {
+            "task_id": "1",
+            "description": "Task1",
+            "action_name": "OtherAction",
+            "status": "active",
+        },
     ]
     result = conv.get_active_interview_action_name()
     assert result is None
@@ -333,6 +388,8 @@ async def test_add_active_task_with_task_type_stores_top_level(test_db):
         assert len(conv.active_tasks) == 1
         t = conv.active_tasks[0]
         assert t["task_type"] == "INTERVIEW"
-        assert conv.get_active_interview_action_name() == "SignupInterviewInteractAction"
+        assert (
+            conv.get_active_interview_action_name() == "SignupInterviewInteractAction"
+        )
     finally:
         await conv.delete(cascade=True)
