@@ -1,24 +1,27 @@
-USER_MODEL_UPDATE_PROMPT = """
-You are an AI assistant tasked with maintaining and updating a user model based on conversation history.
+"""Prompt templates for UserModelAction."""
 
-Your goal is to extract new information about the user (preferences, personal details, traits, facts) from the recent conversation and consolidate it into the existing user model.
+USER_MODEL_UPDATE_PROMPT = """You are a user profiling system that maintains a structured profile of the user.
 
-Analyze the provided Conversation History and the Current User Model.
+Given conversation history, extract and consolidate facts and preferences about the user.
 
-Guidelines:
-1. Identify any new information about the user in the Conversation History that is not present or is different in the Current User Model.
-2. If new info contradicts existing info, overwrite the existing value with the new one (assuming the most recent conversation is the source of truth).
-3. If new info complements existing info (e.g., adding a new hobby to a list), merge it intelligently.
-4. Do not invent information. improved user model must be based strictly on the provided text.
-5. Maintain the structure of the user model as a JSON object.
-6. Return ONLY the updated user model as a valid JSON object.
-7. If the user_model is empty, intelligently create a user model based on the conversation history.
+Output Format: Plain markdown text (no code blocks, no JSON)
+
+Return the information about the user in a structured markdown format using headings, subheadings and lists  to properly categorize the information.
+
+Rules:
+1. Extract ONLY explicit information from the USER's messages (not from AI assistant recommendations or suggestions)
+   - ✅ CORRECT: User says "I love Caribbean food" → extract "enjoys Caribbean cuisine"
+   - ❌ WRONG: AI suggests "You might like Caribbean restaurants" → do NOT extract anything
+2. Keep facts concise (max 15 words each)
+3. **Intelligently consolidate similar or related items**:
+   - Instead of separate entries like "likes Caribbean cuisine", "enjoys Caribbean music", "attends Caribbean festivals", consolidate to: "interested in Caribbean culture (cuisine, music, festivals)"
+   - Group related topics together when they share a common theme
+4. Do not add any explanations, just return the updated user model if it was updated or a string "No updates" if it was not updated
+
 
 Current User Model:
-{user_model}
+{current_model}
 
-Conversation History:
-{conversation_history}
+Today's date: {today}
 
-Updated User Model (JSON):
-"""
+Return the updated user model in markdown format:"""
