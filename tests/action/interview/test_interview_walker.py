@@ -205,3 +205,113 @@ class TestResolveTargetNodeOutOfOrder:
         assert session.target_node == "first_question_node_id"
         action._get_first_question_node.assert_called_once_with(session)
         action._get_question_node.assert_not_called()
+
+
+class TestTargetResolverCancellationGate:
+    """Test that CANCELLATION always routes to CancelledStateNode (intent prioritization)."""
+
+    @pytest.mark.asyncio
+    async def test_cancellation_routes_to_cancelled_with_active_task(self, test_db):
+        """CANCELLATION routes to CANCELLED when conversation has active task."""
+        session = await InterviewSession.create(
+            agent_id="test_agent",
+            conversation_id="test_conv",
+            interview_type="TestInterviewAction",
+            question_graph=[{"name": "q1", "question": "Q1?", "required": True}],
+            state=InterviewState.ACTIVE,
+        )
+
+        cancelled_node = MagicMock()
+        cancelled_node.id = "cancelled_node_id"
+
+        action = MagicMock(spec=InterviewInteractAction)
+        action.get_class_name.return_value = "TestInterviewAction"
+        action.get_state_node = AsyncMock(return_value=cancelled_node)
+
+        visitor = MagicMock()
+        visitor.conversation = MagicMock()
+
+        resolver = TargetResolver(action)
+        await resolver.resolve(session, Intent.CANCELLATION, visitor=visitor)
+
+        assert session.target_node == "cancelled_node_id"
+        action.get_state_node.assert_called_once_with(InterviewState.CANCELLED)
+
+    @pytest.mark.asyncio
+    async def test_cancellation_routes_to_cancelled_with_no_active_task(self, test_db):
+        """CANCELLATION routes to CANCELLED even when no active task (prioritize intent)."""
+        session = await InterviewSession.create(
+            agent_id="test_agent",
+            conversation_id="test_conv",
+            interview_type="TestInterviewAction",
+            question_graph=[{"name": "q1", "question": "Q1?", "required": True}],
+            state=InterviewState.ACTIVE,
+        )
+
+        cancelled_node = MagicMock()
+        cancelled_node.id = "cancelled_node_id"
+
+        action = MagicMock(spec=InterviewInteractAction)
+        action.get_class_name.return_value = "TestInterviewAction"
+        action.get_state_node = AsyncMock(return_value=cancelled_node)
+
+        visitor = MagicMock()
+        visitor.conversation = MagicMock()
+        visitor.conversation.get_active_tasks.return_value = []
+
+        resolver = TargetResolver(action)
+        await resolver.resolve(session, Intent.CANCELLATION, visitor=visitor)
+
+        assert session.target_node == "cancelled_node_id"
+        action.get_state_node.assert_called_once_with(InterviewState.CANCELLED)
+
+    @pytest.mark.asyncio
+    async def test_cancellation_routes_to_cancelled_with_no_visitor(self, test_db):
+        """CANCELLATION routes to CANCELLED even when visitor is None."""
+        session = await InterviewSession.create(
+            agent_id="test_agent",
+            conversation_id="test_conv",
+            interview_type="TestInterviewAction",
+            question_graph=[{"name": "q1", "question": "Q1?", "required": True}],
+            state=InterviewState.ACTIVE,
+        )
+
+        cancelled_node = MagicMock()
+        cancelled_node.id = "cancelled_node_id"
+
+        action = MagicMock(spec=InterviewInteractAction)
+        action.get_class_name.return_value = "TestInterviewAction"
+        action.get_state_node = AsyncMock(return_value=cancelled_node)
+
+        resolver = TargetResolver(action)
+        await resolver.resolve(session, Intent.CANCELLATION, visitor=None)
+
+        assert session.target_node == "cancelled_node_id"
+        action.get_state_node.assert_called_once_with(InterviewState.CANCELLED)
+
+    @pytest.mark.asyncio
+    async def test_cancellation_routes_to_cancelled_with_no_conversation(self, test_db):
+        """CANCELLATION routes to CANCELLED even when visitor has no conversation."""
+        session = await InterviewSession.create(
+            agent_id="test_agent",
+            conversation_id="test_conv",
+            interview_type="TestInterviewAction",
+            question_graph=[{"name": "q1", "question": "Q1?", "required": True}],
+            state=InterviewState.ACTIVE,
+        )
+
+        cancelled_node = MagicMock()
+        cancelled_node.id = "cancelled_node_id"
+
+        action = MagicMock(spec=InterviewInteractAction)
+        action.get_class_name.return_value = "TestInterviewAction"
+        action.get_state_node = AsyncMock(return_value=cancelled_node)
+
+        visitor = MagicMock()
+        visitor.conversation = None
+
+        resolver = TargetResolver(action)
+        await resolver.resolve(session, Intent.CANCELLATION, visitor=visitor)
+
+        assert session.target_node == "cancelled_node_id"
+        action.get_state_node.assert_called_once_with(InterviewState.CANCELLED)

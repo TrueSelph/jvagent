@@ -1,22 +1,26 @@
 """Response builder for interact endpoint with production filtering."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from jvagent.memory.interaction import Interaction
 from jvagent.utils.env import is_production_mode
 
 
-def build_interaction_payload(interaction: Interaction) -> Dict[str, Any]:
+def build_interaction_payload(
+    interaction: Interaction,
+    active_tasks: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     """Build interaction payload, filtering debug data in production.
 
     In production mode (JVAGENT_ENVIRONMENT or config.development.environment), returns
     minimal payload with only: id, utterance, response.
 
     In development mode, returns full payload with: id, utterance, response,
-    actions, directives, parameters, events, observability_metrics, streamed.
+    actions, directives, parameters, events, active_tasks, observability_metrics, streamed.
 
     Args:
         interaction: Interaction node instance
+        active_tasks: Optional list of active tasks from conversation (dev mode only)
 
     Returns:
         Dictionary with interaction data (filtered based on environment)
@@ -30,20 +34,24 @@ def build_interaction_payload(interaction: Interaction) -> Dict[str, Any]:
         }
     else:
         # Full development payload - includes all debug/observability data
-        return {
+        payload = {
             "id": interaction.id,
             "utterance": interaction.utterance,
             "response": interaction.response,
             "actions": interaction.actions,
             "directives": interaction.directives,
+            "active_tasks": active_tasks if active_tasks is not None else [],
             "parameters": interaction.parameters,
             "events": interaction.events,
             "observability_metrics": interaction.observability_metrics,
+            "usage": getattr(interaction, "usage", None) or {},
             "streamed": interaction.streamed,
         }
 
+        return payload
 
-def build_interact_response(
+
+async def build_interact_response(
     user_id: str,
     session_id: str,
     interaction: Interaction,
@@ -73,7 +81,16 @@ def build_interact_response(
         "response": interaction.response,
     }
     if not is_production_mode():
-        response["interaction"] = build_interaction_payload(interaction)
+        active_tasks: List[Dict[str, Any]] = []
+        if interaction.conversation_id:
+            from jvagent.memory.conversation import Conversation
+
+            conversation = await Conversation.get(interaction.conversation_id)
+            if conversation:
+                active_tasks = conversation.get_active_tasks(status="active")
+        response["interaction"] = build_interaction_payload(
+            interaction, active_tasks=active_tasks
+        )
 
     # Include report only in development mode
     # In production mode, omit the field entirely (not set to None)

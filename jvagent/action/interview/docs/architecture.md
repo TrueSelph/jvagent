@@ -39,13 +39,12 @@ The interview action is split into focused packages under `core/`:
 |---------|----------------|
 | **foundation** | Shared types, enums, config dataclasses, prompts, decorators, exceptions. No dependency on other interview packages. |
 | **classification** | Intent classification and extraction (LLM). `ClassificationHandler` + strategy-style `IntentHandler` implementations. |
-| **graph** | Question/state graph: `QuestionNode`, `StateNode`, `QuestionWalker`, `QuestionGraphBuilder`, validators, branch evaluation. |
-| **state** | State machine and state-node directive generation (`InterviewStateMachine`, `StateNode`). |
-| **processing** | Response validation/storage (`ResponseProcessor`) and directive assembly (`DirectiveBuilder`). |
-| **session** | Session entity and orchestration service (`InterviewSession`, `InterviewService`). |
+| **graph** | Question/state graph: `QuestionNode`, `StateNode`, `InterviewWalker`, `QuestionPathWalker`, `QuestionGraphBuilder`, validators, branch evaluation. |
+| **processing** | Directive assembly (`DirectiveBuilder`), target resolution (`TargetResolver`). |
+| **session** | Session entity (`InterviewSession`). |
 | **utils** | Constants, JSON/session helpers, cache utilities. |
 
-Dependency direction: foundation ← utils; classification, graph, state, processing, session depend on foundation (and optionally utils). The action and `InterviewService` orchestrate these; they do not depend on each other's internals.
+Dependency direction: foundation ← utils; classification, graph, processing, session depend on foundation (and optionally utils). The action orchestrates these; they do not depend on each other's internals.
 
 ## Core Components
 
@@ -138,10 +137,12 @@ Manages interview state transitions and state-specific behavior:
 
 ### 8. QuestionPathWalker
 
-Lightweight walker for path discovery and post-update sync:
-- `find_next_target`: Finds next unanswered question on active path (uses existing cache)
-- `get_reachable_questions`: Collects all reachable question names (uses existing cache)
-- `sync`: Post-update sync—invalidates cache, traverses full path, prunes unreachable responses
+Lightweight walker for path discovery and post-update sync.
+
+**Modes:**
+- `find_next`: Finds next unanswered question on active path (uses existing cache)
+- `collect_all`: Collects all reachable question names via `get_reachable_questions`
+- `sync` / `sync_post_update`: Post-update sync—invalidates cache, traverses full path, prunes unreachable responses
 
 ### 9. ClassificationHandler
 

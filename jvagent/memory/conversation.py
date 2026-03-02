@@ -1,5 +1,6 @@
 """Conversation node for managing conversation sessions."""
 
+import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
@@ -68,6 +69,10 @@ class Conversation(DeferredSaveMixin, Node):
     )
     context: Dict[str, Any] = attribute(
         default_factory=dict, description="Conversation context dictionary"
+    )
+    active_tasks: List[Dict[str, Any]] = attribute(
+        default_factory=list,
+        description="Active/inactive tasks for AI context (task tracker)",
     )
 
     async def get_agent(self) -> Optional[Any]:
@@ -350,7 +355,7 @@ class Conversation(DeferredSaveMixin, Node):
                     break
                 current = await current.get_next_interaction()
 
-        # Defensive check: ensure we never exceed limit when limit > 0
+        # Invariant: never exceed limit (defensive)
         if limit > 0 and len(interactions) > limit:
             interactions = interactions[:limit]
 
@@ -430,8 +435,7 @@ class Conversation(DeferredSaveMixin, Node):
             # Add interpretation as system message (if present and requested)
             # Note: interpretations are not truncated
             if with_interpretation and interaction.interpretation:
-                content_parts = [interaction.interpretation]
-                content = " | ".join(content_parts)
+                content = interaction.interpretation
                 history.append(
                     {
                         "role": "system",
@@ -779,25 +783,182 @@ class Conversation(DeferredSaveMixin, Node):
         self.context.update(updates)
         await self.save()
 
-    def data_get(self, key: str) -> Any:
-        """Get value from context.
+    async def add_active_task(
+        self,
+        description: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        task_id: Optional[str] = None,
+        action_name: Optional[str] = None,
+        task_type: Optional[str] = None,
+    ) -> None:
+        """Add or update an active task (upsert by task_id, action_name, or description).
 
         Args:
-            key: Context key to retrieve
+            description: Human/AI-readable task description (action name can be included)
+            metadata: Optional metadata (interview_type, current_question, etc.)
+            task_id: Optional unique ID; auto-generated UUID when not provided
+            action_name: Optional action class name for actions that manage their tasks
+            task_type: Optional task type (e.g. 'INTERVIEW') for router gating
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        short_uuid = uuid.uuid4().hex[:12]
+        default_tid = (
+            f"{action_name}:{short_uuid}" if action_name else f"task_{uuid.uuid4().hex}"
+        )
+        entry: Dict[str, Any] = {
+            "task_id": task_id or default_tid,
+            "task_type": task_type,
+            "description": description,
+            "action_name": action_name,
+            "status": "active",
+            "metadata": metadata or {},
+            "created_at": now,
+            "updated_at": now,
+        }
+
+        for i, t in enumerate(self.active_tasks):
+            if (
+                (task_id and t.get("task_id") == task_id)
+                or t.get("description") == description
+                or (action_name and t.get("action_name") == action_name)
+            ):
+                entry["task_id"] = t.get("task_id") or task_id or default_tid
+                entry["created_at"] = t.get("created_at", now)
+                self.active_tasks[i] = entry
+                await self.save()
+                return
+        self.active_tasks.append(entry)
+        await self.save()
+
+    async def update_task(
+        self,
+        status: str,
+        task_id: Optional[str] = None,
+        description: Optional[str] = None,
+        action_name: Optional[str] = None,
+    ) -> bool:
+        """Update task status. Preserves task for audit log.
+
+        Args:
+            status: New status (e.g. "cancelled", "completed")
+            task_id: Task ID for exact match (optional). Use when multiple tasks per action.
+            description: Description of task to update (optional)
+            action_name: Action class name of task to update (optional)
 
         Returns:
-            Value from context, or None if not found
-        """
-        return self.context.get(key)
+            True if task was updated, False if not found
 
-    def data_set(self, key: str, value: Any) -> None:
-        """Set value in context.
+        Note:
+            Provide at least one of task_id, description, or action_name. When multiple
+            tasks exist per action, use task_id or description to distinguish.
+        """
+        if not task_id and not description and not action_name:
+            return False
+        now = datetime.now(timezone.utc).isoformat()
+        for i, t in enumerate(self.active_tasks):
+            if (
+                (task_id and t.get("task_id") == task_id)
+                or (description and t.get("description") == description)
+                or (action_name and t.get("action_name") == action_name)
+            ):
+                self.active_tasks[i] = {**t, "status": status, "updated_at": now}
+                await self.save()
+                return True
+        return False
+
+    async def remove_active_task(
+        self,
+        task_id: Optional[str] = None,
+        description: Optional[str] = None,
+        action_name: Optional[str] = None,
+    ) -> bool:
+        """Transition task to completed status (preserves task for audit log).
+
+        Delegates to update_task with status="completed".
+        Kept for backward compatibility with custom actions.
 
         Args:
-            key: Context key to set
-            value: Value to store
+            task_id: Task ID for exact match (optional)
+            description: Description of task (optional)
+            action_name: Action class name of task (optional)
+
+        Returns:
+            True if task was updated, False if not found
         """
-        self.context[key] = value
+        return await self.update_task(
+            status="completed",
+            task_id=task_id,
+            description=description,
+            action_name=action_name,
+        )
+
+    def get_active_tasks(
+        self,
+        status: Optional[str] = None,
+        action_name: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get tasks, optionally filtered by status and/or action_name.
+
+        Args:
+            status: Optional filter ("active", "inactive", "upcoming")
+            action_name: Optional filter by action class name for actions managing tasks
+
+        Returns:
+            List of task dicts
+        """
+        tasks = list(self.active_tasks)
+        if status is not None:
+            tasks = [t for t in tasks if t.get("status") == status]
+        if action_name is not None:
+            tasks = [t for t in tasks if t.get("action_name") == action_name]
+        return tasks
+
+    def get_active_task(
+        self,
+        *,
+        task_id: Optional[str] = None,
+        task_type: Optional[str] = None,
+        description: Optional[str] = None,
+        action_name: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Get first task matching all provided filters.
+
+        Replaces get_active_task_by_description, get_active_task_by_action,
+        and get_active_task_action_name. Use task.get("action_name") when
+        you need the action name.
+
+        Args:
+            task_id: Optional filter by task_id
+            task_type: Optional filter by task_type (e.g. "INTERVIEW")
+            description: Optional filter by description
+            action_name: Optional filter by action_name
+            status: Optional filter by status (e.g. "active")
+
+        Returns:
+            First matching task dict, or None
+        """
+        for t in self.active_tasks:
+            if task_id is not None and t.get("task_id") != task_id:
+                continue
+            if task_type is not None and t.get("task_type") != task_type:
+                continue
+            if description is not None and t.get("description") != description:
+                continue
+            if action_name is not None and t.get("action_name") != action_name:
+                continue
+            if status is not None and t.get("status") != status:
+                continue
+            return t
+        return None
+
+    def get_active_tasks_for_context(self) -> List[str]:
+        """Return list of task descriptions for context line.
+
+        Returns:
+            List of descriptions for active tasks (status=active)
+        """
+        return [t["description"] for t in self.get_active_tasks(status="active")]
 
     async def archive(self) -> None:
         """Archive the conversation."""
@@ -832,7 +993,8 @@ class Conversation(DeferredSaveMixin, Node):
     async def get_statistics(self) -> Dict[str, Any]:
         """Get conversation statistics.
 
-        Aggregates metrics from observability_metrics entries across all interactions.
+        Prefers usage when available; falls back to observability_metrics
+        aggregation for interactions without usage (backward compatibility).
 
         Returns:
             Dictionary with conversation statistics
@@ -842,8 +1004,10 @@ class Conversation(DeferredSaveMixin, Node):
         total_duration = 0.0
 
         for interaction in interactions:
-            # Aggregate metrics from observability_metrics entries
-            if (
+            if hasattr(interaction, "usage") and interaction.usage:
+                total_tokens += interaction.usage.get("total_tokens", 0)
+                total_duration += interaction.usage.get("total_duration_seconds", 0.0)
+            elif (
                 hasattr(interaction, "observability_metrics")
                 and interaction.observability_metrics
             ):
@@ -856,10 +1020,13 @@ class Conversation(DeferredSaveMixin, Node):
                         if duration:
                             total_duration += duration
 
+        active_task_count = len(self.get_active_tasks(status="active"))
+
         return {
             "interaction_count": self.interaction_count,
             "total_tokens": total_tokens,
             "total_duration": total_duration,
+            "active_task_count": active_task_count,
             "status": self.status,
             "channel": self.channel,
             "created_at": self.created_at.isoformat() if self.created_at else None,

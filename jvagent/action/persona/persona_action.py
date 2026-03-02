@@ -12,7 +12,9 @@ from typing import Any, Dict, List, Optional
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
+from jvagent.action.interact.utils import build_prompt_for_vision
 from jvagent.action.persona.prompts import (
+    ACTIVE_TASKS_SECTION_PROMPT,
     CHANNEL_OVERRIDE_PREAMBLE,
     CONTINUATION_GUIDANCE_PROMPT,
     DIRECTIVE_COMPLIANCE_CHECK_PROMPT,
@@ -23,6 +25,7 @@ from jvagent.action.persona.prompts import (
     RESPONSE_LENGTH_PROMPT,
     RESPONSE_PROTOCOL_PROMPT,
     SYSTEM_PROMPT_TEMPLATE,
+    VISION_IMAGE_INSTRUCTION,
     format_conditional_section,
     format_parameter,
     get_channel_directive,
@@ -30,6 +33,11 @@ from jvagent.action.persona.prompts import (
 from jvagent.memory import Interaction
 
 logger = logging.getLogger(__name__)
+
+# Base capabilities always included in persona (e.g. vision)
+BASE_PERSONA_CAPABILITIES: List[str] = [
+    "Can view and interpret images shared by users",
+]
 
 
 class PersonaAction(Action):
@@ -92,6 +100,11 @@ class PersonaAction(Action):
         description="Maximum words for voice channel (TTS). Used when channel=voice.",
     )
 
+    remind_on_active_tasks: bool = attribute(
+        default=True,
+        description="When True and active tasks require user intervention, include reminder to return if conversation strays",
+    )
+
     # System prompt (default property)
     system_prompt: str = attribute(
         default=SYSTEM_PROMPT_TEMPLATE,
@@ -126,10 +139,6 @@ class PersonaAction(Action):
             {
                 "condition": "The conversation seems repetitive.",
                 "response": "Bring the circular conversation to the user's attention.",
-            },
-            {
-                "condition": "The user has diverged from the ongoing activity highlghted in conversation history",
-                "response": "Respond but in closing, remind the user to return to complete the ongoing activity",
             },
             {
                 "condition": "You are likely to mention how recent your knowledge cutoff is",
@@ -175,7 +184,7 @@ class PersonaAction(Action):
                 - parameters: Applicable parameters for this interaction
             visitor: Optional InteractWalker for streaming support
             use_history: Whether to include conversation history (default: True)
-            history_limit: Number of past interactions to include in history (default: 3)
+            history_limit: Number of past interactions to include in history (default: 4)
             with_utterance: Whether to include the user's utterance in the prompt (default: True)
             with_interpretation: Include interpretations in history (default: False)
             with_event: Include events in history (default: True)
@@ -231,7 +240,7 @@ class PersonaAction(Action):
                 "or PersonaAction's own parameters."
             )
 
-        # Generate response using direct prompt approach
+        # Generate response using direct prompt approach (pass model_action to avoid second lookup)
         return await self._generate_response(
             interaction,
             visitor,
@@ -245,6 +254,7 @@ class PersonaAction(Action):
             with_response,
             max_statement_length,
             transient,
+            model_action=model_action,
         )
 
     async def _get_user_display_name(self, interaction: Interaction) -> str:
@@ -257,13 +267,17 @@ class PersonaAction(Action):
             logger.debug(f"PersonaAction: failed to resolve user display name: {e}")
         return "user"
 
-    def _sanitize_voice_response(self, response: str, max_words: int = 100) -> str:
+    def _sanitize_voice_response(
+        self, response: str, max_words: Optional[int] = None
+    ) -> str:
         """Sanitize response for voice/TTS: strip markdown, collapse whitespace, truncate.
 
         Fallback when the model disobeys voice format rules.
+        Uses voice_response_limit when max_words is None.
         """
         if not response or not response.strip():
             return response
+        limit = max_words if max_words is not None else self.voice_response_limit
         text = response.strip()
         # Strip markdown: **bold** -> bold, *italic* -> italic
         text = re.sub(r"\*\*([^*]*)\*\*", r"\1", text)
@@ -279,11 +293,11 @@ class PersonaAction(Action):
         # Collapse double newlines and extra whitespace
         text = re.sub(r"\n\n+", ". ", text)
         text = re.sub(r"\s+", " ", text).strip()
-        # Truncate to max_words
+        # Truncate to limit
         words = text.split()
-        if len(words) <= max_words:
+        if len(words) <= limit:
             return text
-        truncated = words[:max_words]
+        truncated = words[:limit]
         # Prefer sentence boundary
         last_sentence_end = -1
         for i in range(len(truncated) - 1, -1, -1):
@@ -291,9 +305,20 @@ class PersonaAction(Action):
             if w and w[-1] in ".!?":
                 last_sentence_end = i
                 break
-        if last_sentence_end > max_words // 2:
+        if last_sentence_end > limit // 2:
             truncated = truncated[: last_sentence_end + 1]
         return " ".join(truncated).strip()
+
+    def _use_voice_formatting(
+        self, interaction: Interaction, visitor: Optional[Any]
+    ) -> bool:
+        """True when response will be spoken (voice channel or TTS via adapter)."""
+        if interaction.channel == "voice":
+            return True
+        if not visitor:
+            return False
+        data = getattr(visitor, "data", None) or {}
+        return bool(data.get("respond_with_voice"))
 
     async def _pipe_response(
         self,
@@ -356,11 +381,15 @@ class PersonaAction(Action):
                 f"{self.get_class_name()}: Visitor channel not set or is 'default', "
                 f"using channel='{channel}'. This may prevent channel adapters from receiving messages."
             )
+        metadata = None
+        if visitor and getattr(visitor, "data", {}).get("respond_with_voice"):
+            metadata = {"respond_with_voice": True}
         await response_bus.publish(
             session_id=visitor.session_id,
             content=response,
             channel=channel,
             stream=False,
+            metadata=metadata,
             interaction_id=interaction.id,
             interaction=interaction,
             user_id=interaction.user_id if hasattr(interaction, "user_id") else None,
@@ -440,6 +469,7 @@ class PersonaAction(Action):
         interaction: Interaction,
         applicable_directives: List[Dict[str, Any]],
         applicable_parameters: List[Dict[str, Any]],
+        visitor: Optional[Any] = None,
     ) -> str:
         """Compose the system prompt using the consolidated template.
 
@@ -447,6 +477,7 @@ class PersonaAction(Action):
             interaction: The active interaction object
             applicable_directives: List of unexecuted directives
             applicable_parameters: List of unexecuted parameters
+            visitor: Optional InteractWalker (for respond_with_voice check)
 
         Returns:
             Composed system prompt string
@@ -454,6 +485,8 @@ class PersonaAction(Action):
         now = await self.now()
         date_str = now.strftime("%A, %d %B, %Y")
         time_str = now.strftime("%I:%M %p")
+        app = await self.get_app()
+        timezone_str = (app.timezone or "UTC") if app else "UTC"
 
         # Build continuation guidance if in multi-call mode
         continuation_guidance = ""
@@ -474,11 +507,10 @@ class PersonaAction(Action):
                 user_utterance=user_utterance or "(No user utterance)",
             )
 
-        capabilities_str = (
-            "\n".join(f"- {cap}" for cap in self.persona_capabilities)
-            if self.persona_capabilities
-            else "None specified"
-        )
+        all_capabilities = list(BASE_PERSONA_CAPABILITIES)
+        if self.persona_capabilities:
+            all_capabilities.extend(self.persona_capabilities)
+        capabilities_str = "\n".join(f"- {cap}" for cap in all_capabilities)
 
         interpretation_section = (
             INTERPRETATION_INSIGHTS_PROMPT.format(
@@ -486,6 +518,17 @@ class PersonaAction(Action):
             )
             if interaction.interpretation and interaction.interpretation.strip()
             else ""
+        )
+
+        # Vision instruction when images are attached (overrides history/training bias)
+        vision_instruction_section = ""
+        if visitor:
+            data = getattr(visitor, "data", None) or {}
+            media_urls = data.get("image_urls") or data.get("whatsapp_media") or []
+            if media_urls:
+                vision_instruction_section = VISION_IMAGE_INSTRUCTION
+        vision_instruction_section = format_conditional_section(
+            vision_instruction_section, bool(vision_instruction_section)
         )
 
         # Build directives section
@@ -513,9 +556,24 @@ class PersonaAction(Action):
         else:
             parameters_section = ""
 
+        # Build active tasks section (when tasks require user intervention)
+        active_tasks_section = ""
+        if self.remind_on_active_tasks:
+            tasks = await self._get_active_tasks_requiring_intervention(interaction)
+            if tasks:
+                task_list = "\n".join(
+                    f"- {t.get('description', str(t))}" for t in tasks
+                )
+                active_tasks_section = ACTIVE_TASKS_SECTION_PROMPT.format(
+                    task_list=task_list
+                )
+        active_tasks_section = format_conditional_section(
+            active_tasks_section, bool(active_tasks_section)
+        )
+
         # Build response length section (channel-aware)
-        channel = interaction.channel or "default"
-        if channel == "voice":
+        use_voice = self._use_voice_formatting(interaction, visitor)
+        if use_voice:
             word_limit = self.voice_response_limit
         else:
             word_limit = self.response_limit if self.response_limit > 0 else 0
@@ -528,11 +586,11 @@ class PersonaAction(Action):
         )
 
         # Build channel formatting section (with override preamble when channel present)
+        effective_channel = "voice" if use_voice else (interaction.channel or "default")
         channel_directive = get_channel_directive(
-            channel,
-            phonetic_substitutions=(
-                self.phonetic_substitutions if channel == "voice" else None
-            ),
+            effective_channel,
+            phonetic_substitutions=(self.phonetic_substitutions if use_voice else None),
+            voice_max_words=self.voice_response_limit,
         )
         if channel_directive:
             channel_formatting_section = f"### CHANNEL FORMATTING\n{CHANNEL_OVERRIDE_PREAMBLE}\n\n{channel_directive}"
@@ -566,10 +624,13 @@ class PersonaAction(Action):
             user=await self._get_user_display_name(interaction),
             date=date_str,
             time=time_str,
+            timezone=timezone_str,
+            vision_instruction_section=vision_instruction_section,
             interpretation_section=interpretation_section,
             response_protocol=RESPONSE_PROTOCOL_PROMPT,
             directives_section=directives_section,
             parameters_section=parameters_section,
+            active_tasks_section=active_tasks_section,
             channel_formatting_section=channel_formatting_section,
             continuation_guidance=continuation_guidance,
             response_length_section=response_length_section,
@@ -586,6 +647,31 @@ class PersonaAction(Action):
             )
 
         return composed
+
+    async def _get_active_tasks_requiring_intervention(
+        self, interaction: Interaction
+    ) -> List[Dict[str, Any]]:
+        """Get active tasks that require user intervention.
+
+        Filters tasks by metadata.requires_user_intervention (default True).
+
+        Args:
+            interaction: Current interaction with conversation_id
+
+        Returns:
+            List of task dicts requiring user intervention
+        """
+        from jvagent.memory.conversation import Conversation
+
+        conversation = await Conversation.get(interaction.conversation_id)
+        if not conversation:
+            return []
+        tasks = conversation.get_active_tasks(status="active")
+        return [
+            t
+            for t in tasks
+            if t.get("metadata", {}).get("requires_user_intervention", True)
+        ]
 
     async def _get_conversation_history(
         self,
@@ -686,6 +772,7 @@ class PersonaAction(Action):
         with_response: bool,
         max_statement_length: Optional[int],
         transient: bool,
+        model_action: Optional[Any] = None,
     ) -> str:
         """Generate response using direct prompt approach.
 
@@ -705,12 +792,13 @@ class PersonaAction(Action):
             with_response: Include AI responses in history
             max_statement_length: Truncate to this length
             transient: If True, skip appending response to interaction.response
+            model_action: Pre-fetched model action (avoids second lookup when passed from respond())
 
         Returns:
             Generated response string
         """
-        # Get model action (required=True raises error if not found)
-        model_action = await self.get_model_action(required=True)
+        if model_action is None:
+            model_action = await self.get_model_action(required=True)
 
         conversation_history = None
         if use_history:
@@ -752,10 +840,13 @@ class PersonaAction(Action):
             )
             prompt = f"{prompt}\n\n[SYSTEM: You MUST execute in your response: {directive_hints}]"
 
-        # When channel=voice, inject format reminder for peak-attention reinforcement
-        channel = interaction.channel or "default"
-        if channel == "voice" and prompt:
-            prompt = f"{prompt}\n\n[VOICE: Plain text only. Max 100 words. No markdown, lists, or **bold**.]"
+        # When voice formatting (channel=voice or respond_with_voice), inject format reminder
+        use_voice = self._use_voice_formatting(interaction, visitor)
+        if use_voice and prompt:
+            prompt = f"{prompt}\n\n[VOICE: Plain text only. Max {self.voice_response_limit} words. No markdown, lists, or **bold**.]"
+
+        # Build multimodal prompt if image URLs present in visitor.data
+        prompt = build_prompt_for_vision(prompt, visitor, model_action)
 
         # Make the language model call
         try:
@@ -764,14 +855,12 @@ class PersonaAction(Action):
                 {"type": "json_object"} if self.use_structured_output else None
             )
 
-            max_tokens = (
-                self.voice_max_tokens if channel == "voice" else self.model_max_tokens
-            )
+            max_tokens = self.voice_max_tokens if use_voice else self.model_max_tokens
             response = await model_action.generate(
                 prompt=prompt,
                 stream=streaming,
                 system=await self._compose_prompt(
-                    interaction, applicable_directives, applicable_parameters
+                    interaction, applicable_directives, applicable_parameters, visitor
                 ),
                 history=conversation_history,
                 calling_action_name=self.get_class_name(),
@@ -779,7 +868,7 @@ class PersonaAction(Action):
                 temperature=self.model_temperature,
                 max_tokens=max_tokens,
                 response_bus=response_bus if streaming else None,
-                interaction=interaction if streaming else None,
+                interaction=interaction,
                 response_format=response_format,
                 transient=transient,
             )
@@ -792,7 +881,7 @@ class PersonaAction(Action):
                 # If parsing fails, response remains as-is (fallback)
 
             # Sanitize for voice channel (strip markdown, truncate) when model disobeys
-            if channel == "voice" and response:
+            if use_voice and response:
                 response = self._sanitize_voice_response(response)
 
             # Mark directives and parameters as executed only if we got a meaningful response

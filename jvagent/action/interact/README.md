@@ -70,6 +70,7 @@ The `/agents/{agent_id}/interact` endpoint response format varies based on envir
 - `interaction.directives` - Directives issued
 - `interaction.parameters` - Parameters applied
 - `interaction.events` - System events
+- `interaction.active_tasks` - Active tasks from conversation
 - `interaction.observability_metrics` - Model calls, token counts, etc.
 - `interaction.streamed` - Streaming flag
 
@@ -88,6 +89,7 @@ The `/agents/{agent_id}/interact` endpoint response format varies based on envir
     "response": "Hello! How can I help you today?",
     "actions": ["InteractRouter", "ConverseInteractAction"],
     "directives": [],
+    "active_tasks": [],
     "parameters": [],
     "events": [],
     "observability_metrics": [
@@ -95,11 +97,24 @@ The `/agents/{agent_id}/interact` endpoint response format varies based on envir
         "event_type": "model_call",
         "data": {
           "model": "gpt-4",
-          "tokens": 150,
-          "duration_ms": 234
+          "usage": {
+            "prompt_tokens": 100,
+            "completion_tokens": 50,
+            "total_tokens": 150
+          },
+          "duration": 0.234
         }
       }
     ],
+    "usage": {
+      "prompt_tokens": 100,
+      "completion_tokens": 50,
+      "total_tokens": 150,
+      "model_call_count": 1,
+      "estimated_cost_usd": 0.0001,
+      "total_duration_seconds": 0.234,
+      "last_updated": "2025-01-02T12:00:00Z"
+    },
     "streamed": false
   },
   "report": [
@@ -263,6 +278,40 @@ response = await self.respond(
 )
 ```
 
+## Visitor Data and Image Support
+
+**Standard key**: `visitor.data["image_urls"]` is the canonical key for image input across channels (WhatsApp, Interact API, etc.). Media sources should populate this key with:
+
+- A list of URL strings
+- A list of dicts: `{"url": "..."}` or `{"base64": "..."}` (with optional `detail` for vision models)
+
+When `image_urls` is populated, PersonaAction uses `build_prompt_for_vision()` (from `jvagent.action.interact.utils.vision_prompt`) to build multimodal prompts for vision-capable LLMs. The helper accepts `image_data_keys` (default: `("image_urls",)`) so channels can use a single standard key.
+
+**Suppression**: Set `visitor.data["image_interpretation"] = False` to skip vision (e.g. when images are document uploads for an interview). The interview action sets this automatically when media is submitted via `data_input_field`.
+
+**Related keys**:
+- `whatsapp_media`: All media URLs (images, documents, video, audio). Used by interview actions with `data_input_field: "whatsapp_media"` for document uploads.
+
+## Task Tracking
+
+The InteractWalker provides task tracker helpers for actions that manage multi-turn flows requiring user input (e.g., interviews):
+
+```python
+await visitor.add_active_task(
+    description="Guide user to complete SignupInterviewInteractAction",
+    action_name="SignupInterviewInteractAction",
+    metadata={"state": "ACTIVE"},
+)
+
+await visitor.remove_active_task(action_name="SignupInterviewInteractAction")
+
+tasks = await visitor.get_active_tasks(status="active")
+```
+
+Tasks are stored on the **Conversation** (not per-interaction). In development mode, `interaction.active_tasks` in the response payload shows the conversation's active tasks for debugging.
+
+See [Task Tracking](../../../docs/task-tracking.md) for full documentation.
+
 ## Bulk Methods
 
 For adding multiple directives or parameters efficiently, use the bulk methods on the InteractWalker:
@@ -374,6 +423,8 @@ await self.respond(visitor, parameters=[self.parameters])  # ❌ Creates nested 
 
 ## See Also
 
+- `jvagent.action.interact.utils.vision_prompt` - `build_prompt_for_vision()` for multimodal prompts from `visitor.data["image_urls"]`
+- [WhatsApp Action](../whatsapp/README.md) - Image flow, quoted image reply support
 - [InteractAction Base Class](../interact/base.py)
 - [InteractWalker](../interact/interact_walker.py)
 - [IntroInteractAction README](../intro/README.md)

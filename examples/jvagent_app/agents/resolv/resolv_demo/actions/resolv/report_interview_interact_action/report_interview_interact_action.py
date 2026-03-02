@@ -66,11 +66,9 @@ class ReportInterviewInteractAction(InterviewInteractAction):
             "User provides: Incident description, Location, Media or evidence, Privacy preference, Reporting on behalf of someone, Name, email, phone number",
             "User uploads photos or evidence for a new issue.",
             "User updates details of a report that has **not yet been confirmed or submitted**.",
-            "User confirms or cancels a report being created.",
         ],
         description="Anchor statements for InteractRouter routing",
     )
-    _standard_interview_anchor_templates: List[str] = []
 
     question_graph: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [

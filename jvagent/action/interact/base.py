@@ -100,6 +100,15 @@ class InteractAction(Action, ABC):
         ),
     )
 
+    def _ensure_interaction(self, visitor: "InteractWalker") -> bool:
+        """Check that visitor has a valid interaction.
+
+        Returns:
+            True if interaction is available, False otherwise.
+            When False, caller should unrecord and return.
+        """
+        return visitor.interaction is not None
+
     @abstractmethod
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute the action's logic on the interaction.
@@ -301,9 +310,15 @@ class InteractAction(Action, ABC):
             if directives:
                 await visitor.add_directives(directives)
 
-            # Add parameters if provided (using bulk method for efficiency)
+            # Add parameters if provided. Use caller's action name explicitly so parameters
+            # are attributed correctly even when visitor._current_action may not match
+            # (e.g. when another action's context is active).
             if parameters:
-                await visitor.add_parameters(parameters)
+                action_name = getattr(
+                    self, "get_class_name", lambda: self.__class__.__name__
+                )()
+                if interaction.add_parameters(parameters, action_name):
+                    await interaction.save()
 
             from jvagent.action.persona.persona_action import PersonaAction
 

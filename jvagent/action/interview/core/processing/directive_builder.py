@@ -5,9 +5,10 @@ for better separation of concerns.
 """
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 from ..foundation.enums import InterviewState
+from ..foundation.prompts import ACTIVE_TASK_DESCRIPTION_TEMPLATE
 from ..session.interview_session import InterviewSession
 from ..utils.handler_utils import invoke_async_with_optional_context
 
@@ -30,11 +31,11 @@ class DirectiveBuilder:
             action: InterviewInteractAction instance
         """
         self.action = action
-        self._event_added = False
+        self._task_added = False
 
-    def reset_event_tracking(self) -> None:
-        """Reset event tracking flag for new execution."""
-        self._event_added = False
+    def reset_task_tracking(self) -> None:
+        """Reset task tracking flag for new execution."""
+        self._task_added = False
 
     def _build_review_data(self, session: InterviewSession) -> Dict[str, Any]:
         """Build key-value dict of collected interview data from session (display only)."""
@@ -155,45 +156,98 @@ class DirectiveBuilder:
     async def queue_directive(self, visitor: "InteractWalker", directive: str) -> None:
         """Queue a directive for later response generation.
 
-        The event is determined automatically based on the session state and added only once
-        per execution, even if multiple directives are queued.
+        Registers active task in task tracker when session is ACTIVE or REVIEW (once per
+        execution). COMPLETED/CANCELLED events are added explicitly in their handlers.
 
         Args:
             visitor: InteractWalker
             directive: Directive string to queue
         """
         if directive and directive.strip():
-            # Add event only once per execution, determined by session state
-            if not self._event_added:
-                # Determine event based on session state from visitor
+            # Register active task only once per execution when session is ACTIVE or REVIEW
+            if not self._task_added:
                 session = getattr(visitor, "interview_session", None)
                 if session:
-                    if session.state == InterviewState.COMPLETED:
-                        # Completion event is already added explicitly in generate_completed_directive
-                        # Skip to avoid duplicate events
-                        event_name = None
-                    else:
-                        # Use action helper to get state-specific event message
-                        event_name = self.action.get_state_event_message(
-                            session.state.value
+                    if session.state in (InterviewState.ACTIVE, InterviewState.REVIEW):
+                        action_name = self.action.get_class_name()
+                        description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(
+                            action_name=action_name
+                        )
+                        metadata = {
+                            "interview_type": session.interview_type,
+                            "state": session.state.value,
+                        }
+                        await visitor.add_active_task(
+                            description=description,
+                            metadata=metadata,
+                            action_name=action_name,
+                            task_type="INTERVIEW",
                         )
                 else:
-                    # No session available, default to active event
-                    event_name = self.action.get_state_event_message("ACTIVE")
-
-                # Only add event if one was determined (skip if COMPLETED state already handled)
-                if event_name:
-                    await visitor.add_event(event_name)
-                    self._event_added = True
-                else:
-                    # Event already added explicitly, just mark as added
-                    self._event_added = True
+                    # No session available, default to active task
+                    action_name = self.action.get_class_name()
+                    description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(
+                        action_name=action_name
+                    )
+                    await visitor.add_active_task(
+                        description=description,
+                        action_name=action_name,
+                        task_type="INTERVIEW",
+                    )
+                self._task_added = True
 
             await visitor.add_directive(directive)
         else:
             logger.warning(
                 f"{self.action.get_class_name()}: Attempted to queue empty directive"
             )
+
+    async def _emit_terminal_directive(
+        self,
+        session: InterviewSession,
+        visitor: "InteractWalker",
+        event_type: str,
+        task_status: str,
+        handler: Optional[Callable[..., Any]],
+        default_message: str,
+    ) -> None:
+        """Shared flow for COMPLETED and CANCELLED terminal directives.
+
+        Adds event, updates task status, calls handler or queues default message,
+        then cleans up session.
+        """
+        event = self.action.get_state_event_message(event_type)
+        await visitor.add_event(event)
+        self._task_added = True
+
+        action_name = self.action.get_class_name()
+        description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(action_name=action_name)
+        await visitor.update_task(
+            status=task_status,
+            description=description,
+            action_name=action_name,
+        )
+
+        if handler:
+            try:
+                await invoke_async_with_optional_context(
+                    handler,
+                    session,
+                    visitor=visitor,
+                    interview_action=self.action,
+                )
+            except Exception as e:
+                logger.error(
+                    f"{action_name}: {event_type} handler failed: {e}",
+                    exc_info=True,
+                )
+                await self.queue_directive(visitor, default_message)
+        else:
+            await self.queue_directive(visitor, default_message)
+
+        from ..utils.session_utils import cleanup_session
+
+        await cleanup_session(session, visitor, action_name)
 
     async def generate_completed_directive(
         self, session: InterviewSession, visitor: "InteractWalker"
@@ -206,41 +260,16 @@ class DirectiveBuilder:
             session: Interview session
             visitor: InteractWalker
         """
-        # Explicitly add completion event BEFORE cleaning up the session
-        # This ensures the event is recorded even if the session is removed
-        # Mark event as added to prevent queue_directive from adding it again
-        completion_event = self.action.get_state_event_message("COMPLETED")
-        await visitor.add_event(completion_event)
-        self._event_added = True  # Prevent duplicate event addition in queue_directive
-
-        # Get completion handler for this interview type
         interview_type = session.interview_type
-        completion_handler = self.action.get_completion_handler(interview_type)
-
-        if completion_handler:
-            try:
-                await invoke_async_with_optional_context(
-                    completion_handler,
-                    session,
-                    visitor=visitor,
-                    interview_action=self.action,
-                )
-                # Completion handler is responsible for sending its own message if needed
-            except Exception as e:
-                logger.error(
-                    f"{self.action.get_class_name()}: Completion handler failed: {e}",
-                    exc_info=True,
-                )
-                # Send generic completion message on error
-                await self.queue_directive(visitor, self.action.completion_message)
-        else:
-            # No completion handler registered, send generic message
-            await self.queue_directive(visitor, self.action.completion_message)
-
-        # Clean up and remove the session (always, regardless of handler success/failure)
-        from ..utils.session_utils import cleanup_session
-
-        await cleanup_session(session, visitor, self.action.get_class_name())
+        handler = self.action.get_completion_handler(interview_type)
+        await self._emit_terminal_directive(
+            session,
+            visitor,
+            event_type="COMPLETED",
+            task_status="completed",
+            handler=handler,
+            default_message=self.action.completion_message,
+        )
 
     async def generate_cancelled_directive(
         self, session: InterviewSession, visitor: "InteractWalker"
@@ -253,38 +282,13 @@ class DirectiveBuilder:
             session: Interview session
             visitor: InteractWalker
         """
-        # Explicitly add cancellation event BEFORE queue_directive and cleanup
-        # This ensures the event is recorded even if the session is removed
-        # Mark event as added to prevent queue_directive from adding it again
-        cancellation_event = self.action.get_state_event_message("CANCELLED")
-        await visitor.add_event(cancellation_event)
-        self._event_added = True  # Prevent duplicate event addition in queue_directive
-
-        # Get cancellation handler for this interview type
         interview_type = session.interview_type
-        cancelled_handler = self.action.get_cancelled_handler(interview_type)
-
-        if cancelled_handler:
-            try:
-                await invoke_async_with_optional_context(
-                    cancelled_handler,
-                    session,
-                    visitor=visitor,
-                    interview_action=self.action,
-                )
-                # Cancellation handler is responsible for sending its own message if needed
-            except Exception as e:
-                logger.error(
-                    f"{self.action.get_class_name()}: Cancellation handler failed: {e}",
-                    exc_info=True,
-                )
-                # Send generic cancellation message on error
-                await self.queue_directive(visitor, self.action.cancellation_message)
-        else:
-            # No cancellation handler registered, send generic message
-            await self.queue_directive(visitor, self.action.cancellation_message)
-
-        # Clean up and remove the session (always, regardless of handler success/failure)
-        from ..utils.session_utils import cleanup_session
-
-        await cleanup_session(session, visitor, self.action.get_class_name())
+        handler = self.action.get_cancelled_handler(interview_type)
+        await self._emit_terminal_directive(
+            session,
+            visitor,
+            event_type="CANCELLED",
+            task_status="cancelled",
+            handler=handler,
+            default_message=self.action.cancellation_message,
+        )

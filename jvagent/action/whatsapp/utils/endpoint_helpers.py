@@ -6,7 +6,7 @@ messages, creating walkers, handling media, and managing interactions.
 
 import base64
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.exceptions import DatabaseError, ValidationError
@@ -66,6 +66,118 @@ def normalize_result(
     return result
 
 
+def _extract_quoted_text(quoted_message: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Extract text from quoted message dict (provider-agnostic).
+
+    Args:
+        quoted_message: Raw quoted message dict from webhook (e.g. quotedMsg)
+
+    Returns:
+        Stripped text string or None if not found/empty
+    """
+    if not quoted_message or not isinstance(quoted_message, dict):
+        return None
+    for key in ("body", "content", "text"):
+        val = quoted_message.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    nested = quoted_message.get("message") or {}
+    if isinstance(nested, dict):
+        for key in ("body", "content", "text"):
+            val = nested.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+    return None
+
+
+def _extract_quoted_image(
+    quoted_message: Optional[Dict[str, Any]]
+) -> Optional[Dict[str, str]]:
+    """Extract base64 image from quoted message when user replies to an image.
+
+    Provider-agnostic: handles whatsapp-web.js, WPPConnect, UltraMsg, etc.
+    Strips data: URI prefix if present; create_multimodal_content adds it.
+
+    Args:
+        quoted_message: Raw quoted message dict from webhook (e.g. quotedMsg)
+
+    Returns:
+        {"base64": "..."} or None if no image found
+    """
+    if not quoted_message or not isinstance(quoted_message, dict):
+        return None
+
+    msg_type = (quoted_message.get("type") or "").lower()
+    nested = quoted_message.get("message") or {}
+
+    # Check if quoted message is an image (top-level or nested)
+    is_image = msg_type in ("image", "img")
+    if not is_image and isinstance(nested, dict):
+        nested_type = (nested.get("type") or "").lower()
+        has_image = "image" in nested or "img" in nested
+        is_image = nested_type in ("image", "img") or has_image
+
+    if not is_image:
+        return None
+
+    # Extract base64 from common locations
+    raw = None
+    for key in ("body", "data", "media"):
+        val = quoted_message.get(key)
+        if isinstance(val, str) and len(val) > 100:
+            raw = val
+            break
+
+    if not raw and isinstance(nested, dict):
+        img = nested.get("image") or nested.get("img")
+        if isinstance(img, dict):
+            for key in ("data", "body", "base64"):
+                val = img.get(key)
+                if isinstance(val, str) and len(val) > 100:
+                    raw = val
+                    break
+        if not raw:
+            for key in ("body", "data"):
+                val = nested.get(key)
+                if isinstance(val, str) and len(val) > 100:
+                    raw = val
+                    break
+
+    if not raw or not raw.strip():
+        return None
+
+    # Strip data: URI prefix if present
+    s = raw.strip()
+    if "," in s and s.lower().startswith("data:"):
+        s = s.split(",", 1)[1]
+    if not s:
+        return None
+
+    return {"base64": s}
+
+
+def _build_utterance_with_quoted_context(
+    quoted_message: Optional[Dict[str, Any]],
+    base_utterance: Optional[str],
+) -> Optional[str]:
+    """Augment utterance with quoted message context when user replies to a message.
+
+    Args:
+        quoted_message: Raw quoted message dict (caller extracts from data)
+        base_utterance: Existing utterance (body, caption, or transcript)
+
+    Returns:
+        Augmented utterance string, or base_utterance unchanged if no quoted text
+    """
+    quoted_text = _extract_quoted_text(quoted_message)
+    if not quoted_text:
+        return base_utterance
+    user_utterance = (
+        base_utterance.strip() if base_utterance else "(no additional message)"
+    )
+    return f'User replied to: "{quoted_text}" with "{user_utterance}"'
+
+
 async def _store_whatsapp_metadata_in_interaction(
     walker: InteractWalker, data_dict: Dict[str, Any]
 ) -> None:
@@ -94,7 +206,7 @@ async def _store_whatsapp_metadata_in_interaction(
                 "content": "channel_metadata:whatsapp",
                 "data": whatsapp_metadata,
             }
-            walker.interaction.events.append(channel_metadata_event)
+            # walker.interaction.events.append(channel_metadata_event)
             # Save interaction to persist the metadata
             await walker.interaction.save()
     except Exception as e:
@@ -199,6 +311,11 @@ async def finalize_whatsapp_interaction(
         # Flush deferred saves (interaction and conversation) with error handling
         await flush_deferred_saves(interaction, walker.conversation)
 
+        # Compute usage after flush so all model_call events are present
+        from jvagent.action.interact.endpoints import _finalize_usage
+
+        await _finalize_usage(interaction)
+
         # Log interaction
         try:
             from jvagent.action.interact.endpoints import _build_interaction_log_data
@@ -206,8 +323,11 @@ async def finalize_whatsapp_interaction(
 
             app = await App.get()
             if app:
+                active_tasks = []
+                if walker.conversation:
+                    active_tasks = walker.conversation.get_active_tasks(status="active")
                 log_data, message = _build_interaction_log_data(
-                    interaction, app.id, agent_id
+                    interaction, app.id, agent_id, active_tasks=active_tasks
                 )
                 logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
         except Exception as log_err:
@@ -393,6 +513,36 @@ async def _handle_media_message(
     return {"status": "ignored", "response": "No media to process"}
 
 
+def _prepare_voice_for_stt(data: Any) -> Optional[Tuple[str, str]]:
+    """Prepare WhatsApp voice message for STT action.
+
+    Extracts raw base64 and resolves audio MIME type. Encapsulates
+    WhatsApp-specific format knowledge; STT action remains generic.
+
+    Args:
+        data: MessagePayload object with media and optional mime_type
+
+    Returns:
+        (audio_base64, audio_type) or None if no valid media
+    """
+    if not data.media or not data.media.strip():
+        return None
+
+    media = data.media.strip()
+    if "," in media:
+        media = media.split(",")[1]
+
+    if not media:
+        return None
+
+    if data.mime_type and data.mime_type.startswith("audio/"):
+        audio_type = data.mime_type.split(";")[0].strip()
+    else:
+        audio_type = "audio/ogg"
+
+    return (media, audio_type)
+
+
 async def _handle_voice_message(
     data: Any, sender: str, whatsapp_action: Any
 ) -> Dict[str, Any]:
@@ -443,11 +593,15 @@ async def _handle_voice_message(
 
         # Transcribe with validation
         try:
-            if not data.media:
+            prepared = _prepare_voice_for_stt(data)
+            if not prepared:
                 logger.debug(f"No media data in voice message from {sender}")
                 return {"status": "ignored", "response": "no audio data"}
 
-            transcript = await stt_action.invoke_base64(audio_base64=data.media)
+            audio_b64, audio_type = prepared
+            transcript = await stt_action.invoke_base64(
+                audio_base64=audio_b64, audio_type=audio_type
+            )
 
             if transcript and transcript.strip():
                 logger.debug(f"Transcribed voice message from {sender}: {transcript}")
@@ -511,6 +665,22 @@ async def _process_interaction_async(
         # Convert MessagePayload to dict for InteractWalker
         data_dict = _convert_message_payload_to_dict(data)
         is_group = is_group or data_dict.get("isGroup", False)
+
+        # When user sends PTT and TTS is configured, respond with voice
+        whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
+        if (
+            data_dict.get("message_type") == "ptt"
+            and whatsapp_action
+            and whatsapp_action.tts_action
+        ):
+            data_dict["respond_with_voice"] = True
+
+        # Extract image from quoted message when user replies to an image
+        quoted = data_dict.get("quoted_message") or {}
+        quoted_image = _extract_quoted_image(quoted)
+        if quoted_image:
+            existing = data_dict.get("image_urls") or []
+            data_dict["image_urls"] = existing + [quoted_image]
 
         # Create walker using helper function
         walker = await create_whatsapp_walker(

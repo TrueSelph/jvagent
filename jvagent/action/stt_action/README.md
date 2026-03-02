@@ -4,35 +4,26 @@ Speech-to-Text action for jvagent that provides audio transcription capabilities
 
 ## Overview
 
-The STT Action converts audio to text using various speech recognition providers. It follows jvagent action patterns with proper lifecycle hooks, error handling, and API endpoints.
+The STT action follows the web_search architectural pattern: an abstract `BaseSTTAction` defines the protocol, and concrete providers (e.g. `DeepgramSTTAction`) are separate packages. Each provider is a first-class Action that agents register directly. It is generic and provider-agnostic; callers (WhatsApp, Telegram, etc.) pass the correct `audio_type` when known.
 
-## Features
+## Architecture
 
-- Convert audio from URLs to text
-- Convert base64 encoded audio to text
-- Convert audio file content to text with duration info
-- Support for multiple audio formats (MP3, WAV, etc.)
-- Health checking for service availability
-- Modular provider system
-- Async/await architecture
-- Proper error handling and logging
+- **BaseSTTAction**: Abstract base class defining invoke, invoke_base64, invoke_file, healthcheck
+- **DeepgramSTTAction**: Concrete implementation using the Deepgram API (package: jvagent/deepgram_stt)
 
 ## Supported Providers
 
-### Deepgram
-- High-quality speech recognition
-- Multiple model options (nova-2, enhanced, nova, base)
-- Smart formatting support
-- Real-time and batch processing
+| Provider | Package | Class |
+|----------|---------|-------|
+| Deepgram | jvagent/deepgram_stt | DeepgramSTTAction |
 
 ## Configuration
 
 ```yaml
 actions:
-  - action: jvagent/stt_action
+  - action: jvagent/deepgram_stt
     context:
       enabled: true
-      provider: deepgram
       api_key: ${DEEPGRAM_API_KEY}
       model: nova-2
       smart_format: true
@@ -43,14 +34,14 @@ actions:
 ### Basic Transcription
 
 ```python
-# Get STT action
-stt_action = await self.get_action(STTAction)
+# Get STT action by class name
+stt_action = await self.get_action("DeepgramSTTAction")
 
 # Transcribe from URL
 transcript = await stt_action.invoke("https://example.com/audio.mp3")
 
-# Transcribe from base64
-transcript = await stt_action.invoke_base64(audio_base64, "audio/mp3")
+# Transcribe from base64 (pass audio_type when known for best results)
+transcript = await stt_action.invoke_base64(audio_base64, "audio/ogg")  # e.g. WhatsApp PTT
 
 # Transcribe from file content with duration
 result = await stt_action.invoke_file(audio_bytes, "audio/wav")
@@ -84,7 +75,7 @@ Transcribe audio to text.
 {
   "success": true,
   "transcript": "Hello world",
-  "provider": "deepgram",
+  "provider": "DeepgramSTTAction",
   "model": "nova-2"
 }
 ```
@@ -92,22 +83,13 @@ Transcribe audio to text.
 ### GET /actions/{action_id}/stt/health
 Check STT service health.
 
-**Response:**
-```json
-{
-  "healthy": true,
-  "provider": "deepgram",
-  "model": "nova-2"
-}
-```
-
 ## API Methods
 
 ### `invoke(audio_url: str) -> Optional[str]`
 Convert speech from audio URL to text.
 
 ### `invoke_base64(audio_base64: str, audio_type: str = "audio/mp3") -> Optional[str]`
-Convert speech from base64 encoded audio to text.
+Convert speech from base64 encoded audio to text. Callers should pass `audio_type` when known; different sources use different formats (e.g. WhatsApp voice = `audio/ogg`).
 
 ### `invoke_file(audio_content: bytes, audio_type: str = "audio/mp3") -> Optional[Dict]`
 Convert speech from audio file content to text with duration info.
@@ -117,17 +99,8 @@ Perform health check for the STT service.
 
 ## Dependencies
 
-- `aiohttp>=3.8.0`
-- `deepgram-sdk>=3.0.0`
+- Deepgram: `deepgram-sdk>=6.0.0`
 
 ## Environment Variables
 
 - `DEEPGRAM_API_KEY`: Your Deepgram API key
-
-## Error Handling
-
-The action includes comprehensive error handling:
-- Graceful degradation when API keys are missing
-- Proper async exception handling
-- Detailed error logging with stack traces
-- Structured error responses for API endpoints

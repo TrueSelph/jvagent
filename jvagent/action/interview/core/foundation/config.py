@@ -158,14 +158,14 @@ class TemplateConfig:
                         )
 
     def get_state_event_message(self, state: str, class_name: str) -> str:
-        """Get formatted state event message.
+        """Get formatted state event message for terminal states.
 
         Args:
-            state: Interview state (ACTIVE, REVIEW, COMPLETED, CANCELLED)
+            state: Interview state (COMPLETED, CANCELLED; ACTIVE/REVIEW use active tasks)
             class_name: Interview action class name
 
         Returns:
-            Formatted event message string
+            Formatted event message string, or empty string if state has no message
         """
         return get_state_event_message(state, class_name)
 

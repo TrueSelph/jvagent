@@ -467,6 +467,7 @@ class BaseWhatsAppAPI(ABC):
 
         elif payload.message_type in ["audio", "ptt", "sticker"]:
             payload.media = request.get("body", "")
+            payload.mime_type = request.get("mimetype", "")
 
         elif payload.message_type in ["contacts", "vcard"]:
             payload.contact = request.get("body", {})

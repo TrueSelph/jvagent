@@ -3,14 +3,14 @@
 These tests verify that the router correctly interprets user intent based on conversation
 history, particularly ensuring it matches current user inputs to the most recent assistant
 question (not earlier questions), and accurately assesses conversational state.
-
-Since the router module has circular dependencies, we test the core formatting logic directly.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pytest
+
+from jvagent.action.router.formatting import format_interaction_history
 
 # Resolve prompts.py path relative to project (works in CI and locally)
 _PROMPTS_FILE = (
@@ -22,148 +22,20 @@ _PROMPTS_FILE = (
 )
 
 
-def format_history_for_test(interaction_history: List[Dict[str, Any]]) -> str:
-    """Test implementation of history formatting logic from InteractRouter._format_history.
+def format_history_for_test(
+    interaction_history: List[Dict[str, Any]],
+    conversation: Optional[Any] = None,
+) -> str:
+    """Format history for tests using shared router formatting."""
+    return format_interaction_history(interaction_history, conversation=conversation)
 
-    This is extracted to avoid circular import issues while testing the same logic.
-    """
-    if not interaction_history:
-        return "(No previous conversation)"
 
-    # Detect format: role/content (formatted=True from get_interaction_history) vs human/ai or utterance/response
-    first_entry = interaction_history[0] if interaction_history else {}
-    is_role_content = (
-        isinstance(first_entry, dict)
-        and "role" in first_entry
-        and "content" in first_entry
-    )
-
-    # Extract context signals: find the MOST RECENT assistant message (skip system/events)
-    context_signals = []
-    last_assistant_msg = None
-
-    if is_role_content:
-        # Scan backwards through history to find the most recent assistant message
-        for entry in reversed(interaction_history):
-            if isinstance(entry, dict) and entry.get("role") == "assistant":
-                last_assistant_msg = entry.get("content") or ""
-                break
-
-        # Check if the most recent assistant message was a question
-        if last_assistant_msg and last_assistant_msg.strip().endswith("?"):
-            context_signals.append("Most recent assistant message is a question")
-
-        # Look for ongoing activity markers (most recent one)
-        for e in reversed(interaction_history):
-            if isinstance(e, dict) and (e.get("content") or "").startswith("[EVENT]"):
-                ev = e["content"]
-                if "Ongoing Activity:" in ev:
-                    activity_name = (
-                        ev.replace("[EVENT] ", "")
-                        .replace("Ongoing Activity:", "")
-                        .strip()
-                    )
-                    context_signals.append(f"Ongoing activity: {activity_name}")
-                    break
-    else:
-        # Custom dict format: find most recent assistant message
-        for entry in reversed(interaction_history):
-            if isinstance(entry, dict) and "ai" in entry:
-                ai_msg = entry["ai"]
-                if ai_msg and ai_msg.strip().endswith("?"):
-                    context_signals.append(
-                        "Most recent assistant message is a question"
-                    )
-                    break
-
-        # Look for ongoing activity in most recent entry
-        if interaction_history and "events" in interaction_history[-1]:
-            for event in interaction_history[-1]["events"]:
-                ev_str = (
-                    event.get("content", event)
-                    if isinstance(event, dict)
-                    else str(event)
-                )
-                if "Ongoing Activity:" in ev_str:
-                    activity_name = (
-                        ev_str.replace("[EVENT] ", "")
-                        .replace("Ongoing Activity:", "")
-                        .strip()
-                    )
-                    context_signals.append(f"Ongoing activity: {activity_name}")
-                    break
-
-    # Build the history lines
-    lines = []
-
-    # Add context line if we have signals
-    if context_signals:
-        context_line = "Context: " + ". ".join(context_signals) + "."
-        lines.append(context_line)
-        lines.append("")  # Empty line for readability
-
-    # Add the full history (chronological order: oldest to newest)
-    for i, entry in enumerate(interaction_history):
-        if isinstance(entry, dict):
-            if is_role_content:
-                role = entry.get("role", "")
-                content = entry.get("content") or ""
-                if role == "user":
-                    lines.append(f"User: {content}")
-                elif role == "assistant":
-                    # Mark as question only if it ends with ?
-                    if content.strip().endswith("?"):
-                        lines.append(f"Assistant (question): {content}")
-                    else:
-                        lines.append(f"Assistant: {content}")
-                elif role == "system" and (content or "").startswith("[EVENT]"):
-                    if "Ongoing Activity:" in content:
-                        lines.append(
-                            f"[Ongoing] {content.replace('[EVENT] ', '').replace('Ongoing Activity:', '').strip()}"
-                        )
-                    else:
-                        lines.append(content)
-            else:
-                if "human" in entry:
-                    lines.append(f"User: {entry['human']}")
-                elif "utterance" in entry:
-                    lines.append(f"User: {entry['utterance']}")
-                if "ai" in entry:
-                    ai_msg = entry["ai"]
-                    if ai_msg and ai_msg.strip().endswith("?"):
-                        lines.append(f"Assistant (question): {ai_msg}")
-                    else:
-                        lines.append(f"Assistant: {ai_msg}")
-                elif "response" in entry and entry["response"]:
-                    resp = entry["response"]
-                    if resp.strip().endswith("?"):
-                        lines.append(f"Assistant (question): {resp}")
-                    else:
-                        lines.append(f"Assistant: {resp}")
-                if "events" in entry:
-                    for event in entry["events"]:
-                        ev_str = (
-                            event.get("content", event)
-                            if isinstance(event, dict)
-                            else str(event)
-                        )
-                        if "Ongoing Activity:" in ev_str:
-                            lines.append(
-                                f"[Ongoing] {ev_str.replace('Ongoing Activity:', '').strip()}"
-                            )
-                        else:
-                            lines.append(f"[EVENT] {ev_str}")
-        elif isinstance(entry, str):
-            lines.append(entry)
-
-    # Add transition marker before current user message
-    if lines:
-        lines.append("")  # Empty line for separation
-        lines.append("---")
-        lines.append(">>> USER RESPONDS NOW <<<")
-        lines.append("---")
-
-    return "\n".join(lines) if lines else "(No previous conversation)"
+def _format_history_content(
+    interaction_history: List[Dict[str, Any]],
+    conversation: Optional[Any] = None,
+) -> str:
+    """Format conversation history. Alias for format_interaction_history."""
+    return format_interaction_history(interaction_history, conversation=conversation)
 
 
 class TestRouterConversationalStateInterpretation:
@@ -251,11 +123,9 @@ class TestRouterConversationalStateInterpretation:
         assert "Most recent assistant message is a question" in formatted
         assert "Do you want to subscribe?" in formatted
 
-        # The event should not prevent identification of the preceding question
-        assert (
-            "Ongoing Activity: EmailCollectionInteractAction" in formatted
-            or "[Ongoing]" in formatted
-        )
+        # The event should be displayed (events shown as-is)
+        assert "[EVENT]" in formatted
+        assert "EmailCollectionInteractAction" in formatted
 
     def test_format_without_question_does_not_add_false_signal(self):
         """Test that if history ends with non-question, context doesn't falsely claim there's a question."""
@@ -348,42 +218,6 @@ class TestRouterConversationalStateInterpretation:
 
 class TestRouterActionMatching:
     """Tests for correct action matching based on anchors and conversation state."""
-
-    def test_ongoing_activity_recognition_in_context(self):
-        """Test that ongoing activity is recognized and included in context signals."""
-        history = [
-            {"role": "assistant", "content": "Let's start your signup"},
-            {"role": "user", "content": "Ok"},
-            {
-                "role": "system",
-                "content": "[EVENT] Ongoing Activity: SignupInterviewInteractAction",
-            },
-        ]
-
-        formatted = format_history_for_test(history)
-
-        # Ongoing activity should be in context signals
-        assert "Ongoing activity:" in formatted
-        assert "SignupInterviewInteractAction" in formatted
-
-    def test_multiple_ongoing_activities_uses_most_recent(self):
-        """Test that only the most recent ongoing activity is used in context."""
-        history = [
-            {"role": "system", "content": "[EVENT] Ongoing Activity: OldActionName"},
-            {"role": "assistant", "content": "Continue the process"},
-            {"role": "user", "content": "Ok"},
-            {
-                "role": "system",
-                "content": "[EVENT] Ongoing Activity: CurrentActionName",
-            },
-        ]
-
-        formatted = format_history_for_test(history)
-
-        # Should reference the most recent ongoing activity
-        assert "CurrentActionName" in formatted
-        # Old one may or may not appear in context line, but current one must
-        assert "CurrentActionName" in formatted
 
 
 class TestRouterPromptStructure:

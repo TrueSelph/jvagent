@@ -193,12 +193,12 @@ class TestMediaBatchManagerConcurrency:
         assert all(r["status"] == "received" for r in results)
 
         # Verify batch contains all images (check internal state)
-        # The batch should exist and have 10 media URLs
+        # The batch should exist and have 10 media items
         async with batch_manager._global_lock:
             if user_id in batch_manager._batches:
                 batch = batch_manager._batches[user_id]
                 # Should have all 10 images (unless some triggered early processing)
-                assert len(batch["media_urls"]) <= 10
+                assert len(batch["media_items"]) <= 10
 
     @pytest.mark.asyncio
     async def test_multiple_users_concurrent_batches(self, batch_manager, mock_action):
@@ -238,7 +238,7 @@ class TestMediaBatchManagerConcurrency:
         original_process = batch_manager._process_batch_internal
 
         async def mock_process(sender, batch):
-            processed_batches.append((sender, len(batch["media_urls"])))
+            processed_batches.append((sender, len(batch["media_items"])))
 
         batch_manager._process_batch_internal = mock_process
 

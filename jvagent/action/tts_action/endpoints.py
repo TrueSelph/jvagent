@@ -10,9 +10,17 @@ from typing import Any, Dict
 from jvspatial.api import endpoint
 from jvspatial.api.exceptions import ResourceNotFoundError
 
-from .tts_action import TTSAction
+from .base import BaseTTSAction
 
 logger = logging.getLogger(__name__)
+
+
+async def _get_tts_action(action_id: str):
+    """Resolve action by ID; validate it is a BaseTTSAction."""
+    action = await BaseTTSAction.get(action_id)
+    if action and isinstance(action, BaseTTSAction):
+        return action
+    return None
 
 
 @endpoint(
@@ -32,7 +40,7 @@ async def synthesize_speech(action_id: str, data: Dict[str, Any]) -> Dict[str, A
     Returns:
         Speech synthesis result
     """
-    action = await TTSAction.get(action_id)
+    action = await _get_tts_action(action_id)
     if not action:
         raise ResourceNotFoundError(
             message=f"TTS action with ID '{action_id}' not found",
@@ -48,13 +56,17 @@ async def synthesize_speech(action_id: str, data: Dict[str, Any]) -> Dict[str, A
 
     result = await action.invoke(text, as_base64=as_base64, as_url=as_url)
 
+    provider = action.get_class_name()
+    model = getattr(action, "model", None)
+    voice = getattr(action, "voice", None)
+
     return {
         "success": result is not None,
         "audio": result,
         "format": "base64" if as_base64 else ("url" if as_url else "bytes"),
-        "provider": action.provider,
-        "model": action.model,
-        "voice": action.voice,
+        "provider": provider,
+        "model": model,
+        "voice": voice,
     }
 
 
@@ -74,7 +86,7 @@ async def get_voices(action_id: str) -> Dict[str, Any]:
     Returns:
         List of available voices
     """
-    action = await TTSAction.get(action_id)
+    action = await _get_tts_action(action_id)
     if not action:
         raise ResourceNotFoundError(
             message=f"TTS action with ID '{action_id}' not found",
@@ -83,10 +95,13 @@ async def get_voices(action_id: str) -> Dict[str, Any]:
 
     voices = await action.get_voices()
 
+    provider = action.get_class_name()
+    voice = getattr(action, "voice", None)
+
     return {
         "voices": voices,
-        "provider": action.provider,
-        "current_voice": action.voice,
+        "provider": provider,
+        "current_voice": voice,
     }
 
 
@@ -106,7 +121,7 @@ async def get_models(action_id: str) -> Dict[str, Any]:
     Returns:
         List of available models
     """
-    action = await TTSAction.get(action_id)
+    action = await _get_tts_action(action_id)
     if not action:
         raise ResourceNotFoundError(
             message=f"TTS action with ID '{action_id}' not found",
@@ -115,10 +130,13 @@ async def get_models(action_id: str) -> Dict[str, Any]:
 
     models = await action.get_models()
 
+    provider = action.get_class_name()
+    model = getattr(action, "model", None)
+
     return {
         "models": models,
-        "provider": action.provider,
-        "current_model": action.model,
+        "provider": provider,
+        "current_model": model,
     }
 
 
@@ -138,7 +156,7 @@ async def tts_health_check(action_id: str) -> Dict[str, Any]:
     Returns:
         Health check result
     """
-    action = await TTSAction.get(action_id)
+    action = await _get_tts_action(action_id)
     if not action:
         raise ResourceNotFoundError(
             message=f"TTS action with ID '{action_id}' not found",
@@ -147,10 +165,14 @@ async def tts_health_check(action_id: str) -> Dict[str, Any]:
 
     health = await action.healthcheck()
 
+    provider = action.get_class_name()
+    model = getattr(action, "model", None)
+    voice = getattr(action, "voice", None)
+
     return {
         "healthy": health is True,
         "details": health if health is not True else None,
-        "provider": action.provider,
-        "model": action.model,
-        "voice": action.voice,
+        "provider": provider,
+        "model": model,
+        "voice": voice,
     }
