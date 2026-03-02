@@ -18,8 +18,9 @@ logger = logging.getLogger(__name__)
 class BaseWebSearchAction(Action, ABC):
     """Abstract base class for web search actions.
 
-    Concrete implementations (e.g., ``SerpAPIWebSearchAction``,
-    ``BraveWebSearchAction``) extend this class and implement ``search``
+    Concrete implementations (e.g., ``SerperWebSearchAction``,
+    ``SerpAPIWebSearchAction``, ``BraveWebSearchAction``) extend this class
+    and implement ``search``
     to call their respective search API, returning a normalized result list.
 
     Each result dict contains:
@@ -35,7 +36,7 @@ class BaseWebSearchAction(Action, ABC):
     Usage (agent.yaml):
         Register a concrete provider action at the agent level. Then point
         ``WebSearchRetrievalInteractAction.web_search_action_type`` at its
-        class name (e.g., ``"SerpAPIWebSearchAction"``).
+        class name (e.g., ``"SerperWebSearchAction"`` or ``"SerpAPIWebSearchAction"``).
     """
 
     api_key: str = attribute(default="", description="API key for the provider")

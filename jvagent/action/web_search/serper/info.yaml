@@ -13,3 +13,4 @@ package:
       weight: 0
   dependencies:
     jvagent: ~0.0.1
+
