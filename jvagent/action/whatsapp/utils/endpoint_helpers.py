@@ -66,6 +66,52 @@ def normalize_result(
     return result
 
 
+def _extract_quoted_text(quoted_message: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Extract text from quoted message dict (provider-agnostic).
+
+    Args:
+        quoted_message: Raw quoted message dict from webhook (e.g. quotedMsg)
+
+    Returns:
+        Stripped text string or None if not found/empty
+    """
+    if not quoted_message or not isinstance(quoted_message, dict):
+        return None
+    for key in ("body", "content", "text"):
+        val = quoted_message.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    nested = quoted_message.get("message") or {}
+    if isinstance(nested, dict):
+        for key in ("body", "content", "text"):
+            val = nested.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+    return None
+
+
+def _build_utterance_with_quoted_context(
+    quoted_message: Optional[Dict[str, Any]],
+    base_utterance: Optional[str],
+) -> Optional[str]:
+    """Augment utterance with quoted message context when user replies to a message.
+
+    Args:
+        quoted_message: Raw quoted message dict (caller extracts from data)
+        base_utterance: Existing utterance (body, caption, or transcript)
+
+    Returns:
+        Augmented utterance string, or base_utterance unchanged if no quoted text
+    """
+    quoted_text = _extract_quoted_text(quoted_message)
+    if not quoted_text:
+        return base_utterance
+    user_utterance = (
+        base_utterance.strip() if base_utterance else "(no additional message)"
+    )
+    return f'User replied to: "{quoted_text}" with "{user_utterance}"'
+
+
 async def _store_whatsapp_metadata_in_interaction(
     walker: InteractWalker, data_dict: Dict[str, Any]
 ) -> None:

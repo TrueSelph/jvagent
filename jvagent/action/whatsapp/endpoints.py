@@ -13,6 +13,7 @@ from jvspatial.exceptions import DatabaseError, ValidationError
 from jvagent.core.agent import Agent
 
 from .utils.endpoint_helpers import (
+    _build_utterance_with_quoted_context,
     _clear_whatsapp_typing,
     _handle_media_message,
     _handle_voice_message,
@@ -156,6 +157,9 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                 agent, agent_id, sender, getattr(data, "isGroup", False)
             )
             return {"status": "ignored", "response": "Ignore interaction"}
+
+        quoted = getattr(data, "quoted_message", None) or {}
+        utterance = _build_utterance_with_quoted_context(quoted, utterance) or utterance
 
         if utterance and len(utterance) > whatsapp_action.utterance_max_length:
             await _clear_whatsapp_typing(
