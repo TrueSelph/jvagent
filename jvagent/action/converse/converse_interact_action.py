@@ -68,7 +68,7 @@ class ConverseInteractAction(InteractAction):
     parameters: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {
-                "condition": "The user message has diverged from user-specific ACTIVE TASKS (if any).",
+                "condition": "There are user-specific ACTIVE TASKS and the user message has diverged",
                 "response": "Respond but in closing, remind the user to return to complete the active task(s).",
             },
             {
