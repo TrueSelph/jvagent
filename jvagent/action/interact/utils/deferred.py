@@ -1,4 +1,4 @@
-"""Shared utilities for the interact subsystem."""
+"""Deferred save utilities for the interact subsystem."""
 
 import logging
 from typing import Any, Optional

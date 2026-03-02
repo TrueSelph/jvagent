@@ -90,6 +90,10 @@ class ResponseGatingInteractAction(InteractAction):
         description="Task types that bypass gating (pass-through mode). When an active "
         "task has one of these types, gating is skipped and the pipeline proceeds.",
     )
+    pass_through_when_media: bool = attribute(
+        default=True,
+        description="When True, bypass gating and use RESPOND when user has attached media (images, documents, etc.).",
+    )
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute posture classification and apply gating logic."""
@@ -118,6 +122,20 @@ class ResponseGatingInteractAction(InteractAction):
                     await interaction.save()
                     await self._handle_respond(visitor, interaction, conversation)
                     return
+
+        # Pass-through when user has attached media (images, documents, etc.)
+        if self.pass_through_when_media:
+            data = getattr(visitor, "data", None) or {}
+            media_urls = data.get("image_urls") or data.get("whatsapp_media") or []
+            if media_urls:
+                logger.debug(
+                    "ResponseGatingInteractAction: Pass-through (media attached: %d items)",
+                    len(media_urls),
+                )
+                interaction.response_posture = POSTURE_RESPOND
+                await interaction.save()
+                await self._handle_respond(visitor, interaction, conversation)
+                return
 
         try:
             model_action = await self.get_model_action()

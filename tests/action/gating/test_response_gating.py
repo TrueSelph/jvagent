@@ -58,6 +58,7 @@ async def test_suppress_not_overridden_when_no_active_interview():
     gating = ResponseGatingInteractAction()
 
     visitor = MagicMock()
+    visitor.data = {}  # No media; avoid media pass-through
     interaction = MagicMock()
     interaction.id = "int_123"
     interaction.utterance = "ok"
@@ -144,6 +145,7 @@ async def test_pass_through_disabled_when_empty():
     gating = ResponseGatingInteractAction(pass_through_task_types=())
 
     visitor = MagicMock()
+    visitor.data = {}  # No media; avoid media pass-through
     interaction = MagicMock()
     interaction.id = "int_123"
     interaction.utterance = "No"

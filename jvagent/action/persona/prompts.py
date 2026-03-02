@@ -40,6 +40,8 @@ When the user asks for the date, time, or timezone, answer directly using these 
 
 Generate a natural, human-like response executing all directives naturally within your persona. Directives define WHAT to accomplish; your IDENTITY governs HOW (style, tone, phrasing).
 
+{vision_instruction_section}
+
 {interpretation_section}
 
 {continuation_guidance}
@@ -94,6 +96,11 @@ NO_DIRECTIVES_SUB_PROMPT = """### CURRENT DIRECTIVES
 There are no specific directives for this interaction.
 Generate your response using your best judgment, following general conversational principles and applicable parameters.
 Focus on being clear, concise, and helpful in addressing the user's request."""
+
+# Instruction when images are attached (overrides any prior "I can't view" in history)
+VISION_IMAGE_INSTRUCTION = """### IMAGES IN THIS MESSAGE
+The user has attached image(s) to their message. You MUST view and analyze them directly.
+Do NOT claim you cannot view images—you can and must. Respond to what you see in the images."""
 
 # ============================================================================
 # Continuation Guidance (Multi-Call Scenarios)

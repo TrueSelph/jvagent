@@ -278,6 +278,18 @@ response = await self.respond(
 )
 ```
 
+## Visitor Data and Image Support
+
+**Standard key**: `visitor.data["image_urls"]` is the canonical key for image input across channels (WhatsApp, Interact API, etc.). Media sources should populate this key with:
+
+- A list of URL strings
+- A list of dicts: `{"url": "..."}` or `{"base64": "..."}` (with optional `detail` for vision models)
+
+When `image_urls` is populated, PersonaAction uses `build_prompt_for_vision()` (from `jvagent.action.interact.utils.vision_prompt`) to build multimodal prompts for vision-capable LLMs. The helper accepts `image_data_keys` (default: `("image_urls",)`) so channels can use a single standard key.
+
+**Related keys**:
+- `whatsapp_media`: All media URLs (images, documents, video, audio). Used by interview actions with `data_input_field: "whatsapp_media"` for document uploads.
+
 ## Task Tracking
 
 The InteractWalker provides task tracker helpers for actions that manage multi-turn flows requiring user input (e.g., interviews):
@@ -409,6 +421,8 @@ await self.respond(visitor, parameters=[self.parameters])  # ❌ Creates nested 
 
 ## See Also
 
+- `jvagent.action.interact.utils.vision_prompt` - `build_prompt_for_vision()` for multimodal prompts from `visitor.data["image_urls"]`
+- [WhatsApp Action](../whatsapp/README.md) - Image flow, quoted image reply support
 - [InteractAction Base Class](../interact/base.py)
 - [InteractWalker](../interact/interact_walker.py)
 - [IntroInteractAction README](../intro/README.md)

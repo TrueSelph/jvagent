@@ -90,6 +90,72 @@ def _extract_quoted_text(quoted_message: Optional[Dict[str, Any]]) -> Optional[s
     return None
 
 
+def _extract_quoted_image(
+    quoted_message: Optional[Dict[str, Any]]
+) -> Optional[Dict[str, str]]:
+    """Extract base64 image from quoted message when user replies to an image.
+
+    Provider-agnostic: handles whatsapp-web.js, WPPConnect, UltraMsg, etc.
+    Strips data: URI prefix if present; create_multimodal_content adds it.
+
+    Args:
+        quoted_message: Raw quoted message dict from webhook (e.g. quotedMsg)
+
+    Returns:
+        {"base64": "..."} or None if no image found
+    """
+    if not quoted_message or not isinstance(quoted_message, dict):
+        return None
+
+    msg_type = (quoted_message.get("type") or "").lower()
+    nested = quoted_message.get("message") or {}
+
+    # Check if quoted message is an image (top-level or nested)
+    is_image = msg_type in ("image", "img")
+    if not is_image and isinstance(nested, dict):
+        nested_type = (nested.get("type") or "").lower()
+        has_image = "image" in nested or "img" in nested
+        is_image = nested_type in ("image", "img") or has_image
+
+    if not is_image:
+        return None
+
+    # Extract base64 from common locations
+    raw = None
+    for key in ("body", "data", "media"):
+        val = quoted_message.get(key)
+        if isinstance(val, str) and len(val) > 100:
+            raw = val
+            break
+
+    if not raw and isinstance(nested, dict):
+        img = nested.get("image") or nested.get("img")
+        if isinstance(img, dict):
+            for key in ("data", "body", "base64"):
+                val = img.get(key)
+                if isinstance(val, str) and len(val) > 100:
+                    raw = val
+                    break
+        if not raw:
+            for key in ("body", "data"):
+                val = nested.get(key)
+                if isinstance(val, str) and len(val) > 100:
+                    raw = val
+                    break
+
+    if not raw or not raw.strip():
+        return None
+
+    # Strip data: URI prefix if present
+    s = raw.strip()
+    if "," in s and s.lower().startswith("data:"):
+        s = s.split(",", 1)[1]
+    if not s:
+        return None
+
+    return {"base64": s}
+
+
 def _build_utterance_with_quoted_context(
     quoted_message: Optional[Dict[str, Any]],
     base_utterance: Optional[str],
@@ -608,6 +674,13 @@ async def _process_interaction_async(
             and whatsapp_action.tts_action
         ):
             data_dict["respond_with_voice"] = True
+
+        # Extract image from quoted message when user replies to an image
+        quoted = data_dict.get("quoted_message") or {}
+        quoted_image = _extract_quoted_image(quoted)
+        if quoted_image:
+            existing = data_dict.get("image_urls") or []
+            data_dict["image_urls"] = existing + [quoted_image]
 
         # Create walker using helper function
         walker = await create_whatsapp_walker(
