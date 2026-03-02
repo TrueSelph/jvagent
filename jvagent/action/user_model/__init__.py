@@ -1,9 +1,9 @@
 """User model action package.
 
-Exports the `UserModelAction` which collects simple personal preferences
+Exports the `UserModelInteractAction` which collects simple personal preferences
 to help personalize agent responses.
 """
 
-from .user_model_action import UserModelAction
+from .user_model_interact_action import UserModelInteractAction
 
-__all__ = ["UserModelAction"]
+__all__ = ["UserModelInteractAction"]

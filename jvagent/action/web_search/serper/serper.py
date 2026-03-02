@@ -24,14 +24,11 @@ class SerperWebSearchAction(BaseWebSearchAction):
     API docs: https://serper.dev/search
 
     Configuration:
-        api_key: Your Serper API key
-        api_endpoint: Serper API endpoint URL (default: https://google.serper.dev/search)
-        gl: Two-letter country code for result localization (default: GY)
-        hl: Language code for search results (default: en)
-        engine: Search engine type (e.g., google, google_light, google_news)
-        ui_lang: User interface language (default: en-US)
-        safesearch: SafeSearch filter level — off, moderate, strict (default: moderate)
-        max_results: Maximum number of results to return
+        api_key: Your Serper API subscription token
+        api_endpoint: Serper API endpoint URL
+        gl: Two-letter country code for result localization (default: gy)
+        hl: Language for search results (default: en)
+        max_results: the maximum number of results to return
     """
 
     api_endpoint: str = attribute(
@@ -50,13 +47,9 @@ class SerperWebSearchAction(BaseWebSearchAction):
         default="google",
         description="Search engine to use (e.g., google_light, google_news)",
     )
-    ui_lang: str = attribute(
-        default="en-US",
-        description="User interface language for the response (e.g., en-US)",
-    )
-    safesearch: str = attribute(
-        default="moderate",
-        description="SafeSearch filter level: off, moderate, or strict",
+    max_results: int = attribute(
+        default=5,
+        description="The maximum number of results to return"
     )
 
     async def search(self, query: str, **kwargs: Any) -> List[Dict[str, str]]:

@@ -1,13 +1,13 @@
 package:
-  name: jvagent/user_model_action
+  name: jvagent/user_model_interact_action
   author: V75 Inc.
-  archetype: UserModelAction
+  archetype: UserModelInteractAction
   version: 1.0.0
   meta:
     title: User Model Action
     description: User Model Action
     group: jvagent
-    type: action
+    type: interact_action
   config:
     order:
       weight: 0

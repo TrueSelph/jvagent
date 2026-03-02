@@ -1,0 +1,27 @@
+# PageIndexRetrievalInteractAction Package Descriptor
+
+package:
+  name: jvagent/user_model_retrieval_interact_action
+  author: jvagent
+  archetype: UserModelRetrievalInteractAction
+  version: 0.0.1
+  meta:
+    title: UserModelRetrievalInteractAction
+    description: Vectorless RAG - retrieves context from PageIndex graph via LLM tree search (no VectorStore)
+    group: jvagent
+    type: interact_action
+  config:
+    order:
+      weight: -75
+    node_summary: true
+    node_text: true
+    doc_description: false
+    max_token_num_each_node: 20000
+    summary_token_threshold: 200
+    limit: 10
+    strategy: tree_search
+  dependencies:
+    jvagent: ~0.0.1
+    actions:
+      - "jvagent/user_model_action"
+      - "jvagent/pageindex_retrieval_interact_action"

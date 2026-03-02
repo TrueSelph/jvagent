@@ -1,6 +1,6 @@
-# UserModelAction
+# UserModelInteractAction
 
-UserModelAction is an InteractAction that automatically maintains a user profile by analyzing conversation history and extracting facts and preferences using an LLM.
+UserModelInteractAction is an InteractAction that automatically maintains a user profile by analyzing conversation history and extracting facts and preferences using an LLM.
 
 ## Overview
 
