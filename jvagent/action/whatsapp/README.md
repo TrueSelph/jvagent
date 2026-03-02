@@ -251,7 +251,9 @@ WHATSAPP_API_KEY=your_api_key
 WHATSAPP_SESSION=your_session_name
 WHATSAPP_TOKEN=your_token
 
-# Application Base URL (for webhook generation)
+# Application Base URL (required for webhooks and media delivery)
+# Used for webhook generation and to resolve relative media URLs (e.g. TTS audio)
+# to absolute URLs when the adapter fetches files for sending
 APP_BASE_URL=https://your-app.com
 
 # Session Registration Timeout (optional, default: 120 seconds)
@@ -277,10 +279,40 @@ actions:
       api_key: "${WHATSAPP_API_KEY}"
       session: "${WHATSAPP_SESSION}"
       token: "${WHATSAPP_TOKEN}"
+      base_url: "${APP_BASE_URL}"
       request_timeout: 60
       chunk_length: 4000
       media_batch_window: 2.5
+      stt_action: "DeepgramSTTAction"   # For transcribing voice messages (PTT)
+      tts_action: "ElevenLabsTTSAction"   # For replying with voice when user sends PTT
 ```
+
+## Voice Messages (PTT and TTS)
+
+When `stt_action` and `tts_action` are configured, the action supports voice message flows. Agents register a concrete provider (e.g. jvagent/deepgram_stt, jvagent/elevenlabs_tts) and WhatsApp references it by class name (e.g. DeepgramSTTAction, ElevenLabsTTSAction):
+
+- **Inbound PTT**: Voice messages are transcribed via the STT action. The adapter passes the correct audio format (WhatsApp voice uses OGG-Opus) to the generic STT layer.
+- **Outbound voice reply**: When the user sends a PTT, the agent can respond with a synthesized voice message. PersonaAction applies voice-optimized formatting (short replies, no markdown), and the TTS action generates audio. The adapter sends the result as a voice message.
+- **Media URLs**: TTS and other media may return relative URLs (e.g. `/api/storage/...`). The adapter prepends `base_url` (from `APP_BASE_URL`) to produce absolute URLs before fetching for delivery. Ensure `APP_BASE_URL` is set and publicly reachable.
+
+## Images and Vision
+
+The WhatsApp action supports image recognition so the agent can interpret images shared by users. Images flow through the media pipeline and are passed to the vision-capable language model.
+
+### Image Flow
+
+1. **Direct images**: When a user sends an image (with or without caption), media is saved via `MediaManager`, batched by `MediaBatchManager`, and passed to `visitor.data["image_urls"]` (vision-capable images) and `visitor.data["whatsapp_media"]` (all media).
+2. **Quoted image replies**: When a user replies to an image using WhatsApp's reply feature, the webhook delivers the original image as base64 in `quoted_message`. The system extracts this via `_extract_quoted_image()` and injects it into `visitor.data["image_urls"]` before creating the walker, so the vision pipeline receives the image even when the current message is text-only (e.g. "What's in this?").
+3. **Vision pipeline**: PersonaAction uses `build_prompt_for_vision()` to check `visitor.data["image_urls"]` and, when images are present, builds multimodal content for the LLM. The base persona includes the capability "Can view and interpret images shared by users."
+
+### Data Keys
+
+- **`image_urls`**: Standard key for vision-capable images (URLs or `{"base64": "..."}` dicts). Used by PersonaAction and the vision prompt builder.
+- **`whatsapp_media`**: All media URLs (images, documents, video, audio). Preserved for backward compatibility with interview actions using `data_input_field: "whatsapp_media"`.
+
+### URL Accessibility
+
+Media URLs are built as `whatsapp_action.base_url + media_url`. The LLM (e.g. OpenAI) must be able to fetch these URLs. Ensure `base_url` is publicly reachable or use a proxy/tunnel in development.
 
 ## Migration Notes
 
@@ -322,6 +354,16 @@ actions:
 2. **Check adapter initialization**: Health check should show `adapter_initialized: true`
 3. **Verify API key**: Webhook URL includes API key - ensure it's valid and not expired
 4. **Check provider configuration**: Verify WhatsApp provider has the correct webhook URL registered
+
+#### Problem: Voice or media messages fail to send ("Failed to fetch or encode file")
+
+**Symptoms**:
+- TTS voice replies or other media fail with fetch errors
+- Log shows relative URL path (e.g. `/api/storage/...`)
+
+**Solutions**:
+1. **Set APP_BASE_URL**: The adapter needs an absolute URL to fetch media. Ensure `APP_BASE_URL` is set (e.g. `https://your-app.com`) and is publicly reachable.
+2. **Configure base_url on action**: In agent.yaml, set `base_url: "${APP_BASE_URL}"` for the WhatsApp action.
 
 ### Health Check
 

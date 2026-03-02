@@ -4,14 +4,49 @@ This module provides REST API endpoints for PersonaAction interactions
 and parameter management.
 """
 
-import logging
 from typing import Any, Dict, List, Optional
 
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
 
-logger = logging.getLogger(__name__)
+
+async def _get_persona_action(action_id: str) -> Any:
+    """Fetch and validate PersonaAction by ID. Raises on not found or wrong type."""
+    from jvagent.action.persona.persona_action import PersonaAction
+
+    action = await PersonaAction.get(action_id)
+    if not action:
+        raise ResourceNotFoundError(
+            message=f"PersonaAction with ID '{action_id}' not found",
+            details={"action_id": action_id},
+        )
+    if not isinstance(action, PersonaAction):
+        raise ValidationError(
+            message=f"Action '{action_id}' is not a PersonaAction",
+            details={"action_id": action_id},
+        )
+    return action
+
+
+def _parse_param_id(param_id: str, parameters: List[Dict[str, Any]]) -> int:
+    """Parse param_id to index. Expected format: param_0, param_1, param_N.
+
+    Raises ValidationError on invalid format, ResourceNotFoundError if index out of range.
+    """
+    try:
+        param_index = int(param_id.replace("param_", ""))
+    except (ValueError, AttributeError):
+        raise ValidationError(
+            message=f"Invalid parameter ID format: '{param_id}'",
+            details={"param_id": param_id},
+        )
+    if param_index < 0 or param_index >= len(parameters):
+        raise ResourceNotFoundError(
+            message=f"Parameter with ID '{param_id}' not found",
+            details={"param_id": param_id},
+        )
+    return param_index
 
 
 # NOTE: The /actions/{action_id}/interact endpoint has been removed.
@@ -66,22 +101,7 @@ async def list_parameters_endpoint(
 
     Dictionary with parameters list and count
     """
-    from jvagent.action.persona.persona_action import PersonaAction
-
-    action = await PersonaAction.get(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"PersonaAction with ID '{action_id}' not found",
-            details={"action_id": action_id},
-        )
-
-    if not isinstance(action, PersonaAction):
-        raise ValidationError(
-            message=f"Action '{action_id}' is not a PersonaAction",
-            details={"action_id": action_id},
-        )
-
-    # Get parameters from the action's parameters attribute
+    action = await _get_persona_action(action_id)
     parameters = action.parameters or []
 
     # Filter by enabled if requested (parameters may have 'enabled' key)
@@ -140,21 +160,7 @@ async def create_parameter_endpoint(
 
     Dictionary with created parameter ID
     """
-    from jvagent.action.persona.persona_action import PersonaAction
-
-    action_node = await PersonaAction.get(action_id)
-    if not action_node:
-        raise ResourceNotFoundError(
-            message=f"PersonaAction with ID '{action_id}' not found",
-            details={"action_id": action_id},
-        )
-
-    if not isinstance(action_node, PersonaAction):
-        raise ValidationError(
-            message=f"Action '{action_id}' is not a PersonaAction",
-            details={"action_id": action_id},
-        )
-
+    action_node = await _get_persona_action(action_id)
     if not condition or not condition.strip():
         raise ValidationError(
             message="condition is required",
@@ -243,21 +249,7 @@ async def update_parameter_endpoint(
 
     Dictionary with updated parameter
     """
-    from jvagent.action.persona.persona_action import PersonaAction
-
-    action_node = await PersonaAction.get(action_id)
-    if not action_node:
-        raise ResourceNotFoundError(
-            message=f"PersonaAction with ID '{action_id}' not found",
-            details={"action_id": action_id},
-        )
-
-    if not isinstance(action_node, PersonaAction):
-        raise ValidationError(
-            message=f"Action '{action_id}' is not a PersonaAction",
-            details={"action_id": action_id},
-        )
-
+    action_node = await _get_persona_action(action_id)
     updates: Dict[str, Any] = {}
     if condition is not None:
         updates["condition"] = condition.strip()
@@ -276,26 +268,9 @@ async def update_parameter_endpoint(
             details={},
         )
 
-    # Parse param_id as index (format: "param_0", "param_1", etc.)
-    try:
-        param_index = int(param_id.replace("param_", ""))
-    except (ValueError, AttributeError):
-        raise ValidationError(
-            message=f"Invalid parameter ID format: '{param_id}'",
-            details={"param_id": param_id},
-        )
-
-    # Get parameters list
     if action_node.parameters is None:
         action_node.parameters = []
-
-    if param_index < 0 or param_index >= len(action_node.parameters):
-        raise ResourceNotFoundError(
-            message=f"Parameter with ID '{param_id}' not found",
-            details={"param_id": param_id},
-        )
-
-    # Update the parameter
+    param_index = _parse_param_id(param_id, action_node.parameters)
     action_node.parameters[param_index].update(updates)
     await action_node.save()
 
@@ -338,41 +313,10 @@ async def delete_parameter_endpoint(
 
     Dictionary with success message
     """
-    from jvagent.action.persona.persona_action import PersonaAction
-
-    action_node = await PersonaAction.get(action_id)
-    if not action_node:
-        raise ResourceNotFoundError(
-            message=f"PersonaAction with ID '{action_id}' not found",
-            details={"action_id": action_id},
-        )
-
-    if not isinstance(action_node, PersonaAction):
-        raise ValidationError(
-            message=f"Action '{action_id}' is not a PersonaAction",
-            details={"action_id": action_id},
-        )
-
-    # Parse param_id as index (format: "param_0", "param_1", etc.)
-    try:
-        param_index = int(param_id.replace("param_", ""))
-    except (ValueError, AttributeError):
-        raise ValidationError(
-            message=f"Invalid parameter ID format: '{param_id}'",
-            details={"param_id": param_id},
-        )
-
-    # Get parameters list
+    action_node = await _get_persona_action(action_id)
     if action_node.parameters is None:
         action_node.parameters = []
-
-    if param_index < 0 or param_index >= len(action_node.parameters):
-        raise ResourceNotFoundError(
-            message=f"Parameter with ID '{param_id}' not found",
-            details={"param_id": param_id},
-        )
-
-    # Delete the parameter
+    param_index = _parse_param_id(param_id, action_node.parameters)
     action_node.parameters.pop(param_index)
     await action_node.save()
 
@@ -417,21 +361,7 @@ async def import_parameters_endpoint(
 
     Dictionary with import count
     """
-    from jvagent.action.persona.persona_action import PersonaAction
-
-    action_node = await PersonaAction.get(action_id)
-    if not action_node:
-        raise ResourceNotFoundError(
-            message=f"PersonaAction with ID '{action_id}' not found",
-            details={"action_id": action_id},
-        )
-
-    if not isinstance(action_node, PersonaAction):
-        raise ValidationError(
-            message=f"Action '{action_id}' is not a PersonaAction",
-            details={"action_id": action_id},
-        )
-
+    action_node = await _get_persona_action(action_id)
     if not parameters:
         raise ValidationError(
             message="parameters list is required and cannot be empty",

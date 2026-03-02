@@ -1,10 +1,12 @@
 """STT (Speech-to-Text) action package.
 
-This module provides speech-to-text integration using various providers.
+Provides BaseSTTAction and concrete provider implementations.
 """
 
-# Import endpoints module to ensure endpoints are discovered and registered
-from . import endpoints  # noqa: F401
-from .stt_action import STTAction
+from jvagent.action.stt_action.base import BaseSTTAction
+from jvagent.action.stt_action.deepgram import DeepgramSTTAction
 
-__all__ = ["STTAction"]
+# Import endpoints to ensure they are discovered and registered
+from . import endpoints  # noqa: F401
+
+__all__ = ["BaseSTTAction", "DeepgramSTTAction"]

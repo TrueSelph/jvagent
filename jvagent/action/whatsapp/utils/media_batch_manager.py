@@ -32,7 +32,7 @@ LAMBDA COMPATIBILITY:
 import asyncio
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from jvspatial.exceptions import DatabaseError
 
@@ -41,6 +41,14 @@ from jvagent.core.agent import Agent
 from .task_helpers import create_background_task
 
 logger = logging.getLogger(__name__)
+
+
+def _is_vision_image(item: Dict[str, Any]) -> bool:
+    """Return True if item is an image suitable for LLM vision input."""
+    mt = item.get("message_type") or ""
+    mime = item.get("mime_type") or ""
+    return mt == "image" or (mime and mime.startswith("image/"))
+
 
 # Constants for batch management
 BATCH_MAX_SIZE = 10  # Maximum number of media items per batch
@@ -92,7 +100,7 @@ class MediaBatchManager:
                 batch = self._batches[sender]
 
                 # Check max batch size
-                if len(batch["media_urls"]) >= BATCH_MAX_SIZE:
+                if len(batch["media_items"]) >= BATCH_MAX_SIZE:
                     logger.debug(
                         f"Media batch for user {sender} reached max size ({BATCH_MAX_SIZE}), "
                         f"processing immediately"
@@ -111,8 +119,14 @@ class MediaBatchManager:
                     self._batches[sender] = batch
                 else:
                     # Add to existing batch
-                    batch["media_urls"].append(media_url)
-                    batch["utterances"].append(utterance)
+                    batch["media_items"].append(
+                        {
+                            "url": media_url,
+                            "utterance": utterance,
+                            "message_type": data_dict.get("message_type"),
+                            "mime_type": data_dict.get("mime_type"),
+                        }
+                    )
                     batch["updated_at"] = current_time
 
                     # Cancel existing timer and start a new one
@@ -127,7 +141,7 @@ class MediaBatchManager:
                     )
                     logger.debug(
                         f"Added media to existing batch for user {sender}, "
-                        f"batch size: {len(batch['media_urls'])}, resetting timer"
+                        f"batch size: {len(batch['media_items'])}, resetting timer"
                     )
             else:
                 # Create new batch
@@ -167,10 +181,16 @@ class MediaBatchManager:
         whatsapp_action: Any,
         current_time: float,
     ) -> Dict[str, Any]:
-        """Create a new batch structure."""
+        """Create a new batch structure with per-item metadata."""
         return {
-            "media_urls": [media_url],
-            "utterances": [utterance],
+            "media_items": [
+                {
+                    "url": media_url,
+                    "utterance": utterance,
+                    "message_type": data_dict.get("message_type"),
+                    "mime_type": data_dict.get("mime_type"),
+                }
+            ],
             "data": data_dict,
             "agent_id": agent_id,
             "action": whatsapp_action,
@@ -211,6 +231,7 @@ class MediaBatchManager:
         """Internal batch processing logic."""
         # Import here to avoid circular dependency
         from .endpoint_helpers import (
+            _build_utterance_with_quoted_context,
             _clear_whatsapp_typing,
             _store_whatsapp_metadata_in_interaction,
             create_whatsapp_walker,
@@ -221,18 +242,29 @@ class MediaBatchManager:
         is_group = batch.get("data", {}).get("isGroup", False)
 
         try:
-            # Combine all media URLs
-            all_media = batch["media_urls"]
+            media_items: List[Dict[str, Any]] = batch["media_items"]
+            all_media = [item["url"] for item in media_items]
+            whatsapp_image_urls = [
+                item["url"] for item in media_items if _is_vision_image(item)
+            ]
 
             # Combine utterances or use default
-            utterances = [u for u in batch["utterances"] if u]
+            utterances = [
+                item.get("utterance") for item in media_items if item.get("utterance")
+            ]
             combined_utterance = (
                 " | ".join(utterances) if utterances else "I've attached media"
+            )
+            quoted = batch["data"].get("quoted_message") or {}
+            combined_utterance = (
+                _build_utterance_with_quoted_context(quoted, combined_utterance)
+                or combined_utterance
             )
 
             # Use the data from the first message and add all media
             data = batch["data"]
             data["whatsapp_media"] = all_media
+            data["image_urls"] = whatsapp_image_urls
 
             logger.debug(
                 f"Processing batched media for user {sender}: {len(all_media)} items",

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import re
 from typing import Any, Dict, List, Optional
 
@@ -128,6 +129,14 @@ class WhatsAppAdapter(ChannelAdapter):
 
         media_url = message.metadata.get("media_url")
         media_type = message.metadata.get("media_type")
+
+        # Ensure relative URLs (e.g. from TTS /api/storage/...) are absolute for fetch
+        if media_url and media_url.startswith("/"):
+            base = (self.action.base_url or "").strip() or os.environ.get(
+                "APP_BASE_URL", ""
+            ).strip()
+            if base:
+                media_url = f"{base.rstrip('/')}{media_url}"
 
         if not media_url and (not message.content or not message.content.strip()):
             logger.debug(

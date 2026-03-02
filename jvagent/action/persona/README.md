@@ -10,6 +10,7 @@ The Persona Action provides a flexible framework for generating agent responses 
 
 ### Key Features
 
+- **Image/Vision Support**: Base persona capability "Can view and interpret images shared by users" is always included. When `visitor.data["image_urls"]` contains images (URLs or base64), PersonaAction builds multimodal prompts via `build_prompt_for_vision()` so the model receives and interprets images.
 - **Directive-Driven Execution**: Ensures directives are executed with ~95%+ consistency through three-layer reinforcement
 - **Configurable Parameters**: Conditional behavioral rules applied when context matches
 - **Multi-Call Awareness**: Handles continuation scenarios within single interactions
@@ -102,6 +103,7 @@ The system prompt follows a streamlined structure designed to maximize directive
 ├─────────────────────────────────────────┤
 │ ### IDENTITY                            │  Position: 2
 │ - Agent name, description, capabilities │  Attention: 10%
+│   (base capabilities + persona_capabilities) │
 │ - Date/time, user reference             │  Tokens: ~100
 ├─────────────────────────────────────────┤
 │ ### TASK                                │  Position: 3
@@ -182,7 +184,7 @@ class PersonaAction(Action):
     # Persona configuration
     persona_name: str = "Agent"
     persona_description: str = "You are friendly and helpful"
-    persona_capabilities: List[str] = []
+    persona_capabilities: List[str] = []  # Appended after base capabilities
 
     # Model configuration
     model_action_type: str = "OpenAILanguageModelAction"
@@ -224,7 +226,7 @@ Optimized prompt templates designed for directive compliance:
 
 #### 3. PersonaPromptBuilder (`prompt_builder.py`)
 
-Alternative builder for advanced use cases requiring custom section ordering:
+Optional/experimental builder for advanced use cases requiring custom section ordering. **Not used by PersonaAction by default**; the main flow uses string templates in `prompts.py` directly.
 
 ```python
 from jvagent.action.persona.prompt_builder import PersonaPromptBuilder
@@ -328,6 +330,7 @@ async def execute(self, interaction, visitor):
 ```python
 custom_prompt = """
 {directives_section}
+{active_tasks_section}
 
 ### MY CUSTOM IDENTITY
 I am {agent_name}, a specialized technical support agent.
@@ -373,6 +376,8 @@ actions:
         - "Answer product questions"
         - "Process orders and returns"
         - "Troubleshoot common issues"
+      # Note: Base capabilities (e.g. "Can view and interpret images shared by users")
+      # are always included; persona_capabilities are appended after
       model: "gpt-4o"
       model_temperature: 0.3
       model_max_tokens: 2048
@@ -392,11 +397,17 @@ PersonaAction includes 6 default parameters for common scenarios:
 3. **Out of Scope**: Admit when requests are outside your role
 4. **Repetitive Information**: Remind user of previously provided info
 5. **Circular Conversations**: Bring repetition to user's attention
-6. **Diverged Activity**: Remind user to complete ongoing activities
+6. **Knowledge cutoff**: Avoid explicit knowledge cutoff details; use general statement
 
 These can be overridden by providing custom `parameters`.
 
 ## Advanced Topics
+
+### Base Capabilities
+
+PersonaAction always includes base capabilities in the system prompt before agent-specific `persona_capabilities`. The base list includes:
+
+- **Can view and interpret images shared by users** — Ensures the model knows it can process image input when `visitor.data["image_urls"]` is populated (e.g. from WhatsApp images or quoted image replies). This is not overridable; it is merged with `persona_capabilities` when building the IDENTITY section.
 
 ### Multi-Call Awareness
 
@@ -423,12 +434,15 @@ PersonaAction automatically formats responses for different channels:
 **Supported Channels:**
 - `web`: Markdown (headers, bold, italic, links, code blocks)
 - `whatsapp`: Limited markdown (bold, italic, bullets)
+- `voice`: TTS-optimized (short replies, no markdown, phonetic substitutions, word limit)
 - `facebook`: Basic formatting (bold, italic, strikethrough)
 - `instagram`: Minimal formatting (bold, italic, hashtags)
 - `twitter`: Character limits, thread indicators
 - `linkedin`: Professional formatting
 - `email`: Formal greetings/closings
 - `sms`: Plain text, 160 character limit
+
+Voice formatting applies when `channel="voice"` or when the response will be spoken via adapter-driven TTS (e.g. `respond_with_voice` for WhatsApp PTT). In both cases, PersonaAction uses the voice word limit, strips markdown, and applies phonetic substitutions.
 
 ```python
 interaction.channel = "whatsapp"
@@ -571,7 +585,7 @@ Token reduction improves response latency:
 
 **Possible Causes**:
 1. Directive marked as `executed: True` before PersonaAction called
-2. Custom `system_prompt` without `{directives_section}` placeholder
+2. Custom `system_prompt` without `{directives_section}` or `{active_tasks_section}` placeholder
 3. Very long conversation history pushing directives out of context
 
 **Solutions**:
@@ -583,6 +597,7 @@ print(f"Unexecuted directives: {len(directives)}")
 # Ensure custom prompts include directives
 custom_prompt = """
 {directives_section}  # REQUIRED
+{active_tasks_section}  # REQUIRED for task reminders
 ...
 """
 
@@ -653,12 +668,14 @@ response = await persona.respond(
 # Ensure all required placeholders are present
 required_placeholders = [
     '{directives_section}',  # REQUIRED
+    '{active_tasks_section}',  # REQUIRED for task reminders (when remind_on_active_tasks=True)
     '{agent_name}',
     '{agent_description}',
     '{agent_capabilities}',
     '{user}',
     '{date}',
     '{time}',
+    '{timezone}',
     '{parameters_section}',
     '{interpretation_section}',
     '{continuation_guidance}',
@@ -717,7 +734,7 @@ async def respond(
 # Persona configuration
 persona_name: str                    # Agent display name
 persona_description: str             # Detailed agent description
-persona_capabilities: List[str]      # List of agent capabilities
+persona_capabilities: List[str]      # Agent-specific capabilities (appended after base)
 
 # Model configuration
 model_action_type: str              # LanguageModelAction type

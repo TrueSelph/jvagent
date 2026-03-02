@@ -20,9 +20,12 @@ Template Categories:
         - CLASSIFICATION_RULES_CORE: Core classification logic (DRY)
         - INTERVIEW_PROMPT: Full prompt with context formatting
 
-    State Messages: Event tracking
-        - STATE_EVENT_MESSAGES: State-specific event messages (dict)
+    State Messages: Event tracking for terminal states
+        - STATE_EVENT_MESSAGES: COMPLETED/CANCELLED event messages (ACTIVE/REVIEW use active tasks)
         - get_state_event_message(): Helper to format state messages
+
+    Task Tracker: Active task descriptions for AI context
+        - ACTIVE_TASK_DESCRIPTION_TEMPLATE: Template for task description in task tracker
 
 Placeholder Conventions:
     {field_display}, {current_value}: Field-related values
@@ -89,11 +92,12 @@ REVIEW_UNCLEAR_GENERAL_DIRECTIVE = """Prompt: I'm not quite sure what you meant 
 # State Event Messages
 # =============================================================================
 
+# State event messages for terminal/completion events only.
+# ACTIVE and REVIEW are tracked via active tasks (ACTIVE_TASK_DESCRIPTION_TEMPLATE),
+# not via these event messages.
 STATE_EVENT_MESSAGES = {
-    "ACTIVE": "Ongoing Activity: interviewing user as part of {class_name}",
-    "REVIEW": "Ongoing Activity: reviewing interview responses as part of {class_name}",
-    "COMPLETED": "Completed activity: {class_name}",
-    "CANCELLED": "interview process cancelled as part of {class_name}",
+    "COMPLETED": "Task {class_name} was completed by user.",
+    "CANCELLED": "Task {class_name} was cancelled by user.",
 }
 
 # Aliases for test compatibility
@@ -102,17 +106,24 @@ CANCELLATION_MESSAGE_TEMPLATE = CANCELLATION_MESSAGE
 
 
 def get_state_event_message(state: str, class_name: str) -> str:
-    """Get formatted state event message.
+    """Get formatted state event message for terminal states.
 
     Args:
-        state: Interview state (ACTIVE, REVIEW, COMPLETED, CANCELLED)
+        state: Interview state (COMPLETED, CANCELLED; ACTIVE/REVIEW use active tasks)
         class_name: Interview action class name
 
     Returns:
-        Formatted event message string
+        Formatted event message string, or empty string if state has no message
     """
     template = STATE_EVENT_MESSAGES.get(state, "")
     return template.format(class_name=class_name) if template else ""
+
+
+# =============================================================================
+# Task Tracker - Active Task Descriptions
+# =============================================================================
+
+ACTIVE_TASK_DESCRIPTION_TEMPLATE = "Guide user to complete {action_name}"
 
 
 # =============================================================================

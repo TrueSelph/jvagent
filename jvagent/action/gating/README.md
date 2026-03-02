@@ -60,6 +60,7 @@ actions:
       history_limit: 5             # Interactions for context
       enable_accumulation: true    # Enable DEFER / fragment buffering
       max_fragment_buffer: 5       # Cap on deferred fragments
+      pass_through_task_types: [INTERVIEW]  # Bypass gating for these task types (default)
 ```
 
 ### Attributes
@@ -72,6 +73,14 @@ actions:
 | `history_limit` | `5` | Previous interactions for context |
 | `enable_accumulation` | `true` | Enable DEFER and fragment buffer |
 | `max_fragment_buffer` | `5` | Max deferred fragments; oldest dropped when exceeded |
+| `pass_through_task_types` | `("INTERVIEW",)` | Task types that bypass gating (pass-through mode). When an active task has one of these types, gating is skipped and the pipeline proceeds. Set to `[]` to disable. |
+| `pass_through_when_media` | `true` | When true, bypass gating and use RESPOND when the user has attached media (images, documents, etc.) in `visitor.data["image_urls"]` or `visitor.data["whatsapp_media"]`. |
+
+## Pass-Through Mode
+
+When an active task has a `task_type` in `pass_through_task_types`, gating is bypassed entirely: no LLM call, no posture classification. The pipeline proceeds as RESPOND. This saves tokens and ensures structured flows (e.g. interviews) always receive user input. Default: `("INTERVIEW",)`. Set `pass_through_task_types: []` to disable.
+
+**Media pass-through**: When `pass_through_when_media` is true (default) and the user has attached media (images, documents, etc.) in `visitor.data["image_urls"]` or `visitor.data["whatsapp_media"]`, gating is bypassed and the pipeline proceeds as RESPOND. This prevents single-image messages (e.g. "I've attached media" placeholder) from being classified as SUPPRESS or DEFER.
 
 ## Deferred Fragment Buffer
 

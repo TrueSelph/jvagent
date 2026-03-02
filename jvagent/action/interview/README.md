@@ -17,6 +17,7 @@ The Interview Action provides a reusable way to collect responses from users in 
 - **Branch Functions**: Custom Python functions for complex branching logic
 - **State Handlers**: `@on_interview_complete`, `@on_interview_review`, `@on_interview_cancelled`
 - **Interaction-Only**: No REST/API endpoints—operates through InteractWalker and conversation flow
+- **Task Tracking**: Automatically registers active tasks when session is ACTIVE/REVIEW; removes on completion/cancellation (see [Task Tracking](../../../docs/task-tracking.md))
 
 ## Quick Start
 

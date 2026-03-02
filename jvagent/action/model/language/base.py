@@ -329,6 +329,14 @@ class LanguageModelAction(BaseModelAction, ABC):
         if response_bus and not interaction:
             raise ValueError("interaction is required when response_bus is provided")
 
+        # Ensure interaction is in context for track_usage (observability_metrics)
+        # Callers like PersonaAction pass interaction when streaming; others rely on
+        # walker's set_interaction. Setting here guarantees observability when we have it.
+        if interaction:
+            from jvagent.action.model.context import set_interaction
+
+            set_interaction(interaction)
+
         # If ResponseBus is provided, extract values from interaction and publish directly
         if response_bus and interaction:
             # Extract values from interaction node

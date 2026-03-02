@@ -55,11 +55,10 @@ The router tracks what the user is expressing:
 
 | Intent Type | Description |
 |-------------|-------------|
-| **REQUEST** | User wants the system to do something |
-| **QUERY** | User is asking a question |
-| **RESPONSE** | User is directly answering assistant's question |
-| **SOCIAL** | Greeting, gratitude, acknowledgment, smalltalk |
-| **NAVIGATION** | Topic change, cancellation, "stop" |
+| **CONVERSATIONAL** | Greeting, gratitude, acknowledgment, smalltalk |
+| **INFORMATIONAL** | User is asking a question or seeking information |
+| **INTERACTIVE** | User is directly answering assistant's question |
+| **DIRECTIVE** | User wants the system to do something specific |
 | **UNCLEAR** | Cannot determine what user needs |
 
 ### Routing Guidelines
@@ -91,7 +90,7 @@ actions:
 
 - `model`: Model identifier (default: "gpt-4o-mini")
 - `model_temperature`: Temperature for LLM (default: 0.1)
-- `model_max_tokens`: Max tokens (default: 500)
+- `model_max_tokens`: Max tokens (default: 400)
 - `history_limit`: Previous interactions to include (default: 3)
 - `weight`: Execution weight (default: -100)
 - `exceptions`: Action names that always execute

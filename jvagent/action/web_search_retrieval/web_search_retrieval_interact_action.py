@@ -35,8 +35,8 @@ class WebSearchRetrievalInteractAction(InteractAction):
 
     Attributes:
         web_search_action_type: Class name of the ``BaseWebSearchAction`` to use
-            (e.g., ``"SerpAPIWebSearchAction"``).  If empty, uses the first
-            available ``BaseWebSearchAction`` registered with the agent.
+            (e.g., ``"SerperWebSearchAction"``, ``"SerpAPIWebSearchAction"``).
+            If empty, uses the first available ``BaseWebSearchAction`` registered with the agent.
         directive: Template for formatting results. Placeholder: ``{results}``
         weight: Execution weight (default: ``-75``, runs before PersonaAction)
     """
@@ -45,7 +45,7 @@ class WebSearchRetrievalInteractAction(InteractAction):
         default="",
         description=(
             "Class name of the BaseWebSearchAction to use "
-            "(e.g., 'SerpAPIWebSearchAction'). "
+            "(e.g., 'SerperWebSearchAction', 'SerpAPIWebSearchAction'). "
             "If empty, uses first available BaseWebSearchAction."
         ),
     )
@@ -80,35 +80,12 @@ class WebSearchRetrievalInteractAction(InteractAction):
     async def on_register(self) -> None:
         """Validate configuration at agent startup."""
         await super().on_register()
-        action = await self._get_web_search_action()
-        if not action:
-            configured = self.web_search_action_type or "(first available)"
-            logger.warning(
-                f"WebSearchRetrievalInteractAction '{self.label}': "
-                f"web_search_action_type='{configured}' not found. "
-                "Ensure a BaseWebSearchAction is registered with the agent."
-            )
-        else:
-            logger.info(
-                f"WebSearchRetrievalInteractAction '{self.label}': "
-                f"using search action '{action.get_class_name()}' ({action.label})"
-            )
+        await self._log_web_search_action_status(is_reload=False)
 
     async def on_reload(self) -> None:
         """Re-validate after a hot-reload."""
         await super().on_reload()
-        action = await self._get_web_search_action()
-        if not action:
-            configured = self.web_search_action_type or "(first available)"
-            logger.warning(
-                f"WebSearchRetrievalInteractAction '{self.label}': "
-                f"after reload, '{configured}' not found."
-            )
-        else:
-            logger.info(
-                f"WebSearchRetrievalInteractAction '{self.label}': "
-                f"reload — active search action '{action.get_class_name()}' ({action.label})"
-            )
+        await self._log_web_search_action_status(is_reload=True)
 
     # ------------------------------------------------------------------ #
     # Execute
@@ -118,6 +95,7 @@ class WebSearchRetrievalInteractAction(InteractAction):
         """Resolve the search action, run the query, inject results as directive."""
         interaction = visitor.interaction
         if not interaction:
+            logger.warning("WebSearchRetrievalInteractAction: No interaction available")
             return
 
         query = self._get_search_query(interaction)
@@ -180,8 +158,36 @@ class WebSearchRetrievalInteractAction(InteractAction):
 
     def _get_search_query(self, interaction: "Interaction") -> Optional[str]:
         """Use interpretation if available, otherwise fall back to utterance."""
-        query = interaction.utterance or interaction.interpretation
+        query = interaction.interpretation or interaction.utterance
         return query.strip() if query else None
+
+    async def _log_web_search_action_status(self, *, is_reload: bool = False) -> None:
+        """Log web search action resolution status (used by on_register and on_reload)."""
+        action = await self._get_web_search_action()
+        configured = self.web_search_action_type or "(first available)"
+        if not action:
+            if is_reload:
+                logger.warning(
+                    f"WebSearchRetrievalInteractAction '{self.label}': "
+                    f"after reload, '{configured}' not found."
+                )
+            else:
+                logger.warning(
+                    f"WebSearchRetrievalInteractAction '{self.label}': "
+                    f"web_search_action_type='{configured}' not found. "
+                    "Ensure a BaseWebSearchAction is registered with the agent."
+                )
+        else:
+            if is_reload:
+                logger.info(
+                    f"WebSearchRetrievalInteractAction '{self.label}': "
+                    f"reload — active search action '{action.get_class_name()}' ({action.label})"
+                )
+            else:
+                logger.info(
+                    f"WebSearchRetrievalInteractAction '{self.label}': "
+                    f"using search action '{action.get_class_name()}' ({action.label})"
+                )
 
     def _format_directive(self, results: List[Dict[str, Any]]) -> str:
         """Format search results into the directive template."""
