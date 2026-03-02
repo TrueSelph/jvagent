@@ -211,6 +211,7 @@ class MediaBatchManager:
         """Internal batch processing logic."""
         # Import here to avoid circular dependency
         from .endpoint_helpers import (
+            _build_utterance_with_quoted_context,
             _clear_whatsapp_typing,
             _store_whatsapp_metadata_in_interaction,
             create_whatsapp_walker,
@@ -228,6 +229,11 @@ class MediaBatchManager:
             utterances = [u for u in batch["utterances"] if u]
             combined_utterance = (
                 " | ".join(utterances) if utterances else "I've attached media"
+            )
+            quoted = batch["data"].get("quoted_message") or {}
+            combined_utterance = (
+                _build_utterance_with_quoted_context(quoted, combined_utterance)
+                or combined_utterance
             )
 
             # Use the data from the first message and add all media
