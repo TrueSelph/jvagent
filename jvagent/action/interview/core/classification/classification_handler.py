@@ -237,6 +237,10 @@ class ClassificationHandler:
                 elif question_name == current_question:
                     extracted_values[question_name] = "N/A"
 
+        # Suppress image interpretation when media was submitted via data_input_field
+        if extracted_values and any(v != "N/A" for v in extracted_values.values()):
+            visitor.data["image_interpretation"] = False
+
         return extracted_values, excluded_fields
 
     async def _get_context_data_note(

@@ -6,6 +6,9 @@ multimodal prompts from visitor.data when image URLs are present.
 Standard key: visitor.data["image_urls"] is the canonical key for image URLs
 across channels (WhatsApp, Interact API, etc.). Media sources should populate
 this key with a list of URLs or [{url, detail?}] dicts.
+
+Suppression: Set visitor.data["image_interpretation"] = False to skip vision
+(e.g. when images are document uploads for an interview, not for interpretation).
 """
 
 from typing import TYPE_CHECKING, Any, List, Optional, Sequence, Union
@@ -24,6 +27,7 @@ def build_prompt_for_vision(
     """Build prompt as text or multimodal content if images are present.
 
     Checks visitor.data for image_data_keys (default: image_urls, the standard key).
+    Skips vision when visitor.data["image_interpretation"] is False.
     If image URLs found, returns List[ContentPart] via model_action.create_multimodal_content().
     Otherwise returns text unchanged.
 
@@ -40,6 +44,9 @@ def build_prompt_for_vision(
         return text
 
     data = visitor.data
+    if data.get("image_interpretation") is False:
+        return text
+
     image_urls: List[Any] = []
 
     for key in image_data_keys:

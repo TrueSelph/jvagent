@@ -287,6 +287,8 @@ response = await self.respond(
 
 When `image_urls` is populated, PersonaAction uses `build_prompt_for_vision()` (from `jvagent.action.interact.utils.vision_prompt`) to build multimodal prompts for vision-capable LLMs. The helper accepts `image_data_keys` (default: `("image_urls",)`) so channels can use a single standard key.
 
+**Suppression**: Set `visitor.data["image_interpretation"] = False` to skip vision (e.g. when images are document uploads for an interview). The interview action sets this automatically when media is submitted via `data_input_field`.
+
 **Related keys**:
 - `whatsapp_media`: All media URLs (images, documents, video, audio). Used by interview actions with `data_input_field: "whatsapp_media"` for document uploads.
 
