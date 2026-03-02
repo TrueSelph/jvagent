@@ -144,6 +144,18 @@ class Action(Node):
         """
         return self.__class__.__name__
 
+    def get_capabilities(self) -> List[str]:
+        """Return capabilities this action contributes to PersonaAction's prompt.
+
+        Override this method to contribute capabilities to the persona when this action
+        is enabled. PersonaAction aggregates these at runtime from all enabled actions.
+        Returns empty list by default.
+
+        Returns:
+            List of capability strings (e.g., "Join WhatsApp groups and send messages")
+        """
+        return []
+
     @property
     def config(self) -> Dict[str, Any]:
         """Get action configuration from metadata.

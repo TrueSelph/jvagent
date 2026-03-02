@@ -510,6 +510,14 @@ class PersonaAction(Action):
         all_capabilities = list(BASE_PERSONA_CAPABILITIES)
         if self.persona_capabilities:
             all_capabilities.extend(self.persona_capabilities)
+        # Aggregate capabilities from enabled actions (e.g. WhatsApp, future Slack)
+        agent = await self.get_agent()
+        if agent:
+            actions_manager = await agent.get_actions_manager()
+            if actions_manager:
+                enabled_actions = await actions_manager.get_actions(enabled_only=True)
+                for action in enabled_actions:
+                    all_capabilities.extend(action.get_capabilities())
         capabilities_str = "\n".join(f"- {cap}" for cap in all_capabilities)
 
         interpretation_section = (
