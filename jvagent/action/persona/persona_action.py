@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
+from jvagent.action.interact.utils import build_prompt_for_vision
 from jvagent.action.persona.prompts import (
     ACTIVE_TASKS_SECTION_PROMPT,
     CHANNEL_OVERRIDE_PREAMBLE,
@@ -24,6 +25,7 @@ from jvagent.action.persona.prompts import (
     RESPONSE_LENGTH_PROMPT,
     RESPONSE_PROTOCOL_PROMPT,
     SYSTEM_PROMPT_TEMPLATE,
+    VISION_IMAGE_INSTRUCTION,
     format_conditional_section,
     format_parameter,
     get_channel_directive,
@@ -31,6 +33,11 @@ from jvagent.action.persona.prompts import (
 from jvagent.memory import Interaction
 
 logger = logging.getLogger(__name__)
+
+# Base capabilities always included in persona (e.g. vision)
+BASE_PERSONA_CAPABILITIES: List[str] = [
+    "Can view and interpret images shared by users",
+]
 
 
 class PersonaAction(Action):
@@ -500,11 +507,10 @@ class PersonaAction(Action):
                 user_utterance=user_utterance or "(No user utterance)",
             )
 
-        capabilities_str = (
-            "\n".join(f"- {cap}" for cap in self.persona_capabilities)
-            if self.persona_capabilities
-            else "None specified"
-        )
+        all_capabilities = list(BASE_PERSONA_CAPABILITIES)
+        if self.persona_capabilities:
+            all_capabilities.extend(self.persona_capabilities)
+        capabilities_str = "\n".join(f"- {cap}" for cap in all_capabilities)
 
         interpretation_section = (
             INTERPRETATION_INSIGHTS_PROMPT.format(
@@ -512,6 +518,17 @@ class PersonaAction(Action):
             )
             if interaction.interpretation and interaction.interpretation.strip()
             else ""
+        )
+
+        # Vision instruction when images are attached (overrides history/training bias)
+        vision_instruction_section = ""
+        if visitor:
+            data = getattr(visitor, "data", None) or {}
+            media_urls = data.get("image_urls") or data.get("whatsapp_media") or []
+            if media_urls:
+                vision_instruction_section = VISION_IMAGE_INSTRUCTION
+        vision_instruction_section = format_conditional_section(
+            vision_instruction_section, bool(vision_instruction_section)
         )
 
         # Build directives section
@@ -608,6 +625,7 @@ class PersonaAction(Action):
             date=date_str,
             time=time_str,
             timezone=timezone_str,
+            vision_instruction_section=vision_instruction_section,
             interpretation_section=interpretation_section,
             response_protocol=RESPONSE_PROTOCOL_PROMPT,
             directives_section=directives_section,
@@ -826,6 +844,9 @@ class PersonaAction(Action):
         use_voice = self._use_voice_formatting(interaction, visitor)
         if use_voice and prompt:
             prompt = f"{prompt}\n\n[VOICE: Plain text only. Max {self.voice_response_limit} words. No markdown, lists, or **bold**.]"
+
+        # Build multimodal prompt if image URLs present in visitor.data
+        prompt = build_prompt_for_vision(prompt, visitor, model_action)
 
         # Make the language model call
         try:

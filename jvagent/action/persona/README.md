@@ -10,6 +10,7 @@ The Persona Action provides a flexible framework for generating agent responses 
 
 ### Key Features
 
+- **Image/Vision Support**: Base persona capability "Can view and interpret images shared by users" is always included. When `visitor.data["image_urls"]` contains images (URLs or base64), PersonaAction builds multimodal prompts via `build_prompt_for_vision()` so the model receives and interprets images.
 - **Directive-Driven Execution**: Ensures directives are executed with ~95%+ consistency through three-layer reinforcement
 - **Configurable Parameters**: Conditional behavioral rules applied when context matches
 - **Multi-Call Awareness**: Handles continuation scenarios within single interactions
@@ -102,6 +103,7 @@ The system prompt follows a streamlined structure designed to maximize directive
 ├─────────────────────────────────────────┤
 │ ### IDENTITY                            │  Position: 2
 │ - Agent name, description, capabilities │  Attention: 10%
+│   (base capabilities + persona_capabilities) │
 │ - Date/time, user reference             │  Tokens: ~100
 ├─────────────────────────────────────────┤
 │ ### TASK                                │  Position: 3
@@ -182,7 +184,7 @@ class PersonaAction(Action):
     # Persona configuration
     persona_name: str = "Agent"
     persona_description: str = "You are friendly and helpful"
-    persona_capabilities: List[str] = []
+    persona_capabilities: List[str] = []  # Appended after base capabilities
 
     # Model configuration
     model_action_type: str = "OpenAILanguageModelAction"
@@ -374,6 +376,8 @@ actions:
         - "Answer product questions"
         - "Process orders and returns"
         - "Troubleshoot common issues"
+      # Note: Base capabilities (e.g. "Can view and interpret images shared by users")
+      # are always included; persona_capabilities are appended after
       model: "gpt-4o"
       model_temperature: 0.3
       model_max_tokens: 2048
@@ -398,6 +402,12 @@ PersonaAction includes 6 default parameters for common scenarios:
 These can be overridden by providing custom `parameters`.
 
 ## Advanced Topics
+
+### Base Capabilities
+
+PersonaAction always includes base capabilities in the system prompt before agent-specific `persona_capabilities`. The base list includes:
+
+- **Can view and interpret images shared by users** — Ensures the model knows it can process image input when `visitor.data["image_urls"]` is populated (e.g. from WhatsApp images or quoted image replies). This is not overridable; it is merged with `persona_capabilities` when building the IDENTITY section.
 
 ### Multi-Call Awareness
 
@@ -724,7 +734,7 @@ async def respond(
 # Persona configuration
 persona_name: str                    # Agent display name
 persona_description: str             # Detailed agent description
-persona_capabilities: List[str]      # List of agent capabilities
+persona_capabilities: List[str]      # Agent-specific capabilities (appended after base)
 
 # Model configuration
 model_action_type: str              # LanguageModelAction type
