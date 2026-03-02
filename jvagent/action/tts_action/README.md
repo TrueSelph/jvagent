@@ -4,35 +4,26 @@ Text-to-Speech action for jvagent that provides speech synthesis capabilities us
 
 ## Overview
 
-The TTS Action converts text to speech using various text-to-speech providers. It is a generic, provider-agnostic action usable by any adapter (WhatsApp, Telegram, web, etc.). It follows jvagent action patterns with proper lifecycle hooks, error handling, and API endpoints.
+The TTS action follows the web_search architectural pattern: an abstract `BaseTTSAction` defines the protocol, and concrete providers (e.g. `ElevenLabsTTSAction`) are separate packages. Each provider is a first-class Action that agents register directly. It is generic and provider-agnostic; use `as_url=True` when output will be sent to adapters (e.g. WhatsApp).
 
-## Features
+## Architecture
 
-- Convert text to speech audio
-- Multiple output formats (bytes, base64, file URL)
-- Voice and model selection
-- Voice and model management
-- Health checking for service availability
-- Modular provider system
-- Async/await architecture
-- Proper error handling and logging
+- **BaseTTSAction**: Abstract base class defining invoke, get_audio_as, healthcheck; optional get_voices, get_voice_by_name, get_models
+- **ElevenLabsTTSAction**: Concrete implementation using the ElevenLabs API (package: jvagent/elevenlabs_tts)
 
 ## Supported Providers
 
-### ElevenLabs
-- High-quality voice synthesis
-- Multiple voice options
-- Various model choices
-- Real-time generation
+| Provider | Package | Class |
+|----------|---------|-------|
+| ElevenLabs | jvagent/elevenlabs_tts | ElevenLabsTTSAction |
 
 ## Configuration
 
 ```yaml
 actions:
-  - action: jvagent/tts_action
+  - action: jvagent/elevenlabs_tts
     context:
       enabled: true
-      provider: elevenlabs
       api_key: ${ELEVENLABS_API_KEY}
       model: eleven_turbo_v2
       voice: Sarah
@@ -43,8 +34,8 @@ actions:
 ### Basic Speech Synthesis
 
 ```python
-# Get TTS action
-tts_action = await self.get_action(TTSAction)
+# Get TTS action by class name
+tts_action = await self.get_action("ElevenLabsTTSAction")
 
 # Generate speech as bytes
 audio_bytes = await tts_action.invoke("Hello, world!")
@@ -66,16 +57,6 @@ for voice in voices:
 
 # Get available models
 models = await tts_action.get_models()
-for model in models:
-    print(f"Model: {model['name']} - {model['description']}")
-```
-
-### Audio Processing
-
-```python
-# Convert existing audio bytes to different formats
-audio_base64 = tts_action.get_audio_as(audio_bytes, as_base64=True)
-audio_url = tts_action.get_audio_as(audio_bytes, as_url=True)
 ```
 
 ### Health Check
@@ -108,7 +89,7 @@ Synthesize speech from text.
   "success": true,
   "audio": "https://example.com/audio.mp3",
   "format": "url",
-  "provider": "elevenlabs",
+  "provider": "ElevenLabsTTSAction",
   "model": "eleven_turbo_v2",
   "voice": "Sarah"
 }
@@ -117,81 +98,33 @@ Synthesize speech from text.
 ### GET /actions/{action_id}/tts/voices
 Get available voices.
 
-**Response:**
-```json
-{
-  "voices": [
-    {
-      "name": "Sarah",
-      "voice_id": "abc123",
-      "category": "premade"
-    }
-  ],
-  "provider": "elevenlabs",
-  "current_voice": "Sarah"
-}
-```
-
 ### GET /actions/{action_id}/tts/models
 Get available models.
-
-**Response:**
-```json
-{
-  "models": [
-    {
-      "name": "Eleven Turbo v2",
-      "model_id": "eleven_turbo_v2",
-      "description": "Fast, high-quality model"
-    }
-  ],
-  "provider": "elevenlabs",
-  "current_model": "eleven_turbo_v2"
-}
-```
 
 ### GET /actions/{action_id}/tts/health
 Check TTS service health.
 
-**Response:**
-```json
-{
-  "healthy": true,
-  "provider": "elevenlabs",
-  "model": "eleven_turbo_v2",
-  "voice": "Sarah"
-}
-```
-
 ## API Methods
 
 ### `invoke(text: str, as_base64: bool = False, as_url: bool = False) -> Optional[Union[str, bytes]]`
-Convert text to speech audio. Use `as_url=True` when the output will be sent to adapters (e.g. WhatsApp) that need a URL to fetch the file. Use `as_base64=True` when the caller needs inline audio (e.g. web players).
+Convert text to speech. Use `as_url=True` when output will be sent to adapters (e.g. WhatsApp). Use `as_base64=True` for inline audio (e.g. web players).
 
 ### `get_audio_as(audio: bytes, as_base64: bool = False, as_url: bool = False) -> Optional[Union[str, bytes]]`
-Convert audio bytes to different formats. Same usage as `invoke`: `as_url` for adapters, `as_base64` for inline.
+Convert audio bytes to different formats.
 
 ### `get_voices() -> List[Dict[str, str]]`
-Get all available voices for the current provider.
+Get all available voices (if supported by provider).
 
 ### `get_models() -> List[Dict[str, str]]`
-Get all available models for the current provider.
+Get all available models (if supported by provider).
 
 ### `healthcheck() -> Union[bool, Dict[str, str]]`
 Perform health check for the TTS service.
 
 ## Dependencies
 
-- `elevenlabs>=1.13.0`
+- ElevenLabs: `elevenlabs>=1.13.0`
 
 ## Environment Variables
 
 - `ELEVENLABS_API_KEY`: Your ElevenLabs API key
-
-## Error Handling
-
-The action includes comprehensive error handling:
-- Graceful degradation when API keys are missing
-- Proper async exception handling
-- Detailed error logging with stack traces
-- Structured error responses for API endpoints

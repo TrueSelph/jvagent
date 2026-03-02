@@ -94,13 +94,13 @@ class WhatsAppAction(Action):
     )
 
     stt_action: Optional[str] = attribute(
-        default="STTAction",
+        default="DeepgramSTTAction",
         description="Label or Class used to transcribe voice messages or audio files",
         min_length=1,
     )
 
     tts_action: Optional[str] = attribute(
-        default="TTSAction",
+        default="ElevenLabsTTSAction",
         description="Label or Class used to convert text to speech",
         min_length=1,
     )

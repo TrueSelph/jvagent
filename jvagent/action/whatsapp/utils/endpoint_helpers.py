@@ -94,7 +94,7 @@ async def _store_whatsapp_metadata_in_interaction(
                 "content": "channel_metadata:whatsapp",
                 "data": whatsapp_metadata,
             }
-            walker.interaction.events.append(channel_metadata_event)
+            # walker.interaction.events.append(channel_metadata_event)
             # Save interaction to persist the metadata
             await walker.interaction.save()
     except Exception as e:

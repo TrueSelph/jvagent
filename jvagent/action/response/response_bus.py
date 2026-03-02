@@ -260,13 +260,17 @@ class ResponseBus:
                     await self._send_to_adapter(
                         self._channel_adapters[channel], message
                     )
-                if (interaction_id or interaction) and message.content:
-                    if interaction is not None and not transient:
-                        await self._append_to_interaction_response_impl(
-                            interaction=interaction,
-                            message_type="adhoc",
-                            content=message.content,
-                        )
+                if (
+                    (interaction_id or interaction)
+                    and content
+                    and interaction is not None
+                    and not transient
+                ):
+                    await self._append_to_interaction_response_impl(
+                        interaction=interaction,
+                        message_type="adhoc",
+                        content=content,
+                    )
             await self._enqueue_and_notify(message, session_id)
             if interaction_id:
                 self._append_to_message_buffers(interaction_id, message)
@@ -291,11 +295,11 @@ class ResponseBus:
                     await self._send_to_adapter(
                         self._channel_adapters[channel], message
                     )
-                if interaction and not transient:
+                if interaction and content and not transient:
                     await self._append_to_interaction_response_impl(
                         interaction=interaction,
                         message_type="adhoc",
-                        content=message.content,
+                        content=content,
                     )
             await self._enqueue_and_notify(message, session_id)
             return message
@@ -344,11 +348,11 @@ class ResponseBus:
                     await self._send_to_adapter(
                         self._channel_adapters[acc.channel], flush_message
                     )
-                if interaction is not None and flush_message.content and not transient:
+                if interaction is not None and full_content and not transient:
                     await self._append_to_interaction_response_impl(
                         interaction=interaction,
                         message_type="adhoc",
-                        content=flush_message.content,
+                        content=full_content,
                     )
             self._append_to_message_buffers(interaction_id, flush_message)
             final_message = ResponseMessage(
@@ -418,7 +422,7 @@ class ResponseBus:
                         await self._append_to_interaction_response_impl(
                             interaction=interaction,
                             message_type="adhoc",
-                            content=flush_message.content,
+                            content=full_content,
                         )
             # Final signal (empty content) for end-of-stream
             final_message = ResponseMessage(
@@ -480,7 +484,7 @@ class ResponseBus:
                 await self._append_to_interaction_response_impl(
                     interaction=interaction,
                     message_type="adhoc",
-                    content=message.content,
+                    content=full_content,
                 )
         self._adhoc_accumulation.pop(interaction_id, None)
 

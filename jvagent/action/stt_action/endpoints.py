@@ -10,9 +10,17 @@ from typing import Any, Dict
 from jvspatial.api import endpoint
 from jvspatial.api.exceptions import ResourceNotFoundError
 
-from .stt_action import STTAction
+from .base import BaseSTTAction
 
 logger = logging.getLogger(__name__)
+
+
+async def _get_stt_action(action_id: str):
+    """Resolve action by ID; validate it is a BaseSTTAction."""
+    action = await BaseSTTAction.get(action_id)
+    if action and isinstance(action, BaseSTTAction):
+        return action
+    return None
 
 
 @endpoint(
@@ -32,7 +40,7 @@ async def transcribe_audio(action_id: str, data: Dict[str, Any]) -> Dict[str, An
     Returns:
         Transcription result
     """
-    action = await STTAction.get(action_id)
+    action = await _get_stt_action(action_id)
     if not action:
         raise ResourceNotFoundError(
             message=f"STT action with ID '{action_id}' not found",
@@ -53,11 +61,14 @@ async def transcribe_audio(action_id: str, data: Dict[str, Any]) -> Dict[str, An
             "error": "Either audio_url or audio_base64 must be provided",
         }
 
+    provider = action.get_class_name()
+    model = getattr(action, "model", None)
+
     return {
         "success": transcript is not None,
         "transcript": transcript,
-        "provider": action.provider,
-        "model": action.model,
+        "provider": provider,
+        "model": model,
     }
 
 
@@ -77,7 +88,7 @@ async def stt_health_check(action_id: str) -> Dict[str, Any]:
     Returns:
         Health check result
     """
-    action = await STTAction.get(action_id)
+    action = await _get_stt_action(action_id)
     if not action:
         raise ResourceNotFoundError(
             message=f"STT action with ID '{action_id}' not found",
@@ -86,9 +97,12 @@ async def stt_health_check(action_id: str) -> Dict[str, Any]:
 
     health = await action.healthcheck()
 
+    provider = action.get_class_name()
+    model = getattr(action, "model", None)
+
     return {
         "healthy": health is True,
         "details": health if health is not True else None,
-        "provider": action.provider,
-        "model": action.model,
+        "provider": provider,
+        "model": model,
     }
