@@ -314,6 +314,10 @@ The WhatsApp action supports image recognition so the agent can interpret images
 
 Media URLs are built as `whatsapp_action.base_url + media_url`. The LLM (e.g. OpenAI) must be able to fetch these URLs. Ensure `base_url` is publicly reachable or use a proxy/tunnel in development.
 
+### Persona Capabilities
+
+When enabled, WhatsAppAction contributes capabilities to PersonaAction via `get_capabilities()`: "Join WhatsApp groups and send messages to groups", "Send and receive voice notes over WhatsApp", "Send and receive images, documents, and other media over WhatsApp". These are included automatically in the persona prompt; no manual sync in agent.yaml is needed. See [PersonaAction README](../persona/README.md#capabilities-base-config-and-action-contributed).
+
 ## Migration Notes
 
 ### Breaking Changes

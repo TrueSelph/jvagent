@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.api.auth.models import APIKey
@@ -168,6 +168,16 @@ class WhatsAppAction(Action):
             return False
 
         return True
+
+    def get_capabilities(self) -> List[str]:
+        """Return WhatsApp capabilities for PersonaAction when enabled."""
+        if not self.enabled:
+            return []
+        return [
+            "Join WhatsApp groups and send messages to groups",
+            "Send and receive voice notes over WhatsApp",
+            "Send and receive images, documents, and other media over WhatsApp",
+        ]
 
     def _config_issues(self) -> list[str]:
         """Get list of configuration issues."""

@@ -1262,6 +1262,23 @@ Actions have well-defined lifecycle hooks:
    - Unloading action-specific modules from memory (when safe)
    - The `on_deregister()` hook is called after cleanup, allowing for additional action-specific cleanup if needed
 
+### Contributing to Persona Capabilities
+
+Actions can contribute capabilities to PersonaAction's system prompt by overriding `get_capabilities()`:
+
+```python
+def get_capabilities(self) -> List[str]:
+    """Return capabilities for PersonaAction when enabled."""
+    if not self.enabled:
+        return []
+    return [
+        "Join WhatsApp groups and send messages to groups",
+        "Send and receive voice notes over WhatsApp",
+    ]
+```
+
+PersonaAction aggregates capabilities from all enabled actions at runtime. When an action is enabled, its capabilities are included; when disabled or deregistered, they are excluded. See [PersonaAction README](jvagent/action/persona/README.md#capabilities-base-config-and-action-contributed) for details.
+
 ## Property Configuration
 
 ### Type-Safe Properties

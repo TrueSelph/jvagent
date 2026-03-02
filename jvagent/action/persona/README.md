@@ -103,7 +103,7 @@ The system prompt follows a streamlined structure designed to maximize directive
 ├─────────────────────────────────────────┤
 │ ### IDENTITY                            │  Position: 2
 │ - Agent name, description, capabilities │  Attention: 10%
-│   (base capabilities + persona_capabilities) │
+│   (base + config + action-contributed)   │
 │ - Date/time, user reference             │  Tokens: ~100
 ├─────────────────────────────────────────┤
 │ ### TASK                                │  Position: 3
@@ -376,8 +376,7 @@ actions:
         - "Answer product questions"
         - "Process orders and returns"
         - "Troubleshoot common issues"
-      # Note: Base capabilities (e.g. "Can view and interpret images shared by users")
-      # are always included; persona_capabilities are appended after
+      # Note: Base + persona_capabilities + action-contributed (get_capabilities)
       model: "gpt-4o"
       model_temperature: 0.3
       model_max_tokens: 2048
@@ -403,11 +402,30 @@ These can be overridden by providing custom `parameters`.
 
 ## Advanced Topics
 
-### Base Capabilities
+### Capabilities: Base, Config, and Action-Contributed
 
-PersonaAction always includes base capabilities in the system prompt before agent-specific `persona_capabilities`. The base list includes:
+PersonaAction builds the IDENTITY capabilities section from three sources, merged in order:
 
-- **Can view and interpret images shared by users** — Ensures the model knows it can process image input when `visitor.data["image_urls"]` is populated (e.g. from WhatsApp images or quoted image replies). This is not overridable; it is merged with `persona_capabilities` when building the IDENTITY section.
+1. **Base capabilities** — Always included. Currently:
+   - **Can view and interpret images shared by users** — Ensures the model knows it can process image input when `visitor.data["image_urls"]` is populated (e.g. from WhatsApp images or quoted image replies). Not overridable.
+
+2. **persona_capabilities** — From agent.yaml config. Agent-specific capabilities (e.g. "Answer general questions") defined in the PersonaAction context.
+
+3. **Action-contributed capabilities** — **Dynamic**. At runtime, PersonaAction queries all enabled actions for their capabilities via `get_capabilities()`. Actions that contribute capabilities override this method:
+
+```python
+# In WhatsAppAction, NewsInteractAction, etc.
+def get_capabilities(self) -> List[str]:
+    """Return capabilities for PersonaAction when enabled."""
+    if not self.enabled:
+        return []
+    return [
+        "Join WhatsApp groups and send messages to groups",
+        "Send and receive voice notes over WhatsApp",
+    ]
+```
+
+When an action is enabled, its capabilities are automatically included. When disabled or deregistered, they are excluded. No manual sync with agent.yaml required.
 
 ### Multi-Call Awareness
 
