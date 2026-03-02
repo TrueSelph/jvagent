@@ -1,10 +1,13 @@
-"""SerpAPI web search action.
+"""Serper web search action.
 
-Implements web search using SerpAPI's Google Search integration.
+Implements web search using Serper's Google Search REST API.
 """
 
+import http.client
+import json
 import logging
 from typing import Any, Dict, List
+from urllib.parse import urlparse
 
 from jvspatial.core.annotations import attribute
 
@@ -17,14 +20,15 @@ _SERPER_DEFAULT_ENDPOINT = "https://google.serper.dev/search"
 class SerperWebSearchAction(BaseWebSearchAction):
     """Web search action using the Serper API.
 
-    Uses ``httpx`` to call Serper's REST API directly.
+    Uses stdlib ``http.client`` to call Serper's REST API directly.
     API docs: https://serper.dev/search
 
     Configuration:
-        api_key: Your Brave Search API subscription token
-        api_endpoint: Brave Search API endpoint URL
-        country: Two-letter country code for result localization (default: GY)
-        search_lang: Language for search results (default: en)
+        api_key: Your Serper API key
+        api_endpoint: Serper API endpoint URL (default: https://google.serper.dev/search)
+        gl: Two-letter country code for result localization (default: GY)
+        hl: Language code for search results (default: en)
+        engine: Search engine type (e.g., google, google_light, google_news)
         ui_lang: User interface language (default: en-US)
         safesearch: SafeSearch filter level — off, moderate, strict (default: moderate)
         max_results: Maximum number of results to return
@@ -56,51 +60,36 @@ class SerperWebSearchAction(BaseWebSearchAction):
     )
 
     async def search(self, query: str, **kwargs: Any) -> List[Dict[str, str]]:
-        """Execute a Google search via SerpAPI and return normalized results.
+        """Execute a Google search via Serper and return normalized results.
 
         Args:
             query: The search query string
-            **kwargs: Additional SerpAPI parameters (override instance defaults)
+            **kwargs: Additional Serper parameters (override instance defaults)
 
         Returns:
             List of result dicts with keys: title, link, snippet
         """
-        try:
-            from serpapi import GoogleSearch
-        except ImportError:
-            logger.error(
-                "SerpAPIWebSearchAction: 'google-search-results' package is not installed. "
-                "Add it to your dependencies: pip install google-search-results>=2.4.2"
-            )
-            return []
+        parsed = urlparse(self.api_endpoint)
+        host = parsed.netloc or "google.serper.dev"
+        path = parsed.path or "/search"
 
-        params = {
+        payload = {
             "q": query,
-            "hl": kwargs.get("hl", self.hl),
             "gl": kwargs.get("gl", self.gl),
+            "hl": kwargs.get("hl", self.hl),
             "engine": kwargs.get("engine", self.engine),
-            "api_key": self.api_key,
         }
 
-        try:
-            import http.client
-            import json
+        headers = {"X-API-KEY": self.api_key, "Content-Type": "application/json"}
 
-            conn = http.client.HTTPSConnection("google.serper.dev")
-            payload = json.dumps(
-                {
-                    "q": query,
-                    "gl": self.gl,
-                    "hl": self.hl,
-                }
-            )
-            headers = {"X-API-KEY": self.api_key, "Content-Type": "application/json"}
-            conn.request("POST", "/search", payload, headers)
+        try:
+            conn = http.client.HTTPSConnection(host)
+            conn.request("POST", path, json.dumps(payload), headers)
             res = conn.getresponse()
             data = res.read()
-            results = data.decode("utf-8")
-            data_dict = json.loads(results)
+            conn.close()
 
+            data_dict = json.loads(data.decode("utf-8"))
             organic = data_dict.get("organic", [])
             logger.debug(
                 f"SerperWebSearchAction: Found {len(organic)} organic results for query: {query!r}"

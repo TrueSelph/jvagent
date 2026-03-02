@@ -6,8 +6,8 @@ An `InteractAction` that performs web searches via a configured `BaseWebSearchAc
 
 `WebSearchRetrievalInteractAction` bridges the gap between the agent's interaction flow and external web search providers. It functions similarly to `RetrievalInteractAction` (which works with vector stores):
 
-1.  **Extracts Query**: Uses the user's utterance (or interpretation) as the search query.
-2.  **Resolves Search Action**: Finds a configured `BaseWebSearchAction` (e.g., Serper, Brave).
+1.  **Extracts Query**: Uses the interaction's interpretation (or utterance as fallback) as the search query.
+2.  **Resolves Search Action**: Finds a configured `BaseWebSearchAction` (e.g., Serper, SerpAPI, Brave).
 3.  **Executes Search**: Calls the search action to get live results.
 4.  **Injects Directive**: Formats results and adds them as a directive to the interaction, making them available to `PersonaAction`.
 
@@ -44,7 +44,7 @@ actions:
 
 ### Query Resolution
 
-By default, the action prefers the user's `utterance` but can fall back to the `interpretation` provided by `InteractRouter`.
+By default, the action prefers the interaction's `interpretation` (from InteractRouter) and falls back to `utterance`.
 
 ### Result Formatting
 
@@ -61,7 +61,7 @@ The formatted results are wrapped in a system directive:
 
 ```text
 Using the following live web search results to inform your response.
-Prioritise this information as it is current and up to date:
+Prioritize this information as it is current and up to date:
 
 - **Specific Guyanese News** (https://news.gy/...)
   Summary of the news...

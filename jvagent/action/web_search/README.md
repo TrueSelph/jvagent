@@ -32,7 +32,7 @@ All web search actions share these common attributes:
 
 ### Serper Web Search
 
-Uses the Serper API (Google Search results).
+Uses the [Serper.dev](https://serper.dev) API (Google Search results). Implemented with stdlib `http.client`; no external pip dependencies.
 
 ```yaml
 - action: jvagent/serper_web_search
@@ -45,7 +45,7 @@ Uses the Serper API (Google Search results).
 
 ### Brave Web Search
 
-Uses the Brave Search API.
+Uses the [Brave Search](https://api.search.brave.com) API. Requires `httpx` pip package.
 
 ```yaml
 - action: jvagent/brave_web_search
@@ -57,7 +57,7 @@ Uses the Brave Search API.
 
 ### SerpAPI Web Search
 
-Uses the SerpAPI API.
+Uses the [SerpAPI](https://serpapi.com) API (distinct from Serper.dev). Requires `google-search-results` pip package.
 
 ```yaml
 - action: jvagent/serpapi_web_search
@@ -111,6 +111,14 @@ Web search actions track basic usage metrics:
 *   `total_results`: Cumulative number of results returned across all searches.
 
 ## Implementation Details
+
+### Provider Comparison
+
+| Provider | API | Pip Dependencies |
+|----------|-----|------------------|
+| Serper | [Serper.dev](https://serper.dev) | None (stdlib only) |
+| SerpAPI | [SerpAPI](https://serpapi.com) | `google-search-results` |
+| Brave | [Brave Search](https://api.search.brave.com) | `httpx` |
 
 ### Result Normalization
 
