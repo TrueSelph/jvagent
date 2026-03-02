@@ -283,13 +283,13 @@ actions:
       request_timeout: 60
       chunk_length: 4000
       media_batch_window: 2.5
-      stt_action: "STTAction"   # For transcribing voice messages (PTT)
-      tts_action: "TTSAction"   # For replying with voice when user sends PTT
+      stt_action: "DeepgramSTTAction"   # For transcribing voice messages (PTT)
+      tts_action: "ElevenLabsTTSAction"   # For replying with voice when user sends PTT
 ```
 
 ## Voice Messages (PTT and TTS)
 
-When `stt_action` and `tts_action` are configured, the action supports voice message flows:
+When `stt_action` and `tts_action` are configured, the action supports voice message flows. Agents register a concrete provider (e.g. jvagent/deepgram_stt, jvagent/elevenlabs_tts) and WhatsApp references it by class name (e.g. DeepgramSTTAction, ElevenLabsTTSAction):
 
 - **Inbound PTT**: Voice messages are transcribed via the STT action. The adapter passes the correct audio format (WhatsApp voice uses OGG-Opus) to the generic STT layer.
 - **Outbound voice reply**: When the user sends a PTT, the agent can respond with a synthesized voice message. PersonaAction applies voice-optimized formatting (short replies, no markdown), and the TTS action generates audio. The adapter sends the result as a voice message.

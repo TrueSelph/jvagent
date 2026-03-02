@@ -1,10 +1,12 @@
 """TTS (Text-to-Speech) action package.
 
-This module provides text-to-speech integration using various providers.
+Provides BaseTTSAction and concrete provider implementations.
 """
 
-# Import endpoints module to ensure endpoints are discovered and registered
-from . import endpoints  # noqa: F401
-from .tts_action import TTSAction
+from jvagent.action.tts_action.base import BaseTTSAction
+from jvagent.action.tts_action.elevenlabs import ElevenLabsTTSAction
 
-__all__ = ["TTSAction"]
+# Import endpoints to ensure they are discovered and registered
+from . import endpoints  # noqa: F401
+
+__all__ = ["BaseTTSAction", "ElevenLabsTTSAction"]
