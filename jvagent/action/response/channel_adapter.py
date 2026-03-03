@@ -35,7 +35,7 @@ class ChannelAdapter(ABC):
         """Initialize channel adapter.
 
         Args:
-            channel: Channel name this adapter handles (e.g., "whatsapp", "web")
+            channel: Channel name this adapter handles (e.g., "whatsapp", "default")
         """
         self.channel = channel
         self.response_bus: Optional[ResponseBus] = None

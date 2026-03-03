@@ -38,7 +38,7 @@ class ChannelFilter(ABC):
         """Initialize channel filter.
 
         Args:
-            channels: List of channel names this filter handles (e.g., ["whatsapp", "web"])
+            channels: List of channel names this filter handles (e.g., ["whatsapp", "default"])
             priority: Execution order (lower numbers execute first, default 100)
             fail_fast: If True, filter errors halt the chain and skip delivery
         """

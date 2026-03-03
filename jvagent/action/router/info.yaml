@@ -24,7 +24,7 @@ package:
   # Package configuration
   config:
     order:
-      weight: -100
+      weight: -200
 
   # Package dependencies
   dependencies:

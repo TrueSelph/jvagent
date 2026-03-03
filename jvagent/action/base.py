@@ -798,25 +798,6 @@ class Action(Node):
 
         return None
 
-    async def get_collection(self) -> Optional[Node]:
-        """Get the collection node associated with this action.
-
-        Returns:
-            Collection node if found, None otherwise
-        """
-        # TODO: Implement when Collection class is available
-        # This will traverse the graph to find connected Collection nodes
-        return None
-
-    async def remove_collection(self) -> list:
-        """Remove all collection nodes associated with this action.
-
-        Returns:
-            List of removed collection nodes
-        """
-        # TODO: Implement when Collection class is available
-        return []
-
     # ============================================================================
     # Package Information
     # ============================================================================
@@ -1064,32 +1045,6 @@ class Action(Node):
             one_time=one_time,
             metadata=proxy_metadata,
         )
-
-    # ============================================================================
-    # Data Management
-    # ============================================================================
-
-    async def export_collection(self) -> Dict[str, Any]:
-        """Export collection data associated with this action.
-
-        Returns:
-            Dictionary containing exported collection data
-        """
-        # TODO: Implement when Collection class is available
-        return {}
-
-    async def import_collection(self, data: Dict[str, Any], purge: bool = True) -> bool:
-        """Import collection data into this action.
-
-        Args:
-            data: Dictionary containing collection data to import
-            purge: Whether to purge existing data before importing
-
-        Returns:
-            True if successful, False otherwise
-        """
-        # TODO: Implement when Collection class is available
-        return False
 
     async def to_dict(self) -> Dict[str, Any]:
         """Convert action to dictionary representation.

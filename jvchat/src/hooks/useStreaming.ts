@@ -121,7 +121,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
 
         const request: InteractionRequest = {
           utterance,
-          channel: 'web',
+          channel: 'default',
           session_id: sessionIdToSend,
           user_id: userId, // Required - endpoint is anonymous (no auth token) but user_id is still required
           stream: true,

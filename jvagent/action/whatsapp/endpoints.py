@@ -113,7 +113,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         access_control_action = await agent.get_action_by_type("AccessControlAction")
         if access_control_action:
             has_access = await access_control_action.has_action_access(
-                session_id=sender, action_label="WhatsAppAction", channel="whatsapp"
+                user_id=sender, action_label="WhatsAppAction", channel="whatsapp"
             )
             if not has_access:
                 return {"status": "received", "response": "Access denied"}

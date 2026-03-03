@@ -81,6 +81,7 @@ class InteractWalker(Walker):
     _skip_current_action_record: bool = (
         False  # Allow actions to opt-out of being recorded as executed
     )
+    _agent: Optional["Agent"] = None  # Agent node, set in on_agent for access control
 
     async def record_action_execution(
         self, action_name: Optional[str] = None
@@ -168,6 +169,7 @@ class InteractWalker(Walker):
         Args:
             here: The Agent node being visited
         """
+        self._agent = here
         # Initialize interaction if not already done
         if not self.interaction:
             # Get memory from agent
@@ -362,6 +364,30 @@ class InteractWalker(Walker):
                 }
             )
             return
+
+        # Access control check (user_id only)
+        if self._agent and self.user_id:
+            access_control = await self._agent.get_action_by_type("AccessControlAction")
+            if access_control:
+                try:
+                    action_label = here.get_class_name()
+                except Exception:
+                    action_label = here.__class__.__name__
+                if not await access_control.has_action_access(
+                    user_id=self.user_id,
+                    action_label=action_label,
+                    channel=self.channel,
+                ):
+                    await self.report(
+                        {
+                            "action_skipped": {
+                                "action": here.label,
+                                "weight": here.weight,
+                                "reason": "access_denied",
+                            }
+                        }
+                    )
+                    return
 
         try:
             # Store current action for convenience methods and reset skip flag
@@ -658,7 +684,7 @@ class InteractWalker(Walker):
             metadata: Optional metadata (interview_type, current_question, etc.)
             task_id: Optional unique ID; defaults to description when not provided
             action_name: Optional action class name for actions that manage their tasks
-            task_type: Optional task type (e.g. 'INTERVIEW') for router gating
+            task_type: Optional task type (e.g. 'INTERVIEW') for router routing
 
         Raises:
             RuntimeError: If no conversation available

@@ -24,7 +24,6 @@ context:
 # Actions are referenced using the format: namespace/action_name
 #
 # Core actions (loaded from jvagent library if no local override exists):
-# - jvagent/response_gating
 # - jvagent/interact_router
 # - jvagent/openai_embedding, jvagent/openai_lm
 # - jvagent/typesense_vectorstore
@@ -40,19 +39,7 @@ actions:
       enabled: true
       description: "Agent Utils action for power user controls"
 
-  # ResponseGatingInteractAction - Determines when to respond, suppress, or defer
-  # Runs before InteractRouter (weight -200); classifies utterance posture for realistic conversation
-  - action: jvagent/response_gating
-    context:
-      enabled: true
-      description: "Classifies utterance posture (RESPOND/SUPPRESS/DEFER) for realistic conversational behavior"
-      model_action_type: "OpenAILanguageModelAction"
-      model: gpt-4o-mini
-      history_limit: 5
-      enable_accumulation: true
-      max_fragment_buffer: 5
-
-  # InteractRouter Action - Intent-based routing for InteractActions
+  # InteractRouter Action - Unified posture + routing
   # Core action from jvagent library (jvagent/action/router/)
   - action: jvagent/interact_router
     context:
@@ -61,6 +48,8 @@ actions:
       # Model Configuration (uses OpenAI model action by entity type)
       model_action_type: "OpenAILanguageModelAction" # Entity type to find dynamically
       history_limit: 3 # Number of previous interactions to include in context
+      # Routing cache - skip LLM for repeated context (requires enable_interact_router_cache in app.yaml)
+      enable_routing_cache: true
       # Optional: List of InteractAction entity names that must always execute.
       # When using the InteractAction.always_execute flag, exceptions can be
       # managed declaratively in code instead of being listed here.
@@ -104,6 +93,8 @@ actions:
       max_token_num_each_node: 20000
       summary_token_threshold: 200
       # model: gpt-4o-mini  # Optional: override LLM for tree search
+      # max_summary_chars: 300  # Optional: max chars per node summary in tree prompt
+      # max_tree_prompt_tokens: 16000  # Optional: max tokens; over budget triggers direct search
 
   # TypesenseVectorStore Action - Vector store for semantic search
   # Core action from jvagent library (jvagent/action/vectorstore/typesense/)
@@ -218,22 +209,16 @@ actions:
   #     session: ${WHATSAPP_SESSION}
   #     base_url: ${APP_BASE_URL}
 
-  - action: jvagent/tts_action
-    context:
-      enabled: true
-      description: "Action for Text-to-Speech integration using multiple providers."
-      provider: "elevenlabs"
-      api_key: ${TTS_API_KEY}
-      model: "eleven_turbo_v2"
-      voice: "Sarah"
-
-  - action: jvagent/stt_action
-    context:
-      enabled: true
-      description: "Action for Speech-to-Text integration using multiple providers."
-      provider: "deepgram"
-      api_key: ${STT_API_KEY}
-      model: "nova-2"
+  # Access Control Action - Per-user, per-action, per-channel permissions
+  # See resolv/resolv_demo agent for full example (Report restricted to WhatsApp only)
+  # - action: jvagent/access_control_action
+  #   context:
+  #     enabled: true
+  #     permissions:
+  #       default:
+  #         any: { deny: [], allow: [{ group: all }] }
+  #       whatsapp:
+  #         any: { deny: [], allow: [{ group: all }] }
 
   # Add more action assignments here
   # Actions can be from different namespaces:

@@ -1,7 +1,7 @@
 """RoutingResult dataclass for structured routing output.
 
 This module provides the RoutingResult dataclass that encapsulates
-the output of the InteractRouter's Chain of Verification process.
+the output of the InteractRouter's unified classification (posture + routing).
 """
 
 import json
@@ -10,6 +10,12 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+# Posture constants (RESPOND/SUPPRESS/DEFER)
+POSTURE_RESPOND = "RESPOND"
+POSTURE_SUPPRESS = "SUPPRESS"
+POSTURE_DEFER = "DEFER"
+VALID_POSTURES = (POSTURE_RESPOND, POSTURE_SUPPRESS, POSTURE_DEFER)
 
 
 @dataclass
@@ -61,7 +67,8 @@ class RoutingResult:
     matched actions, confidence, extracted entities, and optional canned response.
 
     Attributes:
-        interpretation: Rich synopsis of user intent with extracted values
+        posture: Response posture (RESPOND | SUPPRESS | DEFER) from posture classification
+        interpretation: Synopsis of user intent and why this posture applies. Covers both posture justification and intent summary.
         intent_type: Classified intent (CONVERSATIONAL, INFORMATIONAL, INTERACTIVE, DIRECTIVE, UNCLEAR)
         actions: List of matched action names to route to
         confidence: Confidence score (0.0-1.0)
@@ -72,6 +79,7 @@ class RoutingResult:
         raw_response: Original LLM response for debugging
     """
 
+    posture: str = POSTURE_RESPOND
     interpretation: str = ""
     intent_type: str = "UNCLEAR"
     actions: List[str] = field(default_factory=list)
@@ -85,6 +93,7 @@ class RoutingResult:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation."""
         result = {
+            "posture": self.posture,
             "interpretation": self.interpretation,
             "intent_type": self.intent_type,
             "actions": self.actions,
@@ -112,6 +121,7 @@ class RoutingResult:
         entities_data = data.get("extracted_entities", {})
 
         return cls(
+            posture=cls._normalize_posture(data.get("posture", POSTURE_RESPOND)),
             interpretation=data.get("interpretation", ""),
             intent_type=cls._normalize_intent_type(data.get("intent_type", "UNCLEAR")),
             actions=cls._parse_actions(data.get("actions", [])),
@@ -139,6 +149,7 @@ class RoutingResult:
             RoutingResult with UNCLEAR intent and zero confidence
         """
         return cls(
+            posture=POSTURE_RESPOND,
             interpretation=f"Routing error: {error_message}. User said: {utterance[:50]}",
             intent_type="UNCLEAR",
             actions=[],
@@ -146,6 +157,27 @@ class RoutingResult:
             verification=None,
             needs_clarification=True,
         )
+
+    @staticmethod
+    def _normalize_posture(posture_value: Any) -> str:
+        """Normalize and validate posture.
+
+        Args:
+            posture_value: Raw posture from LLM response
+
+        Returns:
+            Validated posture string, defaults to POSTURE_RESPOND
+        """
+        if not posture_value:
+            return POSTURE_RESPOND
+
+        posture_str = str(posture_value).strip().upper()
+
+        if posture_str in VALID_POSTURES:
+            return posture_str
+
+        logger.warning(f"Unrecognized posture '{posture_str}', defaulting to RESPOND")
+        return POSTURE_RESPOND
 
     @staticmethod
     def _normalize_intent_type(intent_value: Any) -> str:
@@ -224,9 +256,17 @@ class RoutingResult:
         except (TypeError, ValueError):
             return 0.0
 
-    def has_issues(self) -> bool:
-        """Check if verification found any issues."""
-        return self.verification and len(self.verification.issues_found) > 0
+    def is_respond(self) -> bool:
+        """Check if posture is RESPOND."""
+        return self.posture == POSTURE_RESPOND
+
+    def is_suppress(self) -> bool:
+        """Check if posture is SUPPRESS."""
+        return self.posture == POSTURE_SUPPRESS
+
+    def is_defer(self) -> bool:
+        """Check if posture is DEFER."""
+        return self.posture == POSTURE_DEFER
 
     def is_conversational(self) -> bool:
         """Check if this is a conversational intent."""

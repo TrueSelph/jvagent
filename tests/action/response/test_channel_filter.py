@@ -34,10 +34,10 @@ class TestChannelFilter:
     @pytest.mark.asyncio
     async def test_applies_to_channel(self):
         """Test applies_to_channel method."""
-        filter = WhatsAppFilter(channels=["whatsapp", "web"], priority=100)
+        filter = WhatsAppFilter(channels=["whatsapp", "default"], priority=100)
 
         assert filter.applies_to_channel("whatsapp") is True
-        assert filter.applies_to_channel("web") is True
+        assert filter.applies_to_channel("default") is True
         assert filter.applies_to_channel("sms") is False
 
     @pytest.mark.asyncio
@@ -119,9 +119,9 @@ class TestWhatsAppFilter:
     @pytest.mark.asyncio
     async def test_whatsapp_filter_custom_channels(self):
         """Test WhatsAppFilter with custom channels."""
-        filter = WhatsAppFilter(channels=["whatsapp", "web"], priority=50)
+        filter = WhatsAppFilter(channels=["whatsapp", "default"], priority=50)
 
-        assert filter.channels == ["whatsapp", "web"]
+        assert filter.channels == ["whatsapp", "default"]
         assert filter.priority == 50
 
     @pytest.mark.asyncio
@@ -283,7 +283,7 @@ class TestResponseBusFilterIntegration:
         """Test filter that applies to multiple channels."""
         bus = ResponseBus()
 
-        filter = WhatsAppFilter(channels=["whatsapp", "web"], priority=100)
+        filter = WhatsAppFilter(channels=["whatsapp", "default"], priority=100)
         await bus.register_channel_filter(filter)
 
         # Test with whatsapp channel
@@ -296,14 +296,14 @@ class TestResponseBusFilterIntegration:
         await bus._apply_channel_filters(message1, "whatsapp")
         assert message1.content == "*Bold* text"
 
-        # Test with web channel
+        # Test with default (web) channel
         message2 = ResponseMessage(
             session_id="test_session",
             user_id="test_user",
             content="**Bold** text",
-            channel="web",
+            channel="default",
         )
-        await bus._apply_channel_filters(message2, "web")
+        await bus._apply_channel_filters(message2, "default")
         assert message2.content == "*Bold* text"
 
         # Test with sms channel (should not apply)

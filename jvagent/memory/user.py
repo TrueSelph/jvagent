@@ -74,7 +74,7 @@ class User(Node):
 
         Args:
             session_id: Optional session identifier. If None, auto-generates one.
-            channel: Communication channel (e.g., 'default', 'whatsapp', 'web')
+            channel: Communication channel (e.g., 'default'=web, 'whatsapp')
             interaction_limit: Optional interaction limit. If None, uses agent's default.
 
         Returns:

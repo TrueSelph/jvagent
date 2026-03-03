@@ -19,7 +19,11 @@ from jvspatial.core.context import (
 )
 from jvspatial.db import get_database_manager
 
-from .config import PAGEINDEX_DB_NAME
+from .config import (
+    PAGEINDEX_DB_NAME,
+    get_pageindex_max_summary_chars,
+    get_pageindex_max_tree_prompt_tokens,
+)
 from .document_walker import DocumentWalker
 from .documents import get_document_root, get_document_roots
 from .llm_bridge import get_pageindex_model_action
@@ -47,27 +51,45 @@ def _build_text_query(query: str) -> Dict[str, Any]:
     }
 
 
-async def _graph_to_tree(root: DocumentRootNode) -> List[Dict[str, Any]]:
+async def _graph_to_tree(
+    root: DocumentRootNode,
+    max_summary_chars: Optional[int] = None,
+) -> List[Dict[str, Any]]:
     """Build PageIndex-style tree from jvspatial graph.
 
     Traverses DocumentRootNode -> DocumentNode hierarchy. Returns list of top-level
     nodes, each with title, node_id, summary, prefix_summary, nodes (no text).
+    Truncates summaries for compact tree prompt (retrieval display only).
     """
+    max_chars = (
+        max_summary_chars
+        if max_summary_chars is not None
+        else get_pageindex_max_summary_chars()
+    )
 
     async def _node_to_dict(node: DocumentNode) -> Dict[str, Any]:
         children = await node.outgoing(node=DocumentNode, edge=DocumentContentEdge)
         summary_val = node.summary or node.prefix_summary
         if summary_val is None and node.text:
             summary_val = (
-                (node.text[:300] + "\u2026") if len(node.text) > 300 else node.text
+                (node.text[:max_chars] + "\u2026")
+                if len(node.text) > max_chars
+                else node.text
             )
+        elif summary_val and len(summary_val) > max_chars:
+            summary_val = summary_val[:max_chars] + "\u2026"
         d: Dict[str, Any] = {
             "title": node.title or "",
             "node_id": str(node.node_id or ""),
             "summary": summary_val,
         }
-        if node.prefix_summary is not None and node.prefix_summary != summary_val:
-            d["prefix_summary"] = node.prefix_summary
+        prefix_val = node.prefix_summary
+        if prefix_val is not None and prefix_val != summary_val:
+            d["prefix_summary"] = (
+                (prefix_val[:max_chars] + "\u2026")
+                if len(prefix_val) > max_chars
+                else prefix_val
+            )
         if children:
             d["nodes"] = [_node_to_dict(c) for c in children]
             d["nodes"] = await _gather(d["nodes"])
@@ -90,13 +112,27 @@ async def _search_via_tree_search(
     collection_name: str = "default",
     metadata_filter: Optional[Dict[str, Any]] = None,
     model: Optional[str] = None,
+    max_summary_chars: Optional[int] = None,
+    max_tree_prompt_tokens: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Search using LLM-based tree search (PageIndex recommended approach).
 
     Builds tree from graph, sends to LLM with query, parses node_list,
-    fetches full content for selected nodes.
+    fetches full content for selected nodes. Falls back to direct search
+    when tree exceeds max_tree_prompt_tokens.
     """
-    from .core.utils import ChatGPT_API_async, get_json_content, remove_fields
+    from .core.utils import (
+        ChatGPT_API_async,
+        count_tokens,
+        get_json_content,
+        remove_fields,
+    )
+
+    max_tokens = (
+        max_tree_prompt_tokens
+        if max_tree_prompt_tokens is not None
+        else get_pageindex_max_tree_prompt_tokens()
+    )
 
     if doc_name:
         root = await get_document_root(doc_name, collection_name=collection_name)
@@ -135,7 +171,7 @@ async def _search_via_tree_search(
         doc_name_val = root.doc_name
 
         try:
-            tree = await _graph_to_tree(root)
+            tree = await _graph_to_tree(root, max_summary_chars=max_summary_chars)
             if not tree:
                 continue
             tree_no_text = remove_fields(tree, fields=["text"])
@@ -148,6 +184,26 @@ async def _search_via_tree_search(
                     deduped.append(n)
             tree_no_text = deduped
 
+            tree_str = json.dumps(tree_no_text, indent=2)
+            tree_tokens = count_tokens(tree_str, model=model or "gpt-4o-mini")
+            if tree_tokens > max_tokens:
+                logger.warning(
+                    f"PageIndex tree for doc '{doc_name_val}' exceeds token budget "
+                    f"({tree_tokens} > {max_tokens}); falling back to direct search"
+                )
+                direct_results = await _search_via_direct(
+                    context,
+                    query,
+                    doc_name_val,
+                    limit,
+                    collection_name=collection_name,
+                    metadata_filter=metadata_filter,
+                )
+                all_results.extend(direct_results[: limit - len(all_results)])
+                if len(all_results) >= limit:
+                    break
+                continue
+
             prompt = f"""You are given a question and a tree structure of a document.
 Each node contains a node id, node title, and a corresponding summary.
 Your task is to find all nodes that are likely to contain the answer to the question.
@@ -155,7 +211,7 @@ Your task is to find all nodes that are likely to contain the answer to the ques
 Question: {query}
 
 Document tree structure:
-{json.dumps(tree_no_text, indent=2)}
+{tree_str}
 
 Please reply in the following JSON format:
 {{
@@ -268,6 +324,8 @@ async def search_documents(
     model: Optional[str] = None,
     collection_name: str = "default",
     metadata_filter: Optional[Dict[str, Any]] = None,
+    max_summary_chars: Optional[int] = None,
+    max_tree_prompt_tokens: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Search documents using vectorless retrieval.
 
@@ -280,6 +338,8 @@ async def search_documents(
         model: LLM model for tree_search (default: PAGEINDEX_TREE_SEARCH_MODEL or gpt-4o-mini)
         collection_name: Collection to search (default: "default")
         metadata_filter: Optional key-value filter to narrow results by document metadata
+        max_summary_chars: Max chars per node summary in tree prompt (default from config: 300)
+        max_tree_prompt_tokens: Max tokens for tree in tree-search prompt (default from config: 16000)
 
     Returns:
         List of dicts with title, text, summary, doc_name, node_id, structure, content
@@ -306,6 +366,8 @@ async def search_documents(
                 collection_name=collection_name,
                 metadata_filter=metadata_filter,
                 model=model,
+                max_summary_chars=max_summary_chars,
+                max_tree_prompt_tokens=max_tree_prompt_tokens,
             )
         if strategy == "walker":
             return await _search_via_walker(
@@ -405,7 +467,7 @@ async def _search_via_walker(
     for root in roots:
         if doc_name and root.doc_name != doc_name:
             continue
-        walker = DocumentWalker(query=query)
+        walker = DocumentWalker(query=query, limit=limit)
         await walker.spawn(root)
         report = await walker.get_report()
         for item in report:

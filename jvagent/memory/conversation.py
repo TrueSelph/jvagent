@@ -798,7 +798,7 @@ class Conversation(DeferredSaveMixin, Node):
             metadata: Optional metadata (interview_type, current_question, etc.)
             task_id: Optional unique ID; auto-generated UUID when not provided
             action_name: Optional action class name for actions that manage their tasks
-            task_type: Optional task type (e.g. 'INTERVIEW') for router gating
+            task_type: Optional task type (e.g. 'INTERVIEW') for router routing
         """
         now = datetime.now(timezone.utc).isoformat()
         short_uuid = uuid.uuid4().hex[:12]

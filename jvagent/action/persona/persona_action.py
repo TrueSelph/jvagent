@@ -552,11 +552,24 @@ class PersonaAction(Action):
         else:
             directives_section = NO_DIRECTIVES_SUB_PROMPT
 
+        # Fetch active tasks (used for parameter filtering and active_tasks_section)
+        tasks: List[Dict[str, Any]] = []
+        if self.remind_on_active_tasks:
+            tasks = await self._get_active_tasks_requiring_intervention(interaction)
+
+        # Filter parameters: exclude requires_active_tasks when no active tasks
+        has_active_tasks = bool(tasks)
+        filtered_parameters = [
+            p
+            for p in applicable_parameters
+            if not p.get("requires_active_tasks") or has_active_tasks
+        ]
+
         # Build parameters section
-        if applicable_parameters:
+        if filtered_parameters:
             parameter_list = "\n".join(
                 format_parameter(p, index=i + 1)
-                for i, p in enumerate(applicable_parameters)
+                for i, p in enumerate(filtered_parameters)
             )
             parameters_section = PARAMETERS_SUB_PROMPT.format(
                 parameter_list=parameter_list
@@ -566,15 +579,11 @@ class PersonaAction(Action):
 
         # Build active tasks section (when tasks require user intervention)
         active_tasks_section = ""
-        if self.remind_on_active_tasks:
-            tasks = await self._get_active_tasks_requiring_intervention(interaction)
-            if tasks:
-                task_list = "\n".join(
-                    f"- {t.get('description', str(t))}" for t in tasks
-                )
-                active_tasks_section = ACTIVE_TASKS_SECTION_PROMPT.format(
-                    task_list=task_list
-                )
+        if tasks:
+            task_list = "\n".join(f"- {t.get('description', str(t))}" for t in tasks)
+            active_tasks_section = ACTIVE_TASKS_SECTION_PROMPT.format(
+                task_list=task_list
+            )
         active_tasks_section = format_conditional_section(
             active_tasks_section, bool(active_tasks_section)
         )
@@ -646,13 +655,7 @@ class PersonaAction(Action):
 
         # Append compliance check for directive recency reinforcement
         if applicable_directives:
-            checklist = "\n".join(
-                f"[ ] Directive {i+1}: {d.get('content', str(d))}"
-                for i, d in enumerate(applicable_directives)
-            )
-            composed += "\n\n" + DIRECTIVE_COMPLIANCE_CHECK_PROMPT.format(
-                directive_checklist=checklist
-            )
+            composed += "\n\n" + DIRECTIVE_COMPLIANCE_CHECK_PROMPT
 
         return composed
 
@@ -841,12 +844,9 @@ class PersonaAction(Action):
 
         prompt = interaction.utterance if with_utterance else ""
 
-        # Inject directive reminder into user prompt for peak-attention reinforcement
+        # Remind the model to follow directives in the system prompt (without restating them)
         if applicable_directives and prompt:
-            directive_hints = "; ".join(
-                d.get("content", str(d)) for d in applicable_directives
-            )
-            prompt = f"{prompt}\n\n[SYSTEM: You MUST execute in your response: {directive_hints}]"
+            prompt = f"{prompt}\n\n[SYSTEM: You MUST execute the directives provided in the system prompt in your response.]"
 
         # When voice formatting (channel=voice or respond_with_voice), inject format reminder
         use_voice = self._use_voice_formatting(interaction, visitor)

@@ -8,15 +8,19 @@ pytest.importorskip("tiktoken")
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from jvspatial.db import unregister_database
+from jvspatial.core.context import get_default_context, set_default_context
+from jvspatial.db import get_database_manager, unregister_database
 
 from jvagent.action.pageindex.adapter import persist_structure
 from jvagent.action.pageindex.config import (
     PAGEINDEX_DB_NAME,
+    get_pageindex_max_summary_chars,
     get_pageindex_node_summary,
     initialize_pageindex_database,
+    set_pageindex_max_summary_chars,
     set_pageindex_node_summary,
 )
+from jvagent.action.pageindex.document_walker import DocumentWalker
 from jvagent.action.pageindex.documents import (
     assimilate_document,
     delete_document,
@@ -29,7 +33,7 @@ from jvagent.action.pageindex.pageindex_retrieval_interact_action import (
     PageIndexRetrievalInteractAction,
     ensure_ingestion_config_for_agent,
 )
-from jvagent.action.pageindex.retrieval import search_documents
+from jvagent.action.pageindex.retrieval import _graph_to_tree, search_documents
 
 
 @pytest.fixture
@@ -349,3 +353,124 @@ async def test_do_assimilate_with_if_add_node_summary(
     )
     assert result.get("doc_name") == "form_test"
     assert "_root_id" in result
+
+
+def _max_summary_len_in_tree(tree):
+    """Recursively find max summary/prefix_summary length in tree."""
+    max_len = 0
+    for node in tree:
+        for key in ("summary", "prefix_summary"):
+            val = node.get(key)
+            if val:
+                max_len = max(max_len, len(val))
+        if node.get("nodes"):
+            max_len = max(max_len, _max_summary_len_in_tree(node["nodes"]))
+    return max_len
+
+
+@pytest.mark.asyncio
+async def test_graph_to_tree_truncates_summaries(pageindex_temp_db):
+    """_graph_to_tree truncates summaries to max_summary_chars."""
+    long_summary = "A" * 500
+    structure = [
+        {
+            "title": "Section",
+            "text": "Content",
+            "summary": long_summary,
+            "node_id": "n1",
+            "physical_index": 0,
+            "start_index": 0,
+            "end_index": 1,
+            "structure": "1",
+        },
+    ]
+    await persist_structure(
+        doc_name="trunc_test",
+        structure=structure,
+        collection_name="col_trunc",
+    )
+    root = await get_document_root("trunc_test", collection_name="col_trunc")
+    assert root is not None
+
+    db = get_database_manager().get_database(PAGEINDEX_DB_NAME)
+    from jvspatial.core.context import GraphContext
+
+    ctx = GraphContext(database=db)
+    prev = get_default_context()
+    try:
+        set_default_context(ctx)
+        tree = await _graph_to_tree(root, max_summary_chars=50)
+        assert len(tree) >= 1
+        max_len = _max_summary_len_in_tree(tree)
+        assert max_len <= 51
+
+        tree_long = await _graph_to_tree(root, max_summary_chars=1000)
+        max_len_long = _max_summary_len_in_tree(tree_long)
+        assert max_len_long <= 1001
+    finally:
+        set_default_context(prev)
+
+
+@pytest.mark.asyncio
+async def test_document_walker_respects_limit(pageindex_temp_db):
+    """DocumentWalker stops when report reaches limit."""
+    structure = [
+        {"title": "A", "text": "content", "node_id": "n1", "structure": "1"},
+        {"title": "B", "text": "content", "node_id": "n2", "structure": "2"},
+        {"title": "C", "text": "content", "node_id": "n3", "structure": "3"},
+    ]
+    for s in structure:
+        s.update({"physical_index": 0, "start_index": 0, "end_index": 1})
+    await persist_structure(
+        doc_name="walker_limit_test",
+        structure=structure,
+        collection_name="col_walker",
+    )
+    root = await get_document_root("walker_limit_test", collection_name="col_walker")
+    assert root is not None
+
+    walker = DocumentWalker(query="content", limit=2)
+    await walker.spawn(root)
+    report = await walker.get_report()
+    assert len(report) <= 2
+
+
+@pytest.mark.asyncio
+async def test_tree_search_falls_back_when_over_token_budget(pageindex_temp_db):
+    """When tree exceeds max_tree_prompt_tokens, fall back to direct search."""
+    structure = [
+        {
+            "title": "Section",
+            "text": "content to match",
+            "summary": "X" * 1000,
+            "node_id": "n1",
+            "physical_index": 0,
+            "start_index": 0,
+            "end_index": 1,
+            "structure": "1",
+        },
+    ]
+    await persist_structure(
+        doc_name="token_budget_test",
+        structure=structure,
+        collection_name="col_budget",
+    )
+
+    results = await search_documents(
+        query="content",
+        strategy="tree_search",
+        limit=5,
+        collection_name="col_budget",
+        max_tree_prompt_tokens=100,
+    )
+    assert len(results) >= 1
+    assert any(r.get("doc_name") == "token_budget_test" for r in results)
+
+
+@pytest.mark.asyncio
+async def test_config_max_summary_chars():
+    """set_pageindex_max_summary_chars and get_pageindex_max_summary_chars work."""
+    set_pageindex_max_summary_chars(200)
+    assert get_pageindex_max_summary_chars() == 200
+    set_pageindex_max_summary_chars(None)
+    assert get_pageindex_max_summary_chars() == 300

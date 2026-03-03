@@ -21,18 +21,26 @@ class DocumentWalker(Walker):
     At each DocumentNode, checks if title, text, or summary matches the query
     (case-insensitive substring or regex). Matching nodes are added to the report.
     Follows DocumentContentEdge to traverse parent-child hierarchy.
+    Stops traversal when report size reaches limit (early termination).
     """
 
-    def __init__(self, query: str = "", **kwargs):
+    def __init__(self, query: str = "", limit: Optional[int] = None, **kwargs):
         super().__init__(**kwargs)
         self._query = (query or "").strip()
         self._query_lower = self._query.lower()
         self._query_regex: Optional[re.Pattern] = None
+        self._limit = limit
         if self._query:
             try:
                 self._query_regex = re.compile(re.escape(self._query), re.IGNORECASE)
             except re.error:
                 self._query_regex = None
+
+    def _at_limit(self) -> bool:
+        """True if report has reached limit (no more items should be added)."""
+        if self._limit is None:
+            return False
+        return len(self._report) >= self._limit
 
     def _matches(self, node: DocumentNode) -> bool:
         """Check if node content matches the query."""
@@ -54,6 +62,8 @@ class DocumentWalker(Walker):
     @on_visit(DocumentNode)
     async def on_document_node(self, here: DocumentNode) -> None:
         """Visit DocumentNode: if it matches query, add to report; queue children."""
+        if self._at_limit():
+            return
         if self._matches(here):
             content = here.summary or here.text or here.title or ""
             await self.report(
@@ -67,7 +77,8 @@ class DocumentWalker(Walker):
                     "content": content[:2000] if content else "",
                 }
             )
-
+        if self._at_limit():
+            return
         children = await here.outgoing(node=DocumentNode, edge=DocumentContentEdge)
         if children:
             await self.visit(children)

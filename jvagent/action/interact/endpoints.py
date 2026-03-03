@@ -27,6 +27,7 @@ from jvagent.action.interact.rate_limiter import (
 from jvagent.action.interact.response_builder import build_interact_response
 from jvagent.action.response.streaming import create_sse_response, format_sse_chunk
 from jvagent.core.agent import Agent
+from jvagent.core.channel import normalize_channel
 
 logger = logging.getLogger(__name__)
 
@@ -359,7 +360,7 @@ async def interact_endpoint(
 
     - agent_id: ID of the agent to interact with
     - utterance: User's input text
-    - channel: Communication channel (default, whatsapp, web, etc.)
+    - channel: Communication channel (default, whatsapp, etc.). default = web.
     - data: Optional dictionary payload
     - session_id: Optional session identifier to continue conversation
     - user_id: Optional user identifier
@@ -412,6 +413,9 @@ async def interact_endpoint(
     # Record the request for rate limiting
     rate_limiter.record_request(client_ip, agent_id)
 
+    # Normalize channel: web/empty -> default
+    channel = normalize_channel(channel)
+
     # Start profiling for this request
     async with profiled_request() as profile:
         # Set profile in context for LM calls to record their timing
@@ -431,6 +435,18 @@ async def interact_endpoint(
                     message=f"Agent with ID '{agent_id}' not found",
                     details={"agent_id": agent_id},
                 )
+
+            # Optional entry-point access check (user_id only)
+            if user_id:
+                access_control = await agent.get_action_by_type("AccessControlAction")
+                if access_control:
+                    if not await access_control.has_action_access(
+                        user_id=user_id, action_label="interact", channel=channel
+                    ):
+                        raise ValidationError(
+                            message="Access denied",
+                            details={"channel": channel},
+                        )
 
             if not utterance or not utterance.strip():
                 raise ValidationError(

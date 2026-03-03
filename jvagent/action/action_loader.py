@@ -2222,6 +2222,18 @@ class ActionLoader:
                 config_overrides = action_cfg["config"]
                 if not isinstance(config_overrides, dict):
                     config_overrides = {}
+                # Merge config into property_overrides for attributes that exist on actions.
+                # This ensures permissions, action_aliases, etc. are applied directly to
+                # class attributes (avoids config-in-metadata approach which fails on Lambda).
+                for key in (
+                    "permissions",
+                    "action_aliases",
+                    "default_deny",
+                    "user_groups",
+                    "exceptions",
+                ):
+                    if key in config_overrides:
+                        property_overrides[key] = config_overrides[key]
 
             # Create action instance (pass agent_name for metadata)
             action = self.create_action_instance(

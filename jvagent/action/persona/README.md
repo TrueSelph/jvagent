@@ -15,7 +15,7 @@ The Persona Action provides a flexible framework for generating agent responses 
 - **Configurable Parameters**: Conditional behavioral rules applied when context matches
 - **Multi-Call Awareness**: Handles continuation scenarios within single interactions
 - **Streaming Support**: Real-time response streaming via ResponseBus
-- **Channel Formatting**: Automatic formatting for different channels (web, SMS, WhatsApp, etc.)
+- **Channel Formatting**: Automatic formatting for different channels (default=web, SMS, WhatsApp, etc.)
 - **Structured Output**: Optional JSON output with insights and revisions
 - **Custom System Prompts**: Override default template while maintaining optimization benefits
 
@@ -75,12 +75,11 @@ What times are you available?]
 
 #### 3. Recency Bias (Bottom of System Prompt)
 
-A compliance checklist is appended at the end of the system prompt, exploiting models' tendency to weight recent tokens heavily:
+A compliance check is appended at the end of the system prompt, exploiting models' tendency to weight recent tokens heavily:
 
 ```
 ### COMPLIANCE CHECK -- MANDATORY
-Verify your response executes:
-[ ] Directive 1: Make a request to the user: What times are you available?
+Verify your response executes ALL directives stated above in the MANDATORY DIRECTIVES section.
 
 If ANY directive is missing from your response, STOP and revise before outputting.
 ```
@@ -135,9 +134,9 @@ The system prompt follows a streamlined structure designed to maximize directive
          ↓ APPENDED AFTER FORMATTING ↓
 ┌─────────────────────────────────────────┐
 │ ### COMPLIANCE CHECK -- MANDATORY       │  Position: LAST (RECENCY)
-│ Verify your response executes:          │  Attention: 20%
-│ [ ] Directive 1: [content]             │  Tokens: ~80
-│ [ ] Directive 2: [content]             │
+│ Verify your response executes ALL       │  Attention: 20%
+│ directives stated above in the          │  Tokens: ~40
+│ MANDATORY DIRECTIVES section.          │
 │                                         │
 │ If ANY directive is missing, STOP      │
 │ and revise before outputting.          │
@@ -213,7 +212,7 @@ Optimized prompt templates designed for directive compliance:
 **Main Templates:**
 - `SYSTEM_PROMPT_TEMPLATE`: Master template with 6-section structure
 - `DIRECTIVES_SECTION_PROMPT`: Directive execution instructions
-- `DIRECTIVE_COMPLIANCE_CHECK_PROMPT`: Recency reinforcement checklist
+- `DIRECTIVE_COMPLIANCE_CHECK_PROMPT`: Recency reinforcement (references directives above)
 - `RESPONSE_PROTOCOL_PROMPT`: Consolidated execution protocol
 - `PARAMETERS_SUB_PROMPT`: Conditional behavioral rules
 - `INTERPRETATION_INSIGHTS_PROMPT`: Pre-analyzed intent context

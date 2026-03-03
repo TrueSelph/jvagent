@@ -48,8 +48,7 @@ class SerperWebSearchAction(BaseWebSearchAction):
         description="Search engine to use (e.g., google_light, google_news)",
     )
     max_results: int = attribute(
-        default=5,
-        description="The maximum number of results to return"
+        default=5, description="The maximum number of results to return"
     )
 
     async def search(self, query: str, **kwargs: Any) -> List[Dict[str, str]]:

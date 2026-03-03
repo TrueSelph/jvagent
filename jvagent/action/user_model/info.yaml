@@ -5,7 +5,7 @@ package:
   version: 1.0.0
   meta:
     title: User Model Action
-    description: User Model Action
+    description: Passive action that maintains user profiles by extracting facts and preferences from conversation history
     group: jvagent
     type: interact_action
   config:

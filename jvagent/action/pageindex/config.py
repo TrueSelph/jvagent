@@ -19,6 +19,8 @@ _pageindex_node_text: Optional[bool] = None
 _pageindex_doc_description: Optional[bool] = None
 _pageindex_max_token_num_each_node: Optional[int] = None
 _pageindex_summary_token_threshold: Optional[int] = None
+_pageindex_max_summary_chars: Optional[int] = None
+_pageindex_max_tree_prompt_tokens: Optional[int] = None
 
 
 def set_pageindex_node_summary(value: Optional[bool]) -> None:
@@ -80,6 +82,32 @@ def set_pageindex_summary_token_threshold(value: Optional[int]) -> None:
 def get_pageindex_summary_token_threshold() -> Optional[int]:
     """Get summary_token_threshold config. Returns None when not set (documents.py uses 200)."""
     return _pageindex_summary_token_threshold
+
+
+def set_pageindex_max_summary_chars(value: Optional[int]) -> None:
+    """Set max chars per node summary in tree prompt (retrieval display only)."""
+    global _pageindex_max_summary_chars
+    _pageindex_max_summary_chars = value
+
+
+def get_pageindex_max_summary_chars() -> int:
+    """Get max_summary_chars. Defaults to 300 when not set."""
+    if _pageindex_max_summary_chars is None:
+        return 300
+    return _pageindex_max_summary_chars
+
+
+def set_pageindex_max_tree_prompt_tokens(value: Optional[int]) -> None:
+    """Set max tokens for tree in tree-search prompt; over budget triggers fallback to direct."""
+    global _pageindex_max_tree_prompt_tokens
+    _pageindex_max_tree_prompt_tokens = value
+
+
+def get_pageindex_max_tree_prompt_tokens() -> int:
+    """Get max_tree_prompt_tokens. Defaults to 16000 when not set."""
+    if _pageindex_max_tree_prompt_tokens is None:
+        return 16000
+    return _pageindex_max_tree_prompt_tokens
 
 
 def _get_prime_db_root() -> str:
@@ -236,14 +264,18 @@ def initialize_pageindex_database(config: Optional[Dict[str, Any]] = None) -> bo
 __all__ = [
     "get_pageindex_config",
     "get_pageindex_doc_description",
+    "get_pageindex_max_summary_chars",
     "get_pageindex_max_token_num_each_node",
+    "get_pageindex_max_tree_prompt_tokens",
     "get_pageindex_node_summary",
     "get_pageindex_node_text",
     "get_pageindex_summary_token_threshold",
     "initialize_pageindex_database",
     "PAGEINDEX_DB_NAME",
     "set_pageindex_doc_description",
+    "set_pageindex_max_summary_chars",
     "set_pageindex_max_token_num_each_node",
+    "set_pageindex_max_tree_prompt_tokens",
     "set_pageindex_node_summary",
     "set_pageindex_node_text",
     "set_pageindex_summary_token_threshold",

@@ -1,6 +1,8 @@
 """Caching layer for Agent, Memory, and Action nodes to reduce database I/O."""
 
 import asyncio
+import hashlib
+import json
 import logging
 import os
 import random
@@ -70,6 +72,7 @@ def reload_performance_config() -> None:
     """
     global _perf_config, ENABLE_AGENT_CACHING, AGENT_CACHE_TTL
     global ENABLE_ACTION_CACHE, ACTION_CACHE_TTL, CACHE_CLEANUP_PROBABILITY
+    global ENABLE_INTERACT_ROUTER_CACHE, INTERACT_ROUTER_CACHE_TTL
 
     _perf_config = _load_performance_config()
 
@@ -88,6 +91,18 @@ def reload_performance_config() -> None:
     )
     CACHE_CLEANUP_PROBABILITY = _get_config_value(
         "cache_cleanup_probability", "JVAGENT_CACHE_CLEANUP_PROBABILITY", 0.1, float
+    )
+    ENABLE_INTERACT_ROUTER_CACHE = _get_config_value(
+        "enable_interact_router_cache",
+        "JVAGENT_ENABLE_INTERACT_ROUTER_CACHE",
+        False,
+        bool,
+    )
+    INTERACT_ROUTER_CACHE_TTL = _get_config_value(
+        "interact_router_cache_ttl",
+        "JVAGENT_INTERACT_ROUTER_CACHE_TTL",
+        45,
+        int,
     )
 
     logger.debug(
@@ -157,6 +172,16 @@ ACTION_CACHE_TTL = _get_config_value(
 # cache_key format: "{agent_id}:enabled" or "{agent_id}:all"
 _action_cache: Dict[str, Tuple[List[Any], datetime]] = {}
 _action_cache_lock = asyncio.Lock()
+
+# Interact router cache (unified posture + routing)
+ENABLE_INTERACT_ROUTER_CACHE = _get_config_value(
+    "enable_interact_router_cache", "JVAGENT_ENABLE_INTERACT_ROUTER_CACHE", False, bool
+)
+INTERACT_ROUTER_CACHE_TTL = _get_config_value(
+    "interact_router_cache_ttl", "JVAGENT_INTERACT_ROUTER_CACHE_TTL", 45, int
+)
+_interact_router_cache: Dict[str, Tuple[Dict[str, Any], datetime]] = {}
+_interact_router_cache_lock = asyncio.Lock()
 
 
 async def get_cached_agent(agent_id: str) -> Optional[Any]:
@@ -269,6 +294,9 @@ async def get_cache_stats() -> Dict[str, Any]:
             if age >= ACTION_CACHE_TTL:
                 action_expired_count += 1
 
+    async with _interact_router_cache_lock:
+        interact_router_cache_size = len(_interact_router_cache)
+
     return {
         "agent_cache": {
             "enabled": ENABLE_AGENT_CACHING,
@@ -281,6 +309,11 @@ async def get_cache_stats() -> Dict[str, Any]:
             "size": action_cache_size,
             "expired": action_expired_count,
             "ttl_seconds": ACTION_CACHE_TTL,
+        },
+        "interact_router_cache": {
+            "enabled": ENABLE_INTERACT_ROUTER_CACHE,
+            "size": interact_router_cache_size,
+            "ttl_seconds": INTERACT_ROUTER_CACHE_TTL,
         },
     }
 
@@ -365,6 +398,85 @@ async def invalidate_action_cache(agent_id: Optional[str] = None) -> None:
 
 
 # ============================================================================
+# Interact Router Cache (unified posture + routing)
+# ============================================================================
+
+
+def interact_router_cache_key(
+    conversation_id: str,
+    utterance: str,
+    last_interaction_ids: Tuple[str, ...],
+    buffer_fingerprint: str,
+    active_task_fingerprint: str,
+) -> str:
+    """Build cache key for interact router result."""
+    payload = json.dumps(
+        {
+            "conversation_id": conversation_id,
+            "utterance": utterance,
+            "last_ids": last_interaction_ids,
+            "buffer": buffer_fingerprint,
+            "active_tasks": active_task_fingerprint,
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+async def get_interact_router_cache(
+    cache_key: str, caller_enabled: bool = True
+) -> Optional[Dict[str, Any]]:
+    """Get cached interact router result if valid.
+
+    Args:
+        cache_key: Key from interact_router_cache_key()
+        caller_enabled: Per-action override; cache used only when both global and caller allow
+
+    Returns:
+        Cached result dict (posture, interpretation, intent_type, actions, etc.) or None
+    """
+    if not caller_enabled:
+        return None
+    if not ENABLE_INTERACT_ROUTER_CACHE:
+        return None
+
+    async with _interact_router_cache_lock:
+        if cache_key in _interact_router_cache:
+            data, cached_at = _interact_router_cache[cache_key]
+            now = await _get_now()
+            age = (now - cached_at).total_seconds()
+            if age < INTERACT_ROUTER_CACHE_TTL:
+                logger.debug(f"Interact router cache hit (age: {age:.1f}s)")
+                return data
+            del _interact_router_cache[cache_key]
+    return None
+
+
+async def set_interact_router_cache(
+    cache_key: str, result: Dict[str, Any], caller_enabled: bool = True
+) -> None:
+    """Store interact router result in cache.
+
+    Args:
+        cache_key: Key from interact_router_cache_key()
+        result: Result dict (posture, interpretation, intent_type, actions, etc.)
+        caller_enabled: Per-action override; cache used only when both global and caller allow
+    """
+    if not caller_enabled:
+        return
+    if not ENABLE_INTERACT_ROUTER_CACHE:
+        return
+
+    # Omit reasoning (deprecated); use interpretation only
+    payload = {k: v for k, v in result.items() if k != "reasoning"}
+
+    async with _interact_router_cache_lock:
+        now = await _get_now()
+        _interact_router_cache[cache_key] = (payload, now)
+        logger.debug("Interact router cached")
+
+
+# ============================================================================
 # Request-Scoped Cache Cleanup
 # ============================================================================
 
@@ -412,6 +524,18 @@ async def cleanup_expired_entries() -> bool:
             del _action_cache[cache_key]
         action_cleaned = len(expired_actions)
 
+    # Clean interact router cache
+    interact_router_cleaned = 0
+    async with _interact_router_cache_lock:
+        expired_interact_router = [
+            cache_key
+            for cache_key, (_, cached_at) in _interact_router_cache.items()
+            if (now - cached_at).total_seconds() >= INTERACT_ROUTER_CACHE_TTL
+        ]
+        for cache_key in expired_interact_router:
+            del _interact_router_cache[cache_key]
+        interact_router_cleaned = len(expired_interact_router)
+
     # Clean stale profiling contexts
     try:
         from jvagent.core.profiling import cleanup_stale_profiles
@@ -422,12 +546,18 @@ async def cleanup_expired_entries() -> bool:
     except Exception as e:
         logger.debug(f"Profile cleanup error (non-fatal): {e}")
 
-    cleaned_any = agent_cleaned > 0 or action_cleaned > 0 or profiles_cleaned > 0
+    cleaned_any = (
+        agent_cleaned > 0
+        or action_cleaned > 0
+        or interact_router_cleaned > 0
+        or profiles_cleaned > 0
+    )
 
     if cleaned_any:
         logger.debug(
             f"Cache cleanup: removed {agent_cleaned} expired agents, "
             f"{action_cleaned} expired action entries, "
+            f"{interact_router_cleaned} interact router entries, "
             f"{profiles_cleaned} stale profiles"
         )
 

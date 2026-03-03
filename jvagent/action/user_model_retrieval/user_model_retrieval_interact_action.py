@@ -21,9 +21,13 @@ from jvagent.action.pageindex.config import (
     set_pageindex_summary_token_threshold,
 )
 from jvagent.action.pageindex.llm_bridge import set_pageindex_model_action
-from .prompts import DIRECTIVE_TEMPLATE
+from jvagent.action.pageindex.pageindex_retrieval_interact_action import (
+    PageIndexRetrievalInteractAction,
+    _push_retrieval_config,
+)
 from jvagent.action.pageindex.retrieval import search_documents
-from jvagent.action.pageindex.pageindex_retrieval_interact_action import PageIndexRetrievalInteractAction
+
+from .prompts import DIRECTIVE_TEMPLATE
 
 if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
@@ -48,7 +52,9 @@ def _push_ingestion_config(ingestion: Dict[str, Any]) -> None:
     set_pageindex_summary_token_threshold(ingestion.get("summary_token_threshold"))
 
 
-def _get_ingestion_config(config: Dict[str, Any], node_summary_attr: bool) -> Dict[str, Any]:
+def _get_ingestion_config(
+    config: Dict[str, Any], node_summary_attr: bool
+) -> Dict[str, Any]:
     """Resolve ingestion config from action config (with attribute fallback for node_summary)."""
     cfg = config or {}
     node_summary = (
@@ -61,7 +67,8 @@ def _get_ingestion_config(config: Dict[str, Any], node_summary_attr: bool) -> Di
         "node_text": _bool_from_config(cfg.get("node_text"), True),
         "doc_description": _bool_from_config(cfg.get("doc_description"), False),
         "max_token_num_each_node": cfg.get("max_token_num_each_node"),
-        "summary_token_threshold": cfg.get("summary_token_threshold") or cfg.get("max_node_tokens"),
+        "summary_token_threshold": cfg.get("summary_token_threshold")
+        or cfg.get("max_node_tokens"),
     }
 
 
@@ -75,7 +82,7 @@ async def ensure_ingestion_config_for_agent(agent_id: str) -> None:
     from jvagent.core.cache import get_cached_actions
 
     actions = await get_cached_actions(agent_id, enabled_only=True)
-    for action in (actions or []):
+    for action in actions or []:
         if isinstance(action, PageIndexRetrievalInteractAction):
             config = getattr(action, "config", None) or {}
             node_summary_attr = getattr(action, "node_summary", False)
@@ -83,22 +90,24 @@ async def ensure_ingestion_config_for_agent(agent_id: str) -> None:
             _push_ingestion_config(ingestion)
             return
     # Fallback: default to summaries for agent-scoped routes
-    _push_ingestion_config({
-        "node_summary": True,
-        "node_text": True,
-        "doc_description": False,
-        "max_token_num_each_node": None,
-        "summary_token_threshold": None,
-    })
+    _push_ingestion_config(
+        {
+            "node_summary": True,
+            "node_text": True,
+            "doc_description": False,
+            "max_token_num_each_node": None,
+            "summary_token_threshold": None,
+        }
+    )
 
 
 class UserModelRetrievalInteractAction(PageIndexRetrievalInteractAction):
-    """InteractAction that retrieves context from PageIndex graph (vectorless).
+    """InteractAction that retrieves context from the user's profile collection in PageIndex.
 
-    Uses LLM-based tree search by default (PageIndex recommended approach), with
-    fallback to direct or walker strategies. No VectorStore, no embeddings.
+    Searches the user model collection (user_model_{user_id}) via LLM-based tree search,
+    direct, or walker strategies. No VectorStore, no embeddings.
     1. Uses interaction's utterance (or interpretation) as search query
-    2. Searches PageIndex document graph via tree_search, direct, or walker
+    2. Searches the user's profile collection in PageIndex via tree_search, direct, or walker
     3. Formats results into directive for PersonaAction
     """
 
@@ -196,10 +205,23 @@ class UserModelRetrievalInteractAction(PageIndexRetrievalInteractAction):
             model = self.config.get("model", self.model)
             doc_name = f"user_model_{user_id}"
             collection_name = self._resolve_collection()
-            metadata_filter = self.metadata_filter or self.config.get("metadata_filter")
+            metadata_filter = (
+                self.metadata_filter or self.config.get("metadata_filter") or {}
+            )
             if user_id:
-                metadata_filter["user_id"] = str(user_id)
-
+                metadata_filter = {**metadata_filter, "user_id": str(user_id)}
+            max_summary_chars = self.config.get(
+                "max_summary_chars", self.max_summary_chars
+            )
+            max_tree_prompt_tokens = self.config.get(
+                "max_tree_prompt_tokens", self.max_tree_prompt_tokens
+            )
+            _push_retrieval_config(
+                {
+                    "max_summary_chars": max_summary_chars,
+                    "max_tree_prompt_tokens": max_tree_prompt_tokens,
+                }
+            )
             results = await search_documents(
                 query=query,
                 doc_name=doc_name,
@@ -208,6 +230,8 @@ class UserModelRetrievalInteractAction(PageIndexRetrievalInteractAction):
                 model=model,
                 collection_name=collection_name,
                 metadata_filter=metadata_filter,
+                max_summary_chars=max_summary_chars,
+                max_tree_prompt_tokens=max_tree_prompt_tokens,
             )
 
             if results:

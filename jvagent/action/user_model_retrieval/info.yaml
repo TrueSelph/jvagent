@@ -23,5 +23,5 @@ package:
   dependencies:
     jvagent: ~0.0.1
     actions:
-      - "jvagent/user_model_action"
+      - "jvagent/user_model_interact_action"
       - "jvagent/pageindex_retrieval_interact_action"
