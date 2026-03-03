@@ -173,11 +173,6 @@ actions:
           #   allow: [{ group: all, enabled: true }]
       user_groups: {}
 
-  - action: jvagent/agent_utils
-    context:
-      enabled: true
-      description: "Agent Utils action for power user controls"
-
   - action: jvagent/whatsapp_action
     context:
       enabled: true

@@ -102,7 +102,8 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         utterance = data.body or data.caption
         utterance = utterance.strip() if utterance else None
 
-        if "@" in data.sender:
+        # Skip LID conversion for groups - @g.us IDs are not LIDs and cause "No LID for user" errors
+        if "@" in data.sender and "@g.us" not in data.sender:
             data.sender = await whatsapp_action.api().convert_lid_to_phone_number(
                 data.sender
             )

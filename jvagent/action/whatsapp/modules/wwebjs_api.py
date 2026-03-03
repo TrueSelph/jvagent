@@ -592,7 +592,12 @@ class WWebJSAPI(BaseWhatsAppAPI):
             f"client/getContactLidAndPhone/{self.session}", data=data
         )
 
-        if result.get("success") and (phone_number := result["data"][0].get("pn")):
+        data_list = result.get("data") if result.get("success") else None
+        if (
+            data_list
+            and len(data_list) > 0
+            and (phone_number := data_list[0].get("pn"))
+        ):
             return str(phone_number.split("@")[0])
 
         return lid
