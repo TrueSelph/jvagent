@@ -84,6 +84,75 @@ async def purge_conversations(
 
 
 @endpoint(
+    "/api/agents/{agent_id}/memory/users/{user_id}",
+    methods=["DELETE"],
+    auth=True,
+    roles=["admin"],
+    tags=["Memory"],
+    response=success_response(
+        data={
+            "deleted_count": ResponseField(
+                field_type=int,
+                description="Number of user nodes deleted",
+                example=1,
+            ),
+            "message": ResponseField(
+                field_type=str,
+                description="Success message",
+                example="Deleted user 'user123' and all connected nodes",
+            ),
+        }
+    ),
+)
+async def delete_user_memory(
+    agent_id: str,
+    user_id: str,
+) -> Dict[str, Any]:
+    """Delete a user node and all connected nodes beneath it (admin only).
+
+    Requires authentication with admin role. Deletes the User node and cascades
+    to all connected nodes: Conversations, Interactions, SubscriptionSettings,
+    and any other nodes solely reachable from the user.
+
+    Args:
+        agent_id: ID of the agent whose memory to modify
+        user_id: External user identifier to delete
+
+    Returns:
+        Dictionary with deleted_count and message
+
+    Raises:
+        ResourceNotFoundError: If agent, memory, or user not found
+    """
+    agent = await Agent.get(agent_id)
+    if not agent:
+        raise ResourceNotFoundError(
+            message=f"Agent with ID '{agent_id}' not found",
+            details={"agent_id": agent_id},
+        )
+
+    memory = await agent.get_memory()
+    if not memory:
+        raise ResourceNotFoundError(
+            message=f"Memory not found for agent '{agent_id}'",
+            details={"agent_id": agent_id},
+        )
+
+    purged = await memory.purge_user_memory(user_id=user_id)
+    if not purged:
+        raise ResourceNotFoundError(
+            message=f"User '{user_id}' not found in memory",
+            details={"agent_id": agent_id, "user_id": user_id},
+        )
+
+    count = len(purged)
+    return {
+        "deleted_count": count,
+        "message": f"Deleted user '{user_id}' and all connected nodes",
+    }
+
+
+@endpoint(
     "/api/agents/{agent_id}/memory/repair",
     methods=["POST"],
     auth=True,

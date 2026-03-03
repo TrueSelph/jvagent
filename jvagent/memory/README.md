@@ -2,6 +2,16 @@
 
 The memory module provides the graph-based storage for user conversations and interactions.
 
+## REST Endpoints (Admin)
+
+All memory endpoints require authentication with admin role.
+
+| Method | Path | Description |
+|--------|------|--------------|
+| DELETE | `/api/agents/{agent_id}/memory/purge` | Purge conversations (query: `user_id`, `conversation_id`). Cascade deletes interactions. Does not delete User nodes. |
+| DELETE | `/api/agents/{agent_id}/memory/users/{user_id}` | Delete a user node and all connected nodes (Conversations, Interactions, SubscriptionSettings, etc.). |
+| POST | `/api/agents/{agent_id}/memory/repair` | Repair orphaned nodes, dual edges, and missing conversation-to-first-interaction edges (query: `recent_minutes`). |
+
 ## Entity Relationships
 
 ```

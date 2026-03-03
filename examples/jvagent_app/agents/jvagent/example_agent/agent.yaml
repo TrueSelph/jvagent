@@ -34,11 +34,6 @@ context:
 # - jvagent/persona (custom ExamplePersonaAction override)
 # - jvagent/example_action (custom action)
 actions:
-  - action: jvagent/agent_utils
-    context:
-      enabled: true
-      description: "Agent Utils action for power user controls"
-
   # InteractRouter Action - Unified posture + routing
   # Core action from jvagent library (jvagent/action/router/)
   - action: jvagent/interact_router
