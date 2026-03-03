@@ -20,61 +20,105 @@ INTENT_TYPES = [
 # System Prompt
 # =============================================================================
 
-ROUTER_SYSTEM_PROMPT = """You are a routing intelligence for a conversational agent. Analyze user messages and route them to appropriate actions with high accuracy.
+ROUTER_SYSTEM_PROMPT = """You are a unified classification and routing intelligence for a conversational agent. First classify response posture (RESPOND/SUPPRESS/DEFER), then—only when posture is RESPOND—classify intent and route to actions.
+
+STEP 0 — POSTURE (RESPOND | SUPPRESS | DEFER)
+Trace the flow from history to the current message. What was the most recent assistant message? How does the current user message relate?
+
+RESPOND — use when:
+- Greeting, opener, first contact ("Hey", "Hi", "Hello") — ALWAYS RESPOND
+- Question, request, substantive statement
+- Answer (affirmative OR negative) to assistant's direct question ("ok", "yes", "no", "no sorry", "nope", "sure" after "Would you like X?")
+- Gratitude for directly preceding assistant help ("Thanks!" after answer) — allow "you're welcome"
+- Short but contextually coherent message; when in doubt, use RESPOND
+
+SUPPRESS — use ONLY when:
+- Social closing (goodbye) AND exchange already concluded or same closing already exchanged
+- Redundant gratitude after assistant already said "you're welcome"
+- Hanging acknowledgment ("ok", "alright") with nothing to answer AND exchange at natural pause
+- NEVER SUPPRESS: direct answer to question ("No sorry"), greetings, "thanks" before "you're welcome"
+
+DEFER — use ONLY when:
+- Utterance genuinely unintelligible/fragmentary ("Actually...", "wait no I") AND history lacks context
+- When prior deferred fragments are provided: if combined (fragments + current) is intelligible, use RESPOND
+
+STEP 1 — ROUTING (only when posture=RESPOND)
+Classify intent and route to actions. For SUPPRESS/DEFER, use actions=[], canned_response="", intent_type="UNCLEAR".
 
 CORE PRINCIPLES:
-1. Understand what the user actually needs right now
-2. Route to actions whose anchors genuinely match the user's need
-3. Calibrate confidence based on certainty and ambiguity
-
-KEY RULES:
 - CONVERSATIONAL intent (greetings, thanks, smalltalk) MUST have empty actions []
 - Lower confidence if ambiguous or uncertain
 
 GATING CONTEXT (when present in history):
-- "Agent did not respond to recent message (suppressed)": Prior user message was a backchannel/filler; agent correctly stayed silent. Do not over-explain.
-- "Deferred fragment(s) pending from user": User sent incomplete fragments; current message may complete the thought. Consider full context when routing."""
+- "Agent did not respond to recent message (suppressed)": Prior turn was backchannel; route based on current message only.
+- "Deferred fragment(s) pending from user": Current message may complete fragmented thought; consider full context."""
 
 # =============================================================================
 # Routing Prompt
 # =============================================================================
 
-ROUTING_PROMPT_TEMPLATE = """CONVERSATION STATE:
-{active_tasks_section}{history_section}
+PRIOR_FRAGMENTS_SECTION = """
+PRIOR DEFERRED FRAGMENTS (not yet responded to):
+{fragments_list}
 
+"""
+
+ROUTING_PROMPT_TEMPLATE = """CONVERSATION STATE:
+{active_tasks_section}{history_section}{prior_fragments_section}
 CURRENT USER MESSAGE:
 {utterance}
 
 AVAILABLE ACTIONS:
 {anchors_json}
 
-TASK: Analyze the current user message in context of the conversation history and route to appropriate action(s).
+TASK: 1) Classify posture (RESPOND/SUPPRESS/DEFER). 2) If posture=RESPOND, classify intent and route to actions; otherwise use actions=[], canned_response="", intent_type="UNCLEAR".
 
-INTENT TYPES:
-- CONVERSATIONAL: Greeting, thanks, smalltalk only; no request, no information given
+POSTURE RULES:
+- RESPOND: Greeting (always), question, request, answer to question, gratitude for help, contextually coherent message. When in doubt, RESPOND.
+- SUPPRESS: Closing after exchange concluded; redundant thanks; hanging "ok" with nothing to answer. NEVER: direct answer to question, greetings.
+- DEFER: Genuinely unintelligible fragment AND no context. With prior fragments: if combined is intelligible, use RESPOND.
+
+INTENT TYPES (when posture=RESPOND):
+- CONVERSATIONAL: Greeting, thanks, smalltalk only; no request
 - INFORMATIONAL: Question, lookup, knowledge retrieval
-- INTERACTIVE: Multi-turn process (interview) — starting or answering/continuing
-- DIRECTIVE: Direct command to perform action
+- INTERACTIVE: Multi-turn (interview) — starting or answering
+- DIRECTIVE: Direct command
 - UNCLEAR: Cannot determine
 
 RULES:
-1. The conversation history is shown FIRST, with the current user message shown AFTER the ">>> USER RESPONDS NOW <<<" marker
-2. Match the current user's message to action anchors based on their actual need
-3. CONVERSATIONAL intent (greetings, thanks, smalltalk) MUST have empty actions []
-4. Actions must be exact keys from Available actions (e.g., "SignupInterviewInteractAction"), NOT anchor descriptions
-5. If the most recent assistant message in the history was a question, and the current user message appears to answer it, use INTERACTIVE (not CONVERSATIONAL)
-6. If the user asks a question about the agent's role, capabilities, or purpose, use CONVERSATIONAL
-7. If context shows "Agent did not respond to recent message (suppressed)", the prior turn was correctly gated; route based on current message only
-8. If context shows "Deferred fragment(s) pending from user", the current message may complete a fragmented thought; consider prior fragments when interpreting
-9. Lower confidence if ambiguous or uncertain {optional_instructions}
+1. The ">>> USER RESPONDS NOW <<<" marker in history indicates the transition to the current user message.
+2. Output posture first; then interpretation (which explains posture and summarizes intent), intent_type, actions, confidence (and canned_response when posture=RESPOND)
+3. CONVERSATIONAL intent MUST have empty actions []
+4. Actions MUST be the exact JSON keys from AVAILABLE ACTIONS (the action class names), NEVER the anchor descriptions or values. Example: for {{"PageIndexRetrievalInteractAction": ["User asks...", ...]}} use actions: ["PageIndexRetrievalInteractAction"], NOT ["User asks..."]
+5. If the assistant's most recent message was a question and user answers, use INTERACTIVE
+6. Lower confidence if ambiguous {optional_instructions}
+
+INTERPRETATION: Brief synopsis of user intent and why this posture applies. Include key topics/entities. RESPOND: user intent + key entities (e.g. "User greeted and asked about jvspatial; clear informational inquiry"). SUPPRESS: why no response (e.g. "Closing exchange; no further response needed"). DEFER: why deferred (e.g. "Fragmentary; lacks context to respond"). Target: one sentence, ~15-30 words.
 
 OUTPUT (JSON only):
 {{
-  "interpretation": "Brief synopsis of user's request/need",
+  "posture": "RESPOND|SUPPRESS|DEFER",
+  "interpretation": "Brief synopsis of user intent and why this posture applies. Include key topics/entities. For SUPPRESS/DEFER: explain why.",
   "intent_type": "CONVERSATIONAL|INFORMATIONAL|INTERACTIVE|DIRECTIVE|UNCLEAR",
   "actions": ["ActionName1"],
   "confidence": 0.0-1.0{entity_field}{canned_field}
 }}"""
+
+# =============================================================================
+# Canned Response Instructions (lead-in only, never substantive)
+# =============================================================================
+# The canned_response is a brief lead-in shown before the full response.
+# It must NEVER answer, explain, refuse, or provide any substantive content.
+
+CANNED_RESPONSE_INSTRUCTIONS_TEMPLATE = """
+6. Generate a VARIED, REQUEST-TAILORED lead-in for canned_response (max {max_words} words).
+   - NEVER answer the user's question or provide any substantive content.
+   - TAILOR to the request type: acknowledge what kind of request it is (question, command, lookup) without answering. Match user's tone.
+   - VARY phrasing: avoid mechanistic repetition. Use different structures and phrasings across requests.
+   - GOOD (varied, tailored): "Good question about jvspatial, one moment" | "On it" | "Checking that for you" | "Give me a sec" | "Looking into it" | "Interesting—let me see" | "Got it, checking now"
+   - BAD: Overusing generic phrases ("One moment", "Let me think about that") repeatedly; any answer, explanation, or substantive content
+   - For {skip_intents} intents, use empty string ""
+"""
 
 # =============================================================================
 # Clarification Prompt Template

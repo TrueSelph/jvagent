@@ -28,7 +28,7 @@ class IntroInteractAction(InteractAction):
 
     Attributes:
         prompt: Introductory message template for first-time users
-        weight: Execution weight (default: -50, runs after InteractRouter but before PersonaAction)
+        weight: Execution weight (default: -101, runs before InteractRouter)
         anchors: Routing anchors (empty list - this runs conditionally based on user status)
     """
 

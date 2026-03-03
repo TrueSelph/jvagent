@@ -143,7 +143,6 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = [
     "jvagent.action.model.*",
-    "jvagent.action.gating.prompts.*",
     "jvagent.action.persona.*",
     "jvagent.action.whatsapp.*",
     "jvagent.action.stt_action.*",

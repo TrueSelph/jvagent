@@ -15,7 +15,9 @@ from jvagent.action.model.context import get_interaction, set_interaction
 from jvagent.action.pageindex.config import (
     initialize_pageindex_database,
     set_pageindex_doc_description,
+    set_pageindex_max_summary_chars,
     set_pageindex_max_token_num_each_node,
+    set_pageindex_max_tree_prompt_tokens,
     set_pageindex_node_summary,
     set_pageindex_node_text,
     set_pageindex_summary_token_threshold,
@@ -45,6 +47,17 @@ def _push_ingestion_config(ingestion: Dict[str, Any]) -> None:
     set_pageindex_doc_description(ingestion.get("doc_description", False))
     set_pageindex_max_token_num_each_node(ingestion.get("max_token_num_each_node"))
     set_pageindex_summary_token_threshold(ingestion.get("summary_token_threshold"))
+
+
+def _push_retrieval_config(retrieval: Dict[str, Any]) -> None:
+    """Push retrieval config values to config module."""
+    if "max_summary_chars" in retrieval and retrieval["max_summary_chars"] is not None:
+        set_pageindex_max_summary_chars(retrieval["max_summary_chars"])
+    if (
+        "max_tree_prompt_tokens" in retrieval
+        and retrieval["max_tree_prompt_tokens"] is not None
+    ):
+        set_pageindex_max_tree_prompt_tokens(retrieval["max_tree_prompt_tokens"])
 
 
 def _get_ingestion_config(
@@ -158,6 +171,16 @@ class PageIndexRetrievalInteractAction(InteractAction):
         default=None,
         description="Optional key-value filter to narrow search by document metadata",
     )
+    max_summary_chars: Optional[int] = attribute(
+        default=None,
+        description="Max chars per node summary in tree prompt (default: 300). "
+        "Truncates summaries for compact LLM context.",
+    )
+    max_tree_prompt_tokens: Optional[int] = attribute(
+        default=None,
+        description="Max tokens for tree in tree-search prompt (default: 16000). "
+        "Exceeding triggers fallback to direct search.",
+    )
 
     def _resolve_collection(self) -> str:
         """Resolve collection name from attribute, config, or agent_id."""
@@ -209,6 +232,18 @@ class PageIndexRetrievalInteractAction(InteractAction):
             doc_name = self.doc_name or self.config.get("doc_name")
             collection_name = self._resolve_collection()
             metadata_filter = self.metadata_filter or self.config.get("metadata_filter")
+            max_summary_chars = self.config.get(
+                "max_summary_chars", self.max_summary_chars
+            )
+            max_tree_prompt_tokens = self.config.get(
+                "max_tree_prompt_tokens", self.max_tree_prompt_tokens
+            )
+            _push_retrieval_config(
+                {
+                    "max_summary_chars": max_summary_chars,
+                    "max_tree_prompt_tokens": max_tree_prompt_tokens,
+                }
+            )
             results = await search_documents(
                 query=query,
                 doc_name=doc_name,
@@ -217,6 +252,8 @@ class PageIndexRetrievalInteractAction(InteractAction):
                 model=model,
                 collection_name=collection_name,
                 metadata_filter=metadata_filter,
+                max_summary_chars=max_summary_chars,
+                max_tree_prompt_tokens=max_tree_prompt_tokens,
             )
 
             if results:

@@ -8,10 +8,13 @@ Chain of Verification (CoVe) prompting to:
 4. Trigger clarification when confidence is below threshold
 """
 
+import asyncio
+import hashlib
 import json
 import logging
 import random
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
 from jvspatial.core.annotations import attribute
 
@@ -19,15 +22,24 @@ from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.router.formatting import format_interaction_history
 from jvagent.action.router.prompts import (
+    CANNED_RESPONSE_INSTRUCTIONS_TEMPLATE,
     CLARIFICATION_PARAPHRASE_PROMPT_TEMPLATE,
     CLARIFICATION_PROMPT_TEMPLATE,
     DEFAULT_CLARIFICATION_MESSAGES,
+    PRIOR_FRAGMENTS_SECTION,
     ROUTER_SYSTEM_PROMPT,
     ROUTING_PROMPT_TEMPLATE,
 )
 from jvagent.action.router.routing_result import (
+    POSTURE_RESPOND,
     RoutingResult,
     parse_routing_response,
+)
+from jvagent.core.app import App
+from jvagent.core.cache import (
+    get_interact_router_cache,
+    interact_router_cache_key,
+    set_interact_router_cache,
 )
 from jvagent.memory.conversation import Conversation
 
@@ -35,6 +47,13 @@ if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
 
 logger = logging.getLogger(__name__)
+
+BUFFER_KEY = "deferred_fragments"
+
+
+def _get_buffer(conversation: Conversation) -> list:
+    """Get deferred fragments buffer."""
+    return list(conversation.context.get(BUFFER_KEY, []))
 
 
 class InteractRouter(InteractAction):
@@ -130,15 +149,47 @@ class InteractRouter(InteractAction):
         ge=0,
     )
     weight: int = attribute(
-        default=-100, description="Execution weight (negative to run first)"
+        default=-200,
+        description="Execution weight (negative to run first; -200)",
     )
     exceptions: List[str] = attribute(
         default_factory=list,
         description="List of InteractAction entity names that must always execute",
     )
 
+    pass_through_task_types: Sequence[str] = attribute(
+        default=("INTERVIEW",),
+        description="Task types that skip router LLM when active; proceed as RESPOND",
+    )
+    pass_through_when_media: bool = attribute(
+        default=True,
+        description="Skip router LLM when user has attached media (images, documents)",
+    )
+    bypass_canned_response: str = attribute(
+        default="One moment",
+        description="Instant canned response for bypass paths (interview/media)",
+    )
+    media_bypass_actions: List[str] = attribute(
+        default_factory=list,
+        description="When non-empty and media attached, route to these actions without LLM",
+    )
+    enable_accumulation: bool = attribute(
+        default=True,
+        description="Enable DEFER posture and fragment accumulation",
+    )
+    max_fragment_buffer: int = attribute(
+        default=5,
+        description="Max deferred fragments to retain",
+        ge=1,
+        le=20,
+    )
+    enable_routing_cache: bool = attribute(
+        default=False,
+        description="Enable routing cache to skip LLM for repeated context (requires enable_interact_router_cache in app.yaml)",
+    )
+
     async def execute(self, visitor: "InteractWalker") -> None:
-        """Execute intent classification and routing with Chain of Verification.
+        """Execute unified posture classification and routing in one LLM call.
 
         Args:
             visitor: The InteractWalker visiting this action
@@ -156,25 +207,104 @@ class InteractRouter(InteractAction):
             return
 
         try:
+            # Prefer visitor.conversation (same instance flushed at request end) for buffer persistence
             agent = await self.get_agent()
+            conversation = getattr(
+                visitor, "conversation", None
+            ) or await Conversation.get(interaction.conversation_id)
             if not agent:
                 logger.error("InteractRouter: Agent not found")
                 return
+
+            dynamic_exceptions = await self._get_dynamic_exceptions(agent)
+            combined_exceptions = list(set(self.exceptions + dynamic_exceptions))
+
+            # Bypass: interview active -> 0 LLM, route to active task (before model_action)
+            if self.pass_through_task_types and conversation:
+                active_tasks = conversation.get_active_tasks(status="active")
+                for t in active_tasks:
+                    if t.get("task_type") in self.pass_through_task_types:
+                        action_name = t.get("action_name", "")
+                        logger.debug(
+                            f"InteractRouter: Bypass (active {t.get('task_type')}: {action_name})"
+                        )
+                        result = RoutingResult(
+                            posture=POSTURE_RESPOND,
+                            interpretation="Bypass: active task",
+                            intent_type="INTERACTIVE",
+                            actions=[action_name] if action_name else [],
+                            confidence=1.0,
+                            canned_response=self.bypass_canned_response,
+                        )
+                        interaction.response_posture = POSTURE_RESPOND
+                        await interaction.save()
+                        await self._handle_respond(visitor, interaction, conversation)
+                        await self._publish_canned_response(visitor, result)
+                        await self._finalize_routing(
+                            visitor,
+                            interaction,
+                            agent,
+                            result,
+                            combined_exceptions,
+                            conversation=conversation,
+                        )
+                        return
+
+            # Bypass: media attached + media_bypass_actions configured
+            if self.pass_through_when_media and self.media_bypass_actions:
+                data = getattr(visitor, "data", None) or {}
+                media_urls = data.get("image_urls") or data.get("whatsapp_media") or []
+                if media_urls:
+                    logger.debug(
+                        "InteractRouter: Bypass (media attached: %d items)",
+                        len(media_urls),
+                    )
+                    result = RoutingResult(
+                        posture=POSTURE_RESPOND,
+                        interpretation="Bypass: media attached",
+                        intent_type="INFORMATIONAL",
+                        actions=list(self.media_bypass_actions),
+                        confidence=1.0,
+                        canned_response=self.bypass_canned_response,
+                    )
+                    interaction.response_posture = POSTURE_RESPOND
+                    await interaction.save()
+                    await self._handle_respond(visitor, interaction, conversation)
+                    await self._publish_canned_response(visitor, result)
+                    await self._finalize_routing(
+                        visitor,
+                        interaction,
+                        agent,
+                        result,
+                        combined_exceptions,
+                        conversation=conversation,
+                    )
+                    return
 
             model_action = await self.get_model_action()
             if not model_action:
                 logger.error("InteractRouter: Model action not found")
                 return
 
-            # Fetch conversation first (needed for anchor filtering and history)
-            conversation = await Conversation.get(interaction.conversation_id)
-
-            # Collect anchors from all InteractActions (filtered by active interview when applicable)
-            anchors_dict = await self._collect_anchors(agent, conversation=conversation)
-
-            # Get dynamic exceptions (actions with always_execute=True)
-            dynamic_exceptions = await self._get_dynamic_exceptions(agent)
-            combined_exceptions = list(set(self.exceptions + dynamic_exceptions))
+            # Media attached but no media_bypass_actions -> continue to LLM
+            # Collect anchors and history in parallel
+            if conversation:
+                anchors_dict, interaction_history = await asyncio.gather(
+                    self._collect_anchors(agent, conversation=conversation),
+                    conversation.get_interaction_history(
+                        limit=self.history_limit,
+                        excluded=interaction.id,
+                        with_utterance=True,
+                        with_response=True,
+                        with_interpretation=True,
+                        with_event=True,
+                        with_posture=True,
+                        formatted=False,
+                    ),
+                )
+            else:
+                anchors_dict = await self._collect_anchors(agent, conversation=None)
+                interaction_history = []
 
             if not anchors_dict:
                 logger.warning("InteractRouter: No anchors available for routing")
@@ -191,29 +321,88 @@ class InteractRouter(InteractAction):
                 )
                 return
 
-            # Get conversation history
-            interaction_history = []
-            if conversation:
-                interaction_history = await conversation.get_interaction_history(
-                    limit=self.history_limit,
-                    excluded=interaction.id,
-                    with_utterance=True,
-                    with_response=True,
-                    with_interpretation=True,
-                    with_event=True,
-                    with_posture=True,
-                    formatted=True,
+            # Cache lookup (skip LLM when enabled and hit)
+            result = None
+            cache_key = None
+            if conversation and self.enable_routing_cache:
+                last_interaction_ids = tuple(
+                    e.get("interaction_id", "") for e in (interaction_history or [])
                 )
+                buffer = _get_buffer(conversation)
+                buffer_fingerprint = (
+                    hashlib.sha256(
+                        json.dumps([b.get("utterance", "") for b in buffer]).encode()
+                    ).hexdigest()
+                    if buffer
+                    else ""
+                )
+                active_tasks = conversation.get_active_tasks(status="active")
+                active_task_fingerprint = (
+                    hashlib.sha256(
+                        json.dumps(
+                            sorted([t.get("action_name", "") for t in active_tasks])
+                        ).encode()
+                    ).hexdigest()
+                    if active_tasks
+                    else ""
+                )
+                cache_key = interact_router_cache_key(
+                    interaction.conversation_id,
+                    interaction.utterance or "",
+                    last_interaction_ids,
+                    buffer_fingerprint,
+                    active_task_fingerprint,
+                )
+                cached = await get_interact_router_cache(
+                    cache_key, caller_enabled=self.enable_routing_cache
+                )
+                if cached is not None:
+                    result = RoutingResult.from_dict(cached)
+                    result.actions = self._resolve_actions_to_keys(
+                        result.actions, anchors_dict
+                    )
 
-            # Route using direct LLM call
-            result = await self._route_direct(
-                interaction,
-                anchors_dict,
-                interaction_history,
-                conversation=conversation,
-            )
+            if result is None:
+                result = await self._route_direct(
+                    interaction,
+                    anchors_dict,
+                    interaction_history or [],
+                    conversation=conversation,
+                )
+                if (
+                    self.enable_routing_cache
+                    and cache_key is not None
+                    and result.confidence > 0
+                ):
+                    await set_interact_router_cache(
+                        cache_key,
+                        result.to_dict(),
+                        caller_enabled=self.enable_routing_cache,
+                    )
 
-            # Publish canned response if enabled and appropriate
+            # Handle posture: SUPPRESS/DEFER early exit
+            interaction.response_posture = result.posture
+            await interaction.save()
+
+            if result.is_suppress():
+                await self._handle_suppress(visitor)
+                return
+
+            if result.is_defer() and self.enable_accumulation:
+                if conversation:
+                    await self._handle_defer(visitor, interaction, conversation)
+                else:
+                    await visitor.set_walk_path([])
+                    logger.warning(
+                        "InteractRouter: DEFER but no conversation - cannot persist buffer"
+                    )
+                return
+
+            if result.is_respond():
+                if conversation:
+                    await self._handle_respond(visitor, interaction, conversation)
+
+            # Publish canned response (before save for latency)
             await self._publish_canned_response(visitor, result)
 
             # Evaluate confidence and handle clarification
@@ -279,6 +468,9 @@ class InteractRouter(InteractAction):
             # Parse the response into RoutingResult
             result = parse_routing_response(response)
 
+            # Resolve actions: LLM may return descriptions instead of keys; map back to action names
+            result.actions = self._resolve_actions_to_keys(result.actions, anchors_dict)
+
             return result
 
         except Exception as e:
@@ -320,6 +512,21 @@ class InteractRouter(InteractAction):
                 task_lines = "\n".join(f"- {desc}" for desc in active_descriptions)
                 active_tasks_section = f"ACTIVE TASKS:\n{task_lines}\n\n"
 
+        # Build PRIOR DEFERRED FRAGMENTS section when buffer has content
+        prior_fragments_section = ""
+        if conversation:
+            buffer = _get_buffer(conversation)
+            prior_fragments = [
+                b.get("utterance", "").strip() for b in buffer if b.get("utterance")
+            ]
+            if prior_fragments:
+                fragments_list = "\n".join(
+                    f'  {i + 1}. "{f}"' for i, f in enumerate(prior_fragments)
+                )
+                prior_fragments_section = PRIOR_FRAGMENTS_SECTION.format(
+                    fragments_list=fragments_list,
+                )
+
         # Conditional entity extraction field
         entity_field = ',\n  "extracted_entities": {}' if self.extract_entities else ""
 
@@ -336,13 +543,10 @@ class InteractRouter(InteractAction):
             )
         if self.enable_canned_response:
             skip_intents = ", ".join(self.skip_canned_for_intents)
-            optional_instructions += (
-                f"\n6. Generate a BRIEF, HUMAN-LIKE canned response for immediate acknowledgment only. "
-                "Tailor it to the specific request and match the user's language (e.g., if they write in Spanish, respond in Spanish). "
-                "Vary phrasing across messages—avoid repeating the same acknowledgments. "
-                "Examples of the style (do not copy verbatim): 'Let me see…', 'One moment…', 'Checking that…'. "
-                "NO assumed pronouncements (e.g., 'I can do that'). EXCEPT for {skip_intents} intents (use empty string)"
-            ).format(skip_intents=skip_intents)
+            optional_instructions += CANNED_RESPONSE_INSTRUCTIONS_TEMPLATE.format(
+                max_words=self.canned_response_max_words,
+                skip_intents=skip_intents,
+            )
 
         # Build the complete prompt
         prompt = ROUTING_PROMPT_TEMPLATE.format(
@@ -350,12 +554,55 @@ class InteractRouter(InteractAction):
             anchors_json=anchors_json,
             active_tasks_section=active_tasks_section,
             history_section=history_section,
+            prior_fragments_section=prior_fragments_section,
             entity_field=entity_field,
             canned_field=canned_field,
             optional_instructions=optional_instructions,
         )
 
         return prompt
+
+    @staticmethod
+    def _resolve_actions_to_keys(
+        actions: List[str],
+        anchors_dict: Dict[str, List[str]],
+    ) -> List[str]:
+        """Resolve actions to valid action names (keys). LLM may return descriptions.
+
+        Args:
+            actions: Raw actions from LLM (may include descriptions)
+            anchors_dict: Map of action_name -> [description, ...anchors]
+
+        Returns:
+            List of valid action names (keys only), or [] if none valid
+        """
+        if not actions:
+            return []
+
+        valid_keys = set(anchors_dict)
+        # Build reverse map: anchor/description -> action_name
+        anchor_to_action: Dict[str, str] = {}
+        for action_name, anchors_list in anchors_dict.items():
+            for anchor in anchors_list:
+                if anchor and isinstance(anchor, str):
+                    anchor_to_action[anchor.strip()] = action_name
+
+        resolved: List[str] = []
+        for a in actions:
+            a_str = str(a).strip() if a else ""
+            if not a_str:
+                continue
+            if a_str in valid_keys:
+                resolved.append(a_str)
+            elif a_str in anchor_to_action:
+                resolved.append(anchor_to_action[a_str])
+            else:
+                logger.debug(
+                    "InteractRouter: Dropping non-key action '%s' (not in anchors keys)",
+                    a_str[:50],
+                )
+
+        return list(dict.fromkeys(resolved))  # preserve order, dedupe
 
     async def _publish_canned_response(
         self,
@@ -399,15 +646,70 @@ class InteractRouter(InteractAction):
             return
 
         try:
+            # Publish first (user sees message before persistence)
+            await self.publish(visitor, canned.strip(), transient=True)
             interaction.canned_response = canned.strip()
             await interaction.save()
-
-            # Publish canned response with transient=True
-            # This sends to user but keeps interaction.response = None
-            await self.publish(visitor, canned.strip(), transient=True)
             logger.debug(f"InteractRouter: Published canned response: {canned}")
         except Exception as e:
             logger.warning(f"InteractRouter: Failed to publish canned response: {e}")
+
+    async def _handle_suppress(self, visitor: "InteractWalker") -> None:
+        """Clear walk path so no response is emitted (SUPPRESS posture)."""
+        await visitor.set_walk_path([])
+        logger.info("InteractRouter: SUPPRESS - cleared walk path, no response")
+
+    async def _handle_defer(
+        self,
+        visitor: "InteractWalker",
+        interaction: "Interaction",
+        conversation: "Conversation",
+    ) -> None:
+        """Append utterance to buffer and clear walk path (DEFER posture)."""
+        buffer = _get_buffer(conversation)
+        app = await App.get()
+        if app:
+            now_dt = await app.now()
+            now = now_dt.isoformat() if isinstance(now_dt, datetime) else now_dt
+        else:
+            now = datetime.now(timezone.utc).isoformat()
+        buffer.append(
+            {
+                "utterance": interaction.utterance or "",
+                "interaction_id": interaction.id,
+                "timestamp": now,
+            }
+        )
+        if len(buffer) > self.max_fragment_buffer:
+            buffer = buffer[-self.max_fragment_buffer :]
+        await conversation.update_context({BUFFER_KEY: buffer})
+        await visitor.set_walk_path([])
+        logger.info(
+            f"InteractRouter: DEFER - appended to buffer ({len(buffer)} fragments), no response"
+        )
+
+    async def _handle_respond(
+        self,
+        visitor: "InteractWalker",
+        interaction: "Interaction",
+        conversation: "Conversation",
+    ) -> None:
+        """Consume buffer if non-empty, inject directive, let pipeline proceed (RESPOND posture)."""
+        buffer = _get_buffer(conversation)
+        if buffer:
+            fragments = [
+                b.get("utterance", "").strip() for b in buffer if b.get("utterance")
+            ]
+            if fragments:
+                directive = (
+                    f"The user's current message completes a fragmented thought. "
+                    f"Prior fragments: {repr(fragments)}. Treat them as a unified request."
+                )
+                await visitor.add_directive(directive)
+                logger.info(
+                    f"InteractRouter: RESPOND - injected directive with {len(fragments)} prior fragments"
+                )
+            await conversation.update_context({BUFFER_KEY: []})
 
     async def _evaluate_confidence(
         self,
@@ -557,7 +859,7 @@ class InteractRouter(InteractAction):
             agent: The agent instance
             result: The routing result
             combined_exceptions: Actions that always execute
-            conversation: Optional Conversation for interview gating
+            conversation: Optional Conversation for active interview routing
         """
         # parse_routing_response already clears actions for CONVERSATIONAL intent
         routed_actions = result.actions
@@ -700,7 +1002,7 @@ class InteractRouter(InteractAction):
 
         Args:
             agent: Agent instance
-            conversation: Optional Conversation for active task gating
+            conversation: Optional Conversation for active task routing
 
         Returns:
             Dictionary mapping entity names to anchor statement lists
@@ -747,7 +1049,7 @@ class InteractRouter(InteractAction):
                     if entity_name != active_interview_name:
                         logger.debug(
                             f"InteractRouter: Skipping {entity_name} "
-                            f"(interview gating: active is {active_interview_name})"
+                            f"(interview routing: active is {active_interview_name})"
                         )
                         continue
 

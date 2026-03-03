@@ -77,7 +77,7 @@ class Interaction(DeferredSaveMixin, Node):
     # Routing (from InteractRouter)
     interpretation: Optional[str] = attribute(
         default=None,
-        description="LLM-generated interpretation of user intent (< 80 words)",
+        description="LLM-generated synopsis of user intent and posture justification (from InteractRouter)",
     )
     intent_type: Optional[str] = attribute(
         default=None, description="Classified intent type"
@@ -87,7 +87,7 @@ class Interaction(DeferredSaveMixin, Node):
     )
     response_posture: Optional[str] = attribute(
         default=None,
-        description="Response gating posture: RESPOND | SUPPRESS | DEFER (from ResponseGatingInteractAction)",
+        description="Response posture: RESPOND | SUPPRESS | DEFER (from InteractRouter)",
     )
 
     # Processing tracking

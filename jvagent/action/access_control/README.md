@@ -1,161 +1,153 @@
 # Access Control Action
 
-Role-based access control with session tracking and permission validation for secure agent operations.
+Role-based access control with user_id-based permissions for secure agent operations.
 
 ## Overview
 
-The Access Control Action provides session-based role management and channel/resource permissions for jvagent applications. It supports complex permission structures with allow/deny rules for users and groups.
+The Access Control Action provides user-based permission management and channel/resource permissions for jvagent applications. Identity is keyed by `user_id` only (no sessions or conversations). It supports allow/deny rules for users and user groups, per-action restriction in the InteractWalker, and programmatic + REST APIs for runtime updates.
 
 ## Features
 
-- **Session Management**: Create, validate, and remove user sessions
-- **Channel/Resource Permissions**: Fine-grained access control by channel and resource
-- **Group Management**: Assign users to groups for permission inheritance
-- **Allow/Deny Rules**: Explicit allow and deny permissions with precedence
-- **Graph Updates**: Automatic graph synchronization with configuration changes
-- **Configuration Export/Import**: JSON/YAML format support with purge option
-- **Exception Handling**: Actions exempt from permission checks
+- **User-only identity**: All permissions key off `user_id`
+- **Channel/Resource permissions**: Fine-grained access by channel and action (InteractAction class name)
+- **User groups**: Assign users to groups for permission inheritance
+- **Allow/Deny rules**: Deny rules checked first; allow rules grant access
+- **default_deny**: When true, deny when no rule matches; when false, allow
+- **action_aliases**: Map short names to action class names in config
+- **Exceptions**: Actions exempt from permission checks
+- **Programmatic API**: Add/remove users, groups, and permission rules
+- **Admin REST endpoints**: All agent-scoped via `agent_id` (singleton per agent)
 
-## Configuration
+## Agent YAML Configuration
+
+Configure directly under `context` (not under `config`). This ensures attributes are
+populated correctly when running on Lambda and other serverless environments.
 
 ```yaml
 actions:
-  - action: jvagent/access_control
+  - action: jvagent/access_control_action
     context:
       enabled: true
+      description: "Per-user/group access control for interact actions"
+      default_deny: false
+      action_aliases:
+        persona: PersonaAction
+        report: ReportInterviewInteractAction
       permissions:
         default:
           any:
-            allow:
-              - group: "all"
-                enabled: true
             deny: []
-      session_groups:
-        admin: ["user1", "user2"]
-        test: ["user3"]
-      exceptions: ["health_check", "status"]
-```
-
-## Usage
-
-### Basic Access Control
-```python
-# Check access to action
-has_access = await action.has_action_access("user123", "my_action", "whatsapp")
-
-# Update graph with current configuration
-await action.update_graph()
-```
-
-### Configuration Management
-```python
-# Export configuration
-config = action.export_config()
-
-# Import configuration (merge)
-await action.import_config(new_config, purge=False)
-
-# Import configuration (replace)
-await action.import_config(new_config, purge=True)
+            allow: [{ group: all, enabled: true }]
+          PersonaAction:
+            deny: []
+            allow: [admins]
+        whatsapp:
+          any:
+            deny: []
+            allow: [{ user: "5926431530", enabled: true }]
+      user_groups:
+        admins: [user_abc123, user_def456]
+        support_team: [user_ghi789]
+      exceptions:
+        - ConverseInteractAction
+        - IntroInteractAction
 ```
 
 ## Permission Structure
 
-The permissions follow this hierarchy:
 ```
-channel -> resource -> allow/deny -> rules
+channel -> action_label -> allow/deny -> rules
 ```
 
-- **Channel**: Communication channel ("default", "whatsapp", "any")
-- **Resource**: Specific resource/action ("any", "ActionName")
-- **Allow/Deny**: Permission type (deny rules checked first)
-- **Rules**: User or group specifications
+- **Channel**: "default" (web), "whatsapp", etc.
+- **Action label**: InteractAction class name (e.g. "PersonaAction", "ReportInterviewInteractAction") or "any"
+- **Allow/Deny**: Deny rules checked first; allow rules grant access
+- **Rules**: `{ user: "user_id" }` or `{ group: "group_name" }`; `group: "all"` matches everyone
 
-### Rule Format
+## Programmatic API
+
 ```python
-{
-    "user": "user_id",     # Direct user match
-    "group": "group_name", # Group membership ("all"/"any" = everyone)
-    "enabled": True        # Rule active/inactive
-}
+# User groups
+await action.add_user_group("support", ["u1", "u2"])
+await action.add_user_to_group("admins", "user_abc")
+await action.add_users_to_group("admins", ["u1", "u2"])
+await action.remove_user_from_group("admins", "user_abc")
+await action.remove_user_group("support")
+groups = action.get_user_groups()
+
+# Direct user access (allow/deny)
+await action.add_user_to_allow("default", "PersonaAction", "user_xyz")
+await action.add_user_to_deny("default", "DeleteAction", "user_bad")
+await action.remove_user_from_permission("default", "X", "user_id", from_allow=True)
+
+# Group-based rules
+await action.add_group_to_allow("default", "PersonaAction", "admins")
+await action.add_group_to_deny("default", "DeleteAction", "guests")
+await action.remove_group_from_permission("default", "X", "group", from_allow=True)
+
+# Check access
+has_access = await action.has_action_access(
+    user_id="user_abc",
+    action_label="PersonaAction",
+    channel="default",
+)
+
+# Bulk config
+config = action.export_config()
+await action.import_config(config, purge=True)
 ```
 
-### Session Groups
-```python
-session_groups = {
-    "admin": ["user1", "user2"],
-    "test": ["user3", "user4"]
-}
-```
+## REST API (Admin Only)
 
-### Exceptions
-```python
-exceptions = ["health_check", "status", "ping"]
-```
+All endpoints require `auth=True` and `roles=["admin"]`. AccessControlAction is a
+singleton per agent, so all endpoints are agent-scoped via `agent_id`.
 
-## API Endpoints
+### Endpoints (`/agents/{agent_id}/access_control/`)
 
-### Access Control
-- `POST /actions/{action_id}/access` - Check access permissions
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/config?format=json\|yaml` | Export config |
+| PUT | `/config` | Replace permissions |
+| PATCH | `/config` | Merge permissions |
+| POST | `/check` | Check access (user_id, action_label, channel) |
+| POST | `/user_groups` | Create group (body: `{name, user_ids?}`) |
+| GET | `/user_groups` | List groups |
+| POST | `/user_groups/{group}/users` | Add users to group |
+| DELETE | `/user_groups/{group}/users` | Remove users from group |
+| DELETE | `/user_groups/{group}` | Remove group |
+| POST | `/permissions` | Add user/group to allow or deny |
+| DELETE | `/permissions` | Remove user/group from allow or deny |
 
-### Configuration Management
-- `GET /actions/{action_id}/config/export?format=json|yaml` - Export configuration
-- `POST /actions/{action_id}/config/import` - Import configuration
+### Config Endpoint (PUT/PATCH)
 
-### Export Example
-```bash
-curl -X GET "/actions/123/config/export?format=yaml" \
-  -H "Authorization: Bearer <token>"
-```
+Resolves AccessControlAction from `agent_id` (no start_node). Request body:
 
-### Import Example
-```bash
-curl -X POST "/actions/123/config/import" \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "config_data": {
-      "permissions": {...},
-      "session_groups": {...},
-      "exceptions": [...]
-    },
-    "purge": false
-  }'
-```
-
-## Configuration Format
-
-### JSON Format
 ```json
 {
   "permissions": {
     "default": {
-      "any": {
-        "allow": [{"group": "all", "enabled": true}],
-        "deny": []
-      }
+      "any": { "deny": [], "allow": [{ "group": "all", "enabled": true }] },
+      "ReportInterviewInteractAction": { "deny": [{ "group": "all" }], "allow": [] }
+    },
+    "whatsapp": {
+      "any": { "deny": [], "allow": [{ "group": "all", "enabled": true }] },
+      "ReportInterviewInteractAction": { "deny": [], "allow": [{ "group": "all", "enabled": true }] }
     }
-  },
-  "session_groups": {
-    "admin": ["user1", "user2"]
-  },
-  "exceptions": ["health_check"]
+  }
 }
 ```
 
-### YAML Format
-```yaml
-permissions:
-  default:
-    any:
-      allow:
-        - group: all
-          enabled: true
-      deny: []
-session_groups:
-  admin:
-    - user1
-    - user2
-exceptions:
-  - health_check
-```
+- **PUT**: Replaces permissions entirely. Preserves `user_groups` and `exceptions`.
+- **PATCH**: Merges permissions at channel level.
+
+## Integration
+
+- **InteractWalker**: Before each InteractAction executes, `has_action_access(user_id, action_label, channel)` is called. If denied, the action is skipped.
+- **Interact endpoint**: Optional entry-point check for `action_label="interact"` when `user_id` is provided.
+- **WhatsApp webhook**: Uses `sender` (phone) as `user_id` for channel-specific identity.
+
+## Channel Adapters
+
+Channels that receive requests before user resolution (e.g. WhatsApp with `sender` phone) should either:
+- Resolve to `user_id` via `memory.get_session()` before the access check, or
+- Use the channel-specific stable ID (e.g. phone number) as `user_id` in config.

@@ -68,8 +68,9 @@ class ConverseInteractAction(InteractAction):
     parameters: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {
-                "condition": "There are user-specific ACTIVE TASKS and the user message has diverged",
+                "condition": "The user message has diverged from the active task(s)",
                 "response": "Respond but in closing, remind the user to return to complete the active task(s).",
+                "requires_active_tasks": True,
             },
             {
                 "condition": "User asks a fact-based or knowledge-based question (what, how, why, when, where, who questions about facts, information, or concepts) and there is no context provided to confidently respond",

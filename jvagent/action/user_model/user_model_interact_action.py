@@ -3,14 +3,15 @@
 A passive action that observes conversations and maintains a user profile
 by extracting facts and preferences using an LLM.
 """
+
 import json
 import logging
-from typing import Any, Dict, List, Optional
-from jvspatial.core.annotations import attribute
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
-from jvagent.memory import Interaction
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.memory import Interaction
 
@@ -33,39 +34,34 @@ class UserModelInteractAction(InteractAction):
     )
     model: str = attribute(
         default="gpt-4o",
-        description="Model for user profile updates (using mini to reduce costs)"
+        description="Model for user profile updates",
     )
     model_temperature: float = attribute(
-        default=0.1,
-        description="Low temperature for consistent extraction"
+        default=0.1, description="Low temperature for consistent extraction"
     )
     model_max_tokens: int = attribute(
-        default=1000,
-        description="Max tokens for profile updates"
+        default=1000, description="Max tokens for profile updates"
     )
 
     update_frequency: int = attribute(
         default=3,
-        description="Update user model every N interactions (1 = every interaction)"
+        description="Update user model every N interactions (1 = every interaction)",
     )
 
     history_limit: int = attribute(
-        default=6,
-        description="Number of recent interactions to analyze"
+        default=6, description="Number of recent interactions to analyze"
     )
-    weight: int = attribute(
-        default=150,
-        description="Weight of the action"
-    )
+    weight: int = attribute(default=150, description="Weight of the action")
     always_execute: bool = attribute(
-        default=True,
-        description="Always execute the action"
+        default=True, description="Always execute the action"
     )
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute the user model action."""
         interaction = visitor.interaction
-        conv_history = await self._get_conversation_history(interaction, self.history_limit)
+        conv_history = await self._get_conversation_history(
+            interaction, self.history_limit
+        )
 
         # Count interactions after the last event
         num_interactions = self.count_interactions_after_event(conv_history)
@@ -73,7 +69,11 @@ class UserModelInteractAction(InteractAction):
         if num_interactions >= self.update_frequency:
             await self._update_user_profile(visitor)
 
-    def count_interactions_after_event(self, conversation_history: List[Dict[str, Any]], event_pattern: str = '[EVENT] UserModelAction: Updated user profile') -> int:
+    def count_interactions_after_event(
+        self,
+        conversation_history: List[Dict[str, Any]],
+        event_pattern: str = "[EVENT] UserModelAction: Updated user profile",
+    ) -> int:
         """
         Count the number of interactions (user messages and assistant responses)
         after the last occurrence of a specific event pattern in the conversation history.
@@ -88,7 +88,9 @@ class UserModelInteractAction(InteractAction):
         # Find the index of the last event message
         last_event_index = -1
         for i, message in enumerate(conversation_history):
-            if message.get('role') == 'system' and event_pattern in message.get('content', ''):
+            if message.get("role") == "system" and event_pattern in message.get(
+                "content", ""
+            ):
                 last_event_index = i
 
         # If no event found, return 0 or total count based on preference
@@ -97,11 +99,13 @@ class UserModelInteractAction(InteractAction):
             return sum(1 for e in conversation_history if e.get("role") == "user")
 
         # Count messages after the last event
-        messages_after_event = conversation_history[last_event_index + 1:]
+        messages_after_event = conversation_history[last_event_index + 1 :]
 
         # Count both user and assistant messages as interactions
         # (excluding the event message itself which is a system message)
-        interaction_count = sum(1 for e in messages_after_event if e.get("role") == "user")
+        interaction_count = sum(
+            1 for e in messages_after_event if e.get("role") == "user"
+        )
 
         return interaction_count
 
@@ -116,11 +120,12 @@ class UserModelInteractAction(InteractAction):
             logger.debug("UserModelAction: No user found, skipping")
             return
 
-
         # Get model action
         model_action = await self.get_action(self.model_action_type)
         if not model_action:
-            logger.warning(f"UserModelAction: Model action '{self.model_action_type}' not found")
+            logger.warning(
+                f"UserModelAction: Model action '{self.model_action_type}' not found"
+            )
             return
 
         # Get conversation history
@@ -138,8 +143,7 @@ class UserModelInteractAction(InteractAction):
 
         # Construct system prompt
         prompt = USER_MODEL_UPDATE_PROMPT.format(
-            current_model=current_model,
-            today=datetime.now().strftime("%A, %B %d, %Y")
+            current_model=current_model, today=datetime.now().strftime("%A, %B %d, %Y")
         )
 
         # Call LLM with conversation history
@@ -162,7 +166,7 @@ class UserModelInteractAction(InteractAction):
             if not new_model or new_model.strip() == "No updates":
                 interaction.add_event(
                     "UserModelAction: Updated user profile - No actual updates",
-                    self.get_class_name()
+                    self.get_class_name(),
                 )
                 logger.debug("UserModelAction: No updates needed")
                 return
@@ -174,8 +178,11 @@ class UserModelInteractAction(InteractAction):
                 user.user_model = {"profile": new_model}
                 await user.save()
 
+                from jvagent.action.pageindex.documents import (
+                    delete_document,
+                    list_documents,
+                )
                 from jvagent.action.pageindex.endpoints import _do_assimilate
-                from jvagent.action.pageindex.documents import list_documents, delete_document
 
                 # Delete existing user model doc(s) for this user to avoid duplicates
                 try:
@@ -186,8 +193,12 @@ class UserModelInteractAction(InteractAction):
                     for doc in existing_docs:
                         doc_name = doc.get("doc_name")
                         if doc_name:
-                            await delete_document(doc_name, collection_name="user_model")
-                            logger.info(f"Deleted existing user model doc: {doc_name} for user {user_id}")
+                            await delete_document(
+                                doc_name, collection_name="user_model"
+                            )
+                            logger.info(
+                                f"Deleted existing user model doc: {doc_name} for user {user_id}"
+                            )
                 except Exception as e:
                     logger.warning(f"Failed to clean up existing user model docs: {e}")
 
@@ -199,19 +210,18 @@ class UserModelInteractAction(InteractAction):
                     if_add_node_summary=True,
                     collection_name="user_model",
                     metadata={"user_id": user_id, "type": "user_model"},
-                    doc_description="User model"
+                    doc_description="User model",
                 )
 
                 # Log event
                 interaction.add_event(
-                    "UserModelAction: Updated user profile",
-                    self.get_class_name()
+                    "UserModelAction: Updated user profile", self.get_class_name()
                 )
                 await interaction.save()
             else:
                 interaction.add_event(
                     "UserModelAction: Updated user profile - No meaningful changes detected",
-                    self.get_class_name()
+                    self.get_class_name(),
                 )
                 logger.debug("UserModelAction: No meaningful changes detected")
 

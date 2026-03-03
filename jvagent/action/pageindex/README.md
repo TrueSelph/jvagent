@@ -40,7 +40,7 @@ Retrieval: query -> tree_search/direct/walker -> directive -> PersonaAction
 
 | Config key | Type | Default | Description |
 |------------|------|---------|-------------|
-| `node_summary` | bool | true | Generate node summaries during ingestion (required for tree_search) |
+| `node_summary` | bool | false | Generate node summaries during ingestion. Config can override. Required for tree_search. |
 | `node_text` | bool | true | Add node text to structure |
 | `doc_description` | bool | false | Add document description |
 | `max_token_num_each_node` | Optional[int] | 20000 | Max tokens per node (PDF only) |

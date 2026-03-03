@@ -121,7 +121,7 @@ class InterviewInteractAction(InteractAction, ABC):
 
     description: str = "Unified orchestrator for interview system"
 
-    # Task type for router gating (ensures at most one interview runs at a time)
+    # Task type for router routing (ensures at most one interview runs at a time)
     task_type: str = TASK_TYPE_INTERVIEW
 
     # Standard anchors that are automatically included for all interview implementations

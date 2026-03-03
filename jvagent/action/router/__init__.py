@@ -12,6 +12,9 @@ Key components:
 
 from .interact_router import InteractRouter
 from .routing_result import (
+    POSTURE_DEFER,
+    POSTURE_RESPOND,
+    POSTURE_SUPPRESS,
     ExtractedEntities,
     RoutingResult,
     VerificationTrace,
@@ -19,9 +22,12 @@ from .routing_result import (
 )
 
 __all__ = [
+    "ExtractedEntities",
     "InteractRouter",
+    "POSTURE_DEFER",
+    "POSTURE_RESPOND",
+    "POSTURE_SUPPRESS",
     "RoutingResult",
     "VerificationTrace",
-    "ExtractedEntities",
     "parse_routing_response",
 ]

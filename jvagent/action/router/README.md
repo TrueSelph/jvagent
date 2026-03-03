@@ -1,6 +1,6 @@
 # InteractRouter Action
 
-InteractRouter is a specialized InteractAction that intelligently analyzes conversational state and routes to appropriate InteractActions based on user needs.
+InteractRouter is a specialized InteractAction that performs **unified posture classification and intent-based routing** in a single LLM call. It analyzes conversational state, classifies response posture (RESPOND/SUPPRESS/DEFER), and routes to appropriate InteractActions based on user needs.
 
 ## Core Principle
 
@@ -11,6 +11,16 @@ The router does NOT mechanically classify messages or automatically route to ong
 1. Understands what the user is expressing
 2. Determines what they actually need from the system
 3. Matches to actions that can fulfill that need
+
+## Unified Flow (Posture + Routing)
+
+InteractRouter combines posture classification and routing in one LLM call:
+
+- **RESPOND**: Proceed with routing; consume deferred fragments if any; publish canned response; finalize walk path
+- **SUPPRESS**: Clear walk path; no response (e.g., closing exchanges, backchannels)
+- **DEFER**: Append utterance to buffer; clear walk path; no response (fragmentary input; wait for completing message)
+
+Fragment accumulation is enabled by default. When DEFER is returned for utterances like "Actually..." or "wait no", the system buffers them. On the next RESPOND, prior fragments are injected as a directive so the agent receives the full context.
 
 ## How It Works
 
@@ -84,6 +94,8 @@ actions:
       history_limit: 3
       exceptions:
         - "SomeAlwaysRunAction"
+      # Routing cache - skip LLM for repeated context (requires enable_interact_router_cache in app.yaml)
+      enable_routing_cache: true
 ```
 
 ### Properties
@@ -92,8 +104,28 @@ actions:
 - `model_temperature`: Temperature for LLM (default: 0.1)
 - `model_max_tokens`: Max tokens (default: 400)
 - `history_limit`: Previous interactions to include (default: 3)
-- `weight`: Execution weight (default: -100)
+- `weight`: Execution weight (default: -200; runs first to subsume posture classification)
 - `exceptions`: Action names that always execute
+- `enable_routing_cache`: Skip LLM for repeated context when cache hit (default: false; requires `enable_interact_router_cache` in app.yaml)
+- `pass_through_task_types`: Task types that bypass LLM when active (default: `("INTERVIEW",)`)
+- `pass_through_when_media`: Bypass LLM when user has attached media (default: true)
+- `media_bypass_actions`: When non-empty and media attached, route to these actions without LLM (default: [])
+- `bypass_canned_response`: Instant canned response for bypass paths (default: "One moment")
+- `enable_accumulation`: Enable DEFER posture and fragment accumulation (default: true)
+- `max_fragment_buffer`: Max deferred fragments to retain (default: 5)
+
+### App-Level Configuration (app.yaml)
+
+The routing cache is gated by global config:
+
+```yaml
+config:
+  performance:
+    enable_interact_router_cache: false   # default
+    interact_router_cache_ttl: 45
+```
+
+Environment variables: `JVAGENT_ENABLE_INTERACT_ROUTER_CACHE`, `JVAGENT_INTERACT_ROUTER_CACHE_TTL`
 
 ## Usage
 
@@ -146,12 +178,13 @@ Conversation:
   User: "Cool thanks"
 
 Analysis:
-  - User is expressing gratitude (SOCIAL)
+  - User is expressing gratitude (CONVERSATIONAL)
   - NOT directly engaging with NewsInteractAction
   - No specific need from the system
 
 Result:
-  intent_type: SOCIAL
+  posture: RESPOND
+  intent_type: CONVERSATIONAL
   actions: []
 ```
 
@@ -164,12 +197,13 @@ Conversation:
   User: "What's the weather like?"
 
 Analysis:
-  - User is asking a question (QUERY)
+  - User is asking a question (INFORMATIONAL)
   - NOT answering the signup question
   - Needs weather information
 
 Result:
-  intent_type: QUERY
+  posture: RESPOND
+  intent_type: INFORMATIONAL
   actions: ["WeatherAction"]
 ```
 
@@ -182,10 +216,11 @@ Conversation:
   User: "John Doe"
 
 Analysis:
-  - User is providing information (RESPONSE)
+  - User is providing information (INTERACTIVE)
   - Directly answering SignupInterviewInteractAction's question
 
 Result:
-  intent_type: RESPONSE
+  posture: RESPOND
+  intent_type: INTERACTIVE
   actions: ["SignupInterviewInteractAction"]
 ```

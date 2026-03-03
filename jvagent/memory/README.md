@@ -26,6 +26,7 @@ Memory (Node)
 - **Parameters**: Access via `interaction.parameters`. Use `get_unexecuted_parameters()` / `get_executed_parameters()` for filtered views.
 - **Events**: `interaction.events`, `get_events_by_action()`
 - **Response**: `set_response()`, `has_response()`, `close_interaction()`
+- **Routing (from InteractRouter)**: `interpretation`, `anchors`, `intent_type`, `response_posture` (RESPOND | SUPPRESS | DEFER)
 
 ### User
 

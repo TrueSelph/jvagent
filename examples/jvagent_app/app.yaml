@@ -173,6 +173,13 @@ config:
     # Set to 0 to disable cleanup, 1.0 to run on every request
     cache_cleanup_probability: 0.1
 
+    # Interact router cache (env: JVAGENT_ENABLE_INTERACT_ROUTER_CACHE)
+    # Skip LLM for repeated context when enabled; requires enable_routing_cache in agent.yaml
+    enable_interact_router_cache: true
+
+    # Interact router cache TTL in seconds (env: JVAGENT_INTERACT_ROUTER_CACHE_TTL)
+    interact_router_cache_ttl: 45
+
 # Agents
 # List of agents (automatically installed when you run jvagent or bootstrap)
 # Agents are referenced using the format: namespace/agent_name

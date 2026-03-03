@@ -679,6 +679,8 @@ config:
     enable_action_cache: true    # Cache action instances during discovery
     action_cache_ttl: 60         # Action cache TTL (seconds)
     enable_dspy_cache: false     # Enable DSPy response caching
+    enable_interact_router_cache: false  # Skip LLM for repeated context (requires enable_routing_cache in agent.yaml)
+    interact_router_cache_ttl: 45        # Interact router cache TTL (seconds)
 
 # Agents (list of namespace/agent_name strings)
 # Agents listed here are automatically installed when you run jvagent or bootstrap
@@ -1009,7 +1011,7 @@ actions:
 ```
 
 **Available Core Actions:**
-- **Interact Actions**: `jvagent/interact_router`, `jvagent/retrieval_interact_action`, `jvagent/intro_interact_action`, `jvagent/interview_interact_action`, `jvagent/converse_interact_action`, `jvagent/pageindex_retrieval_interact_action` (requires `[pageindex]` extra), `jvagent/response_gating`
+- **Interact Actions**: `jvagent/interact_router`, `jvagent/retrieval_interact_action`, `jvagent/intro_interact_action`, `jvagent/interview_interact_action`, `jvagent/converse_interact_action`, `jvagent/pageindex_retrieval_interact_action` (requires `[pageindex]` extra)
 - **Language Models**: `jvagent/openai_lm`, `jvagent/openrouter_lm`
 - **Embedding Models**: `jvagent/openai_embedding`, `jvagent/openrouter_embedding`, `jvagent/huggingface_embedding`, `jvagent/generic_embedding`
 - **Vector Stores**: `jvagent/typesense_vectorstore`
@@ -1477,6 +1479,8 @@ Key environment variables (see `.env.example` for full list):
 - `JVAGENT_ENABLE_ACTION_CACHE` - Enable action caching during discovery (default: `true`)
 - `JVAGENT_ACTION_CACHE_TTL` - Action cache TTL in seconds (default: `60`)
 - `JVAGENT_ENABLE_DSPY_CACHE` - Enable DSPy response caching (default: `false`)
+- `JVAGENT_ENABLE_INTERACT_ROUTER_CACHE` - Enable interact router cache to skip LLM for repeated context (default: `false`)
+- `JVAGENT_INTERACT_ROUTER_CACHE_TTL` - Interact router cache TTL in seconds (default: `45`)
 - `JVSPATIAL_ENABLE_DEFERRED_SAVES` - Batch entity saves for rapid updates (default: `true`)
 
 These can also be configured in `app.yaml` under `config.performance`:
@@ -1489,6 +1493,8 @@ config:
     enable_action_cache: true
     action_cache_ttl: 60
     enable_dspy_cache: false
+    enable_interact_router_cache: false
+    interact_router_cache_ttl: 45
 ```
 
 ### Install Development Dependencies
@@ -1618,21 +1624,21 @@ await agent.save()
 # Create conversation (uses agent's default limit)
 conversation = await user.create_conversation(
     session_id="session456",
-    channel="web"
+    channel="default"
     # Will use agent.interaction_limit (100 in this example)
 )
 
 # Override agent default for specific conversation
 conversation = await user.create_conversation(
     session_id="session456",
-    channel="web",
+    channel="default",
     interaction_limit=50  # Override: use 50 instead of agent's default
 )
 
 # Disable pruning for specific conversation
 conversation = await user.create_conversation(
     session_id="session456",
-    channel="web",
+    channel="default",
     interaction_limit=0  # No pruning (keep all interactions)
 )
 ```
@@ -1643,7 +1649,7 @@ conversation = await user.create_conversation(
 # Create and add interaction (automatically chained)
 interaction = await conversation.create_interaction(
     utterance="Hello, how are you?",
-    channel="web"
+    channel="default"
 )
 
 # Interactions are automatically chained chronologically
@@ -1941,7 +1947,6 @@ For more details, see [jvagent/bundle/README.md](jvagent/bundle/README.md).
 - [Model Actions](jvagent/action/model/README.md)
 - [PageIndex](jvagent/action/pageindex/README.md)
 - [WhatsApp](jvagent/action/whatsapp/README.md)
-- [Gating](jvagent/action/gating/README.md)
 - [Converse](jvagent/action/converse/README.md)
 - [Response](jvagent/action/response/README.md)
 - [Access Control](jvagent/action/access_control/README.md)

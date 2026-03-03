@@ -199,7 +199,7 @@ agents/
 
 This example app includes:
 - **Core actions** (loaded from jvagent library):
-  - `jvagent/interact_router` - Intent-based routing
+  - `jvagent/interact_router` - Unified posture classification + intent-based routing
   - `jvagent/openai_lm` - OpenAI language model
   - `jvagent/openai_embedding` - OpenAI embeddings
   - `jvagent/typesense_vectorstore` - Typesense vector store
@@ -219,7 +219,8 @@ actions:
     context:
       enabled: true
       model_action_type: "OpenAILanguageModelAction"
-      history_limit: 10
+      history_limit: 3
+      enable_routing_cache: true  # Optional: skip LLM for repeated context (requires enable_interact_router_cache in app.yaml)
 ```
 
 No stub directory needed - the action is automatically loaded from the core library when listed in `agent.yaml`.

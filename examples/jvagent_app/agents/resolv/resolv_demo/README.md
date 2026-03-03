@@ -9,7 +9,7 @@ The Resolv Demo Agent demonstrates:
 - Interview-based actions for structured data collection (reports and feedback)
 - Intent-based routing with conversation history management
 - Multi-channel support (web and WhatsApp)
-- Role-based access control with session tracking
+- Role-based access control with user_id-based permissions
 - Integration with external APIs (Resolv IMS)
 - Speech-to-text and text-to-speech capabilities
 - Document retrieval via PageIndex for project information
@@ -48,7 +48,6 @@ context:
 
 actions:
   # Core routing and model actions
-  - action: jvagent/response_gating
   - action: jvagent/interact_router
   - action: jvagent/openai_embedding
   - action: jvagent/pageindex_retrieval_interact_action
@@ -65,10 +64,17 @@ actions:
 
   # Integration actions
   - action: jvagent/access_control_action
+    context:
+      enabled: true
+      permissions:
+        default:
+          any: { deny: [], allow: [{ group: all }] }
+          ReportInterviewInteractAction: { deny: [{ group: all }], allow: [] }
+        whatsapp:
+          any: { deny: [], allow: [{ group: all }] }
+          ReportInterviewInteractAction: { deny: [], allow: [{ group: all }] }
   - action: jvagent/agent_utils
   - action: jvagent/whatsapp_action
-  - action: jvagent/tts_action
-  - action: jvagent/stt_action
 ```
 
 ## Actions
@@ -77,12 +83,13 @@ actions:
 
 #### InteractRouter
 
-Intent-based routing action that analyzes utterances and routes to appropriate InteractActions.
+Unified posture classification and intent-based routing in a single LLM call. Analyzes utterances, classifies response posture (RESPOND/SUPPRESS/DEFER), and routes to appropriate InteractActions.
 
 **Configuration:**
 
 - Model: `gpt-4.1`
 - History limit: 3 interactions
+- Routing cache: `enable_routing_cache: true` (skip LLM for repeated context; requires `enable_interact_router_cache` in app.yaml)
 - Analyzes conversation context for intelligent routing
 
 #### OpenAI Language Model
@@ -155,6 +162,8 @@ Conversational agent with configurable personality and capabilities.
 #### Report Interview InteractAction
 
 Structured interview action for creating incident reports in the Resolv IMS.
+
+**Access Control:** Report creation is restricted to the WhatsApp channel only. Web/default channel users cannot access this action.
 
 **Features:**
 
@@ -323,25 +332,30 @@ Converts audio messages to text.
 
 #### Access Control Action
 
-Role-based access control with session tracking and permission validation.
+Role-based access control with user_id-based permissions and per-action, per-channel rules.
 
 **Features:**
 
+- User_id-based identity (no sessions/conversations)
 - Channel-based permissions (default, whatsapp)
 - User and group-based access control
-- Session tracking
-- Dynamic permission validation
+- Per-action restriction (e.g. Report restricted to WhatsApp only)
+- Programmatic API for runtime permission updates
 
-**Configuration:**
+**Configuration (agent.yaml):**
 
-- Enabled: false (disabled by default)
-- Default channel: Allow all users
-- WhatsApp channel: Configurable user restrictions
+- Enabled: true
+- Report action: Denied on default channel; allowed on whatsapp channel only
+- Other actions: Allow all on both channels
 
 **API Endpoints:**
 
-- `POST /actions/{action_id}/validate` - Validate user permissions
-- `GET /actions/{action_id}/permissions` - Get permission configuration
+- `GET /agents/{agent_id}/access_control/config` - Export config
+- `PUT /agents/{agent_id}/access_control/config` - Replace permissions (body: `{permissions: {...}}`)
+- `PATCH /agents/{agent_id}/access_control/config` - Merge permissions (body: `{permissions: {...}}`)
+- `POST /agents/{agent_id}/access_control/check` - Check user access
+- `POST /agents/{agent_id}/access_control/user_groups` - Create group, add users
+- `POST /agents/{agent_id}/access_control/permissions` - Add allow/deny rules
 
 #### Agent Utils Action
 
@@ -391,7 +405,9 @@ Send a message to the configured WhatsApp number. The agent will automatically r
 
 #### Creating a Report
 
-1. User: "I want to report a pothole"
+**Note:** Report creation is available only via the WhatsApp channel.
+
+1. User (via WhatsApp): "I want to report a pothole"
 2. Agent routes to `report_interview_interact_action`
 3. Agent collects: reporter info, incident details, location, media
 4. Agent creates report in Resolv IMS
@@ -508,8 +524,9 @@ Update weights in `agent.yaml` under each action's `context.weight`.
 
 ### Access Control Testing
 
-- Test channel-based permissions (default vs whatsapp)
-- Test user-based access restrictions
+- Test Report action: denied on web (channel=default), allowed on WhatsApp (channel=whatsapp)
+- Test other actions: allowed on both channels
+- Test user-based access restrictions via user_groups
 - Verify session tracking
 - Test permission validation
 

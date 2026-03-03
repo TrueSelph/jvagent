@@ -71,7 +71,7 @@ This example app uses core actions from the jvagent library. All configuration i
 
 ### Available Core Actions
 
-- **`jvagent/interact_router`** - Intent-based routing for InteractActions
+- **`jvagent/interact_router`** - Unified posture classification + intent-based routing for InteractActions
 - **`jvagent/openai_lm`** - OpenAI language model (multimodal support)
 - **`jvagent/openai_embedding`** - OpenAI embedding model
 - **`jvagent/typesense_vectorstore`** - Typesense vector store

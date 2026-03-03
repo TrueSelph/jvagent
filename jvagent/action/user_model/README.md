@@ -4,7 +4,7 @@ UserModelInteractAction is an InteractAction that automatically maintains a user
 
 ## Overview
 
-UserModelAction passively observes conversations and builds a structured profile of the user in markdown format. It:
+UserModelInteractAction passively observes conversations and builds a structured profile of the user in markdown format. It:
 
 1. Runs periodically based on configurable update frequency
 2. Analyzes recent conversation history
@@ -38,7 +38,7 @@ UserModelAction passively observes conversations and builds a structured profile
 - `model`: LLM model to use (default: "gpt-4o")
 - `model_temperature`: Temperature for generation (default: 0.1 for consistency)
 - `model_max_tokens`: Max tokens for response (default: 1000)
-- `update_frequency`: Update every N interactions (default: 2)
+- `update_frequency`: Update every N interactions (default: 3)
 - `history_limit`: Number of recent interactions to analyze (default: 6)
 - `weight`: Execution weight (default: 150 to run after routing)
 - `always_execute`: Always run regardless of routing (default: true)
@@ -47,11 +47,11 @@ UserModelAction passively observes conversations and builds a structured profile
 
 ```yaml
 actions:
-  - action: jvagent/user_model_action
+  - action: jvagent/user_model_interact_action
     context:
       enabled: true
       model: "gpt-4o"
-      update_frequency: 2  # Update every 2 interactions
+      update_frequency: 3  # Update every 3 interactions
       history_limit: 6     # Analyze last 6 interactions
 ```
 
@@ -106,45 +106,6 @@ async def execute(self, visitor):
         # user.user_model contains markdown-formatted profile
         print(f"User profile:\n{user.user_model}")
 ```
-
-### Searching User Profile
-
-Use the `search_profile()` method to query the user profile for specific information:
-
-```python
-from jvagent.action.user_model.user_model_action import UserModelAction
-
-async def execute(self, visitor):
-    interaction = visitor.interaction
-    user = await interaction.get_user()
-
-    # Get UserModelAction
-    user_model_action = await self.get_action(UserModelAction)
-    if not user_model_action:
-        return
-
-    # Search for specific information
-    food_prefs = await user_model_action.search_profile(
-        user_id=user.id,
-        query="What foods does the user want to try?"
-    )
-
-    if food_prefs:
-        # Use in response
-        response = f"I see you want to try {food_prefs}!"
-```
-
-**Search Examples**:
-- `"What is the user's name?"` → Returns: "Marcia"
-- `"What foods does the user want to try?"` → Returns: "Black cake, pepperpot"
-- `"What are the user's travel plans?"` → Returns: "Visiting Guyana next week"
-- `"What cuisines is the user interested in?"` → Returns: "Guyanese cuisine, Caribbean culture"
-
-**Benefits**:
-- Returns only relevant information (token efficient)
-- Returns `None` if information not found
-- Preserves markdown formatting
-- Fast LLM-based extraction
 
 ### Integration with PersonaAction
 
@@ -244,7 +205,7 @@ The action uses a carefully crafted prompt that:
 ```yaml
 # agent.yaml
 actions:
-  - action: jvagent/user_model_action
+  - action: jvagent/user_model_interact_action
     context:
       enabled: true
       update_frequency: 2

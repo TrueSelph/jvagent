@@ -8,6 +8,8 @@ This module provides the prompt templates used by PersonaAction:
 
 from typing import Dict, Optional
 
+from jvagent.core.channel import normalize_channel
+
 # ============================================================================
 # System Prompt Template (Master)
 # ============================================================================
@@ -186,8 +188,7 @@ in the channel-appropriate format."""
 
 DIRECTIVE_COMPLIANCE_CHECK_PROMPT = """### COMPLIANCE CHECK -- MANDATORY
 
-Verify your response executes:
-{directive_checklist}
+Verify your response executes ALL directives stated above in the MANDATORY DIRECTIVES section.
 
 If ANY directive is missing from your response, STOP and revise before outputting.
 """
@@ -198,7 +199,7 @@ If ANY directive is missing from your response, STOP and revise before outputtin
 
 PARAMETERS_SUB_PROMPT = """### PARAMETERS
 
-Apply when conditions match:
+Apply ONLY when the condition is explicitly true. Do NOT apply a parameter's response when its condition is false.
 
 {parameter_list}
 
@@ -214,7 +215,8 @@ def format_parameter(param: dict, index: Optional[int] = None) -> str:
     """Format a parameter dictionary for inclusion in the prompt.
 
     Args:
-        param: Parameter dictionary (may have 'condition', 'response', 'description', 'rationale', etc.)
+        param: Parameter dictionary (may have 'condition', 'response', 'description',
+            'rationale', 'requires_active_tasks' (metadata for filtering, not rendered), etc.)
         index: Optional index number for the parameter
 
     Returns:
@@ -276,13 +278,14 @@ def get_channel_directive(
     """Get the formatting directive for a specific channel.
 
     Args:
-        channel: Communication channel name
+        channel: Communication channel name (default = web)
         phonetic_substitutions: Optional dict of original -> phonetic replacement for voice channel
         voice_max_words: Max words for voice channel (default: 60)
 
     Returns:
         Channel-specific formatting directive, or empty string if not defined
     """
+    channel = normalize_channel(channel)
     CHANNEL_FORMAT_DIRECTIVES = {
         "facebook": (
             "Format for Facebook:\n"
@@ -352,7 +355,7 @@ def get_channel_directive(
             "- Paragraphs: Basic line breaks only\n"
             "- Emojis: Avoid unless requested"
         ),
-        "web": (
+        "default": (
             "Format for Web (Markdown):\n"
             "- Headers: # H1, ## H2, ### H3\n"
             "- Bold: **text** or __text__\n"
