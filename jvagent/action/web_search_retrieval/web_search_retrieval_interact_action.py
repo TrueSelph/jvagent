@@ -177,6 +177,7 @@ class WebSearchRetrievalInteractAction(InteractAction):
         # Remove common prefixes and meta descriptions
         prefixes = [
             r"^User is asking about ",
+            r"^User is asking for ",
             r"^User is inquiring about ",
             r"^User asked about ",
             r"^User asked for",
@@ -184,7 +185,9 @@ class WebSearchRetrievalInteractAction(InteractAction):
             r"^User questions ",
             r"^The user wants to know ",
             r"^The user is asking about ",
+            r"^The user is asking for ",
             r"^The user asked about ",
+            r"^The user asked for ",
             r"^The user inquired about ",
             r"^User wants to know ",
             r"^This is a query about ",

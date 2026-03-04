@@ -13,9 +13,10 @@ from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.core.app import App
 from jvagent.memory import Interaction
 
-from .prompts import USER_MODEL_UPDATE_PROMPT
+from .prompts import USER_MODEL_UPDATE_PROMPT, CUSTOM_USER_MODEL_UPDATE_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +43,21 @@ class UserModelInteractAction(InteractAction):
     model_max_tokens: int = attribute(
         default=1000, description="Max tokens for profile updates"
     )
-
+    points_of_interest: List[str] = attribute(
+        default=[],
+        description="Points of interest to extract from conversation"
+    )
     update_frequency: int = attribute(
         default=3,
         description="Update user model every N interactions (1 = every interaction)",
+    )
+    user_model_update_prompt: str = attribute(
+        default=USER_MODEL_UPDATE_PROMPT,
+        description="Custom prompt to use for user model updates",
+    )
+    user_model_update_custom_prompt: str = attribute(
+        default=CUSTOM_USER_MODEL_UPDATE_PROMPT,
+        description="Custom prompt to use for user model updates",
     )
 
     history_limit: int = attribute(
@@ -140,11 +152,20 @@ class UserModelInteractAction(InteractAction):
 
         # Get current user model (now stored as markdown string)
         current_model = user.user_model["profile"] if user.user_model else ""
+        app = await App.get()
+        if app:
+            # Get formatted string
+            today_date_str = await app.now("%A, %B %d, %Y")
 
         # Construct system prompt
-        prompt = USER_MODEL_UPDATE_PROMPT.format(
-            current_model=current_model, today=datetime.now().strftime("%A, %B %d, %Y")
-        )
+        if self.points_of_interest:
+            prompt = self.user_model_update_custom_prompt.format(
+                points_of_interest=self.points_of_interest, current_model=current_model, today=today_date_str
+            )
+        else:
+            prompt = self.user_model_update_prompt.format(
+                current_model=current_model, today=today_date_str
+            )
 
         # Call LLM with conversation history
         try:
