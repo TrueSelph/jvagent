@@ -100,6 +100,11 @@ class InteractAction(Action, ABC):
         ),
     )
 
+    deny_access_prompt: str = attribute(
+        default_factory=str,
+        description="Message shown to user when access is denied",
+    )
+
     def _ensure_interaction(self, visitor: "InteractWalker") -> bool:
         """Check that visitor has a valid interaction.
 
