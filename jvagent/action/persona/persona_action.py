@@ -12,7 +12,10 @@ from typing import Any, Dict, List, Optional
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
-from jvagent.action.interact.utils import build_prompt_for_vision
+from jvagent.action.interact.utils import (
+    build_prompt_for_vision,
+    generate_image_interpretation,
+)
 from jvagent.action.persona.prompts import (
     ACTIVE_TASKS_SECTION_PROMPT,
     CHANNEL_OVERRIDE_PREAMBLE,
@@ -33,11 +36,6 @@ from jvagent.action.persona.prompts import (
 from jvagent.memory import Interaction
 
 logger = logging.getLogger(__name__)
-
-# Base capabilities always included in persona (e.g. vision)
-BASE_PERSONA_CAPABILITIES: List[str] = [
-    "Can view and interpret images shared by users",
-]
 
 
 class PersonaAction(Action):
@@ -507,7 +505,7 @@ class PersonaAction(Action):
                 user_utterance=user_utterance or "(No user utterance)",
             )
 
-        all_capabilities = list(BASE_PERSONA_CAPABILITIES)
+        all_capabilities = []
         if self.persona_capabilities:
             all_capabilities.extend(self.persona_capabilities)
         # Aggregate capabilities from enabled actions (e.g. WhatsApp, future Slack)
@@ -537,6 +535,32 @@ class PersonaAction(Action):
                 vision_instruction_section = VISION_IMAGE_INSTRUCTION
         vision_instruction_section = format_conditional_section(
             vision_instruction_section, bool(vision_instruction_section)
+        )
+
+        # Inject recent image context when current request has no images (follow-up questions)
+        recent_image_context_section = ""
+        if visitor:
+            data = getattr(visitor, "data", None) or {}
+            has_images = bool(data.get("image_urls"))
+            suppressed = data.get("image_interpretation") is False
+            if not has_images and not suppressed and interaction.conversation_id:
+                from jvagent.memory.conversation import Conversation
+
+                conversation = await Conversation.get(interaction.conversation_id)
+                if conversation:
+                    interactions = await conversation.get_interactions(
+                        limit=10, reverse=True
+                    )
+                    for prev in interactions:
+                        if prev.id != interaction.id and prev.image_interpretation:
+                            recent_image_context_section = (
+                                f"RECENT IMAGE CONTEXT: The user may be referring to "
+                                f"images from a previous message. Here is the detailed "
+                                f"description: {prev.image_interpretation}"
+                            )
+                            break
+        recent_image_context_section = format_conditional_section(
+            recent_image_context_section, bool(recent_image_context_section)
         )
 
         # Build directives section
@@ -644,6 +668,7 @@ class PersonaAction(Action):
             timezone=timezone_str,
             vision_instruction_section=vision_instruction_section,
             interpretation_section=interpretation_section,
+            recent_image_context_section=recent_image_context_section,
             response_protocol=RESPONSE_PROTOCOL_PROMPT,
             directives_section=directives_section,
             parameters_section=parameters_section,
@@ -810,6 +835,24 @@ class PersonaAction(Action):
         """
         if model_action is None:
             model_action = await self.get_model_action(required=True)
+
+        # Generate and persist extensive image interpretation (behind the scenes) when
+        # vision-capable images are present and interpretation is not suppressed.
+        if visitor:
+            data = getattr(visitor, "data", None) or {}
+            image_urls = data.get("image_urls") or []
+            if image_urls and data.get("image_interpretation") is not False:
+                try:
+                    interpretation = await generate_image_interpretation(
+                        image_urls, model_action
+                    )
+                    if interpretation:
+                        interaction.image_interpretation = interpretation
+                        await interaction.save()
+                except Exception as e:
+                    logger.warning(
+                        f"PersonaAction: Failed to generate image interpretation: {e}"
+                    )
 
         conversation_history = None
         if use_history:

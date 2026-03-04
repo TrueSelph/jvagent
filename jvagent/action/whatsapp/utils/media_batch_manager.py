@@ -253,7 +253,9 @@ class MediaBatchManager:
                 item.get("utterance") for item in media_items if item.get("utterance")
             ]
             combined_utterance = (
-                " | ".join(utterances) if utterances else "I've attached media"
+                " | ".join(utterances)
+                if utterances
+                else "Please receive and interpret the attached media."
             )
             quoted = batch["data"].get("quoted_message") or {}
             combined_utterance = (

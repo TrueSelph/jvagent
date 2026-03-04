@@ -303,12 +303,13 @@ The WhatsApp action supports image recognition so the agent can interpret images
 
 1. **Direct images**: When a user sends an image (with or without caption), media is saved via `MediaManager`, batched by `MediaBatchManager`, and passed to `visitor.data["image_urls"]` (vision-capable images) and `visitor.data["whatsapp_media"]` (all media).
 2. **Quoted image replies**: When a user replies to an image using WhatsApp's reply feature, the webhook delivers the original image as base64 in `quoted_message`. The system extracts this via `_extract_quoted_image()` and injects it into `visitor.data["image_urls"]` before creating the walker, so the vision pipeline receives the image even when the current message is text-only (e.g. "What's in this?").
-3. **Vision pipeline**: PersonaAction uses `build_prompt_for_vision()` to check `visitor.data["image_urls"]` and, when images are present, builds multimodal content for the LLM. The base persona includes the capability "Can view and interpret images shared by users."
+3. **Vision pipeline**: PersonaAction uses `build_prompt_for_vision()` to check `visitor.data["image_urls"]` and, when images are present, builds multimodal content for the LLM. An extensive image interpretation is generated behind the scenes and stored on the Interaction for follow-up questions (e.g., "What color was the car?"). The base persona includes the capability "Can view and interpret images shared by users."
 
 ### Data Keys
 
-- **`image_urls`**: Standard key for vision-capable images (URLs or `{"base64": "..."}` dicts). Used by PersonaAction and the vision prompt builder.
+- **`image_urls`**: Standard key for vision-capable images (URLs or `{"base64": "..."}` dicts). Used by PersonaAction and the vision prompt builder. When populated (and not suppressed), an extensive interpretation is stored on the Interaction for follow-up questions.
 - **`whatsapp_media`**: All media URLs (images, documents, video, audio). Preserved for backward compatibility with interview actions using `data_input_field: "whatsapp_media"`.
+- **`image_interpretation`**: Set to `False` to suppress vision (e.g., document uploads). When suppressed, images are not passed to the model and no interpretation is stored.
 
 ### URL Accessibility
 

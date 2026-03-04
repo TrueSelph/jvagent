@@ -10,7 +10,7 @@ The Persona Action provides a flexible framework for generating agent responses 
 
 ### Key Features
 
-- **Image/Vision Support**: Base persona capability "Can view and interpret images shared by users" is always included. When `visitor.data["image_urls"]` contains images (URLs or base64), PersonaAction builds multimodal prompts via `build_prompt_for_vision()` so the model receives and interprets images.
+- **Image/Vision Support**: Base persona capability "Can view and interpret images shared by users" is always included. When `visitor.data["image_urls"]` contains images (URLs or base64), PersonaAction builds multimodal prompts via `build_prompt_for_vision()` so the model receives and interprets images. An extensive image interpretation is generated behind the scenes and stored on the Interaction for follow-up questions (e.g., "What color was the car?"). Set `visitor.data["image_interpretation"] = False` to suppress vision (e.g., document uploads).
 - **Directive-Driven Execution**: Ensures directives are executed with ~95%+ consistency through three-layer reinforcement
 - **Configurable Parameters**: Conditional behavioral rules applied when context matches
 - **Multi-Call Awareness**: Handles continuation scenarios within single interactions
@@ -406,7 +406,7 @@ These can be overridden by providing custom `parameters`.
 PersonaAction builds the IDENTITY capabilities section from three sources, merged in order:
 
 1. **Base capabilities** — Always included. Currently:
-   - **Can view and interpret images shared by users** — Ensures the model knows it can process image input when `visitor.data["image_urls"]` is populated (e.g. from WhatsApp images or quoted image replies). Not overridable.
+   - **Can view and interpret images shared by users** — Ensures the model knows it can process image input when `visitor.data["image_urls"]` is populated (e.g. from WhatsApp images or quoted image replies). An extensive interpretation is stored on the Interaction for follow-up questions. Not overridable.
 
 2. **persona_capabilities** — From agent.yaml config. Agent-specific capabilities (e.g. "Answer general questions") defined in the PersonaAction context.
 
@@ -425,6 +425,14 @@ def get_capabilities(self) -> List[str]:
 ```
 
 When an action is enabled, its capabilities are automatically included. When disabled or deregistered, they are excluded. No manual sync with agent.yaml required.
+
+### Image Interpretation Memory
+
+When images are present and interpretation is not suppressed, PersonaAction generates an extensive image description behind the scenes via `generate_image_interpretation()` and stores it on `interaction.image_interpretation`. This enables follow-up questions (e.g., "What color was the car?") without re-sending the image.
+
+- **Generation**: A dedicated LLM call with an exhaustive description prompt runs before the main response. The result is persisted on the Interaction.
+- **Follow-up injection**: When the current request has no images, the most recent stored interpretation (from the last 10 interactions) is injected into the system prompt as "RECENT IMAGE CONTEXT" so the model can answer questions about prior images.
+- **Suppression**: Set `visitor.data["image_interpretation"] = False` to skip vision entirely—no interpretation call, no images passed to the model, no storage. Used for document uploads (e.g., interview `data_input_field`).
 
 ### Multi-Call Awareness
 
