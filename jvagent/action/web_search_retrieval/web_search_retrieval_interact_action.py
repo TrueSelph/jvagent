@@ -8,6 +8,7 @@ Mirrors RetrievalInteractAction's relationship to VectorStore.
 
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
+import re
 
 from jvspatial.core.annotations import attribute
 
@@ -130,7 +131,7 @@ class WebSearchRetrievalInteractAction(InteractAction):
             )
             await visitor.add_directive(directive)
         else:
-            logger.debug(
+            logger.warning(
                 f"WebSearchRetrievalInteractAction: no results for query {query!r}"
             )
 
@@ -158,8 +159,66 @@ class WebSearchRetrievalInteractAction(InteractAction):
 
     def _get_search_query(self, interaction: "Interaction") -> Optional[str]:
         """Use interpretation if available, otherwise fall back to utterance."""
-        query = interaction.interpretation or interaction.utterance
-        return query.strip() if query else None
+        interpretation = interaction.interpretation
+        search_query = self._convert_to_search_query(interpretation)
+        return search_query
+
+
+    def _convert_to_search_query(self, statement: str) -> str:
+        """
+        Convert a descriptive statement into a concise Google search query.
+
+        Args:
+            statement (str): The descriptive statement to convert
+
+        Returns:
+            str: A clean search query
+        """
+        # Remove common prefixes and meta descriptions
+        prefixes = [
+            r"^User is asking about ",
+            r"^User is inquiring about ",
+            r"^User asked about ",
+            r"^User asked for",
+            r"^User inquired about ",
+            r"^User questions ",
+            r"^The user wants to know ",
+            r"^The user is asking about ",
+            r"^The user asked about ",
+            r"^The user inquired about ",
+            r"^User wants to know ",
+            r"^This is a query about ",
+            r"^Question regarding ",
+            r"^Inquiry about ",
+        ]
+        suffixes = [
+            r"\s*;\s*(clear|this is).+$",       # "; clear informational inquiry..."
+            r"\s*,\s*indicating\s+.+$",          # ", indicating an informational inquiry..."
+            r"\s*,\s*which is (a|an)\s+.+$",    # ", which is a location-based query..."
+            r"\s*,\s*as (he|she|they|the user)\s+.+$",  # ", as the user wants..."
+        ]
+
+        query = statement
+
+        # Remove prefixes
+        for prefix in prefixes:
+            query = re.sub(prefix, "", query, flags=re.IGNORECASE)
+
+        # Remove suffixes
+        for suffix in suffixes:
+            query = re.sub(suffix, "", query, flags=re.IGNORECASE)
+
+        best_query = query
+
+        # Clean up the query
+        # Remove any remaining meta text
+        best_query = re.sub(r"\s+", " ", best_query)  # Normalize spaces
+        best_query = re.sub(r"[.!?]$", "", best_query)  # Remove trailing punctuation
+
+        # Ensure it's a proper search query
+        search_query = best_query.strip()
+
+        return search_query
 
     async def _log_web_search_action_status(self, *, is_reload: bool = False) -> None:
         """Log web search action resolution status (used by on_register and on_reload)."""
