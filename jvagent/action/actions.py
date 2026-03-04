@@ -191,15 +191,18 @@ class Actions(Node):
                 # Call appropriate lifecycle hook with error handling
                 # Use on_register() for new actions (even during update mode)
                 # Use on_reload() only for actions that actually existed before
+                context_name = (
+                    "on_reload"
+                    if (update_if_exists and action_existed_before)
+                    else "on_register"
+                )
                 try:
                     if update_if_exists and action_existed_before:
                         # True update: action existed before, use on_reload()
                         await action.on_reload()
-                        context_name = "on_reload"
                     else:
                         # New action or fresh install: use on_register()
                         await action.on_register()
-                        context_name = "on_register"
                 except Exception as e:
                     # Log to console (database logging handled automatically by DBLogHandler)
                     logger.error(

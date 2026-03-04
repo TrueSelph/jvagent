@@ -46,6 +46,8 @@ Generate a natural, human-like response executing all directives naturally withi
 
 {interpretation_section}
 
+{recent_image_context_section}
+
 {continuation_guidance}
 
 {response_protocol}

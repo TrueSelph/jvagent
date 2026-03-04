@@ -28,6 +28,7 @@ Trace the flow from history to the current message. What was the most recent ass
 RESPOND — use when:
 - Greeting, opener, first contact ("Hey", "Hi", "Hello") — ALWAYS RESPOND
 - Question, request, substantive statement
+- User sent media (images, documents) — ALWAYS RESPOND; treat as request to view/interpret
 - Answer (affirmative OR negative) to assistant's direct question ("ok", "yes", "no", "no sorry", "nope", "sure" after "Would you like X?")
 - Gratitude for directly preceding assistant help ("Thanks!" after answer) — allow "you're welcome"
 - Short but contextually coherent message; when in doubt, use RESPOND
@@ -41,6 +42,7 @@ SUPPRESS — use ONLY when:
 DEFER — use ONLY when:
 - Utterance genuinely unintelligible/fragmentary ("Actually...", "wait no I") AND history lacks context
 - When prior deferred fragments are provided: if combined (fragments + current) is intelligible, use RESPOND
+- NEVER DEFER: User sent media (images, documents); use RESPOND
 
 STEP 1 — ROUTING (only when posture=RESPOND)
 Classify intent and route to actions. For SUPPRESS/DEFER, use actions=[], canned_response="", intent_type="UNCLEAR".
@@ -74,9 +76,9 @@ AVAILABLE ACTIONS:
 TASK: 1) Classify posture (RESPOND/SUPPRESS/DEFER). 2) If posture=RESPOND, classify intent and route to actions; otherwise use actions=[], canned_response="", intent_type="UNCLEAR".
 
 POSTURE RULES:
-- RESPOND: Greeting (always), question, request, answer to question, gratitude for help, contextually coherent message. When in doubt, RESPOND.
+- RESPOND: Greeting (always), question, request, answer to question, gratitude for help, media (images/documents), contextually coherent message. When in doubt, RESPOND.
 - SUPPRESS: Closing after exchange concluded; redundant thanks; hanging "ok" with nothing to answer. NEVER: direct answer to question, greetings.
-- DEFER: Genuinely unintelligible fragment AND no context. With prior fragments: if combined is intelligible, use RESPOND.
+- DEFER: Genuinely unintelligible fragment AND no context. NEVER: media attachment. With prior fragments: if combined is intelligible, use RESPOND.
 
 INTENT TYPES (when posture=RESPOND):
 - CONVERSATIONAL: Greeting, thanks, smalltalk only; no request

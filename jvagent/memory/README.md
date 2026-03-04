@@ -36,6 +36,7 @@ Memory (Node)
 - **Parameters**: Access via `interaction.parameters`. Use `get_unexecuted_parameters()` / `get_executed_parameters()` for filtered views.
 - **Events**: `interaction.events`, `get_events_by_action()`
 - **Response**: `set_response()`, `has_response()`, `close_interaction()`
+- **Image interpretation**: `image_interpretation` — Extensive AI description of attached images (generated behind the scenes when vision is enabled). Used for follow-up questions without re-sending images.
 - **Routing (from InteractRouter)**: `interpretation`, `anchors`, `intent_type`, `response_posture` (RESPOND | SUPPRESS | DEFER)
 
 ### User

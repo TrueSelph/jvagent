@@ -40,6 +40,7 @@ class Interaction(DeferredSaveMixin, Node):
         channel: Communication channel
         session_id: Session identifier for this interaction
         response: Agent response text
+        image_interpretation: Extensive AI description of attached images (for follow-up questions)
         canned_response: Immediate response before full processing
         actions: Actions involved in processing (in order of execution)
         directives: Directives issued by non-persona actions
@@ -72,6 +73,10 @@ class Interaction(DeferredSaveMixin, Node):
     response: Optional[str] = attribute(
         default=None,
         description="Agent response text (accumulated from stream chunks and ad hoc messages)",
+    )
+    image_interpretation: Optional[str] = attribute(
+        default=None,
+        description="Extensive AI description of attached images (generated behind the scenes when vision is enabled)",
     )
 
     # Routing (from InteractRouter)
