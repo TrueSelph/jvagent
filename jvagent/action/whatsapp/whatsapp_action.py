@@ -93,6 +93,11 @@ class WhatsAppAction(Action):
         le=30.0,
     )
 
+    ignore_list: List[str] = attribute(
+        default_factory=list,
+        description="Keywords to block: messages from senders or to receivers containing any keyword are ignored",
+    )
+
     stt_action: Optional[str] = attribute(
         default="DeepgramSTTAction",
         description="Label or Class used to transcribe voice messages or audio files",
