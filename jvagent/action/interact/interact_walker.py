@@ -378,8 +378,8 @@ class InteractWalker(Walker):
                     action_label=action_label,
                     channel=self.channel,
                 ):
-                    if here.deny_access_prompt:
-                        self.interaction.directives.append({"content": here.deny_access_prompt, "action_name": action_label, "executed": False})
+                    if here.deny_access_directive:
+                        self.interaction.directives.append({"content": here.deny_access_directive, "action_name": action_label, "executed": False})
                         await self.interaction.save()
                     
                     await self.report(
