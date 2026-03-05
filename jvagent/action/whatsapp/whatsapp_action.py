@@ -87,7 +87,7 @@ class WhatsAppAction(Action):
     )
 
     media_batch_window: float = attribute(
-        default=2.5,
+        default=1.5,
         description="Time window in seconds to batch multiple media messages together",
         ge=0.1,
         le=30.0,
@@ -107,11 +107,6 @@ class WhatsAppAction(Action):
 
     # Internal state tracking (not persisted)
     _session_registered: bool = False
-
-    ignore_list: List[str] = attribute(
-        default_factory=lambda: ["@newsletter", "status@broadcast"],
-        description="List of WhatsApp IDs to ignore messages from",
-    )
 
     # action configuration
 
@@ -181,7 +176,7 @@ class WhatsAppAction(Action):
         return [
             "Join WhatsApp groups and send / receive messages to groups",
             "Send, receive and listen to voice notes over WhatsApp",
-            "Receive and view images or media shared over WhatsApp",
+            "Receive and view images shared over WhatsApp",
         ]
 
     def _config_issues(self) -> list[str]:

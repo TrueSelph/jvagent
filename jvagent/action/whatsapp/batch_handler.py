@@ -35,7 +35,7 @@ def handler(event: Dict[str, Any], context: Any) -> None:
         logger.warning("Batch handler received event without sender: %s", event)
         return
 
-    media_batch_window = float(event.get("media_batch_window", 2.5))
+    media_batch_window = float(event.get("media_batch_window", 1.5))
     process_at = event.get("process_at")
     if process_at is not None:
         process_at = float(process_at)

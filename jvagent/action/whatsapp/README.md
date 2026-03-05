@@ -282,7 +282,7 @@ actions:
       base_url: "${APP_BASE_URL}"
       request_timeout: 60
       chunk_length: 4000
-      media_batch_window: 2.5
+      media_batch_window: 1.5
       stt_action: "DeepgramSTTAction"   # For transcribing voice messages (PTT)
       tts_action: "ElevenLabsTTSAction"   # For replying with voice when user sends PTT
 ```

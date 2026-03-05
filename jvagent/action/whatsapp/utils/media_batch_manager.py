@@ -208,16 +208,19 @@ class MediaBatchManager:
                 )
                 self._batches[sender] = batch
 
-                # Start timer for batch processing
+                # Single media: process immediately for instant response
+                delay = (
+                    0
+                    if len(batch["media_items"]) == 1
+                    else whatsapp_action.media_batch_window
+                )
                 batch["timer_task"] = create_background_task(
-                    self._schedule_batch_processing(
-                        sender, whatsapp_action.media_batch_window
-                    ),
+                    self._schedule_batch_processing(sender, delay),
                     name=f"media_batch_timer_{sender}",
                 )
                 logger.debug(
                     f"Created new media batch for user {sender}, "
-                    f"will process in {whatsapp_action.media_batch_window}s"
+                    f"will process in {delay}s"
                 )
 
             # Schedule cleanup if needed
@@ -278,6 +281,15 @@ class MediaBatchManager:
                 f"Media batch for user {sender} reached max size ({BATCH_MAX_SIZE}), "
                 f"processing immediately"
             )
+            deleted = await db.find_one_and_delete(
+                MEDIA_BATCHES_COLLECTION, {"_id": sender}
+            )
+            if deleted:
+                await self._process_batch_from_store(sender, deleted)
+            return {"status": "received", "response": "media batched"}
+
+        if batch_size == 1:
+            # Single media: process inline in webhook (adapter already registered)
             deleted = await db.find_one_and_delete(
                 MEDIA_BATCHES_COLLECTION, {"_id": sender}
             )
@@ -505,6 +517,11 @@ class MediaBatchManager:
                         f"Agent {agent_id} not found for media batch processing"
                     )
                     return
+
+                # Ensure WhatsApp adapter is registered (critical for Lambda batch processor)
+                whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
+                if whatsapp_action:
+                    await whatsapp_action.ensure_adapter_registered()
 
                 await walker.spawn(agent)
             except DatabaseError as e:
