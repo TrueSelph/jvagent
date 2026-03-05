@@ -19,6 +19,7 @@ from .utils.endpoint_helpers import (
     _handle_voice_message,
     _process_interaction_async,
     get_whatsapp_action,
+    is_directed_message,
     normalize_result,
 )
 from .utils.task_helpers import create_background_task
@@ -103,7 +104,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         utterance = utterance.strip() if utterance else None
 
         # Skip LID conversion for groups - @g.us IDs are not LIDs and cause "No LID for user" errors
-        if "@" in data.sender and "@g.us" not in data.sender:
+        if "@lid" in data.sender and "@g.us" not in data.sender:
             data.sender = await whatsapp_action.api().convert_lid_to_phone_number(
                 data.sender
             )
@@ -119,14 +120,18 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             if not has_access:
                 return {"status": "received", "response": "Access denied"}
 
-        # Validate sender - ignore status@broadcast messages completely
+        # Validate sender
         if (
-            not sender
-            or "status@broadcast" in sender
-            or "status@broadcast" in data.receiver
-            or sender == data.receiver
+            not sender 
+            or sender == data.receiver 
+            or  any(keyword in data.sender for keyword in whatsapp_action.ignore_list) 
+            or any(keyword in data.receiver for keyword in whatsapp_action.ignore_list)
         ):
             return {"status": "ignored", "response": "Sender blocked"}
+        
+        direct_message = await is_directed_message(whatsapp_action, data)
+        if not direct_message:
+            return {"status": "ignored", "response": "Not directed message"}
 
         # Check if this is a media message
         if data.message_type in ["image", "document", "video", "audio"] and data.media:

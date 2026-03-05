@@ -108,6 +108,11 @@ class WhatsAppAction(Action):
     # Internal state tracking (not persisted)
     _session_registered: bool = False
 
+    ignore_list: List[str] = attribute(
+        default_factory=lambda: ["@newsletter", "status@broadcast"],
+        description="List of WhatsApp IDs to ignore messages from",
+    )
+
     # action configuration
 
     def _apply_env_defaults(self) -> None:

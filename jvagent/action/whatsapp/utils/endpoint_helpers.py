@@ -6,6 +6,7 @@ messages, creating walkers, handling media, and managing interactions.
 
 import base64
 import logging
+import re
 from typing import Any, Dict, Optional, Tuple
 
 from jvspatial.api.exceptions import ResourceNotFoundError
@@ -709,3 +710,50 @@ async def _process_interaction_async(
         )
     finally:
         await _clear_whatsapp_typing(agent, agent_id, sender, is_group)
+
+
+async def is_directed_message(action_node: WhatsAppAction, data: Any) -> bool:
+    """Determine if message is directed at the bot.
+
+    Args:
+        action_node: WhatsAppAction instance
+        data: Message data dict
+
+    Returns:
+        True if message is directed at bot, False otherwise
+    """
+
+    if not data.isGroup:
+        return True
+
+    # Extract body from message or caption
+    body = data.body or data.caption or ""
+    matches = re.findall(r"@(\d+)", body)
+
+    # Check mentionedIds if no matches in body
+    if not matches and data.mentionedIds:
+        matches = [mid.split("@")[0] for mid in data.mentionedIds]
+
+    if not matches:
+        return False
+
+    receiver = data.receiver.split("@")[0]
+
+    for tagged_id in matches:
+        if action_node.provider == "wwebjs":
+            tagged_id = await action_node.api().convert_lid_to_phone_number(tagged_id)
+
+        if tagged_id == receiver:
+            return True
+
+    # Check group members if direct match failed
+    group_id = data.sender
+    result = await action_node.api().group_members(group_id)
+    if result and result.get("status") == "success":
+        group_members = result.get("response", [])
+        for item in group_members:
+            user_id = item.get("id", {}).get("user")
+            if user_id in matches and item.get("formattedName") == "You":
+                return True
+
+    return False

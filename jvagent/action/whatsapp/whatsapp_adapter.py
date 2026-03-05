@@ -158,8 +158,11 @@ class WhatsAppAdapter(ChannelAdapter):
             not is_group or message.metadata.get("isGroup") is None
         ):
             is_group = await self._get_channel_metadata_from_interaction(
-                message.interaction_id, "isGroup", False
+                message.interaction_id, "isGroup", None
             )
+            # fail to get group from metadata. check user_id length and set group
+            if is_group == None and len(message.user_id) > 10:
+                is_group = True
 
         # Handle media messages
         if media_url and media_type:
