@@ -50,6 +50,7 @@ Classify intent and route to actions. For SUPPRESS/DEFER, use actions=[], canned
 CORE PRINCIPLES:
 - CONVERSATIONAL intent (greetings, thanks, smalltalk) MUST have empty actions []
 - Lower confidence if ambiguous or uncertain
+- canned_response: Brief, varied lead-in; never answer; tailor to request; avoid generic repetition
 
 GATING CONTEXT (when present in history):
 - "Agent did not respond to recent message (suppressed)": Prior turn was backchannel; route based on current message only.
@@ -113,12 +114,13 @@ OUTPUT (JSON only):
 # It must NEVER answer, explain, refuse, or provide any substantive content.
 
 CANNED_RESPONSE_INSTRUCTIONS_TEMPLATE = """
-6. Generate a VARIED, REQUEST-TAILORED lead-in for canned_response (max {max_words} words).
-   - NEVER answer the user's question or provide any substantive content.
-   - TAILOR to the request type: acknowledge what kind of request it is (question, command, lookup) without answering. Match user's tone.
-   - VARY phrasing: avoid mechanistic repetition. Use different structures and phrasings across requests.
-   - GOOD (varied, tailored): "Good question about jvspatial, one moment" | "On it" | "Checking that for you" | "Give me a sec" | "Looking into it" | "Interesting—let me see" | "Got it, checking now"
-   - BAD: Overusing generic phrases ("One moment", "Let me think about that") repeatedly; any answer, explanation, or substantive content
+6. Generate a VARIED, REQUEST-TAILORED lead-in for canned_response. Prefer 3–6 words; max {max_words} words.
+   - NEVER answer, never comment on the request—only acknowledge that you are working on it.
+   - Reference topic or request type when it fits (e.g. "Good question about X") without answering.
+   - TAILOR to request type (question, command, lookup); match user's tone.
+   - VARY phrasing across requests; avoid mechanistic repetition.
+   - GOOD (varied, tailored): "Good question about jvspatial" | "On it" | "Checking that" | "Give me a sec" | "Looking into it" | "Got it, checking now" | "On the weather—checking" | "Doing that now"
+   - BAD: Any answer, explanation, or substantive content; overusing the same phrase repeatedly
    - For {skip_intents} intents, use empty string ""
 """
 
