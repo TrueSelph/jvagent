@@ -104,6 +104,8 @@ actions:
 - `model_temperature`: Temperature for LLM (default: 0.1)
 - `model_max_tokens`: Max tokens (default: 400)
 - `history_limit`: Previous interactions to include (default: 3)
+- `confidence_threshold`: Minimum confidence to proceed without clarification (default: 0.7)
+- `enable_clarification`: Request clarification when confidence is below threshold (default: false; Converse handles unclear cases when disabled)
 - `weight`: Execution weight (default: -200; runs first to subsume posture classification)
 - `exceptions`: Action names that always execute
 - `enable_routing_cache`: Skip LLM for repeated context when cache hit (default: false; requires `enable_interact_router_cache` in app.yaml)
