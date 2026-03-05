@@ -100,7 +100,7 @@ class InteractAction(Action, ABC):
         ),
     )
 
-    deny_access_prompt: str = attribute(
+    deny_access_directive: str = attribute(
         default_factory=str,
         description="Message shown to user when access is denied",
     )
