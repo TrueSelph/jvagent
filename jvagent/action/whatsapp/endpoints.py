@@ -13,6 +13,7 @@ from jvspatial.exceptions import DatabaseError, ValidationError
 from jvagent.core.agent import Agent
 
 from .utils.endpoint_helpers import (
+    _batch_manager,
     _build_utterance_with_quoted_context,
     _clear_whatsapp_typing,
     _handle_media_message,
@@ -122,16 +123,21 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
 
         # Validate sender
         if (
-            not sender 
-            or sender == data.receiver 
-            or  any(keyword in data.sender for keyword in whatsapp_action.ignore_list) 
+            not sender
+            or sender == data.receiver
+            or any(keyword in data.sender for keyword in whatsapp_action.ignore_list)
             or any(keyword in data.receiver for keyword in whatsapp_action.ignore_list)
         ):
             return {"status": "ignored", "response": "Sender blocked"}
-        
+
         direct_message = await is_directed_message(whatsapp_action, data)
         if not direct_message:
             return {"status": "ignored", "response": "Not directed message"}
+
+        # Flush pending media batch if stale (Lambda safety net)
+        await _batch_manager.flush_pending_batch_if_stale(
+            sender, whatsapp_action.media_batch_window
+        )
 
         # Check if this is a media message
         if data.message_type in ["image", "document", "video", "audio"] and data.media:

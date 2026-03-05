@@ -7,8 +7,8 @@ Mirrors RetrievalInteractAction's relationship to VectorStore.
 """
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
 import re
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
@@ -163,7 +163,6 @@ class WebSearchRetrievalInteractAction(InteractAction):
         search_query = self._convert_to_search_query(interpretation)
         return search_query
 
-
     def _convert_to_search_query(self, statement: str) -> str:
         """
         Convert a descriptive statement into a concise Google search query.
@@ -195,9 +194,9 @@ class WebSearchRetrievalInteractAction(InteractAction):
             r"^Inquiry about ",
         ]
         suffixes = [
-            r"\s*;\s*(clear|this is).+$",       # "; clear informational inquiry..."
-            r"\s*,\s*indicating\s+.+$",          # ", indicating an informational inquiry..."
-            r"\s*,\s*which is (a|an)\s+.+$",    # ", which is a location-based query..."
+            r"\s*;\s*(clear|this is).+$",  # "; clear informational inquiry..."
+            r"\s*,\s*indicating\s+.+$",  # ", indicating an informational inquiry..."
+            r"\s*,\s*which is (a|an)\s+.+$",  # ", which is a location-based query..."
             r"\s*,\s*as (he|she|they|the user)\s+.+$",  # ", as the user wants..."
         ]
 

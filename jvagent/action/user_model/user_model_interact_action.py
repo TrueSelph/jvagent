@@ -16,7 +16,7 @@ from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.core.app import App
 from jvagent.memory import Interaction
 
-from .prompts import USER_MODEL_UPDATE_PROMPT, CUSTOM_USER_MODEL_UPDATE_PROMPT
+from .prompts import CUSTOM_USER_MODEL_UPDATE_PROMPT, USER_MODEL_UPDATE_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +44,7 @@ class UserModelInteractAction(InteractAction):
         default=1000, description="Max tokens for profile updates"
     )
     points_of_interest: List[str] = attribute(
-        default=[],
-        description="Points of interest to extract from conversation"
+        default=[], description="Points of interest to extract from conversation"
     )
     update_frequency: int = attribute(
         default=3,
@@ -160,7 +159,9 @@ class UserModelInteractAction(InteractAction):
         # Construct system prompt
         if self.points_of_interest:
             prompt = self.user_model_update_custom_prompt.format(
-                points_of_interest=self.points_of_interest, current_model=current_model, today=today_date_str
+                points_of_interest=self.points_of_interest,
+                current_model=current_model,
+                today=today_date_str,
             )
         else:
             prompt = self.user_model_update_prompt.format(

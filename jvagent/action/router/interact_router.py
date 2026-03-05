@@ -114,7 +114,7 @@ class InteractRouter(InteractAction):
         le=1.0,
     )
     enable_clarification: bool = attribute(
-        default=True,
+        default=False,
         description="Whether to request clarification when confidence is below threshold",
     )
 
