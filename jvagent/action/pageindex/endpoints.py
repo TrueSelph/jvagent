@@ -267,7 +267,7 @@ async def ingest_document_endpoint(
         result = await _do_assimilate(
             content,
             ext,
-            doc_name=doc_name,
+            doc_name=doc_name or filename,
             model=model,
             if_add_node_summary=if_add_node_summary,
             collection_name=collection_name,
@@ -569,6 +569,17 @@ async def import_documents_endpoint(
 
         if not isinstance(parsed, dict):
             raise ValidationError("Data must be a dictionary")
+
+        # replace existing collection name with agent_id
+        existing_collection_names = []
+        for root in parsed.get("roots", []):
+            existing_collection_names.append(root.get("collection_name"))
+            
+        parsed_str = json.dumps(parsed)
+        for collection_name in existing_collection_names:
+            parsed_str = parsed_str.replace(collection_name, agent_id)
+        parsed = json.loads(parsed_str)
+        
 
         await import_documents(parsed, purge=purge, collection_name=agent_id)
 
