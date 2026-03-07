@@ -5,7 +5,6 @@ import os
 from typing import Any, Dict, List, Optional, Union
 
 from jvspatial.api.auth.api_key_service import APIKeyService
-from jvspatial.api.auth.models import APIKey
 from jvspatial.core.annotations import attribute
 from jvspatial.core.context import GraphContext
 from jvspatial.db import get_prime_database
@@ -93,6 +92,12 @@ class WhatsAppAction(Action):
         le=30.0,
     )
 
+    media_batch_mode: str = attribute(
+        default="async",
+        description="Media batching mode: async (in-memory + background tasks), disabled (inline, no batching), lambda (MongoDB + Lambda invoke)",
+        pattern=r"^(async|disabled|lambda)$",
+    )
+
     ignore_list: List[str] = attribute(
         default_factory=list,
         description="Keywords to block: messages from senders or to receivers containing any keyword are ignored",
@@ -139,6 +144,14 @@ class WhatsAppAction(Action):
             if env_api_key:
                 self.api_key = env_api_key
                 logger.debug("Using WHATSAPP_API_KEY from environment")
+
+        # Media batch mode
+        env_mode = os.environ.get("WHATSAPP_MEDIA_BATCH_MODE", "").strip().lower()
+        if env_mode in ("async", "disabled", "lambda"):
+            self.media_batch_mode = env_mode
+            logger.debug(
+                f"Using WHATSAPP_MEDIA_BATCH_MODE from environment: {env_mode}"
+            )
 
         # Application Base URL
         if not self.base_url or not self.base_url.strip():
@@ -391,6 +404,9 @@ class WhatsAppAction(Action):
                 f"{self.base_url}/api/whatsapp/interact/webhook/{agent_id}"
             )
 
+            prime_ctx = GraphContext(database=get_prime_database())
+            api_key_service = APIKeyService(context=prime_ctx)
+
             if (
                 not regenerate
                 and self.webhook_url
@@ -400,10 +416,8 @@ class WhatsAppAction(Action):
                 # When allowed_ip is specified, verify existing key's IPs match
                 if allowed_ip is not None and self.webhook_api_key_id:
                     try:
-                        prime_db = get_prime_database()
-                        context = GraphContext(database=prime_db)
-                        existing_key = await context.get(
-                            APIKey, self.webhook_api_key_id
+                        existing_key = await api_key_service.get_key(
+                            self.webhook_api_key_id
                         )
                         if existing_key and existing_key.is_active:
                             requested_ips = [allowed_ip] if allowed_ip else []
@@ -419,17 +433,12 @@ class WhatsAppAction(Action):
                     return self.webhook_url
 
             system_user_id = await get_or_create_system_user()
-            prime_db = get_prime_database()
-            context = GraphContext(database=prime_db)
-            api_key_service = APIKeyService(context=context)
 
             if regenerate and self.webhook_api_key_id:
                 try:
-                    old_key = await context.get(APIKey, self.webhook_api_key_id)
-                    if old_key:
-                        old_key.is_active = False
-                        old_key._graph_context = context
-                        await context.save(old_key)
+                    await api_key_service.revoke_key(
+                        self.webhook_api_key_id, system_user_id
+                    )
                 except Exception:
                     pass
 
@@ -445,8 +454,6 @@ class WhatsAppAction(Action):
 
             self.webhook_api_key_id = api_key.id
             self.webhook_url = f"{expected_url_base}?api_key={plaintext_key}"
-            if not hasattr(self, "_graph_context") or self._graph_context is None:
-                self._graph_context = context
             await self.save()
             return self.webhook_url
 

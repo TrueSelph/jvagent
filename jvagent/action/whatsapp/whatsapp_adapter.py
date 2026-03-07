@@ -59,44 +59,6 @@ class WhatsAppAdapter(ChannelAdapter):
             self._user_locks[user_id] = asyncio.Lock()
         return self._user_locks[user_id]
 
-    async def _get_channel_metadata_from_interaction(
-        self, interaction_id: str, key: str, default: Any = None
-    ) -> Any:
-        """Retrieve channel metadata from interaction events.
-
-        Args:
-            interaction_id: Interaction ID to look up
-            key: Metadata key to retrieve (e.g., "isGroup")
-            default: Default value if not found
-
-        Returns:
-            Metadata value or default
-        """
-        try:
-            from jvspatial.core.context import GraphContext
-            from jvspatial.db import get_prime_database
-
-            from jvagent.memory.interaction import Interaction
-
-            prime_db = get_prime_database()
-            context = GraphContext(database=prime_db)
-            interaction = await context.get(Interaction, interaction_id)
-
-            if interaction and interaction.events:
-                # Look for channel metadata event
-                for event in interaction.events:
-                    if isinstance(event, dict) and event.get("content", "").startswith(
-                        "channel_metadata:whatsapp"
-                    ):
-                        channel_data = event.get("data", {})
-                        return channel_data.get(key, default)
-        except Exception as e:
-            logger.debug(
-                f"WhatsAppAdapter: Could not retrieve channel metadata from interaction {interaction_id}: {e}"
-            )
-
-        return default
-
     async def send(self, message: ResponseMessage) -> bool:
         """Send adhoc message to WhatsApp.
 
@@ -150,19 +112,11 @@ class WhatsAppAdapter(ChannelAdapter):
 
         api = self.action.api()
 
-        # Extract is_group from message metadata or interaction
-        is_group = message.metadata.get("isGroup", False)
-
-        # If not in metadata, try to get it from the interaction
-        if message.interaction_id and (
-            not is_group or message.metadata.get("isGroup") is None
-        ):
-            is_group = await self._get_channel_metadata_from_interaction(
-                message.interaction_id, "isGroup", None
-            )
-            # fail to get group from metadata. check user_id length and set group
-            if is_group is None and len(message.user_id) > 10:
-                is_group = True
+        # Extract is_group from message.metadata.whatsapp_payload
+        whatsapp_payload = message.metadata.get("whatsapp_payload", {})
+        is_group = whatsapp_payload.get("isGroup", False)
+        if is_group is None and len(message.user_id) > 10:
+            is_group = True
 
         # Handle media messages
         if media_url and media_type:

@@ -212,15 +212,18 @@ class InteractAction(Action, ABC):
             return None
 
         use_stream = stream if stream is not None else getattr(visitor, "stream", False)
+        pub_channel = channel or visitor.channel
+        visitor_data = getattr(visitor, "data", None) or {}
+        pub_metadata = {**(metadata or {}), **visitor_data}
         return await visitor.response_bus.publish(
             session_id=visitor.session_id,
             content=content,
-            channel=channel or visitor.channel,
+            channel=pub_channel,
             stream=use_stream,
             interaction_id=interaction.id,
             interaction=interaction,
             user_id=interaction.user_id if hasattr(interaction, "user_id") else None,
-            metadata=metadata,
+            metadata=pub_metadata,
             streaming_complete=streaming_complete,
             transient=transient,
         )

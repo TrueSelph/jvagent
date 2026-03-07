@@ -379,9 +379,8 @@ class PersonaAction(Action):
                 f"{self.get_class_name()}: Visitor channel not set or is 'default', "
                 f"using channel='{channel}'. This may prevent channel adapters from receiving messages."
             )
-        metadata = None
-        if visitor and getattr(visitor, "data", {}).get("respond_with_voice"):
-            metadata = {"respond_with_voice": True}
+        visitor_data = getattr(visitor, "data", None) or {} if visitor else {}
+        metadata = dict(visitor_data)
         await response_bus.publish(
             session_id=visitor.session_id,
             content=response,

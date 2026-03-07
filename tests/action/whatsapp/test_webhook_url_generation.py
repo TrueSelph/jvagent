@@ -230,6 +230,11 @@ async def test_get_webhook_url_regenerates_on_request(whatsapp_action, mock_agen
         mock_service = MagicMock()
         mock_service_class.return_value = mock_service
 
+        async def revoke_side_effect(key_id, user_id):
+            mock_old_key.is_active = False
+            await mock_context.save(mock_old_key)
+
+        mock_service.revoke_key = AsyncMock(side_effect=revoke_side_effect)
         new_plaintext_key = "test_mock_api_key_new_12345"
         mock_service.generate_key = AsyncMock(
             return_value=(new_plaintext_key, mock_new_key)

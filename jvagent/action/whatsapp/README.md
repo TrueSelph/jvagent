@@ -319,6 +319,30 @@ Media URLs are built as `whatsapp_action.base_url + media_url`. The LLM (e.g. Op
 
 When enabled, WhatsAppAction contributes capabilities to PersonaAction via `get_capabilities()`: "Join WhatsApp groups and send messages to groups", "Send and receive voice notes over WhatsApp", "Send and receive images, documents, and other media over WhatsApp". These are included automatically in the persona prompt; no manual sync in agent.yaml is needed. See [PersonaAction README](../persona/README.md#capabilities-base-config-and-action-contributed).
 
+### Media Batch Mode
+
+Media batching controls how multiple images/files sent at once are processed. Configure via `WHATSAPP_MEDIA_BATCH_MODE` env var or `config.whatsapp.media_batch_mode` in app.yaml.
+
+| Mode | Use case | Behavior |
+|------|----------|----------|
+| **async** | Long-running server (default) | In-memory batching with background timer. All media waits `media_batch_window` to coalesce; then one interact call with all items. Single image also waits the window. |
+| **disabled** | Lambda without MongoDB, or no batching desired | Each media processed inline immediately. No batching. |
+| **lambda** | Lambda + MongoDB + batch processor | Persistent batching: store in MongoDB, invoke batch Lambda async. Single media also waits `media_batch_window` (no inline shortcut) so rapid multi-media coalesce. Requires `JVSPATIAL_DB_TYPE=mongodb` and `JVAGENT_MEDIA_BATCH_PROCESSOR_FUNCTION`. |
+
+**Configuration** (priority: env > app.yaml > action attribute > default):
+
+```bash
+# Environment variable
+WHATSAPP_MEDIA_BATCH_MODE=async
+```
+
+```yaml
+# app.yaml
+config:
+  whatsapp:
+    media_batch_mode: async  # async | disabled | lambda
+```
+
 ## Migration Notes
 
 ### Breaking Changes

@@ -65,8 +65,46 @@ from jvagent.core.profiling import profile_enabled, profiled_request
 # Import INTERACTION level to ensure it's registered and available for logging
 from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
 
+_TRUNCATE_LEN = 200
 
-def _build_interaction_log_data(interaction, app_id, agent_id=None, active_tasks=None):
+
+def _sanitize_visitor_data_for_log(visitor_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Sanitize visitor.data for safe logging (no PII bloat, no media/base64).
+
+    Replaces media, quoted_message; truncates body/caption; summarizes whatsapp_media.
+    """
+    if not visitor_data:
+        return {}
+    out: Dict[str, Any] = {}
+    for key, val in visitor_data.items():
+        if key == "whatsapp_payload" and isinstance(val, dict):
+            payload = {}
+            for pk, pv in val.items():
+                if pk == "media":
+                    payload[pk] = "<media>"
+                elif pk == "quoted_message":
+                    payload[pk] = "<quoted_message>"
+                elif pk in ("body", "caption") and isinstance(pv, str):
+                    payload[pk] = (
+                        pv[:_TRUNCATE_LEN] + "..." if len(pv) > _TRUNCATE_LEN else pv
+                    )
+                else:
+                    payload[pk] = pv
+            out[key] = payload
+        elif key == "whatsapp_media" and isinstance(val, list):
+            out[key] = [{"type": "media", "count": len(val)}]
+        else:
+            out[key] = val
+    return out
+
+
+def _build_interaction_log_data(
+    interaction,
+    app_id,
+    agent_id=None,
+    active_tasks=None,
+    visitor_data: Optional[Dict[str, Any]] = None,
+):
     """Build comprehensive log data dictionary for interaction logging.
 
     This function extracts all available interaction data and builds a complete
@@ -77,6 +115,7 @@ def _build_interaction_log_data(interaction, app_id, agent_id=None, active_tasks
         app_id: Application ID
         agent_id: Optional agent ID
         active_tasks: Optional list of active tasks from conversation (conversation-level)
+        visitor_data: Optional visitor.data dict (walker.data) for inclusion in logs
 
     Returns:
         Tuple of (log_data_dict, message_string) for logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
@@ -200,6 +239,10 @@ def _build_interaction_log_data(interaction, app_id, agent_id=None, active_tasks
     # Add duration if available
     if duration is not None:
         log_data["duration_seconds"] = duration
+
+    # Include sanitized visitor.data for inspection and diagnosis
+    if visitor_data:
+        log_data["interact_data"] = _sanitize_visitor_data_for_log(visitor_data)
 
     return log_data, message
 
@@ -517,7 +560,11 @@ async def interact_endpoint(
                                 status="active"
                             )
                         log_data, message = _build_interaction_log_data(
-                            interaction, app.id, agent_id, active_tasks=active_tasks
+                            interaction,
+                            app.id,
+                            agent_id,
+                            active_tasks=active_tasks,
+                            visitor_data=walker.data,
                         )
                         # Use logger.log() directly to ensure extra parameter is passed correctly
                         logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
@@ -703,6 +750,7 @@ async def _stream_interaction(
                         app.id,
                         agent_id_for_logging,
                         active_tasks=active_tasks,
+                        visitor_data=walker.data,
                     )
                     # Use logger.log() directly to ensure extra parameter is passed correctly
                     logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
@@ -770,6 +818,7 @@ async def _stream_interaction(
                         app.id,
                         agent_id_from_walker,
                         active_tasks=active_tasks,
+                        visitor_data=walker.data,
                     )
                     # Use logger.log() directly to ensure extra parameter is passed correctly
                     logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
