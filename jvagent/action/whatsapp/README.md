@@ -327,7 +327,7 @@ Media batching controls how multiple images/files sent at once are processed. Co
 |------|----------|----------|
 | **async** | Long-running server (default) | In-memory batching with background timer. All media waits `media_batch_window` to coalesce; then one interact call with all items. Single image also waits the window. |
 | **disabled** | Lambda without MongoDB, or no batching desired | Each media processed inline immediately. No batching. |
-| **lambda** | Lambda + MongoDB + batch processor | Persistent batching: store in MongoDB, invoke batch Lambda async. Single media also waits `media_batch_window` (no inline shortcut) so rapid multi-media coalesce. Requires `JVSPATIAL_DB_TYPE=mongodb` and `JVAGENT_MEDIA_BATCH_PROCESSOR_FUNCTION`. |
+| **lambda** | Lambda + MongoDB + batch processor | Persistent batching: store in MongoDB, invoke batch Lambda async. Single media also waits `media_batch_window` (no inline shortcut) so rapid multi-media coalesce. Requires `JVSPATIAL_DB_TYPE=mongodb` and `WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION`. |
 
 **Configuration** (priority: env > app.yaml > action attribute > default):
 
