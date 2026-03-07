@@ -101,10 +101,10 @@ def _invoke_lambda_async(
     process_at: Optional[float] = None,
 ) -> None:
     """Asynchronously invoke the batch processing Lambda (fire-and-forget)."""
-    func_name = os.environ.get("JVAGENT_MEDIA_BATCH_PROCESSOR_FUNCTION", "").strip()
+    func_name = os.environ.get("WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION", "").strip()
     if not func_name:
         logger.warning(
-            "JVAGENT_MEDIA_BATCH_PROCESSOR_FUNCTION not set, skipping async invoke"
+            "WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION not set, skipping async invoke"
         )
         return
     try:
