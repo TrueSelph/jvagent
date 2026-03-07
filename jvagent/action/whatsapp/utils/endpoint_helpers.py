@@ -20,7 +20,10 @@ from jvagent.memory.conversation import Conversation
 
 from ..whatsapp_action import WhatsAppAction
 from .conversation_lock_manager import ConversationLockManager
-from .media_batch_manager import MediaBatchManager
+from .media_batch_manager import (
+    MediaBatchManager,
+    _get_media_batch_mode,
+)
 from .media_manager import MediaManager
 
 logger = logging.getLogger(__name__)
@@ -179,41 +182,6 @@ def _build_utterance_with_quoted_context(
     return f'User replied to: "{quoted_text}" with "{user_utterance}"'
 
 
-async def _store_whatsapp_metadata_in_interaction(
-    walker: InteractWalker, data_dict: Dict[str, Any]
-) -> None:
-    """Store WhatsApp-specific metadata in interaction for adapter retrieval.
-
-    Args:
-        walker: InteractWalker instance with created interaction
-        data_dict: WhatsApp message data dictionary
-    """
-    if not walker.interaction or not data_dict:
-        return
-
-    try:
-        # Extract WhatsApp-specific fields and store as channel metadata event
-        whatsapp_metadata = {}
-        if "isGroup" in data_dict:
-            whatsapp_metadata["isGroup"] = data_dict["isGroup"]
-        if "sender" in data_dict:
-            whatsapp_metadata["sender"] = data_dict["sender"]
-        if "message_id" in data_dict:
-            whatsapp_metadata["message_id"] = data_dict["message_id"]
-
-        if whatsapp_metadata:
-            channel_metadata_event = {
-                "action_name": "WhatsAppAction",
-                "content": "channel_metadata:whatsapp",
-                "data": whatsapp_metadata,
-            }
-            # walker.interaction.events.append(channel_metadata_event)
-            # Save interaction to persist the metadata
-            await walker.interaction.save()
-    except Exception as e:
-        logger.debug(f"Failed to store WhatsApp metadata in interaction: {e}")
-
-
 async def get_conversation_with_lock(sender: str) -> Optional[Any]:
     """Get conversation for user with proper locking to prevent duplicates.
 
@@ -328,7 +296,11 @@ async def finalize_whatsapp_interaction(
                 if walker.conversation:
                     active_tasks = walker.conversation.get_active_tasks(status="active")
                 log_data, message = _build_interaction_log_data(
-                    interaction, app.id, agent_id, active_tasks=active_tasks
+                    interaction,
+                    app.id,
+                    agent_id,
+                    active_tasks=active_tasks,
+                    visitor_data=walker.data,
                 )
                 logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
         except Exception as log_err:
@@ -401,6 +373,8 @@ async def _handle_media_batching(
     """Handle media batching logic with thread-safe batch manager.
 
     Uses the global _batch_manager for concurrent-safe operations.
+    When in Lambda without persistent batching support, processes each media
+    inline (no background tasks).
 
     Args:
         sender: User ID / phone number
@@ -414,6 +388,17 @@ async def _handle_media_batching(
         Dict with status and response
     """
     try:
+        mode = _get_media_batch_mode(whatsapp_action)
+        if mode == "disabled":
+            await _batch_manager.process_single_media_inline(
+                sender=sender,
+                media_url=media_url,
+                utterance=utterance,
+                data_dict=data_dict,
+                agent_id=agent_id,
+            )
+            return {"status": "received", "response": "media batched"}
+
         return await _batch_manager.get_or_create_batch(
             sender=sender,
             media_url=media_url,
@@ -485,8 +470,10 @@ async def _handle_media_message(
                     media_url = whatsapp_action.base_url + media_url
                     logger.debug(f"Saved media for user {sender}: {media_url}")
 
-                    # Convert MessagePayload to dict for batching
-                    data_dict = _convert_message_payload_to_dict(data)
+                    # visitor.data pattern: whatsapp_payload + top-level keys
+                    data_dict = {
+                        "whatsapp_payload": _convert_message_payload_to_dict(data)
+                    }
 
                     # Handle batching for media messages
                     return await _handle_media_batching(
@@ -663,21 +650,22 @@ async def _process_interaction_async(
 
     is_group = getattr(data, "isGroup", False)
     try:
+        data_dict = {}
         # Convert MessagePayload to dict for InteractWalker
-        data_dict = _convert_message_payload_to_dict(data)
-        is_group = is_group or data_dict.get("isGroup", False)
+        data_dict["whatsapp_payload"] = _convert_message_payload_to_dict(data)
+        is_group = is_group or data_dict["whatsapp_payload"].get("isGroup", False)
 
         # When user sends PTT and TTS is configured, respond with voice
         whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
         if (
-            data_dict.get("message_type") == "ptt"
+            data_dict["whatsapp_payload"].get("message_type") == "ptt"
             and whatsapp_action
             and whatsapp_action.tts_action
         ):
             data_dict["respond_with_voice"] = True
 
         # Extract image from quoted message when user replies to an image
-        quoted = data_dict.get("quoted_message") or {}
+        quoted = data_dict["whatsapp_payload"].get("quoted_message") or {}
         quoted_image = _extract_quoted_image(quoted)
         if quoted_image:
             existing = data_dict.get("image_urls") or []
@@ -696,9 +684,6 @@ async def _process_interaction_async(
         except Exception as e:
             logger.error(f"Error spawning walker for user {sender}: {e}")
             return
-
-        # Store WhatsApp-specific metadata in interaction for adapter retrieval
-        await _store_whatsapp_metadata_in_interaction(walker, data_dict)
 
         # Finalize interaction using helper function
         await finalize_whatsapp_interaction(walker, agent_id, sender)

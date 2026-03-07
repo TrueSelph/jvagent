@@ -574,12 +574,11 @@ async def import_documents_endpoint(
         existing_collection_names = []
         for root in parsed.get("roots", []):
             existing_collection_names.append(root.get("collection_name"))
-            
+
         parsed_str = json.dumps(parsed)
         for collection_name in existing_collection_names:
             parsed_str = parsed_str.replace(collection_name, agent_id)
         parsed = json.loads(parsed_str)
-        
 
         await import_documents(parsed, purge=purge, collection_name=agent_id)
 

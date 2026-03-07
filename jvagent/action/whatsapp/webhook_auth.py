@@ -10,8 +10,6 @@ from typing import Optional
 
 from jvspatial.api.auth.models import UserCreateAdmin
 from jvspatial.api.auth.service import AuthenticationService
-from jvspatial.core.context import GraphContext
-from jvspatial.db import get_prime_database
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +29,7 @@ async def get_or_create_system_user() -> str:
     Raises:
         Exception: If user creation fails
     """
-    prime_db = get_prime_database()
-    context = GraphContext(database=prime_db)
-    auth_service = AuthenticationService(context=context)
+    auth_service = AuthenticationService()
 
     existing_user = await auth_service._find_user_by_email(SYSTEM_USER_EMAIL)
     if existing_user:

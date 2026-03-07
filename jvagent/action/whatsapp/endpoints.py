@@ -134,9 +134,9 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         if not direct_message:
             return {"status": "ignored", "response": "Not directed message"}
 
-        # Flush pending media batch if stale (Lambda safety net)
+        # Flush pending media batch if stale (lambda mode safety net)
         await _batch_manager.flush_pending_batch_if_stale(
-            sender, whatsapp_action.media_batch_window
+            sender, whatsapp_action.media_batch_window, whatsapp_action
         )
 
         # Check if this is a media message
