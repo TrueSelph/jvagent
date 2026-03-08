@@ -17,6 +17,7 @@ from jvspatial.api.config_groups import (
     AuthConfig,
     CORSConfig,
     DatabaseConfig,
+    FileStorageConfig,
     RateLimitConfig,
 )
 from jvspatial.core import Root
@@ -590,6 +591,54 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         cors_origins=cors_origins,
     )
 
+    # File storage configuration (env > app.yaml > default)
+    file_storage_enabled = _get_config_value(
+        app_config, "file_storage.enabled", "JVSPATIAL_FILE_STORAGE_ENABLED", False
+    )
+    file_storage_provider = (
+        _get_config_value(
+            app_config, "file_storage.provider", "JVSPATIAL_FILE_INTERFACE", None
+        )
+        or _get_config_value(
+            app_config,
+            "file_storage.provider",
+            "JVSPATIAL_FILE_STORAGE_PROVIDER",
+            "local",
+        )
+        or "local"
+    )
+    file_storage_root = (
+        _get_config_value(
+            app_config, "file_storage.root_dir", "JVSPATIAL_FILES_ROOT_PATH", None
+        )
+        or _get_config_value(
+            app_config,
+            "file_storage.root_dir",
+            "JVSPATIAL_FILE_STORAGE_ROOT",
+            ".files",
+        )
+        or ".files"
+    )
+    file_storage_base_url = _get_config_value(
+        app_config,
+        "file_storage.base_url",
+        "JVSPATIAL_FILE_STORAGE_BASE_URL",
+        "http://localhost:8000",
+    )
+    file_storage_max_size = _get_config_value(
+        app_config,
+        "file_storage.max_size",
+        "JVSPATIAL_FILE_STORAGE_MAX_SIZE",
+        100 * 1024 * 1024,
+    )
+    file_storage_config = FileStorageConfig(
+        file_storage_enabled=file_storage_enabled,
+        file_storage_provider=file_storage_provider,
+        file_storage_root=file_storage_root,
+        file_storage_base_url=file_storage_base_url,
+        file_storage_max_size=file_storage_max_size,
+    )
+
     # Create server with grouped configuration
     server_kwargs = {
         "title": title,
@@ -600,6 +649,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         "database": database_config,
         "auth": auth_config,
         "cors": cors_config,
+        "file_storage": file_storage_config,
         "graph_endpoint_enabled": graph_endpoint_enabled,
         "log_level": log_level,
         "debug": debug_mode,

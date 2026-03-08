@@ -61,8 +61,15 @@ class AppDescriptor:
 
         self.name = context.get("name", "jvagent Application")
         self.description = context.get("description", "")
-        self.file_storage_provider = context.get("file_storage_provider", "local")
-        self.file_storage_root_dir = context.get("file_storage_root_dir", ".files")
+        # Env vars override context (env > app.yaml > default)
+        self.file_storage_provider = (
+            os.getenv("JVSPATIAL_FILE_INTERFACE", "").strip()
+            or context.get("file_storage_provider", "local")
+        ) or "local"
+        self.file_storage_root_dir = (
+            os.getenv("JVSPATIAL_FILES_ROOT_PATH", "").strip()
+            or context.get("file_storage_root_dir", ".files")
+        ) or ".files"
         self.file_storage_enabled = context.get("file_storage_enabled", True)
         self.logging_enabled = context.get("logging_enabled", True)
         self.log_retention_days = context.get("log_retention_days", 60)

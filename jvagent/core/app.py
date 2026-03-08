@@ -249,13 +249,18 @@ class App(Node):
             self._file_interface = server._file_interface
             return self._file_interface
 
-        # Create storage based on node configuration
-        if self.file_storage_provider == "local":
-            self._file_interface = create_storage(
-                provider="local", root_dir=self.file_storage_root_dir
-            )
-        elif self.file_storage_provider == "s3":
-            # Get S3 configuration from environment or node attributes
+        # Resolve provider and root_dir: env > node > default
+        env_provider = os.getenv("JVSPATIAL_FILE_INTERFACE", "").strip()
+        provider = (
+            env_provider if env_provider else (self.file_storage_provider or "local")
+        )
+        env_root = os.getenv("JVSPATIAL_FILES_ROOT_PATH", "").strip()
+        root_dir = env_root if env_root else (self.file_storage_root_dir or ".files")
+
+        # Create storage based on resolved configuration
+        if provider == "local":
+            self._file_interface = create_storage(provider="local", root_dir=root_dir)
+        elif provider == "s3":
             self._file_interface = create_storage(
                 provider="s3",
                 bucket_name=os.getenv("JVSPATIAL_S3_BUCKET_NAME", ""),
@@ -265,9 +270,6 @@ class App(Node):
                 endpoint_url=os.getenv("JVSPATIAL_S3_ENDPOINT_URL"),
             )
         else:
-            # Use environment-based default
-            provider = os.getenv("JVSPATIAL_FILE_INTERFACE", "local")
-            root_dir = os.getenv("JVSPATIAL_FILES_ROOT_PATH", ".files")
             self._file_interface = create_storage(provider=provider, root_dir=root_dir)
 
         return self._file_interface
