@@ -289,6 +289,10 @@ async def whatsapp_batch_invoke(request: Request) -> Dict[str, Any]:
         logger.warning("Batch invoke received invalid JSON")
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
+    logger.debug(
+        "Batch invoke received for sender %s",
+        event.get("sender") if isinstance(event, dict) else None,
+    )
     sender = event.get("sender") if isinstance(event, dict) else None
     if not sender:
         logger.warning("Batch invoke received event without sender: %s", event)
