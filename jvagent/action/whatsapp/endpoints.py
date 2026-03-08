@@ -1,5 +1,6 @@
 """WhatsApp Action Endpoints."""
 
+import json
 import logging
 import os
 from typing import Any, Dict, List, Optional
@@ -23,6 +24,7 @@ from .utils.endpoint_helpers import (
     is_directed_message,
     normalize_result,
 )
+from .utils.media_batch_manager import process_persistent_batch
 from .utils.task_helpers import create_background_task
 
 logger = logging.getLogger(__name__)
@@ -213,6 +215,102 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Unexpected error in WhatsApp webhook: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+def _is_batch_payload(event: Any) -> bool:
+    """True if event has batch payload shape (sender + media_batch_window)."""
+    return (
+        isinstance(event, dict)
+        and isinstance(event.get("sender"), str)
+        and "media_batch_window" in event
+    )
+
+
+@endpoint(
+    "/",
+    methods=["POST"],
+    auth=False,
+    tags=["WhatsApp"],
+    response=success_response(
+        data={
+            "processed": ResponseField(field_type=bool, example=True),
+        }
+    ),
+)
+async def whatsapp_batch_invoke_root(request: Request) -> Dict[str, Any]:
+    """Fallback for LWA direct invoke when path is /. Checks body for batch payload."""
+    try:
+        body = await request.body()
+        event = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not _is_batch_payload(event):
+        raise HTTPException(status_code=404, detail="Not found")
+    sender = event.get("sender")
+    media_batch_window = float(event.get("media_batch_window", 1.5))
+    process_at = event.get("process_at")
+    if process_at is not None:
+        process_at = float(process_at)
+    try:
+        processed = await process_persistent_batch(
+            sender, media_batch_window, process_at=process_at
+        )
+        if processed:
+            logger.info("Processed media batch for sender %s (root fallback)", sender)
+        return {"processed": processed}
+    except Exception as e:
+        logger.error(
+            "Error processing batch for sender %s: %s", sender, e, exc_info=True
+        )
+        raise HTTPException(status_code=500, detail="Batch processing failed")
+
+
+@endpoint(
+    "/_internal/whatsapp/batch",
+    methods=["POST"],
+    auth=False,
+    tags=["WhatsApp"],
+    response=success_response(
+        data={
+            "processed": ResponseField(field_type=bool, example=True),
+        }
+    ),
+)
+async def whatsapp_batch_invoke(request: Request) -> Dict[str, Any]:
+    """Handle direct Lambda invoke for media batch processing (self-invoke path).
+
+    LWA converts direct invokes to HTTP; this endpoint processes batch payloads
+    when WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION points to the main Lambda.
+    """
+    try:
+        body = await request.body()
+        event = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        logger.warning("Batch invoke received invalid JSON")
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    sender = event.get("sender") if isinstance(event, dict) else None
+    if not sender:
+        logger.warning("Batch invoke received event without sender: %s", event)
+        raise HTTPException(status_code=400, detail="Missing sender")
+
+    media_batch_window = float(event.get("media_batch_window", 1.5))
+    process_at = event.get("process_at")
+    if process_at is not None:
+        process_at = float(process_at)
+
+    try:
+        processed = await process_persistent_batch(
+            sender, media_batch_window, process_at=process_at
+        )
+        if processed:
+            logger.info("Processed media batch for sender %s (self-invoke)", sender)
+        return {"processed": processed}
+    except Exception as e:
+        logger.error(
+            "Error processing batch for sender %s: %s", sender, e, exc_info=True
+        )
+        raise HTTPException(status_code=500, detail="Batch processing failed")
 
 
 @endpoint(
