@@ -327,7 +327,27 @@ Media batching controls how multiple images/files sent at once are processed. Co
 |------|----------|----------|
 | **async** | Long-running server (default) | In-memory batching with background timer. All media waits `media_batch_window` to coalesce; then one interact call with all items. Single image also waits the window. |
 | **disabled** | Lambda without MongoDB, or no batching desired | Each media processed inline immediately. No batching. |
-| **lambda** | Lambda + MongoDB + batch processor | Persistent batching: store in MongoDB, invoke batch Lambda async. Single media also waits `media_batch_window` (no inline shortcut) so rapid multi-media coalesce. Requires `JVSPATIAL_DB_TYPE=mongodb` and `WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION`. |
+| **lambda** | Lambda + MongoDB + batch processor | Persistent batching: store in MongoDB, invoke batch processor async. Single media also waits `media_batch_window` (no inline shortcut) so rapid multi-media coalesce. Requires `JVSPATIAL_DB_TYPE=mongodb` and `WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION`. |
+
+#### Lambda mode: self-invoke (recommended)
+
+The main Lambda can handle both HTTP (webhook) and batch events without a second function. The webhook invokes itself asynchronously; AWS Lambda Web Adapter (LWA) routes the direct-invoke payload to an internal HTTP endpoint.
+
+**deploy.yaml configuration**:
+
+```yaml
+lambda:
+  environment:
+    WHATSAPP_MEDIA_BATCH_MODE: "lambda"
+    WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION: "{{app.name}}"  # Self-invoke (e.g. jvagent-iris)
+    AWS_LWA_PASS_THROUGH_PATH: "/api/_internal/whatsapp/batch"
+```
+
+- `WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION`: Set to the main Lambda name so it invokes itself.
+- `AWS_LWA_PASS_THROUGH_PATH`: Routes direct-invoke payloads to the batch handler. Without this, LWA defaults to `/events` and the batch route is never hit.
+- **IAM**: The Lambda role needs `lambda:InvokeFunction` on its own ARN (self-invoke).
+
+**Flow**: Webhook adds media to MongoDB → `_invoke_lambda_async` invokes the same Lambda with `InvocationType="Event"` → LWA POSTs the payload to `/api/_internal/whatsapp/batch` → `whatsapp_batch_invoke` runs `process_persistent_batch`.
 
 **Configuration** (priority: env > app.yaml > action attribute > default):
 
@@ -393,6 +413,25 @@ config:
 **Solutions**:
 1. **Set APP_BASE_URL**: The adapter needs an absolute URL to fetch media. Ensure `APP_BASE_URL` is set (e.g. `https://your-app.com`) and is publicly reachable.
 2. **Configure base_url on action**: In agent.yaml, set `base_url: "${APP_BASE_URL}"` for the WhatsApp action.
+
+#### Problem: Lambda batch mode - media not processed until follow-up message
+
+**Symptoms**:
+- No errors in logs, but batched media is not processed automatically
+- Sending a follow-up text message triggers processing (via `flush_pending_batch_if_stale`)
+
+**Cause**: LWA sends direct-invoke payloads to `/events` by default. The batch handler is at `/api/_internal/whatsapp/batch`, so the request never reaches it.
+
+**Solution**: Set `AWS_LWA_PASS_THROUGH_PATH: "/api/_internal/whatsapp/batch"` in the Lambda environment (deploy.yaml). Redeploy so the env var is applied.
+
+#### Problem: ResourceNotFoundException for batch processor function
+
+**Symptoms**:
+- `Function not found: arn:aws:lambda:...:function:jvagent-iris-batch`
+
+**Cause**: `WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION` points to a non-existent separate batch Lambda.
+
+**Solution**: Use self-invoke: set `WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION: "{{app.name}}"` (the main Lambda name). Ensure `AWS_LWA_PASS_THROUGH_PATH` is configured as above.
 
 ### Health Check
 

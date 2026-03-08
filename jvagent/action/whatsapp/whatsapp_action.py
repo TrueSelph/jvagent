@@ -99,8 +99,8 @@ class WhatsAppAction(Action):
     )
 
     ignore_list: List[str] = attribute(
-        default_factory=list,
-        description="Keywords to block: messages from senders or to receivers containing any keyword are ignored",
+        default_factory=lambda: ["status@broadcast"],
+        description="Keywords to block: messages from senders or to receivers containing any keyword are ignored. Default includes status@broadcast to ignore WhatsApp status updates.",
     )
 
     stt_action: Optional[str] = attribute(

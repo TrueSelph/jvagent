@@ -24,7 +24,9 @@ ERROR RECOVERY:
 BATCH MODES (WHATSAPP_MEDIA_BATCH_MODE or media_batch_mode attribute):
 - async: In-memory batching with background timer tasks (long-running servers).
 - disabled: No batching; each media processed inline immediately.
-- lambda: Persistent batching via MongoDB + Lambda async invoke.
+- lambda: Persistent batching via MongoDB + Lambda async invoke. Supports self-invoke:
+  the main Lambda invokes itself; LWA routes direct-invoke payloads to
+  POST /api/_internal/whatsapp/batch via AWS_LWA_PASS_THROUGH_PATH.
 """
 
 import asyncio
@@ -123,7 +125,7 @@ def _invoke_lambda_async(
             InvocationType="Event",
             Payload=payload,
         )
-        logger.debug(f"Invoked batch processor Lambda for sender {sender}")
+        logger.info(f"Invoked batch processor Lambda for sender {sender}")
     except Exception as e:
         logger.error(f"Failed to invoke batch processor Lambda: {e}", exc_info=True)
 
