@@ -118,12 +118,9 @@ config:
     enabled: true
     origins: http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:5173,http://localhost:5173
 
-  # Development settings
-  development:
-    debug: false
-    # environment: production → shorter, secure interact payloads (id, utterance, response only).
-    # environment: development → full payload with actions, directives, observability, report.
-    environment: development # development or production
+  # Runtime environment (development or production)
+  # Override via JVAGENT_ENVIRONMENT env var
+  environment: development # development or production
 
   # API configuration
   api:
@@ -155,11 +152,6 @@ config:
 
     # Action cache TTL in seconds (env: JVAGENT_ACTION_CACHE_TTL)
     action_cache_ttl: 60
-
-    # DSPy response caching (env: JVAGENT_ENABLE_DSPY_CACHE)
-    # Disabled by default as it may return stale responses for dynamic queries
-    # Enable for development/testing or when deterministic responses are desired
-    enable_dspy_cache: false
 
     # Deferred saves (env: JVSPATIAL_ENABLE_DEFERRED_SAVES)
     # Batch multiple save() calls into a single database write for entities

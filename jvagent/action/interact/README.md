@@ -45,7 +45,7 @@ class MyTopLevelAction(InteractAction):
 The `/agents/{agent_id}/interact` endpoint response format varies based on environment mode. Use **production** mode for shorter, more secure payloads (minimal fields only). Configuration:
 
 - **`JVAGENT_ENVIRONMENT`** env var (highest priority)
-- **`config.development.environment`** in app.yaml (fallback)
+- **`config.environment`** in app.yaml (fallback)
 
 ### Production Mode (shorter, secure payloads)
 
@@ -151,11 +151,10 @@ JVAGENT_ENVIRONMENT=development
 JVAGENT_ENVIRONMENT=production
 ```
 
-**Option 2: app.yaml** (`config.development.environment`)
+**Option 2: app.yaml** (`config.environment`)
 ```yaml
 config:
-  development:
-    environment: production  # Shorter, secure interact payloads
+  environment: production  # Shorter, secure interact payloads
 ```
 
 The environment variable takes precedence over app config. Both are case-insensitive. Defaults to `development` if neither is set.
