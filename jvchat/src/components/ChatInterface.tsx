@@ -15,6 +15,7 @@ import { WelcomeScreen } from "./WelcomeScreen";
 import { ConversationList } from "./ConversationList";
 import { DebugInteractions } from "./DebugInteractions";
 import { PageIndexDocumentsModal } from "./PageIndexDocumentsModal";
+import { ActionsModal } from "./ActionsModal";
 import {
   getMessages,
   deleteMessages,
@@ -53,6 +54,7 @@ export function ChatInterface() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDebugModalOpen, setIsDebugModalOpen] = useState(false);
   const [isPageIndexModalOpen, setIsPageIndexModalOpen] = useState(false);
+  const [isActionsModalOpen, setIsActionsModalOpen] = useState(false);
   const [hasPageIndexAction, setHasPageIndexAction] = useState(false);
 
   const handleMobileMenuClose = useCallback(() => {
@@ -73,6 +75,14 @@ export function ChatInterface() {
 
   const handleClosePageIndexModal = useCallback(() => {
     setIsPageIndexModalOpen(false);
+  }, []);
+
+  const handleToggleActionsModal = useCallback(() => {
+    setIsActionsModalOpen((prev) => !prev);
+  }, []);
+
+  const handleCloseActionsModal = useCallback(() => {
+    setIsActionsModalOpen(false);
   }, []);
 
   useEffect(() => {
@@ -463,6 +473,28 @@ export function ChatInterface() {
                 )}
               </div>
 
+              {/* Agent actions button */}
+              <button
+                onClick={handleToggleActionsModal}
+                className="flex-shrink-0 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                aria-label="Actions"
+                title="Agent Actions"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                  />
+                </svg>
+              </button>
+
               {/* Debug interactions button */}
               <button
                 onClick={handleToggleDebugModal}
@@ -553,6 +585,15 @@ export function ChatInterface() {
           <PageIndexDocumentsModal
             agentId={agentId}
             onClose={handleClosePageIndexModal}
+            isEmbedded={true}
+          />
+        )}
+
+        {/* Agent Actions Modal Dialog */}
+        {isActionsModalOpen && agentId && (
+          <ActionsModal
+            agentId={agentId}
+            onClose={handleCloseActionsModal}
             isEmbedded={true}
           />
         )}

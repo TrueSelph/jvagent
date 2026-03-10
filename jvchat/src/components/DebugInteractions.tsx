@@ -200,7 +200,7 @@ export function DebugInteractions({
         category: "INTERACTION",
         agent_id: targetAgent.id,
         page: 1,
-        page_size: 50,
+        page_size: 200,
       });
 
       setPagination(logsResponse.pagination);

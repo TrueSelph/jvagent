@@ -735,13 +735,59 @@ class ApiClient {
     }
   }
 
-  async getActions(agentId: string): Promise<any> {
+  async getActions(
+    agentId: string,
+    params?: { page?: number; per_page?: number; enabled_only?: boolean }
+  ): Promise<any> {
+    const page = params?.page ?? 1
+    const per_page = params?.per_page ?? 30
+    const enabled_only = params?.enabled_only ?? false
+    const query = `page=${page}&per_page=${per_page}&enabled_only=${enabled_only}`
     const response = await this._withFallback(async (baseURL) => {
       try {
-        return await this.client.get(`/api/agents/${agentId}/actions?page=1&per_page=50&enabled_only=false`, { baseURL })
+        return await this.client.get(`/api/agents/${agentId}/actions?${query}`, { baseURL })
       } catch (err: any) {
         if (err.response?.status === 404) {
-          return await this.client.get(`/agents/${agentId}/actions?page=1&per_page=50&enabled_only=false`, { baseURL })
+          return await this.client.get(`/agents/${agentId}/actions?${query}`, { baseURL })
+        }
+        throw err
+      }
+    })
+    return response.data
+  }
+
+  /**
+   * Update an action. Only pass fields you want to update.
+   * Path: PUT /api/actions/{actionId}
+   */
+  async updateAction(
+    actionId: string,
+    payload: { description?: string; enabled?: boolean; properties?: Record<string, unknown> }
+  ): Promise<any> {
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.put(`/api/actions/${actionId}`, payload, { baseURL })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.put(`/actions/${actionId}`, payload, { baseURL })
+        }
+        throw err
+      }
+    })
+    return response.data
+  }
+
+  /**
+   * Reload an action after update.
+   * Path: POST /api/actions/{actionId}/reload
+   */
+  async reloadAction(actionId: string): Promise<any> {
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.post(`/api/actions/${actionId}/reload`, {}, { baseURL })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.post(`/actions/${actionId}/reload`, {}, { baseURL })
         }
         throw err
       }
