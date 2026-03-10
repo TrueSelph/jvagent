@@ -378,10 +378,10 @@ class InteractWalker(Walker):
                     action_label=action_label,
                     channel=self.channel,
                 ):
-                    if here.deny_access_prompt:
+                    if here.deny_access_directive:
                         self.interaction.directives.append(
                             {
-                                "content": here.deny_access_prompt,
+                                "content": here.deny_access_directive,
                                 "action_name": action_label,
                                 "executed": False,
                             }
