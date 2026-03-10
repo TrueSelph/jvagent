@@ -564,7 +564,7 @@ async def handle_interview_completion(
 
         if result:
             reference_number = result.get("id")
-            completion_message = f"Tell the user: Thank you, {reporter_name}! Your report has been submitted successfully. Please use reference number {reference_number} for any follow-up inquiries."
+            completion_message = f"Thank you, {reporter_name}!\nYour report has been submitted successfully.\nPlease use reference number {reference_number} for any follow-up inquiries or to provide feedback."
     else:
         logger.warning("ResolvAPIAction not found for report submission")
 

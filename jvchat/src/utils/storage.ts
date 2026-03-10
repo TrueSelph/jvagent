@@ -4,6 +4,74 @@ const USER_ID_KEY = 'jvchat_user_id'
 const CONVERSATIONS_KEY = 'jvchat_conversations'
 const MESSAGES_KEY = 'jvchat_messages'
 const SELECTED_AGENT_KEY = 'jvchat_selected_agent'
+const SAVED_CREDENTIALS_KEY = 'jvchat_saved_credentials_v2'
+
+export interface SavedCredential {
+  id: string
+  serverUrl: string
+  email: string
+  password: string
+  name?: string
+  createdAt: number
+}
+
+export function getSavedCredentials(): SavedCredential[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const data = localStorage.getItem(SAVED_CREDENTIALS_KEY)
+    if (!data) return []
+    const parsed = JSON.parse(data)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+export function addSavedCredential(cred: Omit<SavedCredential, 'id' | 'createdAt'>): SavedCredential {
+  if (typeof window === 'undefined') throw new Error('Cannot add credential')
+  const list = getSavedCredentials()
+  const id = `cred_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+  const created = Date.now()
+  const newCred: SavedCredential = {
+    ...cred,
+    id,
+    createdAt: created,
+  }
+  const updated = [...list, newCred]
+  localStorage.setItem(SAVED_CREDENTIALS_KEY, JSON.stringify(updated))
+  return newCred
+}
+
+export function updateSavedCredential(id: string, updates: Partial<SavedCredential>): void {
+  if (typeof window === 'undefined') return
+  const list = getSavedCredentials()
+  const idx = list.findIndex((c) => c.id === id)
+  if (idx === -1) return
+  list[idx] = { ...list[idx], ...updates }
+  localStorage.setItem(SAVED_CREDENTIALS_KEY, JSON.stringify(list))
+}
+
+export function removeSavedCredential(id: string): void {
+  if (typeof window === 'undefined') return
+  const list = getSavedCredentials().filter((c) => c.id !== id)
+  localStorage.setItem(SAVED_CREDENTIALS_KEY, JSON.stringify(list))
+}
+
+export function upsertSavedCredential(cred: Omit<SavedCredential, 'id' | 'createdAt'>): SavedCredential {
+  const list = getSavedCredentials()
+  const existing = list.find(
+    (c) => c.serverUrl === cred.serverUrl && c.email === cred.email
+  )
+  if (existing) {
+    updateSavedCredential(existing.id, {
+      ...cred,
+      password: cred.password,
+      name: cred.name,
+    })
+    return { ...existing, ...cred }
+  }
+  return addSavedCredential(cred)
+}
 
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null
@@ -364,5 +432,6 @@ export function cleanupOldStorage(): void {
   if (typeof window === 'undefined') return
   localStorage.removeItem('jvchat_saved_credentials')
   localStorage.removeItem('jvchat_auth_creds')
+  // Keep jvchat_saved_credentials_v2 - that's the current format
 }
 
