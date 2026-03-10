@@ -74,7 +74,7 @@ class TestEnvironmentMode:
                 os.environ.pop("JVAGENT_ENVIRONMENT", None)
 
     def test_get_environment_mode_from_app_config_production(self, mock_app_config):
-        """Verify app config config.development.environment: production yields production mode."""
+        """Verify app config (legacy config.development.environment): production yields production mode."""
         original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
         try:
             with patch(
@@ -93,7 +93,7 @@ class TestEnvironmentMode:
     def test_get_environment_mode_from_app_config_development(
         self, mock_app_config_development, mock_app_config
     ):
-        """Verify app config config.development.environment: development yields development mode."""
+        """Verify app config (legacy config.development.environment): development yields development mode."""
         original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
         try:
             mode = get_environment_mode()
@@ -120,6 +120,61 @@ class TestEnvironmentMode:
                 os.environ["JVAGENT_ENVIRONMENT"] = original
             else:
                 os.environ.pop("JVAGENT_ENVIRONMENT", None)
+
+
+class TestConfigEnvironmentPath:
+    """Test config.environment (top-level) path is read correctly."""
+
+    def test_config_environment_top_level_yields_production(self):
+        """Verify config.environment (top-level) is read and yields production mode."""
+        original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
+        try:
+            mock_descriptor = MagicMock()
+            mock_descriptor.config = {"environment": "production"}
+            with patch("jvagent.core.app_loader.AppLoader") as MockLoader:
+                mock_loader_instance = MagicMock()
+                mock_loader_instance.load_app_descriptor.return_value = mock_descriptor
+                MockLoader.return_value = mock_loader_instance
+                mode = get_environment_mode()
+                assert mode == "production"
+        finally:
+            if original:
+                os.environ["JVAGENT_ENVIRONMENT"] = original
+
+    def test_config_environment_top_level_yields_development(self):
+        """Verify config.environment (top-level): development yields development mode."""
+        original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
+        try:
+            mock_descriptor = MagicMock()
+            mock_descriptor.config = {"environment": "development"}
+            with patch("jvagent.core.app_loader.AppLoader") as MockLoader:
+                mock_loader_instance = MagicMock()
+                mock_loader_instance.load_app_descriptor.return_value = mock_descriptor
+                MockLoader.return_value = mock_loader_instance
+                mode = get_environment_mode()
+                assert mode == "development"
+        finally:
+            if original:
+                os.environ["JVAGENT_ENVIRONMENT"] = original
+
+    def test_config_environment_precedence_over_legacy(self):
+        """Verify config.environment takes precedence over config.development.environment."""
+        original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
+        try:
+            mock_descriptor = MagicMock()
+            mock_descriptor.config = {
+                "environment": "production",
+                "development": {"environment": "development"},
+            }
+            with patch("jvagent.core.app_loader.AppLoader") as MockLoader:
+                mock_loader_instance = MagicMock()
+                mock_loader_instance.load_app_descriptor.return_value = mock_descriptor
+                MockLoader.return_value = mock_loader_instance
+                mode = get_environment_mode()
+                assert mode == "production"
+        finally:
+            if original:
+                os.environ["JVAGENT_ENVIRONMENT"] = original
 
 
 class TestResponseBuilder:

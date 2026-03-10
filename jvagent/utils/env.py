@@ -7,7 +7,9 @@ EnvironmentMode = Literal["development", "production"]
 
 
 def _get_environment_from_app_config() -> Optional[str]:
-    """Read environment mode from app.yaml config.development.environment.
+    """Read environment mode from app.yaml.
+
+    Checks config.environment first, then config.development.environment (legacy).
 
     Returns:
         'production' or 'development' if found in config, None otherwise
@@ -19,7 +21,13 @@ def _get_environment_from_app_config() -> Optional[str]:
         loader = AppLoader(get_app_root())
         descriptor = loader.load_app_descriptor()
         if descriptor and descriptor.config:
-            dev_config = descriptor.config.get("development", {})
+            config = descriptor.config
+            # Primary: config.environment
+            val = config.get("environment")
+            if isinstance(val, str):
+                return val.lower()
+            # Legacy: config.development.environment
+            dev_config = config.get("development", {})
             if isinstance(dev_config, dict) and "environment" in dev_config:
                 val = dev_config["environment"]
                 if isinstance(val, str):
@@ -34,7 +42,7 @@ def get_environment_mode() -> EnvironmentMode:
 
     Configuration priority:
     1. JVAGENT_ENVIRONMENT env var (highest)
-    2. app.yaml config.development.environment
+    2. app.yaml config.environment (or config.development.environment legacy)
     3. Default: development
 
     Returns:

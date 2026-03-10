@@ -678,7 +678,6 @@ config:
     agent_cache_ttl: 300         # Agent cache TTL (seconds)
     enable_action_cache: true    # Cache action instances during discovery
     action_cache_ttl: 60         # Action cache TTL (seconds)
-    enable_dspy_cache: false     # Enable DSPy response caching
     enable_interact_router_cache: false  # Skip LLM for repeated context (requires enable_routing_cache in agent.yaml)
     interact_router_cache_ttl: 45        # Interact router cache TTL (seconds)
 
@@ -1456,7 +1455,7 @@ Key environment variables (see `.env.example` for full list):
 - `JVAGENT_ENVIRONMENT` - Environment mode: `development` or `production` (default: `development`)
   - In `production` mode: Shorter, secure interact payloads—API responses exclude observability metrics, walker reports, and debugging data (id, utterance, response only)
   - In `development` mode: API responses include full debugging and observability information
-  - Case-insensitive. Can also be set via `config.development.environment` in app.yaml (env var takes precedence)
+  - Case-insensitive. Can also be set via `config.environment` in app.yaml (env var takes precedence)
 
 **Database Configuration:**
 - `JVSPATIAL_DB_TYPE` - Database type: `json` or `mongodb` (default: `json`)
@@ -1492,7 +1491,6 @@ config:
     agent_cache_ttl: 300
     enable_action_cache: true
     action_cache_ttl: 60
-    enable_dspy_cache: false
     enable_interact_router_cache: false
     interact_router_cache_ttl: 45
 ```

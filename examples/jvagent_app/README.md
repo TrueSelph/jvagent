@@ -372,9 +372,8 @@ The `app.yaml` file includes a comprehensive `config` section with application-l
 - `cors.enabled` - Enable CORS
 - `cors.origins` - Comma-separated list of allowed origins
 
-**Development Settings:**
-- `development.debug` - Enable debug mode
-- `development.environment` - Environment mode (`development` or `production`). Set to `production` for shorter, secure interact payloads (excludes actions, directives, observability metrics, report).
+**Runtime Environment:**
+- `environment` - Environment mode (`development` or `production`). Set to `production` for shorter, secure interact payloads (excludes actions, directives, observability metrics, report). Override via `JVAGENT_ENVIRONMENT` env var.
 
 **API Configuration:**
 - `api.prefix` - API route prefix
@@ -386,7 +385,6 @@ The `app.yaml` file includes a comprehensive `config` section with application-l
 - `performance.agent_cache_ttl` - Agent cache TTL in seconds (default: `300`)
 - `performance.enable_action_cache` - Enable action caching during discovery (default: `true`)
 - `performance.action_cache_ttl` - Action cache TTL in seconds (default: `60`)
-- `performance.enable_dspy_cache` - Enable DSPy response caching (default: `false`)
 - `performance.enable_deferred_saves` - Batch entity saves for rapid updates (default: `true`)
 
 **Note**: Configuration in `app.yaml` can use environment variable placeholders (e.g., `${VAR_NAME}`) which are automatically resolved when the app is loaded.
