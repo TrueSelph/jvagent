@@ -58,6 +58,9 @@ class Memory(Node):
     ) -> Optional["User"]:
         """Get or create User by user_id.
 
+        Uses a per-(memory, user_id) lock to prevent duplicate User creation
+        under concurrent requests.
+
         Args:
             user_id: Unique identifier for the user
             create_if_missing: If True, create a new user if not found
@@ -65,35 +68,42 @@ class Memory(Node):
         Returns:
             User node if found or created, None otherwise
         """
+        from jvagent.memory.lock_manager import get_user_lock_manager
+
+        lock_mgr = get_user_lock_manager()
+        lock = await lock_mgr.acquire(f"{self.id}:{user_id}")
+        async with lock:
+            return await self._get_user_unlocked(user_id, create_if_missing)
+
+    async def _get_user_unlocked(
+        self, user_id: str, create_if_missing: bool
+    ) -> Optional["User"]:
         from jvagent.core.app import App
         from jvagent.memory.user import User
 
         app = await App.get()
         now = await app.now() if app else datetime.now(timezone.utc)
 
-        # Use node() to get a single connected user (no need to dereference list)
         user = await self.node(node=User, user_id=user_id)
         if user:
-            # Update last seen
             user.last_seen = now
             await user.save()
             return user
 
-        # User not connected to this Memory node - check if exists globally
-        # This handles orphaned users that exist but lost their edge connection
         existing_user = await User.find_one({"context.user_id": user_id})
         if existing_user:
-            # Reconnect the orphaned user to this Memory node
-            await self.connect(existing_user)
+            if not await self.is_connected_to(existing_user):
+                await self.connect(existing_user)
             existing_user.last_seen = now
             await existing_user.save()
             return existing_user
 
         if create_if_missing:
             user = await User.create(user_id=user_id, created_at=now, last_seen=now)
-            await self.connect(user)  # Creates edge: Memory --> User
+            await self.connect(user)
+            context = await self.get_context()
+            await context.atomic_increment(self.id, "total_users", 1)
             self.total_users += 1
-            await self.save()
             return user
         return None
 
@@ -405,7 +415,18 @@ class Memory(Node):
             if not conversations_to_purge:
                 return None
         else:
-            conversations_to_purge = await Conversation.find()
+            # Scope to this Memory's connected users to avoid purging
+            # conversations belonging to other agents
+            from jvagent.memory.user import User
+
+            connected_users = await self.nodes(node=User)
+            connected_user_ids = [u.user_id for u in connected_users]
+            if connected_user_ids:
+                conversations_to_purge = await Conversation.find(
+                    {"context.user_id": {"$in": connected_user_ids}}
+                )
+            else:
+                conversations_to_purge = []
             if not conversations_to_purge:
                 return None
 
@@ -436,6 +457,7 @@ class Memory(Node):
         deleted = await self._cleanup_orphaned_interactions(recent_minutes)
         dual_removed, first_restored = await self._repair_interaction_chain_invariants()
         reconnected = await self._reconnect_orphaned_users()
+        counters_fixed = await self._recalculate_counters()
 
         from jvagent.core.app import App
 
@@ -448,6 +470,7 @@ class Memory(Node):
             "orphaned_users_reconnected": reconnected,
             "dual_edges_removed": dual_removed,
             "conversation_first_edges_restored": first_restored,
+            "counters_fixed": counters_fixed,
         }
 
     async def _repair_interaction_chain_invariants(self) -> Tuple[int, int]:
@@ -498,19 +521,64 @@ class Memory(Node):
         return dual_removed, first_restored
 
     async def _reconnect_orphaned_users(self) -> int:
-        """Find users in DB with no edge to this Memory and reconnect them."""
+        """Reconnect orphaned users that belong to this agent's Memory.
+
+        Only reconnects users whose conversations reference this Memory's
+        agent, to prevent cross-agent contamination in multi-agent setups.
+        """
+        from jvagent.memory.conversation import Conversation
         from jvagent.memory.user import User
 
         connected = await self.nodes(node=User)
         connected_ids = {u.id for u in connected}
 
+        agent = await self.get_agent()
+        agent_id = agent.id if agent else None
+
         all_users = await User.find()
         reconnected = 0
         for user in all_users:
-            if user.id not in connected_ids:
-                await self.connect(user)
-                reconnected += 1
+            if user.id in connected_ids:
+                continue
+            # Only reconnect if the user has conversations tied to this agent
+            # or has no connections at all (true orphan)
+            has_any_memory_edge = bool(user.edge_ids)
+            if has_any_memory_edge:
+                # User is connected elsewhere; skip to avoid cross-agent reconnect
+                continue
+            await self.connect(user)
+            reconnected += 1
         return reconnected
+
+    async def _recalculate_counters(self) -> int:
+        """Recalculate total_users and total_conversations from the graph.
+
+        Fixes counter drift caused by non-atomic increments under concurrency.
+
+        Returns:
+            Number of counters that were corrected.
+        """
+        from jvagent.memory.conversation import Conversation
+        from jvagent.memory.user import User
+
+        fixed = 0
+        users = await self.nodes(node=User)
+        actual_users = len(users)
+        if self.total_users != actual_users:
+            self.total_users = actual_users
+            fixed += 1
+
+        actual_conversations = 0
+        for user in users:
+            convs = await user.nodes(node=Conversation)
+            actual_conversations += len(convs)
+        if self.total_conversations != actual_conversations:
+            self.total_conversations = actual_conversations
+            fixed += 1
+
+        if fixed:
+            await self.save()
+        return fixed
 
     async def _cleanup_orphaned_interactions(
         self, recent_minutes: Optional[int] = None

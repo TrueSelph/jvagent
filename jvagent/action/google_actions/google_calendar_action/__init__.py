@@ -1,6 +1,6 @@
 """Google Calendar action package."""
 
-from .google_calendar_action import GoogleCalendarAction
 from . import endpoints  # noqa: F401
+from .google_calendar_action import GoogleCalendarAction
 
 __all__ = ["GoogleCalendarAction"]

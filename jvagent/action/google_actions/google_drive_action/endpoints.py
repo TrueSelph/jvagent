@@ -42,7 +42,7 @@ async def _get_drive_action(action_id: str) -> Optional[GoogleDriveAction]:
                 field_type=Dict[str, Any],
                 description="Uploaded file information containing id, name, and mimeType",
                 example={
-                    "id": "1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz",
+                    "id": "1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz",  # pragma: allowlist secret
                     "name": "report.pdf",
                     "mimeType": "application/pdf",
                 },
@@ -134,7 +134,7 @@ async def upload_to_drive(
                 description="List of files and folders in the target location",
                 example=[
                     {
-                        "id": "1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz",
+                        "id": "1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz",  # pragma: allowlist secret
                         "name": "report.pdf",
                         "mimeType": "application/pdf",
                         "url": "https://drive.google.com/file/d/.../view?usp=sharing",
@@ -232,7 +232,8 @@ async def delete_drive_file(action_id: str, file_id: str) -> Dict[str, Any]:
         )
 
     try:
-        return await action.delete_file(file_id=file_id)
+        success = await action.delete_file(file_id=file_id)
+        return {"success": success}
     except Exception as e:
         logger.error(f"Failed to delete file from drive: {e}", exc_info=True)
         raise ValidationError(
@@ -253,7 +254,9 @@ async def delete_drive_file(action_id: str, file_id: str) -> Dict[str, Any]:
             "result": ResponseField(
                 field_type=Dict[str, Any],
                 description="Result of the sharing operation, may include webViewLink",
-                example={"webViewLink": "https://drive.google.com/file/d/.../view?usp=sharing"},
+                example={
+                    "webViewLink": "https://drive.google.com/file/d/.../view?usp=sharing"
+                },
             ),
             "success": ResponseField(
                 field_type=bool,

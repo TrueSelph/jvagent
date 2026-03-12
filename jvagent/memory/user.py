@@ -102,11 +102,11 @@ class User(Node):
         )
         await self.connect(conv)  # Creates edge: User --> Conversation
 
-        # Update Memory's total_conversations counter
         memory = await self.node(direction="in", node=Memory)
         if memory:
+            context = await memory.get_context()
+            await context.atomic_increment(memory.id, "total_conversations", 1)
             memory.total_conversations += 1
-            await memory.save()
 
         return conv
 

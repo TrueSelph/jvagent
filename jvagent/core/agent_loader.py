@@ -603,6 +603,24 @@ class AgentLoader:
                 else:
                     dedupe_map[key] = action_node
 
+            # Second pass: dedupe singleton actions by archetype (keep first per type)
+            singleton_map: Dict[str, Action] = {}
+            for action_node in list(dedupe_map.values()):
+                if not action_node.is_singleton:
+                    continue
+                archetype = action_node.metadata.get(
+                    "class", action_node.get_class_name()
+                )
+                if archetype in singleton_map:
+                    if singleton_map[archetype] != action_node:
+                        duplicates.append(action_node)
+                        # Remove from dedupe_map so we don't count it
+                        key = (action_node.namespace, action_node.label)
+                        if dedupe_map.get(key) == action_node:
+                            del dedupe_map[key]
+                else:
+                    singleton_map[archetype] = action_node
+
             removed = 0
             for duplicate in duplicates:
                 try:

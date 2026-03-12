@@ -1,6 +1,6 @@
 """Google Sheets action package."""
 
-from .google_sheets_action import GoogleSheetsAction
 from . import endpoints  # noqa: F401
+from .google_sheets_action import GoogleSheetsAction
 
 __all__ = ["GoogleSheetsAction"]

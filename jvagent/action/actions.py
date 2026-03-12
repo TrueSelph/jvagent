@@ -66,6 +66,30 @@ class Actions(Node):
         """
         async with self._lock:
             try:
+                # Singleton enforcement: reject duplicate registration of singleton action types
+                if action.is_singleton:
+                    archetype = action.metadata.get("class", action.get_class_name())
+                    existing_singleton = await Action.find_one(
+                        {
+                            "context.agent_id": action.agent_id,
+                            "context.metadata.class": archetype,
+                        }
+                    )
+                    if existing_singleton:
+                        # Allow only if we're updating the same action (same namespace, label)
+                        if (
+                            existing_singleton.namespace != action.namespace
+                            or existing_singleton.label != action.label
+                        ):
+                            logger.warning(
+                                "Rejected duplicate singleton action: %s (archetype=%s) already "
+                                "registered for agent %s. Only one instance per agent allowed.",
+                                action.label,
+                                archetype,
+                                action.agent_id,
+                            )
+                            return False
+
                 # Check if action already exists (uniquely identified by agent_id, namespace, label)
                 existing_action = await Action.find_one(
                     {

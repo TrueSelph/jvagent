@@ -1,10 +1,12 @@
+from typing import Any, Dict, List
+
 from jvspatial.core import Node
-from typing import List, Dict, Any
 from jvspatial.core.annotations import attribute
+
 
 class GoogleToken(Node):
     """Google OAuth2 token node."""
-    
+
     action_id: str = attribute(
         indexed=True,
         default_factory=str,

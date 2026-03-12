@@ -68,7 +68,7 @@ async def repair_agent_graph(
     root_id = getattr(Root, "id", "n.Root.root") if Root else "n.Root.root"
     orphan_ids.discard(root_id)
 
-    reattached = await _reattach_orphans(context, orphan_ids, dry_run)
+    reattached = await _reattach_orphans(context, orphan_ids, dry_run, agent_id)
     reattached += await _reattach_interaction_orphans(context, orphan_ids, dry_run)
     result["orphaned_nodes_reattached"] = reattached
 
@@ -270,7 +270,12 @@ async def _get_all_node_ids(context: Any, agent_id: Optional[str]) -> Set[str]:
     return subgraph
 
 
-async def _reattach_orphans(context: Any, orphan_ids: Set[str], dry_run: bool) -> int:
+async def _reattach_orphans(
+    context: Any,
+    orphan_ids: Set[str],
+    dry_run: bool,
+    agent_id: Optional[str] = None,
+) -> int:
     """Try to reattach orphaned nodes to their expected parents."""
     reattached = 0
 
@@ -352,17 +357,35 @@ async def _reattach_orphans(context: Any, orphan_ids: Set[str], dry_run: bool) -
                 user_id = getattr(node, "user_id", None)
                 if not user_id:
                     continue
-                memories = await Memory.find({})
-                for memory in memories:
-                    connected_users = await memory.nodes(node="User")
-                    if any(u.user_id == user_id for u in connected_users):
-                        continue
-                    if not await memory.is_connected_to(node):
-                        if not dry_run:
-                            await memory.connect(node, direction="out")
-                        reattached += 1
-                        orphan_ids.discard(node_id)
-                        break
+                # Only reattach if the user has no edges at all (true orphan).
+                # This avoids cross-agent contamination by not reconnecting
+                # users that belong to another Memory.
+                if node.edge_ids:
+                    continue
+                if agent_id:
+                    from jvagent.core.agent import Agent as AgentCls
+
+                    agent_node = await AgentCls.get(agent_id)
+                    if agent_node:
+                        memory = await agent_node.get_memory()
+                        if memory and not await memory.is_connected_to(node):
+                            if not dry_run:
+                                await memory.connect(node, direction="out")
+                            reattached += 1
+                            orphan_ids.discard(node_id)
+                else:
+                    # No agent context; try the first Memory without this user
+                    memories = await Memory.find({})
+                    for memory in memories:
+                        connected_users = await memory.nodes(node="User")
+                        if any(u.user_id == user_id for u in connected_users):
+                            continue
+                        if not await memory.is_connected_to(node):
+                            if not dry_run:
+                                await memory.connect(node, direction="out")
+                            reattached += 1
+                            orphan_ids.discard(node_id)
+                            break
 
             elif entity_name == "Conversation":
                 from jvagent.memory.user import User

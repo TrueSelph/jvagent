@@ -99,6 +99,9 @@ async def list_calendar_events(
     events = await action.list_events(
         calendar_id=calendar_id, time_min=time_min, max_results=max_results
     )
+    events = await action.list_events(
+        calendar_id=calendar_id, time_min=time_min, max_results=max_results
+    )
     return {"success": True, "events": events}
 
 

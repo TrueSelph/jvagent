@@ -926,13 +926,16 @@ package:
 - `package.name`: Action reference in `namespace/action_name` format
 - `package.archetype`: The Action class name (must match the class in the Python file)
 - `package.meta`: Metadata object with title, description, group, and type
-- `package.config`: Configuration object (e.g., for ordering)
+- `package.config`: Configuration object (e.g., for ordering, singleton)
+  - `singleton`: When `true` (default), only one instance of this action type may be registered per agent. Set to `false` to allow multiple instances (e.g. MCP, one per server; Google Sheets, one per spreadsheet). Enforced at load and registration time.
 - `package.dependencies`: Dependencies object with `jvagent` version and `actions` list
   - `actions`: List of action dependencies (by `namespace/action_name`) that will be automatically loaded if this action is loaded
   - Dependencies are resolved transitively (if A depends on B, and B depends on C, all three are loaded when A is required)
 - All configuration should be defined as typed Pydantic fields in your Action class
 - Override these properties in agent.yaml using the `context` object
 - **Conditional Loading**: Actions are only loaded if explicitly listed in `agent.yaml` or required as dependencies. Unused actions remain unloaded and their endpoints are not accessible.
+
+**Singleton Actions:** Actions are singletons by default (one instance per agent). Set `config.singleton: false` to allow multiple instances (e.g. MCP, one per MCP server; Google actions, one per connection). Duplicate registrations are rejected at the registration gate, filtered at load time, and deduped on startup.
 
 
 ## Creating Actions

@@ -98,7 +98,11 @@ async def read_sheets(
         logger.error(f"Failed to read spreadsheet: {e}", exc_info=True)
         raise ValidationError(
             message=f"Failed to read spreadsheet: {str(e)}",
-            details={"action_id": action_id, "spreadsheet_id": spreadsheet_id, "range_name": range_name},
+            details={
+                "action_id": action_id,
+                "spreadsheet_id": spreadsheet_id,
+                "range_name": range_name,
+            },
         )
 
 
@@ -115,7 +119,7 @@ async def read_sheets(
                 field_type=Dict[str, Any],
                 description="Update response from the Sheets API including updated range and cell counts",
                 example={
-                    "spreadsheetId": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms",
+                    "spreadsheetId": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms",  # pragma: allowlist secret
                     "updatedRange": "Sheet1!A1:C3",
                     "updatedRows": 3,
                     "updatedColumns": 3,
@@ -183,7 +187,11 @@ async def update_sheets(
         logger.error(f"Failed to update spreadsheet: {e}", exc_info=True)
         raise ValidationError(
             message=f"Failed to update spreadsheet: {str(e)}",
-            details={"action_id": action_id, "spreadsheet_id": spreadsheet_id, "range_name": range_name},
+            details={
+                "action_id": action_id,
+                "spreadsheet_id": spreadsheet_id,
+                "range_name": range_name,
+            },
         )
 
 
@@ -200,7 +208,7 @@ async def update_sheets(
                 field_type=Dict[str, Any],
                 description="Append response from the Sheets API including the range where data was appended",
                 example={
-                    "spreadsheetId": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms",
+                    "spreadsheetId": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms",  # pragma: allowlist secret
                     "tableRange": "Sheet1!A1:C10",
                     "updates": {
                         "updatedRange": "Sheet1!A11:C11",
@@ -271,7 +279,11 @@ async def append_sheets(
         logger.error(f"Failed to append to spreadsheet: {e}", exc_info=True)
         raise ValidationError(
             message=f"Failed to append to spreadsheet: {str(e)}",
-            details={"action_id": action_id, "spreadsheet_id": spreadsheet_id, "range_name": range_name},
+            details={
+                "action_id": action_id,
+                "spreadsheet_id": spreadsheet_id,
+                "range_name": range_name,
+            },
         )
 
 
@@ -288,7 +300,7 @@ async def append_sheets(
                 field_type=Dict[str, Any],
                 description="The newly created spreadsheet metadata",
                 example={
-                    "spreadsheetId": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms",
+                    "spreadsheetId": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms",  # pragma: allowlist secret
                 },
             ),
             "success": ResponseField(
