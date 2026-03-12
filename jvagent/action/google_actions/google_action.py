@@ -1,3 +1,4 @@
+import os
 import json
 import logging
 from typing import Any, ClassVar, Dict, List, Optional, Union
@@ -7,7 +8,10 @@ from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from jvspatial.core.annotations import attribute
+from jvspatial.api.constants import APIRoutes
 from jvagent.action.base import Action
+from .google_token import GoogleToken
+
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +30,6 @@ class GoogleAction(Action):
     API_SERVICE_NAME: ClassVar[str] = ""
     API_VERSION: ClassVar[str] = ""
     SCOPES: ClassVar[List[str]] = []
-    
-    _TOKEN_FILE: ClassVar[str] = "token.json"
 
     async def get_service(self):
         """Build and return an authenticated Google API service object."""
@@ -41,15 +43,32 @@ class GoogleAction(Action):
             logger.error(f"Error building Google {self.API_SERVICE_NAME} service: {e}", exc_info=True)
             raise
 
-    async def get_authorization_url(self) -> str:
+    async def get_authorization_url(self, code_verifier: Optional[str] = None) -> str:
         """Returns the OAuth2 authorization URL for the user to visit."""
         flow = self._create_flow()
-        auth_url, _ = flow.authorization_url(prompt='consent')
+        
+        if code_verifier:
+            flow.code_verifier = code_verifier
+            
+        # Encode action_id and potentially code_verifier into state
+        # format: action_id:code_verifier (or just action_id if verifier is handled elsewhere)
+        state = self.id
+        if code_verifier:
+            state = f"{self.id}:{code_verifier}"
+
+        auth_url, _ = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true',
+            prompt='consent',
+            state=state
+        )
         return auth_url
 
-    async def authorize(self, code: str) -> bool:
+    async def authorize(self, code: str, code_verifier: Optional[str] = None) -> bool:
         """Exchanges the authorization code for credentials and saves them."""
         flow = self._create_flow()
+        if code_verifier:
+            flow.code_verifier = code_verifier
         flow.fetch_token(code=code)
         creds = flow.credentials
         await self._save_credentials(creds)
@@ -60,61 +79,97 @@ class GoogleAction(Action):
         if not self.client_secrets_json:
             raise ValueError("client_secrets_json is required for OAuth2 flow.")
             
+        client_config = None
         if isinstance(self.client_secrets_json, str):
             try:
                 client_config = json.loads(self.client_secrets_json)
             except json.JSONDecodeError:
                 # Assume it's a file path
-                return Flow.from_client_secrets_file(
-                    self.client_secrets_json,
-                    scopes=self.SCOPES,
-                    redirect_uri=self.redirect_uri
-                )
+                with open(self.client_secrets_json, 'r') as f:
+                    client_config = json.load(f)
         else:
             client_config = self.client_secrets_json
-            
+
+        env_base_url = os.environ.get("APP_BASE_URL", "").strip()
+        redirect_uri = f"{env_base_url}/api/google/callback/"
+    
+        # Check for redirect_uris in the config (Google web secrets)
+        if 'web' in client_config and 'redirect_uris' in client_config['web']:
+            if redirect_uri not in client_config['web']['redirect_uris']:
+                raise ValueError(f"redirect_uri is not in the client config\nclient_config:\n{client_config['web']['redirect_uris']}\n\nredirect_uri:\n{redirect_uri}\n\nUPDATE IN GOOGLE CONSOLE: https://console.cloud.google.com/apis/credentials")
+        elif 'installed' in client_config and 'redirect_uris' in client_config['installed']:
+            if redirect_uri not in client_config['installed']['redirect_uris']:
+                raise ValueError(f"redirect_uri is not in the client config\nclient_config:\n{client_config['installed']['redirect_uris']}\n\nredirect_uri:\n{redirect_uri}\n\nUPDATE IN GOOGLE CONSOLE: https://console.cloud.google.com/apis/credentials")
+        
+
         return Flow.from_client_config(
             client_config,
             scopes=self.SCOPES,
-            redirect_uri=self.redirect_uri
+            redirect_uri=redirect_uri
         )
 
     async def _get_credentials(self) -> Credentials:
-        """Retrieves and refreshes cached credentials, or raises an error if missing."""
+        """Retrieves and refreshes cached credentials from database, or raises an error if missing."""
         creds = None
         
-        # Try to load existing token
-        token_data_bytes = await self.get_file(self._TOKEN_FILE)
-        if token_data_bytes:
+        # Retrieve token node from database
+        token_node = await self.node(node="GoogleToken", action_id=self.id)
+        
+        if token_node:
             try:
-                token_info = json.loads(token_data_bytes.decode('utf-8'))
+                token_info = {
+                    'token': token_node.token,
+                    'refresh_token': token_node.refresh_token,
+                    'token_uri': token_node.token_uri,
+                    'client_id': token_node.client_id,
+                    'client_secret': token_node.client_secret,
+                    'scopes': token_node.scopes
+                }
                 creds = Credentials.from_authorized_user_info(token_info, self.SCOPES)
             except Exception as e:
-                logger.warning(f"Failed to load cached credentials: {e}")
+                logger.warning(f"Failed to load cached credentials for {self.id}: {e}")
 
         # If there are no (valid) credentials available, let the user log in.
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                logger.info("Refreshing expired Google OAuth2 credentials.")
+                logger.info(f"Refreshing expired Google OAuth2 credentials for {self.id}.")
                 try:
                     creds.refresh(Request())
                     await self._save_credentials(creds)
                 except Exception as e:
-                    logger.error(f"Failed to refresh credentials: {e}")
-                    raise ValueError("OAuth2 credentials expired and could not be refreshed. Please re-authorize.")
+                    logger.error(f"Failed to refresh credentials for {self.id}: {e}")
+                    raise ValueError(f"OAuth2 credentials for {self.id} expired and could not be refreshed. Please re-authorize.")
             else:
-                raise ValueError("No valid OAuth2 credentials found. Please call the auth_url endpoint to authorize.")
+                raise ValueError(f"No valid OAuth2 credentials found for {self.id}. Please call the auth_url endpoint to authorize.")
                 
         return creds
 
     async def _save_credentials(self, creds: Credentials) -> None:
-        """Saves the credentials to file storage."""
-        token_info = {
+        """Saves the credentials to database as a GoogleToken node."""
+        token_data = {
+            'action_id': self.id,
             'token': creds.token,
             'refresh_token': creds.refresh_token,
             'token_uri': creds.token_uri,
             'client_id': creds.client_id,
             'client_secret': creds.client_secret,
-            'scopes': creds.scopes
+            'scopes': creds.scopes,
+            'agent_id': self.agent_id
         }
-        await self.save_file(self._TOKEN_FILE, json.dumps(token_info).encode('utf-8'))
+        
+        # Update existing token or create new one
+        token_node = await self.node(node="GoogleToken", action_id=self.id)
+        if token_node:
+            token_node.token = creds.token
+            token_node.refresh_token = creds.refresh_token
+            token_node.token_uri = creds.token_uri
+            token_node.client_id = creds.client_id
+            token_node.client_secret = creds.client_secret
+            token_node.scopes = creds.scopes
+            await token_node.save()
+        else:
+            token_node = await GoogleToken.create(**token_data)
+            # Establish google_action >> token relationship
+            await self.connect(token_node)
+        
+        logger.info(f"Saved Google credentials for {self.id} to database")

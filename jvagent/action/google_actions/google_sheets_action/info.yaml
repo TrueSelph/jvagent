@@ -2,7 +2,7 @@
 # Exposes Google Sheets operations via Sheets API with service account.
 
 package:
-  name: jvagent/google_actions/google_sheets_action
+  name: jvagent/google_sheets_action
   author: jvagent
   archetype: GoogleSheetsAction
   version: 0.0.1

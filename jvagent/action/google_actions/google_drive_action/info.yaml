@@ -2,7 +2,7 @@
 # Exposes Google Drive upload, list, and share via Drive API with service account.
 
 package:
-  name: jvagent/google_actions/google_drive_action
+  name: jvagent/google_drive_action
   author: jvagent
   archetype: GoogleDriveAction
   version: 0.0.1

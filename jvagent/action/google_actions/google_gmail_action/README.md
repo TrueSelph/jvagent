@@ -18,7 +18,7 @@ Exposes Google Gmail operations (send, list, read) via the Google Gmail API usin
 ## Agent wiring (agent.yaml)
 
 ```yaml
-- action: jvagent/google_actions/google_gmail_action
+- action: jvagent/google_gmail_action
   context:
     client_secrets_json: ${GOOGLE_CLIENT_SECRETS_JSON}
 ```

@@ -18,7 +18,7 @@ Exposes Google Sheets operations (read, write, append) via the Google Sheets API
 ## Agent wiring (agent.yaml)
 
 ```yaml
-- action: jvagent/google_actions/google_sheets_action
+- action: jvagent/google_sheets_action
   context:
     client_secrets_json: ${GOOGLE_CLIENT_SECRETS_JSON}
 ```

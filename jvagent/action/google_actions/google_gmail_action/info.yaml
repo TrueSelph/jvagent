@@ -2,7 +2,7 @@
 # Exposes Google Gmail operations via Gmail API with service account.
 
 package:
-  name: jvagent/google_actions/google_gmail_action
+  name: jvagent/google_gmail_action
   author: jvagent
   archetype: GoogleGmailAction
   version: 0.0.1
