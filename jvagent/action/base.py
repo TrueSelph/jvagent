@@ -172,6 +172,11 @@ class Action(Node):
         merged = {**base_config, **overrides}
         return merged
 
+    @property
+    def is_singleton(self) -> bool:
+        """True if this action type allows only one instance per agent."""
+        return self.config.get("singleton", True)
+
     async def delete(self, cascade: bool = True) -> None:
         """Delete this action and cascade to child nodes.
 

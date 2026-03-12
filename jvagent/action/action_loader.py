@@ -2193,6 +2193,7 @@ class ActionLoader:
 
         # Load and instantiate actions
         actions = []
+        seen_singleton_types: Set[str] = set()
         for metadata in discovered:
             # Find config using namespace/action_name format
             full_key = f"{metadata.namespace}/{metadata.name}"
@@ -2234,6 +2235,13 @@ class ActionLoader:
                 ):
                     if key in config_overrides:
                         property_overrides[key] = config_overrides[key]
+
+            # Singleton filter: skip duplicate singleton types (first wins)
+            is_singleton = metadata.config.get("singleton", True)
+            if is_singleton and metadata.archetype in seen_singleton_types:
+                continue
+            if is_singleton:
+                seen_singleton_types.add(metadata.archetype)
 
             # Create action instance (pass agent_name for metadata)
             action = self.create_action_instance(

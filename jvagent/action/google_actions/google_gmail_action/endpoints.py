@@ -42,8 +42,8 @@ async def _get_gmail_action(action_id: str) -> Optional[GoogleGmailAction]:
                 field_type=Dict[str, Any],
                 description="The sent message metadata returned by the Gmail API",
                 example={
-                    "id": "18e2f3a4b5c6d7e8",
-                    "threadId": "18e2f3a4b5c6d7e8",
+                    "id": "18e2f3a4b5c6d7e8",  # pragma: allowlist secret
+                    "threadId": "18e2f3a4b5c6d7e8",  # pragma: allowlist secret
                     "labelIds": ["SENT"],
                 },
             ),
@@ -124,7 +124,10 @@ async def send_gmail(
                 field_type=List[Dict[str, Any]],
                 description="List of message stubs matching the query",
                 example=[
-                    {"id": "18e2f3a4b5c6d7e8", "threadId": "18e2f3a4b5c6d7e8"},
+                    {
+                        "id": "18e2f3a4b5c6d7e8",  # pragma: allowlist secret
+                        "threadId": "18e2f3a4b5c6d7e8",  # pragma: allowlist secret
+                    },
                 ],
             ),
             "success": ResponseField(
@@ -205,9 +208,7 @@ async def list_gmail_messages(
         }
     ),
 )
-async def get_gmail_profile(
-    action_id: str, user_id: str = "me"
-) -> Dict[str, Any]:
+async def get_gmail_profile(action_id: str, user_id: str = "me") -> Dict[str, Any]:
     """Get the Gmail profile for an authenticated user.
 
     **Overview:**

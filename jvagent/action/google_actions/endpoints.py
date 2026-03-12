@@ -5,13 +5,14 @@ import secrets
 import string
 from typing import Any, Dict, Optional
 
+from fastapi.responses import HTMLResponse
 from jvspatial.api import endpoint
 from jvspatial.api.exceptions import ResourceNotFoundError
-from fastapi.responses import HTMLResponse
 
 from .google_action import GoogleAction
 
 logger = logging.getLogger(__name__)
+
 
 @endpoint(
     "/google/{action_id}",
@@ -53,7 +54,7 @@ async def get_google_auth_url(action_id: str) -> HTMLResponse:
     # PKCE is handled inside get_authorization_url which will also encode action_id and verifier into state
     auth_url = await action.get_authorization_url(code_verifier=code_verifier)
     logger.info(f"auth_url: {auth_url}")
-    
+
     # Get agent/action info for the response
     agent = await action.get_agent()
     agent_name = "Agent"
@@ -188,7 +189,7 @@ async def get_google_auth_url(action_id: str) -> HTMLResponse:
             </div>
             <h2>Grant Access</h2>
             <p style="color: var(--text-muted)">Authorize this application to access your {action_label}.</p>
-            
+
             <div class="agent-info">
                 <span class="agent-name">{agent_name}</span>
                 {f'<p class="agent-desc">{agent_description}</p>' if agent_description else ''}
@@ -200,6 +201,7 @@ async def get_google_auth_url(action_id: str) -> HTMLResponse:
     </html>
     """
     return HTMLResponse(content=html_content)
+
 
 @endpoint(
     "/google/callback/",
@@ -232,7 +234,9 @@ async def google_oauth_callback(code: str, state: str) -> HTMLResponse:
     """
     logger = logging.getLogger(__name__)
     if not code or not state:
-        return HTMLResponse("<h1>Error</h1><p>Missing code or state.</p>", status_code=400)
+        return HTMLResponse(
+            "<h1>Error</h1><p>Missing code or state.</p>", status_code=400
+        )
 
     # Parse state: format is "action_id:code_verifier" or just "action_id"
     parts = state.split(":", 1)
@@ -244,7 +248,9 @@ async def google_oauth_callback(code: str, state: str) -> HTMLResponse:
     action = await GoogleAction.get(action_id)
     if not action or not isinstance(action, GoogleAction):
         logger.error(f"Action {action_id} not found during callback")
-        return HTMLResponse(f"<h1>Error</h1><p>Action {action_id} not found.</p>", status_code=404)
+        return HTMLResponse(
+            f"<h1>Error</h1><p>Action {action_id} not found.</p>", status_code=404
+        )
 
     try:
         success = await action.authorize(code=code, code_verifier=code_verifier)
@@ -254,10 +260,14 @@ async def google_oauth_callback(code: str, state: str) -> HTMLResponse:
             agent_name = "Agent"
             agent_description = ""
             if agent:
-                agent_name = getattr(agent, "alias", None) or getattr(agent, "name", "Agent")
+                agent_name = getattr(agent, "alias", None) or getattr(
+                    agent, "name", "Agent"
+                )
                 agent_description = getattr(agent, "description", "")
-            
-            action_label = action.metadata.get("title", "Google Account").replace(" Action", "")
+
+            action_label = action.metadata.get("title", "Google Account").replace(
+                " Action", ""
+            )
 
             html_content = f"""
             <!DOCTYPE html>
@@ -372,7 +382,7 @@ async def google_oauth_callback(code: str, state: str) -> HTMLResponse:
                         </svg>
                     </div>
                     <div class="action-badge">Your {action_label} is connected successfully!</div>
-                    
+
                     <div class="agent-info">
                         <span class="agent-name">{agent_name}</span>
                         {f'<p class="agent-desc">{agent_description}</p>' if agent_description else ''}
@@ -386,7 +396,11 @@ async def google_oauth_callback(code: str, state: str) -> HTMLResponse:
             logger.info(f"Authorization successful for {action_id}")
             return HTMLResponse(content=html_content, status_code=200)
         else:
-            return HTMLResponse("<h1>Error</h1><p>Authorization failed.</p>", status_code=400)
+            return HTMLResponse(
+                "<h1>Error</h1><p>Authorization failed.</p>", status_code=400
+            )
     except Exception as e:
         logger.error(f"Callback error for {action_id}: {e}")
-        return HTMLResponse(f"<h1>Error</h1><p>Authorization error: {str(e)}</p>", status_code=400)
+        return HTMLResponse(
+            f"<h1>Error</h1><p>Authorization error: {str(e)}</p>", status_code=400
+        )

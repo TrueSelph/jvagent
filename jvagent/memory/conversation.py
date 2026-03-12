@@ -172,6 +172,9 @@ class Conversation(DeferredSaveMixin, Node):
         The conversation connects to the first interaction only. When utterance is
         provided (and interaction is None), the Interaction is created before connecting.
 
+        Uses a per-conversation lock to prevent concurrent callers from creating
+        duplicate first-interaction edges or forking the chain.
+
         Args:
             interaction: Interaction node to add (optional if utterance provided)
             utterance: User input text (required when interaction is None)
@@ -184,6 +187,25 @@ class Conversation(DeferredSaveMixin, Node):
         Raises:
             ValueError: If neither interaction nor utterance is provided
         """
+        from jvagent.memory.lock_manager import get_conversation_lock_manager
+
+        lock_mgr = get_conversation_lock_manager()
+        lock = await lock_mgr.acquire(self.id)
+        async with lock:
+            return await self._add_interaction_unlocked(
+                interaction=interaction,
+                utterance=utterance,
+                channel=channel,
+                session_id=session_id,
+            )
+
+    async def _add_interaction_unlocked(
+        self,
+        interaction: Optional["Interaction"] = None,
+        utterance: Optional[str] = None,
+        channel: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> "Interaction":
         from jvagent.memory.interaction import Interaction
 
         if interaction is None and utterance is None:
@@ -207,19 +229,15 @@ class Conversation(DeferredSaveMixin, Node):
         last_interaction = await self.get_last_interaction()
 
         if last_interaction:
-            # Chain the new interaction after the last one (bidirectional edge)
             await last_interaction.connect(interaction, direction="both")
         else:
-            # This is the first interaction - connect conversation to it
             await self.connect(interaction, direction="out")
 
-        # Update the last interaction reference
         self.last_interaction_id = interaction.id
         self.interaction_count += 1
         self.last_interaction_at = now
         await self.save()
 
-        # Sync limit from agent when missing or when agent limit changed (e.g. after --update)
         agent = await self.get_agent()
         if (
             agent
@@ -230,7 +248,6 @@ class Conversation(DeferredSaveMixin, Node):
             self.interaction_limit = agent.interaction_limit
             await self.save()
 
-        # Apply rolling window pruning if limit is set and exceeded
         if (
             self.interaction_limit > 0
             and self.interaction_count > self.interaction_limit
@@ -260,25 +277,22 @@ class Conversation(DeferredSaveMixin, Node):
         while current and removed < to_remove:
             next_interaction = await current.get_next_interaction()
 
-            # Always update conversation connection: we remove from the head, so each
-            # iteration the current node is the (current) first. Disconnect conv from
-            # current and connect to next (new first) before deleting.
+            # If there's no next interaction, stop pruning -- removing the last
+            # interaction would leave the conversation in an inconsistent state.
+            if not next_interaction:
+                break
+
             if await self.is_connected_to(current):
                 await self.disconnect(current)
-            if next_interaction:
-                await self.connect(next_interaction, direction="out")
+            await self.connect(next_interaction, direction="out")
 
-            # Disconnect from next interaction if it exists
-            if next_interaction:
-                if await current.is_connected_to(next_interaction):
-                    await current.disconnect(next_interaction)
+            if await current.is_connected_to(next_interaction):
+                await current.disconnect(next_interaction)
 
-            # Delete the interaction
             await current.delete()
             removed += 1
             self.interaction_count -= 1
 
-            # Move to next
             current = next_interaction
 
         # Update last_interaction_id reference after pruning
