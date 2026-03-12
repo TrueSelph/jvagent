@@ -2,7 +2,7 @@
 # Exposes Google Calendar operations via Calendar API with service account.
 
 package:
-  name: jvagent/google_actions/google_calendar_action
+  name: jvagent/google_calendar_action
   author: jvagent
   archetype: GoogleCalendarAction
   version: 0.0.1

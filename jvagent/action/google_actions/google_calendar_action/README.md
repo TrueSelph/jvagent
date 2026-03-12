@@ -19,7 +19,7 @@ Exposes Google Calendar operations (list, create, delete) via the Google Calenda
 ## Agent wiring (agent.yaml)
 
 ```yaml
-- action: jvagent/google_actions/google_calendar_action
+- action: jvagent/google_calendar_action
   context:
     client_secrets_json: ${GOOGLE_CLIENT_SECRETS_JSON}
     default_calendar_id: "primary" # Optional: Defaults to 'primary'

@@ -19,18 +19,23 @@ Exposes Google Drive operations (upload, list, share) via the Google Drive API u
 ## Agent wiring (agent.yaml)
 
 ```yaml
-- action: jvagent/google_actions/google_drive_action
+- action: jvagent/google_drive_action
   context:
     client_secrets_json: ${GOOGLE_CLIENT_SECRETS_JSON}
-    redirect_uri: ${GOOGLE_REDIRECT_URI} # Example: http://localhost:8080/ or urn:ietf:wg:oauth:2.0:oob
-    default_parent_id: "1syTF0gsEjsl7DhjxrnPuTdmwwNDoh8dj"
+    default_parent_id: ${GOOGLE_DRIVE_PARENT_FOLDER_ID}
 ```
 
 Set the variables in your `.env` file:
 
 ```env
-GOOGLE_CLIENT_SECRETS_JSON='{"web":{"client_id":"...","project_id":"...","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_secret":"...","redirect_uris":["http://localhost:8080/"]}}'
-GOOGLE_REDIRECT_URI=http://localhost:8080/
+# Google web Oauth
+GOOGLE_CLIENT_SECRETS_JSON={"web":{"client_id":"433423825197.apps.googleusercontent.com","project_id":"jvagent","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_secret":"GOCSPX","redirect_uris":["https://9cc9-190-93-39-3.ngrok-free.app/api/google/callback/"]}}
+# Allow insecure transport for local testing if not using HTTPS locally
+OAUTHLIB_INSECURE_TRANSPORT = '1'
+# Allow scopes to change (if user doesn't grant all permissions)
+OAUTHLIB_RELAX_TOKEN_SCOPE = '1'
+GOOGLE_DRIVE_PARENT_FOLDER_ID = 1wjA2BC1APlkt3RMTHtotDOu
+
 ```
 
 ### Setup Instructions
@@ -41,7 +46,7 @@ GOOGLE_REDIRECT_URI=http://localhost:8080/
 4. Choose **Web application** (or Desktop app).
 5. Add your authorized redirect URIs (e.g., `http://localhost:8080/` or `urn:ietf:wg:oauth:2.0:oob`).
 6. Click **Create**, then download the JSON containing your client secrets.
-7. Minify the downloaded JSON and paste it into `GOOGLE_CLIENT_SECRETS_JSON` in your `.env` file. Be sure to also configure the `GOOGLE_REDIRECT_URI` to exactly match what was configured in step 5.
+7. Minify the downloaded JSON and paste it into `GOOGLE_CLIENT_SECRETS_JSON` in your `.env` file. Be sure to also configure the `GOOGLE_REDIRECT_URI` to exactly match what was configured in step 5. (https://console.cloud.google.com/apis/credentials)
 
 ## Endpoints
 

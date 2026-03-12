@@ -55,17 +55,40 @@ class GoogleDriveAction(GoogleAction):
         
         return service.files().create(body=file_metadata, media_body=media, fields='id, name').execute()
 
-    async def list_files(self, folder_id: Optional[str] = None, page_size: int = 20) -> List[Dict[str, Any]]:
-        """List files in a Google Drive folder."""
+    async def delete_file(self, file_id: str) -> Dict[str, Any]:
+        """Delete a file from Google Drive."""
+        service = await self.get_service()
+        service.files().delete(fileId=file_id).execute()
+        return {"success": True}
+
+    async def list_files(
+        self, folder_id: Optional[str] = None, with_link: bool = False
+    ) -> List[Dict[str, Any]]:
+        """List files in a Google Drive folder.
+
+        **Args:**
+
+        - folder_id: Optional folder ID to list files from
+        - with_link: Whether to include the webViewLink for each file
+        """
         service = await self.get_service()
         parent_id = folder_id or self.default_parent_id
-        
+
         q = f"'{parent_id}' in parents and trashed = false"
-        results = service.files().list(
-            q=q, pageSize=page_size, fields="nextPageToken, files(id, name, mimeType)"
-        ).execute()
-        
-        return results.get('files', [])
+        fields = "files(id, name, mimeType)"
+        if with_link:
+            fields = "files(id, name, mimeType, webViewLink)"
+
+        results = service.files().list(q=q, fields=f"nextPageToken, {fields}").execute()
+
+        files = results.get("files", [])
+
+        if with_link:
+            for f in files:
+                if "webViewLink" in f:
+                    f["url"] = f.pop("webViewLink")
+
+        return files
 
     async def share_file(
         self, 
