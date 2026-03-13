@@ -33,6 +33,7 @@ from .retrieval import search_documents
 logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {".pdf", ".md", ".markdown"}
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
 
 
 def _parse_metadata(value: Optional[str]) -> Optional[Dict[str, Any]]:
@@ -55,10 +56,12 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
     Optional[str],
     Optional[str],
     Optional[str],
+    Optional[str],
 ]:
     """Parse multipart form-data from raw body without decoding file content.
 
-    Returns (file_content, filename, doc_name, model, if_add_node_summary, collection_name, metadata, doc_description).
+    Returns (file_content, filename, doc_name, model, if_add_node_summary,
+             collection_name, metadata, doc_description, doc_url).
     Uses latin-1 for headers to avoid UTF-8 decode errors on non-ASCII filenames or field values.
     """
     content_type_bytes = (
@@ -81,6 +84,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
     collection_name: Optional[str] = None
     metadata_raw: Optional[str] = None
     doc_description: Optional[str] = None
+    doc_url: Optional[str] = None
 
     def _safe_str(b: bytes) -> str:
         try:
@@ -89,7 +93,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
             return b.decode("latin-1")
 
     def on_field(field) -> None:
-        nonlocal doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description
+        nonlocal doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description, doc_url
         name = _safe_str(field.field_name) if field.field_name else ""
         val = field.value
         value = _safe_str(val) if val is not None else ""
@@ -105,13 +109,14 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
             metadata_raw = value or None
         elif name == "doc_description":
             doc_description = value or None
+        elif name == "doc_url":
+            doc_url = value or None
 
     def on_file(f) -> None:
         nonlocal file_content, filename
         filename = _safe_str(f.file_name) if f.file_name else ""
         f.file_object.seek(0)
         file_content = f.file_object.read()
-        # Do NOT call f.close() - FormParser may finalize the writer again in _on_end
 
     parser = FormParser(
         content_type="multipart/form-data",
@@ -136,6 +141,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
         collection_name,
         metadata_raw,
         doc_description,
+        doc_url,
     )
 
 
@@ -149,6 +155,7 @@ async def _do_assimilate(
     collection_name: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
     doc_description: Optional[str] = None,
+    doc_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run assimilate_document on content. Handles PDF vs Markdown and temp files."""
     assimilate_kw = {
@@ -158,15 +165,19 @@ async def _do_assimilate(
         "collection_name": collection_name,
         "metadata": metadata,
         "doc_description": doc_description,
+        "doc_url": doc_url,
     }
 
     if ext == ".pdf":
         doc = BytesIO(content)
         try:
             return await assimilate_document(doc, **assimilate_kw)
-        except UnicodeDecodeError:
-            pass
-        ext = ".md"
+        except UnicodeDecodeError as e:
+            logger.warning(f"PDF processing failed with UnicodeDecodeError: {e}")
+            raise ValidationError(
+                "Failed to process PDF. The file may be corrupted or contain "
+                "unsupported encoding."
+            )
 
     try:
         text = content.decode("utf-8")
@@ -226,6 +237,7 @@ async def ingest_document_endpoint(
     | file | File | Yes | PDF or Markdown file (`.pdf`, `.md`, `.markdown`) |
     | doc_name | string | No | Override document identifier (default: derived from filename) |
     | doc_description | string | No | Human-readable document description |
+    | doc_url | string | No | Source URL of the document resource (used for reference citations) |
     | if_add_node_summary | string | No | "yes" or "no" – generate LLM summaries per node (default: from agent's PageIndex config) |
     | metadata | string | No | JSON object for tagging, e.g. `{"topic": "finance", "year": 2024}` |
 
@@ -238,6 +250,11 @@ async def ingest_document_endpoint(
         raise ValidationError("Expected multipart/form-data")
 
     body = await request.body()
+    if len(body) > MAX_UPLOAD_BYTES:
+        raise ValidationError(
+            f"File too large ({len(body)} bytes). Maximum upload size is "
+            f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB."
+        )
     (
         content,
         filename,
@@ -247,6 +264,7 @@ async def ingest_document_endpoint(
         collection_name,
         metadata_raw,
         doc_description,
+        doc_url,
     ) = _parse_multipart_safe(body, content_type)
     collection_name = collection_name or agent_id
     metadata = _parse_metadata(metadata_raw)
@@ -273,6 +291,7 @@ async def ingest_document_endpoint(
             collection_name=collection_name,
             metadata=metadata,
             doc_description=doc_description,
+            doc_url=doc_url,
         )
     except ImportError as e:
         raise ValidationError(str(e))
@@ -433,13 +452,16 @@ async def delete_document_endpoint(agent_id: str, doc_name: str) -> Dict[str, An
         data={
             "results": ResponseField(
                 field_type=List[Dict[str, Any]],
-                description="Search results",
+                description="Search results with content and document metadata",
                 example=[
                     {
                         "node_id": "n.DocumentNode.xyz",
                         "title": "Section Title",
                         "doc_name": "my_doc",
                         "content": "Excerpt...",
+                        "start_index": 5,
+                        "end_index": 8,
+                        "doc_url": "https://example.com/doc.pdf",
                     }
                 ],
             ),
@@ -475,7 +497,7 @@ async def search_documents_endpoint(
     | limit | integer | No | Max results (default: 10, max: 200) |
     | metadata | string | No | JSON object to filter by document metadata |
 
-    **Response:** `results` — array of `{node_id, title, doc_name, content, text, summary}`
+    **Response:** `results` — array of `{node_id, title, doc_name, content, text, summary, start_index, end_index, physical_index, doc_url}`
 
     Collection is determined by `agent_id` from the path.
     """
@@ -511,12 +533,14 @@ async def export_documents_endpoint(
     doc_name: Optional[str] = Query(
         default=None, description="Optional document name to export single document"
     ),
-    format: str = Query(default="json", description="Export format: json or yaml"),
+    export_format: str = Query(
+        default="json", description="Export format: json or yaml"
+    ),
 ) -> Dict[str, Any]:
     """Export PageIndex graph data."""
     data = await export_documents(collection_name=agent_id, doc_name=doc_name)
 
-    if format.lower() == "yaml":
+    if export_format.lower() == "yaml":
         try:
             import yaml
 
@@ -570,15 +594,16 @@ async def import_documents_endpoint(
         if not isinstance(parsed, dict):
             raise ValidationError("Data must be a dictionary")
 
-        # replace existing collection name with agent_id
-        existing_collection_names = []
         for root in parsed.get("roots", []):
-            existing_collection_names.append(root.get("collection_name"))
-
-        parsed_str = json.dumps(parsed)
-        for collection_name in existing_collection_names:
-            parsed_str = parsed_str.replace(collection_name, agent_id)
-        parsed = json.loads(parsed_str)
+            root["collection_name"] = agent_id
+            ctx = root.get("context")
+            if isinstance(ctx, dict):
+                ctx["collection_name"] = agent_id
+        for node in parsed.get("nodes", []):
+            node["collection_name"] = agent_id
+            ctx = node.get("context")
+            if isinstance(ctx, dict):
+                ctx["collection_name"] = agent_id
 
         await import_documents(parsed, purge=purge, collection_name=agent_id)
 

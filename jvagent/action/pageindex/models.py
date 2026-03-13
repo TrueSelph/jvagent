@@ -9,6 +9,8 @@ from typing import Any, Dict, Optional
 from jvspatial.core import Edge, Node
 from jvspatial.core.annotations import attribute
 
+_MAX_CONTENT_CHARS = 2000
+
 
 class DocumentRootNode(Node):
     """Root node for a document; links to top-level section nodes.
@@ -18,6 +20,7 @@ class DocumentRootNode(Node):
     Attributes:
         doc_name: Document identifier (e.g., filename or title)
         doc_description: Optional document-level description
+        doc_url: Source URL of the document resource
         collection_name: Collection this document belongs to (typically agent_id)
         metadata: Custom key-value metadata for filtering at query time
     """
@@ -29,6 +32,10 @@ class DocumentRootNode(Node):
     doc_description: Optional[str] = attribute(
         default=None,
         description="Optional document-level description",
+    )
+    doc_url: Optional[str] = attribute(
+        default=None,
+        description="Source URL of the document resource",
     )
     collection_name: str = attribute(
         default="default",
@@ -90,3 +97,20 @@ class DocumentContentEdge(Edge):
     """
 
     pass
+
+
+def node_to_result(node: DocumentNode) -> Dict[str, Any]:
+    """Build a standard result dict from a DocumentNode."""
+    content = node.summary or node.text or node.title or ""
+    return {
+        "node_id": node.id,
+        "title": node.title,
+        "text": node.text,
+        "summary": node.summary,
+        "doc_name": node.doc_name,
+        "structure": node.structure,
+        "content": content[:_MAX_CONTENT_CHARS] if content else "",
+        "start_index": node.start_index,
+        "end_index": node.end_index,
+        "physical_index": node.physical_index,
+    }

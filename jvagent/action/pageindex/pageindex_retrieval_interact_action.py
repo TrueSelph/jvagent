@@ -23,7 +23,11 @@ from jvagent.action.pageindex.config import (
     set_pageindex_summary_token_threshold,
 )
 from jvagent.action.pageindex.llm_bridge import set_pageindex_model_action
-from jvagent.action.pageindex.prompts import DIRECTIVE_TEMPLATE
+from jvagent.action.pageindex.prompts import (
+    DIRECTIVE_TEMPLATE,
+    DIRECTIVE_TEMPLATE_NO_REFS,
+    DIRECTIVE_TEMPLATE_PLAIN,
+)
 from jvagent.action.pageindex.retrieval import search_documents
 
 if TYPE_CHECKING:
@@ -78,6 +82,17 @@ def _get_ingestion_config(
         "summary_token_threshold": cfg.get("summary_token_threshold")
         or cfg.get("max_node_tokens"),
     }
+
+
+def _format_page_range(r: Dict[str, Any]) -> str:
+    """Format page range from result dict, e.g. 'pp. 5-8' or 'p. 5'."""
+    start = r.get("start_index")
+    end = r.get("end_index")
+    if start is not None and end is not None and start != end:
+        return f"pp. {start}-{end}"
+    if start is not None:
+        return f"p. {start}"
+    return ""
 
 
 async def ensure_ingestion_config_for_agent(agent_id: str) -> None:
@@ -181,6 +196,11 @@ class PageIndexRetrievalInteractAction(InteractAction):
         description="Max tokens for tree in tree-search prompt (default: 16000). "
         "Exceeding triggers fallback to direct search.",
     )
+    include_references: bool = attribute(
+        default=True,
+        description="When True, render numbered source references with page numbers and "
+        "document URLs in the directive. Set False to disable and save tokens.",
+    )
 
     def _resolve_collection(self) -> str:
         """Resolve collection name from attribute, config, or agent_id."""
@@ -191,17 +211,19 @@ class PageIndexRetrievalInteractAction(InteractAction):
             or "default"
         )
 
+    def _apply_ingestion_config(self) -> None:
+        """Push ingestion config values from this action to the config module."""
+        _push_ingestion_config(_get_ingestion_config(self.config, self.node_summary))
+
     async def on_register(self) -> None:
         """Push ingestion config for document assimilation when action is registered."""
         await super().on_register()
-        ingestion = _get_ingestion_config(self.config, self.node_summary)
-        _push_ingestion_config(ingestion)
+        self._apply_ingestion_config()
 
     async def on_reload(self) -> None:
         """Re-apply ingestion config when action is reloaded."""
         await super().on_reload()
-        ingestion = _get_ingestion_config(self.config, self.node_summary)
-        _push_ingestion_config(ingestion)
+        self._apply_ingestion_config()
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute vectorless retrieval and add directive to interaction."""
@@ -225,18 +247,22 @@ class PageIndexRetrievalInteractAction(InteractAction):
                 return
 
             initialize_pageindex_database()
-            # Config can override attributes (allows retrieval params in context or config)
-            limit = self.config.get("limit", self.limit)
-            strategy = self.config.get("strategy", self.strategy)
-            model = self.config.get("model", self.model)
-            doc_name = self.doc_name or self.config.get("doc_name")
+            cfg = self.config or {}
+            limit = cfg.get("limit") if cfg.get("limit") is not None else self.limit
+            strategy = cfg.get("strategy") or self.strategy
+            model = cfg.get("model") or self.model
+            doc_name = self.doc_name or cfg.get("doc_name")
             collection_name = self._resolve_collection()
-            metadata_filter = self.metadata_filter or self.config.get("metadata_filter")
-            max_summary_chars = self.config.get(
-                "max_summary_chars", self.max_summary_chars
+            metadata_filter = self.metadata_filter or cfg.get("metadata_filter")
+            max_summary_chars = (
+                cfg.get("max_summary_chars")
+                if cfg.get("max_summary_chars") is not None
+                else self.max_summary_chars
             )
-            max_tree_prompt_tokens = self.config.get(
-                "max_tree_prompt_tokens", self.max_tree_prompt_tokens
+            max_tree_prompt_tokens = (
+                cfg.get("max_tree_prompt_tokens")
+                if cfg.get("max_tree_prompt_tokens") is not None
+                else self.max_tree_prompt_tokens
             )
             _push_retrieval_config(
                 {
@@ -285,8 +311,25 @@ class PageIndexRetrievalInteractAction(InteractAction):
         query = interaction.utterance or interaction.interpretation
         return query.strip() if query else None
 
+    def _resolve_include_references(self) -> bool:
+        """Resolve include_references from config with attribute fallback."""
+        if self.config and "include_references" in self.config:
+            return _bool_from_config(self.config["include_references"], True)
+        return self.include_references
+
     def _format_directive(self, results: List[Dict[str, Any]]) -> str:
-        """Format retrieval results into directive string."""
+        """Format retrieval results into directive string.
+
+        When include_references is True, renders numbered excerpts with a
+        deduplicated references section containing page ranges and URLs.
+        When False, uses the plain flat format to save tokens.
+        """
+        if not self._resolve_include_references():
+            return self._format_directive_plain(results)
+        return self._format_directive_with_references(results)
+
+    def _format_directive_plain(self, results: List[Dict[str, Any]]) -> str:
+        """Original flat format without reference metadata."""
         parts = []
         for r in results:
             content = r.get("content", r.get("text", r.get("title", "")))
@@ -294,4 +337,53 @@ class PageIndexRetrievalInteractAction(InteractAction):
             doc = r.get("doc_name", "")
             prefix = f"[{doc}] {title}: " if doc or title else ""
             parts.append(f"- {prefix}{content}")
-        return self.directive.format(results="\n".join(parts))
+        return DIRECTIVE_TEMPLATE_PLAIN.safe_substitute(results="\n".join(parts))
+
+    def _format_directive_with_references(self, results: List[Dict[str, Any]]) -> str:
+        """Numbered excerpts with deduplicated references.
+
+        Multiple excerpts from the same source share a single reference number,
+        so the references block never contains duplicates.
+        """
+        source_to_ref: Dict[tuple, int] = {}
+        ref_entries: List[str] = []
+        has_ref_metadata = False
+
+        for r in results:
+            page_range = _format_page_range(r)
+            url = r.get("doc_url")
+            doc = r.get("doc_name", "")
+            if page_range or url:
+                has_ref_metadata = True
+
+            ref_key = (doc or "", page_range or "", url or "")
+            if ref_key not in source_to_ref:
+                ref_num = len(source_to_ref) + 1
+                source_to_ref[ref_key] = ref_num
+                ref_str = f"[{ref_num}]"
+                if doc:
+                    ref_str += f" {doc}"
+                if page_range:
+                    ref_str += f", {page_range}"
+                if url:
+                    ref_str += f". {url}" if doc or page_range else f" {url}"
+                ref_entries.append(ref_str)
+
+        excerpt_lines: List[str] = []
+        for r in results:
+            content = r.get("content", r.get("text", r.get("title", "")))
+            title = r.get("title", "")
+            doc = r.get("doc_name", "")
+            page_range = _format_page_range(r)
+            url = r.get("doc_url")
+            ref_key = (doc or "", page_range or "", url or "")
+            ref_num = source_to_ref[ref_key]
+            label = f"[{doc}] {title}" if doc or title else "Excerpt"
+            excerpt_lines.append(f"[{ref_num}] {label}: {content}")
+
+        results_str = "\n".join(excerpt_lines)
+        if has_ref_metadata and ref_entries:
+            return DIRECTIVE_TEMPLATE.safe_substitute(
+                results=results_str, references="\n".join(ref_entries)
+            )
+        return DIRECTIVE_TEMPLATE_NO_REFS.safe_substitute(results=results_str)

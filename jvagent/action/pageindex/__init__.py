@@ -26,7 +26,7 @@ from .documents import (
     get_document_root,
     import_documents,
 )
-from .models import DocumentContentEdge, DocumentNode, DocumentRootNode
+from .models import DocumentContentEdge, DocumentNode, DocumentRootNode, node_to_result
 from .pageindex_retrieval_interact_action import PageIndexRetrievalInteractAction
 from .retrieval import search_documents
 
@@ -37,6 +37,7 @@ __all__ = [
     "DocumentNode",
     "DocumentContentEdge",
     "DocumentRootNode",
+    "node_to_result",
     "persist_structure",
     "tree_to_graph",
     "assimilate_document",

@@ -55,7 +55,7 @@ async def _tree_to_nodes(
     Returns:
         List of created DocumentNode instances
     """
-    created: List[DocumentNode] = []
+    top_level: List[DocumentNode] = []
 
     async def process_item(
         item: Dict[str, Any], parent: Optional[DocumentNode]
@@ -67,7 +67,6 @@ async def _tree_to_nodes(
         node = DocumentNode(**data)
         await node.set_context(context)
         await node.save()
-        created.append(node)
 
         if parent:
             await parent.connect(node, edge=DocumentContentEdge, direction="out")
@@ -81,11 +80,13 @@ async def _tree_to_nodes(
     if isinstance(structure, list):
         for item in structure:
             if isinstance(item, dict):
-                await process_item(item, parent_node)
+                node = await process_item(item, parent_node)
+                top_level.append(node)
     elif isinstance(structure, dict):
-        await process_item(structure, parent_node)
+        node = await process_item(structure, parent_node)
+        top_level.append(node)
 
-    return created
+    return top_level
 
 
 async def persist_structure(
@@ -94,6 +95,7 @@ async def persist_structure(
     doc_description: Optional[str] = None,
     collection_name: str = "default",
     metadata: Optional[Dict[str, Any]] = None,
+    doc_url: Optional[str] = None,
 ) -> str:
     """Persist PageIndex output to jvspatial graph.
 
@@ -103,6 +105,7 @@ async def persist_structure(
         doc_description: Optional document-level description
         collection_name: Collection this document belongs to (default: "default")
         metadata: Custom key-value metadata for filtering at query time
+        doc_url: Source URL of the document resource
 
     Returns:
         DocumentRootNode id for later retrieval/traversal
@@ -125,6 +128,7 @@ async def persist_structure(
         root = DocumentRootNode(
             doc_name=doc_name,
             doc_description=doc_description,
+            doc_url=doc_url,
             collection_name=collection_name,
             metadata=metadata,
         )
@@ -152,7 +156,7 @@ async def tree_to_graph(
 
     Args:
         pageindex_output: Dict with doc_name, structure, and optionally doc_description,
-            collection_name, metadata
+            collection_name, metadata, doc_url
 
     Returns:
         DocumentRootNode id
@@ -162,6 +166,7 @@ async def tree_to_graph(
     doc_description = pageindex_output.get("doc_description")
     collection_name = pageindex_output.get("collection_name", "default")
     metadata = pageindex_output.get("metadata")
+    doc_url = pageindex_output.get("doc_url")
 
     if not doc_name:
         raise ValueError("pageindex_output must contain 'doc_name'")
@@ -174,4 +179,5 @@ async def tree_to_graph(
         doc_description=doc_description,
         collection_name=collection_name,
         metadata=metadata,
+        doc_url=doc_url,
     )

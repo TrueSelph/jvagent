@@ -27,7 +27,7 @@ from .config import (
 from .document_walker import DocumentWalker
 from .documents import get_document_root, get_document_roots
 from .llm_bridge import get_pageindex_model_action
-from .models import DocumentContentEdge, DocumentNode, DocumentRootNode
+from .models import DocumentContentEdge, DocumentNode, DocumentRootNode, node_to_result
 
 logger = logging.getLogger(__name__)
 
@@ -91,17 +91,13 @@ async def _graph_to_tree(
                 else prefix_val
             )
         if children:
-            d["nodes"] = [_node_to_dict(c) for c in children]
-            d["nodes"] = await _gather(d["nodes"])
+            d["nodes"] = await asyncio.gather(*(_node_to_dict(c) for c in children))
         return d
-
-    async def _gather(coros):
-        return await asyncio.gather(*coros)
 
     children = await root.outgoing(node=DocumentNode, edge=DocumentContentEdge)
     if not children:
         return []
-    return await _gather([_node_to_dict(c) for c in children])
+    return list(await asyncio.gather(*(_node_to_dict(c) for c in children)))
 
 
 async def _search_via_tree_search(
@@ -165,26 +161,28 @@ async def _search_via_tree_search(
 
     all_results: List[Dict[str, Any]] = []
 
-    for root in roots:
-        if doc_name and root.doc_name != doc_name:
-            continue
+    # Build trees concurrently across roots
+    trees = await asyncio.gather(
+        *(_graph_to_tree(r, max_summary_chars=max_summary_chars) for r in roots)
+    )
+
+    for root, tree in zip(roots, trees):
         doc_name_val = root.doc_name
 
         try:
-            tree = await _graph_to_tree(root, max_summary_chars=max_summary_chars)
             if not tree:
                 continue
             tree_no_text = remove_fields(tree, fields=["text"])
 
-            seen = set()
+            tree_seen = set()
             deduped = []
             for n in tree_no_text:
-                if n["node_id"] not in seen:
-                    seen.add(n["node_id"])
+                if n["node_id"] not in tree_seen:
+                    tree_seen.add(n["node_id"])
                     deduped.append(n)
             tree_no_text = deduped
 
-            tree_str = json.dumps(tree_no_text, indent=2)
+            tree_str = json.dumps(tree_no_text, separators=(",", ":"))
             tree_tokens = count_tokens(tree_str, model=model or "gpt-4o-mini")
             if tree_tokens > max_tokens:
                 logger.warning(
@@ -236,44 +234,28 @@ Directly return the final JSON structure. Do not output anything else.
                 )
 
             raw = get_json_content(response)
-            parsed = json.loads(raw)
-            node_list = parsed.get("node_list") or []
+            parsed_resp = json.loads(raw)
+            node_list = parsed_resp.get("node_list") or []
             if not isinstance(node_list, list):
                 node_list = []
 
-            seen: set = set()
-            for nid in node_list[:limit]:
-                nid_str = str(nid)
-                key = (nid_str, doc_name_val)
-                if key in seen:
-                    continue
+            unique_nids = list(dict.fromkeys(str(nid) for nid in node_list[:limit]))
+            if unique_nids:
                 nodes = await DocumentNode.find(
                     {
-                        "context.node_id": nid_str,
+                        "context.node_id": {"$in": unique_nids},
                         "context.doc_name": doc_name_val,
                         "context.collection_name": collection_name,
                     }
                 )
+                nid_order = {nid: idx for idx, nid in enumerate(unique_nids)}
+                nodes.sort(key=lambda n: nid_order.get(n.node_id, float("inf")))
                 for node in nodes:
-                    seen.add(key)
-                    content = node.summary or node.text or node.title or ""
-                    all_results.append(
-                        {
-                            "node_id": node.id,
-                            "title": node.title,
-                            "text": node.text,
-                            "summary": node.summary,
-                            "doc_name": node.doc_name,
-                            "structure": node.structure,
-                            "content": content[:2000] if content else "",
-                        }
-                    )
+                    all_results.append(node_to_result(node))
                     if len(all_results) >= limit:
                         break
-                if len(all_results) >= limit:
-                    break
 
-        except (json.JSONDecodeError, KeyError) as e:
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
             logger.warning(
                 f"PageIndex tree search parse error: {e}; falling back to direct"
             )
@@ -285,10 +267,9 @@ Directly return the final JSON structure. Do not output anything else.
                 collection_name=collection_name,
                 metadata_filter=metadata_filter,
             )
-        except Exception as e:
-            logger.warning(
-                f"PageIndex tree search error: {e}; falling back to direct",
-                exc_info=True,
+        except Exception:
+            logger.exception(
+                "Unexpected error in PageIndex tree search; falling back to direct"
             )
             return await _search_via_direct(
                 context,
@@ -314,6 +295,40 @@ Directly return the final JSON structure. Do not output anything else.
             metadata_filter=metadata_filter,
         )
     )
+
+
+async def _resolve_doc_urls(
+    results: List[Dict[str, Any]],
+    collection_name: str,
+) -> None:
+    """Batch-resolve document URLs and enrich result dicts in-place.
+
+    Looks up DocumentRootNode for each unique doc_name concurrently, preferring
+    root.doc_url then root.metadata.get("url") as fallback.
+    """
+    doc_names = {r["doc_name"] for r in results if r.get("doc_name")}
+    if not doc_names:
+        return
+
+    names_list = list(doc_names)
+    roots = await asyncio.gather(
+        *(
+            get_document_root(name, collection_name=collection_name)
+            for name in names_list
+        )
+    )
+    url_map: Dict[str, Optional[str]] = {}
+    for name, root in zip(names_list, roots):
+        if root:
+            url = getattr(root, "doc_url", None)
+            if not url and root.metadata:
+                url = root.metadata.get("url")
+            url_map[name] = url
+        else:
+            url_map[name] = None
+
+    for r in results:
+        r["doc_url"] = url_map.get(r.get("doc_name", ""))
 
 
 async def search_documents(
@@ -342,7 +357,8 @@ async def search_documents(
         max_tree_prompt_tokens: Max tokens for tree in tree-search prompt (default from config: 16000)
 
     Returns:
-        List of dicts with title, text, summary, doc_name, node_id, structure, content
+        List of dicts with title, text, summary, doc_name, node_id, structure, content,
+        start_index, end_index, physical_index, doc_url
     """
     try:
         manager = get_database_manager()
@@ -358,7 +374,7 @@ async def search_documents(
         set_default_context(context)
 
         if strategy == "tree_search":
-            return await _search_via_tree_search(
+            results = await _search_via_tree_search(
                 context,
                 query,
                 doc_name,
@@ -369,8 +385,8 @@ async def search_documents(
                 max_summary_chars=max_summary_chars,
                 max_tree_prompt_tokens=max_tree_prompt_tokens,
             )
-        if strategy == "walker":
-            return await _search_via_walker(
+        elif strategy == "walker":
+            results = await _search_via_walker(
                 context,
                 query,
                 doc_name,
@@ -378,14 +394,18 @@ async def search_documents(
                 collection_name=collection_name,
                 metadata_filter=metadata_filter,
             )
-        return await _search_via_direct(
-            context,
-            query,
-            doc_name,
-            limit,
-            collection_name=collection_name,
-            metadata_filter=metadata_filter,
-        )
+        else:
+            results = await _search_via_direct(
+                context,
+                query,
+                doc_name,
+                limit,
+                collection_name=collection_name,
+                metadata_filter=metadata_filter,
+            )
+
+        await _resolve_doc_urls(results, collection_name)
+        return results
     finally:
         set_default_context(prev)
 
@@ -426,18 +446,7 @@ async def _search_via_direct(
             node = await context._deserialize_entity(DocumentNode, data)
             if not node:
                 continue
-            content = node.summary or node.text or node.title or ""
-            out.append(
-                {
-                    "node_id": node.id,
-                    "title": node.title,
-                    "text": node.text,
-                    "summary": node.summary,
-                    "doc_name": node.doc_name,
-                    "structure": node.structure,
-                    "content": content[:2000] if content else "",
-                }
-            )
+            out.append(node_to_result(node))
         except Exception as e:
             logger.debug(f"Skipping invalid node: {e}")
     return out
@@ -465,9 +474,7 @@ async def _search_via_walker(
 
     all_results: List[Dict[str, Any]] = []
     for root in roots:
-        if doc_name and root.doc_name != doc_name:
-            continue
-        walker = DocumentWalker(query=query, limit=limit)
+        walker = DocumentWalker(query=query, limit=limit - len(all_results))
         await walker.spawn(root)
         report = await walker.get_report()
         for item in report:

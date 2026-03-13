@@ -2,10 +2,15 @@
 
 This module provides database initialization and configuration for the PageIndex
 document index, using a separate database (like logs) for document structure persistence.
+
+All mutable config uses contextvars.ContextVar for async-safety so concurrent
+coroutines (e.g. multiple agent requests) cannot stomp on each other's settings.
 """
 
+import contextvars
 import logging
 import os
+import threading
 from typing import Any, Dict, Optional
 
 from jvspatial.db import create_database, get_database_manager
@@ -14,100 +19,102 @@ logger = logging.getLogger(__name__)
 
 PAGEINDEX_DB_NAME = "pageindex_db"
 
-_pageindex_node_summary: Optional[bool] = None
-_pageindex_node_text: Optional[bool] = None
-_pageindex_doc_description: Optional[bool] = None
-_pageindex_max_token_num_each_node: Optional[int] = None
-_pageindex_summary_token_threshold: Optional[int] = None
-_pageindex_max_summary_chars: Optional[int] = None
-_pageindex_max_tree_prompt_tokens: Optional[int] = None
+_pageindex_node_summary: contextvars.ContextVar[Optional[bool]] = (
+    contextvars.ContextVar("_pageindex_node_summary", default=None)
+)
+_pageindex_node_text: contextvars.ContextVar[Optional[bool]] = contextvars.ContextVar(
+    "_pageindex_node_text", default=None
+)
+_pageindex_doc_description: contextvars.ContextVar[Optional[bool]] = (
+    contextvars.ContextVar("_pageindex_doc_description", default=None)
+)
+_pageindex_max_token_num_each_node: contextvars.ContextVar[Optional[int]] = (
+    contextvars.ContextVar("_pageindex_max_token_num_each_node", default=None)
+)
+_pageindex_summary_token_threshold: contextvars.ContextVar[Optional[int]] = (
+    contextvars.ContextVar("_pageindex_summary_token_threshold", default=None)
+)
+_pageindex_max_summary_chars: contextvars.ContextVar[Optional[int]] = (
+    contextvars.ContextVar("_pageindex_max_summary_chars", default=None)
+)
+_pageindex_max_tree_prompt_tokens: contextvars.ContextVar[Optional[int]] = (
+    contextvars.ContextVar("_pageindex_max_tree_prompt_tokens", default=None)
+)
 
 
 def set_pageindex_node_summary(value: Optional[bool]) -> None:
     """Set whether to generate node summaries during ingestion (from action config)."""
-    global _pageindex_node_summary
-    _pageindex_node_summary = value
+    _pageindex_node_summary.set(value)
 
 
 def get_pageindex_node_summary() -> bool:
     """Get node_summary config. Defaults to False when not set (off by default)."""
-    if _pageindex_node_summary is None:
-        return False
-    return _pageindex_node_summary
+    v = _pageindex_node_summary.get()
+    return v if v is not None else False
 
 
 def set_pageindex_node_text(value: Optional[bool]) -> None:
     """Set whether to add node text during ingestion (from action config)."""
-    global _pageindex_node_text
-    _pageindex_node_text = value
+    _pageindex_node_text.set(value)
 
 
 def get_pageindex_node_text() -> bool:
     """Get node_text config. Defaults to True when not set."""
-    if _pageindex_node_text is None:
-        return True
-    return _pageindex_node_text
+    v = _pageindex_node_text.get()
+    return v if v is not None else True
 
 
 def set_pageindex_doc_description(value: Optional[bool]) -> None:
     """Set whether to add doc description during ingestion (from action config)."""
-    global _pageindex_doc_description
-    _pageindex_doc_description = value
+    _pageindex_doc_description.set(value)
 
 
 def get_pageindex_doc_description() -> bool:
     """Get doc_description config. Defaults to False when not set."""
-    if _pageindex_doc_description is None:
-        return False
-    return _pageindex_doc_description
+    v = _pageindex_doc_description.get()
+    return v if v is not None else False
 
 
 def set_pageindex_max_token_num_each_node(value: Optional[int]) -> None:
     """Set max tokens per node for PDF ingestion (from action config)."""
-    global _pageindex_max_token_num_each_node
-    _pageindex_max_token_num_each_node = value
+    _pageindex_max_token_num_each_node.set(value)
 
 
 def get_pageindex_max_token_num_each_node() -> Optional[int]:
     """Get max_token_num_each_node config. Returns None when not set."""
-    return _pageindex_max_token_num_each_node
+    return _pageindex_max_token_num_each_node.get()
 
 
 def set_pageindex_summary_token_threshold(value: Optional[int]) -> None:
     """Set token threshold for node summaries in markdown (from action config)."""
-    global _pageindex_summary_token_threshold
-    _pageindex_summary_token_threshold = value
+    _pageindex_summary_token_threshold.set(value)
 
 
 def get_pageindex_summary_token_threshold() -> Optional[int]:
     """Get summary_token_threshold config. Returns None when not set (documents.py uses 200)."""
-    return _pageindex_summary_token_threshold
+    return _pageindex_summary_token_threshold.get()
 
 
 def set_pageindex_max_summary_chars(value: Optional[int]) -> None:
     """Set max chars per node summary in tree prompt (retrieval display only)."""
-    global _pageindex_max_summary_chars
-    _pageindex_max_summary_chars = value
+    _pageindex_max_summary_chars.set(value)
 
 
 def get_pageindex_max_summary_chars() -> int:
     """Get max_summary_chars. Defaults to 300 when not set."""
-    if _pageindex_max_summary_chars is None:
-        return 300
-    return _pageindex_max_summary_chars
+    v = _pageindex_max_summary_chars.get()
+    return v if v is not None else 300
 
 
 def set_pageindex_max_tree_prompt_tokens(value: Optional[int]) -> None:
     """Set max tokens for tree in tree-search prompt; over budget triggers fallback to direct."""
-    global _pageindex_max_tree_prompt_tokens
-    _pageindex_max_tree_prompt_tokens = value
+    _pageindex_max_tree_prompt_tokens.set(value)
 
 
 def get_pageindex_max_tree_prompt_tokens() -> int:
     """Get max_tree_prompt_tokens. Defaults to 16000 when not set."""
-    if _pageindex_max_tree_prompt_tokens is None:
-        return 16000
-    return _pageindex_max_tree_prompt_tokens
+    v = _pageindex_max_tree_prompt_tokens.get()
+    return v if v is not None else 16000
 
 
 def _get_prime_db_root() -> str:
@@ -197,6 +204,10 @@ def get_pageindex_config() -> Dict[str, Any]:
         return {"db_type": "json", "db_path": db_path}
 
 
+_db_init_lock = threading.Lock()
+_db_initialized = False
+
+
 def initialize_pageindex_database(config: Optional[Dict[str, Any]] = None) -> bool:
     """Initialize and register the PageIndex graph database.
 
@@ -206,59 +217,71 @@ def initialize_pageindex_database(config: Optional[Dict[str, Any]] = None) -> bo
     Returns:
         True if database was initialized, False otherwise
     """
-    if config is None:
-        config = get_pageindex_config()
+    global _db_initialized
+    if _db_initialized and config is None:
+        return True
 
-    try:
-        manager = get_database_manager()
-        db_type = config["db_type"]
-        db_name = PAGEINDEX_DB_NAME
+    with _db_init_lock:
+        if _db_initialized and config is None:
+            return True
 
-        if db_type == "json":
-            pageindex_db = create_database(
-                db_type="json",
-                base_path=config["db_path"],
-            )
-        elif db_type == "sqlite":
-            pageindex_db = create_database(
-                db_type="sqlite",
-                db_path=config["db_path"],
-            )
-        elif db_type == "mongodb":
-            pageindex_db = create_database(
-                db_type="mongodb",
-                uri=config["db_uri"],
-                db_name=config["db_name"],
-            )
-        elif db_type == "dynamodb":
-            pageindex_db = create_database(
-                db_type="dynamodb",
-                table_name=config["table_name"],
-                region_name=config["region_name"],
-                endpoint_url=config.get("endpoint_url"),
-                aws_access_key_id=config.get("aws_access_key_id"),
-                aws_secret_access_key=config.get("aws_secret_access_key"),
-            )
-        else:
-            pageindex_db = create_database(
-                db_type="json",
-                base_path=config.get("db_path", "./pageindex_db"),
-            )
+        if config is None:
+            config = get_pageindex_config()
 
         try:
-            manager.get_database(db_name)
-            logger.debug(f"PageIndex database '{db_name}' already registered")
-        except (ValueError, KeyError):
+            manager = get_database_manager()
+            db_name = PAGEINDEX_DB_NAME
+
+            try:
+                manager.get_database(db_name)
+                logger.debug(f"PageIndex database '{db_name}' already registered")
+                _db_initialized = True
+                return True
+            except (ValueError, KeyError):
+                pass
+
+            db_type = config["db_type"]
+            if db_type == "json":
+                pageindex_db = create_database(
+                    db_type="json",
+                    base_path=config["db_path"],
+                )
+            elif db_type == "sqlite":
+                pageindex_db = create_database(
+                    db_type="sqlite",
+                    db_path=config["db_path"],
+                )
+            elif db_type == "mongodb":
+                pageindex_db = create_database(
+                    db_type="mongodb",
+                    uri=config["db_uri"],
+                    db_name=config["db_name"],
+                )
+            elif db_type == "dynamodb":
+                pageindex_db = create_database(
+                    db_type="dynamodb",
+                    table_name=config["table_name"],
+                    region_name=config["region_name"],
+                    endpoint_url=config.get("endpoint_url"),
+                    aws_access_key_id=config.get("aws_access_key_id"),
+                    aws_secret_access_key=config.get("aws_secret_access_key"),
+                )
+            else:
+                pageindex_db = create_database(
+                    db_type="json",
+                    base_path=config.get("db_path", "./pageindex_db"),
+                )
+
             manager.register_database(db_name, pageindex_db)
             logger.info(
                 f"PageIndex database initialized: type={db_type}, name={db_name}"
             )
+            _db_initialized = True
+            return True
 
-        return True
-
-    except Exception as e:
-        logger.error(f"Failed to initialize PageIndex database: {e}", exc_info=True)
-        return False
+        except Exception as e:
+            logger.error(f"Failed to initialize PageIndex database: {e}", exc_info=True)
+            return False
 
 
 __all__ = [
