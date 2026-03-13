@@ -9,6 +9,7 @@ Unlike RetrievalInteractAction (which uses a vector store), PageIndex uses reaso
 ## Key Features
 
 - **PDF and Markdown ingestion** with hierarchical structure extraction
+- **Two-stage retrieval**: Lexical index (BM25) for candidate selection, then strategy-specific refinement—scales to large document bases
 - **Three retrieval strategies**: `tree_search` (LLM reasoning, recommended), `direct` (regex/text filter), `walker` (graph traversal)
 - **Document reference metadata** – page numbers, document name, and source URL rendered as numbered citations for LLM responses
 - **jvagent LLM bridge** for observability and token tracking when used in agent context
@@ -20,15 +21,25 @@ Unlike RetrievalInteractAction (which uses a vector store), PageIndex uses reaso
 ### Execution Flow
 
 ```
-Ingestion: PDF/MD -> PageIndex core (page_index/md_to_tree) -> tree_to_graph -> jvspatial
-Retrieval: query -> tree_search/direct/walker -> directive -> PersonaAction
+Ingestion: PDF/MD -> PageIndex core (page_index/md_to_tree) -> tree_to_graph -> jvspatial + lexical index
+Retrieval: query -> lexical candidates (BM25) -> tree_search/direct/walker -> directive -> PersonaAction
 ```
+
+### Two-Stage Retrieval
+
+Retrieval uses a **lexical index** (inverted index with BM25 scoring) for fast candidate selection, then applies the chosen strategy (tree_search, direct, walker) to that subset:
+
+1. **Stage 1**: Tokenize query, fetch posting lists for terms, score nodes with BM25, return top-K candidates.
+2. **Stage 2**: Strategy-specific refinement—tree_search runs LLM selection on top documents; direct hydrates candidates by ID; walker traverses top-ranked roots.
+
+This scales to large document bases without full-corpus scans. When the lexical index has no data (e.g. documents ingested before the feature), retrieval falls back to the original behavior.
 
 ### Components
 
-- `assimilate_document()` – ingestion (programmatic)
+- `assimilate_document()` – ingestion (programmatic); builds lexical index during persist
 - `search_documents()` – retrieval (programmatic)
 - `PageIndexRetrievalInteractAction` – InteractAction for agent workflows
+- `lexical_index` – inverted index (tokenizer, ranking, index CRUD)
 - REST endpoints under `/pageindex/`
 
 ## Configuration
@@ -52,6 +63,11 @@ Retrieval: query -> tree_search/direct/walker -> directive -> PersonaAction
 | `include_references` | bool | true | Render numbered source references (page numbers, URLs) in directive. Set false to save tokens. |
 | `collection` | Optional[str] | null | Override collection name (default: agent_id) |
 | `metadata_filter` | Optional[Dict] | null | Key-value filter to narrow search by document metadata |
+| `enable_lexical_index` | bool | true | Use two-stage retrieval (BM25 candidates). Set false to disable. |
+| `candidate_k` | int | 200 | Max candidates from lexical index per query |
+| `max_docs_for_tree_search` | int | 10 | Max documents to include in tree_search (lexical-ranked) |
+| `max_summary_chars` | Optional[int] | 300 | Max chars per node summary in tree prompt |
+| `max_tree_prompt_tokens` | Optional[int] | 16000 | Max tokens for tree; exceeding triggers fallback to direct |
 
 | Attribute | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -64,6 +80,8 @@ Retrieval: query -> tree_search/direct/walker -> directive -> PersonaAction
 | `strategy` | str | "tree_search" | "tree_search", "direct", or "walker" |
 | `model` | Optional[str] | None | LLM for tree_search (else PAGEINDEX_TREE_SEARCH_MODEL or gpt-4o-mini) |
 | `model_action_type` | str | "OpenAILanguageModelAction" | LanguageModelAction for observability |
+| `max_summary_chars` | Optional[int] | None | Max chars per node summary in tree prompt |
+| `max_tree_prompt_tokens` | Optional[int] | None | Max tokens for tree; exceeding triggers fallback to direct |
 | `directive` | str | DIRECTIVE_TEMPLATE | Template with `{results}` and `{references}` placeholders (when include_references) |
 | `parameters` | List[Dict] | [...] | Conditional behavioral rules |
 
@@ -158,6 +176,9 @@ When `include_references` is true (default), retrieval results include page numb
     max_token_num_each_node: 20000   # PDF only
     summary_token_threshold: 200      # Markdown only
     # model: gpt-4o-mini  # Optional override
+    # enable_lexical_index: true   # Two-stage retrieval (default: true)
+    # candidate_k: 200            # Max lexical candidates per query
+    # max_docs_for_tree_search: 10  # Max documents in tree_search
 ```
 
 ## Usage
@@ -169,9 +190,11 @@ When `include_references` is true (default), retrieval results include page numb
 
 ## Retrieval Strategies
 
-- **tree_search**: Builds tree from graph, sends to LLM with query, parses node_list, fetches content. Recommended. Requires API key.
-- **direct**: Database find with regex on title/text/summary. No LLM.
-- **walker**: DocumentWalker traversal from roots. No LLM.
+All strategies use the lexical index when available (documents ingested after the feature). When the index has no data, they fall back to the original full-scan behavior.
+
+- **tree_search**: Lexical index ranks documents; LLM selects nodes from top-N document trees. Recommended. Requires API key.
+- **direct**: Lexical candidates hydrated by ID; fallback to regex scan on title/text/summary. No LLM.
+- **walker**: Lexical index ranks documents; traverses top-N roots. No LLM.
 
 ## Dependencies
 
@@ -182,6 +205,7 @@ When `include_references` is true (default), retrieval results include page numb
 ## Troubleshooting / Best Practices
 
 - Documents must be ingested before retrieval
+- **Lexical index and re-ingestion**: The lexical index is built during ingestion. Documents ingested *before* the two-stage retrieval feature will work (graceful fallback) but will not benefit from BM25 candidate selection. To get the scaling benefits, re-ingest those documents (delete and assimilate again) or use `lexical_index.reindex_nodes()` to rebuild the index from existing graph nodes.
 - tree_search requires CHATGPT_API_KEY or OPENAI_API_KEY; falls back to direct if missing
 - PageIndex DB path is sibling of prime DB (e.g. `./pageindex_db` next to `./jvagent_db`)
 - Use `model_action_type` for token tracking and observability in agent context

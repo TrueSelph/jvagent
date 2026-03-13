@@ -1,8 +1,11 @@
 """Vectorless retrieval service for PageIndex document graph.
 
-Search via database.find() with text filters, DocumentWalker traversal,
-or LLM-based tree search (PageIndex recommended approach).
-No vector store, no embeddings.
+Two-stage pipeline:
+    1. Lexical candidate retrieval (BM25 over inverted index -- O(|query_terms|))
+    2. Strategy-specific refinement (tree_search / direct / walker)
+
+Falls back gracefully to full-scan retrieval when the lexical index has no
+data (e.g. documents ingested before the index existed).
 """
 
 import asyncio
@@ -10,7 +13,7 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from jvspatial.core.context import (
     GraphContext,
@@ -21,6 +24,9 @@ from jvspatial.db import get_database_manager
 
 from .config import (
     PAGEINDEX_DB_NAME,
+    get_pageindex_candidate_k,
+    get_pageindex_enable_lexical_index,
+    get_pageindex_max_docs_for_tree_search,
     get_pageindex_max_summary_chars,
     get_pageindex_max_tree_prompt_tokens,
 )
@@ -30,8 +36,6 @@ from .llm_bridge import get_pageindex_model_action
 from .models import DocumentContentEdge, DocumentNode, DocumentRootNode, node_to_result
 
 logger = logging.getLogger(__name__)
-
-_MAX_DOCS_FOR_TREE_SEARCH = 5
 
 
 def _build_text_query(query: str) -> Dict[str, Any]:
@@ -51,16 +55,74 @@ def _build_text_query(query: str) -> Dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Lexical candidate helpers
+# ---------------------------------------------------------------------------
+
+
+async def _lexical_candidates(
+    query: str,
+    collection_name: str,
+    doc_name: Optional[str] = None,
+    metadata_filter: Optional[Dict[str, Any]] = None,
+    candidate_k: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Retrieve BM25-ranked candidates from the lexical index.
+
+    Resolves ``metadata_filter`` to a set of allowed doc_names before querying
+    the index.  Returns empty list when the index has no data or the feature
+    is disabled (signals caller to fall back).
+    """
+    if not get_pageindex_enable_lexical_index():
+        return []
+
+    from .lexical_index import search as lex_search
+
+    allowed_doc_names: Optional[List[str]] = None
+    if metadata_filter and not doc_name:
+        roots = await get_document_roots(
+            collection_name=collection_name,
+            metadata_filter=metadata_filter,
+        )
+        allowed_doc_names = [r.doc_name for r in roots]
+        if not allowed_doc_names:
+            return []
+
+    k = candidate_k if candidate_k is not None else get_pageindex_candidate_k()
+
+    try:
+        return await lex_search(
+            query=query,
+            collection_name=collection_name,
+            doc_name=doc_name,
+            allowed_doc_names=allowed_doc_names,
+            candidate_k=k,
+        )
+    except Exception:
+        logger.debug("Lexical index search failed; falling back", exc_info=True)
+        return []
+
+
+def _top_doc_names(candidates: List[Dict[str, Any]], max_docs: int) -> List[str]:
+    """Aggregate candidate scores by doc_name and return top-N doc names."""
+    doc_scores: Dict[str, float] = {}
+    for c in candidates:
+        dn = c["doc_name"]
+        doc_scores[dn] = doc_scores.get(dn, 0.0) + c["score"]
+    ranked = sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)
+    return [dn for dn, _ in ranked[:max_docs]]
+
+
+# ---------------------------------------------------------------------------
+# Tree building (unchanged)
+# ---------------------------------------------------------------------------
+
+
 async def _graph_to_tree(
     root: DocumentRootNode,
     max_summary_chars: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
-    """Build PageIndex-style tree from jvspatial graph.
-
-    Traverses DocumentRootNode -> DocumentNode hierarchy. Returns list of top-level
-    nodes, each with title, node_id, summary, prefix_summary, nodes (no text).
-    Truncates summaries for compact tree prompt (retrieval display only).
-    """
+    """Build PageIndex-style tree from jvspatial graph."""
     max_chars = (
         max_summary_chars
         if max_summary_chars is not None
@@ -100,6 +162,11 @@ async def _graph_to_tree(
     return list(await asyncio.gather(*(_node_to_dict(c) for c in children)))
 
 
+# ---------------------------------------------------------------------------
+# Strategy: tree_search
+# ---------------------------------------------------------------------------
+
+
 async def _search_via_tree_search(
     context: GraphContext,
     query: str,
@@ -111,12 +178,7 @@ async def _search_via_tree_search(
     max_summary_chars: Optional[int] = None,
     max_tree_prompt_tokens: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
-    """Search using LLM-based tree search (PageIndex recommended approach).
-
-    Builds tree from graph, sends to LLM with query, parses node_list,
-    fetches full content for selected nodes. Falls back to direct search
-    when tree exceeds max_tree_prompt_tokens.
-    """
+    """LLM-based tree search with lexical pre-selection of documents."""
     from .core.utils import (
         ChatGPT_API_async,
         count_tokens,
@@ -129,16 +191,31 @@ async def _search_via_tree_search(
         if max_tree_prompt_tokens is not None
         else get_pageindex_max_tree_prompt_tokens()
     )
+    max_docs = get_pageindex_max_docs_for_tree_search()
+
+    # --- Document selection: lexical-guided or legacy first-N ---
+    candidates = await _lexical_candidates(
+        query,
+        collection_name,
+        doc_name=doc_name,
+        metadata_filter=metadata_filter,
+    )
 
     if doc_name:
         root = await get_document_root(doc_name, collection_name=collection_name)
         roots = [root] if root else []
+    elif candidates:
+        top_docs = _top_doc_names(candidates, max_docs)
+        root_tasks = [
+            get_document_root(dn, collection_name=collection_name) for dn in top_docs
+        ]
+        roots = [r for r in await asyncio.gather(*root_tasks) if r]
     else:
         roots = await get_document_roots(
             collection_name=collection_name,
             metadata_filter=metadata_filter,
         )
-        roots = roots[:_MAX_DOCS_FOR_TREE_SEARCH]
+        roots = roots[:max_docs]
 
     if not roots:
         return []
@@ -161,7 +238,6 @@ async def _search_via_tree_search(
 
     all_results: List[Dict[str, Any]] = []
 
-    # Build trees concurrently across roots
     trees = await asyncio.gather(
         *(_graph_to_tree(r, max_summary_chars=max_summary_chars) for r in roots)
     )
@@ -174,7 +250,7 @@ async def _search_via_tree_search(
                 continue
             tree_no_text = remove_fields(tree, fields=["text"])
 
-            tree_seen = set()
+            tree_seen: Set[str] = set()
             deduped = []
             for n in tree_no_text:
                 if n["node_id"] not in tree_seen:
@@ -297,15 +373,171 @@ Directly return the final JSON structure. Do not output anything else.
     )
 
 
+# ---------------------------------------------------------------------------
+# Strategy: direct (candidate-first when lexical index available)
+# ---------------------------------------------------------------------------
+
+
+async def _search_via_direct(
+    context: GraphContext,
+    query: str,
+    doc_name: Optional[str],
+    limit: int,
+    collection_name: str = "default",
+    metadata_filter: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Search using lexical candidates then hydrate, or fall back to regex scan."""
+
+    # --- Two-stage path: lexical candidates -> hydrate by ID ---
+    candidates = await _lexical_candidates(
+        query,
+        collection_name,
+        doc_name=doc_name,
+        metadata_filter=metadata_filter,
+    )
+    if candidates:
+        candidate_ids = [c["node_id"] for c in candidates[: limit * 3]]
+        out: List[Dict[str, Any]] = []
+        for nid in candidate_ids:
+            try:
+                data = await context.database.get("node", nid)
+                if not data:
+                    continue
+                node = await context._deserialize_entity(DocumentNode, data)
+                if not node:
+                    continue
+                if node.collection_name != collection_name:
+                    continue
+                if doc_name and node.doc_name != doc_name:
+                    continue
+                out.append(node_to_result(node))
+                if len(out) >= limit:
+                    break
+            except Exception as e:
+                logger.debug(f"Skipping candidate node {nid}: {e}")
+        if out:
+            return out
+
+    # --- Fallback: original full-scan regex search ---
+    return await _search_via_direct_scan(
+        context,
+        query,
+        doc_name,
+        limit,
+        collection_name=collection_name,
+        metadata_filter=metadata_filter,
+    )
+
+
+async def _search_via_direct_scan(
+    context: GraphContext,
+    query: str,
+    doc_name: Optional[str],
+    limit: int,
+    collection_name: str = "default",
+    metadata_filter: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Original full-scan regex search (fallback when lexical index is empty)."""
+    db_query = _build_text_query(query)
+    db_query["context.collection_name"] = collection_name
+
+    if metadata_filter:
+        roots = await get_document_roots(
+            collection_name=collection_name,
+            metadata_filter=metadata_filter,
+        )
+        doc_names = [r.doc_name for r in roots]
+        if not doc_names:
+            return []
+        if doc_name:
+            if doc_name not in doc_names:
+                return []
+            db_query["context.doc_name"] = doc_name
+        else:
+            db_query["context.doc_name"] = {"$in": doc_names}
+    elif doc_name:
+        db_query["context.doc_name"] = doc_name
+
+    results = await context.database.find("node", db_query)
+    out: List[Dict[str, Any]] = []
+    for data in results[:limit]:
+        try:
+            node = await context._deserialize_entity(DocumentNode, data)
+            if not node:
+                continue
+            out.append(node_to_result(node))
+        except Exception as e:
+            logger.debug(f"Skipping invalid node: {e}")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Strategy: walker (lexical-guided root selection)
+# ---------------------------------------------------------------------------
+
+
+async def _search_via_walker(
+    context: GraphContext,
+    query: str,
+    doc_name: Optional[str],
+    limit: int,
+    collection_name: str = "default",
+    metadata_filter: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Search using DocumentWalker traversal from document roots.
+
+    When the lexical index has data, walks only the top-scoring document roots
+    instead of all roots in the collection.
+    """
+    if doc_name:
+        root = await get_document_root(doc_name, collection_name=collection_name)
+        roots = [root] if root else []
+    else:
+        candidates = await _lexical_candidates(
+            query,
+            collection_name,
+            metadata_filter=metadata_filter,
+        )
+        if candidates:
+            max_docs = get_pageindex_max_docs_for_tree_search()
+            top_docs = _top_doc_names(candidates, max_docs)
+            root_tasks = [
+                get_document_root(dn, collection_name=collection_name)
+                for dn in top_docs
+            ]
+            roots = [r for r in await asyncio.gather(*root_tasks) if r]
+        else:
+            roots = await get_document_roots(
+                collection_name=collection_name,
+                metadata_filter=metadata_filter,
+            )
+    if not roots:
+        return []
+
+    all_results: List[Dict[str, Any]] = []
+    for root in roots:
+        walker = DocumentWalker(query=query, limit=limit - len(all_results))
+        await walker.spawn(root)
+        report = await walker.get_report()
+        for item in report:
+            if isinstance(item, dict):
+                all_results.append(item)
+        if len(all_results) >= limit:
+            break
+
+    return all_results[:limit]
+
+
+# ---------------------------------------------------------------------------
+# URL enrichment (unchanged)
+# ---------------------------------------------------------------------------
+
+
 async def _resolve_doc_urls(
     results: List[Dict[str, Any]],
     collection_name: str,
 ) -> None:
-    """Batch-resolve document URLs and enrich result dicts in-place.
-
-    Looks up DocumentRootNode for each unique doc_name concurrently, preferring
-    root.doc_url then root.metadata.get("url") as fallback.
-    """
+    """Batch-resolve document URLs and enrich result dicts in-place."""
     doc_names = {r["doc_name"] for r in results if r.get("doc_name")}
     if not doc_names:
         return
@@ -329,6 +561,11 @@ async def _resolve_doc_urls(
 
     for r in results:
         r["doc_url"] = url_map.get(r.get("doc_name", ""))
+
+
+# ---------------------------------------------------------------------------
+# Public entry point (unchanged signature)
+# ---------------------------------------------------------------------------
 
 
 async def search_documents(
@@ -368,7 +605,10 @@ async def search_documents(
         return []
 
     context = GraphContext(database=db)
-    prev = get_default_context()
+    try:
+        prev = get_default_context()
+    except RuntimeError:
+        prev = None
 
     try:
         set_default_context(context)
@@ -407,80 +647,5 @@ async def search_documents(
         await _resolve_doc_urls(results, collection_name)
         return results
     finally:
-        set_default_context(prev)
-
-
-async def _search_via_direct(
-    context: GraphContext,
-    query: str,
-    doc_name: Optional[str],
-    limit: int,
-    collection_name: str = "default",
-    metadata_filter: Optional[Dict[str, Any]] = None,
-) -> List[Dict[str, Any]]:
-    """Search using database.find with text filters."""
-    db_query = _build_text_query(query)
-    db_query["context.collection_name"] = collection_name
-
-    if metadata_filter:
-        roots = await get_document_roots(
-            collection_name=collection_name,
-            metadata_filter=metadata_filter,
-        )
-        doc_names = [r.doc_name for r in roots]
-        if not doc_names:
-            return []
-        if doc_name:
-            if doc_name not in doc_names:
-                return []
-            db_query["context.doc_name"] = doc_name
-        else:
-            db_query["context.doc_name"] = {"$in": doc_names}
-    elif doc_name:
-        db_query["context.doc_name"] = doc_name
-
-    results = await context.database.find("node", db_query)
-    out: List[Dict[str, Any]] = []
-    for data in results[:limit]:
-        try:
-            node = await context._deserialize_entity(DocumentNode, data)
-            if not node:
-                continue
-            out.append(node_to_result(node))
-        except Exception as e:
-            logger.debug(f"Skipping invalid node: {e}")
-    return out
-
-
-async def _search_via_walker(
-    context: GraphContext,
-    query: str,
-    doc_name: Optional[str],
-    limit: int,
-    collection_name: str = "default",
-    metadata_filter: Optional[Dict[str, Any]] = None,
-) -> List[Dict[str, Any]]:
-    """Search using DocumentWalker traversal from document roots."""
-    if doc_name:
-        root = await get_document_root(doc_name, collection_name=collection_name)
-        roots = [root] if root else []
-    else:
-        roots = await get_document_roots(
-            collection_name=collection_name,
-            metadata_filter=metadata_filter,
-        )
-    if not roots:
-        return []
-
-    all_results: List[Dict[str, Any]] = []
-    for root in roots:
-        walker = DocumentWalker(query=query, limit=limit - len(all_results))
-        await walker.spawn(root)
-        report = await walker.get_report()
-        for item in report:
-            if isinstance(item, dict):
-                all_results.append(item)
-        if len(all_results) >= limit:
-            break
-
-    return all_results[:limit]
+        if prev is not None:
+            set_default_context(prev)

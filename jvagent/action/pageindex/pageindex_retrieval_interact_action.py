@@ -14,7 +14,10 @@ from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.model.context import get_interaction, set_interaction
 from jvagent.action.pageindex.config import (
     initialize_pageindex_database,
+    set_pageindex_candidate_k,
     set_pageindex_doc_description,
+    set_pageindex_enable_lexical_index,
+    set_pageindex_max_docs_for_tree_search,
     set_pageindex_max_summary_chars,
     set_pageindex_max_token_num_each_node,
     set_pageindex_max_tree_prompt_tokens,
@@ -62,6 +65,15 @@ def _push_retrieval_config(retrieval: Dict[str, Any]) -> None:
         and retrieval["max_tree_prompt_tokens"] is not None
     ):
         set_pageindex_max_tree_prompt_tokens(retrieval["max_tree_prompt_tokens"])
+    if "enable_lexical_index" in retrieval:
+        set_pageindex_enable_lexical_index(retrieval["enable_lexical_index"])
+    if "candidate_k" in retrieval and retrieval["candidate_k"] is not None:
+        set_pageindex_candidate_k(retrieval["candidate_k"])
+    if (
+        "max_docs_for_tree_search" in retrieval
+        and retrieval["max_docs_for_tree_search"] is not None
+    ):
+        set_pageindex_max_docs_for_tree_search(retrieval["max_docs_for_tree_search"])
 
 
 def _get_ingestion_config(
@@ -268,6 +280,9 @@ class PageIndexRetrievalInteractAction(InteractAction):
                 {
                     "max_summary_chars": max_summary_chars,
                     "max_tree_prompt_tokens": max_tree_prompt_tokens,
+                    "enable_lexical_index": cfg.get("enable_lexical_index"),
+                    "candidate_k": cfg.get("candidate_k"),
+                    "max_docs_for_tree_search": cfg.get("max_docs_for_tree_search"),
                 }
             )
             results = await search_documents(

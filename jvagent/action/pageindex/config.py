@@ -40,6 +40,15 @@ _pageindex_max_summary_chars: contextvars.ContextVar[Optional[int]] = (
 _pageindex_max_tree_prompt_tokens: contextvars.ContextVar[Optional[int]] = (
     contextvars.ContextVar("_pageindex_max_tree_prompt_tokens", default=None)
 )
+_pageindex_enable_lexical_index: contextvars.ContextVar[Optional[bool]] = (
+    contextvars.ContextVar("_pageindex_enable_lexical_index", default=None)
+)
+_pageindex_candidate_k: contextvars.ContextVar[Optional[int]] = contextvars.ContextVar(
+    "_pageindex_candidate_k", default=None
+)
+_pageindex_max_docs_for_tree_search: contextvars.ContextVar[Optional[int]] = (
+    contextvars.ContextVar("_pageindex_max_docs_for_tree_search", default=None)
+)
 
 
 def set_pageindex_node_summary(value: Optional[bool]) -> None:
@@ -115,6 +124,39 @@ def get_pageindex_max_tree_prompt_tokens() -> int:
     """Get max_tree_prompt_tokens. Defaults to 16000 when not set."""
     v = _pageindex_max_tree_prompt_tokens.get()
     return v if v is not None else 16000
+
+
+def set_pageindex_enable_lexical_index(value: Optional[bool]) -> None:
+    """Enable/disable the lexical candidate index for two-stage retrieval."""
+    _pageindex_enable_lexical_index.set(value)
+
+
+def get_pageindex_enable_lexical_index() -> bool:
+    """Get enable_lexical_index. Defaults to True when not set."""
+    v = _pageindex_enable_lexical_index.get()
+    return v if v is not None else True
+
+
+def set_pageindex_candidate_k(value: Optional[int]) -> None:
+    """Set max candidates returned by lexical index per query."""
+    _pageindex_candidate_k.set(value)
+
+
+def get_pageindex_candidate_k() -> int:
+    """Get candidate_k. Defaults to 200 when not set."""
+    v = _pageindex_candidate_k.get()
+    return v if v is not None else 200
+
+
+def set_pageindex_max_docs_for_tree_search(value: Optional[int]) -> None:
+    """Set max documents to include in tree search (replaces fixed constant)."""
+    _pageindex_max_docs_for_tree_search.set(value)
+
+
+def get_pageindex_max_docs_for_tree_search() -> int:
+    """Get max_docs_for_tree_search. Defaults to 10 when not set."""
+    v = _pageindex_max_docs_for_tree_search.get()
+    return v if v is not None else 10
 
 
 def _get_prime_db_root() -> str:
@@ -285,8 +327,11 @@ def initialize_pageindex_database(config: Optional[Dict[str, Any]] = None) -> bo
 
 
 __all__ = [
+    "get_pageindex_candidate_k",
     "get_pageindex_config",
     "get_pageindex_doc_description",
+    "get_pageindex_enable_lexical_index",
+    "get_pageindex_max_docs_for_tree_search",
     "get_pageindex_max_summary_chars",
     "get_pageindex_max_token_num_each_node",
     "get_pageindex_max_tree_prompt_tokens",
@@ -295,7 +340,10 @@ __all__ = [
     "get_pageindex_summary_token_threshold",
     "initialize_pageindex_database",
     "PAGEINDEX_DB_NAME",
+    "set_pageindex_candidate_k",
     "set_pageindex_doc_description",
+    "set_pageindex_enable_lexical_index",
+    "set_pageindex_max_docs_for_tree_search",
     "set_pageindex_max_summary_chars",
     "set_pageindex_max_token_num_each_node",
     "set_pageindex_max_tree_prompt_tokens",

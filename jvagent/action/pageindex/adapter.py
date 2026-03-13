@@ -68,6 +68,23 @@ async def _tree_to_nodes(
         await node.set_context(context)
         await node.save()
 
+        try:
+            from .lexical_index import index_node as _lex_index_node
+
+            await _lex_index_node(
+                node_id=node.id,
+                doc_name=doc_name,
+                collection_name=collection_name,
+                title=data.get("title", ""),
+                text=data.get("text", ""),
+                summary=data.get("summary") or "",
+                prefix_summary=data.get("prefix_summary") or "",
+            )
+        except Exception:
+            logger.debug(
+                f"Lexical index: failed to index node {node.id}", exc_info=True
+            )
+
         if parent:
             await parent.connect(node, edge=DocumentContentEdge, direction="out")
 
@@ -121,7 +138,10 @@ async def persist_structure(
         raise
 
     context = GraphContext(database=db)
-    prev_context = get_default_context()
+    try:
+        prev_context = get_default_context()
+    except RuntimeError:
+        prev_context = None
     try:
         set_default_context(context)
 
@@ -146,7 +166,8 @@ async def persist_structure(
         )
         return root.id
     finally:
-        set_default_context(prev_context)
+        if prev_context is not None:
+            set_default_context(prev_context)
 
 
 async def tree_to_graph(
