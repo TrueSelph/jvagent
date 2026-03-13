@@ -34,6 +34,20 @@ from .models import DocumentRootNode
 logger = logging.getLogger(__name__)
 
 
+def _safe_get_prev_context() -> Optional[GraphContext]:
+    """Return the current default context, or None if none is set."""
+    try:
+        return get_default_context()
+    except RuntimeError:
+        return None
+
+
+def _safe_restore_context(prev: Optional[GraphContext]) -> None:
+    """Restore a previous default context if one was captured."""
+    if prev is not None:
+        set_default_context(prev)
+
+
 def _to_yes_no(value: Any, default: bool) -> str:
     """Normalize bool-like value to yes/no. None -> default; yes/true/1 -> yes; else no."""
     if value is None:
@@ -197,14 +211,14 @@ async def get_document_roots(
     """Get DocumentRootNodes filtered by collection and optional metadata."""
     initialize_pageindex_database()
     context = _get_pageindex_context()
-    prev = get_default_context()
+    prev = _safe_get_prev_context()
     try:
         set_default_context(context)
         query: Dict[str, Any] = {"context.collection_name": collection_name}
         query.update(_build_metadata_query(metadata_filter or {}))
         return await DocumentRootNode.find(query)
     finally:
-        set_default_context(prev)
+        _safe_restore_context(prev)
 
 
 async def get_document_root(
@@ -214,7 +228,7 @@ async def get_document_root(
     """Get DocumentRootNode by doc_name and collection_name."""
     initialize_pageindex_database()
     context = _get_pageindex_context()
-    prev = get_default_context()
+    prev = _safe_get_prev_context()
     try:
         set_default_context(context)
         query: Dict[str, Any] = {
@@ -224,7 +238,7 @@ async def get_document_root(
         roots = await DocumentRootNode.find(query)
         return roots[0] if roots else None
     finally:
-        set_default_context(prev)
+        _safe_restore_context(prev)
 
 
 async def list_documents(
@@ -234,7 +248,7 @@ async def list_documents(
     """List documents in the PageIndex graph, optionally filtered by collection and metadata."""
     initialize_pageindex_database()
     context = _get_pageindex_context()
-    prev = get_default_context()
+    prev = _safe_get_prev_context()
     try:
         set_default_context(context)
         query: Dict[str, Any] = {"context.collection_name": collection_name}
@@ -252,7 +266,7 @@ async def list_documents(
             for r in roots
         ]
     finally:
-        set_default_context(prev)
+        _safe_restore_context(prev)
 
 
 async def delete_document(
@@ -266,14 +280,34 @@ async def delete_document(
         return False
 
     context = _get_pageindex_context()
-    prev = get_default_context()
+    prev = _safe_get_prev_context()
     try:
         set_default_context(context)
+
+        # Clean up lexical index before cascade-deleting graph nodes
+        try:
+            from .lexical_index import remove_document_nodes
+            from .models import DocumentContentEdge, DocumentNode
+
+            nodes = await DocumentNode.find(
+                {
+                    "context.doc_name": doc_name,
+                    "context.collection_name": collection_name,
+                }
+            )
+            if nodes:
+                await remove_document_nodes([n.id for n in nodes], collection_name)
+        except Exception:
+            logger.debug(
+                "Lexical index cleanup failed for document deletion",
+                exc_info=True,
+            )
+
         await root.delete()
         logger.info(f"Deleted document '{doc_name}'")
         return True
     finally:
-        set_default_context(prev)
+        _safe_restore_context(prev)
 
 
 async def export_documents(
@@ -285,7 +319,7 @@ async def export_documents(
 
     initialize_pageindex_database()
     context = _get_pageindex_context()
-    prev = get_default_context()
+    prev = _safe_get_prev_context()
     logger.debug(f"Exporting documents in collection: {collection_name}")
     try:
         set_default_context(context)
@@ -310,7 +344,7 @@ async def export_documents(
             "edges": [e.model_dump() for e in edges],
         }
     finally:
-        set_default_context(prev)
+        _safe_restore_context(prev)
 
 
 async def import_documents(
@@ -323,19 +357,52 @@ async def import_documents(
 
     initialize_pageindex_database()
     context = _get_pageindex_context()
-    prev = get_default_context()
+    prev = _safe_get_prev_context()
     try:
         set_default_context(context)
         if purge and collection_name:
+            try:
+                from .lexical_index import remove_collection
+
+                await remove_collection(collection_name)
+            except Exception:
+                logger.debug(
+                    "Lexical index cleanup failed during import purge",
+                    exc_info=True,
+                )
             query = {"context.collection_name": collection_name}
             roots = await DocumentRootNode.find(query)
             for root in roots:
                 await root.delete()
         for root_data in data.get("roots", []):
             await DocumentRootNode(**root_data).save()
+        imported_nodes: list = []
         for node_data in data.get("nodes", []):
-            await DocumentNode(**node_data).save()
+            node = DocumentNode(**node_data)
+            await node.save()
+            imported_nodes.append(node)
         for edge_data in data.get("edges", []):
             await DocumentContentEdge(**edge_data).save()
+
+        # Build lexical index for imported nodes
+        if imported_nodes:
+            try:
+                from .lexical_index import index_node as _lex_index
+
+                for node in imported_nodes:
+                    coll = getattr(
+                        node, "collection_name", collection_name or "default"
+                    )
+                    await _lex_index(
+                        node_id=node.id,
+                        doc_name=node.doc_name,
+                        collection_name=coll,
+                        title=node.title or "",
+                        text=node.text or "",
+                        summary=node.summary or "",
+                        prefix_summary=node.prefix_summary or "",
+                    )
+            except Exception:
+                logger.debug("Lexical indexing failed during import", exc_info=True)
     finally:
-        set_default_context(prev)
+        _safe_restore_context(prev)
