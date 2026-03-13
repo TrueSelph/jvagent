@@ -83,6 +83,7 @@ async def assimilate_document(
     collection_name: str = "default",
     metadata: Optional[Dict[str, Any]] = None,
     doc_description: Optional[str] = None,
+    doc_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Assimilate a PDF or Markdown document via PageIndex and optionally persist to graph.
 
@@ -103,6 +104,7 @@ async def assimilate_document(
         collection_name: Collection this document belongs to (default: "default")
         metadata: Custom key-value metadata for filtering at query time
         doc_description: Optional user-provided document description (overrides LLM-generated if set)
+        doc_url: Source URL of the document resource (stored on DocumentRootNode for reference citations)
 
     Returns:
         Dict with doc_name, structure, doc_description (if requested), _root_id (if persist)
@@ -113,17 +115,10 @@ async def assimilate_document(
     model = model or "gpt-4o-mini"
 
     # Normalize: true/yes/1 -> "yes", false/no/0 -> "no" for core; use config when None
-    if_add_node_summary = _to_yes_no(
-        if_add_node_summary,
-        get_pageindex_node_summary() if if_add_node_summary is None else False,
-    )
-    if_add_node_text = _to_yes_no(
-        if_add_node_text,
-        get_pageindex_node_text() if if_add_node_text is None else True,
-    )
+    if_add_node_summary = _to_yes_no(if_add_node_summary, get_pageindex_node_summary())
+    if_add_node_text = _to_yes_no(if_add_node_text, get_pageindex_node_text())
     if_add_doc_description = _to_yes_no(
-        if_add_doc_description,
-        get_pageindex_doc_description() if if_add_doc_description is None else False,
+        if_add_doc_description, get_pageindex_doc_description()
     )
     if max_token_num_each_node is None:
         max_token_num_each_node = get_pageindex_max_token_num_each_node()
@@ -147,7 +142,7 @@ async def assimilate_document(
         if is_pdf:
             # page_index() uses asyncio.run() internally; run in executor to avoid
             # "asyncio.run() cannot be called from a running event loop"
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 None,
                 lambda: page_index(
@@ -183,6 +178,8 @@ async def assimilate_document(
             result["metadata"] = metadata
             if doc_description is not None:
                 result["doc_description"] = doc_description
+            if doc_url is not None:
+                result["doc_url"] = doc_url
             root_id = await tree_to_graph(result)
             result["_root_id"] = root_id
             logger.info(f"Assimilated document '{name}' (root={root_id})")
@@ -247,6 +244,7 @@ async def list_documents(
             {
                 "doc_name": r.doc_name,
                 "doc_description": r.doc_description,
+                "doc_url": r.doc_url,
                 "root_id": r.id,
                 "collection_name": r.collection_name,
                 "metadata": r.metadata,
@@ -288,10 +286,7 @@ async def export_documents(
     initialize_pageindex_database()
     context = _get_pageindex_context()
     prev = get_default_context()
-    import logging
-
-    logger = logging.getLogger(__name__)
-    logger.warning(f"exporting documents in collection: {collection_name}")
+    logger.debug(f"Exporting documents in collection: {collection_name}")
     try:
         set_default_context(context)
         query: Dict[str, Any] = {"context.collection_name": collection_name}
@@ -299,7 +294,16 @@ async def export_documents(
             query["context.doc_name"] = doc_name
         roots = await DocumentRootNode.find(query)
         nodes = await DocumentNode.find(query)
-        edges = await DocumentContentEdge.find({})
+
+        node_ids = {r.id for r in roots} | {n.id for n in nodes}
+        all_edges = await DocumentContentEdge.find({})
+        edges = [
+            e
+            for e in all_edges
+            if getattr(e, "source", None) in node_ids
+            or getattr(e, "target", None) in node_ids
+        ]
+
         return {
             "roots": [r.model_dump() for r in roots],
             "nodes": [n.model_dump() for n in nodes],

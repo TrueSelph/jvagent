@@ -10,6 +10,7 @@ Unlike RetrievalInteractAction (which uses a vector store), PageIndex uses reaso
 
 - **PDF and Markdown ingestion** with hierarchical structure extraction
 - **Three retrieval strategies**: `tree_search` (LLM reasoning, recommended), `direct` (regex/text filter), `walker` (graph traversal)
+- **Document reference metadata** – page numbers, document name, and source URL rendered as numbered citations for LLM responses
 - **jvagent LLM bridge** for observability and token tracking when used in agent context
 - **REST API** for ingestion, listing, search, and deletion
 - **Persists structure** to jvspatial graph database (sibling of prime DB)
@@ -48,6 +49,7 @@ Retrieval: query -> tree_search/direct/walker -> directive -> PersonaAction
 | `max_node_tokens` | Optional[int] | - | Alias for `summary_token_threshold` |
 | `limit` | int | 10 | Number of results to retrieve (retrieval) |
 | `strategy` | str | "tree_search" | Retrieval strategy (retrieval) |
+| `include_references` | bool | true | Render numbered source references (page numbers, URLs) in directive. Set false to save tokens. |
 | `collection` | Optional[str] | null | Override collection name (default: agent_id) |
 | `metadata_filter` | Optional[Dict] | null | Key-value filter to narrow search by document metadata |
 
@@ -57,11 +59,12 @@ Retrieval: query -> tree_search/direct/walker -> directive -> PersonaAction
 | `collection` | Optional[str] | None | Override collection (default: agent_id) |
 | `metadata_filter` | Optional[Dict] | None | Filter by document metadata |
 | `limit` | int | 10 | Number of results to retrieve |
+| `include_references` | bool | true | Render numbered source references in directive; set false to save tokens |
 | `weight` | int | -75 | Execution order (after InteractRouter) |
 | `strategy` | str | "tree_search" | "tree_search", "direct", or "walker" |
 | `model` | Optional[str] | None | LLM for tree_search (else PAGEINDEX_TREE_SEARCH_MODEL or gpt-4o-mini) |
 | `model_action_type` | str | "OpenAILanguageModelAction" | LanguageModelAction for observability |
-| `directive` | str | DIRECTIVE_TEMPLATE | Template with `{results}` placeholder |
+| `directive` | str | DIRECTIVE_TEMPLATE | Template with `{results}` and `{references}` placeholders (when include_references) |
 | `parameters` | List[Dict] | [...] | Conditional behavioral rules |
 
 ### assimilate_document (programmatic)
@@ -83,6 +86,7 @@ Retrieval: query -> tree_search/direct/walker -> directive -> PersonaAction
 | `persist` | bool | True | Persist to graph DB |
 | `collection_name` | str | "default" | Collection this document belongs to (typically agent_id) |
 | `metadata` | Optional[Dict] | None | Custom key-value metadata for filtering at query time |
+| `doc_url` | Optional[str] | None | Source URL of the document (stored on DocumentRootNode for reference citations) |
 
 ### Environment Variables (database and LLM)
 
@@ -102,11 +106,11 @@ All routes are agent-scoped (collection = agent_id from path).
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/agents/{agent_id}/pageindex/documents` | Ingest PDF/MD (multipart: file, doc_name, metadata) |
+| POST | `/api/agents/{agent_id}/pageindex/documents` | Ingest PDF/MD (multipart: file, doc_name, doc_url, metadata) |
 | GET | `/api/agents/{agent_id}/pageindex/documents` | List documents (query: metadata) |
 | GET | `/api/agents/{agent_id}/pageindex/documents/{doc_name}` | Get document metadata |
 | DELETE | `/api/agents/{agent_id}/pageindex/documents/{doc_name}` | Delete document |
-| POST | `/api/agents/{agent_id}/pageindex/documents/search` | Search (body: query, doc_name, strategy, limit, metadata) |
+| POST | `/api/agents/{agent_id}/pageindex/documents/search` | Search (body: query, doc_name, strategy, limit, metadata). Returns results with start_index, end_index, doc_url. |
 
 ## Named Collections and Multi-Agent
 
@@ -124,6 +128,15 @@ Documents can have key-value metadata at ingestion; filter at query time.
 - **Search/List**: `metadata_filter={"topic": "finance"}` or REST `metadata` param (JSON)
 - **Values**: str, int, float, bool, or list of primitives; multiple keys use AND semantics
 
+## Document Reference Metadata
+
+When `include_references` is true (default), retrieval results include page numbers and document URLs so the LLM can cite sources. The directive formats numbered excerpts with a reference list. Each reference uses the format `[N] doc_name, pp. X-Y. url` (comma between document name and page range, period before URL).
+
+- **Page numbers**: From `DocumentNode` (`start_index`, `end_index`, `physical_index`) – populated during PDF/Markdown ingestion
+- **Document URL**: Set at ingestion via `doc_url` parameter or REST form field `doc_url`; stored on `DocumentRootNode`. Also supports `metadata.url` as fallback
+- **References section**: Rendered only when page numbers or URLs are available. If no reference metadata exists, the section is omitted entirely
+- **Disable references**: Set `include_references: false` in config to use the plain directive format and save tokens
+
 ## Example Agent Configuration
 
 ```yaml
@@ -137,6 +150,7 @@ Documents can have key-value metadata at ingestion; filter at query time.
   config:
     limit: 10
     strategy: "tree_search"
+    include_references: true   # Set false to save tokens (plain directive, no citations)
     # metadata_filter: {"access": "internal"}  # Optional: narrow search by metadata
     node_summary: true      # Required for tree_search; generates summaries during ingestion
     node_text: true
@@ -150,7 +164,7 @@ Documents can have key-value metadata at ingestion; filter at query time.
 
 - **Basic setup**: Ingest documents via API or `assimilate_document()`, add action to agent
 - **Query selection**: Uses `interaction.utterance` (preferred) or `interaction.interpretation`
-- **Directive format**: Default template with `{results}` placeholder
+- **Directive format**: With `include_references: true`, numbered excerpts plus a References section (document name, page range, URL). With `include_references: false`, plain flat format. References section is omitted when no page/URL metadata exists
 - **Integration**: Runs after InteractRouter, adds directive for PersonaAction
 
 ## Retrieval Strategies
@@ -172,3 +186,5 @@ Documents can have key-value metadata at ingestion; filter at query time.
 - PageIndex DB path is sibling of prime DB (e.g. `./pageindex_db` next to `./jvagent_db`)
 - Use `model_action_type` for token tracking and observability in agent context
 - **Ingestion config**: Put `node_summary`, `node_text`, `doc_description`, etc. under the `config` block (not `context`). These apply when documents are assimilated via API or `assimilate_document()`. REST ingestion uses config pushed when the action registers; if no agent has PageIndex, defaults apply.
+- **Reference citations**: Provide `doc_url` at ingestion (REST form field or `assimilate_document(doc_url=...)`) for URLs in references. Page numbers come from PDF structure automatically. Set `include_references: false` to reduce token usage when citations are not needed.
+- **Web vs WhatsApp consistency**: If page numbers or references appear on one channel (e.g. WhatsApp) but not another (e.g. web), ensure both use the **same agent_id** and that the agent has PageIndex with `include_references: true`. Different agents or configs per channel will produce different responses. The reference format is `[N] doc_name, pp. X-Y. url` (comma between doc name and page range, period before URL).

@@ -22,6 +22,7 @@ package:
     summary_token_threshold: 200
     limit: 10
     strategy: tree_search
+    include_references: true  # Render numbered source references (page numbers, URLs) in directive; set false to save tokens
     # max_summary_chars: 300  # Max chars per node summary in tree prompt (retrieval display)
     # max_tree_prompt_tokens: 16000  # Max tokens for tree; over budget triggers direct search fallback
   dependencies:

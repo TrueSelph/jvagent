@@ -22,6 +22,7 @@ export function PageIndexDocumentsModal({
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [docName, setDocName] = useState('')
   const [docDescription, setDocDescription] = useState('')
+  const [docUrl, setDocUrl] = useState('')
   const [metadataJson, setMetadataJson] = useState('')
   const [addNodeSummary, setAddNodeSummary] = useState(true)
   const [purgeOnImport, setPurgeOnImport] = useState(false)
@@ -100,12 +101,14 @@ export function PageIndexDocumentsModal({
       await apiClient.uploadPageIndexDocument(agentId, fileToUpload, {
         docName: docName || undefined,
         docDescription: docDescription || undefined,
+        docUrl: docUrl || undefined,
         metadata: parseMetadata(),
         ifAddNodeSummary: addNodeSummary,
       })
       setSelectedFile(null)
       setDocName('')
       setDocDescription('')
+      setDocUrl('')
       setMetadataJson('')
       await fetchDocuments()
     } catch (err: any) {
@@ -354,6 +357,15 @@ export function PageIndexDocumentsModal({
                 className="block w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-500 dark:placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:focus:ring-indigo-500 dark:focus:border-indigo-500 resize-y min-h-[60px]"
               />
             </div>
+            <div className="w-full">
+              <input
+                type="url"
+                placeholder="Source URL (optional, for reference citations)"
+                value={docUrl}
+                onChange={(e) => setDocUrl(e.target.value)}
+                className="block w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-500 dark:placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:focus:ring-indigo-500 dark:focus:border-indigo-500"
+              />
+            </div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -413,6 +425,9 @@ export function PageIndexDocumentsModal({
                           Description
                         </th>
                         <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase hidden md:table-cell">
+                          Source URL
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase hidden lg:table-cell">
                           Metadata
                         </th>
                         <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">
@@ -429,7 +444,22 @@ export function PageIndexDocumentsModal({
                           <td className="px-4 py-3 text-sm text-gray-600 dark:text-slate-300 hidden sm:table-cell max-w-[200px] truncate">
                             {doc.doc_description || '—'}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-500 dark:text-slate-400 hidden md:table-cell max-w-[150px] truncate" title={doc.metadata ? JSON.stringify(doc.metadata) : undefined}>
+                          <td className="px-4 py-3 text-sm hidden md:table-cell max-w-[180px]">
+                            {doc.doc_url ? (
+                              <a
+                                href={doc.doc_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-indigo-600 dark:text-indigo-400 hover:underline truncate block max-w-[180px]"
+                                title={doc.doc_url}
+                              >
+                                {doc.doc_url}
+                              </a>
+                            ) : (
+                              <span className="text-gray-500 dark:text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500 dark:text-slate-400 hidden lg:table-cell max-w-[150px] truncate" title={doc.metadata ? JSON.stringify(doc.metadata) : undefined}>
                             {doc.metadata ? JSON.stringify(doc.metadata) : '—'}
                           </td>
                           <td className="px-4 py-3 text-right">

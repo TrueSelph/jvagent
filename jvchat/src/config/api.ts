@@ -825,6 +825,7 @@ class ApiClient {
     options?: {
       docName?: string
       docDescription?: string
+      docUrl?: string
       metadata?: Record<string, unknown>
       ifAddNodeSummary?: boolean
     }
@@ -833,6 +834,7 @@ class ApiClient {
     formData.append('file', file)
     if (options?.docName) formData.append('doc_name', options.docName)
     if (options?.docDescription) formData.append('doc_description', options.docDescription)
+    if (options?.docUrl) formData.append('doc_url', options.docUrl)
     if (options?.metadata) formData.append('metadata', JSON.stringify(options.metadata))
     if (options?.ifAddNodeSummary !== undefined) {
       formData.append('if_add_node_summary', options.ifAddNodeSummary ? 'yes' : 'no')

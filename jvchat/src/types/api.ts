@@ -128,6 +128,7 @@ export interface LogsResponse {
 export interface PageIndexDocument {
   doc_name: string
   doc_description?: string
+  doc_url?: string
   root_id: string
   collection_name?: string
   metadata?: Record<string, unknown>
@@ -154,6 +155,9 @@ export interface PageIndexSearchResult {
   content?: string
   text?: string
   summary?: string
+  start_index?: number
+  end_index?: number
+  doc_url?: string
 }
 
 export interface PageIndexSearchResponse {

@@ -6,13 +6,18 @@ ChatGPT_API, ChatGPT_API_with_finish_reason to use jvagent model when in context
 """
 
 import importlib.util
-import sys
+import types
 from pathlib import Path
 
 from . import llm_bridge
 
-# Load real utils with a distinct module name to avoid sys.modules conflict
 _real_utils_path = Path(__file__).parent / "core" / "utils.py"
+if not _real_utils_path.exists():
+    raise FileNotFoundError(
+        f"PageIndex core/utils.py not found at {_real_utils_path}. "
+        "Ensure the core directory is present."
+    )
+
 _spec = importlib.util.spec_from_file_location(
     "_pageindex_utils_real",
     _real_utils_path,
@@ -20,8 +25,7 @@ _spec = importlib.util.spec_from_file_location(
 _real = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_real)
 
-# Build override module: copy all exports from real utils
-_override = type(sys.modules[__name__])("jvagent.action.pageindex.core.utils")
+_override = types.ModuleType("jvagent.action.pageindex.core.utils")
 _override.__file__ = str(_real_utils_path)
 _override.__package__ = "jvagent.action.pageindex.core"
 
