@@ -27,6 +27,9 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [graphData, setGraphData] = useState<string | null>(null)
+  const [repairing, setRepairing] = useState(false)
+  const [repairMessage, setRepairMessage] = useState<string | null>(null)
+  const [repairError, setRepairError] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const graphvizRef = useRef<ReturnType<typeof graphviz> | null>(null)
   const navigate = useNavigate()
@@ -131,6 +134,45 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
 
   const handleRefresh = () => {
     fetchGraph()
+  }
+
+  const formatRepairResult = (result: Record<string, unknown> | null | undefined): string => {
+    if (!result) return 'Graph repair completed.'
+    const items: [string, string][] = [
+      ['memory_repair_agents', 'agent(s) memory repaired'],
+      ['orphaned_interactions_deleted', 'interaction(s) deleted'],
+      ['orphaned_users_reconnected', 'user(s) reconnected'],
+      ['dual_edges_removed', 'dual edge(s) removed'],
+      ['conversation_first_edges_restored', 'conv-first edge(s) restored'],
+      ['dead_edges_removed', 'dead edge(s) removed'],
+      ['orphaned_nodes_reattached', 'orphan(s) reattached'],
+      ['orphaned_nodes_deleted', 'orphan(s) deleted'],
+      ['node_edge_ids_synced', 'node(s) edge_ids synced'],
+      ['duplicate_edges_removed', 'duplicate edge(s) removed'],
+    ]
+    const parts = items.map(([key, label]) => {
+      const n = Number(result[key]) || 0
+      return `${n} ${label}`
+    })
+    const actualRepairKeys = items.map(([k]) => k).filter((k) => k !== 'memory_repair_agents')
+    const actualRepairsTotal = actualRepairKeys.reduce((sum, key) => sum + (Number(result[key]) || 0), 0)
+    if (actualRepairsTotal === 0) return 'No repairs needed.'
+    return `Repair completed: ${parts.join(', ')}.`
+  }
+
+  const handleRepairGraph = async () => {
+    setRepairing(true)
+    setRepairMessage(null)
+    setRepairError(null)
+    try {
+      const result = await apiClient.repairGraph()
+      setRepairMessage(formatRepairResult(result))
+      fetchGraph()
+    } catch (err: unknown) {
+      setRepairError(err instanceof Error ? err.message : 'Graph repair failed.')
+    } finally {
+      setRepairing(false)
+    }
   }
 
   const handleClose = () => {
@@ -239,6 +281,27 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
                 </svg>
                 <span className="hidden sm:inline">Refresh</span>
               </button>
+              <button
+                onClick={handleRepairGraph}
+                disabled={repairing || loading}
+                className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                title="Repair graph"
+              >
+                <svg
+                  className={`w-4 h-4 ${repairing ? 'animate-spin' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M11 4a7 7 0 00-7 7h2a5 5 0 015-5V4zm0 0V2m0 2a7 7 0 017 7h-2a5 5 0 00-5-5V4zM3 11h2m14 0h2M5.636 5.636l1.414 1.414m9.9 9.9l1.414 1.414M11 18v2m0-2a7 7 0 01-7-7H2m9 7a7 7 0 007-7h2"
+                  />
+                </svg>
+                <span className="hidden sm:inline">Repair graph</span>
+              </button>
               {onClose && (
                 <button
                   onClick={handleClose}
@@ -253,6 +316,21 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
               )}
             </div>
           </div>
+
+          {(repairMessage || repairError) && (
+            <div className={`flex-shrink-0 px-4 sm:px-6 py-2 flex items-center justify-between gap-2 text-sm ${repairError ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300' : 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300'}`}>
+              <span>{repairError ?? repairMessage}</span>
+              <button
+                onClick={() => { setRepairMessage(null); setRepairError(null) }}
+                className="flex-shrink-0 opacity-70 hover:opacity-100"
+                aria-label="Dismiss"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
 
           <div className="flex-1 overflow-hidden relative min-h-0">
             {loading && (
@@ -300,28 +378,66 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
       <div className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700 px-4 sm:px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">App Graph</h1>
-          <button
-            onClick={handleRefresh}
-            disabled={loading}
-            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-          >
-            <svg
-              className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRefresh}
+              disabled={loading}
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-            Refresh
-          </button>
+              <svg
+                className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+              Refresh
+            </button>
+            <button
+              onClick={handleRepairGraph}
+              disabled={repairing || loading}
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              title="Repair graph"
+            >
+              <svg
+                className={`w-4 h-4 ${repairing ? 'animate-spin' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M11 4a7 7 0 00-7 7h2a5 5 0 015-5V4zm0 0V2m0 2a7 7 0 017 7h-2a5 5 0 00-5-5V4zM3 11h2m14 0h2M5.636 5.636l1.414 1.414m9.9 9.9l1.414 1.414M11 18v2m0-2a7 7 0 01-7-7H2m9 7a7 7 0 007-7h2"
+                />
+              </svg>
+              Repair graph
+            </button>
+          </div>
         </div>
       </div>
+
+      {(repairMessage || repairError) && (
+        <div className={`px-4 sm:px-6 py-2 flex items-center justify-between gap-2 text-sm ${repairError ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300' : 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300'}`}>
+          <span>{repairError ?? repairMessage}</span>
+          <button
+            onClick={() => { setRepairMessage(null); setRepairError(null) }}
+            className="flex-shrink-0 opacity-70 hover:opacity-100"
+            aria-label="Dismiss"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 max-w-7xl mx-auto px-4 sm:px-6 py-6 w-full">
         {loading && (

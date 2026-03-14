@@ -1,5 +1,7 @@
 """Tests for agent graph repair utility."""
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from jvspatial.core.context import get_default_context
 from jvspatial.core.entities import Edge, Root
@@ -28,11 +30,16 @@ class TestGraphRepair:
 
     @pytest.mark.asyncio
     async def test_repair_returns_expected_structure(self, temp_dir, test_db):
-        """Repair returns dict with expected keys."""
+        """Repair returns dict with all expected keys including memory repair fields."""
         await Root.get()
 
         result = await repair_agent_graph(dry_run=False)
 
+        assert "memory_repair_agents" in result
+        assert "orphaned_interactions_deleted" in result
+        assert "orphaned_users_reconnected" in result
+        assert "dual_edges_removed" in result
+        assert "conversation_first_edges_restored" in result
         assert "dead_edges_removed" in result
         assert "orphaned_nodes_reattached" in result
         assert "orphaned_nodes_deleted" in result
@@ -108,6 +115,21 @@ author: Test
         assert retrieved is not None
 
     @pytest.mark.asyncio
+    async def test_repair_dry_run_skips_memory_repair(self, temp_dir, test_db):
+        """Dry run does not invoke memory repair."""
+        await Root.get()
+
+        with patch(
+            "jvagent.core.graph_repair._run_memory_repair_all_agents",
+            new_callable=AsyncMock,
+        ) as mock_memory_repair:
+            result = await repair_agent_graph(dry_run=True)
+
+        mock_memory_repair.assert_not_called()
+        assert result["dry_run"] is True
+        assert result["memory_repair_agents"] == 0
+
+    @pytest.mark.asyncio
     async def test_repair_orphan_reattachment(self, temp_dir, test_db):
         """Repair reattaches orphan App node to Root."""
         # Bootstrap app so Root -> App exists
@@ -139,3 +161,42 @@ agents: []
 
         assert result["orphaned_nodes_reattached"] >= 1
         assert "orphan(s) reattached" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_memory_repair_runs_before_graph_repair(self, temp_dir, test_db):
+        """Memory repair (all agents) executes before graph repair steps."""
+        await Root.get()
+
+        call_order = []
+
+        async def fake_memory_repair(recent_minutes):
+            call_order.append("memory")
+            return {
+                "memory_repair_agents": 0,
+                "orphaned_interactions_deleted": 0,
+                "orphaned_users_reconnected": 0,
+                "dual_edges_removed": 0,
+                "conversation_first_edges_restored": 0,
+                "counters_fixed": 0,
+            }
+
+        original_remove_dead_edges = __import__(
+            "jvagent.core.graph_repair", fromlist=["_remove_dead_edges"]
+        )._remove_dead_edges
+
+        async def patched_remove_dead_edges(context, dry_run):
+            call_order.append("graph")
+            return await original_remove_dead_edges(context, dry_run)
+
+        with patch(
+            "jvagent.core.graph_repair._run_memory_repair_all_agents",
+            side_effect=fake_memory_repair,
+        ), patch(
+            "jvagent.core.graph_repair._remove_dead_edges",
+            side_effect=patched_remove_dead_edges,
+        ):
+            await repair_agent_graph(dry_run=False)
+
+        assert call_order[0] == "memory", "Memory repair must run before graph repair"
+        assert "graph" in call_order, "Graph repair steps must run"
+        assert call_order.index("memory") < call_order.index("graph")

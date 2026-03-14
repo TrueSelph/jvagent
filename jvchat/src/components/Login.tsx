@@ -189,18 +189,19 @@ export function Login() {
 
         {/* Saved credentials cards */}
         {savedCreds.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-2 w-full">
             <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
               Saved accounts
             </p>
-            <div className="grid gap-2">
+            <div className="max-h-48 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 dark:border-gray-600 min-w-0">
+            <div className="grid gap-2 p-2 min-w-0">
               {savedCreds.map((cred) => (
                 <div
                   key={cred.id}
                   onClick={() => handleSelectCredential(cred)}
-                  className="group flex items-center justify-between gap-3 px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-300 dark:hover:border-indigo-600 cursor-pointer transition-colors"
+                  className="group flex items-center justify-between gap-3 min-w-0 overflow-hidden px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-300 dark:hover:border-indigo-600 cursor-pointer transition-colors"
                 >
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1 overflow-hidden">
                     <p className="font-medium text-gray-900 dark:text-gray-100 truncate">
                       {cred.name || cred.email}
                     </p>
@@ -231,6 +232,7 @@ export function Login() {
                   </button>
                 </div>
               ))}
+            </div>
             </div>
           </div>
         )}

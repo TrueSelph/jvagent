@@ -5,7 +5,7 @@ This module provides endpoints for:
 - Updating agents (alias, enabled status, description, interaction_limit)
 - Deleting agents
 - Listing agents with pagination and filtering
-- Graph repair (admin)
+- Graph repair (admin): runs memory repair for all agents first, then full graph repair
 """
 
 import asyncio
@@ -579,6 +579,31 @@ async def get_storage_file(file_path: str):
     tags=["App"],
     response=success_response(
         data={
+            "memory_repair_agents": ResponseField(
+                field_type=int,
+                description="Number of agents whose memory was repaired",
+                example=2,
+            ),
+            "orphaned_interactions_deleted": ResponseField(
+                field_type=int,
+                description="Number of orphaned interactions deleted across all agents",
+                example=3,
+            ),
+            "orphaned_users_reconnected": ResponseField(
+                field_type=int,
+                description="Number of orphaned users reconnected across all agents",
+                example=1,
+            ),
+            "dual_edges_removed": ResponseField(
+                field_type=int,
+                description="Number of duplicate interaction chain edges removed",
+                example=0,
+            ),
+            "conversation_first_edges_restored": ResponseField(
+                field_type=int,
+                description="Number of conversation-to-first-interaction edges restored",
+                example=0,
+            ),
             "dead_edges_removed": ResponseField(
                 field_type=int,
                 description="Number of dead edges removed",
@@ -607,41 +632,35 @@ async def get_storage_file(file_path: str):
             "message": ResponseField(
                 field_type=str,
                 description="Success message",
-                example="Repair completed: 2 dead edge(s) removed, 3 node(s) edge_ids synced",
+                example="Repair completed: memory repaired for 2 agent(s), 2 dead edge(s) removed",
             ),
         }
     ),
 )
 async def repair_graph(
-    agent_id: Optional[str] = Query(
-        None,
-        description="If provided, scope repair to that agent's subgraph and run memory repair",
-    ),
     dry_run: bool = Query(
         False,
         description="If True, report issues without making changes",
     ),
     recent_minutes: Optional[int] = Query(
         None,
-        description="When agent_id set: only clean orphan interactions from last N minutes (None = all)",
+        description="Only clean orphan interactions from last N minutes (None = all)",
     ),
 ) -> Dict[str, Any]:
-    """Run agent graph repair (admin only, manually triggered).
+    """Run memory repair (all agents) then agent graph repair (admin only, manually triggered).
 
-    Validates structure, removes dead edges, syncs node edge_ids, reattaches
-    or removes orphaned nodes, and removes duplicate edges. When agent_id
-    is provided, also runs memory repair for that agent.
+    Memory repair executes first for all agents, then validates graph structure,
+    removes dead edges, syncs node edge_ids, reattaches or removes orphaned nodes,
+    and removes duplicate edges.
 
     Args:
-        agent_id: Optional - scope repair to that agent's subgraph and run memory repair
-        dry_run: Optional - report issues without making changes
-        recent_minutes: Optional - when agent_id set, passed to memory repair
+        dry_run: Optional - report issues without making changes (memory repair skipped)
+        recent_minutes: Optional - passed to memory repair to limit orphan interaction cleanup
 
     Returns:
-        Dictionary with repair counts and message
+        Dictionary with memory repair counts and graph repair counts
     """
     result = await repair_agent_graph(
-        agent_id=agent_id,
         dry_run=dry_run,
         recent_minutes=recent_minutes,
     )
