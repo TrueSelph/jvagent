@@ -987,6 +987,11 @@ class Conversation(DeferredSaveMixin, Node):
     async def delete(self, cascade: bool = True) -> None:
         """Delete this conversation and update Memory's total_conversations counter.
 
+        This override is triggered when Conversation.delete() is called directly.
+        When a Conversation is deleted via cascade from User.delete(), the base
+        Node.delete() is invoked instead, so purge_user_memory handles the counter
+        decrement for that case.
+
         Args:
             cascade: Whether to cascade deletion to dependent nodes (default: True)
         """
@@ -998,8 +1003,8 @@ class Conversation(DeferredSaveMixin, Node):
         if user:
             memory = await user.node(direction="in", node=Memory)
             if memory:
-                memory.total_conversations = max(0, memory.total_conversations - 1)
-                await memory.save()
+                context = await memory.get_context()
+                await context.atomic_increment(memory.id, "total_conversations", -1)
 
         # Call parent delete to perform actual deletion
         await super().delete(cascade=cascade)

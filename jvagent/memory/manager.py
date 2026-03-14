@@ -356,15 +356,24 @@ class Memory(Node):
         if not users:
             return None
 
+        context = await self.get_context()
         purged = []
         for user in users:
             purged.append(user)
-            # Cascade delete will call Conversation.delete() for each conversation,
-            # which will properly decrement total_conversations counter
-            await user.delete(cascade=True)
-            self.total_users = max(0, self.total_users - 1)
+            # Count conversations before cascade so we can decrement total_conversations.
+            # Node.delete(cascade=True) deletes child nodes via the base Node.delete(),
+            # bypassing the Conversation.delete() override, so we handle the counter here.
+            from jvagent.memory.conversation import Conversation as _Conv
 
-        await self.save()
+            user_convs = await user.nodes(node=_Conv)
+            conv_count = len(user_convs)
+            await user.delete(cascade=True)
+            await context.atomic_increment(self.id, "total_users", -1)
+            if conv_count:
+                await context.atomic_increment(
+                    self.id, "total_conversations", -conv_count
+                )
+
         return purged
 
     async def purge_conversation(
@@ -434,8 +443,6 @@ class Memory(Node):
         for conversation in conversations_to_purge:
             purged.append(conversation)
             await conversation.delete(cascade=True)
-
-        await self.save()
 
         return purged
 
@@ -536,6 +543,7 @@ class Memory(Node):
         agent_id = agent.id if agent else None
 
         all_users = await User.find()
+        context = await self.get_context()
         reconnected = 0
         for user in all_users:
             if user.id in connected_ids:
@@ -547,13 +555,15 @@ class Memory(Node):
                 # User is connected elsewhere; skip to avoid cross-agent reconnect
                 continue
             await self.connect(user)
+            await context.atomic_increment(self.id, "total_users", 1)
             reconnected += 1
         return reconnected
 
     async def _recalculate_counters(self) -> int:
-        """Recalculate total_users and total_conversations from the graph.
+        """Recalculate total_users, total_conversations, and interaction_count from the graph.
 
-        Fixes counter drift caused by non-atomic increments under concurrency.
+        Fixes counter drift caused by non-atomic increments under concurrency or
+        interactions deleted outside the normal prune path (e.g. orphan cleanup).
 
         Returns:
             Number of counters that were corrected.
@@ -569,15 +579,32 @@ class Memory(Node):
             fixed += 1
 
         actual_conversations = 0
+        all_convs: list = []
         for user in users:
             convs = await user.nodes(node=Conversation)
             actual_conversations += len(convs)
+            all_convs.extend(convs)
         if self.total_conversations != actual_conversations:
             self.total_conversations = actual_conversations
             fixed += 1
 
         if fixed:
             await self.save()
+
+        # Reconcile interaction_count on each conversation
+        for conv in all_convs:
+            interactions = await conv.get_interactions(limit=0)
+            actual_count = len(interactions)
+            if conv.interaction_count != actual_count:
+                conv.interaction_count = actual_count
+                # Repair last_interaction_id reference when it has drifted
+                if interactions:
+                    conv.last_interaction_id = interactions[-1].id
+                else:
+                    conv.last_interaction_id = None
+                await conv.save()
+                fixed += 1
+
         return fixed
 
     async def _cleanup_orphaned_interactions(
