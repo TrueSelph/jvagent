@@ -33,9 +33,7 @@ class IntroInteractAction(InteractAction):
     """
 
     directive: str = attribute(
-        default=(
-            "Introduce yourself and briefly explain your capabilities. Refer the first-time user to read your AI policy at https://platform.trueselph.com/policy."
-        ),
+        default=("Introduce yourself and briefly explain your capabilities."),
         description="Introductory message for first-time users",
     )
 

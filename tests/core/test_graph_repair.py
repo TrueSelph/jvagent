@@ -119,7 +119,7 @@ agents: []
 """
         )
         app_loader = AppLoader(str(temp_dir))
-        await app_loader.bootstrap_application(update_if_exists=True)
+        await app_loader.bootstrap_application(update_mode="source")
 
         app = await App.get()
         assert app is not None

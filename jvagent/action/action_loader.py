@@ -2092,7 +2092,6 @@ class ActionLoader:
                     ):
                         loaded_modules.append(parent_module)
 
-            # Store metadata (including agent_name for path construction)
             action.metadata = {
                 "name": metadata.name,
                 "title": metadata.title,
@@ -2109,8 +2108,12 @@ class ActionLoader:
                 "config_overrides": config_overrides or {},
                 "dependencies": metadata.dependencies,
                 "agent_name": agent_name,
-                "loaded_modules": loaded_modules,  # Track modules for cleanup
+                "loaded_modules": loaded_modules,
             }
+
+            action._property_override_keys = (
+                set(property_overrides.keys()) if property_overrides else set()
+            )
 
             return action
 
@@ -2207,16 +2210,8 @@ class ActionLoader:
             if "context" in action_cfg:
                 context = action_cfg["context"]
                 if isinstance(context, dict):
-                    # Extract enabled separately (not a property override)
-                    if "enabled" in context:
-                        metadata.enabled = context["enabled"]
-                        # Create context copy without enabled
-                        context_without_enabled = {
-                            k: v for k, v in context.items() if k != "enabled"
-                        }
-                        property_overrides.update(context_without_enabled)
-                    else:
-                        property_overrides.update(context)
+                    metadata.enabled = context.get("enabled", metadata.enabled)
+                    property_overrides.update(context)
 
             # Config overrides are in separate 'config' field
             if "config" in action_cfg:

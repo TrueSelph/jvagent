@@ -96,8 +96,11 @@ jvagent
 # Run with debug logging
 jvagent examples/jvagent_app --debug
 
-# Run with update mode
+# Run with merge update (non-destructive)
 jvagent examples/jvagent_app --update
+
+# Run with source update (destructive)
+jvagent examples/jvagent_app --update --source
 ```
 
 **Note:** Before running the example, ensure you have:
@@ -231,7 +234,7 @@ When jvagent starts in a directory with `app.yaml`, it automatically:
    - Reads `info.yaml` for each action
    - Loads and registers actions with their configuration
 
-### Default Behavior vs. Update Mode
+### Default Behavior vs. Update Modes
 
 **Default Behavior (No `--update` flag):**
 - Uses existing agents and actions from the database
@@ -240,11 +243,18 @@ When jvagent starts in a directory with `app.yaml`, it automatically:
 - Safe for repeated runs - won't overwrite manual changes
 - **Important**: Agents can only be installed via `app.yaml` - there is no direct agent installation
 
-**Update Mode (`--update` or `--migrate` flag):**
-- Updates existing agents and actions with values from YAML files
-- Overwrites agent/action context with values from `app.yaml` and `agent.yaml`
-- Useful when you've updated YAML files and want to apply changes
-- Use when migrating or syncing configuration
+**Merge Update Mode (`--update` or `--update --merge`):**
+- Non-destructive: preserves database state and runtime modifications
+- Only updates properties that are explicitly set in YAML files
+- Preserves child nodes, graph connections, and runtime-modified properties
+- Updates metadata to reflect the current source code state
+- Use when you've updated YAML files and want to apply changes without losing DB state
+
+**Source Update Mode (`--update --source`):**
+- Destructive: fully overwrites database state from YAML source
+- Overwrites all agent/action context with values from YAML files
+- Deletes and recreates action nodes (child nodes are lost)
+- Use for a complete reset to source configuration
 
 ### Examples
 
@@ -273,34 +283,43 @@ This will:
 - Skip existing actions (won't overwrite their context)
 - Start the server with existing configuration
 
-**Example 3: Update Existing Configuration**
+**Example 3: Merge Update (Non-Destructive)**
 ```bash
 jvagent /path/to/my_jvagent_app --update
 ```
 This will:
-- Update App node from `app.yaml`
-- Update all agents from their `agent.yaml` files
-- Update all actions from their `info.yaml` files
-- Apply any changes you made to YAML files
+- Update App/Agent/Action nodes with explicitly set YAML properties only
+- Preserve database state for properties not in YAML
+- Preserve child nodes and graph connections for actions
+- Apply source code changes while keeping runtime modifications
 
-**Example 4: Bootstrap Only (No Server)**
+**Example 4: Source Update (Destructive)**
+```bash
+jvagent /path/to/my_jvagent_app --update --source
+```
+This will:
+- Fully overwrite App/Agent nodes from YAML files
+- Delete and recreate action nodes from source
+- Reset all properties to YAML/source values (previous `--update` behavior)
+
+**Example 5: Bootstrap Only (No Server)**
 ```bash
 jvagent /path/to/my_jvagent_app bootstrap
 ```
 This will:
 - Bootstrap the application graph
-- Install/update agents and actions
+- Install agents and actions (skip existing)
 - Exit without starting the server
 
-**Example 5: Bootstrap with Updates**
+**Example 6: Bootstrap with Merge Update**
 ```bash
 jvagent /path/to/my_jvagent_app bootstrap --update
 ```
 This will:
-- Update all agents and actions from YAML files
+- Non-destructively merge source changes into existing DB state
 - Exit without starting the server
 
-**Example 6: Run with Debug Logging**
+**Example 7: Run with Debug Logging**
 ```bash
 jvagent /path/to/my_jvagent_app --debug
 ```
@@ -309,7 +328,7 @@ This will:
 - Show detailed information about bootstrap process
 - Display individual agent and action registration
 
-**Example 7: Fresh Start with Purge (Development Only)**
+**Example 8: Fresh Start with Purge (Development Only)**
 ```bash
 jvagent /path/to/my_jvagent_app --purge
 ```
@@ -344,10 +363,16 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
    - Safe to run repeatedly
    - Won't overwrite runtime modifications
 
-3. **Use `--update` when changing YAML files:**
+3. **Use `--update` (merge) when changing YAML files:**
    - After modifying `app.yaml` or `agent.yaml`
-   - When syncing configuration from version control
-   - During deployment or migration
+   - Applies only explicitly set YAML properties
+   - Preserves runtime modifications and child nodes
+   - Safe for incremental configuration updates
+
+4. **Use `--update --source` for a full reset:**
+   - When you need a clean slate from source configuration
+   - During major migrations or schema changes
+   - Be aware that child nodes and runtime state will be lost
 
 4. **Keep your app directory in version control:**
    - Track `app.yaml`, `agent.yaml`, and `info.yaml` files
@@ -1251,7 +1276,7 @@ Actions have well-defined lifecycle hooks:
    - Clean up active resources
    - Disconnect from external services
 
-6. **on_reload()** - Called when action is reloaded
+6. **on_reload()** - Called when action is reloaded (both merge and source update modes)
    - Refresh configuration
    - Reinitialize resources
    - Update connections
