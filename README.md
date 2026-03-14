@@ -248,6 +248,7 @@ When jvagent starts in a directory with `app.yaml`, it automatically:
 - Only updates properties that are explicitly set in YAML files
 - Preserves child nodes, graph connections, and runtime-modified properties
 - Updates metadata to reflect the current source code state
+- **Action removal**: Actions removed from `agent.yaml` are deregistered and deleted from the graph, including those whose class modules are no longer imported (ghost nodes). jvspatial's standard `Node.get()` + `node.delete()` interface handles cleanup so edges and dependent nodes are properly removed.
 - Use when you've updated YAML files and want to apply changes without losing DB state
 
 **Source Update Mode (`--update --source`):**

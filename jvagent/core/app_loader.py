@@ -13,7 +13,7 @@ import yaml
 from jvspatial.core import Root
 
 from jvagent.core.agent import Agent  # noqa: F401
-from jvagent.core.agent_loader import AgentLoader
+from jvagent.core.agent_loader import AgentLoader, _apply_properties
 from jvagent.core.agents import Agents
 from jvagent.core.app import App
 from jvagent.core.bootstrap_logger import BootstrapLogger
@@ -229,6 +229,7 @@ class AppLoader:
             # Step 5: Install agents from app.yaml
             if descriptor.agents:
                 await self._install_agents(descriptor, update_mode)
+                await self._recount_agent_statistics(app)
 
             bootstrap_log.complete()
             return app
@@ -381,27 +382,8 @@ class AppLoader:
         return [canonical]
 
     def _apply_app_properties(self, app: App, properties: Dict[str, Any]) -> None:
-        """Apply property overrides from descriptor to app instance.
-
-        Args:
-            app: App instance to update
-            properties: Dictionary with property overrides
-        """
-        if not properties:
-            return
-
-        for key, value in properties.items():
-            # Only set public properties (not private, not id, not name - name is static)
-            if (
-                not key.startswith("_")
-                and key not in ["id", "name"]
-                and hasattr(app, key)
-            ):
-                try:
-                    setattr(app, key, value)
-                    logger.debug(f"Set app.{key} = {value}")
-                except Exception as e:
-                    logger.warning(f"Could not set app.{key}: {e}")
+        """Apply property overrides from descriptor to app instance."""
+        _apply_properties(app, properties, reserved={"id", "name"})
 
     async def _ensure_agents_node(self, app: App) -> Optional[Agents]:
         """Ensure Agents manager node exists.
@@ -432,6 +414,26 @@ class AppLoader:
             logger.error(f"Error in _ensure_agents_node: {e}", exc_info=True)
             return None
 
+    async def _recount_agent_statistics(self, app: App) -> None:
+        """Recount total_agents and active_agents from the live graph.
+
+        Called after all agent installs/updates are complete so that
+        counts reflect actual DB state rather than accumulated increments.
+        """
+        try:
+            agents_manager = await app.node(node="Agents")
+            if not agents_manager:
+                return
+
+            from jvagent.core.agent import Agent
+
+            all_agents = await Agent.find({})
+            agents_manager.total_agents = len(all_agents)
+            agents_manager.active_agents = sum(1 for a in all_agents if a.enabled)
+            await agents_manager.save()
+        except Exception as e:
+            logger.warning(f"Could not recount agent statistics: {e}")
+
     async def _install_agents(
         self, descriptor: AppDescriptor, update_mode: Optional[str]
     ) -> None:
@@ -460,18 +462,12 @@ class AppLoader:
 
             namespace, agent_name = agent_ref.split("/", 1)
 
-            # Check if agent already exists
-            existing_agent = await Agent.find_one(
-                {"context.name": agent_name, "context.namespace": namespace}
-            )
-            was_existing = existing_agent is not None
-
             agent = await self.agent_loader.install_agent(
                 namespace, agent_name, update_mode=update_mode
             )
 
             if agent:
-                if was_existing and update_mode is not None:
+                if update_mode is not None:
                     updated_count += 1
                     logger.debug(
                         f"  ✓ Agent: {namespace}/{agent_name} (updated - {update_mode})"

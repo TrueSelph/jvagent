@@ -48,12 +48,10 @@ class AgentDescriptor:
         # Extract agent reference: agent: namespace/agent_name
         agent_ref = data.get("agent", "")
         if agent_ref and "/" in agent_ref:
-            # Parse namespace/agent_name from agent field
             parsed_namespace, parsed_name = agent_ref.split("/", 1)
             self.namespace = parsed_namespace
             self.name = parsed_name
         else:
-            # Use folder structure namespace and name field
             self.namespace = namespace
             self.name = data.get("name", "")
 
@@ -128,7 +126,6 @@ class AgentLoader:
                 logger.warning(f"Empty agent descriptor: {agent_file}")
                 return None
 
-            # Resolve environment variable placeholders
             from jvagent.core.env_resolver import resolve_env_placeholders
 
             data = resolve_env_placeholders(data)
@@ -160,19 +157,16 @@ class AgentLoader:
 
         discovered = []
 
-        # Iterate through namespace directories in the agents folder
         for namespace_dir in agents_path.iterdir():
             if not namespace_dir.is_dir():
                 continue
 
             namespace = namespace_dir.name
 
-            # Iterate through agent directories within each namespace
             for agent_dir in namespace_dir.iterdir():
                 if not agent_dir.is_dir():
                     continue
 
-                # Look for agent.yaml file
                 agent_file = agent_dir / "agent.yaml"
                 if agent_file.exists():
                     discovered.append((namespace, agent_dir.name))
@@ -200,13 +194,11 @@ class AgentLoader:
         Returns:
             Agent instance if successful, None otherwise
         """
-        # Load agent descriptor
         descriptor = self.load_agent_descriptor(namespace, agent_name)
         if not descriptor:
             return None
 
         try:
-            # Check if agent already exists (by namespace and name)
             existing_agent = await Agent.find_one(
                 {
                     "context.name": descriptor.name,
@@ -223,12 +215,14 @@ class AgentLoader:
                     agent.enabled = descriptor.enabled
                     agent.description = descriptor.description
                     agent.alias = descriptor.alias
-                    self._apply_agent_properties(agent, descriptor.properties)
+                    _apply_properties(
+                        agent,
+                        descriptor.properties,
+                        reserved={"id", "name", "namespace"},
+                    )
                 # merge mode: preserve all DB values, no property overwrites
-
                 await agent.save()
             else:
-                # Build initial agent data
                 agent_data = {
                     "name": descriptor.name,
                     "namespace": descriptor.namespace,
@@ -237,15 +231,13 @@ class AgentLoader:
                     "description": descriptor.description,
                 }
 
-                # Apply property overrides from agent.yaml
                 if descriptor.properties:
                     for key, value in descriptor.properties.items():
-                        # Only override if it's a valid field (don't override private fields)
-                        if not key.startswith("_") and key not in [
+                        if not key.startswith("_") and key not in {
                             "id",
                             "namespace",
                             "name",
-                        ]:
+                        }:
                             agent_data[key] = value
 
                 agent = await Agent.create(**agent_data)
@@ -254,20 +246,15 @@ class AgentLoader:
                 app = await App.get()
                 if app:
                     agents_manager = await app.node(node="Agents")
-
                     if agents_manager:
                         await agents_manager.connect(agent, direction="both")
-
-                        # Update statistics
                         agents_manager.total_agents += 1
                         if descriptor.enabled:
                             agents_manager.active_agents += 1
                         await agents_manager.save()
 
-            # Ensure Actions node exists for this agent
+            # Ensure Actions and Memory nodes exist for this agent
             actions_manager = await self._ensure_actions_node(agent)
-
-            # Ensure Memory node exists for this agent
             await self._ensure_memory_node(agent)
 
             # Run _install_actions when: (a) agent has actions to install, or
@@ -289,83 +276,37 @@ class AgentLoader:
             logger.error(f"Error installing agent {agent_name}: {e}", exc_info=True)
             return None
 
-    def _apply_agent_properties(
-        self, agent: Agent, properties: Optional[Dict[str, Any]] = None
-    ) -> None:
-        """Apply property overrides to agent instance.
-
-        Args:
-            agent: Agent instance to update
-            properties: Dictionary with property overrides (filtered by caller for merge mode)
-        """
-        if not properties:
-            return
-
-        for key, value in properties.items():
-            # Only set public properties (not private, not id, not name - name is static)
-            if (
-                not key.startswith("_")
-                and key not in ["id", "name"]
-                and hasattr(agent, key)
-            ):
-                try:
-                    setattr(agent, key, value)
-                except Exception as e:
-                    logger.warning(f"Could not set agent.{key}: {e}")
-
-    async def _ensure_actions_node(self, agent: Agent):
-        """Ensure Actions node exists for agent.
-
-        Args:
-            agent: Agent instance
-
-        Returns:
-            Actions node instance
-        """
-        # Import here to avoid circular dependency
+    async def _ensure_actions_node(self, agent: Agent) -> Actions:
+        """Ensure Actions node exists for agent."""
         from jvagent.action.actions import Actions
 
-        # Check if Actions node already connected
         actions = await agent.node(node="Actions")
         if actions:
             return actions
 
-        # Create new Actions node
         actions = await Actions.create()
         await agent.connect(actions, direction="both")
         return actions
 
     async def _ensure_memory_node(self, agent: Agent) -> Memory:
-        """Ensure Memory node exists for agent.
-
-        Args:
-            agent: Agent instance
-
-        Returns:
-            Memory node instance
-        """
-        # Check if Memory node already connected
+        """Ensure Memory node exists for agent."""
         memory = await agent.node(node="Memory")
         if memory:
             return memory
 
-        # Create new Memory node
         memory = await Memory.create()
         await agent.connect(memory, direction="both")
         return memory
 
+    # ============================================================================
+    # Action installation
+    # ============================================================================
+
     def _get_expected_actions_from_descriptor(
         self, descriptor: AgentDescriptor
     ) -> set[Tuple[str, str]]:
-        """Extract expected action references from agent.yaml descriptor.
-
-        Args:
-            descriptor: Agent descriptor with action configurations
-
-        Returns:
-            Set of (namespace, label) tuples for actions expected in agent.yaml
-        """
-        expected = set()
+        """Extract (namespace, label) pairs from agent.yaml descriptor."""
+        expected: set[Tuple[str, str]] = set()
         for action_config in descriptor.actions or []:
             if not isinstance(action_config, dict):
                 continue
@@ -375,83 +316,150 @@ class AgentLoader:
                 expected.add((namespace, label))
         return expected
 
-    async def _get_existing_actions_for_agent(
-        self, agent: Agent, actions_manager: Optional[Actions] = None
-    ) -> List[Action]:
-        """Get all existing actions for an agent.
+    async def _get_all_action_records(self, agent: Agent) -> List[Dict[str, Any]]:
+        """Return all node records for this agent from the raw DB (no entity filter).
 
-        Uses graph connections to find all Action subclasses (including distant descendants).
+        Bypasses jvspatial's entity-type filtering so ghost nodes whose classes
+        are not imported (removed actions) are visible.
+        """
+        from jvspatial.core.context import get_default_context
+        from jvspatial.core.entities.node import Node
+
+        context = get_default_context()
+        type_code = context._get_entity_type_code(Node)
+        collection = context._get_collection_name(type_code)
+        raw = await context.database.find(collection, {"context.agent_id": agent.id})
+        return [
+            r
+            for r in raw
+            if r.get("context", {}).get("namespace")
+            and r.get("context", {}).get("label")
+        ]
+
+    async def _reconcile_actions(
+        self,
+        agent: Agent,
+        actions_manager: Actions,
+        expected_actions: set[Tuple[str, str]],
+        all_records: List[Dict[str, Any]],
+    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
+        """Remove stale action nodes and deduplicate, using raw DB records as truth.
+
+        Handles both live actions (whose modules are imported) and ghost nodes
+        (whose entity type is absent from _collect_class_names() because their
+        modules are no longer pre-imported).
+
+        For live actions, deregister_action() is used so lifecycle hooks,
+        endpoint unregistration and module unloading all run correctly.
+
+        For ghost actions, Action.get() returns None (entity class not imported),
+        but Node.get() now falls back to the Node base class for unknown entity
+        types (jvspatial context.get() ghost-node fallback).  node.delete(cascade=True)
+        then cleans up all edges and the node record through the standard interface.
 
         Args:
             agent: Agent instance
-            actions_manager: Optional Actions manager node (if not provided, will be fetched)
-
-        Returns:
-            List of existing Action instances for the agent
-        """
-        # If actions_manager is provided, use graph connections (more reliable for subclasses)
-        if actions_manager:
-            # Match _dedupe_agent_actions: filter by agent_id to ensure we only consider
-            # actions belonging to this agent (orphans from other agents may be connected)
-            connected = await actions_manager.nodes(direction="out", node=Action)
-            return [
-                n for n in connected if isinstance(n, Action) and n.agent_id == agent.id
-            ]
-
-        # Fallback to database query if actions_manager not available
-        return await Action.find({"context.agent_id": agent.id})
-
-    def _sync_actions_with_descriptor(
-        self, expected_actions: set[Tuple[str, str]], existing_actions: List[Action]
-    ) -> Dict[str, List[Action]]:
-        """Compare expected actions from agent.yaml with existing actions in database.
-
-        Args:
+            actions_manager: Actions manager node
             expected_actions: Set of (namespace, label) tuples from agent.yaml
-            existing_actions: List of existing Action instances
+            all_records: Raw DB records from _get_all_action_records()
 
         Returns:
-            Dictionary with keys:
-            - 'to_remove': Actions in DB but not in agent.yaml
-            - 'to_update': Actions in both (need module reload + update)
-            - 'to_add': Actions in agent.yaml but not in DB
+            Map of (namespace, label) -> raw record for the surviving (kept) actions
         """
-        existing_set = {(action.namespace, action.label) for action in existing_actions}
-        existing_map = {
-            (action.namespace, action.label): action for action in existing_actions
-        }
+        from jvspatial.core.entities.node import Node
 
-        to_remove = [
-            action
-            for action in existing_actions
-            if (action.namespace, action.label) not in expected_actions
-        ]
-        to_update = [existing_map[key] for key in expected_actions & existing_set]
-        to_add_keys = expected_actions - existing_set
+        # Partition into to_keep (expected, first per ns/label) and to_remove (everything else).
+        # Any duplicate within expected_actions is also sent to to_remove.
+        kept_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        to_remove: List[Dict[str, Any]] = []
 
-        return {
-            "to_remove": to_remove,
-            "to_update": to_update,
-            "to_add": list(to_add_keys),
-        }
+        for record in all_records:
+            ctx = record.get("context", {})
+            ns = ctx["namespace"]
+            label = ctx["label"]
+            key = (ns, label)
+
+            if key in expected_actions and key not in kept_map:
+                kept_map[key] = record
+            else:
+                to_remove.append(record)
+
+        # Remove stale / duplicate records
+        removed = 0
+        removed_logged: List[str] = []
+
+        for record in to_remove:
+            record_id = record.get("id")
+            ctx = record.get("context", {})
+            ns = ctx.get("namespace", "?")
+            label = ctx.get("label", "?")
+
+            try:
+                # Live path: action class is imported — use full deregister flow
+                # (triggers lifecycle hooks, endpoint unregister, module unload)
+                action = await Action.get(record_id)
+                if action:
+                    await actions_manager.deregister_action(record_id)
+                    removed += 1
+                    removed_logged.append(f"{ns}/{label}")
+                    continue
+
+                # Ghost path: class not imported, Action.get() returned None.
+                # Node.get() falls back to the Node base class for unknown entity
+                # types, so we get a proper instance and call delete(cascade=True)
+                # through the standard jvspatial interface — no raw DB calls.
+                node = await Node.get(record_id)
+                if node:
+                    await node.delete(cascade=True)
+                    removed += 1
+                    removed_logged.append(f"{ns}/{label} (ghost)")
+                else:
+                    logger.warning(
+                        f"Could not retrieve node {ns}/{label} ({record_id}) "
+                        "for removal; skipping"
+                    )
+
+            except Exception as e:
+                logger.warning(
+                    f"Error removing action node {ns}/{label} ({record_id}): {e}"
+                )
+
+        if removed_logged:
+            logger.info(
+                f"Removed {removed} action(s) for {agent.name}: "
+                + ", ".join(removed_logged)
+            )
+
+        # Recount from ground truth (kept_map). deregister_action adjusts counts
+        # for live actions; set final values here to correct for any drift.
+        try:
+            kept_nodes: List[Action] = []
+            for record in kept_map.values():
+                node = await Action.get(record["id"])
+                if node:
+                    kept_nodes.append(node)
+
+            actions_manager.registered_count = len(kept_nodes)
+            actions_manager.enabled_count = sum(1 for n in kept_nodes if n.enabled)
+            await actions_manager.save()
+        except Exception as e:
+            logger.warning(f"Could not recount action statistics for {agent.name}: {e}")
+
+        return kept_map
 
     async def _install_actions(
         self,
         agent: Agent,
         descriptor: AgentDescriptor,
-        actions_manager,
+        actions_manager: Actions,
         update_mode: Optional[str] = None,
     ) -> None:
         """Install or update actions for an agent.
 
-        Actions are loaded from:
-        1. Discovered from filesystem: agents/{namespace}/{agent_name}/actions/{namespace}/{action_name}/info.yaml
-        2. Configured in agent.yaml: actions list with context overrides
-
-        When update_mode is set, this method makes agent.yaml the source of truth:
-        - Removes actions not in agent.yaml
-        - Reloads modules for actions that exist (ensuring code changes take effect)
-        - Adds new actions from agent.yaml
+        When update_mode is set, agent.yaml is the source of truth:
+        - Actions not in agent.yaml are removed (including ghosts with unimported classes)
+        - Existing actions have their modules reloaded
+        - New actions in agent.yaml are registered
         - "merge" preserves DB state; "source" does a full overwrite
 
         Args:
@@ -460,85 +468,38 @@ class AgentLoader:
             actions_manager: Actions manager node
             update_mode: "merge" for non-destructive, "source" for destructive, None to skip
         """
-        await self._dedupe_agent_actions(agent, actions_manager)
+        expected_actions = self._get_expected_actions_from_descriptor(descriptor)
 
-        sync_result = {}
+        kept_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
         if update_mode is not None:
-            # Get expected actions from agent.yaml
-            expected_actions = self._get_expected_actions_from_descriptor(descriptor)
-
-            # Get existing actions using graph connections (finds all Action subclasses)
-            existing_actions = await self._get_existing_actions_for_agent(
-                agent, actions_manager
+            all_records = await self._get_all_action_records(agent)
+            kept_map = await self._reconcile_actions(
+                agent, actions_manager, expected_actions, all_records
             )
 
-            # Also find orphan actions in DB (not connected to Actions manager)
-            # These can persist if edges were removed but nodes weren't deleted
-            db_actions = await Action.find({"context.agent_id": agent.id})
-            graph_ids = {a.id for a in existing_actions}
-            orphans = [a for a in db_actions if a.id not in graph_ids]
-            for orphan in orphans:
-                if (orphan.namespace, orphan.label) not in expected_actions:
-                    existing_actions.append(orphan)
-
-            # Compare and categorize
-            sync_result = self._sync_actions_with_descriptor(
-                expected_actions, existing_actions
-            )
-
-            # Remove actions not in agent.yaml
-            for action_to_remove in sync_result["to_remove"]:
+            # Reload modules for surviving actions so code changes take effect
+            for (ns, label), record in kept_map.items():
                 try:
-                    await actions_manager.deregister_action(action_to_remove.id)
+                    node = await Action.get(record["id"])
+                    if not node:
+                        continue
+                    metadata_dict = node.metadata
+                    is_core = metadata_dict.get("is_core_action", False)
+                    core_module_path = metadata_dict.get("core_module_path")
+
+                    if is_core and core_module_path:
+                        if core_module_path in sys.modules:
+                            importlib.reload(sys.modules[core_module_path])
+                    else:
+                        await node._unload_action_modules()
                 except Exception as e:
-                    logger.error(
-                        f"Error deregistering action {action_to_remove.id}: {e}",
+                    logger.warning(
+                        f"Error reloading modules for action {ns}/{label}: {e}",
                         exc_info=True,
                     )
 
-            # Sweep stale action nodes whose classes were not imported (invisible
-            # to entity-filtered queries like Action.find and nodes(node=Action)).
-            stale_removed = await self._sweep_stale_action_nodes(
-                agent, actions_manager, expected_actions
-            )
-            if stale_removed > 0:
-                logger.info(
-                    f"Swept {stale_removed} stale action node(s) for {agent.name}"
-                )
-
-            # If update mode, reload modules for actions that will be updated
-            # This ensures fresh code is loaded when actions are recreated
-            # Get existing actions using graph connections (finds all Action subclasses)
-            existing_map = {
-                (action.namespace, action.label): action for action in existing_actions
-            }
-
-            # Reload modules for actions that exist and are in agent.yaml (will be updated)
-            for namespace, label in expected_actions:
-                if (namespace, label) in existing_map:
-                    existing_action = existing_map[(namespace, label)]
-                    try:
-                        # Get metadata to determine if this is a core action
-                        metadata_dict = existing_action.metadata
-                        is_core = metadata_dict.get("is_core_action", False)
-                        core_module_path = metadata_dict.get("core_module_path")
-
-                        if is_core and core_module_path:
-                            # For core actions, use importlib.reload()
-                            if core_module_path in sys.modules:
-                                importlib.reload(sys.modules[core_module_path])
-                        else:
-                            await existing_action._unload_action_modules()
-                    except Exception as e:
-                        logger.warning(
-                            f"Error reloading modules for action {namespace}/{label}: {e}",
-                            exc_info=True,
-                        )
-
-        # Load actions using ActionLoader
-        # This discovers actions from filesystem and applies configuration from agent.yaml
-        # If modules were unloaded above, fresh imports will occur here
-        expected_actions = self._get_expected_actions_from_descriptor(descriptor)
+        # Load actions from filesystem and register / update
         actions = self.action_loader.load_actions_for_agent(
             descriptor.namespace, descriptor.name, agent.id, descriptor.actions
         )
@@ -546,228 +507,46 @@ class AgentLoader:
         if not actions:
             return
 
-        # Register or update actions with the manager
-        actions_to_register = []
-        for action in actions:
-            if (action.namespace, action.label) in expected_actions:
-                actions_to_register.append(action)
+        actions_to_register = [
+            a for a in actions if (a.namespace, a.label) in expected_actions
+        ]
         results = await actions_manager.register_actions(
             actions_to_register, update_mode=update_mode
         )
 
-        registered_count = 0
-        updated_count = 0
-        failed_count = 0
-        removed_count = len(sync_result.get("to_remove", []))
+        registered_count = sum(
+            1 for ok in results.values() if ok and update_mode is None
+        )
+        updated_count = sum(
+            1 for ok in results.values() if ok and update_mode is not None
+        )
+        failed_count = sum(1 for ok in results.values() if not ok)
+        removed_count = (
+            max(0, len(kept_map) - sum(results.values()))
+            if update_mode is not None
+            else 0
+        )
 
-        for action in actions_to_register:
-            action_label = action.label
-            success = results.get(action_label, False)
+        for label, success in results.items():
+            if not success:
+                logger.warning(f"Failed to register action: {label}")
 
-            if success:
-                existing_actions = await actions_manager.nodes(
-                    node=Action,
-                    namespace=action.namespace,
-                    label=action.label,
-                )
-
-                if existing_actions and update_mode is not None:
-                    updated_count += 1
-                else:
-                    registered_count += 1
-            else:
-                logger.warning(f"Failed to register action: {action_label}")
-                failed_count += 1
-
-        total_actions = registered_count + updated_count
-        if update_mode is not None and removed_count > 0:
-            logger.info(
-                f"Actions for {agent.name}: {removed_count} removed, "
-                f"{registered_count} registered, {updated_count} updated, {failed_count} failed"
-            )
-        elif failed_count > 0:
+        if update_mode is not None:
+            parts = []
+            if len(kept_map) > updated_count:
+                parts.append(f"{len(kept_map) - updated_count} removed")
+            if registered_count:
+                parts.append(f"{registered_count} registered")
+            if updated_count:
+                parts.append(f"{updated_count} updated")
+            if failed_count:
+                parts.append(f"{failed_count} failed")
+            if parts:
+                logger.info(f"Actions for {agent.name}: {', '.join(parts)}")
+        elif failed_count:
             logger.warning(
-                f"Actions for {agent.name}: {registered_count} registered, {updated_count} updated, {failed_count} failed"
+                f"Actions for {agent.name}: {registered_count} registered, {failed_count} failed"
             )
-
-    async def _dedupe_agent_actions(
-        self, agent: Agent, actions_manager: Actions
-    ) -> None:
-        """Ensure only one action node exists per (namespace, label) for the agent."""
-        try:
-            connected_nodes = await actions_manager.nodes(direction="out", node=Action)
-            action_nodes = [
-                node
-                for node in connected_nodes
-                if isinstance(node, Action) and node.agent_id == agent.id
-            ]
-            total_connected = len(action_nodes)
-            if total_connected == 0:
-                return
-
-            dedupe_map: Dict[Tuple[str, str], Action] = {}
-            duplicates: List[Action] = []
-            for action_node in action_nodes:
-                key = (action_node.namespace, action_node.label)
-                if key in dedupe_map:
-                    duplicates.append(action_node)
-                else:
-                    dedupe_map[key] = action_node
-
-            # Second pass: dedupe singleton actions by archetype (keep first per type)
-            singleton_map: Dict[str, Action] = {}
-            for action_node in list(dedupe_map.values()):
-                if not action_node.is_singleton:
-                    continue
-                archetype = action_node.metadata.get(
-                    "class", action_node.get_class_name()
-                )
-                if archetype in singleton_map:
-                    if singleton_map[archetype] != action_node:
-                        duplicates.append(action_node)
-                        # Remove from dedupe_map so we don't count it
-                        key = (action_node.namespace, action_node.label)
-                        if dedupe_map.get(key) == action_node:
-                            del dedupe_map[key]
-                else:
-                    singleton_map[archetype] = action_node
-
-            removed = 0
-            for duplicate in duplicates:
-                try:
-                    if await actions_manager.is_connected_to(duplicate):
-                        await actions_manager.disconnect(duplicate)
-                    await duplicate.delete()
-                    removed += 1
-                except Exception as exc:
-                    logger.error(
-                        f"Error removing duplicate action {duplicate.id}: {exc}",
-                        exc_info=True,
-                    )
-
-            connected_ids = {action.id for action in dedupe_map.values()}
-            # Remove orphan actions that still reference the agent but are not connected
-            # Use graph connections to find all Action subclasses (including distant descendants)
-            all_connected_actions = await actions_manager.nodes(node=Action)
-            orphan_candidates = [
-                a for a in all_connected_actions if a.id not in connected_ids
-            ]
-            for orphan in orphan_candidates:
-                if orphan.id in connected_ids:
-                    continue
-                try:
-                    if await actions_manager.is_connected_to(orphan):
-                        await actions_manager.disconnect(orphan)
-                    await orphan.delete()
-                    removed += 1
-                except Exception as exc:
-                    logger.error(
-                        f"Error removing orphan action {orphan.id}: {exc}",
-                        exc_info=True,
-                    )
-
-            actions_manager.registered_count = len(dedupe_map)
-            actions_manager.enabled_count = sum(
-                1 for action in dedupe_map.values() if action.enabled
-            )
-
-            if removed > 0:
-                await actions_manager.save()
-        except Exception as exc:
-            logger.error(
-                f"Failed to deduplicate actions for agent {agent.id}: {exc}",
-                exc_info=True,
-            )
-
-    async def _sweep_stale_action_nodes(
-        self,
-        agent: Agent,
-        actions_manager: Actions,
-        expected_actions: set[Tuple[str, str]],
-    ) -> int:
-        """Remove action nodes whose classes were not imported.
-
-        When an action is removed from agent.yaml its module is no longer
-        pre-imported, so its entity type (e.g. ``NewsInteractAction``) is
-        absent from ``Action._collect_class_names()``.  Both
-        ``Action.find()`` and ``actions_manager.nodes(node=Action)`` filter
-        by entity type, so these "ghost" nodes are invisible to the normal
-        sync/deregister flow.
-
-        This method bypasses entity-type filtering by querying the raw
-        database for *all* node records with ``context.agent_id`` matching
-        the current agent, then deletes any whose ``(namespace, label)``
-        pair is not in ``expected_actions``.
-
-        The counts on ``actions_manager`` are NOT adjusted because the ghost
-        nodes were already excluded from the counts set by
-        ``_dedupe_agent_actions``.
-
-        Args:
-            agent: Agent instance
-            actions_manager: Actions manager node
-            expected_actions: Set of (namespace, label) tuples from agent.yaml
-
-        Returns:
-            Number of stale nodes removed
-        """
-        from jvspatial.core.context import get_default_context
-        from jvspatial.core.entities.node import Node
-
-        try:
-            context = get_default_context()
-            type_code = context._get_entity_type_code(Node)
-            collection = context._get_collection_name(type_code)
-
-            raw_records = await context.database.find(
-                collection, {"context.agent_id": agent.id}
-            )
-
-            removed = 0
-            for record in raw_records:
-                ctx = record.get("context", {})
-                ns = ctx.get("namespace")
-                label = ctx.get("label")
-                record_id = record.get("id")
-
-                if not ns or not label or not record_id:
-                    continue
-
-                if (ns, label) in expected_actions:
-                    continue
-
-                try:
-                    node = await Node.get(record_id)
-                    if not node:
-                        await context.database.delete(collection, record_id)
-                        await context._cache.delete(record_id)
-                        removed += 1
-                        continue
-
-                    if await actions_manager.is_connected_to(node):
-                        await actions_manager.disconnect(node)
-                    await node.delete(cascade=True)
-                    removed += 1
-                except Exception as e:
-                    logger.warning(
-                        f"Error removing stale action node {ns}/{label} "
-                        f"({record_id}): {e}"
-                    )
-                    try:
-                        await context.database.delete(collection, record_id)
-                        await context._cache.delete(record_id)
-                        removed += 1
-                    except Exception:
-                        pass
-
-            return removed
-
-        except Exception as exc:
-            logger.error(
-                f"Failed to sweep stale action nodes for agent {agent.id}: {exc}",
-                exc_info=True,
-            )
-            return 0
 
     async def install_all_agents(
         self, update_mode: Optional[str] = None
@@ -812,7 +591,6 @@ class AgentLoader:
             True if successful, False otherwise
         """
         try:
-            # Find the agent by namespace and name
             agent = await Agent.find_one(
                 {"context.name": agent_name, "context.namespace": namespace}
             )
@@ -822,16 +600,12 @@ class AgentLoader:
                 return False
             was_enabled = agent.enabled
 
-            # Get Agents manager for statistics update
-            # Need to get it before deleting the agent
             app = await App.get()
             agents_manager = await app.node(node="Agents") if app else None
 
-            # Delete the agent (cascades to connected nodes)
             await agent.delete()
             logger.info(f"Uninstalled agent: {namespace}/{agent_name}")
 
-            # Update Agents manager statistics
             if agents_manager:
                 agents_manager.total_agents = max(0, agents_manager.total_agents - 1)
                 if was_enabled:
@@ -845,3 +619,39 @@ class AgentLoader:
         except Exception as e:
             logger.error(f"Error uninstalling agent {agent_name}: {e}", exc_info=True)
             return False
+
+
+# ---------------------------------------------------------------------------
+# Shared utility
+# ---------------------------------------------------------------------------
+
+
+def _apply_properties(
+    target: Any,
+    properties: Optional[Dict[str, Any]],
+    reserved: Optional[set] = None,
+) -> None:
+    """Apply property overrides from a descriptor to a node instance.
+
+    Skips private keys (leading ``_``) and any explicitly reserved keys.
+    Only sets attributes that already exist on the target.
+
+    Args:
+        target: Node instance to update
+        properties: Dictionary of property key/value pairs from YAML context
+        reserved: Additional keys to skip beyond private ones (e.g. ``{"id", "name"}``)
+    """
+    if not properties:
+        return
+
+    _reserved = reserved or set()
+
+    for key, value in properties.items():
+        if key.startswith("_") or key in _reserved:
+            continue
+        if not hasattr(target, key):
+            continue
+        try:
+            setattr(target, key, value)
+        except Exception as e:
+            logger.warning(f"Could not set {type(target).__name__}.{key}: {e}")
