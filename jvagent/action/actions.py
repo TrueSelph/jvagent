@@ -46,26 +46,24 @@ class Actions(Node):
     ) -> bool:
         """Register or update an action with this manager.
 
-        This method includes a safeguard to prevent duplicate actions from being registered
-        under the same agent. Actions are uniquely identified by (agent_id, namespace, label).
+        Actions are uniquely identified by (agent_id, namespace, label).
 
         This method:
-        1. Checks if action already exists (by agent_id, namespace, and label)
-        2. If exists and update_mode="source": deletes existing action(s) and creates fresh
-        3. If exists and update_mode="merge": updates existing in place, preserving DB state
-        4. If exists and update_mode=None: skips registration to prevent duplicate
-        5. If not exists: creates the action node in the graph
-        6. Connects it to this Actions manager node
-        7. Calls the action's lifecycle hook:
-           - on_register() for new actions (even during update mode)
-           - on_reload() only for actions that actually existed before this registration
-        8. Updates statistics
+        1. Enforces singleton constraint for singleton action types
+        2. Checks if action already exists (by agent_id, namespace, label)
+        3. If exists and update_mode=None: reuses existing node (no-op)
+        4. If exists and update_mode="merge": updates metadata in place, calls on_reload()
+        5. If exists and update_mode="source": deletes existing and creates fresh
+        6. If not exists: saves and connects the action, calls on_register()
+
+        Prior to calling this method during bootstrap, _reconcile_actions() guarantees
+        a clean slate — stale and duplicate nodes have already been removed — so no
+        defensive duplicate-detection is performed here.
 
         Args:
             action: Action instance to register (fresh from source)
             update_mode: "merge" for non-destructive, "source" for destructive, None to skip
-            property_overrides: Set of property keys explicitly set via agent.yaml context
-                                (used in merge mode to know which fields source should win)
+            property_overrides: Kept for API compatibility; unused internally.
 
         Returns:
             True if successful, False otherwise
@@ -82,7 +80,6 @@ class Actions(Node):
                         }
                     )
                     if existing_singleton:
-                        # Allow only if we're updating the same action (same namespace, label)
                         if (
                             existing_singleton.namespace != action.namespace
                             or existing_singleton.label != action.label
@@ -96,7 +93,7 @@ class Actions(Node):
                             )
                             return False
 
-                # Check if action already exists (uniquely identified by agent_id, namespace, label)
+                # Check if action already exists
                 existing_action = await Action.find_one(
                     {
                         "context.agent_id": action.agent_id,
@@ -105,8 +102,6 @@ class Actions(Node):
                     }
                 )
 
-                # Track if action existed before this registration
-                # This determines whether to call on_register() or on_reload()
                 action_existed_before = existing_action is not None
 
                 if existing_action:
@@ -128,54 +123,9 @@ class Actions(Node):
                         )
 
                     # source mode: delete existing, create fresh
-                    all_existing = await Action.find(
-                        {
-                            "context.agent_id": action.agent_id,
-                            "context.namespace": action.namespace,
-                            "context.label": action.label,
-                        }
-                    )
-                    for existing in all_existing:
-                        try:
-                            if await self.is_connected_to(existing):
-                                await self.disconnect(existing)
-                            await existing.delete(cascade=True)
-                            self.registered_count = max(0, self.registered_count - 1)
-                            if existing.enabled:
-                                self.enabled_count = max(0, self.enabled_count - 1)
-                        except Exception as e:
-                            logger.error(
-                                f"Error deleting existing action {existing.id}: {e}",
-                                exc_info=True,
-                            )
-                else:
-                    all_duplicates = await Action.find(
-                        {
-                            "context.agent_id": action.agent_id,
-                            "context.namespace": action.namespace,
-                            "context.label": action.label,
-                        }
-                    )
-                    for duplicate in all_duplicates:
-                        try:
-                            if await self.is_connected_to(duplicate):
-                                await self.disconnect(duplicate)
-                            await duplicate.delete(cascade=True)
-                            self.registered_count = max(0, self.registered_count - 1)
-                            if duplicate.enabled:
-                                self.enabled_count = max(0, self.enabled_count - 1)
-                            logger.warning(
-                                "Removed orphaned duplicate action %s (agent_id=%s, namespace=%s, label=%s)",
-                                duplicate.id,
-                                duplicate.agent_id,
-                                duplicate.namespace,
-                                duplicate.label,
-                            )
-                        except Exception as e:
-                            logger.error(
-                                f"Error removing duplicate action {duplicate.id}: {e}",
-                                exc_info=True,
-                            )
+                    if await self.is_connected_to(existing_action):
+                        await self.disconnect(existing_action)
+                    await existing_action.delete(cascade=True)
 
                 self.registered_count += 1
                 if action.enabled:
@@ -185,34 +135,6 @@ class Actions(Node):
 
                 if not await self.is_connected_to(action):
                     await self.connect(action, direction="both")
-
-                other_existing = await Action.find_one(
-                    {
-                        "context.agent_id": action.agent_id,
-                        "context.namespace": action.namespace,
-                        "context.label": action.label,
-                    }
-                )
-
-                if other_existing and other_existing.id != action.id:
-                    logger.warning(
-                        f"Duplicate action detected after save for {action.namespace}/{action.label} "
-                        f"(agent_id={action.agent_id}). Removing duplicate {action.id}, "
-                        f"keeping existing {other_existing.id}"
-                    )
-
-                    if await self.is_connected_to(action):
-                        await self.disconnect(action)
-                    await action.delete(cascade=True)
-                    self.registered_count = max(0, self.registered_count - 1)
-                    if action.enabled:
-                        self.enabled_count = max(0, self.enabled_count - 1)
-
-                    if not await self.is_connected_to(other_existing):
-                        await self.connect(other_existing, direction="both")
-
-                    await self.save()
-                    return True
 
                 context_name = (
                     "on_reload"
@@ -334,8 +256,8 @@ class Actions(Node):
         Returns:
             Dictionary mapping action labels to registration status
         """
-        results = {}
-        registered_actions = []
+        results: Dict[str, bool] = {}
+        registered_actions: List[Action] = []
 
         for action in actions:
             overrides = getattr(action, "_property_override_keys", None)
@@ -345,33 +267,14 @@ class Actions(Node):
                 property_overrides=overrides,
             )
             results[action.label] = success
-
-            # Only track as registered if it was successful AND we need to verify it wasn't a duplicate
             if success:
-                # Verify the action still exists and is connected (not deleted as duplicate)
-                try:
-                    existing = await Action.find_one(
-                        {
-                            "context.agent_id": action.agent_id,
-                            "context.namespace": action.namespace,
-                            "context.label": action.label,
-                        }
-                    )
-                    if existing:
-                        # Include when: (a) we saved this action (id match), or
-                        # (b) we merged in place (update_mode set, existing is the merged node)
-                        if existing.id == action.id or update_mode is not None:
-                            registered_actions.append(existing)
-                except Exception:
-                    # If we can't verify, skip post_register to be safe
-                    pass
+                registered_actions.append(action)
 
-        # Call post_register only on actions that were actually registered (not duplicates)
+        # Call post_register for every successfully registered action
         for action in registered_actions:
             try:
                 await action.post_register()
             except Exception as e:
-                # Log to console (database logging handled automatically by DBLogHandler)
                 logger.error(
                     f"Error in post_register for {action.label}: {e}",
                     exc_info=True,
@@ -392,14 +295,16 @@ class Actions(Node):
     async def deregister_action(self, action_id: str) -> bool:
         """Deregister an action from this manager.
 
-        This method performs complete cleanup:
+        Performs complete cleanup in order:
         1. Unregisters all endpoints associated with the action
         2. Unloads action-specific modules (if safe)
-        3. Calls the action's on_deregister() lifecycle hook
+        3. Calls on_deregister() lifecycle hook
         4. Disconnects from Actions manager
-        5. Deletes the action node (removes graph edges)
-        6. Verifies deletion succeeded
-        7. Updates statistics (only after confirmed deletion)
+        5. Deletes the action node (cascade-removes child nodes)
+
+        Statistics (registered_count, enabled_count) are updated here for standalone
+        calls.  When called from _reconcile_actions, the caller resets them from
+        ground truth after all removals are complete.
 
         Args:
             action_id: ID of the action to deregister
@@ -409,12 +314,10 @@ class Actions(Node):
         """
         async with self._lock:
             try:
-                # Get the action
                 action = await Action.get(action_id)
                 if not action:
                     return False
 
-                # Step 1: Unregister endpoints associated with this action
                 try:
                     endpoints_unregistered = await action._unregister_endpoints()
                     if endpoints_unregistered > 0:
@@ -426,7 +329,6 @@ class Actions(Node):
                         f"Error unregistering endpoints for action {action_id}: {e}"
                     )
 
-                # Step 2: Unload action-specific modules (if safe)
                 try:
                     modules_unloaded = await action._unload_action_modules()
                     if modules_unloaded > 0:
@@ -438,11 +340,9 @@ class Actions(Node):
                         f"Error unloading modules for action {action_id}: {e}"
                     )
 
-                # Step 3: Call lifecycle hook (allows action-specific cleanup)
                 try:
                     await action.on_deregister()
                 except Exception as e:
-                    # Log to console (database logging handled automatically by DBLogHandler)
                     logger.error(
                         f"Error in on_deregister for action {action_id}: {e}",
                         exc_info=True,
@@ -457,36 +357,20 @@ class Actions(Node):
                             }
                         },
                     )
-                    # Continue with deregistration even if hook fails
 
-                # Capture enabled state before delete (action object may be invalid after)
                 was_enabled = action.enabled
                 agent_id = action.agent_id
 
-                # Step 4: Disconnect from Actions manager before delete (matches _dedupe pattern)
-                # Ensures edge_ids on both nodes are cleaned so Node.delete can fully remove the node
                 if await self.is_connected_to(action):
                     await self.disconnect(action)
 
-                # Step 5: Delete the action (cascade deletes child nodes e.g. NewsSummaryCache)
                 await action.delete(cascade=True)
 
-                # Step 6: Verify the action was actually removed from the database
-                still_exists = await Action.get(action_id)
-                if still_exists:
-                    logger.error(
-                        f"Action {action_id} still exists in DB after delete; "
-                        "counts will not be decremented"
-                    )
-                    return False
-
-                # Step 7: Update statistics only after confirmed deletion
                 self.registered_count = max(0, self.registered_count - 1)
                 if was_enabled:
                     self.enabled_count = max(0, self.enabled_count - 1)
                 await self.save()
 
-                # Invalidate action cache for this agent
                 from jvagent.core.cache import invalidate_action_cache
 
                 await invalidate_action_cache(agent_id)

@@ -494,6 +494,12 @@ actions:
             len(ghost_after) == 0
         ), "Ghost action node with unimported entity type was not removed"
 
+        # The edge pointing to the ghost must also be gone (no remnant edges)
+        edges_after = await context.database.find("edge", {"target": ghost_id})
+        assert (
+            len(edges_after) == 0
+        ), "Remnant edge pointing to removed ghost action node was not cleaned up"
+
         # action_a must still exist
         remaining = [
             r for r in raw_after if r.get("context", {}).get("label") == "action_a"
