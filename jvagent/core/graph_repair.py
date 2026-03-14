@@ -1,12 +1,13 @@
 """Agent graph repair utility for jvagent.
 
 Validates graph structure, removes dead edges, reattaches or removes orphaned
-nodes, and syncs node-edge references. Follows the memory repair pattern.
+nodes, and syncs node-edge references. Memory repair (all agents) runs before
+graph repair to ensure a clean memory state prior to structural validation.
 """
 
 import logging
 from collections import defaultdict
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from jvspatial.core import Node, Root
 from jvspatial.core.context import get_default_context
@@ -16,30 +17,35 @@ logger = logging.getLogger(__name__)
 
 
 async def repair_agent_graph(
-    agent_id: Optional[str] = None,
     dry_run: bool = False,
     recent_minutes: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Run agent graph repair procedures.
+    """Run memory repair (all agents) then agent graph repair procedures.
 
-    Validates structure, removes dead edges, syncs node edge_ids, reattaches
-    or removes orphaned nodes, and removes duplicate edges. When agent_id
-    is provided, also runs memory repair for that agent's Memory.
+    Memory repair executes first for all agents to ensure a consistent memory
+    state before structural graph validation. Graph repair then validates
+    structure, removes dead edges, syncs node edge_ids, reattaches or removes
+    orphaned nodes, and removes duplicate edges.
 
     Args:
-        agent_id: If provided, scope repair to that agent's subgraph only
-            and run memory repair for that agent.
         dry_run: If True, report issues without making changes.
-        recent_minutes: If agent_id set, passed to memory repair to limit
-            orphan interaction cleanup to last N minutes (None = all).
+        recent_minutes: Passed to memory repair to limit orphan interaction
+            cleanup to last N minutes (None = all).
 
     Returns:
-        Dict with dead_edges_removed, orphaned_nodes_reattached,
-        orphaned_nodes_deleted, node_edge_ids_synced, duplicate_edges_removed,
-        message. When agent_id provided, also includes memory repair fields.
+        Dict with memory_repair_agents, orphaned_interactions_deleted,
+        orphaned_users_reconnected, dual_edges_removed,
+        conversation_first_edges_restored, dead_edges_removed,
+        orphaned_nodes_reattached, orphaned_nodes_deleted,
+        node_edge_ids_synced, duplicate_edges_removed, message.
     """
     context = get_default_context()
     result = {
+        "memory_repair_agents": 0,
+        "orphaned_interactions_deleted": 0,
+        "orphaned_users_reconnected": 0,
+        "dual_edges_removed": 0,
+        "conversation_first_edges_restored": 0,
         "dead_edges_removed": 0,
         "orphaned_nodes_reattached": 0,
         "orphaned_nodes_deleted": 0,
@@ -49,6 +55,13 @@ async def repair_agent_graph(
 
     if dry_run:
         result["dry_run"] = True
+
+    # 0. Memory repair for all agents (before graph repair)
+    memory_result = None
+    if not dry_run:
+        memory_result = await _run_memory_repair_all_agents(recent_minutes)
+        if memory_result:
+            result.update(memory_result)
 
     # 1. Remove dead edges
     dead_removed = await _remove_dead_edges(context, dry_run)
@@ -61,14 +74,14 @@ async def repair_agent_graph(
     # 3. Identify orphaned nodes and reattach or remove
     root = await Root.get()
     reachable = await _compute_reachable_nodes(context, root)
-    all_node_ids = await _get_all_node_ids(context, agent_id)
+    all_node_ids = await _get_all_node_ids(context)
     orphan_ids = all_node_ids - reachable
 
     # Exclude Root from orphans
     root_id = getattr(Root, "id", "n.Root.root") if Root else "n.Root.root"
     orphan_ids.discard(root_id)
 
-    reattached = await _reattach_orphans(context, orphan_ids, dry_run, agent_id)
+    reattached = await _reattach_orphans(context, orphan_ids, dry_run)
     reattached += await _reattach_interaction_orphans(context, orphan_ids, dry_run)
     result["orphaned_nodes_reattached"] = reattached
 
@@ -79,24 +92,11 @@ async def repair_agent_graph(
     dup_removed = await _remove_duplicate_edges(context, dry_run)
     result["duplicate_edges_removed"] = dup_removed
 
-    # 5. When agent_id provided, run memory repair for that agent
-    if agent_id and not dry_run:
-        memory_result = await _run_memory_repair(agent_id, recent_minutes)
-        if memory_result:
-            result.update(memory_result)
-
     parts = []
-    if dead_removed:
-        parts.append(f"{dead_removed} dead edge(s) removed")
-    if reattached:
-        parts.append(f"{reattached} orphan(s) reattached")
-    if deleted:
-        parts.append(f"{deleted} orphan(s) deleted")
-    if synced:
-        parts.append(f"{synced} node(s) edge_ids synced")
-    if dup_removed:
-        parts.append(f"{dup_removed} duplicate edge(s) removed")
-    if agent_id and not dry_run:
+    if memory_result:
+        agents_repaired = memory_result.get("memory_repair_agents", 0)
+        if agents_repaired:
+            parts.append(f"memory repaired for {agents_repaired} agent(s)")
         if result.get("orphaned_interactions_deleted"):
             parts.append(
                 f"{result['orphaned_interactions_deleted']} interaction(s) deleted"
@@ -109,6 +109,16 @@ async def repair_agent_graph(
             parts.append(
                 f"{result['conversation_first_edges_restored']} conv-first edge(s) restored"
             )
+    if dead_removed:
+        parts.append(f"{dead_removed} dead edge(s) removed")
+    if reattached:
+        parts.append(f"{reattached} orphan(s) reattached")
+    if deleted:
+        parts.append(f"{deleted} orphan(s) deleted")
+    if synced:
+        parts.append(f"{synced} node(s) edge_ids synced")
+    if dup_removed:
+        parts.append(f"{dup_removed} duplicate edge(s) removed")
 
     result["message"] = (
         "Repair completed: " + ", ".join(parts) if parts else "No repairs needed"
@@ -119,19 +129,46 @@ async def repair_agent_graph(
     return result
 
 
-async def _run_memory_repair(
-    agent_id: str, recent_minutes: Optional[int]
-) -> Optional[Dict[str, Any]]:
-    """Run memory repair for the given agent. Returns None if agent or memory not found."""
+async def _run_memory_repair_all_agents(
+    recent_minutes: Optional[int],
+) -> Dict[str, Any]:
+    """Run memory repair for every agent that has a Memory node.
+
+    Args:
+        recent_minutes: Passed to each agent's memory repair to limit orphan
+            interaction cleanup to last N minutes (None = all).
+
+    Returns:
+        Aggregated dict with memory_repair_agents count and summed repair fields.
+    """
     from jvagent.core.agent import Agent
 
-    agent = await Agent.get(agent_id)
-    if not agent:
-        return None
-    memory = await agent.get_memory()
-    if not memory:
-        return None
-    return await memory.repair_memory(recent_minutes=recent_minutes)
+    aggregated: Dict[str, Any] = {
+        "memory_repair_agents": 0,
+        "orphaned_interactions_deleted": 0,
+        "orphaned_users_reconnected": 0,
+        "dual_edges_removed": 0,
+        "conversation_first_edges_restored": 0,
+        "counters_fixed": 0,
+    }
+
+    agents: List[Any] = await Agent.find({})
+    for agent in agents:
+        memory = await agent.get_memory()
+        if not memory:
+            continue
+        repair = await memory.repair_memory(recent_minutes=recent_minutes)
+        aggregated["memory_repair_agents"] += 1
+        for key in (
+            "orphaned_interactions_deleted",
+            "orphaned_users_reconnected",
+            "dual_edges_removed",
+            "conversation_first_edges_restored",
+            "counters_fixed",
+        ):
+            aggregated[key] += repair.get(key, 0)
+
+    return aggregated
 
 
 async def _remove_dead_edges(context: Any, dry_run: bool) -> int:
@@ -243,38 +280,16 @@ async def _compute_reachable_nodes(context: Any, root: Node) -> Set[str]:
     return reachable
 
 
-async def _get_all_node_ids(context: Any, agent_id: Optional[str]) -> Set[str]:
-    """Get all node IDs. When agent_id provided, return agent subgraph only."""
-    if not agent_id:
-        nodes_data = await context.database.find("node", {})
-        return {n.get("id") for n in nodes_data if n.get("id")}
-
-    from jvagent.core.agent import Agent
-
-    agent = await Agent.get(agent_id)
-    if not agent:
-        return set()
-
-    subgraph: Set[str] = {agent.id}
-    queue = [agent]
-    while queue:
-        node = queue.pop(0)
-        try:
-            neighbors = await node.nodes(direction="out")
-            for neighbor in neighbors:
-                if neighbor.id not in subgraph:
-                    subgraph.add(neighbor.id)
-                    queue.append(neighbor)
-        except Exception as e:
-            logger.debug("Error traversing from %s: %s", node.id, e)
-    return subgraph
+async def _get_all_node_ids(context: Any) -> Set[str]:
+    """Get all node IDs in the graph."""
+    nodes_data = await context.database.find("node", {})
+    return {n.get("id") for n in nodes_data if n.get("id")}
 
 
 async def _reattach_orphans(
     context: Any,
     orphan_ids: Set[str],
     dry_run: bool,
-    agent_id: Optional[str] = None,
 ) -> int:
     """Try to reattach orphaned nodes to their expected parents."""
     reattached = 0
@@ -362,30 +377,17 @@ async def _reattach_orphans(
                 # users that belong to another Memory.
                 if node.edge_ids:
                     continue
-                if agent_id:
-                    from jvagent.core.agent import Agent as AgentCls
-
-                    agent_node = await AgentCls.get(agent_id)
-                    if agent_node:
-                        memory = await agent_node.get_memory()
-                        if memory and not await memory.is_connected_to(node):
-                            if not dry_run:
-                                await memory.connect(node, direction="out")
-                            reattached += 1
-                            orphan_ids.discard(node_id)
-                else:
-                    # No agent context; try the first Memory without this user
-                    memories = await Memory.find({})
-                    for memory in memories:
-                        connected_users = await memory.nodes(node="User")
-                        if any(u.user_id == user_id for u in connected_users):
-                            continue
-                        if not await memory.is_connected_to(node):
-                            if not dry_run:
-                                await memory.connect(node, direction="out")
-                            reattached += 1
-                            orphan_ids.discard(node_id)
-                            break
+                memories = await Memory.find({})
+                for memory in memories:
+                    connected_users = await memory.nodes(node="User")
+                    if any(u.user_id == user_id for u in connected_users):
+                        continue
+                    if not await memory.is_connected_to(node):
+                        if not dry_run:
+                            await memory.connect(node, direction="out")
+                        reattached += 1
+                        orphan_ids.discard(node_id)
+                        break
 
             elif entity_name == "Conversation":
                 from jvagent.memory.user import User
@@ -408,9 +410,9 @@ async def _reattach_orphans(
                 from jvagent.core.agent import Agent
 
                 if isinstance(node, Action):
-                    agent_id = getattr(node, "agent_id", None)
-                    if agent_id:
-                        agent = await Agent.get(agent_id)
+                    action_agent_id = getattr(node, "agent_id", None)
+                    if action_agent_id:
+                        agent = await Agent.get(action_agent_id)
                         if agent:
                             actions_manager = await agent.get_actions_manager()
                             if (

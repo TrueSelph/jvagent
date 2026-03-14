@@ -735,6 +735,41 @@ class ApiClient {
     }
   }
 
+  async repairGraph(options?: { dry_run?: boolean; recent_minutes?: number }): Promise<any> {
+    try {
+      const params: Record<string, string | number | boolean> = {}
+      if (options?.dry_run !== undefined) params.dry_run = options.dry_run
+      if (options?.recent_minutes !== undefined) params.recent_minutes = options.recent_minutes
+
+      const response = await this._withFallback(async (baseURL) => {
+        try {
+          return await this.client.post('/api/graph/repair', {}, { params, baseURL })
+        } catch (err: any) {
+          if (err.response?.status === 404) {
+            return await this.client.post('/graph/repair', {}, { params, baseURL })
+          }
+          throw err
+        }
+      })
+
+      const data = response.data
+      if (data?.success && data?.data) return data.data
+      return data
+    } catch (error: any) {
+      console.error('Error repairing graph:', error)
+      const status = error.response?.status
+      let errorMessage: string | unknown = error.response?.data?.detail ?? error.response?.data?.message ?? error.message ?? 'Failed to repair graph'
+      if (Array.isArray(errorMessage)) {
+        errorMessage = errorMessage.map((e: { msg?: string; message?: string }) => e?.msg ?? e?.message ?? String(e)).join('; ')
+      }
+      if (typeof errorMessage !== 'string') {
+        errorMessage = typeof errorMessage === 'object' ? JSON.stringify(errorMessage) : String(errorMessage)
+      }
+      const prefix = status ? `[${status}] ` : ''
+      throw new Error(prefix + errorMessage)
+    }
+  }
+
   async getActions(
     agentId: string,
     params?: { page?: number; per_page?: number; enabled_only?: boolean }

@@ -10,7 +10,13 @@ All memory endpoints require authentication with admin role.
 |--------|------|--------------|
 | DELETE | `/api/agents/{agent_id}/memory/purge` | Purge conversations (query: `user_id`, `conversation_id`). Cascade deletes interactions. Does not delete User nodes. |
 | DELETE | `/api/agents/{agent_id}/memory/users/{user_id}` | Delete a user node and all connected nodes (Conversations, Interactions, SubscriptionSettings, etc.). |
-| POST | `/api/agents/{agent_id}/memory/repair` | Repair orphaned nodes, dual edges, and missing conversation-to-first-interaction edges (query: `recent_minutes`). |
+| POST | `/api/agents/{agent_id}/memory/repair` | Repair orphaned nodes, dual edges, and missing conversation-to-first-interaction edges for a single agent (query: `recent_minutes`). |
+
+### App-Wide Repair
+
+`POST /graph/repair` is the recommended entry point for maintenance. It runs **memory repair for all agents first** (before any graph repair), then performs full structural graph repair (dead edges, orphaned nodes, duplicate edges). Accepts `dry_run` and `recent_minutes` query parameters.
+
+Use `/api/agents/{agent_id}/memory/repair` only when you need to target a single agent's memory in isolation.
 
 ## Entity Relationships
 
