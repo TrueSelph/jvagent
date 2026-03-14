@@ -54,10 +54,10 @@ class AppDescriptor:
         self.author = data.get("author", "")
         self.jvagent_version = data.get("jvagent", "")
 
-        # Extract properties from context object
         context = data.get("context", {})
         if not isinstance(context, dict):
             context = {}
+        self._explicit_context_keys = set(context.keys())
 
         self.name = context.get("name", "jvagent Application")
         self.description = context.get("description", "")
@@ -162,7 +162,7 @@ class AppLoader:
             return None
 
     async def bootstrap_application(
-        self, update_if_exists: bool = False
+        self, update_mode: Optional[str] = None
     ) -> Optional[App]:
         """Bootstrap the application from app.yaml.
 
@@ -173,7 +173,8 @@ class AppLoader:
         4. Installs all agents specified in app.yaml
 
         Args:
-            update_if_exists: If True, update existing entities; if False, skip existing
+            update_mode: Update strategy - "merge" for non-destructive merge, "source" for
+                         destructive overwrite from YAML, or None to skip existing.
 
         Returns:
             App instance if successful, None otherwise
@@ -210,7 +211,7 @@ class AppLoader:
                 return None
 
             # Step 2: Create or update App node
-            app = await self._ensure_app_node(descriptor, update_if_exists, root)
+            app = await self._ensure_app_node(descriptor, update_mode, root)
             if not app:
                 logger.error("Failed to create/update App node")
                 return None
@@ -227,7 +228,7 @@ class AppLoader:
 
             # Step 5: Install agents from app.yaml
             if descriptor.agents:
-                await self._install_agents(descriptor, update_if_exists)
+                await self._install_agents(descriptor, update_mode)
 
             bootstrap_log.complete()
             return app
@@ -237,7 +238,7 @@ class AppLoader:
             return None
 
     async def _ensure_app_node(
-        self, descriptor: AppDescriptor, update_if_exists: bool, root
+        self, descriptor: AppDescriptor, update_mode: Optional[str], root
     ) -> Optional[App]:
         """Ensure App node exists and is configured.
 
@@ -247,7 +248,7 @@ class AppLoader:
 
         Args:
             descriptor: App descriptor
-            update_if_exists: If True, update existing app; if False, skip update
+            update_mode: "merge" for non-destructive, "source" for destructive, None to skip
             root: Root node for graph traversal
 
         Returns:
@@ -270,7 +271,7 @@ class AppLoader:
 
             if app_nodes:
                 app = app_nodes[0]
-                if update_if_exists:
+                if update_mode == "source":
                     app.name = descriptor.name
                     app.version = descriptor.version
                     app.description = descriptor.description
@@ -285,7 +286,13 @@ class AppLoader:
 
                     self._apply_app_properties(app, descriptor.properties)
                     await app.save()
-                    logger.debug(f"Updated App node: {app.id}")
+                    logger.debug(f"Updated App node (source): {app.id}")
+                elif update_mode == "merge":
+                    # Only update source identity metadata; preserve all context config
+                    app.version = descriptor.version
+                    app.app_id = descriptor.app_id
+                    await app.save()
+                    logger.debug(f"Updated App node (merge): {app.id}")
 
                 App._cached_app = app
                 return app
@@ -426,7 +433,7 @@ class AppLoader:
             return None
 
     async def _install_agents(
-        self, descriptor: AppDescriptor, update_if_exists: bool
+        self, descriptor: AppDescriptor, update_mode: Optional[str]
     ) -> None:
         """Install agents specified in app.yaml.
 
@@ -436,7 +443,7 @@ class AppLoader:
 
         Args:
             descriptor: App descriptor with agent list
-            update_if_exists: If True, update existing agents; if False, skip existing
+            update_mode: "merge" for non-destructive, "source" for destructive, None to skip
         """
         installed_count = 0
         updated_count = 0
@@ -459,16 +466,16 @@ class AppLoader:
             )
             was_existing = existing_agent is not None
 
-            # Install the agent (this will also load actions from agent.yaml)
-            # Pass update_if_exists to ensure agent properties are updated
             agent = await self.agent_loader.install_agent(
-                namespace, agent_name, update_if_exists
+                namespace, agent_name, update_mode=update_mode
             )
 
             if agent:
-                if was_existing and update_if_exists:
+                if was_existing and update_mode is not None:
                     updated_count += 1
-                    logger.debug(f"  ✓ Agent: {namespace}/{agent_name} (updated)")
+                    logger.debug(
+                        f"  ✓ Agent: {namespace}/{agent_name} (updated - {update_mode})"
+                    )
                 else:
                     installed_count += 1
                     logger.debug(f"  ✓ Agent: {namespace}/{agent_name}")

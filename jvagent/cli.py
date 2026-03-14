@@ -7,7 +7,7 @@ import logging
 import os
 import shutil
 import sys
-from typing import Any, List
+from typing import Any, List, Optional
 
 from dotenv import load_dotenv
 from jvspatial.api import Server
@@ -72,7 +72,7 @@ def load_app_env(app_root: str = None) -> None:
 
 
 async def bootstrap_application_graph(
-    update_if_exists: bool = False, app_root: str = None
+    update_mode: Optional[str] = None, app_root: str = None
 ) -> None:
     """Bootstrap the application graph with App and Agents nodes.
 
@@ -85,8 +85,8 @@ async def bootstrap_application_graph(
     Otherwise, falls back to manual bootstrap with basic configuration.
 
     Args:
-        update_if_exists: If True, update existing agents and actions with values from YAML files.
-                         If False (default), use existing agents/actions without overwriting their context.
+        update_mode: Update strategy - "merge" for non-destructive merge, "source" for
+                     destructive overwrite from YAML, or None to skip existing.
         app_root: Path to the app root directory. If None, uses current working directory.
 
     All operations are idempotent - existing nodes and connections are preserved.
@@ -100,12 +100,12 @@ async def bootstrap_application_graph(
     app_yaml_path = os.path.join(app_root, "app.yaml")
 
     if os.path.exists(app_yaml_path):
-        mode = "update" if update_if_exists else "sync"
+        mode = update_mode if update_mode else "sync"
         bootstrap_log.start(f"Application graph ({mode} mode)")
 
         # Use AppLoader for declarative bootstrap
         app_loader = AppLoader(app_root)
-        app = await app_loader.bootstrap_application(update_if_exists=update_if_exists)
+        app = await app_loader.bootstrap_application(update_mode=update_mode)
 
         if app:
             bootstrap_log.complete("Application graph ready")
@@ -805,7 +805,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
 
 
 async def pre_startup_bootstrap(
-    server: Server, update_if_exists: bool = False, app_root: str = None
+    server: Server, update_mode: Optional[str] = None, app_root: str = None
 ) -> bool:
     """Perform bootstrap tasks before server starts.
 
@@ -814,8 +814,8 @@ async def pre_startup_bootstrap(
 
     Args:
         server: Server instance with initialized context
-        update_if_exists: If True, update existing agents and actions from YAML files.
-                         If False (default), use existing agents/actions without overwriting.
+        update_mode: Update strategy - "merge" for non-destructive merge, "source" for
+                     destructive overwrite from YAML, or None to skip existing.
         app_root: Path to the app root directory. If None, uses current working directory.
 
     Returns:
@@ -823,9 +823,7 @@ async def pre_startup_bootstrap(
     """
     try:
         # Bootstrap application graph
-        await bootstrap_application_graph(
-            update_if_exists=update_if_exists, app_root=app_root
-        )
+        await bootstrap_application_graph(update_mode=update_mode, app_root=app_root)
 
         # Initialize all actions by calling their on_startup() hooks
         # This ensures runtime components like channel adapters are initialized
@@ -924,7 +922,7 @@ def main() -> None:
     # This handles both: "jvagent /path/to/app bundle" and "jvagent bundle /path/to/app"
     app_root = None
     commands = ["run", "status", "agent", "action", "bootstrap", "bundle"]
-    flags = ["--debug", "--update", "--migrate", "--purge"]
+    flags = ["--debug", "--update", "--migrate", "--purge", "--source", "--merge"]
 
     # Find app root: first argument that's not a command or flag
     # This extracts paths whether they appear before or after the command
@@ -993,10 +991,26 @@ def main() -> None:
         # Also set DEBUG level for all jvagent loggers to ensure they inherit properly
         logging.getLogger("jvagent").setLevel(logging.DEBUG)
 
-    # Check for --update flag
-    update_flag = "--update" in args or "--migrate" in args
-    if update_flag:
-        args = [arg for arg in args if arg not in ["--update", "--migrate"]]
+    # Check for --update flag and sub-flags (--source / --merge)
+    has_update = "--update" in args or "--migrate" in args
+    has_source = "--source" in args
+    has_merge = "--merge" in args
+
+    if has_update:
+        if has_source:
+            update_mode = "source"
+        else:
+            update_mode = "merge"
+    else:
+        update_mode = None
+        if has_source or has_merge:
+            logger.warning("--source/--merge flags have no effect without --update")
+
+    args = [
+        arg
+        for arg in args
+        if arg not in ["--update", "--migrate", "--source", "--merge"]
+    ]
 
     # Check for --purge flag (development mode only)
     purge_flag = "--purge" in args
@@ -1014,7 +1028,7 @@ def main() -> None:
 
     # If no arguments or "run" command, start the server
     if not args or args[0] == "run":
-        run_server(update_if_exists=update_flag, debug=debug_flag, app_root=app_root)
+        run_server(update_mode=update_mode, debug=debug_flag, app_root=app_root)
     elif args[0] == "status":
         # Show application status
         asyncio.run(show_status(app_root=app_root))
@@ -1026,7 +1040,7 @@ def main() -> None:
         handle_action_command(args[1:], app_root=app_root)
     elif args[0] == "bootstrap":
         # Bootstrap application graph
-        asyncio.run(bootstrap_only(update_if_exists=update_flag, app_root=app_root))
+        asyncio.run(bootstrap_only(update_mode=update_mode, app_root=app_root))
     elif args[0] == "bundle":
         # Bundle application for deployment
         handle_bundle_command(args[1:], app_root=app_root)
@@ -1112,8 +1126,11 @@ Arguments:
                               Must be a valid directory path. If not provided, uses current working directory.
 
 Flags:
-    --update, --migrate        Force update of existing agents and actions from YAML files
-                                By default, existing agents/actions are used as-is
+    --update, --migrate        Update existing agents and actions from YAML files (non-destructive merge).
+                                Applies source changes while preserving database state.
+    --update --source          Destructive update: fully overwrite database state from source YAML files.
+                                Deletes and recreates action nodes (child nodes are lost).
+    --update --merge           Explicit non-destructive merge (same as --update alone).
     --purge                    Delete existing database and logs before starting (development mode only)
     --debug                    Enable debug logging (verbose output for troubleshooting)
 
@@ -1127,8 +1144,10 @@ Environment Variables:
 Examples:
     jvagent                                    # Run from current directory
     jvagent /path/to/my_app                    # Run from specified app directory
-    jvagent /path/to/my_app --update           # Run with update flag
+    jvagent /path/to/my_app --update           # Run with merge update (non-destructive)
+    jvagent /path/to/my_app --update --source  # Run with source update (destructive)
     jvagent /path/to/my_app bootstrap          # Bootstrap from specified directory
+    jvagent /path/to/my_app bootstrap --update # Bootstrap with merge update
     jvagent /path/to/my_app bundle             # Generate Dockerfile in app directory
     jvagent bundle /path/to/my_app             # Generate Dockerfile (path after command)
     jvagent bundle                             # Generate Dockerfile in current directory
@@ -1165,13 +1184,13 @@ class StartupLogCounter(logging.Handler):
 
 
 def run_server(
-    update_if_exists: bool = False, debug: bool = False, app_root: str = None
+    update_mode: Optional[str] = None, debug: bool = False, app_root: str = None
 ) -> None:
     """Start the jvagent server.
 
     Args:
-        update_if_exists: If True, update existing agents and actions from YAML files.
-                         If False (default), use existing agents/actions without overwriting.
+        update_mode: Update strategy - "merge" for non-destructive merge, "source" for
+                     destructive overwrite from YAML, or None to skip existing.
         debug: If True, enable debug logging.
         app_root: Path to the app root directory. If None, uses current working directory.
     """
@@ -1197,9 +1216,7 @@ def run_server(
 
         # Perform bootstrap tasks before server starts
         admin_exists = asyncio.run(
-            pre_startup_bootstrap(
-                server, update_if_exists=update_if_exists, app_root=app_root
-            )
+            pre_startup_bootstrap(server, update_mode=update_mode, app_root=app_root)
         )
 
         if admin_exists:
@@ -1350,12 +1367,14 @@ async def show_status(app_root: str = None) -> None:
     print()
 
 
-async def bootstrap_only(update_if_exists: bool = False, app_root: str = None) -> None:
+async def bootstrap_only(
+    update_mode: Optional[str] = None, app_root: str = None
+) -> None:
     """Bootstrap the application graph without starting the server.
 
     Args:
-        update_if_exists: If True, update existing agents and actions from YAML files.
-                         If False (default), use existing agents/actions without overwriting.
+        update_mode: Update strategy - "merge" for non-destructive merge, "source" for
+                     destructive overwrite from YAML, or None to skip existing.
         app_root: Path to the app root directory. If None, uses current working directory.
     """
     from pathlib import Path
@@ -1395,9 +1414,7 @@ async def bootstrap_only(update_if_exists: bool = False, app_root: str = None) -
     root_logger.addHandler(log_counter)
 
     try:
-        await bootstrap_application_graph(
-            update_if_exists=update_if_exists, app_root=app_root
-        )
+        await bootstrap_application_graph(update_mode=update_mode, app_root=app_root)
 
         # Initialize all actions by calling their on_startup() hooks
         # This ensures runtime components like channel adapters are initialized
@@ -1427,8 +1444,12 @@ async def bootstrap_only(update_if_exists: bool = False, app_root: str = None) -
         else:
             logger.info("✓ Bootstrap Summary: No warnings or errors")
 
-        if update_if_exists:
-            print("Bootstrap complete! (Updated existing agents and actions)")
+        if update_mode == "source":
+            print(
+                "Bootstrap complete! (Updated existing agents and actions from source)"
+            )
+        elif update_mode == "merge":
+            print("Bootstrap complete! (Merged source changes, preserved DB state)")
         else:
             print("Bootstrap complete! (Used existing agents and actions)")
     finally:

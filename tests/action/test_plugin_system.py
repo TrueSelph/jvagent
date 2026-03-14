@@ -280,7 +280,7 @@ context:
 
         # Bootstrap application
         loader = AppLoader(str(temp_dir))
-        app = await loader.bootstrap_application(update_if_exists=True)
+        app = await loader.bootstrap_application(update_mode="source")
 
         assert app is not None, "Bootstrap failed"
         assert app.name == "Test App", "App name not set correctly"
