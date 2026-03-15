@@ -304,6 +304,13 @@ def _get_config_value(
     return default
 
 
+def _import_core_endpoint_modules() -> None:
+    """Import core endpoint modules so @endpoint decorators register with the server."""
+    from jvagent.action import endpoints as _  # noqa: F401
+    from jvagent.core import endpoints as _  # noqa: F401
+    from jvagent.logging import endpoints as _  # noqa: F401
+
+
 def create_server_from_config(debug: bool = False, app_root: str = None) -> Server:
     """Create and configure Server instance from app.yaml and environment variables.
 
@@ -793,13 +800,11 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     else:
         logger.info("Logging is disabled in configuration")
 
-    # Import core endpoint modules to ensure they're loaded
-    # Core endpoints (logging, core, action base endpoints) are always needed
-    # Optional action endpoints (interact, persona, vectorstore, model, whatsapp, etc.)
-    # are loaded conditionally via pre_import_action_modules_for_agents() based on agent.yaml
-    from jvagent.action import endpoints as action_endpoints  # noqa: F401
-    from jvagent.core import endpoints as core_endpoints  # noqa: F401
-    from jvagent.logging import endpoints  # noqa: F401
+    # Import core endpoint modules so @endpoint decorators run and register.
+    # jvspatial auto-registers: decorators register immediately when server exists;
+    # sync_endpoint_modules handles uvicorn --reload double-load. Action-specific
+    # endpoints (interact, pageindex, whatsapp, etc.) load via pre_import_action_modules_for_agents.
+    _import_core_endpoint_modules()
 
     return server
 
