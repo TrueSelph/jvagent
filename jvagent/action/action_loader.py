@@ -1423,6 +1423,8 @@ class ActionLoader:
 
         This is critical for endpoint discovery - parent package __init__.py files
         import endpoints.py modules which register endpoints via @endpoint decorators.
+        jvspatial's sync_endpoint_modules ensures these are registered at app build
+        (including uvicorn reload).
 
         Also installs pip dependencies for core actions before importing.
 
@@ -1606,7 +1608,8 @@ class ActionLoader:
         This triggers:
         - Module import (action_name.py or __init__.py)
         - Endpoint import (via __init__.py: from . import endpoints)
-        - Endpoint registration (via @endpoint decorator to deferred registry)
+        - Endpoint registration (via @endpoint decorator; jvspatial sync_endpoint_modules
+          handles uvicorn reload)
 
         Args:
             action_ref: Action reference in "namespace/action_name" format
@@ -1918,7 +1921,8 @@ class ActionLoader:
         try:
             # Import parent packages first to ensure their __init__.py files execute
             # This is critical for endpoint discovery - parent package __init__.py files
-            # import endpoints.py modules which register endpoints via @endpoint decorators
+            # import endpoints.py modules which register via @endpoint; sync_endpoint_modules
+            # ensures registration at app build (including uvicorn reload)
             module_path_parts = metadata.core_module_path.split(".")
 
             # Import all parent packages (e.g., for "jvagent.action.model.language.openai",

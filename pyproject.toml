@@ -28,7 +28,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "jvspatial>=0.0.3",
+    "jvspatial>=0.0.4",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.0",
     "httpx>=0.27.0",
@@ -85,6 +85,7 @@ minversion = "7.0"
 addopts = "-ra -q --strict-markers"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "asyncio: mark test as an asyncio test",
 ]

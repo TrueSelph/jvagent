@@ -1422,6 +1422,8 @@ Actions follow a standard structure that separates business logic from API endpo
 - **Action Class** (`{action_name}.py`): Contains the `Action` subclass with business logic, lifecycle hooks, and configuration properties
 - **Endpoints Module** (`endpoints.py`): Contains all HTTP API endpoints decorated with `@endpoint`. This is the **standard pattern** for organizing action endpoints.
 
+Endpoints auto-register when their modules are imported; no `packages=` needed. Core endpoints are imported in the CLI; action-specific endpoints load via bootstrap.
+
 **Benefits of the `__init__.py` + `endpoints.py` pattern:**
 - ✅ **Separation of concerns**: Business logic separate from API layer
 - ✅ **Clean organization**: Action class focused on core functionality
