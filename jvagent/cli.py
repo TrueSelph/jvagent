@@ -1325,15 +1325,11 @@ async def show_status(app_root: str = None) -> None:
     if not db_path_obj.is_absolute():
         db_path = str(app_root_path / db_path)
 
-    # Set JVSPATIAL_JSONDB_PATH to ensure DatabaseManager uses the correct path
+    os.environ["JVSPATIAL_DB_TYPE"] = db_type
     if db_type == "json":
         os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
-
-    # Import and initialize context
-    from jvspatial.db import set_current_db_path, set_current_db_type
-
-    set_current_db_type(db_type)
-    set_current_db_path(db_path)
+    elif db_type == "sqlite":
+        os.environ["JVSPATIAL_SQLITE_PATH"] = db_path
 
     app_loader = AppLoader(app_root)
     status = await app_loader.get_app_status()
@@ -1403,15 +1399,11 @@ async def bootstrap_only(
     if not db_path_obj.is_absolute():
         db_path = str(app_root_path / db_path)
 
-    # Set JVSPATIAL_JSONDB_PATH to ensure DatabaseManager uses the correct path
+    os.environ["JVSPATIAL_DB_TYPE"] = db_type
     if db_type == "json":
         os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
-
-    # Import and initialize context
-    from jvspatial.db import set_current_db_path, set_current_db_type
-
-    set_current_db_type(db_type)
-    set_current_db_path(db_path)
+    elif db_type == "sqlite":
+        os.environ["JVSPATIAL_SQLITE_PATH"] = db_path
 
     # Install log counter to track warnings and errors during bootstrap
     log_counter = StartupLogCounter()
@@ -1473,6 +1465,7 @@ def handle_agent_command(args: List[str], app_root: str = None) -> None:
         app_root: Path to the app root directory. If None, uses current working directory.
     """
     import asyncio
+    from pathlib import Path
 
     if app_root is None:
         app_root = os.getcwd()
@@ -1488,17 +1481,20 @@ def handle_agent_command(args: List[str], app_root: str = None) -> None:
 
     command = args[0]
 
-    # Initialize database context - use JVSPATIAL_JSONDB_PATH which is set by main()
-    # with the path already resolved against app_root
+    # Initialize database context - resolve path against app_root if relative
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
     db_path = os.getenv("JVSPATIAL_JSONDB_PATH") or os.getenv(
         "JVSPATIAL_DB_PATH", "./jvagent_db"
     )
+    db_path_obj = Path(db_path)
+    if not db_path_obj.is_absolute():
+        db_path = str(Path(app_root).resolve() / db_path)
 
-    from jvspatial.db import set_current_db_path, set_current_db_type
-
-    set_current_db_type(db_type)
-    set_current_db_path(db_path)
+    os.environ["JVSPATIAL_DB_TYPE"] = db_type
+    if db_type == "json":
+        os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
+    elif db_type == "sqlite":
+        os.environ["JVSPATIAL_SQLITE_PATH"] = db_path
 
     if command == "list":
         asyncio.run(list_agents())
@@ -1532,6 +1528,7 @@ def handle_action_command(args: List[str], app_root: str = None) -> None:
         app_root: Path to the app root directory. If None, uses current working directory.
     """
     import asyncio
+    from pathlib import Path
 
     if app_root is None:
         app_root = os.getcwd()
@@ -1543,17 +1540,20 @@ def handle_action_command(args: List[str], app_root: str = None) -> None:
 
     command = args[0]
 
-    # Initialize database context - use JVSPATIAL_JSONDB_PATH which is set by main()
-    # with the path already resolved against app_root
+    # Initialize database context - resolve path against app_root if relative
     db_type = os.getenv("JVSPATIAL_DB_TYPE", "json")
     db_path = os.getenv("JVSPATIAL_JSONDB_PATH") or os.getenv(
         "JVSPATIAL_DB_PATH", "./jvagent_db"
     )
+    db_path_obj = Path(db_path)
+    if not db_path_obj.is_absolute():
+        db_path = str(Path(app_root).resolve() / db_path)
 
-    from jvspatial.db import set_current_db_path, set_current_db_type
-
-    set_current_db_type(db_type)
-    set_current_db_path(db_path)
+    os.environ["JVSPATIAL_DB_TYPE"] = db_type
+    if db_type == "json":
+        os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
+    elif db_type == "sqlite":
+        os.environ["JVSPATIAL_SQLITE_PATH"] = db_path
 
     if command == "list":
         if len(args) < 2:
