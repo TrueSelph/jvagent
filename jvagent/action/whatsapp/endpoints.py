@@ -192,13 +192,18 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
 
         if use_async_mode:
             # Async mode: Return immediately with 200 OK and process in background
-            # Use this mode only for long-running servers, NOT for AWS Lambda
+            # Falls back to sync when JVSPATIAL_BACKGROUND_TASKS is false
             logger.debug(f"Processing interaction asynchronously for {sender}")
-            create_background_task(
+            task = create_background_task(
                 _process_interaction_async(
                     data, utterance, sender, agent_id, agent, sender_name=sender_name
                 ),
                 name=f"whatsapp_interaction_{sender}",
+            )
+            if task is not None:
+                return {"status": "received"}
+            await _process_interaction_async(
+                data, utterance, sender, agent_id, agent, sender_name=sender_name
             )
             return {"status": "received"}
         else:

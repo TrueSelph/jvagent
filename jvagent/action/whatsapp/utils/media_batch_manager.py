@@ -252,12 +252,16 @@ class MediaBatchManager:
                     if batch.get("timer_task") and not batch["timer_task"].done():
                         batch["timer_task"].cancel()
 
-                    batch["timer_task"] = create_background_task(
+                    task = create_background_task(
                         self._schedule_batch_processing(
                             sender, whatsapp_action.media_batch_window
                         ),
                         name=f"media_batch_timer_{sender}",
                     )
+                    if task is not None:
+                        batch["timer_task"] = task
+                    else:
+                        await self._process_batch_internal(sender, batch)
                     logger.debug(
                         f"Added media to existing batch for user {sender}, "
                         f"batch size: {len(batch['media_items'])}, resetting timer"
@@ -274,12 +278,16 @@ class MediaBatchManager:
                 )
                 self._batches[sender] = batch
 
-                batch["timer_task"] = create_background_task(
+                task = create_background_task(
                     self._schedule_batch_processing(
                         sender, whatsapp_action.media_batch_window
                     ),
                     name=f"media_batch_timer_{sender}",
                 )
+                if task is not None:
+                    batch["timer_task"] = task
+                else:
+                    await self._process_batch_internal(sender, batch)
                 logger.debug(
                     f"Created new media batch for user {sender}, "
                     f"will process in {whatsapp_action.media_batch_window}s"
