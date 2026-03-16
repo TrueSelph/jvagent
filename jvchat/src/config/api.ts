@@ -966,16 +966,114 @@ class ApiClient {
     return response.data
   }
 
+  async getUsers(
+    agentId: string,
+    userIds: string[],
+    options?: { filter?: string; page?: number; page_size?: number }
+  ): Promise<Record<string, string>> {
+    if (!agentId) return {}
+    const params: Record<string, string | number> = {
+      page: options?.page ?? 1,
+      page_size: options?.page_size ?? 200,
+    }
+    if (options?.filter) {
+      params.filter = options.filter
+    } else if (userIds.length) {
+      params.filter = JSON.stringify({ 'context.user_id': { $in: userIds } })
+    }
+    const path = `/api/agents/${agentId}/memory/users`
+    try {
+      const response = await this._withFallback(async (baseURL) => {
+        try {
+          return await this.client.get(path, { baseURL, params })
+        } catch (err: any) {
+          if (err.response?.status === 404) {
+            return await this.client.get(`/agents/${agentId}/memory/users`, {
+              baseURL,
+              params,
+            })
+          }
+          throw err
+        }
+      })
+      const data = response.data
+      const users = data?.users ?? data?.data?.users ?? []
+      if (!Array.isArray(users)) return {}
+      const nameMap: Record<string, string> = {}
+      for (const u of users) {
+        const ctx = u?.context ?? {}
+        const uid = ctx.user_id
+        const name = ctx.display_name ?? ctx.name
+        if (uid && name && typeof name === 'string') nameMap[uid] = name.trim()
+      }
+      return nameMap
+    } catch {
+      return {}
+    }
+  }
+
+  async getUsersPaginated(
+    agentId: string,
+    params: { filter?: string; page?: number; page_size?: number } = {}
+  ): Promise<{ users: any[]; pagination: { page: number; page_size: number; total: number; total_pages: number } }> {
+    if (!agentId) return { users: [], pagination: { page: 1, page_size: 50, total: 0, total_pages: 0 } }
+    const queryParams: Record<string, string | number> = {
+      page: params.page ?? 1,
+      page_size: params.page_size ?? 50,
+    }
+    if (params.filter) queryParams.filter = params.filter
+    const path = `/api/agents/${agentId}/memory/users`
+    try {
+      const response = await this._withFallback(async (baseURL) => {
+        try {
+          return await this.client.get(path, { baseURL, params: queryParams })
+        } catch (err: any) {
+          if (err.response?.status === 404) {
+            return await this.client.get(`/agents/${agentId}/memory/users`, {
+              baseURL,
+              params: queryParams,
+            })
+          }
+          throw err
+        }
+      })
+      const data = response.data
+      const users = data?.users ?? data?.data?.users ?? []
+      const pagination = data?.pagination ?? data?.data?.pagination ?? {}
+      return {
+        users: Array.isArray(users) ? users : [],
+        pagination: {
+          page: pagination.page ?? 1,
+          page_size: pagination.page_size ?? 50,
+          total: pagination.total ?? 0,
+          total_pages: pagination.total_pages ?? 0,
+        },
+      }
+    } catch {
+      return { users: [], pagination: { page: 1, page_size: 50, total: 0, total_pages: 0 } }
+    }
+  }
+
   async getLogs(params: {
     category?: string
     agent_id?: string
+    user_id?: string
+    filter?: string
     page?: number
     page_size?: number
   }): Promise<LogsResponse> {
-    const { category, agent_id, page = 1, page_size = 50 } = params
+    const { category, agent_id, user_id, filter, page = 1, page_size = 50 } =
+      params
     const queryParams: Record<string, string | number> = { page, page_size }
     if (category) queryParams.category = category
-    if (agent_id) queryParams.agent_id = agent_id
+    if (filter) {
+      queryParams.filter = filter
+    } else if (agent_id || user_id) {
+      const filterObj: Record<string, string> = {}
+      if (agent_id) filterObj["context.log_data.agent_id"] = agent_id
+      if (user_id) filterObj["context.log_data.user_id"] = user_id
+      queryParams.filter = JSON.stringify(filterObj)
+    }
 
     const response = await this._withFallback(async (baseURL) => {
       try {
