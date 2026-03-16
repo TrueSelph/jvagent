@@ -454,7 +454,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     auth_enabled = _get_config_value(
         app_config, "auth.enabled", "JVAGENT_AUTH_ENABLED", True
     )
-    jwt_secret = os.getenv(
+    jwt_secret = os.getenv("JVSPATIAL_JWT_SECRET_KEY") or os.getenv(
         "JVSPATIAL_JWT_SECRET", "jvagent-secret-key-change-in-production"
     )
     jwt_expire_minutes = int(
