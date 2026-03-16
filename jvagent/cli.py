@@ -10,15 +10,13 @@ import sys
 from typing import Any, List, Optional
 
 from dotenv import load_dotenv
-from jvspatial.api import Server
-from jvspatial.api.auth.models import UserCreate, UserCreateAdmin
-from jvspatial.api.auth.service import AuthenticationService
+from jvspatial.api import Server, get_auth_service
+from jvspatial.api.auth.models import UserCreateAdmin
 from jvspatial.api.config_groups import (
     AuthConfig,
     CORSConfig,
     DatabaseConfig,
     FileStorageConfig,
-    RateLimitConfig,
 )
 from jvspatial.core import Root
 
@@ -186,11 +184,12 @@ async def _manual_bootstrap() -> None:
 async def ensure_admin_user() -> bool:
     """Ensure a single admin user exists.
 
-    Uses jvspatial RBAC: when no users exist, first registration becomes admin
-    (bootstrap). When users exist, verifies admin by email and role.
+    First-user bootstrap is delegated to jvspatial via AuthConfig.bootstrap_admin_*;
+    the server runs _bootstrap_admin_startup on start. This function handles only the
+    recovery path: when users exist but the configured admin email is not found.
 
     Returns:
-        True if admin user exists (either already existed or was just created),
+        True if admin user exists (or will be created by jvspatial on server start),
         False if admin user could not be created (missing password or no admin).
     """
     logger.debug("Checking for admin user...")
@@ -205,21 +204,11 @@ async def ensure_admin_user() -> bool:
         )
         return False
 
-    auth_service = AuthenticationService()
+    auth_service = get_auth_service()
     user_count = await auth_service._user_count()
 
     if user_count == 0:
-        try:
-            user_response = await auth_service.register_user(
-                UserCreate(email=admin_email, password=admin_password)
-            )
-            logger.info(
-                f"Created admin user via bootstrap: {admin_email} (ID: {user_response.id})"
-            )
-            return True
-        except Exception as e:
-            logger.error(f"Failed to create admin user: {e}", exc_info=True)
-            return False
+        return True
 
     existing_user = await auth_service._find_user_by_email(admin_email)
     if existing_user:
@@ -240,6 +229,7 @@ async def ensure_admin_user() -> bool:
             UserCreateAdmin(
                 email=admin_email,
                 password=admin_password,
+                name=admin_username,
                 roles=["admin"],
                 permissions=[],
             )
@@ -464,7 +454,6 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     auth_enabled = _get_config_value(
         app_config, "auth.enabled", "JVAGENT_AUTH_ENABLED", True
     )
-    jwt_auth_enabled = os.getenv("JVSPATIAL_JWT_AUTH_ENABLED", "true").lower() == "true"
     jwt_secret = os.getenv(
         "JVSPATIAL_JWT_SECRET", "jvagent-secret-key-change-in-production"
     )
@@ -474,16 +463,32 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         )
     )
 
-    # API Key authentication configuration (enabled by default when auth is enabled)
-    api_key_auth_enabled = _get_config_value(
-        app_config, "auth.api_key_enabled", "JVAGENT_API_KEY_AUTH_ENABLED", auth_enabled
+    # API key management endpoints (/auth/api-keys) - enabled by default when auth is enabled
+    # Supports auth.api_key_management_enabled and legacy auth.api_key_enabled
+    api_key_management_enabled = _get_config_value(
+        app_config,
+        "auth.api_key_management_enabled",
+        "JVAGENT_API_KEY_MANAGEMENT_ENABLED",
+        None,
     )
+    if api_key_management_enabled is None:
+        api_key_management_enabled = _get_config_value(
+            app_config,
+            "auth.api_key_enabled",
+            "JVAGENT_API_KEY_AUTH_ENABLED",
+            auth_enabled,
+        )
     api_key_prefix = _get_config_value(
         app_config, "auth.api_key_prefix", "JVAGENT_API_KEY_PREFIX", "jv_"
     )
     api_key_header = _get_config_value(
         app_config, "auth.api_key_header", "JVAGENT_API_KEY_HEADER", "x-api-key"
     )
+
+    # Bootstrap admin (passed to AuthConfig; jvspatial runs _bootstrap_admin_startup on server start)
+    admin_username = os.getenv("JVAGENT_ADMIN_USERNAME", "admin")
+    admin_password = os.getenv("JVAGENT_ADMIN_PASSWORD")
+    admin_email = os.getenv("JVAGENT_ADMIN_EMAIL", f"{admin_username}@jvagent.example")
 
     # Log server creation details only in debug mode
     if debug:
@@ -499,11 +504,10 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
             logger.debug(f"Database: {db_type} at {db_path}")
         logger.debug(f"Authentication: {'enabled' if auth_enabled else 'disabled'}")
         if auth_enabled:
-            logger.debug(f"  JWT Auth: {'enabled' if jwt_auth_enabled else 'disabled'}")
             logger.debug(
-                f"  API Key Auth: {'enabled' if api_key_auth_enabled else 'disabled'}"
+                f"  API Key Management: {'enabled' if api_key_management_enabled else 'disabled'}"
             )
-            if api_key_auth_enabled:
+            if api_key_management_enabled:
                 logger.debug(f"    API Key Prefix: {api_key_prefix}")
                 logger.debug(f"    API Key Header: {api_key_header}")
 
@@ -569,6 +573,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         "/api/auth/refresh",
         "/api/auth/logout",
         "/api/storage/*",  # Public access for images/media
+        "/api/agents/*/interact",  # Anonymous interact endpoint
     ]
     app_exempt_paths = _get_config_value(app_config, "auth.exempt_paths", None, None)
     if isinstance(app_exempt_paths, list):
@@ -578,12 +583,14 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
 
     auth_config = AuthConfig(
         auth_enabled=auth_enabled,
-        jwt_auth_enabled=jwt_auth_enabled,
         jwt_secret=jwt_secret,
         jwt_expire_minutes=jwt_expire_minutes,
-        api_key_auth_enabled=api_key_auth_enabled,
+        api_key_management_enabled=api_key_management_enabled,
         api_key_prefix=api_key_prefix,
         api_key_header=api_key_header,
+        bootstrap_admin_email=admin_email if admin_password else None,
+        bootstrap_admin_password=admin_password or None,
+        bootstrap_admin_name=admin_username if admin_password else None,
         auth_exempt_paths=auth_exempt_paths,
         role_permission_mapping={
             "admin": ["*"],

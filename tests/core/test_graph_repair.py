@@ -3,8 +3,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from jvspatial.core.context import get_default_context
-from jvspatial.core.entities import Edge, Root
+from jvspatial.core import Edge, Root, get_default_context
 
 from jvagent.core.agent_loader import AgentLoader
 from jvagent.core.app import App
