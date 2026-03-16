@@ -388,16 +388,17 @@ actions:
 
 ### Default Parameters
 
-PersonaAction includes 6 default parameters for common scenarios:
+PersonaAction includes 7 default parameters for common scenarios:
 
-1. **OpenAI Origin**: Deny association with OpenAI when asked
-2. **Identity Questions**: Refer to yourself only by name
-3. **Out of Scope**: Admit when requests are outside your role
-4. **Repetitive Information**: Remind user of previously provided info
-5. **Circular Conversations**: Bring repetition to user's attention
-6. **Knowledge cutoff**: Avoid explicit knowledge cutoff details; use general statement
+1. **Direct Response (base)**: End with the answer; avoid closers like "feel free to ask" or similar invitations to ask more. Be direct and conclusive. Applies when providing a response.
+2. **OpenAI Origin**: Deny association with OpenAI when asked
+3. **Identity Questions**: Refer to yourself only by name
+4. **Out of Scope**: Admit when requests are outside your role
+5. **Repetitive Information**: Remind user of previously provided info
+6. **Circular Conversations**: Bring repetition to user's attention
+7. **Knowledge cutoff**: Avoid explicit knowledge cutoff details; use general statement
 
-These can be overridden by providing custom `parameters`.
+These can be overridden by providing custom `parameters`. Deployments that override entirely can include the base parameter if they want the same direct-response behavior.
 
 ## Advanced Topics
 
