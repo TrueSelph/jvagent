@@ -68,8 +68,17 @@ BATCH_CLEANUP_INTERVAL = 60  # Run cleanup every 60 seconds
 INVOKE_DEDUP_SECONDS = 1.0  # Min seconds between batch Lambda invokes per sender
 
 
+def _is_lambda_env() -> bool:
+    """Return True if running on AWS Lambda."""
+    return bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+
+
 def _get_media_batch_mode(whatsapp_action: Any) -> str:
-    """Resolve media batch mode: env > app config > action attribute > default."""
+    """Resolve media batch mode: env > app config > action attribute > default.
+
+    On Lambda (AWS_LAMBDA_FUNCTION_NAME set), defaults to 'disabled' when unset,
+    since 'async' uses background tasks that never run after Lambda freezes.
+    """
     mode = os.environ.get("WHATSAPP_MEDIA_BATCH_MODE", "").strip().lower()
     if mode in ("async", "disabled", "lambda"):
         return mode
@@ -94,6 +103,9 @@ def _get_media_batch_mode(whatsapp_action: Any) -> str:
     action_mode = getattr(whatsapp_action, "media_batch_mode", None)
     if action_mode and str(action_mode).lower() in ("async", "disabled", "lambda"):
         return str(action_mode).lower()
+    # On Lambda, default to disabled (async uses background tasks that freeze)
+    if _is_lambda_env():
+        return "disabled"
     return "async"
 
 

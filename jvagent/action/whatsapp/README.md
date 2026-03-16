@@ -263,6 +263,16 @@ APP_BASE_URL=https://your-app.com
 # Minimum value: 5 seconds
 WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS=120
 
+# Media Batch Mode (optional)
+# async: Long-running servers (default). Uses background tasks - NOT suitable for Lambda.
+# disabled: Each media processed inline. Default on Lambda when unset.
+# lambda: MongoDB + Lambda invoke. Requires JVSPATIAL_DB_TYPE=mongodb and WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION.
+WHATSAPP_MEDIA_BATCH_MODE=disabled
+
+# Skip Startup Registration (optional, for Lambda)
+# Set to true to skip session registration on cold start; use POST /api/actions/{action_id}/session/register manually
+WHATSAPP_SKIP_STARTUP_REGISTRATION=false
+
 # Security Configuration
 JVSPATIAL_JWT_SECRET=your_jwt_secret
 ```
@@ -315,6 +325,13 @@ The WhatsApp action supports image recognition so the agent can interpret images
 
 Media URLs are built as `whatsapp_action.base_url + media_url`. The LLM (e.g. OpenAI) must be able to fetch these URLs. Ensure `base_url` is publicly reachable or use a proxy/tunnel in development.
 
+### File Storage on Lambda
+
+On AWS Lambda, the deployment root (`/var/task`) is read-only. Local file storage with `root_dir: ./.files` or `.files` will fail. For Lambda deployments:
+
+- **Recommended:** Configure `file_storage.provider: s3` (or `JVSPATIAL_FILE_INTERFACE=s3`) with an S3 bucket. Ensure `APP_BASE_URL` and file proxy/URL generation serve media from S3.
+- **Alternative:** Set `JVSPATIAL_FILES_ROOT_PATH=/tmp` for ephemeral storage (cleared between invocations; not suitable for media that must persist across requests).
+
 ### Persona Capabilities
 
 When enabled, WhatsAppAction contributes capabilities to PersonaAction via `get_capabilities()`: "Join WhatsApp groups and send messages to groups", "Send and receive voice notes over WhatsApp", "Send and receive images, documents, and other media over WhatsApp". These are included automatically in the persona prompt; no manual sync in agent.yaml is needed. See [PersonaAction README](../persona/README.md#capabilities-base-config-and-action-contributed).
@@ -323,10 +340,12 @@ When enabled, WhatsAppAction contributes capabilities to PersonaAction via `get_
 
 Media batching controls how multiple images/files sent at once are processed. Configure via `WHATSAPP_MEDIA_BATCH_MODE` env var or `config.whatsapp.media_batch_mode` in app.yaml.
 
+**Lambda auto-detection:** When running on AWS Lambda (`AWS_LAMBDA_FUNCTION_NAME` set) and `WHATSAPP_MEDIA_BATCH_MODE` is unset, the action defaults to `disabled`. The `async` mode uses background tasks that never run after Lambda freezes the execution context.
+
 | Mode | Use case | Behavior |
 |------|----------|----------|
-| **async** | Long-running server (default) | In-memory batching with background timer. All media waits `media_batch_window` to coalesce; then one interact call with all items. Single image also waits the window. |
-| **disabled** | Lambda without MongoDB, or no batching desired | Each media processed inline immediately. No batching. |
+| **async** | Long-running server (default) | In-memory batching with background timer. All media waits `media_batch_window` to coalesce; then one interact call with all items. Single image also waits the window. **Not suitable for Lambda.** |
+| **disabled** | Lambda without MongoDB, or no batching desired | Each media processed inline immediately. No batching. **Default on Lambda when unset.** |
 | **lambda** | Lambda + MongoDB + batch processor | Persistent batching: store in MongoDB, invoke batch processor async. Single media also waits `media_batch_window` (no inline shortcut) so rapid multi-media coalesce. Requires `JVSPATIAL_DB_TYPE=mongodb` and `WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION`. |
 
 #### Lambda mode: self-invoke (recommended)
@@ -362,6 +381,38 @@ config:
   whatsapp:
     media_batch_mode: async  # async | disabled | lambda
 ```
+
+## Lambda Deployment
+
+For AWS Lambda deployments, configure the following:
+
+### Required Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `WHATSAPP_API_URL` | WhatsApp API endpoint URL |
+| `WHATSAPP_API_KEY` | WhatsApp API authentication key |
+| `APP_BASE_URL` | Public base URL for webhooks and media (e.g. API Gateway URL) |
+| `JVSPATIAL_JWT_SECRET_KEY` | JWT secret for webhook API key auth |
+
+### Lambda-Specific Configuration
+
+| Variable | Description |
+|----------|-------------|
+| `WHATSAPP_MEDIA_BATCH_MODE` | `disabled` (default when unset) or `lambda`. Do not use `async` on Lambda. |
+| `JVSPATIAL_FILE_INTERFACE` | Set to `s3` for media storage. Local storage fails on Lambda (read-only `/var/task`). |
+| `JVSPATIAL_DB_TYPE` | Must be `mongodb` when using `media_batch_mode=lambda` |
+| `WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION` | Lambda function name for batch processing (self-invoke: use main Lambda name) |
+| `AWS_LWA_PASS_THROUGH_PATH` | Route direct-invoke payloads to batch handler: `/api/_internal/whatsapp/batch` |
+| `WHATSAPP_SKIP_STARTUP_REGISTRATION` | Set to `true` to skip session registration on cold start; use manual endpoint instead |
+
+### LWA (Lambda Web Adapter) Configuration
+
+When using `media_batch_mode=lambda` with self-invoke, LWA must route direct-invoke payloads to the batch endpoint. Set `AWS_LWA_PASS_THROUGH_PATH=/api/_internal/whatsapp/batch` in the Lambda environment. Without this, LWA defaults to `/events` and the batch handler is never reached.
+
+### IAM Permissions
+
+For self-invoke: the Lambda role needs `lambda:InvokeFunction` on its own ARN.
 
 ## Migration Notes
 

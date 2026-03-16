@@ -252,11 +252,36 @@ class WhatsAppAction(Action):
                 f"Error re-registering session during reload: {e}", exc_info=True
             )
 
+    async def _warn_lambda_local_storage(self) -> None:
+        """Log warning when on Lambda with local file storage and non-/tmp path."""
+        if not os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+            return
+        try:
+            from jvagent.core.app import App
+
+            app = await App.get()
+            if not app:
+                return
+            provider = getattr(app, "file_storage_provider", "") or "local"
+            root = (getattr(app, "file_storage_root_dir", "") or ".files").strip()
+            if provider == "local" and root and not root.startswith("/tmp"):
+                logger.warning(
+                    "WhatsApp media on Lambda: file_storage is local with "
+                    "root_dir=%r. Lambda /var/task is read-only. Configure "
+                    "file_storage.provider: s3 (or JVSPATIAL_FILE_INTERFACE=s3) "
+                    "or set JVSPATIAL_FILES_ROOT_PATH=/tmp for ephemeral storage.",
+                    root,
+                )
+        except Exception:
+            pass
+
     async def on_startup(self) -> None:
         """Initialize filter and adapter, attempt session registration with configurable timeout."""
         self._apply_env_defaults()
         if not self.is_configured() or not self.enabled:
             return
+
+        await self._warn_lambda_local_storage()
 
         agent = await self.get_agent()
         if not agent:
@@ -285,11 +310,24 @@ class WhatsAppAction(Action):
                 logger.warning("WhatsAppVoiceResponseFilter initialization failed")
 
         original_timeout = self.request_timeout
+        skip_registration = (
+            os.environ.get("WHATSAPP_SKIP_STARTUP_REGISTRATION", "").lower() == "true"
+        )
         try:
             if desired_timeout > self.request_timeout:
                 self.request_timeout = desired_timeout
 
-            result = await self.register_session()
+            if skip_registration:
+                logger.info(
+                    "WhatsApp startup registration skipped (WHATSAPP_SKIP_STARTUP_REGISTRATION=true). "
+                    "Use POST /api/actions/{action_id}/session/register to register manually."
+                )
+                result = {
+                    "status": "skipped",
+                    "reason": "WHATSAPP_SKIP_STARTUP_REGISTRATION=true",
+                }
+            else:
+                result = await self.register_session()
             if (
                 isinstance(result, dict)
                 and result.get("ok", True)
