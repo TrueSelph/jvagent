@@ -9,9 +9,7 @@ import logging
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set
 
-from jvspatial.core import Node, Root
-from jvspatial.core.context import get_default_context
-from jvspatial.core.entities.edge import Edge
+from jvspatial.core import Edge, Node, Root, get_default_context
 
 logger = logging.getLogger(__name__)
 
