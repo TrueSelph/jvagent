@@ -71,6 +71,16 @@ class WWebJSAPI(BaseWhatsAppAPI):
 
     async def parse_inbound_message(self, request: dict) -> Optional[MessagePayload]:
         """Parses WWebJS format message and converts to standard format."""
+        # Ignore non-message events (qr, ready, session, etc.) - they have no message payload
+        data_type = request.get("dataType", "")
+        if data_type in (
+            "qr",
+            "ready",
+            "session",
+            "message_ack",
+            "message_status",
+        ):
+            return None
         wppconnect_format = await self.translate_wwebjs_to_wppconnect(request)
         return await super().parse_inbound_message(wppconnect_format)
 
@@ -85,7 +95,14 @@ class WWebJSAPI(BaseWhatsAppAPI):
             )
 
         msg_data = message.get("_data", {})
-        msg_id = msg_data.get("id", {})
+        # Fallback: when _data is empty (e.g. JSON serialization omits it), use
+        # message object directly - ts-whatsapp/whatsapp-web.js may serialize
+        # body/from/to at top level of the message.
+        if not msg_data and message:
+            msg_data = message
+        msg_id = msg_data.get("id", {}) or message.get("id", {})
+        if isinstance(msg_id, str):
+            msg_id = {"_serialized": msg_id, "fromMe": False}
 
         # Build standard format
         wppconnect_data = {

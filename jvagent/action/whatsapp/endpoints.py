@@ -84,8 +84,12 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             )
 
         # Parse request data with error handling
-        try:
+        # Use webhook middleware's parsed payload when available (body may be consumed)
+        request_data = getattr(request.state, "parsed_payload", None)
+        if request_data is None:
             request_data = await request.json()
+
+        try:
             data = await whatsapp_action.api().parse_inbound_message(request_data)
         except ValidationError as e:
             logger.debug(f"Validation error parsing WhatsApp webhook request: {e}")
@@ -94,12 +98,10 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             logger.debug(f"Error parsing WhatsApp webhook request: {e}")
             data = None
 
-        if data.message_type in ["ignored"]:
+        if not data or data.message_type in ["ignored"]:
             return {"status": "ignored", "response": "Ignore message"}
 
-        # logger.warning(f"Received WhatsApp webhook for agent {agent_id}: {data}")
-
-        if not data or data.fromMe:
+        if data.fromMe:
             return {"status": "received", "response": "Ignore message"}
 
         # MessagePayload is a dataclass, access attributes directly
