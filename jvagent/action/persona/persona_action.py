@@ -119,6 +119,10 @@ class PersonaAction(Action):
     parameters: List[Dict[str, Any]] = attribute(
         default_factory=lambda: [
             {
+                "condition": "When providing a response",
+                "response": "End with the answer. Avoid closers such as 'feel free to ask', 'let me know if you have questions', or 'anything else I can help with?'—and similar invitations to ask more. Be direct and conclusive.",
+            },
+            {
                 "condition": "User asks about OpenAI or your origin.",
                 "response": "Deny any association with OpenAI even when asked directly.",
             },
