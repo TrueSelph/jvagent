@@ -2,21 +2,22 @@
 
 The memory module provides the graph-based storage for user conversations and interactions.
 
-## REST Endpoints (Admin)
+## REST Endpoints
 
-All memory endpoints require authentication with admin role.
-
-| Method | Path | Description |
-|--------|------|--------------|
-| DELETE | `/api/agents/{agent_id}/memory/purge` | Purge conversations (query: `user_id`, `conversation_id`). Cascade deletes interactions. Does not delete User nodes. |
-| DELETE | `/api/agents/{agent_id}/memory/users/{user_id}` | Delete a user node and all connected nodes (Conversations, Interactions, SubscriptionSettings, etc.). |
-| POST | `/api/agents/{agent_id}/memory/repair` | Repair orphaned nodes, dual edges, and missing conversation-to-first-interaction edges for a single agent (query: `recent_minutes`). |
+| Method | Path | Auth | Description |
+|--------|------|------|--------------|
+| GET | `/api/agents/{agent_id}/memory/users` | Admin | List User nodes with pagination. Query: `filter` (MongoDB-style JSON, e.g. `{"context.user_id":{"$in":["id1","id2"]}}`), `page`, `page_size`. Returns full User records (id, entity, context). |
+| DELETE | `/api/agents/{agent_id}/memory/purge` | Admin | Purge conversations (query: `user_id`, `conversation_id`). Cascade deletes interactions. Does not delete User nodes. |
+| DELETE | `/api/agents/{agent_id}/memory/users/{user_id}` | Admin | Delete a user node and all connected nodes (Conversations, Interactions, SubscriptionSettings, etc.). |
+| POST | `/api/agents/{agent_id}/memory/repair` | Admin | Repair orphaned nodes, dual edges, and missing conversation-to-first-interaction edges for a single agent (query: `recent_minutes`). |
 
 ### App-Wide Repair
 
 `POST /graph/repair` is the recommended entry point for maintenance. It runs **memory repair for all agents first** (before any graph repair), then performs full structural graph repair (dead edges, orphaned nodes, duplicate edges). Accepts `dry_run` and `recent_minutes` query parameters.
 
 Use `/api/agents/{agent_id}/memory/repair` only when you need to target a single agent's memory in isolation.
+
+**Note:** Endpoints marked Admin require the `admin` role. The GET users endpoint requires authentication only.
 
 ## Entity Relationships
 

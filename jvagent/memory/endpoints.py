@@ -1,14 +1,176 @@
-"""Memory admin endpoints for purge operations."""
+"""Memory admin endpoints for purge operations and user lookup."""
 
+import json
+import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import Query
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.api.exceptions import ResourceNotFoundError
+from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
+from jvspatial.logging.filter_utils import validate_log_filter
 
 from jvagent.core.agent import Agent
 from jvagent.memory.manager import Memory
+from jvagent.memory.user import User
+
+logger = logging.getLogger(__name__)
+
+
+def _user_context_matches(user: User, filter_query: Dict[str, Any]) -> bool:
+    """Check if a User's context matches the MongoDB-style filter."""
+    if not filter_query:
+        return True
+    ctx = {
+        "user_id": user.user_id,
+        "name": user.name,
+        "display_name": user.display_name,
+        "user_model": user.user_model,
+        "usage": user.usage,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "last_seen": user.last_seen.isoformat() if user.last_seen else None,
+    }
+    for key, expected in filter_query.items():
+        if not key.startswith("context."):
+            continue
+        attr = key.replace("context.", "", 1)
+        val = ctx.get(attr)
+        if isinstance(expected, dict):
+            if "$in" in expected:
+                if val not in expected["$in"]:
+                    return False
+            elif "$eq" in expected:
+                if val != expected["$eq"]:
+                    return False
+            elif "$ne" in expected:
+                if val == expected["$ne"]:
+                    return False
+            elif "$regex" in expected:
+                import re
+
+                if not isinstance(val, str) or not re.search(expected["$regex"], val):
+                    return False
+            elif "$exists" in expected:
+                exists = val is not None
+                if expected["$exists"] != exists:
+                    return False
+        else:
+            if val != expected:
+                return False
+    return True
+
+
+@endpoint(
+    "/api/agents/{agent_id}/memory/users",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["Memory"],
+    response=success_response(
+        data={
+            "users": ResponseField(
+                field_type=list,
+                description="Paginated list of full User node records (id, entity, context)",
+            ),
+            "pagination": ResponseField(
+                field_type=Dict[str, Any],
+                description="Pagination metadata (page, page_size, total, total_pages)",
+            ),
+        }
+    ),
+)
+async def get_users(
+    agent_id: str,
+    filter: Optional[str] = Query(
+        None,
+        description='MongoDB-style filter JSON (e.g. {"context.user_id":{"$in":["id1","id2"]}})',
+    ),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page (max 200)"),
+) -> Dict[str, Any]:
+    """List User nodes from an agent's memory with pagination and filter (admin only).
+
+    Requires authentication with admin role. Returns full User node records (id, entity, context, edges). Supports
+    MongoDB-style filter for context.user_id, context.name, and other context fields.
+
+    **Path Parameters:**
+    - `agent_id`: Agent node ID (required)
+
+    **Query Parameters:**
+    - `filter`: Optional MongoDB-style filter JSON. Keys must use context. prefix.
+      Examples: {"context.user_id":{"$in":["id1","id2"]}}, {"context.name":"John"}
+    - `page`: Page number (default: 1)
+    - `page_size`: Items per page (default: 50, max: 200)
+
+    **Returns:**
+    - `users`: List of full User node records
+    - `pagination`: { page, page_size, total, total_pages }
+
+    **Raises:**
+    - ResourceNotFoundError: If agent or memory not found
+    - ValidationError: If filter JSON is invalid
+    """
+    filter_query: Optional[Dict[str, Any]] = None
+    if filter:
+        try:
+            filter_dict = json.loads(filter)
+        except json.JSONDecodeError as e:
+            raise ValidationError(
+                message=f"Invalid filter JSON: {e}",
+                details={"filter": filter},
+            ) from e
+        if not isinstance(filter_dict, dict):
+            raise ValidationError(
+                message="Filter must be a JSON object",
+                details={"filter": filter},
+            )
+        filter_query = validate_log_filter(filter_dict)
+
+    agent = await Agent.get(agent_id)
+    if not agent:
+        raise ResourceNotFoundError(
+            message=f"Agent with ID '{agent_id}' not found",
+            details={"agent_id": agent_id},
+        )
+
+    memory = await agent.get_memory()
+    if not memory:
+        raise ResourceNotFoundError(
+            message=f"Memory not found for agent '{agent_id}'",
+            details={"agent_id": agent_id},
+        )
+
+    try:
+        all_users = await memory.get_users()
+        filtered = [
+            u for u in all_users if _user_context_matches(u, filter_query or {})
+        ]
+        filtered.sort(key=lambda u: u.last_seen or u.created_at, reverse=True)
+
+        total = len(filtered)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        start = (page - 1) * page_size
+        page_users = filtered[start : start + page_size]
+
+        users_data: List[Dict[str, Any]] = []
+        for user in page_users:
+            exported = await user.export()
+            users_data.append(exported)
+    except Exception as e:
+        logger.warning("Failed to list users: %s", e)
+        users_data = []
+        total = 0
+        total_pages = 0
+
+    return {
+        "users": users_data,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+        },
+    }
 
 
 @endpoint(

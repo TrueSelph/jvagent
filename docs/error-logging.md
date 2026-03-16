@@ -210,16 +210,16 @@ Errors are saved with these fields:
 
 ## API Endpoints for Log Querying
 
-### Query Logs by Agent ID
+### Query Logs with Filter
 
 ```http
-GET /api/logs?agent_id=agent_123&page=1&page_size=50
+GET /api/logs?filter={"context.log_data.agent_id":"agent_123"}&page=1&page_size=50
 ```
 
 **Authentication Required**: Yes
 
 **Query Parameters:**
-- `agent_id` (optional): Filter by agent_id for cross-referencing
+- `filter` (optional): MongoDB-style filter JSON. All keys must use `context.` prefix. Use `context.log_data.agent_id` for agent filtering (jvagent).
 - `category` (optional): Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 - `start_date` (optional): ISO format start date (e.g., `2024-01-01T00:00:00Z`)
 - `end_date` (optional): ISO format end date
@@ -229,17 +229,17 @@ GET /api/logs?agent_id=agent_123&page=1&page_size=50
 **Examples:**
 
 ```bash
-# Get all logs for specific agent
+# Get all logs for specific agent (jvagent)
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/logs?agent_id=agent_123"
+  "http://localhost:8000/api/logs?filter=%7B%22context.log_data.agent_id%22%3A%22agent_123%22%7D"
 
 # Get ERROR logs for agent
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/logs?agent_id=agent_123&category=ERROR"
+  "http://localhost:8000/api/logs?filter=%7B%22context.log_data.agent_id%22%3A%22agent_123%22%7D&category=ERROR"
 
 # Get logs for agent in date range
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/logs?agent_id=agent_123&start_date=2024-01-01T00:00:00Z&end_date=2024-01-31T23:59:59Z"
+  "http://localhost:8000/api/logs?filter=%7B%22context.log_data.agent_id%22%3A%22agent_123%22%7D&start_date=2024-01-01T00:00:00Z&end_date=2024-01-31T23:59:59Z"
 ```
 
 **Response:**
@@ -250,13 +250,12 @@ curl -H "Authorization: Bearer $TOKEN" \
       "log_id": "log_123",
       "log_level": "ERROR",
       "status_code": 500,
-      "error_code": "action_error",
+      "event_code": "action_error",
       "message": "Action execution failed",
       "path": "/api/agents/agent_123/actions",
       "method": "POST",
-      "agent_id": "agent_123",
       "logged_at": "2024-01-15T10:30:00Z",
-      "error_data": {
+      "log_data": {
         "message": "Action execution failed",
         "log_level": "ERROR",
         "agent_id": "agent_123",

@@ -616,15 +616,13 @@ The error handler extracts:
 #### Get Error Logs by Agent
 
 ```http
-GET /logs/agents/{agent_id}/errors?error_code=unauthorized&status_code=401&page=1&page_size=50
+GET /logs/agents/{agent_id}?start_time=2025-01-01T00:00:00Z&end_time=2025-01-31T23:59:59Z&filter={"context.log_data.user_id":"usr_456"}&page=1&page_size=50
 ```
 
 **Query Parameters:**
-- `error_code`: Optional error code filter
-- `status_code`: Optional HTTP status code filter
-- `user_id`: Optional user ID filter
 - `start_time`: Optional start time filter (ISO datetime string)
 - `end_time`: Optional end time filter (ISO datetime string)
+- `filter`: Optional MongoDB-style filter JSON. All keys must use `context.` prefix. Use `context.log_data.agent_id`, `context.log_data.user_id`, etc.
 - `page`: Page number (default: 1)
 - `page_size`: Items per page (default: 50)
 

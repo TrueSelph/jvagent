@@ -4,6 +4,7 @@ import {
   useRef,
   useLayoutEffect,
   useCallback,
+  useMemo,
 } from "react";
 import { apiClient } from "../config/api";
 import { getSelectedAgent } from "../utils/storage";
@@ -47,6 +48,11 @@ export function DebugInteractions({
   const [improveModel, setImproveModel] = useState("gpt-4o");
   const [improving, setImproving] = useState(false);
   const [improveResult, setImproveResult] = useState("");
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [knownUserIds, setKnownUserIds] = useState<string[]>([]);
+  const [userNamesByUserId, setUserNamesByUserId] = useState<
+    Record<string, string>
+  >({});
 
   const userRef = useRef<HTMLTextAreaElement>(null);
   const systemRef = useRef<HTMLTextAreaElement>(null);
@@ -55,6 +61,7 @@ export function DebugInteractions({
   const improveResultRef = useRef<HTMLTextAreaElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lastFocusedInteractionId = useRef<string | null>(null);
+  const initialLoadDone = useRef(false);
 
   const adjustHeight = (el: HTMLTextAreaElement | null) => {
     if (!el) return;
@@ -122,6 +129,37 @@ export function DebugInteractions({
     [],
   );
 
+  const extractUserIdsFromLogs = useCallback((logs: any[]) => {
+    const ids = new Set<string>();
+    for (const log of logs || []) {
+      const uid =
+        log.log_data?.user_id || log.log_data?.interaction_data?.user_id;
+      if (uid) ids.add(uid);
+    }
+    return Array.from(ids).sort();
+  }, []);
+
+  const mapLogsToParents = useCallback((logs: any[]) => {
+    return (logs || [])
+      .map((log: any) => {
+        const interactionData = log.log_data?.interaction_data || {};
+        const metrics = interactionData.observability_metrics || [];
+        const utterance = interactionData.utterance;
+        const conversationHistory =
+          interactionData.conversation_history || [];
+        const user_id =
+          log.log_data?.user_id || interactionData.user_id;
+        return {
+          id: log.log_id,
+          utterance,
+          metrics,
+          conversationHistory,
+          user_id,
+        };
+      })
+      .filter((p: any) => p.metrics && p.metrics.length > 0);
+  }, []);
+
   const loadMore = useCallback(async () => {
     if (
       !targetAgentId ||
@@ -136,31 +174,35 @@ export function DebugInteractions({
       const logsResponse = await apiClient.getLogs({
         category: "INTERACTION",
         agent_id: targetAgentId,
+        user_id: selectedUserId ?? undefined,
         page: nextPage,
         page_size: 50,
       });
       setPagination(logsResponse.pagination);
-      const newParents = (logsResponse.logs || [])
-        .map((log: any) => {
-          const interactionData = log.log_data?.interaction_data || {};
-          const metrics = interactionData.observability_metrics || [];
-          const utterance = interactionData.utterance;
-          const conversationHistory =
-            interactionData.conversation_history || [];
-          return { id: log.log_id, utterance, metrics, conversationHistory };
-        })
-        .filter((p: any) => p.metrics && p.metrics.length > 0);
+      const newParents = mapLogsToParents(logsResponse.logs || []);
       setParentInteractions((prev) => [...prev, ...newParents]);
+      setKnownUserIds((prev) =>
+        [...new Set([...prev, ...extractUserIdsFromLogs(logsResponse.logs || [])])].sort()
+      );
     } catch (err: any) {
       setError(err.message || "Failed to load more logs");
     } finally {
       setLoadingMore(false);
     }
-  }, [targetAgentId, pagination]);
+  }, [
+    targetAgentId,
+    pagination,
+    selectedUserId,
+    mapLogsToParents,
+    extractUserIdsFromLogs,
+  ]);
 
   const initializeDebugSession = useCallback(async () => {
+    initialLoadDone.current = false;
     setLoading(true);
     setError(null);
+    setSelectedUserId(null);
+    setUserNamesByUserId({});
 
     let agentsData;
     try {
@@ -205,24 +247,20 @@ export function DebugInteractions({
 
       setPagination(logsResponse.pagination);
 
-      const parents = (logsResponse.logs || [])
-        .map((log: any) => {
-          const interactionData = log.log_data?.interaction_data || {};
-          const metrics = interactionData.observability_metrics || [];
-          const utterance = interactionData.utterance;
-          const conversationHistory =
-            interactionData.conversation_history || [];
-          return { id: log.log_id, utterance, metrics, conversationHistory };
-        })
-        .filter((p: any) => p.metrics && p.metrics.length > 0);
-
+      const parents = mapLogsToParents(logsResponse.logs || []);
       setParentInteractions(parents);
+
+      const userIds = extractUserIdsFromLogs(logsResponse.logs || []);
+      setKnownUserIds((prev) =>
+        [...new Set([...prev, ...userIds])].sort()
+      );
 
       if (parents.length > 0) {
         const latestParentIdx = 0;
         const latestMetricIdx = parents[latestParentIdx].metrics.length - 1;
         selectInteraction(latestParentIdx, latestMetricIdx, parents);
       }
+      initialLoadDone.current = true;
     } catch (err: any) {
       console.error(err);
 
@@ -236,13 +274,91 @@ export function DebugInteractions({
     } finally {
       setLoading(false);
     }
-  }, [selectInteraction]);
+  }, [selectInteraction, mapLogsToParents, extractUserIdsFromLogs]);
 
   const hasMorePages = pagination && pagination.page < pagination.total_pages;
+
+  const effectiveParents = useMemo(() => {
+    if (!selectedUserId) return parentInteractions;
+    return parentInteractions.filter((p) => p.user_id === selectedUserId);
+  }, [parentInteractions, selectedUserId]);
 
   useEffect(() => {
     initializeDebugSession();
   }, [initializeDebugSession]);
+
+  useEffect(() => {
+    if (!targetAgentId || knownUserIds.length === 0) return;
+    apiClient.getUsers(targetAgentId, knownUserIds).then((users) => {
+      setUserNamesByUserId((prev) => ({ ...prev, ...users }));
+    });
+  }, [targetAgentId, knownUserIds.join(",")]);
+
+  useEffect(() => {
+    if (effectiveParents.length === 0) {
+      setSelectedParentIndex(null);
+      setSelectedMetricIndex(null);
+      setSelectedInteraction(null);
+      return;
+    }
+    const currentParent =
+      selectedParentIndex != null ? effectiveParents[selectedParentIndex] : null;
+    const metricId = selectedInteraction?.id;
+    const parentWithMetric = metricId
+      ? effectiveParents.find((p) =>
+          p.metrics?.some((m: any) => m.id === metricId),
+        )
+      : null;
+    const metricIdx =
+      parentWithMetric?.metrics?.findIndex((m: any) => m.id === metricId) ?? -1;
+    if (parentWithMetric && metricIdx >= 0) {
+      const newParentIdx = effectiveParents.indexOf(parentWithMetric);
+      if (newParentIdx !== selectedParentIndex || selectedMetricIndex !== metricIdx) {
+        selectInteraction(newParentIdx, metricIdx, effectiveParents);
+      }
+    } else if (!currentParent || selectedParentIndex >= effectiveParents.length) {
+      selectInteraction(0, effectiveParents[0].metrics.length - 1, effectiveParents);
+    }
+  }, [effectiveParents, selectedUserId]);
+
+  useEffect(() => {
+    if (!initialLoadDone.current || !targetAgentId) return;
+
+    const refetchWithUserFilter = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const logsResponse = await apiClient.getLogs({
+          category: "INTERACTION",
+          agent_id: targetAgentId,
+          user_id: selectedUserId ?? undefined,
+          page: 1,
+          page_size: 200,
+        });
+        setPagination(logsResponse.pagination);
+        const parents = mapLogsToParents(logsResponse.logs || []);
+        setParentInteractions(parents);
+        setKnownUserIds((prev) =>
+          [...new Set([...prev, ...extractUserIdsFromLogs(logsResponse.logs || [])])].sort()
+        );
+        if (parents.length > 0) {
+          selectInteraction(0, parents[0].metrics.length - 1, parents);
+        } else {
+          setSelectedParentIndex(null);
+          setSelectedMetricIndex(null);
+          setSelectedInteraction(null);
+        }
+      } catch (err: any) {
+        setError(err.message || "Failed to load logs");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    refetchWithUserFilter();
+    // Only refetch when user changes the filter; targetAgentId is from closure (set after initial load)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedUserId]);
 
   useEffect(() => {
     const historyData = selectedInteraction?.data?.history;
@@ -456,6 +572,11 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
     return str.length > length ? str.substring(0, length) + "..." : str;
   };
 
+  const formatUserLabel = (userId: string) => {
+    const name = userNamesByUserId[userId];
+    return name ? `${name} (${userId})` : userId;
+  };
+
   const effectiveDarkMode = isEmbedded ? appTheme === "dark" : darkMode;
 
   useEffect(() => {
@@ -645,10 +766,38 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
           )}
 
           {/* Interaction Selector */}
-          {!loading && parentInteractions.length > 0 && (
+          {!loading &&
+            (parentInteractions.length > 0 ||
+              (selectedUserId && initialLoadDone.current)) && (
             <div
               className={`rounded-lg shadow-sm p-4 mb-6 border ${effectiveDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"}`}
             >
+              {knownUserIds.length > 0 && (
+                <div className="mb-4">
+                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
+                    User
+                  </label>
+                  <select
+                    className={`w-full max-w-xs p-2 border rounded text-sm ${effectiveDarkMode ? "bg-slate-700 border-slate-600 text-slate-100" : "bg-white border-gray-300"}`}
+                    value={selectedUserId ?? ""}
+                    onChange={(e) =>
+                      setSelectedUserId(e.target.value || null)
+                    }
+                  >
+                    <option value="">All users</option>
+                    {[...knownUserIds].sort().map((id) => (
+                      <option key={id} value={id}>
+                        {formatUserLabel(id)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {effectiveParents.length === 0 && selectedUserId ? (
+                <p className={`text-sm ${effectiveDarkMode ? "text-slate-400" : "text-gray-500"}`}>
+                  No interactions for this user in the current view.
+                </p>
+              ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
@@ -661,14 +810,20 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                       selectInteraction(
                         parseInt(e.target.value),
                         0,
-                        parentInteractions,
+                        effectiveParents,
                       )
                     }
                   >
-                    {parentInteractions.map((p, idx) => (
+                    {effectiveParents.map((p, idx) => (
                       <option key={p.id || idx} value={idx}>
                         [{idx + 1}]{" "}
-                        {truncate(p.utterance || "(no utterance)", 100)}
+                        {knownUserIds.length > 1 && !selectedUserId && p.user_id
+                          ? `[${formatUserLabel(p.user_id)}] `
+                          : ""}
+                        {truncate(
+                          p.utterance || "(no utterance)",
+                          knownUserIds.length > 1 && !selectedUserId ? 80 : 100,
+                        )}
                       </option>
                     ))}
                   </select>
@@ -685,13 +840,13 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                       selectInteraction(
                         selectedParentIndex!,
                         parseInt(e.target.value),
-                        parentInteractions,
+                        effectiveParents,
                       )
                     }
                     disabled={selectedParentIndex === null}
                   >
                     {selectedParentIndex !== null &&
-                      parentInteractions[selectedParentIndex]?.metrics.map(
+                      effectiveParents[selectedParentIndex]?.metrics.map(
                         (m: any, mi: number) => (
                           <option key={mi} value={mi}>
                             [{mi + 1}]{" "}
@@ -707,6 +862,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                   </select>
                 </div>
               </div>
+              )}
               {hasMorePages && (
                 <div className="mt-4 flex justify-center">
                   <button
