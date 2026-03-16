@@ -5,6 +5,7 @@ for WhatsApp webhook authentication.
 """
 
 import logging
+import os
 import secrets
 from typing import Optional
 
@@ -15,6 +16,13 @@ logger = logging.getLogger(__name__)
 
 # System service user email - not used for login, only for API key ownership
 SYSTEM_USER_EMAIL = "whatsapp-service@system.internal"
+
+
+def _get_jwt_secret() -> Optional[str]:
+    """Get JWT secret from environment. Supports JVSPATIAL_JWT_SECRET_KEY and JVSPATIAL_JWT_SECRET."""
+    return os.environ.get("JVSPATIAL_JWT_SECRET_KEY") or os.environ.get(
+        "JVSPATIAL_JWT_SECRET"
+    )
 
 
 async def get_or_create_system_user() -> str:
@@ -29,7 +37,13 @@ async def get_or_create_system_user() -> str:
     Raises:
         Exception: If user creation fails
     """
-    auth_service = AuthenticationService()
+    jwt_secret = _get_jwt_secret()
+    if not jwt_secret:
+        raise ValueError(
+            "JWT secret must be set for webhook authentication. "
+            "Set JVSPATIAL_JWT_SECRET_KEY in your environment."
+        )
+    auth_service = AuthenticationService(jwt_secret=jwt_secret)
 
     existing_user = await auth_service._find_user_by_email(SYSTEM_USER_EMAIL)
     if existing_user:
