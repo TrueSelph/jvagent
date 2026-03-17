@@ -558,7 +558,7 @@ class TestBackgroundTaskFailures:
     @pytest.mark.asyncio
     async def test_background_task_exception_logged(self):
         """Background task exceptions should be logged, not silently swallowed."""
-        from jvagent.action.whatsapp.endpoints import create_background_task
+        from jvspatial.async_utils import create_background_task
 
         exception_logged = {"value": False}
 
@@ -581,7 +581,7 @@ class TestBackgroundTaskFailures:
     @pytest.mark.asyncio
     async def test_cancelled_task_handled_gracefully(self):
         """Cancelled tasks should not log errors."""
-        from jvagent.action.whatsapp.endpoints import create_background_task
+        from jvspatial.async_utils import create_background_task
 
         async def long_running_task():
             """A task that runs for a long time."""
@@ -603,7 +603,7 @@ class TestBackgroundTaskFailures:
     @pytest.mark.asyncio
     async def test_multiple_background_tasks_independent(self):
         """Multiple background tasks should not affect each other."""
-        from jvagent.action.whatsapp.endpoints import create_background_task
+        from jvspatial.async_utils import create_background_task
 
         results = {"success": 0, "failure": 0}
 
