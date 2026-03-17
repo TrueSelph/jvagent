@@ -1,3 +1,4 @@
+from datetime import datetime
 import json
 import logging
 import os
@@ -6,7 +7,7 @@ from typing import Any, ClassVar, Dict, List, Optional, Union
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
+from googleapiclient.discovery import Resource, build
 from jvspatial.api.constants import APIRoutes
 from jvspatial.core.annotations import attribute
 
@@ -27,28 +28,72 @@ class GoogleAction(Action):
         default="http://localhost:8080/",
         description="The redirect URI used in the OAuth2 flow.",
     )
-
+    _built_service: Optional[Any] = None
+    
     # These must be overridden by subclasses
     API_SERVICE_NAME: ClassVar[str] = ""
     API_VERSION: ClassVar[str] = ""
     SCOPES: ClassVar[List[str]] = []
 
     async def get_service(self):
-        """Build and return an authenticated Google API service object."""
+        """Build and return an authenticated Google API service object with caching."""
         if not self.API_SERVICE_NAME or not self.API_VERSION:
             raise ValueError(
                 f"{self.__class__.__name__} must define API_SERVICE_NAME and API_VERSION"
             )
 
+        # 1. Check if we already have a built service in memory
+        if hasattr(self, "_built_service") and self._built_service:
+            # Check if the credentials inside the service are still valid
+            # This is a local check, no network call.
+            if self._built_service._http.credentials.valid:
+                return self._built_service
+            else:
+                logger.info("Cached service credentials expired. Rebuilding...")
+
         try:
+            # 2. Get fresh/refreshed credentials from DB
             creds = await self._get_credentials()
-            return build(self.API_SERVICE_NAME, self.API_VERSION, credentials=creds)
-        except Exception as e:
-            logger.error(
-                f"Error building Google {self.API_SERVICE_NAME} service: {e}",
-                exc_info=True,
+
+            # 3. Build the actual service object
+            logger.warning(f"Building Google {self.API_SERVICE_NAME} service for {self.id}")
+            self._built_service = build(
+                self.API_SERVICE_NAME,
+                self.API_VERSION,
+                credentials=creds,
+                static_discovery=False
             )
+            
+            return self._built_service
+
+        except Exception as e:
+            logger.error(f"Error building Google {self.API_SERVICE_NAME} service: {e}", exc_info=True)
+            self._built_service = None
             raise
+
+    # async def get_service(self):
+    #     """Build and return an authenticated Google API service object."""
+    #     if not self.API_SERVICE_NAME or not self.API_VERSION:
+    #         raise ValueError(
+    #             f"{self.__class__.__name__} must define API_SERVICE_NAME and API_VERSION"
+    #         )
+
+    #     try:
+    #         if self.google_service:
+    #             return self.google_service
+            
+    #         logger.warning(f"Building Google {self.API_SERVICE_NAME} service for {self.id}")
+    #         self.google_service = await self._get_credentials()
+
+    #         return build(self.API_SERVICE_NAME, self.API_VERSION, credentials=self.google_service, static_discovery=False)
+            
+    #     except Exception as e:
+    #         logger.error(
+    #             f"Error building Google {self.API_SERVICE_NAME} service: {e}",
+    #             exc_info=True,
+    #         )
+    #         self.google_service = None
+    #         raise
 
     async def get_authorization_url(self, code_verifier: Optional[str] = None) -> str:
         """Returns the OAuth2 authorization URL for the user to visit."""
@@ -135,6 +180,7 @@ class GoogleAction(Action):
                     "client_id": token_node.client_id,
                     "client_secret": token_node.client_secret,
                     "scopes": token_node.scopes,
+                    "expiry": token_node.expiry.isoformat() if isinstance(token_node.expiry, datetime) else token_node.expiry
                 }
                 creds = Credentials.from_authorized_user_info(token_info, self.SCOPES)
             except Exception as e:
@@ -146,8 +192,25 @@ class GoogleAction(Action):
                 logger.info(
                     f"Refreshing expired Google OAuth2 credentials for {self.id}."
                 )
+                logger.warning(
+                    f"DEBUG OAuth State for {self.id}: \n"
+                    f"Valid: {creds.valid}, \n"
+                    f"Expired: {creds.expired}, \n"
+                    f"Has Refresh Token: {bool(creds.refresh_token)}, \n"
+                    f"Expiry: {creds.expiry}\n"
+                )
                 try:
                     creds.refresh(Request())
+
+                    logger.warning(
+                        f"New Creds OAuth State for {self.id}: \n"
+                        f"Valid: {creds.valid}, \n"
+                        f"Expired: {creds.expired}, \n"
+                        f"Has Refresh Token: {bool(creds.refresh_token)}, \n"
+                        f"Expiry: {creds.expiry}\n"
+                        "----"
+                    )
+                        
                     await self._save_credentials(creds)
                 except Exception as e:
                     logger.error(f"Failed to refresh credentials for {self.id}: {e}")
@@ -172,6 +235,7 @@ class GoogleAction(Action):
             "client_secret": creds.client_secret,
             "scopes": creds.scopes,
             "agent_id": self.agent_id,
+            "expiry": creds.expiry.isoformat() if creds.expiry else None
         }
 
         # Update existing token or create new one
@@ -183,6 +247,7 @@ class GoogleAction(Action):
             token_node.client_id = creds.client_id
             token_node.client_secret = creds.client_secret
             token_node.scopes = creds.scopes
+            token_node.expiry = creds.expiry.isoformat() if creds.expiry else None
             await token_node.save()
         else:
             token_node = await GoogleToken.create(**token_data)

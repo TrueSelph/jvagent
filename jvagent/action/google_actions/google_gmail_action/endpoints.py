@@ -30,7 +30,7 @@ async def _get_gmail_action(action_id: str) -> Optional[GoogleGmailAction]:
 
 
 @endpoint(
-    "/actions/{action_id}/google_gmail/send",
+    "/actions/{action_id}/send",
     methods=["POST"],
     auth=True,
     roles=["admin"],
@@ -112,7 +112,7 @@ async def send_gmail(
 
 
 @endpoint(
-    "/actions/{action_id}/google_gmail/list",
+    "/actions/{action_id}/list",
     methods=["GET"],
     auth=True,
     roles=["admin"],
@@ -182,7 +182,7 @@ async def list_gmail_messages(
 
 
 @endpoint(
-    "/actions/{action_id}/google_gmail/profile",
+    "/actions/{action_id}/profile",
     methods=["GET"],
     auth=True,
     roles=["admin"],

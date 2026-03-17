@@ -30,7 +30,7 @@ async def _get_drive_action(action_id: str) -> Optional[GoogleDriveAction]:
 
 
 @endpoint(
-    "/actions/{action_id}/google_drive/upload",
+    "/actions/{action_id}/upload",
     methods=["POST"],
     auth=True,
     roles=["admin"],
@@ -121,7 +121,7 @@ async def upload_to_drive(
 
 
 @endpoint(
-    "/actions/{action_id}/google_drive/list",
+    "/actions/{action_id}/list",
     methods=["GET"],
     auth=True,
     roles=["admin"],
@@ -186,7 +186,7 @@ async def list_drive_files(
 
 
 @endpoint(
-    "/actions/{action_id}/google_drive/delete",
+    "/actions/{action_id}/delete",
     methods=["DELETE"],
     auth=True,
     roles=["admin"],
@@ -243,7 +243,7 @@ async def delete_drive_file(action_id: str, file_id: str) -> Dict[str, Any]:
 
 
 @endpoint(
-    "/actions/{action_id}/google_drive/share",
+    "/actions/{action_id}/share",
     methods=["POST"],
     auth=True,
     roles=["admin"],
@@ -334,3 +334,90 @@ async def share_drive_file(
             message=f"Failed to share file: {str(e)}",
             details={"action_id": action_id, "file_id": file_id},
         )
+
+
+@endpoint(
+    "/actions/{action_id}/compare_files",
+    methods=["POST"],
+    auth=True,
+    roles=["admin"],
+    tags=["Google Drive Action"],
+    summary="Compare two file listings from Google Drive",
+    response=success_response(
+        data={
+            "added": ResponseField(
+                field_type=List[Dict[str, Any]],
+                description="Files that were added between the two listings",
+                example=[
+                    {
+                        "id": "1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz",  # pragma: allowlist secret
+                        "name": "new_report.pdf",
+                        "mimeType": "application/pdf",
+                    }
+                ],
+            ),
+            "removed": ResponseField(
+                field_type=List[Dict[str, Any]],
+                description="Files that were removed between the two listings",
+                example=[],
+            ),
+            "modified": ResponseField(
+                field_type=List[Dict[str, Any]],
+                description="Files that were modified between the two listings",
+                example=[
+                    {
+                        "id": "1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz",  # pragma: allowlist secret
+                        "old": {
+                            "name": "old_report.pdf",
+                            "size": "102400",
+                        },
+                        "new": {
+                            "name": "updated_report.pdf",
+                            "size": "102400",
+                        },
+                    }
+                ],
+            ),
+            "success": ResponseField(
+                field_type=bool,
+                description="Whether the upload was successful",
+                example=True,
+            ),
+        }
+    ),
+)
+async def compare_drive_files(
+    action_id: str, old_files: List[Dict], new_files: List[Dict]
+) -> Dict[str, Any]:
+    """Compare two file listings from Google Drive.
+
+    **Overview:**
+
+    Compares two nested file listings and identifies added, removed, and modified items.
+
+    **Args:**
+
+    - action_id: ID of the Google Drive action
+    - old_files: Previous listing of files
+    - new_files: New listing of files
+
+    **Returns:**
+
+    Dictionary containing:
+    - **added**: Files present in new listing but not in old
+    - **removed**: Files present in old listing but not in new
+    - **modified**: Files present in both but with different properties
+
+    **Raises:**
+
+    - ResourceNotFoundError: If the Google Drive action is not found
+    """
+    action = await _get_drive_action(action_id=action_id)
+    if not action:
+        raise ResourceNotFoundError(
+            message=f"Google Drive action {action_id} not found",
+            details={"action_id": action_id},
+        )
+
+    diff = action.compare_files(old_files=old_files, new_files=new_files)
+    return {"success": True, **diff}

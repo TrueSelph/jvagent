@@ -1,4 +1,7 @@
 import logging
+import io
+from googleapiclient.http import MediaIoBaseDownload
+
 from typing import Any, ClassVar, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
@@ -74,31 +77,45 @@ class GoogleDriveAction(GoogleAction):
         return True
 
     async def list_files(
-        self, folder_id: Optional[str] = None, with_link: bool = False
+        self, 
+        folder_id: Optional[str] = None, 
+        with_link: bool = False, 
+        depth: int = 5
     ) -> List[Dict[str, Any]]:
-        """List files in a Google Drive folder.
-
-        **Args:**
-
-        - folder_id: Optional folder ID to list files from
-        - with_link: Whether to include the webViewLink for each file
         """
+        List files and folders recursively up to a specified depth.
+        """
+        if depth < 0:
+            return []
+
         service = await self.get_service()
         parent_id = folder_id or self.default_parent_id
 
         q = f"'{parent_id}' in parents and trashed = false"
-        fields = "files(id, name, mimeType)"
-        if with_link:
-            fields = "files(id, name, mimeType, webViewLink)"
-
+        fields = "files(id, name, mimeType, createdTime, modifiedTime" + (", webViewLink" if with_link else "") + ")"
+        
+        # Note: .execute() is usually synchronous in the standard google-api-python-client.
+        # If using a wrapper like aiogoogle, ensure you await this call.
         results = service.files().list(q=q, fields=f"nextPageToken, {fields}").execute()
-
         files = results.get("files", [])
 
-        if with_link:
-            for f in files:
-                if "webViewLink" in f:
-                    f["url"] = f.pop("webViewLink")
+        for f in files:
+            # Standardize the link key if requested
+            if with_link and "webViewLink" in f:
+                f["url"] = f.pop("webViewLink")
+
+            # If it's a folder, look deeper
+            if f["mimeType"] == "application/vnd.google-apps.folder":
+                if depth > 0:
+                    # Recursive call to get children
+                    f["files"] = await self.list_files(
+                        folder_id=f["id"], 
+                        with_link=with_link, 
+                        depth=depth - 1
+                    )
+                else:
+                    # If we hit depth limit, provide an empty list or omit
+                    f["files"] = []
 
         return files
 
@@ -125,3 +142,119 @@ class GoogleDriveAction(GoogleAction):
             return {"webViewLink": file.get("webViewLink")}
 
         return {"success": True}
+
+
+    async def get_media(self, file_id: str) -> bytes:
+        """
+        Download a file's content from Google Drive.
+        Handles both regular binary files and Google Workspace documents (Docs, Sheets, etc.).
+        """
+        service = await self.get_service()
+
+        # 1. Fetch metadata to determine if it's a Google Doc that needs exporting
+        file_metadata = service.files().get(
+            fileId=file_id, 
+            fields="name, mimeType"
+        ).execute()
+        
+        mime_type = file_metadata.get("mimeType", "")
+        
+        # 2. Define the request based on file type
+        if mime_type.startswith("application/vnd.google-apps."):
+            # Handle Google Docs by exporting to PDF by default
+            # You can change 'application/pdf' to other formats (e.g., docx, xlsx)
+            request = service.files().export_media(
+                fileId=file_id, 
+                mimeType="application/pdf"
+            )
+        else:
+            # Standard binary download for images, PDFs, ZIPs, etc.
+            request = service.files().get_media(fileId=file_id)
+
+        # 3. Perform the download using a buffer
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        
+        done = False
+        while not done:
+            # Standard google-api-client execute() is synchronous
+            status, done = downloader.next_chunk()
+            if status:
+                progress = int(status.progress() * 100)
+                # logger.debug(f"Download progress for {file_id}: {progress}%")
+
+        # 4. Return the bytes
+        return fh.getvalue()
+
+    def compare_files(self, old_files: List[Dict], new_files: List[Dict]) -> Dict[str, List[Dict]]:
+        """
+        Compares two nested file lists and returns added, removed, and modified items.
+        files format: [
+            {
+            "id": "1dI6RT-NRUZJ0X6QsXARldqmhdHK86uB5",
+            "name": "new folder",
+            "mimeType": "application/vnd.google-apps.folder",
+            "createdTime": "2026-03-13T13:49:56.485Z",
+            "modifiedTime": "2026-03-13T13:49:56.485Z",
+            "files": [...],
+            },
+            ...
+        ]
+        return {
+            "added": [
+                {
+                    "id": "1CXcmy9fpze34g1pnsDXJxOahLE1Gwqxrr",
+                    "name": "my-cv.pdf",
+                    "mimeType": "application/pdf"
+                }
+            ],
+            "removed": [...],
+            "modified": [
+                {
+                    "id": "1dI6RT-NRUZJ0X6QsXARldqmhdHK86uB5",
+                    "old": { ... },
+                    "new": { ... }
+                }
+            ]
+        }
+        """
+        def flatten_to_dict(items, lookup=None):
+            if lookup is None:
+                lookup = {}
+            for item in items:
+                # Store a copy of the item without the nested 'files' for clean comparison
+                item_copy = {k: v for k, v in item.items() if k != "files"}
+                lookup[item["id"]] = item_copy
+                
+                # Recurse if there are nested files
+                if "files" in item and item["files"]:
+                    flatten_to_dict(item["files"], lookup)
+            return lookup
+
+        old_map = flatten_to_dict(old_files)
+        new_map = flatten_to_dict(new_files)
+
+        old_ids = set(old_map.keys())
+        new_ids = set(new_map.keys())
+
+        # 1. Added: IDs in new but not in old
+        added = [new_map[fid] for fid in (new_ids - old_ids)]
+
+        # 2. Removed: IDs in old but not in new
+        removed = [old_map[fid] for fid in (old_ids - new_ids)]
+
+        # 3. Modified: IDs in both, but content (like name) changed
+        modified = []
+        for fid in (old_ids & new_ids):
+            if old_map[fid] != new_map[fid]:
+                modified.append({
+                    "id": fid,
+                    "old": old_map[fid],
+                    "new": new_map[fid]
+                })
+
+        return {
+            "added": added,
+            "removed": removed,
+            "modified": modified
+        }

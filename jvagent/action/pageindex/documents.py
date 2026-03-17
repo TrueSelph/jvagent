@@ -59,17 +59,19 @@ def _to_yes_no(value: Any, default: bool) -> str:
 def _build_metadata_query(metadata_filter: Dict[str, Any]) -> Dict[str, Any]:
     """Build query dict for metadata filter.
 
-    For single-key filters, uses context.metadata.k = v.
-    For multi-key filters, matches the full metadata dict to ensure AND semantics
-    work correctly with JSON backend (context.metadata must contain all keys).
+    Supports single-key, multi-key, and list-valued filters (OR semantics for lists).
+    Uses dot notation for all keys to allow matching a subset of metadata.
     """
     if not metadata_filter:
         return {}
-    if len(metadata_filter) == 1:
-        k, v = next(iter(metadata_filter.items()))
-        return {f"context.metadata.{k}": v}
-    # Multi-key: use $eq so QueryEngine matches dict equality (not operator dict)
-    return {"context.metadata": {"$eq": metadata_filter}}
+
+    query = {}
+    for k, v in metadata_filter.items():
+        if isinstance(v, list):
+            query[f"context.metadata.{k}"] = {"$in": v}
+        else:
+            query[f"context.metadata.{k}"] = v
+    return query
 
 
 def _get_pageindex_context() -> GraphContext:
