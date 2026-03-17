@@ -38,14 +38,12 @@ Automatically sync and ingest documents from Google Drive folders into PageIndex
 - action: jvagent/page_index_google_drive_sync_action
   context:
     google_drive_folders:
-      - folder_id: "1syTF0gsEjsl7DhjxrnPuTdmwwNDoh8dj"
+      - folder_id: "123"
         metadata:
-          source: "company_docs"
-          category: "faq"
-      - folder_id: "1another_folder_id"
+          access: "public"
+      - folder_id: "1234"
         metadata:
-          source: "policies"
-          category: "internal"
+          access: "private"
 ```
 
 ## Setup Instructions

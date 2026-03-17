@@ -102,10 +102,6 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 await self.connect(google_drive_documents_node)
 
             message = "Documents already ingested!"
-            logger.warning(f"page_index_action.node_summary: {page_index_action.model}")
-            logger.warning(
-                f"page_index_action.node_summary: {page_index_action.node_summary}"
-            )
 
             for new_file in file_result["added"]:
                 doc_name = new_file.get("name", "")
@@ -120,9 +116,9 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 await assimilate_document(
                     file_bytes,
                     doc_name=doc_name,
-                    model=page_index_action.model,
+                    model=page_index_action.config.get("model"),
                     model_action=model_action,
-                    if_add_node_summary=page_index_action.node_summary,
+                    if_add_node_summary=page_index_action.config.get("node_summary"),
                     persist=True,
                     collection_name=collection_name,
                     doc_url=url,
@@ -156,9 +152,9 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 await assimilate_document(
                     file_bytes,
                     doc_name=doc_name,
-                    model=page_index_action.model,
+                    model=page_index_action.config.get("model"),
                     model_action=model_action,
-                    if_add_node_summary=page_index_action.node_summary,
+                    if_add_node_summary=page_index_action.config.get("node_summary"),
                     persist=True,
                     collection_name=collection_name,
                     doc_url=url,
