@@ -68,11 +68,6 @@ BATCH_CLEANUP_INTERVAL = 60  # Run cleanup every 60 seconds
 INVOKE_DEDUP_SECONDS = 1.0  # Min seconds between batch Lambda invokes per sender
 
 
-def _is_lambda_env() -> bool:
-    """Return True if running on AWS Lambda."""
-    return bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
-
-
 def _get_media_batch_mode(whatsapp_action: Any = None) -> str:
     """Resolve media batch mode from BACKGROUND_PROCESSING and AWS_LAMBDA_FUNCTION_NAME.
 
@@ -84,7 +79,7 @@ def _get_media_batch_mode(whatsapp_action: Any = None) -> str:
     """
     if use_background_processing():
         return "async"
-    return "lambda" if _is_lambda_env() else "disabled"
+    return "lambda" if bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME")) else "disabled"
 
 
 def _invoke_lambda_async(
