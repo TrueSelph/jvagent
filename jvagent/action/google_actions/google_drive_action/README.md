@@ -1,11 +1,20 @@
 # Google Drive Action
 
-Exposes Google Drive operations (upload, list, share) via the Google Drive API using **OAuth 2.0** authentication.
+Manage Google Drive files and folders using OAuth 2.0 authentication. Supports uploading, listing, sharing, and deleting files with recursive folder traversal.
+
+## Features
+
+- **Upload files** from URL or base64 content
+- **List files** recursively with configurable depth
+- **Share files** via link or direct user access
+- **Delete files** from Google Drive
+- **Compare file changes** between snapshots
+- **Automatic token refresh** with secure caching
 
 ## Requirements
 
 - **Google Cloud project** with Drive API enabled
-- **OAuth 2.0 Client ID** configured (Web application or Desktop app)
+- **OAuth 2.0 Client ID** configured (Web application)
 - **Client Secrets JSON** downloaded from Google Cloud Console
 
 ## Configuration
@@ -14,9 +23,9 @@ Exposes Google Drive operations (upload, list, share) via the Google Drive API u
 | --------------------- | ------------------------------------------------------------------- | -------- |
 | `client_secrets_json` | OAuth2 Client Secrets JSON (string or object)                       | Yes      |
 | `redirect_uri`        | Redirect URI for OAuth2 flow (default: `urn:ietf:wg:oauth:2.0:oob`) | No       |
-| `default_parent_id`   | Default parent folder ID for uploads                                | No       |
+| `default_parent_id`   | Default parent folder ID for uploads (default: `root`)              | No       |
 
-## Agent wiring (agent.yaml)
+## Agent Configuration (agent.yaml)
 
 ```yaml
 - action: jvagent/google_drive_action
@@ -25,28 +34,36 @@ Exposes Google Drive operations (upload, list, share) via the Google Drive API u
     default_parent_id: ${GOOGLE_DRIVE_PARENT_FOLDER_ID}
 ```
 
-Set the variables in your `.env` file:
+Set environment variables in `.env`:
 
 ```env
-# Google web Oauth
-GOOGLE_CLIENT_SECRETS_JSON={"web":{"client_id":"433423825197.apps.googleusercontent.com","project_id":"jvagent","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_secret":"GOCSPX","redirect_uris":["https://9cc9-190-93-39-3.ngrok-free.app/api/google/callback/"]}}
-# Allow insecure transport for local testing if not using HTTPS locally
-OAUTHLIB_INSECURE_TRANSPORT = '1'
-# Allow scopes to change (if user doesn't grant all permissions)
-OAUTHLIB_RELAX_TOKEN_SCOPE = '1'
-GOOGLE_DRIVE_PARENT_FOLDER_ID = 1wjA2BC1APlkt3RMTHtotDOu
+# Google OAuth 2.0 Client Secrets (Web application)
+GOOGLE_CLIENT_SECRETS_JSON={"web":{"client_id":"YOUR_CLIENT_ID.apps.googleusercontent.com","project_id":"YOUR_PROJECT","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_secret":"YOUR_CLIENT_SECRET","redirect_uris":["https://YOUR_DOMAIN/api/google/callback/"]}}
 
+# Default parent folder ID for uploads
+GOOGLE_DRIVE_PARENT_FOLDER_ID=root
+
+# For local testing only (not recommended for production)
+OAUTHLIB_INSECURE_TRANSPORT=1
+OAUTHLIB_RELAX_TOKEN_SCOPE=1
 ```
 
-### Setup Instructions
+## Setup Instructions
 
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
-2. Select your project and navigate to **APIs & Services > Credentials**.
-3. Click **Create Credentials > OAuth client ID**.
-4. Choose **Web application** (or Desktop app).
-5. Add your authorized redirect URIs (e.g., `http://localhost:8080/` or `urn:ietf:wg:oauth:2.0:oob`).
-6. Click **Create**, then download the JSON containing your client secrets.
-7. Minify the downloaded JSON and paste it into `GOOGLE_CLIENT_SECRETS_JSON` in your `.env` file. Be sure to also configure the `GOOGLE_REDIRECT_URI` to exactly match what was configured in step 5. (https://console.cloud.google.com/apis/credentials)
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create or select a project
+3. Enable the **Google Drive API**:
+   - Navigate to **APIs & Services > Library**
+   - Search for "Google Drive API"
+   - Click **Enable**
+4. Create OAuth 2.0 credentials:
+   - Go to **APIs & Services > Credentials**
+   - Click **Create Credentials > OAuth client ID**
+   - Choose **Web application**
+   - Add authorized redirect URIs (e.g., `https://YOUR_DOMAIN/api/google/callback/`)
+   - Click **Create**
+5. Download the JSON credentials
+6. Minify the JSON and set as `GOOGLE_CLIENT_SECRETS_JSON` in `.env`
 
 ## Endpoints
 
@@ -57,13 +74,14 @@ GOOGLE_DRIVE_PARENT_FOLDER_ID = 1wjA2BC1APlkt3RMTHtotDOu
 | POST   | `/agents/{agent_id}/google_drive/upload`    | Upload file (from URL or base64 content)   |
 | GET    | `/agents/{agent_id}/google_drive/list`      | List files in a folder                     |
 | POST   | `/agents/{agent_id}/google_drive/share`     | Share file (get link or grant user access) |
+| DELETE | `/agents/{agent_id}/google_drive/delete`    | Delete a file                              |
 
-### Authorization Flow
+## Authorization Flow
 
-1. Call `GET /agents/{agent_id}/google_drive/auth_url` to receive the authorization URL.
-2. Direct the user to the URL to grant permissions.
-3. The user will receive an authorization code.
-4. Call `POST /agents/{agent_id}/google_drive/authorize` with the code to complete setup:
+1. Call `GET /agents/{agent_id}/google_drive/auth_url` to receive the authorization URL
+2. Direct the user to the URL to grant permissions
+3. The user will receive an authorization code
+4. Call `POST /agents/{agent_id}/google_drive/authorize` with the code:
 
 ```json
 POST /agents/{agent_id}/google_drive/authorize
@@ -72,57 +90,66 @@ POST /agents/{agent_id}/google_drive/authorize
 }
 ```
 
-_Note: Tokens are automatically cached securely using native action file storage (`token.json`). If tokens expire, they will be refreshed automatically if a refresh token was granted._
+Tokens are automatically cached securely using action file storage (`token.json`). Expired tokens are refreshed automatically if a refresh token was granted.
 
-### Upload
+## API Usage
 
-Provide either `source_url` (fetch from URL) or `content` (base64):
+### Upload File
+
+Upload from URL:
 
 ```json
 POST /agents/{agent_id}/google_drive/upload
 {
   "name": "document.pdf",
   "source_url": "https://example.com/file.pdf",
-  "parent_folder_id": "optional-override"
+  "parent_folder_id": "optional-folder-id"
 }
 ```
 
-Or with base64 content:
+Upload from base64 content:
 
 ```json
+POST /agents/{agent_id}/google_drive/upload
 {
   "name": "notes.txt",
   "content": "SGVsbG8gV29ybGQ=",
-  "mime_type": "text/plain"
+  "mime_type": "text/plain",
+  "parent_folder_id": "optional-folder-id"
 }
 ```
 
-### List
+### List Files
+
+List files in a folder with recursive traversal:
 
 ```http
-GET /agents/{agent_id}/google_drive/list?folder_id=root&page_size=20
+GET /agents/{agent_id}/google_drive/list?folder_id=root&depth=5&with_link=true
 ```
 
-Omit `folder_id` to use `default_parent_id` or root.
+Query parameters:
+- `folder_id`: Folder ID to list (default: `default_parent_id` or `root`)
+- `depth`: Recursion depth for nested folders (default: `5`)
+- `with_link`: Include shareable links in response (default: `false`)
 
-### Share
+### Share File
 
-Get shareable link (optionally make public):
+Get shareable link (make public):
 
 ```json
 POST /agents/{agent_id}/google_drive/share
 {
   "file_id": "1abc...",
   "share_type": "link",
-  "link_scope": "anyone"
+  "link_scope": "anyone",
+  "role": "reader"
 }
 ```
-
-`link_scope`: `anyone`, `domain`, `organization`, or omit for restricted (existing access only).
 
 Grant access to a user:
 
 ```json
+POST /agents/{agent_id}/google_drive/share
 {
   "file_id": "1abc...",
   "share_type": "user",
@@ -131,4 +158,82 @@ Grant access to a user:
 }
 ```
 
-`role`: `reader`, `writer`, `commenter`.
+Parameters:
+- `link_scope`: `anyone`, `domain`, `organization` (for link sharing)
+- `role`: `reader`, `writer`, `commenter`
+
+### Delete File
+
+```json
+DELETE /agents/{agent_id}/google_drive/delete
+{
+  "file_id": "1abc..."
+}
+```
+
+## Response Examples
+
+### Upload Response
+
+```json
+{
+  "id": "1abc123xyz",
+  "name": "document.pdf"
+}
+```
+
+### List Response
+
+```json
+{
+  "files": [
+    {
+      "id": "1folder123",
+      "name": "My Folder",
+      "mimeType": "application/vnd.google-apps.folder",
+      "createdTime": "2026-03-10T10:00:00Z",
+      "modifiedTime": "2026-03-10T10:00:00Z",
+      "url": "https://drive.google.com/drive/folders/1folder123",
+      "files": [
+        {
+          "id": "1file456",
+          "name": "document.pdf",
+          "mimeType": "application/pdf",
+          "createdTime": "2026-03-10T11:00:00Z",
+          "modifiedTime": "2026-03-10T11:00:00Z",
+          "url": "https://drive.google.com/file/d/1file456/view"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Share Response
+
+```json
+{
+  "webViewLink": "https://drive.google.com/file/d/1abc123xyz/view?usp=sharing"
+}
+```
+
+## Error Handling
+
+Common errors and solutions:
+
+| Error | Cause | Solution |
+| ----- | ----- | -------- |
+| `invalid_grant` | Authorization code expired or invalid | Request a new authorization URL |
+| `insufficient_permissions` | Scopes not granted | Re-authorize with proper scopes |
+| `notFound` | File or folder doesn't exist | Verify the file/folder ID |
+| `forbidden` | No access to file/folder | Check permissions in Google Drive |
+
+## Best Practices
+
+- Store credentials securely in environment variables
+- Use `default_parent_id` to organize uploads
+- Implement pagination for large file lists
+- Cache authorization tokens to reduce API calls
+- Monitor API quota usage in Google Cloud Console
+- Use appropriate `mime_type` for uploads
+- Test with a service account for production automation

@@ -30,7 +30,7 @@ async def _get_sheets_action(action_id: str) -> Optional[GoogleSheetsAction]:
 
 
 @endpoint(
-    "/actions/{action_id}/google_sheets/read",
+    "/actions/{action_id}/read",
     methods=["GET"],
     auth=True,
     roles=["admin"],
@@ -107,7 +107,7 @@ async def read_sheets(
 
 
 @endpoint(
-    "/actions/{action_id}/google_sheets/update",
+    "/actions/{action_id}/update",
     methods=["POST"],
     auth=True,
     roles=["admin"],
@@ -196,7 +196,7 @@ async def update_sheets(
 
 
 @endpoint(
-    "/actions/{action_id}/google_sheets/append",
+    "/actions/{action_id}/append",
     methods=["POST"],
     auth=True,
     roles=["admin"],
@@ -288,7 +288,7 @@ async def append_sheets(
 
 
 @endpoint(
-    "/actions/{action_id}/google_sheets/create",
+    "/actions/{action_id}/create",
     methods=["POST"],
     auth=True,
     roles=["admin"],

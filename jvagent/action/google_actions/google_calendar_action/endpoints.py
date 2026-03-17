@@ -30,7 +30,7 @@ async def _get_calendar_action(action_id: str) -> Optional[GoogleCalendarAction]
 
 
 @endpoint(
-    "/actions/{action_id}/google_calendar/list",
+    "/actions/{action_id}/list",
     methods=["GET"],
     auth=True,
     roles=["admin"],
@@ -106,7 +106,7 @@ async def list_calendar_events(
 
 
 @endpoint(
-    "/actions/{action_id}/google_calendar/create",
+    "/actions/{action_id}/create",
     methods=["POST"],
     auth=True,
     roles=["admin"],
@@ -196,7 +196,7 @@ async def create_calendar_event(
 
 
 @endpoint(
-    "/actions/{action_id}/google_calendar/delete",
+    "/actions/{action_id}/delete",
     methods=["DELETE"],
     auth=True,
     roles=["admin"],

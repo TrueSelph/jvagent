@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict, List
 
 from jvspatial.core import Node
@@ -40,4 +41,9 @@ class GoogleToken(Node):
         indexed=True,
         default_factory=str,
         description="ID of the agent this token belongs to",
+    )
+
+    expiry: datetime = attribute(
+        default_factory=datetime,
+        description="Token expiry timestamp",
     )
