@@ -21,11 +21,11 @@ ERROR RECOVERY:
 - Timer tasks are cancelled on batch removal to prevent orphaned tasks
 - Per-user locks prevent race conditions during batch operations
 
-BATCH MODES (WHATSAPP_MEDIA_BATCH_MODE or media_batch_mode attribute):
-- async: In-memory batching with background timer tasks (long-running servers).
-- disabled: No batching; each media processed inline immediately.
-- lambda: Persistent batching via MongoDB + Lambda async invoke. Supports self-invoke:
-  the main Lambda invokes itself; LWA routes direct-invoke payloads to
+BATCH MODES (derived from BACKGROUND_PROCESSING + AWS_LAMBDA_FUNCTION_NAME):
+- async: In-memory batching with background timer tasks. When BACKGROUND_PROCESSING=true.
+- disabled: No batching; each media processed inline. When BACKGROUND_PROCESSING=false and not Lambda.
+- lambda: Persistent batching via MongoDB + Lambda async invoke. When BACKGROUND_PROCESSING=false and
+  AWS_LAMBDA_FUNCTION_NAME is set. Supports self-invoke; LWA routes direct-invoke payloads to
   POST /api/_internal/whatsapp/batch via AWS_LWA_PASS_THROUGH_PATH.
 """
 
@@ -36,12 +36,12 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
+from jvspatial.async_utils import create_background_task
+from jvspatial.config import use_background_processing
 from jvspatial.db import get_prime_database
 from jvspatial.exceptions import DatabaseError
 
 from jvagent.core.agent import Agent
-
-from .task_helpers import create_background_task
 
 logger = logging.getLogger(__name__)
 
@@ -73,40 +73,18 @@ def _is_lambda_env() -> bool:
     return bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
 
 
-def _get_media_batch_mode(whatsapp_action: Any) -> str:
-    """Resolve media batch mode: env > app config > action attribute > default.
+def _get_media_batch_mode(whatsapp_action: Any = None) -> str:
+    """Resolve media batch mode from BACKGROUND_PROCESSING and AWS_LAMBDA_FUNCTION_NAME.
 
-    On Lambda (AWS_LAMBDA_FUNCTION_NAME set), defaults to 'disabled' when unset,
-    since 'async' uses background tasks that never run after Lambda freezes.
+    - BACKGROUND_PROCESSING=true -> async (in-memory batching with background tasks)
+    - BACKGROUND_PROCESSING=false + Lambda -> lambda (persistent batching via MongoDB + Lambda)
+    - BACKGROUND_PROCESSING=false + not Lambda -> disabled (inline, no batching)
+
+    The whatsapp_action parameter is ignored; kept for backward compatibility with call sites.
     """
-    mode = os.environ.get("WHATSAPP_MEDIA_BATCH_MODE", "").strip().lower()
-    if mode in ("async", "disabled", "lambda"):
-        return mode
-    try:
-        from jvagent.core.app_context import get_app_root
-        from jvagent.core.app_loader import AppLoader
-
-        loader = AppLoader(get_app_root())
-        descriptor = loader.load_app_descriptor()
-        if descriptor and descriptor.config:
-            whatsapp_config = descriptor.config.get("whatsapp", {})
-            if isinstance(whatsapp_config, dict):
-                app_mode = whatsapp_config.get("media_batch_mode")
-                if app_mode and str(app_mode).lower() in (
-                    "async",
-                    "disabled",
-                    "lambda",
-                ):
-                    return str(app_mode).lower()
-    except Exception:
-        pass
-    action_mode = getattr(whatsapp_action, "media_batch_mode", None)
-    if action_mode and str(action_mode).lower() in ("async", "disabled", "lambda"):
-        return str(action_mode).lower()
-    # On Lambda, default to disabled (async uses background tasks that freeze)
-    if _is_lambda_env():
-        return "disabled"
-    return "async"
+    if use_background_processing():
+        return "async"
+    return "lambda" if _is_lambda_env() else "disabled"
 
 
 def _invoke_lambda_async(
@@ -660,12 +638,12 @@ async def process_persistent_batch(
 
     Called by the batch handler Lambda. Sleeps until process_at (or
     media_batch_window if process_at not provided) before claiming the batch.
-    Only runs when WHATSAPP_MEDIA_BATCH_MODE=lambda and JVSPATIAL_DB_TYPE=mongodb.
+    Only runs when in lambda mode (BACKGROUND_PROCESSING=false + AWS_LAMBDA_FUNCTION_NAME)
+    and JVSPATIAL_DB_TYPE=mongodb.
 
     Returns True if a batch was found and processed, False otherwise.
     """
-    mode = os.environ.get("WHATSAPP_MEDIA_BATCH_MODE", "").strip().lower()
-    if mode != "lambda":
+    if _get_media_batch_mode() != "lambda":
         return False
     if os.environ.get("JVSPATIAL_DB_TYPE") != "mongodb":
         return False

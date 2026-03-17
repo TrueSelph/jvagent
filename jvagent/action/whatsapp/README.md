@@ -263,11 +263,8 @@ APP_BASE_URL=https://your-app.com
 # Minimum value: 5 seconds
 WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS=120
 
-# Media Batch Mode (optional)
-# async: Long-running servers (default). Uses background tasks - NOT suitable for Lambda.
-# disabled: Each media processed inline. Default on Lambda when unset.
-# lambda: MongoDB + Lambda invoke. Requires JVSPATIAL_DB_TYPE=mongodb and WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION.
-WHATSAPP_MEDIA_BATCH_MODE=disabled
+# Media batch mode is derived from BACKGROUND_PROCESSING (see jvspatial config).
+# Lambda: auto-disabled -> lambda mode when MongoDB + WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION configured.
 
 # Skip Startup Registration (optional, for Lambda)
 # Set to true to skip session registration on cold start; use POST /api/actions/{action_id}/session/register manually
@@ -338,15 +335,13 @@ When enabled, WhatsAppAction contributes capabilities to PersonaAction via `get_
 
 ### Media Batch Mode
 
-Media batching controls how multiple images/files sent at once are processed. Configure via `WHATSAPP_MEDIA_BATCH_MODE` env var or `config.whatsapp.media_batch_mode` in app.yaml.
+Media batch mode is derived from `BACKGROUND_PROCESSING` and `AWS_LAMBDA_FUNCTION_NAME`:
 
-**Lambda auto-detection:** When running on AWS Lambda (`AWS_LAMBDA_FUNCTION_NAME` set) and `WHATSAPP_MEDIA_BATCH_MODE` is unset, the action defaults to `disabled`. The `async` mode uses background tasks that never run after Lambda freezes the execution context.
-
-| Mode | Use case | Behavior |
-|------|----------|----------|
-| **async** | Long-running server (default) | In-memory batching with background timer. All media waits `media_batch_window` to coalesce; then one interact call with all items. Single image also waits the window. **Not suitable for Lambda.** |
-| **disabled** | Lambda without MongoDB, or no batching desired | Each media processed inline immediately. No batching. **Default on Lambda when unset.** |
-| **lambda** | Lambda + MongoDB + batch processor | Persistent batching: store in MongoDB, invoke batch processor async. Single media also waits `media_batch_window` (no inline shortcut) so rapid multi-media coalesce. Requires `JVSPATIAL_DB_TYPE=mongodb` and `WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION`. |
+| Mode | Condition | Behavior |
+|------|-----------|----------|
+| **async** | `BACKGROUND_PROCESSING=true` | In-memory batching with background timer. All media waits `media_batch_window` to coalesce; then one interact call with all items. **Default for long-running servers.** |
+| **disabled** | `BACKGROUND_PROCESSING=false` and not Lambda | Each media processed inline immediately. No batching. |
+| **lambda** | `BACKGROUND_PROCESSING=false` and `AWS_LAMBDA_FUNCTION_NAME` set | Persistent batching: store in MongoDB, invoke batch processor async. Requires `JVSPATIAL_DB_TYPE=mongodb` and `WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION`. |
 
 #### Lambda mode: self-invoke (recommended)
 
@@ -357,7 +352,7 @@ The main Lambda can handle both HTTP (webhook) and batch events without a second
 ```yaml
 lambda:
   environment:
-    WHATSAPP_MEDIA_BATCH_MODE: "lambda"
+    # BACKGROUND_PROCESSING is auto-disabled on Lambda (AWS_LAMBDA_FUNCTION_NAME set)
     WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION: "{{app.name}}"  # Self-invoke (e.g. jvagent-iris)
     AWS_LWA_PASS_THROUGH_PATH: "/api/_internal/whatsapp/batch"
 ```
@@ -367,20 +362,6 @@ lambda:
 - **IAM**: The Lambda role needs `lambda:InvokeFunction` on its own ARN (self-invoke).
 
 **Flow**: Webhook adds media to MongoDB → `_invoke_lambda_async` invokes the same Lambda with `InvocationType="Event"` → LWA POSTs the payload to `/api/_internal/whatsapp/batch` → `whatsapp_batch_invoke` runs `process_persistent_batch`.
-
-**Configuration** (priority: env > app.yaml > action attribute > default):
-
-```bash
-# Environment variable
-WHATSAPP_MEDIA_BATCH_MODE=async
-```
-
-```yaml
-# app.yaml
-config:
-  whatsapp:
-    media_batch_mode: async  # async | disabled | lambda
-```
 
 ## Lambda Deployment
 
@@ -399,16 +380,16 @@ For AWS Lambda deployments, configure the following:
 
 | Variable | Description |
 |----------|-------------|
-| `WHATSAPP_MEDIA_BATCH_MODE` | `disabled` (default when unset) or `lambda`. Do not use `async` on Lambda. |
+| `BACKGROUND_PROCESSING` | Auto-disabled on Lambda (`AWS_LAMBDA_FUNCTION_NAME` set). Media batch mode: `lambda` when disabled + Lambda. |
 | `JVSPATIAL_FILE_INTERFACE` | Set to `s3` for media storage. Local storage fails on Lambda (read-only `/var/task`). |
-| `JVSPATIAL_DB_TYPE` | Must be `mongodb` when using `media_batch_mode=lambda` |
+| `JVSPATIAL_DB_TYPE` | Must be `mongodb` when using lambda media batch mode |
 | `WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION` | Lambda function name for batch processing (self-invoke: use main Lambda name) |
 | `AWS_LWA_PASS_THROUGH_PATH` | Route direct-invoke payloads to batch handler: `/api/_internal/whatsapp/batch` |
 | `WHATSAPP_SKIP_STARTUP_REGISTRATION` | Set to `true` to skip session registration on cold start; use manual endpoint instead |
 
 ### LWA (Lambda Web Adapter) Configuration
 
-When using `media_batch_mode=lambda` with self-invoke, LWA must route direct-invoke payloads to the batch endpoint. Set `AWS_LWA_PASS_THROUGH_PATH=/api/_internal/whatsapp/batch` in the Lambda environment. Without this, LWA defaults to `/events` and the batch handler is never reached.
+When using lambda media batch mode (auto-enabled when `BACKGROUND_PROCESSING` is false and on Lambda), LWA must route direct-invoke payloads to the batch endpoint. Set `AWS_LWA_PASS_THROUGH_PATH=/api/_internal/whatsapp/batch` in the Lambda environment. Without this, LWA defaults to `/events` and the batch handler is never reached.
 
 ### IAM Permissions
 

@@ -92,12 +92,6 @@ class WhatsAppAction(Action):
         le=30.0,
     )
 
-    media_batch_mode: str = attribute(
-        default="async",
-        description="Media batching mode: async (in-memory + background tasks), disabled (inline, no batching), lambda (MongoDB + Lambda invoke)",
-        pattern=r"^(async|disabled|lambda)$",
-    )
-
     ignore_list: List[str] = attribute(
         default_factory=lambda: ["status@broadcast"],
         description="Keywords to block: messages from senders or to receivers containing any keyword are ignored. Default includes status@broadcast to ignore WhatsApp status updates.",
@@ -144,14 +138,6 @@ class WhatsAppAction(Action):
             if env_api_key:
                 self.api_key = env_api_key
                 logger.debug("Using WHATSAPP_API_KEY from environment")
-
-        # Media batch mode
-        env_mode = os.environ.get("WHATSAPP_MEDIA_BATCH_MODE", "").strip().lower()
-        if env_mode in ("async", "disabled", "lambda"):
-            self.media_batch_mode = env_mode
-            logger.debug(
-                f"Using WHATSAPP_MEDIA_BATCH_MODE from environment: {env_mode}"
-            )
 
         # Application Base URL
         if not self.base_url or not self.base_url.strip():

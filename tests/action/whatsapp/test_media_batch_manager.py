@@ -20,41 +20,39 @@ except ImportError as e:
 
 
 class TestMediaBatchManagerModeResolution:
-    """Tests for _get_media_batch_mode resolver."""
+    """Tests for _get_media_batch_mode resolver.
 
-    @pytest.fixture
-    def mock_action(self):
-        action = MagicMock()
-        action.media_batch_mode = "async"
-        return action
+    Mode is derived from BACKGROUND_PROCESSING and AWS_LAMBDA_FUNCTION_NAME:
+    - BACKGROUND_PROCESSING=true -> async
+    - BACKGROUND_PROCESSING=false + Lambda -> lambda
+    - BACKGROUND_PROCESSING=false + not Lambda -> disabled
+    """
 
-    def test_env_var_takes_priority(self, mock_action):
-        """WHATSAPP_MEDIA_BATCH_MODE env var overrides action attribute."""
-        with patch.dict(os.environ, {"WHATSAPP_MEDIA_BATCH_MODE": "disabled"}):
-            assert _get_media_batch_mode(mock_action) == "disabled"
-        with patch.dict(os.environ, {"WHATSAPP_MEDIA_BATCH_MODE": "lambda"}):
-            assert _get_media_batch_mode(mock_action) == "lambda"
+    def test_async_when_background_processing_true(self):
+        """BACKGROUND_PROCESSING=true -> async mode."""
+        with patch.dict(os.environ, {"BACKGROUND_PROCESSING": "true"}):
+            os.environ.pop("AWS_LAMBDA_FUNCTION_NAME", None)
+            assert _get_media_batch_mode() == "async"
 
-    def test_action_attribute_when_env_unset(self, mock_action):
-        """Action media_batch_mode used when env not set or invalid."""
-        with patch.dict(os.environ, {"WHATSAPP_MEDIA_BATCH_MODE": ""}):
-            mock_action.media_batch_mode = "disabled"
-            assert _get_media_batch_mode(mock_action) == "disabled"
-            mock_action.media_batch_mode = "lambda"
-            assert _get_media_batch_mode(mock_action) == "lambda"
+    def test_lambda_when_background_processing_false_and_on_lambda(self):
+        """BACKGROUND_PROCESSING=false + AWS_LAMBDA_FUNCTION_NAME -> lambda mode."""
+        with patch.dict(
+            os.environ,
+            {"BACKGROUND_PROCESSING": "false", "AWS_LAMBDA_FUNCTION_NAME": "my-func"},
+        ):
+            assert _get_media_batch_mode() == "lambda"
 
-    def test_default_async_when_no_config(self):
-        """Default is async when env and action have no valid mode."""
-        action = MagicMock()
-        action.media_batch_mode = None
-        with patch.dict(os.environ, {"WHATSAPP_MEDIA_BATCH_MODE": ""}):
-            assert _get_media_batch_mode(action) == "async"
+    def test_disabled_when_background_processing_false_and_not_lambda(self):
+        """BACKGROUND_PROCESSING=false + not Lambda -> disabled mode."""
+        with patch.dict(os.environ, {"BACKGROUND_PROCESSING": "false"}):
+            os.environ.pop("AWS_LAMBDA_FUNCTION_NAME", None)
+            assert _get_media_batch_mode() == "disabled"
 
-    def test_invalid_env_ignored(self, mock_action):
-        """Invalid env value falls through to action or default."""
-        with patch.dict(os.environ, {"WHATSAPP_MEDIA_BATCH_MODE": "invalid"}):
-            mock_action.media_batch_mode = "lambda"
-            assert _get_media_batch_mode(mock_action) == "lambda"
+    def test_lambda_default_when_unset_and_on_lambda(self):
+        """When BACKGROUND_PROCESSING unset and on Lambda, use_background_processing() is False -> lambda."""
+        with patch.dict(os.environ, {"AWS_LAMBDA_FUNCTION_NAME": "my-func"}):
+            os.environ.pop("BACKGROUND_PROCESSING", None)
+            assert _get_media_batch_mode() == "lambda"
 
 
 class TestMediaBatchManagerProcessSingleMediaInline:
@@ -105,7 +103,6 @@ class TestMediaBatchManagerAsyncBatching:
     @pytest.fixture
     def mock_action(self):
         action = MagicMock()
-        action.media_batch_mode = "async"
         action.media_batch_window = 0.15  # Short window for fast test
         return action
 
@@ -114,7 +111,8 @@ class TestMediaBatchManagerAsyncBatching:
         self, batch_manager, mock_action
     ):
         """Multiple media arriving within batch window result in one _process_batch_internal call."""
-        with patch.dict(os.environ, {"WHATSAPP_MEDIA_BATCH_MODE": "async"}):
+        with patch.dict(os.environ, {"BACKGROUND_PROCESSING": "true"}):
+            os.environ.pop("AWS_LAMBDA_FUNCTION_NAME", None)
             with patch.object(
                 MediaBatchManager,
                 "_process_batch_internal",

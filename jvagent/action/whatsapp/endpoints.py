@@ -2,13 +2,14 @@
 
 import json
 import logging
-import os
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException, Request
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError
+from jvspatial.async_utils import create_background_task
+from jvspatial.config import use_background_processing
 from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.core.agent import Agent
@@ -25,7 +26,6 @@ from .utils.endpoint_helpers import (
     normalize_result,
 )
 from .utils.media_batch_manager import process_persistent_batch
-from .utils.task_helpers import create_background_task
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
     (including response generation and WhatsApp send) before returning the HTTP response.
     This ensures the interaction completes before Lambda freezes the execution context.
 
-    Set WHATSAPP_WEBHOOK_ASYNC=true to use background task mode (for long-running servers).
+    Set BACKGROUND_PROCESSING=true to use background task mode (for long-running servers).
 
     Args:
         request: FastAPI request object
@@ -184,15 +184,10 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             return {"status": "ignored", "response": "Utterance too long."}
 
         # Check if webhook should run in async mode (background task)
-        # Default is False (synchronous) for Lambda compatibility.
-        # On Lambda, never use background tasks - they never run after context freezes.
-        use_async_mode = os.environ.get(
-            "WHATSAPP_WEBHOOK_ASYNC", "false"
-        ).lower() == "true" and not os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
-
-        if use_async_mode:
+        # use_background_processing() returns False for Lambda, True for long-running servers.
+        if use_background_processing():
             # Async mode: Return immediately with 200 OK and process in background
-            # Falls back to sync when JVSPATIAL_BACKGROUND_TASKS is false
+            # Falls back to sync when BACKGROUND_PROCESSING is false
             logger.debug(f"Processing interaction asynchronously for {sender}")
             task = create_background_task(
                 _process_interaction_async(
