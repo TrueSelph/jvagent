@@ -3,7 +3,7 @@
 Uses PageIndex graph with LLM-based tree search (default) or text filtering.
 No embeddings, no vector store.
 """
-
+import copy
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -213,6 +213,9 @@ class PageIndexRetrievalInteractAction(InteractAction):
         description="When True, render numbered source references with page numbers and "
         "document URLs in the directive. Set False to disable and save tokens.",
     )
+    user_groups: Dict[str, List[str]] = attribute(
+        default_factory=dict, description="Add user groups to use document filter. group to user ids."
+    )
 
     def _resolve_collection(self) -> str:
         """Resolve collection name from attribute, config, or agent_id."""
@@ -266,6 +269,18 @@ class PageIndexRetrievalInteractAction(InteractAction):
             doc_name = self.doc_name or cfg.get("doc_name")
             collection_name = self._resolve_collection()
             metadata_filter = self.metadata_filter or cfg.get("metadata_filter")
+
+            # apply user group filter
+            if self.user_groups:
+                metadata_filter = copy.deepcopy(self.metadata_filter)
+                if self.user_groups:
+                    for group, users in self.user_groups.items():
+                        if visitor.user_id in users:
+                            if isinstance(metadata_filter, Dict) and "access" in metadata_filter:
+                                metadata_filter["access"].append(group)
+                            else:
+                                metadata_filter = {"access": [group]}
+
             max_summary_chars = (
                 cfg.get("max_summary_chars")
                 if cfg.get("max_summary_chars") is not None
