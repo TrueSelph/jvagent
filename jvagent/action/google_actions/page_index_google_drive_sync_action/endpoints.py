@@ -22,16 +22,14 @@ async def _get_page_index_google_drive_sync_action(
     if not action:
         raise ResourceNotFoundError(
             message=(
-                f"PageIndexGoogleDriveSyncAction with ID "
-                f"'{action_id}' not found"
+                f"PageIndexGoogleDriveSyncAction with ID " f"'{action_id}' not found"
             ),
             details={"action_id": action_id},
         )
     if not isinstance(action, PageIndexGoogleDriveSyncAction):
         raise ValidationError(
             message=(
-                f"Action '{action_id}' is not a "
-                f"PageIndexGoogleDriveSyncAction"
+                f"Action '{action_id}' is not a " f"PageIndexGoogleDriveSyncAction"
             ),
             details={"action_id": action_id},
         )

@@ -82,6 +82,95 @@ def _get_media_batch_mode(whatsapp_action: Any = None) -> str:
     return "lambda" if bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME")) else "disabled"
 
 
+def _get_lambda_client():
+    """Lazy singleton for boto3 Lambda client (avoids per-invoke creation overhead)."""
+    if _lambda_client_cache[0] is None:
+        import boto3
+
+        _lambda_client_cache[0] = boto3.client("lambda")
+    return _lambda_client_cache[0]
+
+
+# Module-level cache for Lambda client; boto3 clients are thread-safe
+_lambda_client_cache: List[Optional[Any]] = [None]
+_scheduler_client_cache: List[Optional[Any]] = [None]
+
+
+def _get_scheduler_client():
+    """Lazy singleton for boto3 EventBridge Scheduler client."""
+    if _scheduler_client_cache[0] is None:
+        import boto3
+
+        _scheduler_client_cache[0] = boto3.client("scheduler")
+    return _scheduler_client_cache[0]
+
+
+def _create_eventbridge_schedule(
+    sender: str,
+    media_batch_window: float,
+    process_at: float,
+) -> bool:
+    """Create one-time EventBridge schedule to invoke batch Lambda at process_at.
+
+    Avoids in-Lambda sleep (billed time). Returns True on success.
+    Requires WHATSAPP_EVENTBRIDGE_SCHEDULER_ENABLED=true and WHATSAPP_EVENTBRIDGE_ROLE_ARN.
+    """
+    import re
+
+    if os.environ.get("WHATSAPP_EVENTBRIDGE_SCHEDULER_ENABLED", "").lower() != "true":
+        return False
+    role_arn = os.environ.get("WHATSAPP_EVENTBRIDGE_ROLE_ARN", "").strip()
+    lambda_arn = os.environ.get("WHATSAPP_EVENTBRIDGE_LAMBDA_ARN", "").strip()
+    if not lambda_arn:
+        func_name = os.environ.get(
+            "WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION", ""
+        ).strip()
+        if func_name:
+            region = os.environ.get("AWS_REGION", "us-east-1")
+            account = os.environ.get("AWS_ACCOUNT_ID", "")
+            if account:
+                lambda_arn = f"arn:aws:lambda:{region}:{account}:function:{func_name}"
+    if not role_arn or not lambda_arn:
+        return False
+    try:
+        from datetime import datetime, timezone
+
+        client = _get_scheduler_client()
+        schedule_group = os.environ.get(
+            "WHATSAPP_EVENTBRIDGE_SCHEDULER_GROUP", "default"
+        ).strip()
+        # Sanitize sender for schedule name (alphanumeric, hyphen, underscore)
+        safe_sender = re.sub(r"[^a-zA-Z0-9_-]", "_", sender)[:32]
+        name = f"wa-batch-{safe_sender}-{int(process_at * 1000)}"
+        at_time = datetime.fromtimestamp(process_at, tz=timezone.utc)
+        schedule_expr = f"at({at_time.strftime('%Y-%m-%dT%H:%M:%S')})"
+        payload = json.dumps(
+            {"sender": sender, "media_batch_window": media_batch_window}
+        )
+        client.create_schedule(
+            Name=name,
+            GroupName=schedule_group,
+            ScheduleExpression=schedule_expr,
+            ScheduleExpressionTimezone="UTC",
+            FlexibleTimeWindow={"Mode": "OFF"},
+            Target={
+                "Arn": lambda_arn,
+                "RoleArn": role_arn,
+                "Input": payload,
+            },
+            ActionAfterCompletion="DELETE",
+        )
+        logger.info(
+            f"Created EventBridge schedule for sender {sender} at {schedule_expr}"
+        )
+        return True
+    except Exception as e:
+        logger.warning(
+            f"EventBridge schedule failed for {sender}, falling back to Lambda invoke: {e}"
+        )
+        return False
+
+
 def _invoke_lambda_async(
     sender: str,
     media_batch_window: float,
@@ -95,9 +184,12 @@ def _invoke_lambda_async(
         )
         return
     try:
-        import boto3
-
-        client = boto3.client("lambda")
+        # Prefer EventBridge Scheduler when process_at set (avoids billed sleep time)
+        if process_at is not None and _create_eventbridge_schedule(
+            sender, media_batch_window, process_at
+        ):
+            return
+        client = _get_lambda_client()
         payload_dict: Dict[str, Any] = {
             "sender": sender,
             "media_batch_window": media_batch_window,

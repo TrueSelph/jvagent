@@ -632,8 +632,10 @@ async def _process_interaction_async(
         agent_id: Agent ID
         agent: Agent instance
     """
+    whatsapp_action = None
     try:
         # Ensure WhatsApp adapter is registered (lazy init for Lambda cold start)
+        # Fetch once and reuse for adapter, tts check, and walker creation
         whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
         if whatsapp_action:
             adapter_ready = await whatsapp_action.ensure_adapter_registered()
@@ -655,8 +657,7 @@ async def _process_interaction_async(
         data_dict["whatsapp_payload"] = _convert_message_payload_to_dict(data)
         is_group = is_group or data_dict["whatsapp_payload"].get("isGroup", False)
 
-        # When user sends PTT and TTS is configured, respond with voice
-        whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
+        # When user sends PTT and TTS is configured, respond with voice (reuse whatsapp_action)
         if (
             data_dict["whatsapp_payload"].get("message_type") == "ptt"
             and whatsapp_action

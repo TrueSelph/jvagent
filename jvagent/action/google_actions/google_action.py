@@ -1,7 +1,7 @@
-from datetime import datetime
 import json
 import logging
 import os
+from datetime import datetime
 from typing import Any, ClassVar, Dict, List, Optional, Union
 
 from google.auth.transport.requests import Request
@@ -29,7 +29,7 @@ class GoogleAction(Action):
         description="The redirect URI used in the OAuth2 flow.",
     )
     _built_service: Optional[Any] = None
-    
+
     # These must be overridden by subclasses
     API_SERVICE_NAME: ClassVar[str] = ""
     API_VERSION: ClassVar[str] = ""
@@ -56,18 +56,23 @@ class GoogleAction(Action):
             creds = await self._get_credentials()
 
             # 3. Build the actual service object
-            logger.warning(f"Building Google {self.API_SERVICE_NAME} service for {self.id}")
+            logger.warning(
+                f"Building Google {self.API_SERVICE_NAME} service for {self.id}"
+            )
             self._built_service = build(
                 self.API_SERVICE_NAME,
                 self.API_VERSION,
                 credentials=creds,
-                static_discovery=False
+                static_discovery=False,
             )
-            
+
             return self._built_service
 
         except Exception as e:
-            logger.error(f"Error building Google {self.API_SERVICE_NAME} service: {e}", exc_info=True)
+            logger.error(
+                f"Error building Google {self.API_SERVICE_NAME} service: {e}",
+                exc_info=True,
+            )
             self._built_service = None
             raise
 
@@ -81,12 +86,12 @@ class GoogleAction(Action):
     #     try:
     #         if self.google_service:
     #             return self.google_service
-            
+
     #         logger.warning(f"Building Google {self.API_SERVICE_NAME} service for {self.id}")
     #         self.google_service = await self._get_credentials()
 
     #         return build(self.API_SERVICE_NAME, self.API_VERSION, credentials=self.google_service, static_discovery=False)
-            
+
     #     except Exception as e:
     #         logger.error(
     #             f"Error building Google {self.API_SERVICE_NAME} service: {e}",
@@ -180,7 +185,11 @@ class GoogleAction(Action):
                     "client_id": token_node.client_id,
                     "client_secret": token_node.client_secret,
                     "scopes": token_node.scopes,
-                    "expiry": token_node.expiry.isoformat() if isinstance(token_node.expiry, datetime) else token_node.expiry
+                    "expiry": (
+                        token_node.expiry.isoformat()
+                        if isinstance(token_node.expiry, datetime)
+                        else token_node.expiry
+                    ),
                 }
                 creds = Credentials.from_authorized_user_info(token_info, self.SCOPES)
             except Exception as e:
@@ -210,7 +219,7 @@ class GoogleAction(Action):
                         f"Expiry: {creds.expiry}\n"
                         "----"
                     )
-                        
+
                     await self._save_credentials(creds)
                 except Exception as e:
                     logger.error(f"Failed to refresh credentials for {self.id}: {e}")
@@ -235,7 +244,7 @@ class GoogleAction(Action):
             "client_secret": creds.client_secret,
             "scopes": creds.scopes,
             "agent_id": self.agent_id,
-            "expiry": creds.expiry.isoformat() if creds.expiry else None
+            "expiry": creds.expiry.isoformat() if creds.expiry else None,
         }
 
         # Update existing token or create new one
