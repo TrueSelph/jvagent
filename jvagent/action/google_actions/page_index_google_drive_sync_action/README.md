@@ -127,7 +127,7 @@ Parameters:
    - **Added**: New files to ingest
    - **Modified**: Files with changes to re-ingest
    - **Removed**: Files deleted from Drive
-3. **Document Ingestion**: 
+3. **Document Ingestion**:
    - Downloads files from Google Drive
    - Extracts text and generates embeddings
    - Stores in PageIndex collection with metadata

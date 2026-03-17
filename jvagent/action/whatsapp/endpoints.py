@@ -1,5 +1,6 @@
 """WhatsApp Action Endpoints."""
 
+import asyncio
 import json
 import logging
 from typing import Any, Dict, List, Optional
@@ -118,12 +119,21 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         sender_name = data.sender_name
 
         access_control_action = await agent.get_action_by_type("AccessControlAction")
-        if access_control_action:
-            has_access = await access_control_action.has_action_access(
-                user_id=sender, action_label="WhatsAppAction", channel="whatsapp"
-            )
-            if not has_access:
-                return {"status": "received", "response": "Access denied"}
+
+        # Run access check and directed-message check in parallel
+        async def _check_access():
+            if access_control_action:
+                return await access_control_action.has_action_access(
+                    user_id=sender, action_label="WhatsAppAction", channel="whatsapp"
+                )
+            return True
+
+        has_access, direct_message = await asyncio.gather(
+            _check_access(),
+            is_directed_message(whatsapp_action, data),
+        )
+        if not has_access:
+            return {"status": "received", "response": "Access denied"}
 
         # Validate sender
         if (
@@ -134,17 +144,15 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         ):
             return {"status": "ignored", "response": "Sender blocked"}
 
-        direct_message = await is_directed_message(whatsapp_action, data)
         if not direct_message:
             return {"status": "ignored", "response": "Not directed message"}
 
-        # Flush pending media batch if stale (lambda mode safety net)
-        await _batch_manager.flush_pending_batch_if_stale(
-            sender, whatsapp_action.media_batch_window, whatsapp_action
-        )
-
         # Check if this is a media message
         if data.message_type in ["image", "document", "video", "audio"] and data.media:
+            # Flush pending media batch if stale (lambda mode safety net)
+            await _batch_manager.flush_pending_batch_if_stale(
+                sender, whatsapp_action.media_batch_window, whatsapp_action
+            )
             return await _handle_media_message(
                 data, sender, agent_id, whatsapp_action, utterance
             )
