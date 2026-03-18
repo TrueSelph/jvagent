@@ -4,6 +4,7 @@ This module contains helper functions used by WhatsApp endpoints for processing
 messages, creating walkers, handling media, and managing interactions.
 """
 
+import asyncio
 import base64
 import logging
 import re
@@ -725,11 +726,15 @@ async def is_directed_message(action_node: WhatsAppAction, data: Any) -> bool:
 
     receiver = data.receiver.split("@")[0]
 
-    for tagged_id in matches:
-        if action_node.provider == "wwebjs":
-            tagged_id = await action_node.api().convert_lid_to_phone_number(tagged_id)
+    if action_node.provider == "wwebjs":
+        tagged_phones = await asyncio.gather(
+            *[action_node.api().convert_lid_to_phone_number(tid) for tid in matches]
+        )
+    else:
+        tagged_phones = matches
 
-        if tagged_id == receiver:
+    for tagged in tagged_phones:
+        if tagged == receiver:
             return True
 
     # Check group members if direct match failed

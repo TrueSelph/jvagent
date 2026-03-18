@@ -373,6 +373,16 @@ class WhatsAppAction(Action):
                 f"WhatsApp action is not configured: {'; '.join(self._config_issues())}"
             )
 
+        # Shorter timeout for webhook path to avoid Lambda stalls (env overrides default only)
+        timeout = self.request_timeout
+        if timeout == 60:  # Apply env only when using default; registration sets higher
+            env_timeout = os.environ.get("WHATSAPP_REQUEST_TIMEOUT")
+            if env_timeout:
+                try:
+                    timeout = min(timeout, int(env_timeout))
+                except ValueError:
+                    pass
+
         try:
             if self.provider == "wppconnect":
                 return WPPConnectAPI(
@@ -380,7 +390,7 @@ class WhatsAppAction(Action):
                     session=self.session,
                     token=self.token,
                     secret_key=self.api_key,
-                    timeout=self.request_timeout,
+                    timeout=timeout,
                 )
             elif self.provider == "wwebjs":
                 return WWebJSAPI(
@@ -388,7 +398,7 @@ class WhatsAppAction(Action):
                     session=self.session,
                     token=self.token,
                     secret_key=self.api_key,
-                    timeout=self.request_timeout,
+                    timeout=timeout,
                 )
             elif self.provider == "ultramsg":
                 return UltraMsgAPI(
@@ -396,7 +406,7 @@ class WhatsAppAction(Action):
                     session=self.session,
                     token=self.token,
                     secret_key=self.api_key,
-                    timeout=self.request_timeout,
+                    timeout=timeout,
                 )
             else:
                 raise ValidationError(f"Unsupported provider: {self.provider}")

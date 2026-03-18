@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException, Request
@@ -114,6 +115,11 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             data.sender = await whatsapp_action.api().convert_lid_to_phone_number(
                 data.sender
             )
+            t0 = getattr(request.state, "webhook_start", None)
+            if t0 is not None:
+                logger.info(
+                    f"Webhook: convert_lid done in {int((time.perf_counter() - t0) * 1000)}ms"
+                )
 
         sender = data.sender
         sender_name = data.sender_name
@@ -170,6 +176,11 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                 typing_result = await whatsapp_action.api().set_typing_status(
                     phone=sender, value=True, is_group=data.isGroup
                 )
+                t0 = getattr(request.state, "webhook_start", None)
+                if t0 is not None:
+                    logger.info(
+                        f"Webhook: set_typing done in {int((time.perf_counter() - t0) * 1000)}ms"
+                    )
                 if not typing_result.get("ok", True):
                     logger.debug(
                         f"Failed to set typing status for {sender}: {typing_result.get('error', 'Unknown error')}"
@@ -196,7 +207,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         if use_background_processing():
             # Async mode: Return immediately with 200 OK and process in background
             # Falls back to sync when BACKGROUND_PROCESSING is false
-            logger.debug(f"Processing interaction asynchronously for {sender}")
+            logger.info(f"Processing interaction asynchronously for {sender}")
             task = create_background_task(
                 _process_interaction_async(
                     data, utterance, sender, agent_id, agent, sender_name=sender_name
@@ -204,18 +215,33 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                 name=f"whatsapp_interaction_{sender}",
             )
             if task is not None:
+                t0 = getattr(request.state, "webhook_start", None)
+                if t0 is not None:
+                    logger.info(
+                        f"Webhook: queued for async in {int((time.perf_counter() - t0) * 1000)}ms"
+                    )
                 return {"status": "received"}
             await _process_interaction_async(
                 data, utterance, sender, agent_id, agent, sender_name=sender_name
             )
+            t0 = getattr(request.state, "webhook_start", None)
+            if t0 is not None:
+                logger.info(
+                    f"Webhook: interaction done in {int((time.perf_counter() - t0) * 1000)}ms"
+                )
             return {"status": "received"}
         else:
             # Sync mode (default): Await full interaction before returning
             # This ensures Lambda completes the full flow before freezing
-            logger.debug(f"Processing interaction synchronously for {sender}")
+            logger.info(f"Processing interaction synchronously for {sender}")
             await _process_interaction_async(
                 data, utterance, sender, agent_id, agent, sender_name=sender_name
             )
+            t0 = getattr(request.state, "webhook_start", None)
+            if t0 is not None:
+                logger.info(
+                    f"Webhook: interaction done in {int((time.perf_counter() - t0) * 1000)}ms"
+                )
             return {"status": "received"}
 
     except (ResourceNotFoundError, HTTPException):
