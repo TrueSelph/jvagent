@@ -282,7 +282,7 @@ def get_performance_config_value(
 ) -> Any:
     """Get performance config value with type coercion.
 
-    Used by cache.py for config.performance section. Keys are flat (e.g. enable_agent_caching).
+    Used by cache.py for config.performance section. Keys are flat (e.g. enable_agent_cache).
 
     Args:
         config: Full app config (or config.performance subsection)

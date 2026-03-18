@@ -110,7 +110,7 @@ This document maps `app.yaml` config paths to environment variables and document
 | app.yaml path | Env var | Default |
 |---------------|---------|---------|
 | `config.performance.enable_profiling` | `JVAGENT_ENABLE_PROFILING` | false |
-| `config.performance.enable_agent_caching` | `JVAGENT_ENABLE_AGENT_CACHING` | true |
+| `config.performance.enable_agent_cache` | `JVAGENT_ENABLE_AGENT_CACHE` | true |
 | `config.performance.agent_cache_ttl` | `JVAGENT_AGENT_CACHE_TTL` | 300 |
 | `config.performance.enable_action_cache` | `JVAGENT_ENABLE_ACTION_CACHE` | true |
 | `config.performance.action_cache_ttl` | `JVAGENT_ACTION_CACHE_TTL` | 60 |

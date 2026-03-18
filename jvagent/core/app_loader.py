@@ -72,7 +72,11 @@ class AppDescriptor:
         ) or ".files"
         self.file_storage_enabled = context.get("file_storage_enabled", True)
         self.logging_enabled = context.get("logging_enabled", True)
-        self.log_retention_days = context.get("log_retention_days", 60)
+        self.log_retention_days = (
+            env.log_retention_default_days
+            if env.log_retention_default_days is not None
+            else context.get("log_retention_days", 60)
+        )
         self.timezone = context.get("timezone")
 
         # Additional properties from context (excluding reserved fields)
