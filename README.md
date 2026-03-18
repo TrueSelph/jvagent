@@ -101,6 +101,9 @@ jvagent examples/jvagent_app --update
 
 # Run with source update (destructive)
 jvagent examples/jvagent_app --update --source
+
+# Run with serverless runtime simulation (single-threaded, no background tasks)
+jvagent examples/jvagent_app --serverless
 ```
 
 **Note:** Before running the example, ensure you have:

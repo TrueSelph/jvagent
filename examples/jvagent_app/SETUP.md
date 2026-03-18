@@ -63,6 +63,9 @@ jvagent examples/jvagent_app --debug
 
 # Both
 jvagent examples/jvagent_app --update --debug
+
+# Run with serverless runtime simulation
+jvagent examples/jvagent_app --serverless
 ```
 
 ## Using Core Actions

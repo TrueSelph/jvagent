@@ -934,7 +934,7 @@ def main() -> None:
     # This handles both: "jvagent /path/to/app bundle" and "jvagent bundle /path/to/app"
     app_root = None
     commands = ["run", "status", "agent", "action", "bootstrap", "bundle"]
-    flags = ["--debug", "--update", "--migrate", "--purge", "--source", "--merge"]
+    flags = ["--debug", "--update", "--purge", "--source", "--merge", "--serverless"]
 
     # Find app root: first argument that's not a command or flag
     # This extracts paths whether they appear before or after the command
@@ -968,6 +968,14 @@ def main() -> None:
 
     # Load .env file from app root directory
     load_app_env(app_root=app_root)
+
+    # Check for --serverless flag (overrides .env; simulates serverless runtime)
+    if "--serverless" in args:
+        args = [arg for arg in args if arg != "--serverless"]
+        os.environ["JVAGENT_SERVERLESS"] = "1"
+        os.environ["AWS_LAMBDA_FUNCTION_NAME"] = "jvagent-serverless"
+        os.environ["BACKGROUND_PROCESSING"] = "false"
+        logger.info("Serverless mode enabled (single-threaded, no background tasks)")
 
     # Set database path environment variables BEFORE any database initialization
     # This must happen before any database operations to prevent jvspatial from using defaults
@@ -1004,7 +1012,7 @@ def main() -> None:
         logging.getLogger("jvagent").setLevel(logging.DEBUG)
 
     # Check for --update flag and sub-flags (--source / --merge)
-    has_update = "--update" in args or "--migrate" in args
+    has_update = "--update" in args
     has_source = "--source" in args
     has_merge = "--merge" in args
 
@@ -1018,11 +1026,7 @@ def main() -> None:
         if has_source or has_merge:
             logger.warning("--source/--merge flags have no effect without --update")
 
-    args = [
-        arg
-        for arg in args
-        if arg not in ["--update", "--migrate", "--source", "--merge"]
-    ]
+    args = [arg for arg in args if arg not in ["--update", "--source", "--merge"]]
 
     # Check for --purge flag (development mode only)
     purge_flag = "--purge" in args
@@ -1113,9 +1117,10 @@ def print_usage() -> None:
 jvagent - Agentive Platform
 
     Usage:
-        jvagent [<app_root>] [run] [--update] [--debug]   Start the jvagent server (default)
-        jvagent <app_root> [run] [--update] [--debug]    Start server with app root path
+        jvagent [<app_root>] [run] [--update] [--debug] [--serverless]   Start the jvagent server (default)
+        jvagent <app_root> [run] [--update] [--debug] [--serverless]    Start server with app root path
                                 --update: Update existing agents/actions from YAML files
+                                --serverless: Simulate serverless runtime (single-threaded, no background tasks)
     jvagent [<app_root>] status             Show application status
     jvagent [<app_root>] bootstrap [--update]  Bootstrap application graph
                                   --update: Update existing agents/actions from YAML files
@@ -1138,13 +1143,14 @@ Arguments:
                               Must be a valid directory path. If not provided, uses current working directory.
 
 Flags:
-    --update, --migrate        Update existing agents and actions from YAML files (non-destructive merge).
+    --update                   Update existing agents and actions from YAML files (non-destructive merge).
                                 Applies source changes while preserving database state.
     --update --source          Destructive update: fully overwrite database state from source YAML files.
                                 Deletes and recreates action nodes (child nodes are lost).
     --update --merge           Explicit non-destructive merge (same as --update alone).
     --purge                    Delete existing database and logs before starting (development mode only)
     --debug                    Enable debug logging (verbose output for troubleshooting)
+    --serverless              Simulate serverless execution environment (single-threaded, no background tasks)
 
 Environment Variables:
     JVAGENT_ADMIN_PASSWORD     Admin user password (required)
@@ -1158,6 +1164,7 @@ Examples:
     jvagent /path/to/my_app                    # Run from specified app directory
     jvagent /path/to/my_app --update           # Run with merge update (non-destructive)
     jvagent /path/to/my_app --update --source  # Run with source update (destructive)
+    jvagent --serverless                      # Run with serverless runtime simulation
     jvagent /path/to/my_app bootstrap          # Bootstrap from specified directory
     jvagent /path/to/my_app bootstrap --update # Bootstrap with merge update
     jvagent /path/to/my_app bundle             # Generate Dockerfile in app directory
@@ -1276,7 +1283,13 @@ def run_server(
 
         # Start the server
         bootstrap_log.complete("Ready")
-        server.run()
+        run_kwargs = {}
+        if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") or os.environ.get(
+            "JVAGENT_SERVERLESS"
+        ):
+            run_kwargs["workers"] = 1
+            run_kwargs["reload"] = False
+        server.run(**run_kwargs)
     except Exception:
         # If server fails to start, display summary and remove handler
         summary = log_counter.get_summary()
