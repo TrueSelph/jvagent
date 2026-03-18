@@ -3,6 +3,8 @@ FROM public.ecr.aws/lambda/python:3.12
 # Add Lambda Web Adapter
 COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1 /lambda-adapter /opt/extensions/lambda-adapter
 
+ENV START_COMMAND="jvagent ."
+
 ENV JVAGENT_PORT=8080
 ENV JVAGENT_HOST=0.0.0.0
 # Add venv to PATH so CLI commands work
@@ -35,7 +37,7 @@ RUN set -eux && \
     /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: -r ./jvagent/requirements-all.txt || \
     /opt/venv/bin/pip install --no-cache-dir -r ./jvagent/requirements-all.txt && \
     /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: -e ./jvspatial || \
-    /opt/venv/bin/pip install --no-cache-dir -e './jvspatial[serverless]' && \
+    /opt/venv/bin/pip install --no-cache-dir -e './jvspatial' && \
     # Verify jvagent CLI is available (use the actual CLI command)
     echo "Checking jvagent CLI availability..." && \
     /opt/venv/bin/jvagent --help && \
@@ -47,7 +49,7 @@ RUN set -eux && \
 RUN test -f /opt/venv/bin/python || (echo "ERROR: venv not found!" && exit 1)
 
 # Create wrapper script that uses the CLI entry point directly
-RUN printf '#!/bin/sh\nexec jvagent .\n' > /var/task/run.sh && \
+RUN printf '#!/bin/sh\nexec $START_COMMAND\n' > /var/task/run.sh && \
     chmod +x /var/task/run.sh
 
 ENTRYPOINT []

@@ -3,6 +3,7 @@
 Uses PageIndex graph with LLM-based tree search (default) or text filtering.
 No embeddings, no vector store.
 """
+
 import copy
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -214,7 +215,8 @@ class PageIndexRetrievalInteractAction(InteractAction):
         "document URLs in the directive. Set False to disable and save tokens.",
     )
     user_groups: Dict[str, List[str]] = attribute(
-        default_factory=dict, description="Add user groups to use document filter. group to user ids."
+        default_factory=dict,
+        description="Add user groups to use document filter. group to user ids.",
     )
 
     def _resolve_collection(self) -> str:
@@ -276,7 +278,10 @@ class PageIndexRetrievalInteractAction(InteractAction):
                 if self.user_groups:
                     for group, users in self.user_groups.items():
                         if visitor.user_id in users:
-                            if isinstance(metadata_filter, Dict) and "access" in metadata_filter:
+                            if (
+                                isinstance(metadata_filter, Dict)
+                                and "access" in metadata_filter
+                            ):
                                 metadata_filter["access"].append(group)
                             else:
                                 metadata_filter = {"access": [group]}
