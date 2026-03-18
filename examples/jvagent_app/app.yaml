@@ -33,9 +33,8 @@ tags:
   - boilerplate
 
 # Application configuration defaults
-# These are application-level defaults that can be overridden by .env or environment variables
-# In production, the running jvagent instance will use its own paths and settings
-# Environment variable placeholders (e.g., ${VAR_NAME}) are automatically resolved
+# Env vars override. Use ${VAR} for secrets — never real values.
+# See docs/configuration.md for app.yaml path → env var mapping.
 config:
   # Server configuration
   server:

@@ -252,44 +252,60 @@ _rate_limiter_initialized = False
 
 
 def _initialize_rate_limiter_from_config() -> None:
-    """Initialize rate limiter from app.yaml config (called once at module load)."""
+    """Initialize rate limiter from config (env > app.yaml > default).
+
+    Env vars: JVAGENT_INTERACT_RATE_LIMIT_PER_MINUTE, JVAGENT_INTERACT_MAX_UTTERANCE_LENGTH
+    """
     global _rate_limiter_initialized
     if _rate_limiter_initialized:
         return
+
+    rate_limit = 60
+    max_length: Optional[int] = 2000
 
     try:
         import os
 
         from jvagent.core.app_loader import AppLoader
 
-        # Try to find app.yaml in current directory or parent directories
-        app_path = os.getcwd()
-        loader = AppLoader(app_path)
-        descriptor = loader.load_app_descriptor()
+        # Env vars take precedence over app.yaml
+        env_rate = os.getenv("JVAGENT_INTERACT_RATE_LIMIT_PER_MINUTE")
+        if env_rate is not None and env_rate.isdigit():
+            rate_limit = int(env_rate)
 
-        if descriptor and descriptor.config:
-            interact_config = descriptor.config.get("interact", {})
-            rate_limit = interact_config.get("rate_limit_per_minute", 60)
-            max_length = interact_config.get("max_utterance_length", 2000)
-
-            # Handle None/null values
-            if max_length == "None" or max_length is None:
+        env_max = os.getenv("JVAGENT_INTERACT_MAX_UTTERANCE_LENGTH")
+        if env_max is not None:
+            if env_max.lower() in ("none", "null", ""):
                 max_length = None
+            elif env_max.isdigit():
+                max_length = int(env_max)
 
-            initialize_rate_limiter(
-                rate_limit_per_minute=rate_limit,
-                max_utterance_length=max_length,
-            )
-            logger.info(
-                f"Initialized rate limiter: {rate_limit} req/min, "
-                f"max_utterance_length={max_length or 'unlimited'}"
-            )
-        else:
-            # Use defaults
-            initialize_rate_limiter()
-            logger.debug("Using default rate limiter configuration")
+        # Fall back to app.yaml if env vars not set
+        if env_rate is None or env_max is None:
+            app_path = os.getcwd()
+            loader = AppLoader(app_path)
+            descriptor = loader.load_app_descriptor()
+
+            if descriptor and descriptor.config:
+                interact_config = descriptor.config.get("interact", {})
+                if env_rate is None:
+                    rate_limit = interact_config.get("rate_limit_per_minute", 60)
+                if env_max is None:
+                    raw = interact_config.get("max_utterance_length", 2000)
+                    max_length = None if raw in ("None", None) else raw
+
+        if max_length == "None":
+            max_length = None
+
+        initialize_rate_limiter(
+            rate_limit_per_minute=rate_limit,
+            max_utterance_length=max_length,
+        )
+        logger.info(
+            f"Initialized rate limiter: {rate_limit} req/min, "
+            f"max_utterance_length={max_length or 'unlimited'}"
+        )
     except Exception as e:
-        # If config loading fails, use defaults
         logger.debug(f"Could not load rate limiter config, using defaults: {e}")
         initialize_rate_limiter()
 

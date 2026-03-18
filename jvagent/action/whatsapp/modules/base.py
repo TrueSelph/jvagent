@@ -96,13 +96,29 @@ class ConnectionPoolManager:
         pool_key = (parsed.netloc, int(timeout))
 
         async with self._session_lock:
-            # Check if session exists and is still open
+            # Check if session exists and is still valid (same event loop, running)
             if pool_key in self._sessions:
                 session = self._sessions[pool_key]
-                if not session.closed:
-                    return session
-                # Session was closed, remove it
-                del self._sessions[pool_key]
+                try:
+                    loop = getattr(session, "_loop", None)
+                    current = asyncio.get_running_loop()
+                    if (
+                        not session.closed
+                        and loop is not None
+                        and loop is current
+                        and loop.is_running()
+                    ):
+                        return session
+                except RuntimeError:
+                    pass
+                # Session invalid (closed loop, different loop, or not running)
+                # Close before removing to avoid "Unclosed client session" warnings
+                stale = self._sessions.pop(pool_key)
+                if not stale.closed:
+                    try:
+                        await stale.close()
+                    except Exception:
+                        pass
 
             # Create new session with connection pooling
             connector = aiohttp.TCPConnector(
@@ -360,7 +376,12 @@ class BaseWhatsAppAPI(ABC):
                     )
                     continue
                 elif attempt == 0:
-                    # First attempt failed, try again with fresh session
+                    # Invalidate pool on "Event loop is closed" so future calls get fresh session
+                    if "Event loop is closed" in error or "event loop" in error.lower():
+                        try:
+                            await pool.close_session(self.api_url, self.timeout)
+                        except Exception:
+                            pass
                     self.logger.debug(
                         f"Request failed for {method} {url}: {error}, retrying..."
                     )
