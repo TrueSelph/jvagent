@@ -17,6 +17,7 @@ from jvagent.core.agent_loader import AgentLoader, _apply_properties
 from jvagent.core.agents import Agents
 from jvagent.core.app import App
 from jvagent.core.bootstrap_logger import BootstrapLogger
+from jvagent.env import load_env
 
 logger = logging.getLogger(__name__)
 
@@ -62,13 +63,12 @@ class AppDescriptor:
         self.name = context.get("name", "jvagent Application")
         self.description = context.get("description", "")
         # Env vars override context (env > app.yaml > default)
+        env = load_env()
         self.file_storage_provider = (
-            os.getenv("JVSPATIAL_FILE_INTERFACE", "").strip()
-            or context.get("file_storage_provider", "local")
+            env.file_interface or context.get("file_storage_provider", "local")
         ) or "local"
         self.file_storage_root_dir = (
-            os.getenv("JVSPATIAL_FILES_ROOT_PATH", "").strip()
-            or context.get("file_storage_root_dir", ".files")
+            env.files_root_path or context.get("file_storage_root_dir", ".files")
         ) or ".files"
         self.file_storage_enabled = context.get("file_storage_enabled", True)
         self.logging_enabled = context.get("logging_enabled", True)
@@ -108,8 +108,8 @@ class AppDescriptor:
                 # Simple string format: namespace/agent_name
                 self.agents.append(agent_ref)
             else:
-                print(
-                    f"Warning: Invalid agent reference format (expected string): {agent_ref}"
+                logger.warning(
+                    "Invalid agent reference format (expected string): %s", agent_ref
                 )
 
     def __repr__(self) -> str:
@@ -139,7 +139,7 @@ class AppLoader:
         app_file = self.base_path / "app.yaml"
 
         if not app_file.exists():
-            print(f"App descriptor not found: {app_file}")
+            logger.debug("App descriptor not found: %s", app_file)
             return None
 
         try:
@@ -147,7 +147,7 @@ class AppLoader:
                 data = yaml.safe_load(f)
 
             if not data:
-                print(f"Empty app descriptor: {app_file}")
+                logger.debug("Empty app descriptor: %s", app_file)
                 return None
 
             # Resolve environment variable placeholders
@@ -158,7 +158,7 @@ class AppLoader:
             return AppDescriptor(data, self.base_path)
 
         except Exception as e:
-            print(f"Error loading app descriptor from {app_file}: {e}")
+            logger.warning("Error loading app descriptor from %s: %s", app_file, e)
             return None
 
     async def bootstrap_application(

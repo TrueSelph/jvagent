@@ -510,12 +510,42 @@ class Memory(Node):
             while current:
                 next_nodes = await current.nodes(node=Interaction, direction="out")
                 if len(next_nodes) > 1:
-                    next_nodes.sort(key=lambda n: (n.started_at, n.id))
+                    from jvagent.memory.interaction import interaction_sort_key
+
+                    next_nodes.sort(key=interaction_sort_key)
                     keep = next_nodes[0]
+                    # Find tail of keep's chain (keep may have its own next nodes)
+                    tail = keep
+                    while True:
+                        next_of_tail = await tail.nodes(
+                            node=Interaction, direction="out"
+                        )
+                        if len(next_of_tail) != 1:
+                            break
+                        cand = next_of_tail[0]
+                        if cand.id in seen:
+                            break
+                        seen.add(cand.id)
+                        tail = cand
+                    # Chain each extra to tail, then disconnect from current
                     for extra in next_nodes[1:]:
                         if await current.is_connected_to(extra):
+                            await tail.connect(extra, direction="both")
                             await current.disconnect(extra)
                             dual_removed += 1
+                        # Advance tail to end of extra's chain
+                        tail = extra
+                        while True:
+                            next_of_tail = await tail.nodes(
+                                node=Interaction, direction="out"
+                            )
+                            if len(next_of_tail) != 1:
+                                break
+                            cand = next_of_tail[0]
+                            if cand.id in seen:
+                                break
+                            seen.add(cand.id)
+                            tail = cand
                     current = keep
                 elif len(next_nodes) == 1:
                     current = next_nodes[0]

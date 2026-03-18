@@ -28,36 +28,29 @@ async def _get_now() -> datetime:
 # ============================================================================
 # Performance Configuration Loader
 # ============================================================================
-def _load_performance_config() -> Dict[str, Any]:
-    """Load performance configuration from app.yaml with environment variable fallback.
-
-    Configuration priority:
-    1. Environment variables (highest priority)
-    2. app.yaml config.performance section
-    3. Default values (lowest priority)
-
-    Returns:
-        Dictionary with performance configuration values
-    """
-    config: Dict[str, Any] = {}
-
-    # Try to load from app.yaml
+def _load_perf_config() -> Dict[str, Any]:
+    """Load app config from app.yaml for performance section."""
     try:
         from jvagent.core.app_context import get_app_root
-        from jvagent.core.app_loader import AppLoader
+        from jvagent.core.config import load_app_config
 
-        loader = AppLoader(get_app_root())
-        descriptor = loader.load_app_descriptor()
-
-        if descriptor and descriptor.config:
-            perf_config = descriptor.config.get("performance", {})
-            if perf_config:
-                config = perf_config
-                logger.debug("Loaded performance config from app.yaml")
+        return load_app_config(get_app_root())
     except Exception as e:
-        logger.debug(f"Could not load performance config from app.yaml: {e}")
+        logger.debug("Could not load performance config from app.yaml: %s", e)
+        return {}
 
-    return config
+
+def _perf_config_value(
+    config: Dict[str, Any],
+    key: str,
+    env_var: str,
+    default: Any,
+    config_type: type = str,
+) -> Any:
+    """Get performance config value via centralized config module."""
+    from jvagent.core.config import get_performance_config_value
+
+    return get_performance_config_value(config, key, env_var, default, config_type)
 
 
 # Load config - initially empty, populated when reload_performance_config() is called
@@ -74,31 +67,37 @@ def reload_performance_config() -> None:
     global ENABLE_ACTION_CACHE, ACTION_CACHE_TTL, CACHE_CLEANUP_PROBABILITY
     global ENABLE_INTERACT_ROUTER_CACHE, INTERACT_ROUTER_CACHE_TTL
 
-    _perf_config = _load_performance_config()
+    _perf_config = _load_perf_config()
 
     # Reload all config values
-    ENABLE_AGENT_CACHING = _get_config_value(
-        "enable_agent_caching", "JVAGENT_ENABLE_AGENT_CACHING", True, bool
+    ENABLE_AGENT_CACHING = _perf_config_value(
+        _perf_config, "enable_agent_caching", "JVAGENT_ENABLE_AGENT_CACHING", True, bool
     )
-    AGENT_CACHE_TTL = _get_config_value(
-        "agent_cache_ttl", "JVAGENT_AGENT_CACHE_TTL", 300, int
+    AGENT_CACHE_TTL = _perf_config_value(
+        _perf_config, "agent_cache_ttl", "JVAGENT_AGENT_CACHE_TTL", 300, int
     )
-    ENABLE_ACTION_CACHE = _get_config_value(
-        "enable_action_cache", "JVAGENT_ENABLE_ACTION_CACHE", True, bool
+    ENABLE_ACTION_CACHE = _perf_config_value(
+        _perf_config, "enable_action_cache", "JVAGENT_ENABLE_ACTION_CACHE", True, bool
     )
-    ACTION_CACHE_TTL = _get_config_value(
-        "action_cache_ttl", "JVAGENT_ACTION_CACHE_TTL", 60, int
+    ACTION_CACHE_TTL = _perf_config_value(
+        _perf_config, "action_cache_ttl", "JVAGENT_ACTION_CACHE_TTL", 60, int
     )
-    CACHE_CLEANUP_PROBABILITY = _get_config_value(
-        "cache_cleanup_probability", "JVAGENT_CACHE_CLEANUP_PROBABILITY", 0.1, float
+    CACHE_CLEANUP_PROBABILITY = _perf_config_value(
+        _perf_config,
+        "cache_cleanup_probability",
+        "JVAGENT_CACHE_CLEANUP_PROBABILITY",
+        0.1,
+        float,
     )
-    ENABLE_INTERACT_ROUTER_CACHE = _get_config_value(
+    ENABLE_INTERACT_ROUTER_CACHE = _perf_config_value(
+        _perf_config,
         "enable_interact_router_cache",
         "JVAGENT_ENABLE_INTERACT_ROUTER_CACHE",
         False,
         bool,
     )
-    INTERACT_ROUTER_CACHE_TTL = _get_config_value(
+    INTERACT_ROUTER_CACHE_TTL = _perf_config_value(
+        _perf_config,
         "interact_router_cache_ttl",
         "JVAGENT_INTERACT_ROUTER_CACHE_TTL",
         45,
@@ -106,53 +105,17 @@ def reload_performance_config() -> None:
     )
 
     logger.debug(
-        f"Performance config reloaded: agent_caching={ENABLE_AGENT_CACHING}, "
-        f"action_caching={ENABLE_ACTION_CACHE}"
+        "Performance config reloaded: agent_caching=%s, action_caching=%s",
+        ENABLE_AGENT_CACHING,
+        ENABLE_ACTION_CACHE,
     )
-
-
-def _get_config_value(
-    key: str, env_var: str, default: Any, config_type: type = str
-) -> Any:
-    """Get configuration value with environment variable priority.
-
-    Args:
-        key: Key in the performance config section
-        env_var: Environment variable name
-        default: Default value if neither config nor env var is set
-        config_type: Type to convert the value to (str, int, float, bool)
-
-    Returns:
-        Configuration value
-    """
-    # Environment variable takes priority
-    env_value = os.getenv(env_var)
-    if env_value is not None:
-        if config_type == bool:
-            return env_value.lower() == "true"
-        elif config_type == int:
-            return int(env_value)
-        elif config_type == float:
-            return float(env_value)
-        return env_value
-
-    # Check app.yaml config
-    if key in _perf_config:
-        return _perf_config[key]
-
-    # Return default
-    return default
 
 
 # ============================================================================
 # Agent Cache Configuration
 # ============================================================================
-ENABLE_AGENT_CACHING = _get_config_value(
-    "enable_agent_caching", "JVAGENT_ENABLE_AGENT_CACHING", True, bool
-)
-AGENT_CACHE_TTL = _get_config_value(
-    "agent_cache_ttl", "JVAGENT_AGENT_CACHE_TTL", 300, int
-)
+ENABLE_AGENT_CACHING = True
+AGENT_CACHE_TTL = 300
 
 # In-memory cache: {agent_id: (agent_node, cached_at)}
 _agent_cache: Dict[str, Tuple[Any, datetime]] = {}
@@ -161,12 +124,8 @@ _cache_lock = asyncio.Lock()
 # ============================================================================
 # Action Cache Configuration
 # ============================================================================
-ENABLE_ACTION_CACHE = _get_config_value(
-    "enable_action_cache", "JVAGENT_ENABLE_ACTION_CACHE", True, bool
-)
-ACTION_CACHE_TTL = _get_config_value(
-    "action_cache_ttl", "JVAGENT_ACTION_CACHE_TTL", 60, int
-)
+ENABLE_ACTION_CACHE = True
+ACTION_CACHE_TTL = 60
 
 # Action cache: {cache_key: (actions_list, cached_at)}
 # cache_key format: "{agent_id}:enabled" or "{agent_id}:all"
@@ -174,12 +133,8 @@ _action_cache: Dict[str, Tuple[List[Any], datetime]] = {}
 _action_cache_lock = asyncio.Lock()
 
 # Interact router cache (unified posture + routing)
-ENABLE_INTERACT_ROUTER_CACHE = _get_config_value(
-    "enable_interact_router_cache", "JVAGENT_ENABLE_INTERACT_ROUTER_CACHE", False, bool
-)
-INTERACT_ROUTER_CACHE_TTL = _get_config_value(
-    "interact_router_cache_ttl", "JVAGENT_INTERACT_ROUTER_CACHE_TTL", 45, int
-)
+ENABLE_INTERACT_ROUTER_CACHE = False
+INTERACT_ROUTER_CACHE_TTL = 45
 _interact_router_cache: Dict[str, Tuple[Dict[str, Any], datetime]] = {}
 _interact_router_cache_lock = asyncio.Lock()
 
@@ -482,9 +437,7 @@ async def set_interact_router_cache(
 
 # Probability of cleanup running per request (0.0-1.0, default 0.1 = 10%)
 # This approach is serverless-friendly (works in Lambda, Cloud Functions, etc.)
-CACHE_CLEANUP_PROBABILITY = _get_config_value(
-    "cache_cleanup_probability", "JVAGENT_CACHE_CLEANUP_PROBABILITY", 0.1, float
-)
+CACHE_CLEANUP_PROBABILITY = 0.1
 
 
 async def cleanup_expired_entries() -> bool:

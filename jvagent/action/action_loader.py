@@ -1,355 +1,23 @@
 import importlib
-import importlib.abc
 import importlib.util
 import logging
 import os
 import sys
 import types
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
 
 import yaml
 
 from jvagent.action.base import Action
+from jvagent.action.loader import importer as _importer_module
+from jvagent.action.loader.importer import JvagentActionsImporter
+from jvagent.action.loader.metadata import ActionMetadata, ActionRegistry
 from jvagent.core.env_resolver import resolve_env_placeholders
 
+_ACTIONS_PREFIX = _importer_module._ACTIONS_PREFIX
+
 logger = logging.getLogger(__name__)
-
-
-class ActionMetadata:
-    """Container for action metadata loaded from info.yaml.
-
-    Format:
-    - package: object containing package information
-      - name: namespace/action_name
-      - author: author name
-      - archetype: Action class name (same as Action Node class)
-      - version: package version
-      - meta: object with title, description, group, type
-      - config: configuration object
-      - dependencies: object with jvagent, actions, and pip dependencies
-        - jvagent: jvagent version requirement (e.g., "~2.1.0")
-        - actions: list of action dependencies (by namespace/action_name)
-        - pip: list of pip package specifications (e.g., ["requests>=2.25.0", "numpy"])
-
-    Pip dependencies are automatically installed before the action is loaded.
-
-    Configuration should be defined as Pydantic fields on the Action class.
-    """
-
-    def __init__(self, data: Dict[str, Any], path: Path, namespace: str = ""):
-        """Initialize action metadata.
-
-        Args:
-            data: Parsed YAML data from info.yaml
-            path: Path to the action directory
-            namespace: Namespace for the action (from folder structure)
-        """
-        self.data = data
-        self.path = path
-        self.namespace = namespace
-
-        # Extract package information
-        package = data.get("package", {})
-        if not isinstance(package, dict):
-            package = {}
-
-        # Extract name from package.name (namespace/action_name format)
-        # or use folder structure namespace + name field
-        package_name = package.get("name", "")
-        if package_name and "/" in package_name:
-            # Parse namespace/action_name from package.name
-            parsed_namespace, parsed_name = package_name.split("/", 1)
-            # Use parsed namespace if it matches folder structure, otherwise use folder namespace
-            if parsed_namespace == namespace or not namespace:
-                self.namespace = parsed_namespace
-            self.name = parsed_name
-        else:
-            # Use folder structure namespace and extract name from package or data
-            self.name = package.get("name", data.get("name", ""))
-            if not self.name:
-                # Use directory name
-                self.name = path.name
-
-        # Package metadata
-        self.author = package.get("author", "")
-        self.archetype = package.get("archetype", "Action")
-        self.version = package.get("version", "0.0.1")
-
-        # Extract meta information
-        meta = package.get("meta", {})
-        if not isinstance(meta, dict):
-            meta = {}
-
-        self.title = meta.get("title", self.name.replace("_", " ").title())
-        self.description = meta.get("description", "")
-        self.group = meta.get("group", "")
-        self.type = meta.get("type", "action")
-
-        # Configuration
-        self.config = package.get("config", {})
-
-        # Dependencies
-        self.dependencies = package.get("dependencies", {})
-
-        # Module is derived from action name (action_name.py)
-        self.module = self.name
-
-        # Class name is the archetype
-        self.class_name = self.archetype
-
-        # Enabled defaults to True (can be overridden in agent.yaml)
-        self.enabled = True
-
-        # Core action flags (set by discover_core_action)
-        self.is_core_action: bool = False
-        self.core_module_path: Optional[str] = None
-        self.core_class_name: Optional[str] = None
-
-        # Agent information (set when discovering actions for a specific agent)
-        self.agent_namespace: Optional[str] = None
-        self.agent_name: Optional[str] = None
-
-    def __repr__(self) -> str:
-        return f"ActionMetadata(namespace={self.namespace}, name={self.name}, version={self.version})"
-
-
-class ActionRegistry:
-    """Registry for tracking required, resolved, and imported actions.
-
-    This class manages the lifecycle of action loading:
-    - Required actions: Actions explicitly listed in agent.yaml
-    - Resolved actions: Required actions + their transitive dependencies
-    - Imported actions: Actions that have been successfully imported
-    """
-
-    def __init__(self):
-        """Initialize the action registry."""
-        self.required_actions: Set[str] = (
-            set()
-        )  # e.g., {"jvagent/whatsapp", "jvagent/interact_router"}
-        self.resolved_actions: Set[str] = set()  # After dependency resolution
-        self.imported_actions: Set[str] = set()  # Successfully imported
-        self.action_metadata: Dict[str, ActionMetadata] = {}  # Cached metadata
-        self._resolving: Set[str] = (
-            set()
-        )  # Track actions currently being resolved (prevents cycles)
-
-    def add_required_action(self, action_ref: str) -> None:
-        """Mark action as required (from agent.yaml).
-
-        Args:
-            action_ref: Action reference in "namespace/action_name" format
-        """
-        if action_ref and "/" in action_ref:
-            self.required_actions.add(action_ref)
-
-    def should_import_action(self, action_ref: str) -> bool:
-        """Check if action should be imported.
-
-        Args:
-            action_ref: Action reference in "namespace/action_name" format
-
-        Returns:
-            True if action should be imported, False otherwise
-        """
-        return (
-            action_ref in self.resolved_actions
-            and action_ref not in self.imported_actions
-        )
-
-    def mark_imported(self, action_ref: str) -> None:
-        """Mark action as successfully imported.
-
-        Args:
-            action_ref: Action reference in "namespace/action_name" format
-        """
-        self.imported_actions.add(action_ref)
-
-    def is_resolving(self, action_ref: str) -> bool:
-        """Check if action is currently being resolved (prevents circular dependencies).
-
-        Args:
-            action_ref: Action reference in "namespace/action_name" format
-
-        Returns:
-            True if action is currently being resolved
-        """
-        return action_ref in self._resolving
-
-    def start_resolving(self, action_ref: str) -> None:
-        """Mark action as being resolved.
-
-        Args:
-            action_ref: Action reference in "namespace/action_name" format
-        """
-        self._resolving.add(action_ref)
-
-    def finish_resolving(self, action_ref: str) -> None:
-        """Mark action as finished resolving.
-
-        Args:
-            action_ref: Action reference in "namespace/action_name" format
-        """
-        self._resolving.discard(action_ref)
-
-
-# Module path prefix for app-loaded actions (custom actions in app's agents/ directory).
-# Format: jvagent.actions.{agent_ns}.{agent_name}.{action_ns}.{action_name}
-_ACTIONS_PREFIX = "jvagent.actions."
-
-# Global base path for the importer, set by ActionLoader.__init__
-_actions_importer_base_path: Optional[Path] = None
-
-
-class JvagentActionsImporter(importlib.abc.MetaPathFinder):
-    """Import hook that resolves jvagent.actions.* to the app directory's agents/ tree.
-
-    Used when jvagent is installed as a pip package and the app directory (e.g. iris_ai)
-    is the deployment target. Custom actions live under {base_path}/agents/ and are
-    exposed as jvagent.actions.{agent_ns}.{agent_name}.{action_ns}.{action_name}.
-
-    Supports lazy base_path via a callable for early registration.
-    """
-
-    def __init__(self, base_path: Union[Path, Callable[[], Optional[Path]]]):
-        """Initialize the importer.
-
-        Args:
-            base_path: Either a Path or a callable returning Optional[Path].
-                      When callable, find_spec will call it to get the current base_path.
-        """
-        self._base_path = base_path
-
-    def find_spec(
-        self,
-        fullname: str,
-        path: Optional[List[str]],
-        target: Optional[types.ModuleType] = None,
-    ) -> Optional[importlib.machinery.ModuleSpec]:
-        if not fullname.startswith(_ACTIONS_PREFIX):
-            return None
-
-        # Resolve base_path (may be a callable for lazy initialization)
-        base_path = self._base_path() if callable(self._base_path) else self._base_path
-        if base_path is None:
-            return None
-
-        agents_path = base_path / "agents"
-        if not agents_path.exists() or not agents_path.is_dir():
-            return None
-
-        rest = fullname[len(_ACTIONS_PREFIX) :]
-
-        # Handle exact "jvagent.actions" (rest is empty string)
-        if rest == "":
-            spec = importlib.machinery.ModuleSpec(
-                fullname, loader=None, is_package=True
-            )
-            spec.submodule_search_locations = [str(agents_path)]
-            return spec
-
-        parts = rest.split(".")
-        if len(parts) < 1:
-            return None
-
-        # Map module hierarchy to filesystem (see plan path mapping).
-        # parts[0]=agent_ns, parts[1]=agent_name, parts[2]=action_ns, parts[3]=action_name, ...
-        if len(parts) == 1:
-            # jvagent.actions.{agent_ns}
-            dir_path = agents_path / parts[0]
-        elif len(parts) == 2:
-            # jvagent.actions.{agent_ns}.{agent_name}
-            dir_path = agents_path / parts[0] / parts[1] / "actions"
-        elif len(parts) == 3:
-            # jvagent.actions.{agent_ns}.{agent_name}.{action_ns}
-            dir_path = agents_path / parts[0] / parts[1] / "actions" / parts[2]
-        elif len(parts) == 4:
-            # jvagent.actions.{agent_ns}.{agent_name}.{action_ns}.{action_name} (action package)
-            dir_path = (
-                agents_path / parts[0] / parts[1] / "actions" / parts[2] / parts[3]
-            )
-        else:
-            # jvagent.actions....{action_name}.{submodule} -> e.g. .endpoints, .prompts
-            action_dir = (
-                agents_path / parts[0] / parts[1] / "actions" / parts[2] / parts[3]
-            )
-            submodule = ".".join(parts[4:])
-            module_file = action_dir / f"{parts[4]}.py"
-            if len(parts) == 5 and module_file.exists():
-                spec = importlib.util.spec_from_file_location(
-                    fullname, module_file, submodule_search_locations=[str(action_dir)]
-                )
-                return spec
-            # Deeper submodule (e.g. utils.helpers)
-            subpath = action_dir / parts[4]
-            if len(parts) == 5:
-                init = subpath / "__init__.py"
-                if subpath.is_dir() and init.exists():
-                    spec = importlib.util.spec_from_file_location(
-                        fullname, init, submodule_search_locations=[str(subpath)]
-                    )
-                    return spec
-                if module_file.exists():
-                    spec = importlib.util.spec_from_file_location(
-                        fullname,
-                        module_file,
-                        submodule_search_locations=[str(action_dir)],
-                    )
-                    return spec
-            else:
-                # parts[4] is a package, look for parts[5].py or parts[5]/__init__.py
-                mid = action_dir
-                for i in range(4, len(parts) - 1):
-                    mid = mid / parts[i]
-                last = parts[-1]
-                file_py = mid / f"{last}.py"
-                dir_init = mid / last / "__init__.py"
-                if file_py.exists():
-                    spec = importlib.util.spec_from_file_location(
-                        fullname, file_py, submodule_search_locations=[str(mid)]
-                    )
-                    return spec
-                if dir_init.exists():
-                    spec = importlib.util.spec_from_file_location(
-                        fullname,
-                        dir_init,
-                        submodule_search_locations=[str(mid / last)],
-                    )
-                    return spec
-            return None
-
-        if not dir_path.exists() or not dir_path.is_dir():
-            return None
-
-        # Namespace package (2–4 parts) or action package (5 parts = 4 parts in rest)
-        if len(parts) <= 3:
-            spec = importlib.machinery.ModuleSpec(
-                fullname, loader=None, is_package=True
-            )
-            spec.submodule_search_locations = [str(dir_path)]
-            return spec
-
-        # len(parts) == 4: action package directory
-        init_file = dir_path / "__init__.py"
-        module_file = dir_path / f"{parts[3]}.py"
-        if init_file.exists():
-            spec = importlib.util.spec_from_file_location(
-                fullname,
-                init_file,
-                submodule_search_locations=[str(dir_path)],
-            )
-            return spec
-        if module_file.exists():
-            spec = importlib.util.spec_from_file_location(
-                fullname, module_file, submodule_search_locations=[str(dir_path)]
-            )
-            return spec
-        return None
-
-
-# Global importer instance registered at module load time
-_actions_importer = JvagentActionsImporter(lambda: _actions_importer_base_path)
 
 
 class ActionLoader:
@@ -361,14 +29,11 @@ class ActionLoader:
         Args:
             base_path: Base path to search for actions. If None, uses current directory.
         """
-        global _actions_importer_base_path
-
         self.base_path = Path(base_path or os.getcwd())
         self._core_action_path: Optional[Path] = None
         self._core_action_cache: Optional[Dict[str, Dict[str, Any]]] = None
 
-        # Set the global base path for the importer (registered at module load time)
-        _actions_importer_base_path = self.base_path
+        _importer_module._actions_importer_base_path = self.base_path
 
     # ============================================================================
     # Helper Methods
@@ -2255,10 +1920,3 @@ class ActionLoader:
                 actions.append(action)
 
         return actions
-
-
-# Register the global importer at module load time so it's in sys.meta_path
-# before any jvagent.actions.* imports occur (even if ActionLoader not yet created).
-# The importer uses _actions_importer_base_path which is set when ActionLoader.__init__ runs.
-if _actions_importer not in sys.meta_path:
-    sys.meta_path.insert(0, _actions_importer)

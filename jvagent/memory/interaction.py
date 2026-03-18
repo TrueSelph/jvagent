@@ -14,6 +14,35 @@ if TYPE_CHECKING:
     from jvagent.memory.user import User
 
 
+def _normalize_dt(dt: Optional[datetime]) -> Optional[datetime]:
+    """Normalize datetime for comparison; handles naive/aware mix."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def interaction_sort_key(node: Any) -> tuple:
+    """Sort key for Interaction by started_at (handles naive/aware datetime).
+
+    Use for sorting Interaction nodes chronologically. Handles None started_at
+    and mixes of naive/aware datetimes.
+
+    Args:
+        node: Interaction node (or any object with started_at and id)
+
+    Returns:
+        Tuple (started_at, id) suitable for sorting
+    """
+    st = getattr(node, "started_at", None)
+    if st is None:
+        return (datetime.min.replace(tzinfo=timezone.utc), getattr(node, "id", ""))
+    if st.tzinfo is None:
+        st = st.replace(tzinfo=timezone.utc)
+    return (st, getattr(node, "id", ""))
+
+
 @compound_index(
     [("context.conversation_id", 1), ("context.started_at", -1)], name="conv_timestamp"
 )
@@ -661,8 +690,12 @@ class Interaction(DeferredSaveMixin, Node):
         )
 
         # Verify timestamp ordering (safety check)
-        if next_int and next_int.started_at >= self.started_at:
-            return next_int
+        if next_int:
+            a, b = _normalize_dt(next_int.started_at), _normalize_dt(self.started_at)
+            if a is not None and b is not None and a >= b:
+                return next_int
+            if a is None or b is None:
+                return next_int
         return None
 
     async def get_previous_interaction(self) -> Optional["Interaction"]:
@@ -681,6 +714,10 @@ class Interaction(DeferredSaveMixin, Node):
         )
 
         # Verify timestamp ordering (safety check)
-        if prev_int and prev_int.started_at <= self.started_at:
-            return prev_int
+        if prev_int:
+            a, b = _normalize_dt(prev_int.started_at), _normalize_dt(self.started_at)
+            if a is not None and b is not None and a <= b:
+                return prev_int
+            if a is None or b is None:
+                return prev_int
         return None

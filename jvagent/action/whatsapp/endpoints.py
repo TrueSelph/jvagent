@@ -117,7 +117,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             )
             t0 = getattr(request.state, "webhook_start", None)
             if t0 is not None:
-                logger.info(
+                logger.debug(
                     f"Webhook: convert_lid done in {int((time.perf_counter() - t0) * 1000)}ms"
                 )
 
@@ -178,7 +178,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                 )
                 t0 = getattr(request.state, "webhook_start", None)
                 if t0 is not None:
-                    logger.info(
+                    logger.debug(
                         f"Webhook: set_typing done in {int((time.perf_counter() - t0) * 1000)}ms"
                     )
                 if not typing_result.get("ok", True):
@@ -217,7 +217,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             if task is not None:
                 t0 = getattr(request.state, "webhook_start", None)
                 if t0 is not None:
-                    logger.info(
+                    logger.debug(
                         f"Webhook: queued for async in {int((time.perf_counter() - t0) * 1000)}ms"
                     )
                 return {"status": "received"}
@@ -226,7 +226,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             )
             t0 = getattr(request.state, "webhook_start", None)
             if t0 is not None:
-                logger.info(
+                logger.debug(
                     f"Webhook: interaction done in {int((time.perf_counter() - t0) * 1000)}ms"
                 )
             return {"status": "received"}
@@ -239,7 +239,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             )
             t0 = getattr(request.state, "webhook_start", None)
             if t0 is not None:
-                logger.info(
+                logger.debug(
                     f"Webhook: interaction done in {int((time.perf_counter() - t0) * 1000)}ms"
                 )
             return {"status": "received"}
