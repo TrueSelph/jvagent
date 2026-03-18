@@ -264,7 +264,7 @@ APP_BASE_URL=https://your-app.com
 WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS=120
 
 # Media batch mode is derived from BACKGROUND_PROCESSING (see jvspatial config).
-# Lambda: auto-disabled -> lambda mode when MongoDB + WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION configured.
+# Lambda: auto-disabled -> lambda mode when MongoDB + AWS_LAMBDA_FUNCTION_NAME set.
 
 # Skip Startup Registration (optional, for Lambda)
 # Set to true to skip session registration on cold start; use POST /api/actions/{action_id}/session/register manually
@@ -341,7 +341,7 @@ Media batch mode is derived from `BACKGROUND_PROCESSING` and `AWS_LAMBDA_FUNCTIO
 |------|-----------|----------|
 | **async** | `BACKGROUND_PROCESSING=true` | In-memory batching with background timer. All media waits `media_batch_window` to coalesce; then one interact call with all items. **Default for long-running servers.** |
 | **disabled** | `BACKGROUND_PROCESSING=false` and not Lambda | Each media processed inline immediately. No batching. |
-| **lambda** | `BACKGROUND_PROCESSING=false` and `AWS_LAMBDA_FUNCTION_NAME` set | Persistent batching: store in MongoDB, invoke batch processor async. Requires `JVSPATIAL_DB_TYPE=mongodb` and `WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION`. |
+| **lambda** | `BACKGROUND_PROCESSING=false` and `AWS_LAMBDA_FUNCTION_NAME` set | Persistent batching: store in MongoDB, invoke batch processor async. Requires `JVSPATIAL_DB_TYPE=mongodb`. |
 
 #### Lambda mode: self-invoke (recommended)
 
@@ -353,15 +353,15 @@ The main Lambda can handle both HTTP (webhook) and batch events without a second
 lambda:
   environment:
     # BACKGROUND_PROCESSING is auto-disabled on Lambda (AWS_LAMBDA_FUNCTION_NAME set)
-    WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION: "{{app.name}}"  # Self-invoke (e.g. jvagent-iris)
+    AWS_LAMBDA_FUNCTION_NAME: "{{app.name}}"  # Set by AWS or jvdeploy; used for self-invoke
     AWS_LWA_PASS_THROUGH_PATH: "/api/_internal/whatsapp/batch"
 ```
 
-- `WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION`: Set to the main Lambda name so it invokes itself.
+- `AWS_LAMBDA_FUNCTION_NAME`: Set by AWS in Lambda environments (or by jvdeploy as `{{app.name}}`). Used for self-invoke; no extra config needed.
 - `AWS_LWA_PASS_THROUGH_PATH`: Routes direct-invoke payloads to the batch handler. Without this, LWA defaults to `/events` and the batch route is never hit.
 - **IAM**: The Lambda role needs `lambda:InvokeFunction` on its own ARN (self-invoke).
 
-**Flow**: Webhook adds media to MongoDB → `_invoke_lambda_async` invokes the same Lambda with `InvocationType="Event"` → LWA POSTs the payload to `/api/_internal/whatsapp/batch` → `whatsapp_batch_invoke` runs `process_persistent_batch`.
+**Flow**: Webhook adds media to MongoDB → `_invoke_lambda_async` invokes the same Lambda (using `AWS_LAMBDA_FUNCTION_NAME`) with `InvocationType="Event"` → LWA POSTs the payload to `/api/_internal/whatsapp/batch` → `whatsapp_batch_invoke` runs `process_persistent_batch`.
 
 ## Lambda Deployment
 
@@ -383,7 +383,6 @@ For AWS Lambda deployments, configure the following:
 | `BACKGROUND_PROCESSING` | Auto-disabled on Lambda (`AWS_LAMBDA_FUNCTION_NAME` set). Media batch mode: `lambda` when disabled + Lambda. |
 | `JVSPATIAL_FILE_INTERFACE` | Set to `s3` for media storage. Local storage fails on Lambda (read-only `/var/task`). |
 | `JVSPATIAL_DB_TYPE` | Must be `mongodb` when using lambda media batch mode |
-| `WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION` | Lambda function name for batch processing (self-invoke: use main Lambda name) |
 | `AWS_LWA_PASS_THROUGH_PATH` | Route direct-invoke payloads to batch handler: `/api/_internal/whatsapp/batch` |
 | `WHATSAPP_SKIP_STARTUP_REGISTRATION` | Set to `true` to skip session registration on cold start; use manual endpoint instead |
 
@@ -459,11 +458,11 @@ For self-invoke: the Lambda role needs `lambda:InvokeFunction` on its own ARN.
 #### Problem: ResourceNotFoundException for batch processor function
 
 **Symptoms**:
-- `Function not found: arn:aws:lambda:...:function:jvagent-iris-batch`
+- `Function not found: arn:aws:lambda:...:function:...`
 
-**Cause**: `WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION` points to a non-existent separate batch Lambda.
+**Cause**: `AWS_LAMBDA_FUNCTION_NAME` (set by AWS or deploy config) points to a non-existent or misconfigured Lambda.
 
-**Solution**: Use self-invoke: set `WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION: "{{app.name}}"` (the main Lambda name). Ensure `AWS_LWA_PASS_THROUGH_PATH` is configured as above.
+**Solution**: Ensure the Lambda function exists and `AWS_LAMBDA_FUNCTION_NAME` matches the deployed function name. Set `AWS_LWA_PASS_THROUGH_PATH: "/api/_internal/whatsapp/batch"` so LWA routes direct-invoke payloads to the batch handler.
 
 ### Health Check
 

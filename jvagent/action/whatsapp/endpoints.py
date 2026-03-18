@@ -291,7 +291,7 @@ async def whatsapp_batch_invoke(request: Request) -> Dict[str, Any]:
     """Handle direct Lambda invoke for media batch processing (self-invoke path).
 
     LWA converts direct invokes to HTTP; this endpoint processes batch payloads
-    when WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION points to the main Lambda.
+    when AWS_LAMBDA_FUNCTION_NAME is set (self-invoke).
     """
     try:
         body = await request.body()
