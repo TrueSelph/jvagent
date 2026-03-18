@@ -122,9 +122,7 @@ def _create_eventbridge_schedule(
     role_arn = os.environ.get("WHATSAPP_EVENTBRIDGE_ROLE_ARN", "").strip()
     lambda_arn = os.environ.get("WHATSAPP_EVENTBRIDGE_LAMBDA_ARN", "").strip()
     if not lambda_arn:
-        func_name = os.environ.get(
-            "WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION", ""
-        ).strip()
+        func_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME", "").strip()
         if func_name:
             region = os.environ.get("AWS_REGION", "us-east-1")
             account = os.environ.get("AWS_ACCOUNT_ID", "")
@@ -177,11 +175,9 @@ def _invoke_lambda_async(
     process_at: Optional[float] = None,
 ) -> None:
     """Asynchronously invoke the batch processing Lambda (fire-and-forget)."""
-    func_name = os.environ.get("WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION", "").strip()
+    func_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME", "").strip()
     if not func_name:
-        logger.warning(
-            "WHATSAPP_MEDIA_BATCH_PROCESSOR_FUNCTION not set, skipping async invoke"
-        )
+        logger.warning("AWS_LAMBDA_FUNCTION_NAME not set, skipping async invoke")
         return
     try:
         # Prefer EventBridge Scheduler when process_at set (avoids billed sleep time)
