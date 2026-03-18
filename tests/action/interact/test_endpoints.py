@@ -11,10 +11,10 @@ from jvagent.action.interact.response_builder import (
     build_interact_response,
     build_interaction_payload,
 )
-from jvagent.utils.env import get_environment_mode, is_production_mode
+from jvagent.core.config import get_environment_mode, is_production_mode
 
 
-@patch("jvagent.utils.env._get_environment_from_app_config", return_value=None)
+@patch("jvagent.core.config._get_environment_from_app_config", return_value=None)
 class TestEnvironmentMode:
     """Test environment mode detection functions."""
 
@@ -78,7 +78,7 @@ class TestEnvironmentMode:
         original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
         try:
             with patch(
-                "jvagent.utils.env._get_environment_from_app_config",
+                "jvagent.core.config._get_environment_from_app_config",
                 return_value="production",
             ):
                 mode = get_environment_mode()
@@ -88,7 +88,8 @@ class TestEnvironmentMode:
                 os.environ["JVAGENT_ENVIRONMENT"] = original
 
     @patch(
-        "jvagent.utils.env._get_environment_from_app_config", return_value="development"
+        "jvagent.core.config._get_environment_from_app_config",
+        return_value="development",
     )
     def test_get_environment_mode_from_app_config_development(
         self, mock_app_config_development, mock_app_config
@@ -103,7 +104,8 @@ class TestEnvironmentMode:
                 os.environ["JVAGENT_ENVIRONMENT"] = original
 
     @patch(
-        "jvagent.utils.env._get_environment_from_app_config", return_value="production"
+        "jvagent.core.config._get_environment_from_app_config",
+        return_value="production",
     )
     def test_env_var_overrides_app_config(
         self, mock_app_config_production, mock_app_config

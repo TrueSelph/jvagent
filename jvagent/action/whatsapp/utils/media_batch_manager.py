@@ -39,6 +39,7 @@ from typing import Any, Dict, List, Optional
 from jvspatial.async_utils import create_background_task
 from jvspatial.config import use_background_processing
 from jvspatial.db import get_prime_database
+from jvspatial.env import load_env
 from jvspatial.exceptions import DatabaseError
 
 from jvagent.core.agent import Agent
@@ -728,7 +729,7 @@ async def process_persistent_batch(
     """
     if _get_media_batch_mode() != "lambda":
         return False
-    if os.environ.get("JVSPATIAL_DB_TYPE") != "mongodb":
+    if load_env().db_type != "mongodb":
         return False
     if process_at is not None:
         delay = max(0, process_at - time.time())

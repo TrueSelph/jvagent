@@ -290,6 +290,9 @@ async def _reattach_orphans(
     dry_run: bool,
 ) -> int:
     """Try to reattach orphaned nodes to their expected parents."""
+    from jvagent.action.base import Action
+    from jvagent.core.graph_repair_handlers import get_reattach_handler
+
     reattached = 0
 
     for node_id in list(orphan_ids):
@@ -300,127 +303,16 @@ async def _reattach_orphans(
 
             entity_name = node.__class__.__name__
 
-            if entity_name == "App":
-                root = await Root.get()
-                if root and not await root.is_connected_to(node):
-                    if not dry_run:
-                        await root.connect(node, direction="out")
-                    reattached += 1
-                    orphan_ids.discard(node_id)
-
-            elif entity_name == "Agents":
-                from jvagent.core.app import App
-
-                app_nodes = await App.find({})
-                for app in app_nodes:
-                    if not await app.is_connected_to(node):
-                        if not dry_run:
-                            await app.connect(node, direction="out")
-                        reattached += 1
-                        orphan_ids.discard(node_id)
-                        break
-
-            elif entity_name == "Agent":
-                from jvagent.core.agents import Agents
-
-                agents_nodes = await Agents.find({})
-                for agents in agents_nodes:
-                    if not await agents.is_connected_to(node):
-                        if not dry_run:
-                            await agents.connect(node, direction="out")
-                        reattached += 1
-                        orphan_ids.discard(node_id)
-                        break
-
-            elif entity_name == "Actions":
-                from jvagent.core.agent import Agent
-
-                agents_without_actions = []
-                for a in await Agent.find({}):
-                    actions_mgr = await a.node(node="Actions")
-                    if not actions_mgr:
-                        agents_without_actions.append(a)
-                if len(
-                    agents_without_actions
-                ) == 1 and not await agents_without_actions[0].is_connected_to(node):
-                    if not dry_run:
-                        await agents_without_actions[0].connect(node, direction="out")
-                    reattached += 1
-                    orphan_ids.discard(node_id)
-
-            elif entity_name == "Memory":
-                from jvagent.core.agent import Agent
-
-                agents_without_memory = []
-                for a in await Agent.find({}):
-                    mem = await a.node(node="Memory")
-                    if not mem:
-                        agents_without_memory.append(a)
-                if len(agents_without_memory) == 1 and not await agents_without_memory[
-                    0
-                ].is_connected_to(node):
-                    if not dry_run:
-                        await agents_without_memory[0].connect(node, direction="out")
-                    reattached += 1
-                    orphan_ids.discard(node_id)
-
-            elif entity_name == "User":
-                from jvagent.memory.manager import Memory
-
-                user_id = getattr(node, "user_id", None)
-                if not user_id:
-                    continue
-                # Only reattach if the user has no edges at all (true orphan).
-                # This avoids cross-agent contamination by not reconnecting
-                # users that belong to another Memory.
-                if node.edge_ids:
-                    continue
-                memories = await Memory.find({})
-                for memory in memories:
-                    connected_users = await memory.nodes(node="User")
-                    if any(u.user_id == user_id for u in connected_users):
-                        continue
-                    if not await memory.is_connected_to(node):
-                        if not dry_run:
-                            await memory.connect(node, direction="out")
-                        reattached += 1
-                        orphan_ids.discard(node_id)
-                        break
-
-            elif entity_name == "Conversation":
-                from jvagent.memory.user import User
-
-                user_id = getattr(node, "user_id", None)
-                if not user_id:
-                    continue
-                user = await User.find_one({"context.user_id": user_id})
-                if user and not await user.is_connected_to(node):
-                    if not dry_run:
-                        await user.connect(node, direction="out")
-                    reattached += 1
-                    orphan_ids.discard(node_id)
-
-            elif entity_name == "Interaction":
+            if entity_name == "Interaction":
                 continue
 
-            else:
-                from jvagent.action.base import Action
-                from jvagent.core.agent import Agent
+            handler = get_reattach_handler(entity_name)
+            if not handler and isinstance(node, Action):
+                handler = get_reattach_handler("Action")
 
-                if isinstance(node, Action):
-                    action_agent_id = getattr(node, "agent_id", None)
-                    if action_agent_id:
-                        agent = await Agent.get(action_agent_id)
-                        if agent:
-                            actions_manager = await agent.get_actions_manager()
-                            if (
-                                actions_manager
-                                and not await actions_manager.is_connected_to(node)
-                            ):
-                                if not dry_run:
-                                    await actions_manager.connect(node, direction="out")
-                                reattached += 1
-                                orphan_ids.discard(node_id)
+            if handler:
+                if await handler(context, node, orphan_ids, dry_run):
+                    reattached += 1
 
         except Exception as e:
             logger.debug("Could not reattach %s: %s", node_id, e)
@@ -447,8 +339,10 @@ async def _reattach_interaction_orphans(
             continue
         by_conv[conv_id].append(node)
 
+    from jvagent.memory.interaction import interaction_sort_key
+
     for conv_id, interactions in by_conv.items():
-        interactions.sort(key=lambda n: (getattr(n, "started_at", None) or "", n.id))
+        interactions.sort(key=interaction_sort_key)
         conversation = await Conversation.get(conv_id)
         if not conversation:
             continue

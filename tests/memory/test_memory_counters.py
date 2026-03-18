@@ -5,10 +5,12 @@ Covers:
 - Concurrent conversation deletes do not corrupt the counter
 - repair_memory (_recalculate_counters) corrects drift
 - interaction_count reconciliation via _recalculate_counters
+- dual-branch sequential chaining in repair_memory
 """
 
 import asyncio
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -253,3 +255,52 @@ async def test_repair_memory_restores_counters_from_graph(test_db):
     assert fresh is not None
     assert fresh.total_users == 1
     assert fresh.total_conversations == 1
+
+
+# ---------------------------------------------------------------------------
+# Dual-branch sequential chaining
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_repair_memory_chains_dual_branch_interactions(test_db):
+    """repair_memory chains second branched node to first instead of orphaning."""
+    memory = await _setup_memory()
+    user = await _make_user(memory)
+    conv = await _make_conversation(memory, user)
+
+    # Build normal chain: Conv -> I1 -> I2
+    i1 = await conv.add_interaction(utterance="first")
+    i2 = await conv.add_interaction(utterance="second")
+
+    # Create I3 and connect I1 -> I3 to form dual branch (I1 -> I2 and I1 -> I3)
+    # Use i1.started_at as base so timezone matches (avoids naive/aware comparison)
+    base = i1.started_at or datetime.now(timezone.utc)
+    if base.tzinfo is None:
+        base = base.replace(tzinfo=timezone.utc)
+    i3 = await Interaction.create(
+        conversation_id=conv.id,
+        user_id=conv.user_id,
+        utterance="third",
+        channel=conv.channel,
+        session_id=conv.session_id,
+        started_at=base + timedelta(seconds=2),
+    )
+    await i1.connect(i3, direction="both")
+
+    # Verify dual branch exists: I1 has two outgoing
+    next_from_i1 = await i1.nodes(node=Interaction, direction="out")
+    assert len(next_from_i1) == 2
+
+    result = await memory.repair_memory()
+    assert result["dual_edges_removed"] >= 1
+
+    # Verify sequential chain: I1 -> I2 -> I3
+    next_i1 = await i1.get_next_interaction()
+    assert next_i1 is not None
+    assert next_i1.id == i2.id
+    next_i2 = await i2.get_next_interaction()
+    assert next_i2 is not None
+    assert next_i2.id == i3.id
+    next_i3 = await i3.get_next_interaction()
+    assert next_i3 is None

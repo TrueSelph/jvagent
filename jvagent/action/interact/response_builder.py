@@ -2,8 +2,8 @@
 
 from typing import Any, Dict, List, Optional
 
+from jvagent.core.config import is_production_mode
 from jvagent.memory.interaction import Interaction
-from jvagent.utils.env import is_production_mode
 
 
 def build_interaction_payload(

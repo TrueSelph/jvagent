@@ -12,6 +12,8 @@ from jvspatial.core.annotations import attribute
 from jvspatial.storage import create_storage, get_proxy_manager
 from jvspatial.storage.exceptions import StorageError
 
+from jvagent.env import load_env
+
 
 class App(Node):
     """Root application node representing the jvagent application.
@@ -250,12 +252,9 @@ class App(Node):
             return self._file_interface
 
         # Resolve provider and root_dir: env > node > default
-        env_provider = os.getenv("JVSPATIAL_FILE_INTERFACE", "").strip()
-        provider = (
-            env_provider if env_provider else (self.file_storage_provider or "local")
-        )
-        env_root = os.getenv("JVSPATIAL_FILES_ROOT_PATH", "").strip()
-        root_dir = env_root if env_root else (self.file_storage_root_dir or ".files")
+        env = load_env()
+        provider = env.file_interface or (self.file_storage_provider or "local")
+        root_dir = env.files_root_path or (self.file_storage_root_dir or ".files")
 
         # Create storage based on resolved configuration
         if provider == "local":
@@ -263,11 +262,11 @@ class App(Node):
         elif provider == "s3":
             self._file_interface = create_storage(
                 provider="s3",
-                bucket_name=os.getenv("JVSPATIAL_S3_BUCKET_NAME", ""),
-                region_name=os.getenv("JVSPATIAL_S3_REGION_NAME", "us-east-1"),
-                access_key_id=os.getenv("JVSPATIAL_S3_ACCESS_KEY_ID"),
-                secret_access_key=os.getenv("JVSPATIAL_S3_SECRET_ACCESS_KEY"),
-                endpoint_url=os.getenv("JVSPATIAL_S3_ENDPOINT_URL"),
+                bucket_name=env.s3_bucket_name or "",
+                region_name=env.s3_region_name,
+                access_key_id=env.s3_access_key_id,
+                secret_access_key=env.s3_secret_access_key,
+                endpoint_url=env.s3_endpoint_url,
             )
         else:
             self._file_interface = create_storage(provider=provider, root_dir=root_dir)
