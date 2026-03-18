@@ -63,15 +63,15 @@ def reload_performance_config() -> None:
     This should be called after set_app_root() to ensure the config
     is loaded from the correct app.yaml location.
     """
-    global _perf_config, ENABLE_AGENT_CACHING, AGENT_CACHE_TTL
+    global _perf_config, ENABLE_AGENT_CACHE, AGENT_CACHE_TTL
     global ENABLE_ACTION_CACHE, ACTION_CACHE_TTL, CACHE_CLEANUP_PROBABILITY
     global ENABLE_INTERACT_ROUTER_CACHE, INTERACT_ROUTER_CACHE_TTL
 
     _perf_config = _load_perf_config()
 
     # Reload all config values
-    ENABLE_AGENT_CACHING = _perf_config_value(
-        _perf_config, "enable_agent_caching", "JVAGENT_ENABLE_AGENT_CACHING", True, bool
+    ENABLE_AGENT_CACHE = _perf_config_value(
+        _perf_config, "enable_agent_cache", "JVAGENT_ENABLE_AGENT_CACHE", True, bool
     )
     AGENT_CACHE_TTL = _perf_config_value(
         _perf_config, "agent_cache_ttl", "JVAGENT_AGENT_CACHE_TTL", 300, int
@@ -106,7 +106,7 @@ def reload_performance_config() -> None:
 
     logger.debug(
         "Performance config reloaded: agent_caching=%s, action_caching=%s",
-        ENABLE_AGENT_CACHING,
+        ENABLE_AGENT_CACHE,
         ENABLE_ACTION_CACHE,
     )
 
@@ -114,7 +114,7 @@ def reload_performance_config() -> None:
 # ============================================================================
 # Agent Cache Configuration
 # ============================================================================
-ENABLE_AGENT_CACHING = True
+ENABLE_AGENT_CACHE = True
 AGENT_CACHE_TTL = 300
 
 # In-memory cache: {agent_id: (agent_node, cached_at)}
@@ -152,7 +152,7 @@ async def get_cached_agent(agent_id: str) -> Optional[Any]:
     Returns:
         Agent node if found, None otherwise
     """
-    if not ENABLE_AGENT_CACHING:
+    if not ENABLE_AGENT_CACHE:
         # Caching disabled, fetch directly from database
         from jvagent.core.agent import Agent
 
@@ -254,7 +254,7 @@ async def get_cache_stats() -> Dict[str, Any]:
 
     return {
         "agent_cache": {
-            "enabled": ENABLE_AGENT_CACHING,
+            "enabled": ENABLE_AGENT_CACHE,
             "size": agent_cache_size,
             "expired": agent_expired_count,
             "ttl_seconds": AGENT_CACHE_TTL,

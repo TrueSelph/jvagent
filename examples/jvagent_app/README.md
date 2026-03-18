@@ -381,7 +381,7 @@ The `app.yaml` file includes a comprehensive `config` section with application-l
 
 **Performance Configuration:**
 - `performance.enable_profiling` - Enable request latency profiling (default: `false`)
-- `performance.enable_agent_caching` - Enable agent node caching (default: `true`)
+- `performance.enable_agent_cache` - Enable agent node caching (env: JVAGENT_ENABLE_AGENT_CACHE, default: `true`)
 - `performance.agent_cache_ttl` - Agent cache TTL in seconds (default: `300`)
 - `performance.enable_action_cache` - Enable action caching during discovery (default: `true`)
 - `performance.action_cache_ttl` - Action cache TTL in seconds (default: `60`)

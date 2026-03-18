@@ -705,7 +705,7 @@ config:
   # Performance optimization
   performance:
     enable_profiling: false      # Enable request latency profiling
-    enable_agent_caching: true   # Cache agent nodes
+    enable_agent_cache: true   # Cache agent nodes
     agent_cache_ttl: 300         # Agent cache TTL (seconds)
     enable_action_cache: true    # Cache action instances during discovery
     action_cache_ttl: 60         # Action cache TTL (seconds)
@@ -1509,7 +1509,7 @@ Key environment variables (see `.env.example` for full list):
 
 **Performance Optimization:**
 - `JVAGENT_ENABLE_PROFILING` - Enable request latency profiling (default: `false`)
-- `JVAGENT_ENABLE_AGENT_CACHING` - Enable agent node caching (default: `true`)
+- `JVAGENT_ENABLE_AGENT_CACHE` - Enable agent node caching (default: `true`)
 - `JVAGENT_AGENT_CACHE_TTL` - Agent cache TTL in seconds (default: `300`)
 - `JVAGENT_ENABLE_ACTION_CACHE` - Enable action caching during discovery (default: `true`)
 - `JVAGENT_ACTION_CACHE_TTL` - Action cache TTL in seconds (default: `60`)
@@ -1523,7 +1523,7 @@ These can also be configured in `app.yaml` under `config.performance`:
 config:
   performance:
     enable_profiling: false
-    enable_agent_caching: true
+    enable_agent_cache: true
     agent_cache_ttl: 300
     enable_action_cache: true
     action_cache_ttl: 60

@@ -13,6 +13,17 @@ def _parse_bool(val: str) -> bool:
     return str(val).strip().lower() in ("true", "1", "yes")
 
 
+def _parse_int(val: Optional[str]) -> Optional[int]:
+    """Parse env string to int. Returns None if unset/invalid. Accepts 0 for indefinite retention."""
+    if val is None or not str(val).strip():
+        return None
+    try:
+        n = int(val)
+        return n if n >= 0 else None
+    except ValueError:
+        return None
+
+
 @dataclass
 class EnvConfig:
     """Unified environment configuration for jvagent core.
@@ -27,6 +38,7 @@ class EnvConfig:
     admin_email: str
     log_db_path: Optional[str]
     log_db_uri: Optional[str]
+    log_retention_default_days: Optional[int]
 
     # JVSPATIAL (used by jvagent core)
     file_interface: str
@@ -60,6 +72,9 @@ def load_env() -> EnvConfig:
         admin_email=admin_email,
         log_db_path=os.getenv("JVAGENT_LOG_DB_PATH"),
         log_db_uri=os.getenv("JVAGENT_LOG_DB_URI"),
+        log_retention_default_days=_parse_int(
+            os.getenv("JVAGENT_LOG_RETENTION_DEFAULT_DAYS")
+        ),
         # JVSPATIAL
         file_interface=os.getenv("JVSPATIAL_FILE_INTERFACE", "local"),
         files_root_path=os.getenv("JVSPATIAL_FILES_ROOT_PATH", ".files"),

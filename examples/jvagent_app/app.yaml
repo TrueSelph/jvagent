@@ -137,9 +137,9 @@ config:
     # When enabled, profiles are logged at DEBUG level with latency breakdowns
     enable_profiling: false
 
-    # Agent node caching (env: JVAGENT_ENABLE_AGENT_CACHING)
+    # Agent node caching (env: JVAGENT_ENABLE_AGENT_CACHE)
     # Cache Agent nodes to reduce database lookups
-    enable_agent_caching: true
+    enable_agent_cache: true
 
     # Agent cache TTL in seconds (env: JVAGENT_AGENT_CACHE_TTL)
     agent_cache_ttl: 300
