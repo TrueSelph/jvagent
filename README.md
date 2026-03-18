@@ -649,6 +649,8 @@ jvagent_app/
 
 ## Configuration Files
 
+For a complete mapping of app.yaml paths to environment variables and secrets, see [docs/configuration.md](docs/configuration.md).
+
 ### app.yaml
 
 Application-level configuration that bootstraps the entire jvagent application:
