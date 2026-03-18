@@ -112,12 +112,12 @@ class ConnectionPoolManager:
                 except RuntimeError:
                     pass
                 # Session invalid (closed loop, different loop, or not running)
-                # Close before removing to avoid "Unclosed client session" warnings
+                # Close before removing; use timeout to avoid blocking on unreachable host
                 stale = self._sessions.pop(pool_key)
                 if not stale.closed:
                     try:
-                        await stale.close()
-                    except Exception:
+                        await asyncio.wait_for(stale.close(), timeout=2.0)
+                    except (asyncio.TimeoutError, Exception):
                         pass
 
             # Create new session with connection pooling
@@ -347,7 +347,7 @@ class BaseWhatsAppAPI(ABC):
                     session = await pool.get_session(self.api_url, self.timeout)
                 else:
                     # Retry with fresh session (bypasses potential pool issues)
-                    self.logger.debug(f"Retrying {method} {url} with fresh session")
+                    self.logger.info(f"Retrying {method} {url} with fresh session")
                     connector = aiohttp.TCPConnector(limit=10, force_close=True)
                     timeout_obj = aiohttp.ClientTimeout(total=self.timeout)
                     session = aiohttp.ClientSession(
@@ -371,7 +371,7 @@ class BaseWhatsAppAPI(ABC):
 
                 if exc_type == "TypeError" and "BaseException" in error:
                     # aiohttp/Python 3.12+ connection bug - retry with fresh session
-                    self.logger.debug(
+                    self.logger.info(
                         f"Connection issue for {method} {url}, attempt {attempt + 1}"
                     )
                     continue
@@ -382,7 +382,7 @@ class BaseWhatsAppAPI(ABC):
                             await pool.close_session(self.api_url, self.timeout)
                         except Exception:
                             pass
-                    self.logger.debug(
+                    self.logger.info(
                         f"Request failed for {method} {url}: {error}, retrying..."
                     )
                     continue
