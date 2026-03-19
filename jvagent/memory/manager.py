@@ -459,10 +459,13 @@ class Memory(Node):
 
         Returns:
             Dict with orphaned_interactions_deleted, orphaned_users_reconnected,
-            dual_edges_removed, conversation_first_edges_restored
+            dual_edges_removed, conversation_first_edges_restored,
+            conversation_branch_edges_removed
         """
         deleted = await self._cleanup_orphaned_interactions(recent_minutes)
-        dual_removed, first_restored = await self._repair_interaction_chain_invariants()
+        dual_removed, first_restored, conv_branch_removed = (
+            await self._repair_interaction_chain_invariants()
+        )
         reconnected = await self._reconnect_orphaned_users()
         counters_fixed = await self._recalculate_counters()
 
@@ -477,25 +480,61 @@ class Memory(Node):
             "orphaned_users_reconnected": reconnected,
             "dual_edges_removed": dual_removed,
             "conversation_first_edges_restored": first_restored,
+            "conversation_branch_edges_removed": conv_branch_removed,
             "counters_fixed": counters_fixed,
         }
 
-    async def _repair_interaction_chain_invariants(self) -> Tuple[int, int]:
-        """Repair dual edges and missing conversation->first edges.
+    async def _repair_interaction_chain_invariants(self) -> Tuple[int, int, int]:
+        """Repair dual edges, missing conversation->first edges, and conversation branches.
 
         Returns:
-            Tuple of (dual_edges_removed, conversation_first_edges_restored)
+            Tuple of (dual_edges_removed, conversation_first_edges_restored,
+            conversation_branch_edges_removed)
         """
         from jvagent.memory.conversation import Conversation
-        from jvagent.memory.interaction import Interaction
+        from jvagent.memory.interaction import Interaction, interaction_sort_key
 
         dual_removed = 0
         first_restored = 0
+        conv_branch_removed = 0
 
         conversations = await Conversation.find()
         for conv in conversations:
             if conv.interaction_count <= 0:
                 continue
+
+            conv_out = await conv.nodes(node=Interaction, direction="out")
+            if len(conv_out) > 1:
+                conv_out.sort(key=interaction_sort_key)
+                keep = conv_out[0]
+                seen = {keep.id}
+                tail = keep
+                while True:
+                    next_of_tail = await tail.nodes(node=Interaction, direction="out")
+                    if len(next_of_tail) != 1:
+                        break
+                    cand = next_of_tail[0]
+                    if cand.id in seen:
+                        break
+                    seen.add(cand.id)
+                    tail = cand
+                for extra in conv_out[1:]:
+                    if await conv.is_connected_to(extra):
+                        await tail.connect(extra, direction="both")
+                        await conv.disconnect(extra)
+                        conv_branch_removed += 1
+                    tail = extra
+                    while True:
+                        next_of_tail = await tail.nodes(
+                            node=Interaction, direction="out"
+                        )
+                        if len(next_of_tail) != 1:
+                            break
+                        cand = next_of_tail[0]
+                        if cand.id in seen:
+                            break
+                        seen.add(cand.id)
+                        tail = cand
 
             first = await conv.get_first_interaction()
             if not first:
@@ -510,8 +549,6 @@ class Memory(Node):
             while current:
                 next_nodes = await current.nodes(node=Interaction, direction="out")
                 if len(next_nodes) > 1:
-                    from jvagent.memory.interaction import interaction_sort_key
-
                     next_nodes.sort(key=interaction_sort_key)
                     keep = next_nodes[0]
                     # Find tail of keep's chain (keep may have its own next nodes)
@@ -555,7 +592,7 @@ class Memory(Node):
                 else:
                     break
 
-        return dual_removed, first_restored
+        return dual_removed, first_restored, conv_branch_removed
 
     async def _reconnect_orphaned_users(self) -> int:
         """Reconnect orphaned users that belong to this agent's Memory.

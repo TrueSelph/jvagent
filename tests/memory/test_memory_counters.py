@@ -304,3 +304,55 @@ async def test_repair_memory_chains_dual_branch_interactions(test_db):
     assert next_i2.id == i3.id
     next_i3 = await i3.get_next_interaction()
     assert next_i3 is None
+
+
+# ---------------------------------------------------------------------------
+# Conversation-branch sequential chaining
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_repair_memory_chains_conversation_branch_interactions(test_db):
+    """repair_memory chains second branch from conversation into first chain."""
+    memory = await _setup_memory()
+    user = await _make_user(memory)
+    conv = await _make_conversation(memory, user)
+
+    # Build normal chain: Conv -> I1 -> I2
+    i1 = await conv.add_interaction(utterance="first")
+    i2 = await conv.add_interaction(utterance="second")
+
+    # Create I3 and connect Conv -> I3 to form conversation branch (Conv -> I1 and Conv -> I3)
+    base = i2.started_at or datetime.now(timezone.utc)
+    if base.tzinfo is None:
+        base = base.replace(tzinfo=timezone.utc)
+    i3 = await Interaction.create(
+        conversation_id=conv.id,
+        user_id=conv.user_id,
+        utterance="third",
+        channel=conv.channel,
+        session_id=conv.session_id,
+        started_at=base + timedelta(seconds=1),
+    )
+    await conv.connect(i3, direction="out")
+
+    # Verify conversation branch exists: Conv has two outgoing to interactions
+    conv_out = await conv.nodes(node=Interaction, direction="out")
+    assert len(conv_out) == 2
+
+    result = await memory.repair_memory()
+    assert result["conversation_branch_edges_removed"] >= 1
+
+    # Verify sequential chain: Conv -> I1 -> I2 -> I3
+    conv_out_after = await conv.nodes(node=Interaction, direction="out")
+    assert len(conv_out_after) == 1
+    assert conv_out_after[0].id == i1.id
+
+    next_i1 = await i1.get_next_interaction()
+    assert next_i1 is not None
+    assert next_i1.id == i2.id
+    next_i2 = await i2.get_next_interaction()
+    assert next_i2 is not None
+    assert next_i2.id == i3.id
+    next_i3 = await i3.get_next_interaction()
+    assert next_i3 is None

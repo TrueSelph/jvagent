@@ -39,6 +39,7 @@ class TestGraphRepair:
         assert "orphaned_users_reconnected" in result
         assert "dual_edges_removed" in result
         assert "conversation_first_edges_restored" in result
+        assert "conversation_branch_edges_removed" in result
         assert "dead_edges_removed" in result
         assert "orphaned_nodes_reattached" in result
         assert "orphaned_nodes_deleted" in result

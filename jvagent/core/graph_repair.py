@@ -32,8 +32,10 @@ async def repair_agent_graph(
 
     Returns:
         Dict with memory_repair_agents, orphaned_interactions_deleted,
-        orphaned_users_reconnected, dual_edges_removed,
-        conversation_first_edges_restored, dead_edges_removed,
+        orphaned_users_reconnected,         dual_edges_removed,
+        conversation_first_edges_restored,
+        conversation_branch_edges_removed,
+        dead_edges_removed,
         orphaned_nodes_reattached, orphaned_nodes_deleted,
         node_edge_ids_synced, duplicate_edges_removed, message.
     """
@@ -44,6 +46,7 @@ async def repair_agent_graph(
         "orphaned_users_reconnected": 0,
         "dual_edges_removed": 0,
         "conversation_first_edges_restored": 0,
+        "conversation_branch_edges_removed": 0,
         "dead_edges_removed": 0,
         "orphaned_nodes_reattached": 0,
         "orphaned_nodes_deleted": 0,
@@ -107,6 +110,10 @@ async def repair_agent_graph(
             parts.append(
                 f"{result['conversation_first_edges_restored']} conv-first edge(s) restored"
             )
+        if result.get("conversation_branch_edges_removed"):
+            parts.append(
+                f"{result['conversation_branch_edges_removed']} conv-branch edge(s) removed"
+            )
     if dead_removed:
         parts.append(f"{dead_removed} dead edge(s) removed")
     if reattached:
@@ -147,6 +154,7 @@ async def _run_memory_repair_all_agents(
         "orphaned_users_reconnected": 0,
         "dual_edges_removed": 0,
         "conversation_first_edges_restored": 0,
+        "conversation_branch_edges_removed": 0,
         "counters_fixed": 0,
     }
 
@@ -162,6 +170,7 @@ async def _run_memory_repair_all_agents(
             "orphaned_users_reconnected",
             "dual_edges_removed",
             "conversation_first_edges_restored",
+            "conversation_branch_edges_removed",
             "counters_fixed",
         ):
             aggregated[key] += repair.get(key, 0)

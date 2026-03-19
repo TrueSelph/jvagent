@@ -604,6 +604,11 @@ async def get_storage_file(file_path: str):
                 description="Number of conversation-to-first-interaction edges restored",
                 example=0,
             ),
+            "conversation_branch_edges_removed": ResponseField(
+                field_type=int,
+                description="Number of conversation-branch edges removed (extra conv->interaction edges)",
+                example=0,
+            ),
             "dead_edges_removed": ResponseField(
                 field_type=int,
                 description="Number of dead edges removed",

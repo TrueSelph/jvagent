@@ -342,6 +342,11 @@ async def delete_user_memory(
                 description="Number of conversation-to-first-interaction edges restored",
                 example=0,
             ),
+            "conversation_branch_edges_removed": ResponseField(
+                field_type=int,
+                description="Number of conversation-branch edges removed (extra conv->interaction edges)",
+                example=0,
+            ),
             "message": ResponseField(
                 field_type=str,
                 description="Success message",
@@ -392,14 +397,17 @@ async def repair_memory(
     reconnected = result["orphaned_users_reconnected"]
     dual_removed = result["dual_edges_removed"]
     first_restored = result["conversation_first_edges_restored"]
+    conv_branch_removed = result["conversation_branch_edges_removed"]
     return {
         "orphaned_interactions_deleted": deleted,
         "orphaned_users_reconnected": reconnected,
         "dual_edges_removed": dual_removed,
         "conversation_first_edges_restored": first_restored,
+        "conversation_branch_edges_removed": conv_branch_removed,
         "message": (
             f"Repair completed: {deleted} orphaned interaction(s) deleted, "
             f"{reconnected} user(s) reconnected, {dual_removed} dual edge(s) removed, "
-            f"{first_restored} conv-first edge(s) restored"
+            f"{first_restored} conv-first edge(s) restored, "
+            f"{conv_branch_removed} conv-branch edge(s) removed"
         ),
     }
