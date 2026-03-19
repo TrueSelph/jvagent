@@ -31,6 +31,7 @@ from jvagent.action.pageindex.prompts import (
     DIRECTIVE_TEMPLATE,
     DIRECTIVE_TEMPLATE_NO_REFS,
     DIRECTIVE_TEMPLATE_PLAIN,
+    DIRECTIVE_TEMPLATE_STR,
 )
 from jvagent.action.pageindex.retrieval import search_documents
 
@@ -161,7 +162,7 @@ class PageIndexRetrievalInteractAction(InteractAction):
         description="Execution weight (runs after InteractRouter)",
     )
     directive: str = attribute(
-        default=DIRECTIVE_TEMPLATE,
+        default=DIRECTIVE_TEMPLATE_STR,
         description="Template for formatting the directive. Placeholder: {results}",
     )
     strategy: str = attribute(

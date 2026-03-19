@@ -33,3 +33,6 @@ DIRECTIVE_TEMPLATE_NO_REFS = Template(
     "$results\n\n"
     "[END OF CONTEXT]"
 )
+
+# String form for Pydantic/JSON-serializable attribute defaults
+DIRECTIVE_TEMPLATE_STR = DIRECTIVE_TEMPLATE.template

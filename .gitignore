@@ -49,6 +49,7 @@ jvagent_db/
 *.db
 *.sqlite
 *.sqlite3
+*_pageindex_db
 
 # Logs
 *.log
