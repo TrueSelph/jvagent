@@ -32,6 +32,7 @@ class EnvConfig:
     """
 
     # JVAGENT
+    app_id: Optional[str]  # Overrides app node's app_id when set
     log_level: Optional[str]
     admin_username: str
     admin_password: Optional[str]
@@ -55,6 +56,31 @@ class EnvConfig:
     s3_endpoint_url: Optional[str]
 
 
+def get_jvagent_app_id() -> Optional[str]:
+    """Return JVAGENT_APP_ID if set (from .env or os.environ), else None.
+
+    Uses dotenv_values for .env so it works in child processes (e.g. uvicorn --reload)
+    where load_dotenv may not have run.
+    """
+    try:
+        from dotenv import dotenv_values
+
+        from jvagent.core.app_context import get_app_root
+
+        root = get_app_root()
+        for candidate in (os.path.join(root, ".env"), ".env"):
+            if os.path.isfile(candidate):
+                values = dotenv_values(candidate)
+                val = values.get("JVAGENT_APP_ID") if values else None
+                if val and str(val).strip():
+                    return str(val).strip()
+                break
+    except Exception:
+        pass
+    val = os.getenv("JVAGENT_APP_ID")
+    return str(val).strip() if val and str(val).strip() else None
+
+
 def load_env() -> EnvConfig:
     """Load all environment variables used by jvagent core into EnvConfig."""
     admin_username = os.getenv("JVAGENT_ADMIN_USERNAME", "admin")
@@ -66,6 +92,7 @@ def load_env() -> EnvConfig:
     )
     return EnvConfig(
         # JVAGENT
+        app_id=os.getenv("JVAGENT_APP_ID") or None,
         log_level=os.getenv("JVAGENT_LOG_LEVEL"),
         admin_username=admin_username,
         admin_password=os.getenv("JVAGENT_ADMIN_PASSWORD"),

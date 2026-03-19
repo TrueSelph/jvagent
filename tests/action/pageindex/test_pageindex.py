@@ -1,5 +1,7 @@
 """Tests for PageIndex named collections and metadata."""
 
+import os
+
 import pytest
 
 pytest.importorskip("openai")
@@ -14,6 +16,7 @@ from jvspatial.db import get_database_manager, unregister_database
 from jvagent.action.pageindex.adapter import persist_structure
 from jvagent.action.pageindex.config import (
     PAGEINDEX_DB_NAME,
+    get_pageindex_config,
     get_pageindex_max_summary_chars,
     get_pageindex_node_summary,
     initialize_pageindex_database,
@@ -474,3 +477,19 @@ async def test_config_max_summary_chars():
     assert get_pageindex_max_summary_chars() == 200
     set_pageindex_max_summary_chars(None)
     assert get_pageindex_max_summary_chars() == 300
+
+
+def test_get_pageindex_config_db_name_derivation():
+    """get_pageindex_config derives db name from app_id when JVAGENT_PAGEINDEX_DB_NAME unset."""
+    with patch.dict("os.environ", {"JVAGENT_PAGEINDEX_DB_NAME": ""}, clear=False):
+        config = get_pageindex_config(app_id="jvagent_demo_app")
+    assert config["db_type"] == "json"
+    assert "jvagent_demo_app_pageindex_db" in config["db_path"]
+
+
+def test_get_pageindex_config_explicit_db_name():
+    """JVAGENT_PAGEINDEX_DB_NAME overrides derivation."""
+    with patch.dict("os.environ", {"JVAGENT_PAGEINDEX_DB_NAME": "custom_pageindex_db"}):
+        config = get_pageindex_config(app_id="jvagent_demo_app")
+    assert config["db_type"] == "json"
+    assert "custom_pageindex_db" in config["db_path"]

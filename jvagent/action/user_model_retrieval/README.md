@@ -88,11 +88,10 @@ Retrieval: query -> tree_search/direct/walker -> directive -> PersonaAction
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `JVSPATIAL_PAGEINDEX_DB_PATH` | Path for json/sqlite | `{parent_of_prime_db}/pageindex_db` |
-| `JVSPATIAL_PAGEINDEX_DB_NAME` | MongoDB database name / DynamoDB table name | pageindex_db |
-| `JVSPATIAL_PAGEINDEX_DB_TYPE` | json, sqlite, mongodb, dynamodb | json |
-| `JVSPATIAL_JSONDB_PATH` | Prime DB path (derives shared root) | - |
-| `JVSPATIAL_SQLITE_PATH` | Prime DB sqlite path | jvdb/sqlite/jvspatial.db |
+| `JVAGENT_PAGEINDEX_DB_TYPE` | json, sqlite, mongodb, dynamodb | json |
+| `JVAGENT_PAGEINDEX_DB_PATH` | Path for json/sqlite (explicit) | - |
+| `JVAGENT_PAGEINDEX_DB_ROOT` | Root for path when DB_PATH not set | . |
+| `JVAGENT_PAGEINDEX_DB_NAME` | Explicit db name (overrides autogeneration) | - |
 | `PAGEINDEX_TREE_SEARCH_MODEL` | LLM for tree_search | gpt-4o-mini |
 | `CHATGPT_API_KEY` / `OPENAI_API_KEY` | API key for tree_search | - |
 

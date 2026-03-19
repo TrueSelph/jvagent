@@ -34,6 +34,14 @@ from .models import DocumentRootNode
 logger = logging.getLogger(__name__)
 
 
+async def _get_app_id_from_node() -> Optional[str]:
+    """Get app_id from App node. JVAGENT_APP_ID env overrides when set in config."""
+    from jvagent.core.app import App
+
+    app = await App.get()
+    return getattr(app, "app_id", None) if app else None
+
+
 def _safe_get_prev_context() -> Optional[GraphContext]:
     """Return the current default context, or None if none is set."""
     try:
@@ -125,7 +133,7 @@ async def assimilate_document(
     Returns:
         Dict with doc_name, structure, doc_description (if requested), _root_id (if persist)
     """
-    initialize_pageindex_database()
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
 
     # Core expects a valid model string (tiktoken.encoding_for_model fails on None)
     model = model or "gpt-4o-mini"
@@ -211,7 +219,7 @@ async def get_document_roots(
     metadata_filter: Optional[Dict[str, Any]] = None,
 ) -> List[DocumentRootNode]:
     """Get DocumentRootNodes filtered by collection and optional metadata."""
-    initialize_pageindex_database()
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
     prev = _safe_get_prev_context()
     try:
@@ -228,7 +236,7 @@ async def get_document_root(
     collection_name: str = "default",
 ) -> Optional[DocumentRootNode]:
     """Get DocumentRootNode by doc_name and collection_name."""
-    initialize_pageindex_database()
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
     prev = _safe_get_prev_context()
     try:
@@ -248,7 +256,7 @@ async def list_documents(
     metadata_filter: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """List documents in the PageIndex graph, optionally filtered by collection and metadata."""
-    initialize_pageindex_database()
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
     prev = _safe_get_prev_context()
     try:
@@ -276,7 +284,7 @@ async def delete_document(
     collection_name: str = "default",
 ) -> bool:
     """Delete a document and all its nodes from the PageIndex graph."""
-    initialize_pageindex_database()
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
     root = await get_document_root(doc_name, collection_name=collection_name)
     if not root:
         return False
@@ -319,7 +327,7 @@ async def export_documents(
     """Export documents and their graph structure."""
     from .models import DocumentContentEdge, DocumentNode
 
-    initialize_pageindex_database()
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
     prev = _safe_get_prev_context()
     logger.debug(f"Exporting documents in collection: {collection_name}")
@@ -357,7 +365,7 @@ async def import_documents(
     """Import documents and their graph structure."""
     from .models import DocumentContentEdge, DocumentNode
 
-    initialize_pageindex_database()
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
     prev = _safe_get_prev_context()
     try:

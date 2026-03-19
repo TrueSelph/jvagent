@@ -19,6 +19,7 @@ from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
 from pydantic import Field
 from python_multipart.multipart import FormParser, parse_options_header
 
+from .config import initialize_pageindex_database
 from .documents import (
     assimilate_document,
     delete_document,
@@ -33,6 +34,16 @@ from .retrieval import search_documents
 logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {".pdf", ".md", ".markdown"}
+
+
+async def _get_app_id_from_node() -> Optional[str]:
+    """Get app_id from App node. JVAGENT_APP_ID env overrides when set in config."""
+    from jvagent.core.app import App
+
+    app = await App.get()
+    return getattr(app, "app_id", None) if app else None
+
+
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
 
 
@@ -245,6 +256,7 @@ async def ingest_document_endpoint(
 
     Documents are stored in the agent's collection (collection = `agent_id` from path).
     """
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
     content_type = request.headers.get("content-type", "")
     if "multipart/form-data" not in content_type:
         raise ValidationError("Expected multipart/form-data")
@@ -347,6 +359,7 @@ async def list_documents_endpoint(
 
     Collection is determined by `agent_id` from the path.
     """
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
     metadata_filter = _parse_metadata(metadata)
     documents = await list_documents(
         collection_name=agent_id,
@@ -390,6 +403,7 @@ async def get_document_endpoint(agent_id: str, doc_name: str) -> Dict[str, Any]:
 
     Returns 404 if the document is not found in the agent's collection.
     """
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
     root = await get_document_root(doc_name, collection_name=agent_id)
     if not root:
         raise ResourceNotFoundError(
@@ -433,6 +447,7 @@ async def delete_document_endpoint(agent_id: str, doc_name: str) -> Dict[str, An
 
     Returns 404 if the document is not found in the agent's collection.
     """
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
     deleted = await delete_document(doc_name, collection_name=agent_id)
     if not deleted:
         raise ResourceNotFoundError(
@@ -501,6 +516,7 @@ async def search_documents_endpoint(
 
     Collection is determined by `agent_id` from the path.
     """
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
     metadata_filter = _parse_metadata(metadata)
     results = await search_documents(
         query=query,
@@ -538,6 +554,7 @@ async def export_documents_endpoint(
     ),
 ) -> Dict[str, Any]:
     """Export PageIndex graph data."""
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
     data = await export_documents(collection_name=agent_id, doc_name=doc_name)
 
     if export_format.lower() == "yaml":
@@ -575,6 +592,7 @@ async def import_documents_endpoint(
     ),
 ) -> Dict[str, str]:
     """Import PageIndex graph data."""
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
     try:
         if isinstance(data, str):
             try:

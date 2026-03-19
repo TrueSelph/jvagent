@@ -16,6 +16,7 @@ This document maps `app.yaml` config paths to environment variables and document
 
 | app.yaml path | Env var | Default |
 |---------------|---------|---------|
+| (none) | `JVAGENT_APP_ID` | (app node's app_id) |
 | `config.server.title` | `JVAGENT_TITLE` | jvagent API |
 | `config.server.description` | `JVAGENT_DESCRIPTION` | jvagent Agentive Platform API |
 | `config.server.version` | `JVAGENT_VERSION` | (package version) |
@@ -85,6 +86,20 @@ This document maps `app.yaml` config paths to environment variables and document
 | `config.logging.database.table_name` | `JVSPATIAL_LOG_DB_TABLE_NAME` | (none) |
 | `config.logging.database.region` | `JVSPATIAL_LOG_DB_REGION` | (none) |
 | `config.logging.database.endpoint_url` | `JVSPATIAL_LOG_DB_ENDPOINT_URL` | (none) |
+
+### PageIndex (document indexing/retrieval)
+
+| app.yaml path | Env var | Default |
+|---------------|---------|---------|
+| `config.pageindex.db_name` | `JVAGENT_PAGEINDEX_DB_NAME` | (derived: `{app_id}_pageindex_db`) |
+| `config.pageindex.db_root` | `JVAGENT_PAGEINDEX_DB_ROOT` | . |
+| (none) | `JVAGENT_PAGEINDEX_DB_TYPE` | json |
+| (none) | `JVAGENT_PAGEINDEX_DB_PATH` | (none) |
+| (none) | `JVAGENT_PAGEINDEX_DB_URI` | mongodb://localhost:27017 |
+| (none) | `JVAGENT_PAGEINDEX_DB_TABLE_NAME` | (derived from db_name) |
+| (none) | `JVAGENT_PAGEINDEX_DB_REGION` | us-east-1 |
+
+DB name resolution when `JVAGENT_PAGEINDEX_DB_NAME` is unset: `{app_id}_pageindex_db` — one db per app (agents share it, documents scoped by collection). Fallback: `config.pageindex.db_name` in app.yaml, else `pageindex_db`.
 
 ### CORS
 
