@@ -1,6 +1,7 @@
-"""UserModelRetrievalInteractAction for vectorless RAG.
+"""UserLongMemoryRetrievalInteractAction for vectorless RAG.
 
-Uses UserModel graph with LLM-based tree search (default) or text filtering.
+Uses the assimilated user_long_memory_{user_id} document in PageIndex
+with LLM-based tree search (default) or text filtering.
 No embeddings, no vector store.
 """
 
@@ -101,10 +102,10 @@ async def ensure_ingestion_config_for_agent(agent_id: str) -> None:
     )
 
 
-class UserModelRetrievalInteractAction(PageIndexRetrievalInteractAction):
+class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
     """InteractAction that retrieves context from the user's profile collection in PageIndex.
 
-    Searches the user model collection (user_model_{user_id}) via LLM-based tree search,
+    Searches the long memory collection (user_long_memory_{user_id}) via LLM-based tree search,
     direct, or walker strategies. No VectorStore, no embeddings.
     1. Uses interaction's utterance (or interpretation) as search query
     2. Searches the user's profile collection in PageIndex via tree_search, direct, or walker
@@ -142,7 +143,7 @@ class UserModelRetrievalInteractAction(PageIndexRetrievalInteractAction):
         description="LanguageModelAction type for tree_search (enables observability)",
     )
     parameters: List[Dict[str, Any]] = attribute(
-        default=[
+        default_factory=lambda: [
             {
                 "condition": "There is no data in the context or anywhere else in the prompt that can answer the user request",
                 "response": "Answer based on your own knowledge but mention that the information might be inaccurate or out of date and encourage them to seek external sources of information.",
@@ -156,7 +157,7 @@ class UserModelRetrievalInteractAction(PageIndexRetrievalInteractAction):
         "Required for tree search to work well.",
     )
     collection: Optional[str] = attribute(
-        default=None,
+        default="LongTermMemory",
         description="Collection name (default: agent_id). Override via context or config.",
     )
     metadata_filter: Optional[Dict[str, Any]] = attribute(
@@ -166,10 +167,17 @@ class UserModelRetrievalInteractAction(PageIndexRetrievalInteractAction):
         "Example: {'user_id': '{user_id}', 'type': 'user_model'} filters to documents with matching user_id and type.",
     )
 
+    async def on_register(self) -> None:
+        """Register the action with the agent."""
+        await super().on_register()
+        if self.point_of_interest:
+            self.anchors.append(f"needs context from {str(self.point_of_interest)}")
+
     def _resolve_collection(self) -> str:
         """Resolve collection name from attribute, config, or agent_id."""
+        agent_id = self.agent_id
         return (
-            self.collection
+            f"{agent_id}_{self.collection}"
             or (self.config.get("collection") if self.config else None)
             or (self.config.get("collection_name") if self.config else None)
             or getattr(self, "agent_id", None)
@@ -203,7 +211,7 @@ class UserModelRetrievalInteractAction(PageIndexRetrievalInteractAction):
             limit = self.config.get("limit", self.limit)
             strategy = self.config.get("strategy", self.strategy)
             model = self.config.get("model", self.model)
-            doc_name = f"user_model_{user_id}"
+            doc_name = f"user_long_memory_{user_id}"
             collection_name = self._resolve_collection()
             metadata_filter = (
                 self.metadata_filter or self.config.get("metadata_filter") or {}
@@ -254,12 +262,7 @@ class UserModelRetrievalInteractAction(PageIndexRetrievalInteractAction):
             set_interaction(prev_interaction)
 
     def _get_search_query(self, interaction: "Interaction") -> Optional[str]:
-        """Get search query from utterance or interpretation.
-
-        Prefer utterance for retrieval—it contains the actual search terms. Interpretation
-        is often a meta-description (e.g. "User is asking for information about X") that
-        does not match document content.
-        """
+        """Get search query from utterance or interpretation."""
         query = interaction.utterance or interaction.interpretation
         return query.strip() if query else None
 

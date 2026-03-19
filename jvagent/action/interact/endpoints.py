@@ -60,6 +60,46 @@ async def _finalize_usage(interaction: Any) -> None:
             )
 
 
+async def _run_background_actions(walker: "InteractWalker") -> None:
+    """Execute deferred background InteractActions after the interaction is closed.
+
+    Called as a fire-and-forget asyncio task once the response has been sent to
+    the client.  Each action runs in isolation - an error in one action does NOT
+    prevent subsequent actions from running.
+
+    Args:
+        walker: The InteractWalker whose background_actions list will be executed.
+    """
+    if not walker.background_actions:
+        return
+
+    for action in walker.background_actions:
+        try:
+            action_name = action.get_class_name() if hasattr(action, "get_class_name") else action.__class__.__name__
+            logger.debug(f"Running background action: {action_name}")
+            # Temporarily mark as current action so convenience methods work
+            walker._current_action = action
+            walker._skip_current_action_record = False
+            await action.execute(walker)
+            logger.debug(f"Background action completed: {action_name}")
+        except Exception as e:
+            agent_id = getattr(action, "agent_id", None)
+            interaction_id = walker.interaction.id if walker.interaction else None
+            logger.error(
+                f"Error in background action {getattr(action, 'label', action.__class__.__name__)}: {e}",
+                exc_info=True,
+                extra={
+                    "agent_id": agent_id,
+                    "interaction_id": interaction_id,
+                    "action_class": action.__class__.__name__,
+                },
+            )
+        finally:
+            walker._current_action = None
+            walker._skip_current_action_record = False
+
+
+
 from jvagent.core.profiling import profile_enabled, profiled_request
 
 # Import INTERACTION level to ensure it's registered and available for logging
@@ -597,6 +637,10 @@ async def interact_endpoint(
                         report=report,
                     )
 
+                # Fire background actions (await in Lambda to ensure it finishes before the execution freezes)
+                if walker.background_actions:
+                    await _run_background_actions(walker)
+
                 return result
 
         except ValueError as e:
@@ -793,6 +837,10 @@ async def _stream_interaction(
                 }
             )
 
+            # Fire background actions after final chunk is yielded
+            if walker.background_actions:
+                asyncio.create_task(_run_background_actions(walker))
+
             # Log profile summary
             await finalize_profile(profile.request_id, log=True)
 
@@ -859,6 +907,10 @@ async def _stream_interaction(
                     **final_response,  # Spread the filtered response
                 }
             )
+
+            # Fire background actions after final chunk is yielded
+            if walker.background_actions:
+                asyncio.create_task(_run_background_actions(walker))
 
             # Log profile summary
             await finalize_profile(profile.request_id, log=True)

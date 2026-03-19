@@ -81,6 +81,18 @@ class InteractAction(Action, ABC):
         ),
     )
 
+    # Background execution: if True, this action runs asynchronously after the
+    # interaction is closed and the response has been sent to the client.
+    run_in_background: bool = attribute(
+        default=False,
+        description=(
+            "If True, this InteractAction is deferred and executed as a background "
+            "task after the interaction is closed. The action does not block the "
+            "user-facing response. Useful for analytics, model updates, and "
+            "other non-critical post-interaction processing."
+        ),
+    )
+
     # Anchors for routing (published by InteractRouter)
     anchors: List[str] = attribute(
         default_factory=list,
