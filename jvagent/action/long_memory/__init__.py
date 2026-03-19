@@ -4,6 +4,6 @@ Exports the `UserModelInteractAction` which collects simple personal preferences
 to help personalize agent responses.
 """
 
-from .user_model_interact_action import UserModelInteractAction
+from .long_memory_interact_action import UserLongMemoryInteractAction
 
-__all__ = ["UserModelInteractAction"]
+__all__ = ["UserLongMemoryInteractAction"]

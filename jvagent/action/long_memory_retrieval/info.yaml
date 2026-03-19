@@ -1,0 +1,24 @@
+# UserLongMemoryRetrievalInteractAction Package Descriptor
+
+package:
+  name: jvagent/long_memory_retrieval_interact_action
+  author: jvagent
+  archetype: UserLongMemoryRetrievalInteractAction
+  version: 0.0.1
+  meta:
+    title: UserLongMemoryRetrievalInteractAction
+    description: Vectorless RAG - retrieves context from PageIndex via LLM tree search
+    group: jvagent
+    type: interact_action
+  config:
+    order:
+      weight: -75
+    node_summary: true
+    node_text: true
+    doc_description: false
+    max_token_num_each_node: 20000
+    summary_token_threshold: 200
+    limit: 10
+    strategy: tree_search
+  dependencies:
+    jvagent: ~0.0.1

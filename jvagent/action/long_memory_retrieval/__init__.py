@@ -1,6 +1,6 @@
-"""User model retrieval action. Searches the user's profile collection in PageIndex.
+"""Long memory retrieval action. Searches the user's profile collection in PageIndex.
 
-Uses PageIndex infrastructure to retrieve context from the user_model_{user_id}
+Uses PageIndex infrastructure to retrieve context from the long_memory_{user_id}
 collection, enabling personalized responses based on stored user profiles.
 """
 
@@ -27,7 +27,7 @@ from jvagent.action.pageindex.models import (
 )
 from jvagent.action.pageindex.retrieval import search_documents
 
-from .user_model_retrieval_interact_action import UserModelRetrievalInteractAction
+from .long_memory_retrieval_interact_action import UserLongMemoryRetrievalInteractAction
 
 __all__ = [
     "PAGEINDEX_DB_NAME",
@@ -42,5 +42,5 @@ __all__ = [
     "get_document_root",
     "search_documents",
     "DocumentWalker",
-    "UserModelRetrievalInteractAction",
+    "UserLongMemoryRetrievalInteractAction",
 ]
