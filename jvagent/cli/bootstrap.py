@@ -13,7 +13,7 @@ from jvagent.core import Agents
 from jvagent.core.app import App
 from jvagent.core.app_loader import AppLoader
 from jvagent.core.bootstrap_logger import BootstrapLogger
-from jvagent.env import load_env
+from jvagent.env import get_jvagent_app_id, load_env
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,14 @@ async def bootstrap_application_graph(
         bootstrap_log.info("No app.yaml found - using manual bootstrap")
         await _manual_bootstrap()
         bootstrap_log.complete("Manual bootstrap complete")
+
+    # Apply JVAGENT_APP_ID override to App node if set
+    app = await App.get()
+    if app:
+        env_app_id = get_jvagent_app_id()
+        if env_app_id:
+            app.app_id = env_app_id
+            await app.save()
 
 
 async def _manual_bootstrap() -> None:

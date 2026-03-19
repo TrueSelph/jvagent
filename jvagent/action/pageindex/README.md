@@ -110,13 +110,18 @@ This scales to large document bases without full-corpus scans. When the lexical 
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `JVSPATIAL_PAGEINDEX_DB_PATH` | Path for json/sqlite | `{parent_of_prime_db}/pageindex_db` |
-| `JVSPATIAL_PAGEINDEX_DB_NAME` | MongoDB database name / DynamoDB table name | pageindex_db |
-| `JVSPATIAL_PAGEINDEX_DB_TYPE` | json, sqlite, mongodb, dynamodb | json |
-| `JVSPATIAL_JSONDB_PATH` | Prime DB path (derives shared root) | - |
-| `JVSPATIAL_SQLITE_PATH` | Prime DB sqlite path | jvdb/sqlite/jvspatial.db |
+| `JVAGENT_APP_ID` | Overrides app node's app_id when set | app node's app_id |
+| `JVAGENT_PAGEINDEX_DB_TYPE` | json, sqlite, mongodb, dynamodb | json |
+| `JVAGENT_PAGEINDEX_DB_PATH` | Path for json/sqlite (explicit) | - |
+| `JVAGENT_PAGEINDEX_DB_ROOT` | Root for path when DB_PATH not set | . |
+| `JVAGENT_PAGEINDEX_DB_NAME` | Explicit db name (overrides autogeneration) | - |
+| `JVAGENT_PAGEINDEX_DB_URI` | MongoDB connection URI | mongodb://localhost:27017 |
+| `JVAGENT_PAGEINDEX_DB_TABLE_NAME` | DynamoDB table name | derived from db_name |
+| `JVAGENT_PAGEINDEX_DB_REGION` | AWS region for DynamoDB | us-east-1 |
 | `PAGEINDEX_TREE_SEARCH_MODEL` | LLM for tree_search | gpt-4o-mini |
 | `CHATGPT_API_KEY` / `OPENAI_API_KEY` | API key for tree_search | - |
+
+**DB name resolution** (when `JVAGENT_PAGEINDEX_DB_NAME` is unset): `{app_id}_pageindex_db` — one db per app; multiple agents share it, documents scoped by collection (agent_id). Fallback: `config.pageindex.db_name` in app.yaml, else `pageindex_db`.
 
 ## REST API Endpoints
 
@@ -207,7 +212,7 @@ All strategies use the lexical index when available (documents ingested after th
 - Documents must be ingested before retrieval
 - **Lexical index and re-ingestion**: The lexical index is built during ingestion. Documents ingested *before* the two-stage retrieval feature will work (graceful fallback) but will not benefit from BM25 candidate selection. To get the scaling benefits, re-ingest those documents (delete and assimilate again) or use `lexical_index.reindex_nodes()` to rebuild the index from existing graph nodes.
 - tree_search requires CHATGPT_API_KEY or OPENAI_API_KEY; falls back to direct if missing
-- PageIndex DB path is sibling of prime DB (e.g. `./pageindex_db` next to `./jvagent_db`)
+- PageIndex DB path defaults to `{JVAGENT_PAGEINDEX_DB_ROOT}/{db_name}` when `JVAGENT_PAGEINDEX_DB_PATH` is unset
 - Use `model_action_type` for token tracking and observability in agent context
 - **Ingestion config**: Put `node_summary`, `node_text`, `doc_description`, etc. under the `config` block (not `context`). These apply when documents are assimilated via API or `assimilate_document()`. REST ingestion uses config pushed when the action registers; if no agent has PageIndex, defaults apply.
 - **Reference citations**: Provide `doc_url` at ingestion (REST form field or `assimilate_document(doc_url=...)`) for URLs in references. Page numbers come from PDF structure automatically. Set `include_references: false` to reduce token usage when citations are not needed.

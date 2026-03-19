@@ -233,14 +233,20 @@ class PageIndexRetrievalInteractAction(InteractAction):
         _push_ingestion_config(_get_ingestion_config(self.config, self.node_summary))
 
     async def on_register(self) -> None:
-        """Push ingestion config for document assimilation when action is registered."""
+        """Push ingestion config and initialize PageIndex db when action is registered."""
         await super().on_register()
         self._apply_ingestion_config()
+        app = await self.get_app()
+        app_id = getattr(app, "app_id", None) if app else None
+        initialize_pageindex_database(app_id=app_id)
 
     async def on_reload(self) -> None:
-        """Re-apply ingestion config when action is reloaded."""
+        """Re-apply ingestion config and re-init PageIndex db when action is reloaded."""
         await super().on_reload()
         self._apply_ingestion_config()
+        app = await self.get_app()
+        app_id = getattr(app, "app_id", None) if app else None
+        initialize_pageindex_database(app_id=app_id)
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute vectorless retrieval and add directive to interaction."""

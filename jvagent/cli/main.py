@@ -63,6 +63,9 @@ def main() -> None:
 
     logger.debug(f"Using app root: {app_root}")
 
+    # Load .env first so JVAGENT_APP_ID and other vars override app.yaml before any other code runs
+    load_app_env(app_root=app_root)
+
     # Set the global app root for config loading in other modules
     from jvagent.core.app_context import set_app_root
 
@@ -74,9 +77,6 @@ def main() -> None:
 
     reload_performance_config()
     reload_profiling_config()
-
-    # Load .env file from app root directory
-    load_app_env(app_root=app_root)
 
     # Check for --serverless flag (overrides .env; simulates serverless runtime)
     if "--serverless" in args:

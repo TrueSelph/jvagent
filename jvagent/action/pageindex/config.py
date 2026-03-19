@@ -159,82 +159,113 @@ def get_pageindex_max_docs_for_tree_search() -> int:
     return v if v is not None else 10
 
 
-def _get_prime_db_root() -> str:
-    """Get the prime database root path (shared with prime db).
+def _resolve_app_id(app_id: Optional[str]) -> Optional[str]:
+    """Resolve app_id: JVAGENT_APP_ID overrides app.yaml/app node, else app node's app_id.
 
-    Uses JVSPATIAL_JSONDB_PATH when set (json type). For sqlite, derives from
-    JVSPATIAL_SQLITE_PATH (e.g. jvdb/sqlite/jvspatial.db -> jvdb).
+    Reads JVAGENT_APP_ID from .env via dotenv_values (not os.environ) so it works
+    in child processes (e.g. uvicorn --reload) where load_dotenv may not have run.
     """
-    json_path = os.getenv("JVSPATIAL_JSONDB_PATH")
-    if json_path:
-        return json_path
-    sqlite_path = os.getenv("JVSPATIAL_SQLITE_PATH", "jvdb/sqlite/jvspatial.db")
-    # Derive root: jvdb/sqlite/jvspatial.db -> jvdb
-    return os.path.dirname(os.path.dirname(sqlite_path)) or "jvdb"
+    env_val = None
+    try:
+        from dotenv import dotenv_values
+
+        from jvagent.core.app_context import get_app_root
+
+        root = get_app_root()
+        for candidate in (os.path.join(root, ".env"), ".env"):
+            if os.path.isfile(candidate):
+                values = dotenv_values(candidate)
+                env_val = values.get("JVAGENT_APP_ID") if values else None
+                if env_val and str(env_val).strip():
+                    return str(env_val).strip()
+                break
+    except Exception:
+        pass
+    env_val = os.getenv("JVAGENT_APP_ID")
+    if env_val and str(env_val).strip():
+        return str(env_val).strip()
+    return app_id
 
 
-def _get_shared_db_root() -> str:
-    """Get shared root for prime db and PageIndex (parent of prime db folder)."""
-    prime_root = _get_prime_db_root()
-    shared = os.path.dirname(prime_root)
-    return shared if shared else "."
+def _get_pageindex_db_name(app_id: Optional[str] = None) -> str:
+    """Resolve PageIndex db name: explicit env, or {app_id}_pageindex_db (one db per app), or default."""
+    explicit = os.getenv("JVAGENT_PAGEINDEX_DB_NAME")
+    if explicit and explicit.strip():
+        return explicit.strip()
+
+    resolved = _resolve_app_id(app_id)
+    if resolved:
+        sanitized = "".join(c for c in resolved if c.isalnum() or c == "_") or "app"
+        return f"{sanitized}_pageindex_db"
+
+    try:
+        from jvagent.core.app_context import get_app_root
+        from jvagent.core.config import load_app_config
+
+        config = load_app_config(get_app_root())
+        pageindex_cfg = config.get("pageindex") if isinstance(config, dict) else {}
+        if isinstance(pageindex_cfg, dict):
+            db_name = pageindex_cfg.get("db_name")
+            if db_name and isinstance(db_name, str) and db_name.strip():
+                return db_name.strip()
+    except Exception:
+        pass
+
+    return "pageindex_db"
 
 
-def _get_pageindex_db_path() -> str:
-    """Get PageIndex db path, defaulting to shared root + /pageindex_db when unset."""
-    explicit = os.getenv("JVSPATIAL_PAGEINDEX_DB_PATH")
-    if explicit:
-        return explicit
-    shared_root = _get_shared_db_root()
-    return os.path.join(shared_root, PAGEINDEX_DB_NAME)
+def _get_pageindex_db_path(app_id: Optional[str] = None) -> str:
+    """Get PageIndex db path. Uses JVAGENT_PAGEINDEX_DB_PATH when set, else root + db_name."""
+    explicit = os.getenv("JVAGENT_PAGEINDEX_DB_PATH")
+    if explicit and explicit.strip():
+        return explicit.strip()
+    root = os.getenv("JVAGENT_PAGEINDEX_DB_ROOT", ".")
+    root = root.strip() if root else "."
+    return os.path.join(root, _get_pageindex_db_name(app_id))
 
 
-def get_pageindex_config() -> Dict[str, Any]:
+def get_pageindex_config(app_id: Optional[str] = None) -> Dict[str, Any]:
     """Get PageIndex database configuration from environment variables and defaults.
+
+    Args:
+        app_id: Optional app ID for db name derivation when JVAGENT_PAGEINDEX_DB_NAME unset.
+                One db per app; agents share the db, documents scoped by collection (agent_id).
 
     Returns:
         Dictionary with PageIndex database configuration
 
     Environment Variables:
-        JVSPATIAL_PAGEINDEX_DB_TYPE: Database type (json, sqlite, mongodb, dynamodb)
-        JVSPATIAL_PAGEINDEX_DB_PATH: Path for file-based databases (json, sqlite).
-            When unset, defaults to {parent_of_prime_db}/pageindex_db (sibling of prime db).
-        JVSPATIAL_PAGEINDEX_DB_URI: Connection URI for MongoDB
-        JVSPATIAL_PAGEINDEX_DB_NAME: Database name for MongoDB (default: pageindex_db)
-        JVSPATIAL_PAGEINDEX_DB_TABLE_NAME: Table name for DynamoDB
-        JVSPATIAL_PAGEINDEX_DB_REGION: AWS region for DynamoDB
+        JVAGENT_APP_ID: Universal app identifier (overrides app node's app_id when set)
+        JVAGENT_PAGEINDEX_DB_TYPE: Database type (json, sqlite, mongodb, dynamodb)
+        JVAGENT_PAGEINDEX_DB_PATH: Path for file-based databases (json, sqlite).
+        JVAGENT_PAGEINDEX_DB_ROOT: Root for path when DB_PATH not set (default: .)
+        JVAGENT_PAGEINDEX_DB_NAME: Explicit db name (overrides autogeneration)
+        JVAGENT_PAGEINDEX_DB_URI: Connection URI for MongoDB
+        JVAGENT_PAGEINDEX_DB_TABLE_NAME: Table name for DynamoDB
+        JVAGENT_PAGEINDEX_DB_REGION: AWS region for DynamoDB
     """
-    db_type = os.getenv("JVSPATIAL_PAGEINDEX_DB_TYPE") or os.getenv(
-        "JVSPATIAL_DB_TYPE", "json"
-    )
+    db_type = os.getenv("JVAGENT_PAGEINDEX_DB_TYPE", "json")
+    db_name = _get_pageindex_db_name(app_id)
 
     if db_type == "json":
-        db_path = _get_pageindex_db_path()
+        db_path = _get_pageindex_db_path(app_id)
         return {"db_type": db_type, "db_path": db_path}
     elif db_type == "sqlite":
-        explicit = os.getenv("JVSPATIAL_PAGEINDEX_DB_PATH")
-        if explicit:
-            db_path = explicit
+        explicit = os.getenv("JVAGENT_PAGEINDEX_DB_PATH")
+        if explicit and explicit.strip():
+            db_path = explicit.strip()
         else:
-            shared_root = _get_shared_db_root()
-            db_path = os.path.join(
-                shared_root, PAGEINDEX_DB_NAME, "sqlite", "pageindex.db"
-            )
+            root = os.getenv("JVAGENT_PAGEINDEX_DB_ROOT", ".")
+            root = root.strip() if root else "."
+            db_path = os.path.join(root, db_name, "sqlite", "pageindex.db")
         return {"db_type": db_type, "db_path": db_path}
     elif db_type == "mongodb":
-        db_uri = os.getenv("JVSPATIAL_PAGEINDEX_DB_URI") or os.getenv(
-            "JVSPATIAL_MONGODB_URI", "mongodb://localhost:27017"
-        )
-        db_name = os.getenv("JVSPATIAL_PAGEINDEX_DB_NAME", "pageindex_db")
+        db_uri = os.getenv("JVAGENT_PAGEINDEX_DB_URI", "mongodb://localhost:27017")
         return {"db_type": db_type, "db_uri": db_uri, "db_name": db_name}
     elif db_type == "dynamodb":
-        table_name = os.getenv("JVSPATIAL_PAGEINDEX_DB_TABLE_NAME", "pageindex_db")
-        region_name = os.getenv("JVSPATIAL_PAGEINDEX_DB_REGION") or os.getenv(
-            "JVSPATIAL_DYNAMODB_REGION", "us-east-1"
-        )
-        endpoint_url = os.getenv("JVSPATIAL_PAGEINDEX_DB_ENDPOINT_URL") or os.getenv(
-            "JVSPATIAL_DYNAMODB_ENDPOINT_URL"
-        )
+        table_name = os.getenv("JVAGENT_PAGEINDEX_DB_TABLE_NAME", db_name)
+        region_name = os.getenv("JVAGENT_PAGEINDEX_DB_REGION", "us-east-1")
+        endpoint_url = os.getenv("JVAGENT_PAGEINDEX_DB_ENDPOINT_URL")
         return {
             "db_type": db_type,
             "table_name": table_name,
@@ -242,19 +273,24 @@ def get_pageindex_config() -> Dict[str, Any]:
             "endpoint_url": endpoint_url,
         }
     else:
-        db_path = _get_pageindex_db_path()
-        return {"db_type": "json", "db_path": db_path}
+        return {"db_type": "json", "db_path": _get_pageindex_db_path(app_id)}
 
 
 _db_init_lock = threading.Lock()
 _db_initialized = False
 
 
-def initialize_pageindex_database(config: Optional[Dict[str, Any]] = None) -> bool:
+def initialize_pageindex_database(
+    config: Optional[Dict[str, Any]] = None,
+    app_id: Optional[str] = None,
+) -> bool:
     """Initialize and register the PageIndex graph database.
+
+    One db per app; multiple agents share it. Documents are scoped by collection (agent_id).
 
     Args:
         config: Optional configuration dictionary. If not provided, reads from environment.
+        app_id: Optional app ID for db name derivation when config is None.
 
     Returns:
         True if database was initialized, False otherwise
@@ -268,7 +304,7 @@ def initialize_pageindex_database(config: Optional[Dict[str, Any]] = None) -> bo
             return True
 
         if config is None:
-            config = get_pageindex_config()
+            config = get_pageindex_config(app_id=app_id)
 
         try:
             manager = get_database_manager()

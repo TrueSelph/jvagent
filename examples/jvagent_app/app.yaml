@@ -130,6 +130,11 @@ config:
   paths:
     agents: ./agents
 
+  # PageIndex (document indexing/retrieval) - optional
+  # pageindex:
+  #   db_name: "{agent_name}_{app_name}_pageindex_db"  # template or explicit name
+  #   db_root: "."  # root for path when DB_PATH not set
+
   # Performance optimization configuration
   # These settings can also be overridden via environment variables
   performance:
