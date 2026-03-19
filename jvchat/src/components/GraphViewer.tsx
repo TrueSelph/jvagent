@@ -144,6 +144,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
       ['orphaned_users_reconnected', 'user(s) reconnected'],
       ['dual_edges_removed', 'dual edge(s) removed'],
       ['conversation_first_edges_restored', 'conv-first edge(s) restored'],
+      ['conversation_branch_edges_removed', 'conv-branch edge(s) removed'],
       ['dead_edges_removed', 'dead edge(s) removed'],
       ['orphaned_nodes_reattached', 'orphan(s) reattached'],
       ['orphaned_nodes_deleted', 'orphan(s) deleted'],
