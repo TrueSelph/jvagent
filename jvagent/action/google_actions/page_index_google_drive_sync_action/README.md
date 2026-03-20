@@ -21,11 +21,11 @@ Automatically sync and ingest documents from Google Drive folders into PageIndex
 
 ## Configuration
 
-| Attribute              | Description                                                                    | Required |
-| ---------------------- | ------------------------------------------------------------------------------ | -------- |
-| `google_drive_folders` | List of folder configs with `folder_id` and optional `metadata`                | No       |
-| `client_secrets_json`  | OAuth2 Client Secrets JSON (inherited from GoogleDriveAction)                 | Yes      |
-| `default_parent_id`    | Default parent folder ID (inherited from GoogleDriveAction)                   | No       |
+| Attribute              | Description                                                     | Required |
+| ---------------------- | --------------------------------------------------------------- | -------- |
+| `google_drive_folders` | List of folder configs with `folder_id` and optional `metadata` | No       |
+| `client_secrets_json`  | OAuth2 Client Secrets JSON (inherited from GoogleDriveAction)   | Yes      |
+| `default_parent_id`    | Default parent folder ID (inherited from GoogleDriveAction)     | No       |
 
 ## Agent Configuration (agent.yaml)
 
@@ -58,8 +58,8 @@ Automatically sync and ingest documents from Google Drive folders into PageIndex
 
 ## Endpoints
 
-| Method | Path                                                    | Description                                    |
-| ------ | ------------------------------------------------------- | ---------------------------------------------- |
+| Method | Path                                                     | Description                                        |
+| ------ | -------------------------------------------------------- | -------------------------------------------------- |
 | POST   | `/agents/{agent_id}/page_index_google_drive_sync/ingest` | Trigger document ingestion from configured folders |
 
 ## API Usage
@@ -94,6 +94,7 @@ POST /agents/{agent_id}/page_index_google_drive_sync/ingest
 ```
 
 Parameters:
+
 - `google_drive_folders`: Override configured folders (optional)
 - `remove_deleted_documents`: Delete documents from index when removed from Drive (default: `false`)
 
@@ -104,16 +105,9 @@ Parameters:
   "status": "completed",
   "message": "Documents ingested successfully!",
   "documents_ingested": {
-    "added": [
-      "FAQ_2026.pdf",
-      "Policies.docx"
-    ],
-    "updated": [
-      "Guidelines_v2.pdf"
-    ],
-    "to_be_removed": [
-      "Archived_FAQ.pdf"
-    ]
+    "added": ["FAQ_2026.pdf", "Policies.docx"],
+    "updated": ["Guidelines_v2.pdf"],
+    "to_be_removed": ["Archived_FAQ.pdf"]
   }
 }
 ```
@@ -167,13 +161,13 @@ Metadata is queryable in PageIndex for filtering and context enrichment.
 
 ## Troubleshooting
 
-| Issue | Cause | Solution |
-| ----- | ----- | -------- |
-| No documents ingested | Folder is empty or inaccessible | Verify folder ID and permissions |
-| Documents not searchable | PageIndex not configured | Ensure PageIndexRetrievalInteractAction is enabled |
-| Duplicate documents | Re-running ingestion | Check change detection logic |
-| Memory issues | Large files or many documents | Process folders in batches |
-| Slow ingestion | Large documents or slow network | Consider splitting large files |
+| Issue                    | Cause                           | Solution                                           |
+| ------------------------ | ------------------------------- | -------------------------------------------------- |
+| No documents ingested    | Folder is empty or inaccessible | Verify folder ID and permissions                   |
+| Documents not searchable | PageIndex not configured        | Ensure PageIndexRetrievalInteractAction is enabled |
+| Duplicate documents      | Re-running ingestion            | Check change detection logic                       |
+| Memory issues            | Large files or many documents   | Process folders in batches                         |
+| Slow ingestion           | Large documents or slow network | Consider splitting large files                     |
 
 ## Integration with PageIndex Retrieval
 

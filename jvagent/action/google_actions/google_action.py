@@ -28,12 +28,36 @@ class GoogleAction(Action):
         default="http://localhost:8080/",
         description="The redirect URI used in the OAuth2 flow.",
     )
+    auth_url: str = attribute(
+        default="", description="The authorization URL for the user to visit."
+    )
+
     _built_service: Optional[Any] = None
 
     # These must be overridden by subclasses
     API_SERVICE_NAME: ClassVar[str] = ""
     API_VERSION: ClassVar[str] = ""
     SCOPES: ClassVar[List[str]] = []
+
+
+    async def _apply_env_defaults(self) -> None:
+        self.auth_url = os.environ.get("APP_BASE_URL", "").strip() + f"/api/google/{self.id}"
+        self.redirect_uri = os.environ.get("APP_BASE_URL", "").strip() + f"/api/google/callback/"
+        await self.save()
+
+        self._create_flow()
+
+    async def on_register(self) -> None:
+        """Called when action is registered. Validates configuration."""
+        await self._apply_env_defaults()
+
+    async def on_reload(self) -> None:
+        """Called when action is reloaded. Re-registers session with current webhook URL."""
+        await self._apply_env_defaults()
+
+    async def on_startup(self) -> None:
+        """Initialize filter and adapter, attempt session registration with configurable timeout."""
+        await self._apply_env_defaults()
 
     async def get_service(self):
         """Build and return an authenticated Google API service object with caching."""
@@ -75,30 +99,6 @@ class GoogleAction(Action):
             )
             self._built_service = None
             raise
-
-    # async def get_service(self):
-    #     """Build and return an authenticated Google API service object."""
-    #     if not self.API_SERVICE_NAME or not self.API_VERSION:
-    #         raise ValueError(
-    #             f"{self.__class__.__name__} must define API_SERVICE_NAME and API_VERSION"
-    #         )
-
-    #     try:
-    #         if self.google_service:
-    #             return self.google_service
-
-    #         logger.warning(f"Building Google {self.API_SERVICE_NAME} service for {self.id}")
-    #         self.google_service = await self._get_credentials()
-
-    #         return build(self.API_SERVICE_NAME, self.API_VERSION, credentials=self.google_service, static_discovery=False)
-
-    #     except Exception as e:
-    #         logger.error(
-    #             f"Error building Google {self.API_SERVICE_NAME} service: {e}",
-    #             exc_info=True,
-    #         )
-    #         self.google_service = None
-    #         raise
 
     async def get_authorization_url(self, code_verifier: Optional[str] = None) -> str:
         """Returns the OAuth2 authorization URL for the user to visit."""
@@ -147,26 +147,23 @@ class GoogleAction(Action):
         else:
             client_config = self.client_secrets_json
 
-        env_base_url = os.environ.get("APP_BASE_URL", "").strip()
-        redirect_uri = f"{env_base_url}/api/google/callback/"
-
         # Check for redirect_uris in the config (Google web secrets)
         if "web" in client_config and "redirect_uris" in client_config["web"]:
-            if redirect_uri not in client_config["web"]["redirect_uris"]:
+            if self.redirect_uri not in client_config["web"]["redirect_uris"]:
                 raise ValueError(
-                    f"redirect_uri is not in the client config\nclient_config:\n{client_config['web']['redirect_uris']}\n\nredirect_uri:\n{redirect_uri}\n\nUPDATE IN GOOGLE CONSOLE: https://console.cloud.google.com/apis/credentials"
+                    f"redirect_uri is not in the client config\nclient_config:\n{client_config['web']['redirect_uris']}\n\nredirect_uri:\n{self.redirect_uri}\n\nUPDATE IN GOOGLE CONSOLE: https://console.cloud.google.com/apis/credentials"
                 )
         elif (
             "installed" in client_config
             and "redirect_uris" in client_config["installed"]
         ):
-            if redirect_uri not in client_config["installed"]["redirect_uris"]:
+            if self.redirect_uri not in client_config["installed"]["redirect_uris"]:
                 raise ValueError(
-                    f"redirect_uri is not in the client config\nclient_config:\n{client_config['installed']['redirect_uris']}\n\nredirect_uri:\n{redirect_uri}\n\nUPDATE IN GOOGLE CONSOLE: https://console.cloud.google.com/apis/credentials"
+                    f"redirect_uri is not in the client config\nclient_config:\n{client_config['installed']['redirect_uris']}\n\nredirect_uri:\n{self.redirect_uri}\n\nUPDATE IN GOOGLE CONSOLE: https://console.cloud.google.com/apis/credentials"
                 )
 
         return Flow.from_client_config(
-            client_config, scopes=self.SCOPES, redirect_uri=redirect_uri
+            client_config, scopes=self.SCOPES, redirect_uri=self.redirect_uri
         )
 
     async def _get_credentials(self) -> Credentials:
@@ -201,24 +198,8 @@ class GoogleAction(Action):
                 logger.info(
                     f"Refreshing expired Google OAuth2 credentials for {self.id}."
                 )
-                logger.warning(
-                    f"DEBUG OAuth State for {self.id}: \n"
-                    f"Valid: {creds.valid}, \n"
-                    f"Expired: {creds.expired}, \n"
-                    f"Has Refresh Token: {bool(creds.refresh_token)}, \n"
-                    f"Expiry: {creds.expiry}\n"
-                )
                 try:
                     creds.refresh(Request())
-
-                    logger.warning(
-                        f"New Creds OAuth State for {self.id}: \n"
-                        f"Valid: {creds.valid}, \n"
-                        f"Expired: {creds.expired}, \n"
-                        f"Has Refresh Token: {bool(creds.refresh_token)}, \n"
-                        f"Expiry: {creds.expiry}\n"
-                        "----"
-                    )
 
                     await self._save_credentials(creds)
                 except Exception as e:

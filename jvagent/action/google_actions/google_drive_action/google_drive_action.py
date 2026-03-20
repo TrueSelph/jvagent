@@ -182,7 +182,7 @@ class GoogleDriveAction(GoogleAction):
         return fh.getvalue()
 
     def compare_files(
-        self, old_files: List[Dict], new_files: List[Dict]
+        self, old_files: List[Dict], new_files: List[Dict], ignore_folders: bool = True
     ) -> Dict[str, List[Dict]]:
         """
         Compares two nested file lists and returns added, removed, and modified items.
@@ -235,15 +235,40 @@ class GoogleDriveAction(GoogleAction):
         old_ids = set(old_map.keys())
         new_ids = set(new_map.keys())
 
+        # # 1. Added: IDs in new but not in old
+        # added = [new_map[fid] for fid in (new_ids - old_ids)]
+
+        # # 2. Removed: IDs in old but not in new
+        # removed = [old_map[fid] for fid in (old_ids - new_ids)]
+
+        # # 3. Modified: IDs in both, but content (like name) changed
+        # modified = []
+        # for fid in old_ids & new_ids:
+        #     if old_map[fid] != new_map[fid]:
+        #         modified.append({"id": fid, "old": old_map[fid], "new": new_map[fid]})
+
         # 1. Added: IDs in new but not in old
-        added = [new_map[fid] for fid in (new_ids - old_ids)]
+        added = []
+        for fid in (new_ids - old_ids):
+            # Skip if it's a folder
+            if new_map[fid].get("mimeType") == "application/vnd.google-apps.folder" and ignore_folders:
+                continue
+            added.append(new_map[fid])
 
         # 2. Removed: IDs in old but not in new
-        removed = [old_map[fid] for fid in (old_ids - new_ids)]
+        removed = []
+        for fid in (old_ids - new_ids):
+            # Skip if it's a folder
+            if old_map[fid].get("mimeType") == "application/vnd.google-apps.folder" and ignore_folders:
+                continue
+            removed.append(old_map[fid])
 
         # 3. Modified: IDs in both, but content (like name) changed
         modified = []
         for fid in old_ids & new_ids:
+            # Skip if it's a folder
+            if old_map[fid].get("mimeType") == "application/vnd.google-apps.folder" and ignore_folders:
+                continue
             if old_map[fid] != new_map[fid]:
                 modified.append({"id": fid, "old": old_map[fid], "new": new_map[fid]})
 
