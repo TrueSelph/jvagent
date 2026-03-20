@@ -184,9 +184,7 @@ class UserLongMemory(Node):
             return existing
 
         resolved_title = (
-            title
-            or CATEGORY_TITLES.get(category)
-            or category.replace("_", " ").title()
+            title or CATEGORY_TITLES.get(category) or category.replace("_", " ").title()
         )
         node = await UserLongMemoryNode.create(
             user_id=self.user_id,

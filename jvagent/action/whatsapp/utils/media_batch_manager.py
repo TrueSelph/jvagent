@@ -725,6 +725,9 @@ async def process_persistent_batch(
     Only runs when in lambda mode (BACKGROUND_PROCESSING=false + AWS_LAMBDA_FUNCTION_NAME)
     and JVSPATIAL_DB_TYPE=mongodb.
 
+    Uses atomic find-and-delete operation to prevent race conditions where multiple
+    Lambda invocations could process the same batch.
+
     Returns True if a batch was found and processed, False otherwise.
     """
     if _get_media_batch_mode() != "lambda":
@@ -737,10 +740,28 @@ async def process_persistent_batch(
             await asyncio.sleep(delay)
     else:
         await asyncio.sleep(media_batch_window)
+
     db = get_prime_database()
-    batch = await db.find_one_and_delete(MEDIA_BATCHES_COLLECTION, {"_id": sender})
+
+    # Use atomic find-and-delete to prevent race conditions:
+    # If multiple Lambda instances invoke simultaneously, only one will claim the batch
+    try:
+        batch = await db.find_one_and_delete(MEDIA_BATCHES_COLLECTION, {"_id": sender})
+    except Exception as exc:
+        logger.error(f"Failed to retrieve batch for sender {sender}: {exc}")
+        return False
+
     if not batch:
         return False
-    manager = MediaBatchManager()
-    await manager._process_batch_from_store(sender, batch)
+
+    # Process the claimed batch
+    try:
+        manager = MediaBatchManager()
+        await manager._process_batch_from_store(sender, batch)
+    except Exception as exc:
+        logger.error(f"Failed to process batch for sender {sender}: {exc}")
+        # Batch was already deleted, so it won't be reprocessed
+        # Log error for manual investigation
+        return False
+
     return True

@@ -275,6 +275,8 @@ class StateNode(Node):
             await interview_action.directive_builder.generate_completed_directive(
                 session, visitor
             )
+        # Persist state change immediately to database (critical for Lambda environments)
+        await session.save()
 
     async def generate_cancelled_directive(
         self,
