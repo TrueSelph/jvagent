@@ -16,7 +16,7 @@ Custom categories can emerge dynamically from the LLM output.
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
@@ -26,6 +26,9 @@ from jvagent.core.app import App
 from jvagent.memory import Interaction
 
 from .prompts import LONG_MEMORY_CUSTOM_UPDATE_PROMPT, LONG_MEMORY_UPDATE_PROMPT
+
+if TYPE_CHECKING:
+    from jvagent.action.model.language.base import LanguageModelAction
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +119,9 @@ class UserLongMemoryInteractAction(InteractAction):
         )
 
         num_user_msgs = self._count_user_messages_since_last_update(conv_history)
-        logger.debug(f"UserLongMemoryAction: {num_user_msgs} user messages since last update")
+        logger.debug(
+            f"UserLongMemoryAction: {num_user_msgs} user messages since last update"
+        )
 
         if num_user_msgs >= self.update_frequency:
             await self._update_user_long_memory(visitor)
@@ -198,7 +203,9 @@ class UserLongMemoryInteractAction(InteractAction):
             return
 
         # ── Get LLM model action ──────────────────────────────────────────────
-        model_action = await self.get_action(self.model_action_type)
+        model_action: Optional["LanguageModelAction"] = await self.get_action(
+            self.model_action_type
+        )
         if not model_action:
             logger.warning(
                 f"UserLongMemoryAction: Model action '{self.model_action_type}' not found"
@@ -342,9 +349,15 @@ class UserLongMemoryInteractAction(InteractAction):
 
         # Include current interaction utterance + response for multi-call awareness
         if with_utterance and with_response and interaction.response:
-            history.append({"role": "user", "content": _truncate(interaction.utterance)})
-            history.append({"role": "assistant", "content": _truncate(interaction.response)})
+            history.append(
+                {"role": "user", "content": _truncate(interaction.utterance)}
+            )
+            history.append(
+                {"role": "assistant", "content": _truncate(interaction.response)}
+            )
         elif with_response and interaction.response:
-            history.append({"role": "assistant", "content": _truncate(interaction.response)})
+            history.append(
+                {"role": "assistant", "content": _truncate(interaction.response)}
+            )
 
         return history if history else []

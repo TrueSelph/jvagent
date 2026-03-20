@@ -5,6 +5,7 @@ and assimilates them into the PageIndex for semantic search.
 """
 
 import logging
+
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
@@ -25,7 +26,10 @@ class UserLongMemoryStoreInteractAction(InteractAction):
         default="LongTermMemory",
         description="Collection to use for semantic memory extraction",
     )
-    weight: int = attribute(default=160, description="Execution weight (high = late, after long_memory updates)")
+    weight: int = attribute(
+        default=160,
+        description="Execution weight (high = late, after long_memory updates)",
+    )
     always_execute: bool = attribute(
         default=True, description="Always execute regardless of routing results"
     )
@@ -55,7 +59,9 @@ class UserLongMemoryStoreInteractAction(InteractAction):
         if not unindexed_nodes:
             return
 
-        logger.info(f"UserLongMemoryStoreAction: Found {len(unindexed_nodes)} updated categories for user {user_id}")
+        logger.info(
+            f"UserLongMemoryStoreAction: Found {len(unindexed_nodes)} updated categories for user {user_id}"
+        )
 
         try:
             from jvagent.action.pageindex.documents import (
@@ -78,9 +84,7 @@ class UserLongMemoryStoreInteractAction(InteractAction):
                 for doc in existing_docs:
                     doc_name = doc.get("doc_name")
                     if doc_name:
-                        await delete_document(
-                            doc_name, collection_name=collection_name
-                        )
+                        await delete_document(doc_name, collection_name=collection_name)
                         logger.info(
                             f"Deleted existing long memory doc: {doc_name} for user {user_id}"
                         )
@@ -93,7 +97,7 @@ class UserLongMemoryStoreInteractAction(InteractAction):
                     ext="md",
                     doc_name=f"user_long_memory_{user_id}",
                     model=self.model,
-                    if_add_node_summary=True,
+                    if_add_node_summary="yes",
                     collection_name=collection_name,
                     metadata={"user_id": user_id, "type": "user_long_memory"},
                     doc_description="User long-term memory",

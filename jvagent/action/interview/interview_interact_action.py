@@ -874,94 +874,97 @@ class InterviewInteractAction(InteractAction, ABC):
         session = await self._get_or_create_session(conversation)
         visitor.interview_session = session
 
-        # Reset directive builder task tracking for this execution
-        self.directive_builder.reset_task_tracking()
-
-        # Get utterance
-        utterance = visitor.utterance if visitor.utterance else ""
-
-        # 2. Classify and extract
-        classification_result = await self.classifier.classify_and_extract(
-            session, utterance, interaction, visitor
-        )
         try:
-            intent = Intent(classification_result.intent)
-        except ValueError:
-            intent = Intent.NONE
+            # Reset directive builder task tracking for this execution
+            self.directive_builder.reset_task_tracking()
 
-        # 3. Store extracted responses based on intent
-        # Note: DECLINE is intentionally not handled here - QuestionNode handles
-        # DECLINE logic (N/A for optional, directive for required) during traversal
-        had_updates = False
-        if intent == Intent.SUBMISSION and classification_result.extracted_data:
-            # Route SUBMISSION values through update_queue to ensure validation pipeline runs
-            had_updates = self._build_and_apply_update_queue(
-                session, classification_result.extracted_data, merge_existing=False
+            # Get utterance
+            utterance = visitor.utterance if visitor.utterance else ""
+
+            # 2. Classify and extract
+            classification_result = await self.classifier.classify_and_extract(
+                session, utterance, interaction, visitor
             )
-        elif intent == Intent.UPDATE:
-            # Collect updates from extracted_data (multi-field) or field/value (single-field)
-            updates = {}
-            if classification_result.extracted_data:
-                updates = classification_result.extracted_data
-            elif classification_result.field:
-                updates = {classification_result.field: classification_result.value}
+            try:
+                intent = Intent(classification_result.intent)
+            except ValueError:
+                intent = Intent.NONE
 
-            if updates:
+            # 3. Store extracted responses based on intent
+            # Note: DECLINE is intentionally not handled here - QuestionNode handles
+            # DECLINE logic (N/A for optional, directive for required) during traversal
+            had_updates = False
+            if intent == Intent.SUBMISSION and classification_result.extracted_data:
+                # Route SUBMISSION values through update_queue to ensure validation pipeline runs
                 had_updates = self._build_and_apply_update_queue(
-                    session, updates, merge_existing=True
+                    session, classification_result.extracted_data, merge_existing=False
                 )
+            elif intent == Intent.UPDATE:
+                # Collect updates from extracted_data (multi-field) or field/value (single-field)
+                updates = {}
+                if classification_result.extracted_data:
+                    updates = classification_result.extracted_data
+                elif classification_result.field:
+                    updates = {classification_result.field: classification_result.value}
 
-        # 4. Determine target node based on intent and state
-        await self._resolve_target_node(session, intent, visitor)
-        target_node_id = session.target_node
-        try:
-            target_node = await Node.get(target_node_id)
-        except Exception as exc:
-            logger.exception(
-                f"{self.get_class_name()}: Failed to load target node {target_node_id}: {exc}"
-            )
-            session.target_node = None
-            await session.save()
-            raise
-
-        interview_walker = InterviewWalker(
-            interview_session=session,
-            interaction=interaction,
-            interact_visitor=visitor,
-            interview_action=self,
-            current_intent=intent,
-        )
-
-        await interview_walker.spawn(target_node)
-
-        for directive in interview_walker.directives:
-            await self._queue_directive(visitor, directive)
-
-        # Post-walk: delegate graph sync and cleanup to QuestionPathWalker.sync when path may have changed.
-        # Skip when we reached REVIEW (on_state_node already ran sync before building directive).
-        # Skip when session was removed by a terminal state (COMPLETED/CANCELLED).
-        terminal = interview_walker.terminal_state
-        session_removed = terminal in (
-            InterviewState.COMPLETED,
-            InterviewState.CANCELLED,
-        )
-
-        if not session_removed:
-            if (had_updates or session.update_queue) and (
-                terminal != InterviewState.REVIEW
-            ):
-                from .core.graph.question_path_walker import QuestionPathWalker
-
-                first_node = await self._get_first_question_node(session)
-                if first_node:
-                    await QuestionPathWalker.sync(
-                        session,
-                        first_node,
-                        visitor,
-                        self,
-                        invalidate_cache=(intent == Intent.UPDATE),
+                if updates:
+                    had_updates = self._build_and_apply_update_queue(
+                        session, updates, merge_existing=True
                     )
 
+            # 4. Determine target node based on intent and state
+            await self._resolve_target_node(session, intent, visitor)
+            target_node_id = session.target_node
+            try:
+                target_node = await Node.get(target_node_id)
+            except Exception as exc:
+                logger.exception(
+                    f"{self.get_class_name()}: Failed to load target node {target_node_id}: {exc}"
+                )
+                session.target_node = None
+                await session.save()
+                raise
+
+            interview_walker = InterviewWalker(
+                interview_session=session,
+                interaction=interaction,
+                interact_visitor=visitor,
+                interview_action=self,
+                current_intent=intent,
+            )
+
+            await interview_walker.spawn(target_node)
+
+            for directive in interview_walker.directives:
+                await self._queue_directive(visitor, directive)
+
+            # Post-walk: delegate graph sync and cleanup to QuestionPathWalker.sync when path may have changed.
+            # Skip when we reached REVIEW (on_state_node already ran sync before building directive).
+            # Skip when session was removed by a terminal state (COMPLETED/CANCELLED).
+            terminal = interview_walker.terminal_state
+            session_removed = terminal in (
+                InterviewState.COMPLETED,
+                InterviewState.CANCELLED,
+            )
+
+            if not session_removed:
+                if (had_updates or session.update_queue) and (
+                    terminal != InterviewState.REVIEW
+                ):
+                    from .core.graph.question_path_walker import QuestionPathWalker
+
+                    first_node = await self._get_first_question_node(session)
+                    if first_node:
+                        await QuestionPathWalker.sync(
+                            session,
+                            first_node,
+                            visitor,
+                            self,
+                            invalidate_cache=(intent == Intent.UPDATE),
+                        )
+        finally:
+            # Always persist session state before Lambda function returns (critical for Lambda environments)
+            # Lambda freezes the Python process after handler returns, so any deferred saves will be lost
             await session.save()
 
     async def _get_conversation_history(

@@ -82,7 +82,9 @@ class InteractWalker(Walker):
         False  # Allow actions to opt-out of being recorded as executed
     )
     _agent: Optional["Agent"] = None  # Agent node, set in on_agent for access control
-    background_actions: List["InteractAction"] = []  # Actions deferred for post-interaction execution
+    background_actions: List["InteractAction"] = (
+        []
+    )  # Actions deferred for post-interaction execution
 
     async def record_action_execution(
         self, action_name: Optional[str] = None

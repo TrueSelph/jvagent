@@ -150,6 +150,58 @@ The review handler is called automatically when the interview transitions to REV
 - `str`: Custom message to prepend to the review summary
 - `None`: Use default review summary
 
+## Lambda Environment Considerations
+
+### Database Persistence in AWS Lambda
+
+When running interview actions in AWS Lambda, there are critical considerations for data persistence:
+
+**Problem**: Lambda freezes the Python process immediately after the handler returns. Any deferred or queued writes that haven't been persisted to the database will be lost.
+
+**Solution**: The interview system automatically ensures session state is persisted synchronously before each Lambda invocation returns by wrapping the `execute()` method in a try/finally block. This guarantees that:
+
+1. Interview session state (responses, current state) is written to the database
+2. Update queue modifications are persisted
+3. State transitions (ACTIVE → REVIEW → COMPLETED) are written atomically
+
+**Important**: If you override `execute()` in a custom interview action, you MUST ensure session persistence:
+
+```python
+async def execute(self, visitor: "InteractWalker") -> None:
+    """Custom execute with Lambda-safe persistence."""
+    interaction = visitor.interaction
+    conversation = await interaction.get_conversation()
+    session = await self._get_or_create_session(conversation)
+    visitor.interview_session = session
+
+    try:
+        # ... all interview processing ...
+        await self._process_interview(session, visitor)
+    finally:
+        # CRITICAL: Always save before Lambda returns
+        await session.save()
+```
+
+**For Completion Handlers**: Always explicitly save the session after processing:
+
+```python
+@on_interview_complete('MyInterviewAction')
+async def handle_interview_completion(
+    session: InterviewSession,
+    visitor: InteractWalker
+) -> None:
+    """Process data when interview completes."""
+    data = session.extract_data()
+    user = await visitor.interaction.get_conversation().get_user()
+    user.preferences = data["responses"]
+    await user.save()  # Save user changes
+
+    # CRITICAL: Ensure session is saved before Lambda returns
+    await session.save()
+```
+
+This is handled automatically by the framework for the main interview flow, but custom handlers must explicitly persist any changes.
+
 ## Data Handling Patterns
 
 ### Pattern A: Use Completion Handler Decorator (Recommended)

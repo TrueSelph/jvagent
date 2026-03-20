@@ -75,7 +75,11 @@ async def _run_background_actions(walker: "InteractWalker") -> None:
 
     for action in walker.background_actions:
         try:
-            action_name = action.get_class_name() if hasattr(action, "get_class_name") else action.__class__.__name__
+            action_name = (
+                action.get_class_name()
+                if hasattr(action, "get_class_name")
+                else action.__class__.__name__
+            )
             logger.debug(f"Running background action: {action_name}")
             # Temporarily mark as current action so convenience methods work
             walker._current_action = action
@@ -97,7 +101,6 @@ async def _run_background_actions(walker: "InteractWalker") -> None:
         finally:
             walker._current_action = None
             walker._skip_current_action_record = False
-
 
 
 from jvagent.core.profiling import profile_enabled, profiled_request
