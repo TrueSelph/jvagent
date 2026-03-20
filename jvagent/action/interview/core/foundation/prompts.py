@@ -68,7 +68,11 @@ QUESTION_DIRECTIVE = """Make a request to the user based on the following:
 {instructions}
 """
 
-REVIEW_CONFIRMATION_DIRECTIVE = """Prompt: Here's what I have so far: (let the user know what you have, keeping the same structure and order of the items below. Format the label in bold. Eg. *label:* value)
+REVIEW_CONFIRMATION_DIRECTIVE = """Confirmation Rules:
+- Let the user know what you have, keeping the same structure and order of the items below. Format the label in bold. Eg. *label:* value
+- Re-present the current information below if you have already presented it.
+
+Here's what I have so far: 
 
 {summary}
 

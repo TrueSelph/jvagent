@@ -21,3 +21,34 @@ class GoogleDriveDocuments(Node):
         default_factory=dict,
         description="Metadata for documents",
     )
+
+    status: str = attribute(
+        default="pending",
+        description="Status of the document. (pending, processing, completed, failed)",
+    )
+
+    ingesting_documents: Dict[str, Any] = attribute(
+        default={
+            "added": [],
+            "modified": [],
+            "removed": []
+        },
+        description="contain a list of added, modified and deleted documents",
+    )
+
+    failed_documents: Dict[str, Any] = attribute(
+        default={
+            "added": [],
+            "modified": [],
+            "removed": []
+        },
+        description="contain a list of failed documents",
+    )
+
+    active_document: str = attribute(
+        default_factory=str,
+        description="Document which is currently being processed",
+    )
+    
+        
+        

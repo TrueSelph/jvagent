@@ -49,10 +49,15 @@ export function DebugInteractions({
   const [improving, setImproving] = useState(false);
   const [improveResult, setImproveResult] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const selectedUserIdRef = useRef<string | null>(null);
   const [knownUserIds, setKnownUserIds] = useState<string[]>([]);
   const [userNamesByUserId, setUserNamesByUserId] = useState<
     Record<string, string>
   >({});
+
+  useEffect(() => {
+    selectedUserIdRef.current = selectedUserId;
+  }, [selectedUserId]);
 
   const userRef = useRef<HTMLTextAreaElement>(null);
   const systemRef = useRef<HTMLTextAreaElement>(null);
@@ -201,8 +206,7 @@ export function DebugInteractions({
     initialLoadDone.current = false;
     setLoading(true);
     setError(null);
-    setSelectedUserId(null);
-    setUserNamesByUserId({});
+    // Don't reset selectedUserId to preserve filters on refresh
 
     let agentsData;
     try {
@@ -241,6 +245,7 @@ export function DebugInteractions({
       const logsResponse = await apiClient.getLogs({
         category: "INTERACTION",
         agent_id: targetAgent.id,
+        user_id: selectedUserIdRef.current ?? undefined,
         page: 1,
         page_size: 200,
       });
