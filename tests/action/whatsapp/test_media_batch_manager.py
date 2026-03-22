@@ -3,6 +3,7 @@
 import asyncio
 import os
 import tempfile
+import time as time_module
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -200,3 +201,188 @@ class TestProcessPersistentBatchJsonDB:
                 )
                 is None
             )
+
+
+class TestDeferredMediaBatchCoalescing:
+    """Serverless persistent batching: slow multi-webhook albums must not split."""
+
+    @pytest.mark.asyncio
+    async def test_two_pushes_after_window_stay_one_batch_without_flush(self):
+        """Simulates two image webhooks spaced beyond media_batch_window.
+
+        Without an interposed flush_pending_batch_if_stale (removed from the media
+        webhook path), both items remain in one document and process once together.
+        """
+        mock_action = MagicMock()
+        mock_action.media_batch_window = 0.5
+        clock = {"t": 1_000_000.0}
+
+        def fake_time():
+            return clock["t"]
+
+        manager = MediaBatchManager()
+        payload = {"whatsapp_payload": {"message_type": "image"}}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = JsonDB(base_path=tmp)
+            with (
+                patch.object(
+                    media_batch_manager_mod,
+                    "get_prime_database",
+                    return_value=db,
+                ),
+                patch.object(
+                    media_batch_manager_mod,
+                    "is_serverless_mode",
+                    return_value=True,
+                ),
+                patch.object(
+                    media_batch_manager_mod,
+                    "create_task",
+                    new_callable=AsyncMock,
+                ),
+                patch.object(
+                    media_batch_manager_mod.time,
+                    "time",
+                    side_effect=fake_time,
+                ),
+                patch.object(
+                    MediaBatchManager,
+                    "_process_batch_internal",
+                    new_callable=AsyncMock,
+                ) as mock_process,
+            ):
+                await manager.get_or_create_batch(
+                    sender="sender_album",
+                    media_url="http://example.com/0.jpg",
+                    utterance=None,
+                    data_dict=payload,
+                    agent_id="agent1",
+                    whatsapp_action=mock_action,
+                )
+                clock["t"] += 0.6
+                await manager.get_or_create_batch(
+                    sender="sender_album",
+                    media_url="http://example.com/1.jpg",
+                    utterance=None,
+                    data_dict=payload,
+                    agent_id="agent1",
+                    whatsapp_action=mock_action,
+                )
+
+                stored = await db.get(
+                    media_batch_manager_mod.MEDIA_BATCHES_COLLECTION,
+                    "sender_album",
+                )
+                assert stored is not None
+                assert len(stored.get("media_items", [])) == 2
+
+                await media_batch_manager_mod.process_persistent_batch(
+                    "sender_album",
+                    0.0,
+                    process_at=clock["t"],
+                )
+
+            mock_process.assert_called_once()
+            batch = mock_process.call_args[0][1]
+            assert len(batch["media_items"]) == 2
+            assert batch["media_items"][0]["url"] == "http://example.com/0.jpg"
+            assert batch["media_items"][1]["url"] == "http://example.com/1.jpg"
+
+    @pytest.mark.asyncio
+    async def test_flush_between_p_splits_batch(self):
+        """Stale flush between webhooks processes the first item only (old failure mode)."""
+        mock_action = MagicMock()
+        mock_action.media_batch_window = 0.5
+        clock = {"t": 1_000_000.0}
+
+        def fake_time():
+            return clock["t"]
+
+        manager = MediaBatchManager()
+        payload = {"whatsapp_payload": {"message_type": "image"}}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = JsonDB(base_path=tmp)
+            with (
+                patch.object(
+                    media_batch_manager_mod,
+                    "get_prime_database",
+                    return_value=db,
+                ),
+                patch.object(
+                    media_batch_manager_mod,
+                    "is_serverless_mode",
+                    return_value=True,
+                ),
+                patch.object(
+                    media_batch_manager_mod,
+                    "create_task",
+                    new_callable=AsyncMock,
+                ),
+                patch.object(
+                    media_batch_manager_mod.time,
+                    "time",
+                    side_effect=fake_time,
+                ),
+                patch.object(
+                    MediaBatchManager,
+                    "_process_batch_internal",
+                    new_callable=AsyncMock,
+                ) as mock_process,
+            ):
+                await manager.get_or_create_batch(
+                    sender="sender_split",
+                    media_url="http://example.com/a.jpg",
+                    utterance=None,
+                    data_dict=payload,
+                    agent_id="agent1",
+                    whatsapp_action=mock_action,
+                )
+                clock["t"] += 0.6
+                await manager.flush_pending_batch_if_stale(
+                    "sender_split",
+                    mock_action.media_batch_window,
+                    mock_action,
+                )
+                await manager.get_or_create_batch(
+                    sender="sender_split",
+                    media_url="http://example.com/b.jpg",
+                    utterance=None,
+                    data_dict=payload,
+                    agent_id="agent1",
+                    whatsapp_action=mock_action,
+                )
+
+            assert mock_process.call_count == 1
+            first = mock_process.call_args[0][1]
+            assert len(first["media_items"]) == 1
+            assert first["media_items"][0]["url"] == "http://example.com/a.jpg"
+
+            with (
+                patch.object(
+                    media_batch_manager_mod,
+                    "get_prime_database",
+                    return_value=db,
+                ),
+                patch.object(
+                    media_batch_manager_mod,
+                    "is_serverless_mode",
+                    return_value=True,
+                ),
+                patch.object(
+                    MediaBatchManager,
+                    "_process_batch_internal",
+                    new_callable=AsyncMock,
+                ) as mock_process2,
+            ):
+                await media_batch_manager_mod.process_persistent_batch(
+                    "sender_split",
+                    0.0,
+                    process_at=time_module.time(),
+                )
+
+            mock_process2.assert_called_once()
+            second = mock_process2.call_args[0][1]
+            assert len(second["media_items"]) == 1
+            assert second["media_items"][0]["url"] == "http://example.com/b.jpg"

@@ -342,6 +342,8 @@ Batching mode follows **only** jvspatial `is_serverless_mode()` (config / `SERVE
 | **async** | Not serverless | In-memory batching with background timer. Media waits `media_batch_window` to coalesce; then one interact call with all items. |
 | **deferred** | Serverless | Persistent batching in MongoDB + `jvspatial.create_task` (Shape A) for follow-up processing. Requires `JVSPATIAL_DB_TYPE=mongodb` for atomic updates. |
 
+**Stale-batch flush (serverless only)**: `flush_pending_batch_if_stale` runs when the webhook continues to a **non-media** interaction (text, voice after STT, location)—see `whatsapp_interact` in `endpoints.py`. It does **not** run at the start of each image/document/video/audio webhook, so multiple files can remain in one `media_batches` document even when the provider delivers them more than `media_batch_window` seconds apart. If deferred dispatch is broken, a follow-up text (or voice/location) still drains an old pending batch.
+
 #### AWS Lambda: self-invoke (typical setup)
 
 The main Lambda can handle both HTTP (webhook) and batch events without a second function. The webhook invokes itself asynchronously; AWS Lambda Web Adapter (LWA) routes the direct-invoke payload to an internal HTTP endpoint.
@@ -448,7 +450,7 @@ For self-invoke: the Lambda role needs `lambda:InvokeFunction` on its own ARN.
 
 **Symptoms**:
 - No errors in logs, but batched media is not processed automatically
-- Sending a follow-up text message triggers processing (via `flush_pending_batch_if_stale`)
+- Sending a follow-up **text** message (or a voice message that yields a transcript, or a location message) triggers processing via `flush_pending_batch_if_stale` on that non-media path
 
 **Cause**: LWA sends direct-invoke payloads to `/events` by default. The deferred router is at `/api/_internal/deferred`, so the request never reaches it.
 

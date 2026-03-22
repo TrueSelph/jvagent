@@ -154,10 +154,6 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
 
         # Check if this is a media message
         if data.message_type in ["image", "document", "video", "audio"] and data.media:
-            # Flush pending media batch if stale (lambda mode safety net)
-            await _batch_manager.flush_pending_batch_if_stale(
-                sender, whatsapp_action.media_batch_window, whatsapp_action
-            )
             return await _handle_media_message(
                 data, sender, agent_id, whatsapp_action, utterance
             )
@@ -191,6 +187,13 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                 agent, agent_id, sender, getattr(data, "isGroup", False)
             )
             return {"status": "ignored", "response": "Ignore interaction"}
+
+        # Serverless: flush stale persisted media batches before text/voice/location
+        # interactions. Not run on media webhooks so multi-image albums can coalesce
+        # without flushing a partial batch when the next image arrives after the window.
+        await _batch_manager.flush_pending_batch_if_stale(
+            sender, whatsapp_action.media_batch_window, whatsapp_action
+        )
 
         quoted = getattr(data, "quoted_message", None) or {}
         utterance = _build_utterance_with_quoted_context(quoted, utterance) or utterance
