@@ -6,10 +6,11 @@ replacing the PersonaAction interact endpoint.
 
 import asyncio
 import logging
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 from fastapi import Request
 from fastapi.responses import StreamingResponse
+from jvspatial import create_task, flush_deferred_entities
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import (
@@ -31,8 +32,6 @@ from jvagent.core.channel import normalize_channel
 
 logger = logging.getLogger(__name__)
 
-from jvagent.action.interact.utils import flush_deferred_saves
-
 # Import profiling utilities
 
 
@@ -46,11 +45,13 @@ async def _finalize_usage(interaction: Any) -> None:
     if hasattr(interaction, "compute_usage"):
         interaction.compute_usage()
         await interaction.save()
-    if hasattr(interaction, "usage") and interaction.usage:
+    await flush_deferred_entities(interaction, strict=False)
+    usage = getattr(interaction, "usage", None)
+    if usage:
         try:
             user = await interaction.get_user()
             if user and hasattr(user, "add_usage_from_interaction"):
-                await user.add_usage_from_interaction(interaction.usage)
+                await user.add_usage_from_interaction(usage)
         except Exception as e:
             logger.warning(
                 "Failed to update user usage stats: interaction_id=%s user_id=%s error=%s",
@@ -602,7 +603,9 @@ async def interact_endpoint(
 
                 # Flush deferred saves (interaction and conversation) with error handling
                 async with profile.measure("flush_saves"):
-                    await flush_deferred_saves(interaction, walker.conversation)
+                    await flush_deferred_entities(
+                        interaction, walker.conversation, strict=False
+                    )
 
                 # Compute usage after flush so all model_call events are present
                 await _finalize_usage(interaction)
@@ -695,9 +698,16 @@ async def _stream_interaction(
     set_current_profile(profile)
 
     try:
-        # Start walker in background
+        # Start walker in background (concurrent with early interaction polling).
         walker_start = time.time()
-        walk_task = asyncio.create_task(walker.spawn(agent))
+        walk_task = cast(
+            asyncio.Task,
+            await create_task(
+                walker.spawn(agent),
+                name="interact_stream_spawn",
+                concurrent=True,
+            ),
+        )
 
         # Wait for interaction to be created
         max_wait = 5.0  # Maximum seconds to wait for interaction
@@ -789,7 +799,9 @@ async def _stream_interaction(
             # Close interaction
             await interaction.close_interaction()
             # Flush deferred saves (interaction and conversation) with error handling
-            await flush_deferred_saves(interaction, walker.conversation)
+            await flush_deferred_entities(
+                interaction, walker.conversation, strict=False
+            )
 
             # Compute usage after flush so all model_call events are present
             await _finalize_usage(interaction)
@@ -842,7 +854,10 @@ async def _stream_interaction(
 
             # Fire background actions after final chunk is yielded
             if walker.background_actions:
-                asyncio.create_task(_run_background_actions(walker))
+                await create_task(
+                    _run_background_actions(walker),
+                    name="interact_background_actions",
+                )
 
             # Log profile summary
             await finalize_profile(profile.request_id, log=True)
@@ -861,7 +876,9 @@ async def _stream_interaction(
             # Close interaction
             await interaction.close_interaction()
             # Flush deferred saves (interaction and conversation) with error handling
-            await flush_deferred_saves(interaction, walker.conversation)
+            await flush_deferred_entities(
+                interaction, walker.conversation, strict=False
+            )
 
             # Compute usage after flush so all model_call events are present
             await _finalize_usage(interaction)
@@ -913,7 +930,10 @@ async def _stream_interaction(
 
             # Fire background actions after final chunk is yielded
             if walker.background_actions:
-                asyncio.create_task(_run_background_actions(walker))
+                await create_task(
+                    _run_background_actions(walker),
+                    name="interact_background_actions",
+                )
 
             # Log profile summary
             await finalize_profile(profile.request_id, log=True)

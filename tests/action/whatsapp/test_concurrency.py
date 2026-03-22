@@ -558,52 +558,46 @@ class TestBackgroundTaskFailures:
     @pytest.mark.asyncio
     async def test_background_task_exception_logged(self):
         """Background task exceptions should be logged, not silently swallowed."""
-        from jvspatial.async_utils import create_background_task
-
-        exception_logged = {"value": False}
+        from jvspatial import create_task
 
         async def failing_task():
             """A task that will fail."""
             raise ValueError("Intentional test failure")
 
-        # Create the task with exception handling
-        task = create_background_task(failing_task(), name="test_failing_task")
+        task = await create_task(failing_task(), name="test_failing_task")
+        assert task is not None
 
-        # Wait for the task to complete (and fail)
         try:
             await task
         except ValueError:
             pass  # Expected
 
-        # Task should be done (not hanging)
         assert task.done(), "Task should complete even after exception"
 
     @pytest.mark.asyncio
     async def test_cancelled_task_handled_gracefully(self):
         """Cancelled tasks should not log errors."""
-        from jvspatial.async_utils import create_background_task
+        from jvspatial import create_task
 
         async def long_running_task():
             """A task that runs for a long time."""
             await asyncio.sleep(100)
 
-        # Create and immediately cancel
-        task = create_background_task(long_running_task(), name="test_cancelled_task")
+        task = await create_task(long_running_task(), name="test_cancelled_task")
+        assert task is not None
         task.cancel()
 
-        # Wait for cancellation to process
         try:
             await task
         except asyncio.CancelledError:
             pass  # Expected
 
-        # Task should be cancelled
         assert task.cancelled(), "Task should be cancelled"
 
     @pytest.mark.asyncio
     async def test_multiple_background_tasks_independent(self):
         """Multiple background tasks should not affect each other."""
-        from jvspatial.async_utils import create_background_task
+        from jvspatial import create_task
 
         results = {"success": 0, "failure": 0}
 
@@ -619,15 +613,16 @@ class TestBackgroundTaskFailures:
             results["failure"] += 1
             raise RuntimeError("Intentional failure")
 
-        # Mix of success and failure tasks
         tasks = []
         for i in range(10):
             if i % 3 == 0:
-                tasks.append(create_background_task(failure_task(), name=f"fail_{i}"))
+                t = await create_task(failure_task(), name=f"fail_{i}")
+                assert t is not None
+                tasks.append(t)
             else:
-                tasks.append(
-                    create_background_task(success_task(i), name=f"success_{i}")
-                )
+                t = await create_task(success_task(i), name=f"success_{i}")
+                assert t is not None
+                tasks.append(t)
 
         # Wait for all tasks
         await asyncio.gather(*tasks, return_exceptions=True)

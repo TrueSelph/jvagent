@@ -1,8 +1,4 @@
-"""Webhook authentication utilities for PageIndexGoogleDriveSync action.
-
-This module provides utilities for managing system service users and API keys
-for PageIndexGoogleDriveSync webhook authentication.
-"""
+"""Create or resolve system users for webhook API key ownership."""
 
 import logging
 import os
@@ -14,28 +10,21 @@ from jvspatial.api.auth.service import AuthenticationService
 
 logger = logging.getLogger(__name__)
 
-# System service user email - not used for login, only for API key ownership
-SYSTEM_USER_EMAIL = "pageindex-google-drive-sync-service@system.internal"
-
 
 def _get_jwt_secret() -> Optional[str]:
-    """Get JWT secret from environment. Supports JVSPATIAL_JWT_SECRET_KEY and JVSPATIAL_JWT_SECRET."""
     return os.environ.get("JVSPATIAL_JWT_SECRET_KEY") or os.environ.get(
         "JVSPATIAL_JWT_SECRET"
     )
 
 
-async def get_or_create_system_user() -> str:
-    """Get or create system service user for webhook API keys.
+async def get_or_create_system_user_for_webhook(
+    system_user_email: str,
+    webhook_permission: str,
+) -> str:
+    """Get or create a system service user for webhook API keys.
 
     Uses create_user_with_roles (admin-only path) since public registration
     is disabled when users exist. Admin must exist before webhook setup.
-
-    Returns:
-        User ID of the system service user
-
-    Raises:
-        Exception: If user creation fails
     """
     jwt_secret = _get_jwt_secret()
     if not jwt_secret:
@@ -45,7 +34,7 @@ async def get_or_create_system_user() -> str:
         )
     auth_service = AuthenticationService(jwt_secret=jwt_secret)
 
-    existing_user = await auth_service._find_user_by_email(SYSTEM_USER_EMAIL)
+    existing_user = await auth_service._find_user_by_email(system_user_email)
     if existing_user:
         return existing_user.id
 
@@ -53,23 +42,20 @@ async def get_or_create_system_user() -> str:
 
     try:
         user_data = UserCreateAdmin(
-            email=SYSTEM_USER_EMAIL,
+            email=system_user_email,
             password=random_password,
             roles=["system"],
-            permissions=["webhook:pageindex_google_drive_sync"],
+            permissions=[webhook_permission],
         )
         user_response = await auth_service.create_user_with_roles(user_data)
-        logger.info(f"Created system service user: {user_response.id}")
+        logger.info("Created system service user: %s", user_response.id)
         return user_response.id
     except ValueError as e:
         if "already exists" in str(e).lower():
-            existing_user = await auth_service._find_user_by_email(SYSTEM_USER_EMAIL)
+            existing_user = await auth_service._find_user_by_email(system_user_email)
             if existing_user:
                 return existing_user.id
         raise
     except Exception as e:
-        logger.error(f"Failed to create system service user: {e}")
+        logger.error("Failed to create system service user: %s", e)
         raise
-
-
-__all__ = ["get_or_create_system_user", "SYSTEM_USER_EMAIL"]

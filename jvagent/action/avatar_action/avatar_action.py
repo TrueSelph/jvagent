@@ -3,11 +3,11 @@
 Provides storage and retrieval of base64 encoded avatar images.
 """
 
-import logging
 import base64
-import aiohttp
-from typing import Dict, Optional, Union, Any
+import logging
+from typing import Any, Dict, Optional, Union
 
+import aiohttp
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
@@ -21,19 +21,17 @@ class AvatarAction(Action):
     Stores a base64 encoded image and its mimetype.
     """
 
-    image_data: str = attribute(
-        default="", description="Base64 encoded image data"
-    )
+    image_data: str = attribute(default="", description="Base64 encoded image data")
     mimetype: str = attribute(
         default="", description="MIME type of the image (e.g. image/png, image/jpeg)"
     )
 
     async def pull_avatar_from_whatsapp(self, phone: Optional[str] = None) -> bool:
         """Pull avatar from whatsapp and save it locally."""
-        whatsapp_action = await self.get_action("WhatsAppAction")
+        whatsapp_action: Any = await self.get_action("WhatsAppAction")
         if not whatsapp_action:
             raise Exception("WhatsApp action not found")
-        
+
         if not phone:
             # Try to get own device number
             device_info = await whatsapp_action.api().get_host_device()
@@ -44,23 +42,33 @@ class AvatarAction(Action):
                     or device_info.get("wid", {}).get("user")
                     or device_info.get("id", {}).get("user")
                 )
-            
+
             if not phone:
-                raise Exception("Phone number not provided and couldn't be determined from session")
+                raise Exception(
+                    "Phone number not provided and couldn't be determined from session"
+                )
 
         result = await whatsapp_action.api().get_profile_picture(phone=phone)
         if isinstance(result, dict) and not result.get("ok", True):
-            raise Exception(f"Failed to get profile picture: {result.get('error', 'Unknown error')}")
-             
+            raise Exception(
+                f"Failed to get profile picture: {result.get('error', 'Unknown error')}"
+            )
+
         # Extract URL from various possible response formats
         url = None
         if isinstance(result, str):
             url = result
         elif isinstance(result, dict):
-            url = result.get("profile_picture") or result.get("url") or result.get("response")
-            
+            url = (
+                result.get("profile_picture")
+                or result.get("url")
+                or result.get("response")
+            )
+
         if not url or not isinstance(url, str) or not url.startswith("http"):
-            raise Exception(f"Could not find a valid profile picture URL in response: {result}")
+            raise Exception(
+                f"Could not find a valid profile picture URL in response: {result}"
+            )
 
         # Download image
         async with aiohttp.ClientSession() as session:
@@ -73,27 +81,30 @@ class AvatarAction(Action):
                     logger.info(f"Successfully pulled avatar for {phone}")
                     return True
                 else:
-                    raise Exception(f"Failed to download profile picture: HTTP {response.status}")
+                    raise Exception(
+                        f"Failed to download profile picture: HTTP {response.status}"
+                    )
 
     async def set_whatsapp_avatar(self) -> bool:
         """Set WhatsApp profile picture using the current local avatar."""
-        whatsapp_action = await self.get_action("WhatsAppAction")
+        whatsapp_action: Any = await self.get_action("WhatsAppAction")
         if not whatsapp_action:
             raise Exception("WhatsApp action not found")
-        
+
         if not self.image_data:
             raise Exception("No avatar image set in AvatarAction")
 
         # Convert base64 data back to bytes for the API
         file_data = base64.b64decode(self.image_data)
-        
+
         result = await whatsapp_action.api().set_profile_pic(file_data=file_data)
         if not result.get("ok", True):
-            raise Exception(f"Failed to set profile picture: {result.get('error', 'Unknown error')}")
+            raise Exception(
+                f"Failed to set profile picture: {result.get('error', 'Unknown error')}"
+            )
 
         logger.info(f"Successfully set WhatsApp profile picture from current avatar")
         return True
-        
 
     async def set_avatar(self, image_data: str, mimetype: str) -> bool:
         """Set the avatar image data and mimetype.
@@ -107,7 +118,7 @@ class AvatarAction(Action):
         """
         self.image_data = image_data
         self.mimetype = mimetype
-        
+
         try:
             await self.save()
             return True
@@ -126,7 +137,7 @@ class AvatarAction(Action):
         """
         if not self.image_data:
             return None
-            
+
         if with_prefix:
             return f"data:{self.mimetype};base64,{self.image_data}"
         return self.image_data
@@ -139,7 +150,7 @@ class AvatarAction(Action):
         """
         self.image_data = ""
         self.mimetype = ""
-        
+
         try:
             await self.save()
             return True
@@ -157,6 +168,6 @@ class AvatarAction(Action):
             return {
                 "status": "warning",
                 "message": "Avatar image is not set.",
-                "healthy": True
+                "healthy": False,
             }
         return True

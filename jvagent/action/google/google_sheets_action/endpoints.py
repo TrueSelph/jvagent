@@ -5,28 +5,13 @@ from typing import Any, Dict, List, Optional
 
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
+from jvspatial.api.exceptions import ValidationError
+
+from jvagent.action.utils.endpoint_helpers import require_typed_action
 
 from .google_sheets_action import GoogleSheetsAction
 
 logger = logging.getLogger(__name__)
-
-
-async def _get_sheets_action(action_id: str) -> Optional[GoogleSheetsAction]:
-    """Resolve action by ID; validate it is a GoogleSheetsAction.
-
-    **Args:**
-
-    - action_id: ID of the action to retrieve
-
-    **Returns:**
-
-    GoogleSheetsAction instance if found and valid, else None
-    """
-    action = await GoogleSheetsAction.get(action_id)
-    if action and isinstance(action, GoogleSheetsAction):
-        return action
-    return None
 
 
 @endpoint(
@@ -82,12 +67,12 @@ async def read_sheets(
     - ResourceNotFoundError: If the Google Sheets action is not found
     - ValidationError: If the read operation fails
     """
-    action = await _get_sheets_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Google Sheets action {action_id} not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        GoogleSheetsAction,
+        not_found_message=f"Google Sheets action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a GoogleSheetsAction",
+    )
 
     try:
         values = await action.read_spreadsheet(
@@ -168,12 +153,12 @@ async def update_sheets(
     - ResourceNotFoundError: If the Google Sheets action is not found
     - ValidationError: If the update operation fails
     """
-    action = await _get_sheets_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Google Sheets action {action_id} not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        GoogleSheetsAction,
+        not_found_message=f"Google Sheets action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a GoogleSheetsAction",
+    )
 
     try:
         result = await action.update_spreadsheet(
@@ -260,12 +245,12 @@ async def append_sheets(
     - ResourceNotFoundError: If the Google Sheets action is not found
     - ValidationError: If the append operation fails
     """
-    action = await _get_sheets_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Google Sheets action {action_id} not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        GoogleSheetsAction,
+        not_found_message=f"Google Sheets action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a GoogleSheetsAction",
+    )
 
     try:
         result = await action.append_spreadsheet(
@@ -334,12 +319,12 @@ async def create_spreadsheet(action_id: str, title: str) -> Dict[str, Any]:
     - ResourceNotFoundError: If the Google Sheets action is not found
     - ValidationError: If the spreadsheet creation fails
     """
-    action = await _get_sheets_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Google Sheets action {action_id} not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        GoogleSheetsAction,
+        not_found_message=f"Google Sheets action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a GoogleSheetsAction",
+    )
 
     try:
         result = await action.create_spreadsheet(title=title)

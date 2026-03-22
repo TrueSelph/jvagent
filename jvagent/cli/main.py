@@ -78,13 +78,14 @@ def main() -> None:
     reload_performance_config()
     reload_profiling_config()
 
-    # Check for --serverless flag (overrides .env; simulates serverless runtime)
+    # Check for --serverless flag (overrides .env; simulates serverless + Lambda for local dev)
     if "--serverless" in args:
         args = [arg for arg in args if arg != "--serverless"]
-        os.environ["JVAGENT_SERVERLESS"] = "1"
+        os.environ["SERVERLESS_MODE"] = "true"
         os.environ["AWS_LAMBDA_FUNCTION_NAME"] = "jvagent-serverless"
-        os.environ["BACKGROUND_PROCESSING"] = "false"
-        logger.info("Serverless mode enabled (single-threaded, no background tasks)")
+        logger.info(
+            "Serverless mode enabled (single worker, jvspatial SERVERLESS_MODE=true)"
+        )
 
     _set_db_env_from_config(app_root)
 

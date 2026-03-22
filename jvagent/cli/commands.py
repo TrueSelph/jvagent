@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
+from jvspatial import is_serverless_mode
 
 from jvagent.cli.bootstrap import bootstrap_application_graph, ensure_admin_user
 from jvagent.cli.server_config import (
@@ -258,9 +259,7 @@ def run_server(
         # Start the server
         bootstrap_log.complete("Ready")
         run_kwargs = {}
-        if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") or os.environ.get(
-            "JVAGENT_SERVERLESS"
-        ):
+        if is_serverless_mode():
             run_kwargs["workers"] = 1
             run_kwargs["reload"] = False
         server.run(**run_kwargs)

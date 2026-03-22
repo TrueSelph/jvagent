@@ -199,12 +199,6 @@ class InteractWalker(Walker):
                 self.new_user = new_user
                 self.conversation = conversation
 
-                # Enable deferred saves on conversation to batch metadata updates (if enabled)
-                from jvspatial.core.mixins import ENABLE_DEFERRED_SAVES
-
-                if ENABLE_DEFERRED_SAVES:
-                    conversation.enable_deferred_saves()
-
                 # Create interaction
                 from jvagent.action.model.context import set_interaction
                 from jvagent.memory.interaction import Interaction
@@ -214,10 +208,6 @@ class InteractWalker(Walker):
                     channel=self.channel,
                     session_id=self.session_id,
                 )
-
-                # Enable deferred saves to batch all interaction updates (if enabled)
-                if ENABLE_DEFERRED_SAVES:
-                    self.interaction.enable_deferred_saves()
 
                 # Set interaction object in context for automatic observability
                 set_interaction(self.interaction)

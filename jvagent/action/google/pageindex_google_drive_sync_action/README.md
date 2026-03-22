@@ -35,7 +35,7 @@ Automatically sync and ingest documents from Google Drive folders into PageIndex
     client_secrets_json: ${GOOGLE_CLIENT_SECRETS_JSON}
     default_parent_id: ${GOOGLE_DRIVE_PARENT_FOLDER_ID}
 
-- action: jvagent/page_index_google_drive_sync_action
+- action: jvagent/pageindex_google_drive_sync_action
   context:
     google_drive_folders:
       - folder_id: "123"
@@ -58,9 +58,19 @@ Automatically sync and ingest documents from Google Drive folders into PageIndex
 
 ## Endpoints
 
-| Method | Path                                                     | Description                                        |
-| ------ | -------------------------------------------------------- | -------------------------------------------------- |
-| POST   | `/agents/{agent_id}/page_index_google_drive_sync/ingest` | Trigger document ingestion from configured folders |
+Admin routes (authenticated, `action_id` is the PageIndex Google Drive sync action instance):
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| POST | `/actions/{action_id}/ingest_google_documents` | Ingest from configured or requested folders |
+| GET | `/actions/{action_id}/list_google_documents` | List tracked Drive documents |
+| DELETE | `/actions/{action_id}/delete_google_documents` | Remove indexed documents (optional `document_id`) |
+
+Webhook:
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| POST | `/page_index_google_drive_sync/interact/webhook/{agent_id}` | Trigger ingestion (API key auth) |
 
 ## API Usage
 
@@ -157,7 +167,7 @@ Metadata is queryable in PageIndex for filtering and context enrichment.
 - **Monitor changes**: Review the response to understand what was added/updated/removed
 - **Test first**: Start with a small folder to verify configuration
 - **Backup**: Keep original documents in Google Drive as backup
-- **Permissions**: Ensure service account has read access to all monitored folders
+- **Permissions**: Ensure the OAuth-authorized Google account can read all monitored folders
 
 ## Troubleshooting
 

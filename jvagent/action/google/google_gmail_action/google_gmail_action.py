@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleGmailAction(GoogleAction):
-    """Action for Google Gmail operations using a service account."""
+    """Action for Google Gmail operations using OAuth2 (user-delegated credentials)."""
 
     API_SERVICE_NAME: ClassVar[str] = "gmail"
     API_VERSION: ClassVar[str] = "v1"

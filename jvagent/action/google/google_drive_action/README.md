@@ -236,4 +236,4 @@ Common errors and solutions:
 - Cache authorization tokens to reduce API calls
 - Monitor API quota usage in Google Cloud Console
 - Use appropriate `mime_type` for uploads
-- Test with a service account for production automation
+- Test with OAuth2 user-delegated credentials (or your org’s approved Google auth pattern) for production

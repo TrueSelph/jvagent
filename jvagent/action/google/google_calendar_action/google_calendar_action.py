@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleCalendarAction(GoogleAction):
-    """Action for Google Calendar operations using a service account."""
+    """Action for Google Calendar operations using OAuth2 (user-delegated credentials)."""
 
     API_SERVICE_NAME: ClassVar[str] = "calendar"
     API_VERSION: ClassVar[str] = "v3"

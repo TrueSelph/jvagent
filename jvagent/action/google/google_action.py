@@ -7,8 +7,7 @@ from typing import Any, ClassVar, Dict, List, Optional, Union
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import Resource, build
-from jvspatial.api.constants import APIRoutes
+from googleapiclient.discovery import build
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
@@ -39,10 +38,13 @@ class GoogleAction(Action):
     API_VERSION: ClassVar[str] = ""
     SCOPES: ClassVar[List[str]] = []
 
-
     async def _apply_env_defaults(self) -> None:
-        self.auth_url = os.environ.get("APP_BASE_URL", "").strip() + f"/api/google/{self.id}"
-        self.redirect_uri = os.environ.get("APP_BASE_URL", "").strip() + f"/api/google/callback/"
+        self.auth_url = (
+            os.environ.get("APP_BASE_URL", "").strip() + f"/api/google/{self.id}"
+        )
+        self.redirect_uri = (
+            os.environ.get("APP_BASE_URL", "").strip() + f"/api/google/callback/"
+        )
         await self.save()
 
         self._create_flow()
