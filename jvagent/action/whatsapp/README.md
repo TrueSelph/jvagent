@@ -395,6 +395,20 @@ When using Lambda async invoke for deferred tasks, LWA must route direct-invoke 
 
 For self-invoke: the Lambda role needs `lambda:InvokeFunction` on its own ARN.
 
+### Serverless WhatsApp media batch – remediation checklist
+
+Use this when logs show `Invoked deferred task jvagent.whatsapp.media_batch` but **no reply** until a follow-up text (typing may show on the webhook only). Work through in order.
+
+| Step | Action | Verify |
+|------|--------|--------|
+| 1. LWA pass-through | Set `AWS_LWA_PASS_THROUGH_PATH` to **`{JVSPATIAL_API_PREFIX}/_internal/deferred`** (default **`/api/_internal/deferred`**). Must match jvspatial `APIRoutes.deferred_invoke_full_path()` for your `JVSPATIAL_API_PREFIX`. | CloudWatch / access logs show **`POST .../_internal/deferred`** on the invocation triggered by deferred scheduling—not only webhook URLs. |
+| 2. App auth middleware | **`POST …/_internal/deferred` must bypass `AuthenticationMiddleware`** (no JWT on LWA pass-through). jvspatial **`PathMatcher` always exempts** `/_internal/deferred` so custom **`JVSPATIAL_AUTH_EXEMPT_PATHS`** cannot accidentally drop it. If you still see **`[401] path=/api/_internal/deferred has_auth_header=False`**, upgrade jvspatial to a version with that fix. Separately: if **`JVSPATIAL_DEFERRED_INVOKE_SECRET`** is set, the **deferred route** returns **401** unless you send `X-JVSPATIAL-Deferred-Authorize` / `Bearer` (LWA does not add these by default)—prefer unset for self-invoke. | No **401** from `auth_middleware` on `/_internal/deferred`; no **401** from deferred secret unless you intend to enforce it. |
+| 3. Lambda timeout | Timeout must exceed **`media_batch_window`** + full interact (LLM) + WhatsApp send. Typical **30–120s+**; default **300s** in example deploy templates is safe. | REPORT for the deferred `RequestId` is not `Status: timeout`. |
+| 4. IAM self-invoke | Execution role allows **`lambda:InvokeFunction`** on **this** function’s ARN. | No `AccessDeniedException` on invoke in logs. |
+| 5. Shared media storage | Webhook and deferred run may be **different instances**. Local files under instance-only disk are invisible to the deferred worker. Use **S3** (`JVSPATIAL_FILE_INTERFACE=s3`) or **EFS** mounted at the same path for **all** invocations (e.g. `/mnt/jvspatial/.files`). | `GET` the saved media URL succeeds from a cold invocation / different instance. |
+
+After routing works, deferred logs should include **`Deferred whatsapp media batch invoked for sender ...`** and either **`Processed media batch ...`** or **`processed=False`** (INFO) with a hint for claim races / empty batch.
+
 ## Migration Notes
 
 ### Breaking Changes

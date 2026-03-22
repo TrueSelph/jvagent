@@ -652,13 +652,20 @@ async def handle_whatsapp_media_batch_deferred_event(
     if process_at is not None:
         process_at = float(process_at)
 
-    logger.debug("Deferred whatsapp media batch for sender %s", sender)
+    logger.info("Deferred whatsapp media batch invoked for sender %s", sender)
     try:
         processed = await process_persistent_batch(
             sender, media_batch_window, process_at=process_at
         )
         if processed:
             logger.info("Processed media batch for sender %s (deferred invoke)", sender)
+        else:
+            logger.info(
+                "Deferred media batch for sender %s: processed=False "
+                "(no document claimed—already processed, race with another worker, "
+                "empty/missing batch, or is_serverless_mode false in this invocation).",
+                sender,
+            )
         return {"processed": processed}
     except Exception as e:
         logger.error(
