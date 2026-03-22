@@ -72,7 +72,7 @@ REVIEW_CONFIRMATION_DIRECTIVE = """Confirmation Rules:
 - Let the user know what you have, keeping the same structure and order of the items below. Format the label in bold. Eg. *label:* value
 - Re-present the current information below if you have already presented it.
 
-Here's what I have so far: 
+Here's what I have so far:
 
 {summary}
 

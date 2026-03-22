@@ -102,7 +102,7 @@ jvagent examples/jvagent_app --update
 # Run with source update (destructive)
 jvagent examples/jvagent_app --update --source
 
-# Run with serverless runtime simulation (single-threaded, no background tasks)
+# Run with serverless simulation (SERVERLESS_MODE=true, single worker; optional fake Lambda name)
 jvagent examples/jvagent_app --serverless
 ```
 
@@ -1516,7 +1516,7 @@ Key environment variables (see `.env.example` for full list):
 - `JVAGENT_ENABLE_DSPY_CACHE` - Enable DSPy response caching (default: `false`)
 - `JVAGENT_ENABLE_INTERACT_ROUTER_CACHE` - Enable interact router cache to skip LLM for repeated context (default: `false`)
 - `JVAGENT_INTERACT_ROUTER_CACHE_TTL` - Interact router cache TTL in seconds (default: `45`)
-- `JVSPATIAL_ENABLE_DEFERRED_SAVES` - Batch entity saves for rapid updates (default: `true`)
+- `JVSPATIAL_ENABLE_DEFERRED_SAVES` - Batch entity saves for rapid updates (default: `true`; **ignored in serverless** — jvspatial `deferred_saves_globally_allowed()` is false)
 
 These can also be configured in `app.yaml` under `config.performance`:
 ```yaml

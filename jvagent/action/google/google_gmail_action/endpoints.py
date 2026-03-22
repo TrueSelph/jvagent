@@ -5,28 +5,13 @@ from typing import Any, Dict, List, Optional
 
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
+from jvspatial.api.exceptions import ValidationError
+
+from jvagent.action.utils.endpoint_helpers import require_typed_action
 
 from .google_gmail_action import GoogleGmailAction
 
 logger = logging.getLogger(__name__)
-
-
-async def _get_gmail_action(action_id: str) -> Optional[GoogleGmailAction]:
-    """Resolve action by ID; validate it is a GoogleGmailAction.
-
-    **Args:**
-
-    - action_id: ID of the action to retrieve
-
-    **Returns:**
-
-    GoogleGmailAction instance if found and valid, else None
-    """
-    action = await GoogleGmailAction.get(action_id)
-    if action and isinstance(action, GoogleGmailAction):
-        return action
-    return None
 
 
 @endpoint(
@@ -88,12 +73,12 @@ async def send_gmail(
     - ResourceNotFoundError: If the Google Gmail action is not found
     - ValidationError: If the send operation fails
     """
-    action = await _get_gmail_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Google Gmail action {action_id} not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        GoogleGmailAction,
+        not_found_message=f"Google Gmail action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a GoogleGmailAction",
+    )
 
     try:
         result = await action.send_email(
@@ -168,12 +153,12 @@ async def list_gmail_messages(
 
     - ResourceNotFoundError: If the Google Gmail action is not found
     """
-    action = await _get_gmail_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Google Gmail action {action_id} not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        GoogleGmailAction,
+        not_found_message=f"Google Gmail action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a GoogleGmailAction",
+    )
 
     messages = await action.list_messages(
         query=query, max_results=max_results, user_id=user_id
@@ -231,12 +216,12 @@ async def get_gmail_profile(action_id: str, user_id: str = "me") -> Dict[str, An
 
     - ResourceNotFoundError: If the Google Gmail action is not found
     """
-    action = await _get_gmail_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Google Gmail action {action_id} not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        GoogleGmailAction,
+        not_found_message=f"Google Gmail action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a GoogleGmailAction",
+    )
 
     profile = await action.get_profile(user_id=user_id)
     return {"success": True, "profile": profile}

@@ -5,28 +5,13 @@ from typing import Any, Dict, List, Optional
 
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
+from jvspatial.api.exceptions import ValidationError
+
+from jvagent.action.utils.endpoint_helpers import require_typed_action
 
 from .google_calendar_action import GoogleCalendarAction
 
 logger = logging.getLogger(__name__)
-
-
-async def _get_calendar_action(action_id: str) -> Optional[GoogleCalendarAction]:
-    """Resolve action by ID; validate it is a GoogleCalendarAction.
-
-    **Args:**
-
-    - action_id: ID of the action to retrieve
-
-    **Returns:**
-
-    GoogleCalendarAction instance if found and valid, else None
-    """
-    action = await GoogleCalendarAction.get(action_id)
-    if action and isinstance(action, GoogleCalendarAction):
-        return action
-    return None
 
 
 @endpoint(
@@ -89,16 +74,13 @@ async def list_calendar_events(
 
     - ResourceNotFoundError: If the Google Calendar action is not found
     """
-    action = await _get_calendar_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Google Calendar action {action_id} not found",
-            details={"action_id": action_id},
-        )
-
-    events = await action.list_events(
-        calendar_id=calendar_id, time_min=time_min, max_results=max_results
+    action = await require_typed_action(
+        action_id,
+        GoogleCalendarAction,
+        not_found_message=f"Google Calendar action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a GoogleCalendarAction",
     )
+
     events = await action.list_events(
         calendar_id=calendar_id, time_min=time_min, max_results=max_results
     )
@@ -170,12 +152,12 @@ async def create_calendar_event(
     - ResourceNotFoundError: If the Google Calendar action is not found
     - ValidationError: If the event creation fails
     """
-    action = await _get_calendar_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Google Calendar action {action_id} not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        GoogleCalendarAction,
+        not_found_message=f"Google Calendar action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a GoogleCalendarAction",
+    )
 
     try:
         result = await action.create_event(
@@ -237,12 +219,12 @@ async def delete_calendar_event(
     - ResourceNotFoundError: If the Google Calendar action is not found
     - ValidationError: If the deletion operation fails
     """
-    action = await _get_calendar_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Google Calendar action {action_id} not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        GoogleCalendarAction,
+        not_found_message=f"Google Calendar action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a GoogleCalendarAction",
+    )
 
     try:
         await action.delete_event(calendar_id=calendar_id, event_id=event_id)

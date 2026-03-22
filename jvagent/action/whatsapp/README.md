@@ -263,8 +263,8 @@ APP_BASE_URL=https://your-app.com
 # Minimum value: 5 seconds
 WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS=120
 
-# Media batch mode is derived from BACKGROUND_PROCESSING (see jvspatial config).
-# Lambda: auto-disabled -> lambda mode when MongoDB + AWS_LAMBDA_FUNCTION_NAME set.
+# Media batch mode follows jvspatial is_serverless_mode() only (SERVERLESS_MODE or platform auto-detect).
+# Deferred path: MongoDB + jvspatial create_task (Shape A); in-process path: in-memory batch + create_task (Shape B).
 
 # Skip Startup Registration (optional, for Lambda)
 # Set to true to skip session registration on cold start; use POST /api/actions/{action_id}/session/register manually
@@ -335,15 +335,14 @@ When enabled, WhatsAppAction contributes capabilities to PersonaAction via `get_
 
 ### Media Batch Mode
 
-Media batch mode is derived from `BACKGROUND_PROCESSING` and `AWS_LAMBDA_FUNCTION_NAME`:
+Batching mode follows **only** jvspatial `is_serverless_mode()` (config / `SERVERLESS_MODE` / platform auto-detect; see jvspatial `docs/md/serverless-mode.md`). Cloud-specific wiring (Lambda self-invoke, SQS, etc.) lives in jvspatial’s deferred-task factory, not in this module.
 
 | Mode | Condition | Behavior |
 |------|-----------|----------|
-| **async** | `BACKGROUND_PROCESSING=true` | In-memory batching with background timer. All media waits `media_batch_window` to coalesce; then one interact call with all items. **Default for long-running servers.** |
-| **disabled** | `BACKGROUND_PROCESSING=false` and not Lambda | Each media processed inline immediately. No batching. |
-| **lambda** | `BACKGROUND_PROCESSING=false` and `AWS_LAMBDA_FUNCTION_NAME` set | Persistent batching: store in MongoDB, invoke batch processor async. Requires `JVSPATIAL_DB_TYPE=mongodb`. |
+| **async** | Not serverless | In-memory batching with background timer. Media waits `media_batch_window` to coalesce; then one interact call with all items. |
+| **deferred** | Serverless | Persistent batching in MongoDB + `jvspatial.create_task` (Shape A) for follow-up processing. Requires `JVSPATIAL_DB_TYPE=mongodb` for atomic updates. |
 
-#### Lambda mode: self-invoke (recommended)
+#### AWS Lambda: self-invoke (typical setup)
 
 The main Lambda can handle both HTTP (webhook) and batch events without a second function. The webhook invokes itself asynchronously; AWS Lambda Web Adapter (LWA) routes the direct-invoke payload to an internal HTTP endpoint.
 
@@ -352,16 +351,16 @@ The main Lambda can handle both HTTP (webhook) and batch events without a second
 ```yaml
 lambda:
   environment:
-    # BACKGROUND_PROCESSING is auto-disabled on Lambda (AWS_LAMBDA_FUNCTION_NAME set)
-    AWS_LAMBDA_FUNCTION_NAME: "{{app.name}}"  # Set by AWS or jvdeploy; used for self-invoke
-    AWS_LWA_PASS_THROUGH_PATH: "/api/_internal/whatsapp/batch"
+    # Set by AWS / jvdeploy; jvspatial uses it for default Lambda deferred dispatch
+    AWS_LAMBDA_FUNCTION_NAME: "{{app.name}}"
+    AWS_LWA_PASS_THROUGH_PATH: "/api/_internal/deferred"
 ```
 
 - `AWS_LAMBDA_FUNCTION_NAME`: Set by AWS in Lambda environments (or by jvdeploy as `{{app.name}}`). Used for self-invoke; no extra config needed.
-- `AWS_LWA_PASS_THROUGH_PATH`: Routes direct-invoke payloads to the batch handler. Without this, LWA defaults to `/events` and the batch route is never hit.
+- `AWS_LWA_PASS_THROUGH_PATH`: Routes direct-invoke payloads to jvspatial’s deferred invoke router (`POST /api/_internal/deferred` by default). Without this, LWA defaults to `/events` and deferred tasks are never dispatched in-process.
 - **IAM**: The Lambda role needs `lambda:InvokeFunction` on its own ARN (self-invoke).
 
-**Flow**: Webhook adds media to MongoDB → `_invoke_lambda_async` invokes the same Lambda (using `AWS_LAMBDA_FUNCTION_NAME`) with `InvocationType="Event"` → LWA POSTs the payload to `/api/_internal/whatsapp/batch` → `whatsapp_batch_invoke` runs `process_persistent_batch`.
+**Flow**: Webhook persists media batches in the prime database (`media_batches`) → `create_task("jvagent.whatsapp.media_batch", {...}, run_at=...)` schedules work (Lambda async invoke and/or EventBridge when configured; see jvspatial serverless deferred-task docs) → LWA POSTs the JSON body to `/api/_internal/deferred` → `media_batch_manager.handle_whatsapp_media_batch_deferred_event` runs `process_persistent_batch`, which shares the same downstream walker path as in-memory batching (`_process_batch_internal`). MongoDB is the typical production store; other jvspatial adapters support the same `find_one_and_update` / work-claim APIs with RMW semantics (weaker under concurrent writers than native Mongo).
 
 ## Lambda Deployment
 
@@ -380,15 +379,15 @@ For AWS Lambda deployments, configure the following:
 
 | Variable | Description |
 |----------|-------------|
-| `BACKGROUND_PROCESSING` | Auto-disabled on Lambda (`AWS_LAMBDA_FUNCTION_NAME` set). Media batch mode: `lambda` when disabled + Lambda. |
+| `SERVERLESS_MODE` | Optional override; Lambda sets serverless automatically. See jvspatial serverless docs. |
 | `JVSPATIAL_FILE_INTERFACE` | Set to `s3` for media storage. Local storage fails on Lambda (read-only `/var/task`). |
-| `JVSPATIAL_DB_TYPE` | Must be `mongodb` when using lambda media batch mode |
-| `AWS_LWA_PASS_THROUGH_PATH` | Route direct-invoke payloads to batch handler: `/api/_internal/whatsapp/batch` |
+| `JVSPATIAL_DB_TYPE` | `mongodb` recommended for deferred media batching under concurrency; json/sqlite and other adapters work via jvspatial compound operations (best-effort RMW where not native) |
+| `AWS_LWA_PASS_THROUGH_PATH` | Route direct-invoke payloads to deferred router: `/api/_internal/deferred` (or `{JVSPATIAL_API_PREFIX}/_internal/deferred`) |
 | `WHATSAPP_SKIP_STARTUP_REGISTRATION` | Set to `true` to skip session registration on cold start; use manual endpoint instead |
 
 ### LWA (Lambda Web Adapter) Configuration
 
-When using lambda media batch mode (auto-enabled when `BACKGROUND_PROCESSING` is false and on Lambda), LWA must route direct-invoke payloads to the batch endpoint. Set `AWS_LWA_PASS_THROUGH_PATH=/api/_internal/whatsapp/batch` in the Lambda environment. Without this, LWA defaults to `/events` and the batch handler is never reached.
+When using Lambda async invoke for deferred tasks, LWA must route direct-invoke payloads to the jvspatial deferred endpoint. Set `AWS_LWA_PASS_THROUGH_PATH=/api/_internal/deferred` in the Lambda environment (or match your `JVSPATIAL_API_PREFIX`). Without this, LWA defaults to `/events` and deferred handlers are never reached.
 
 ### IAM Permissions
 
@@ -451,9 +450,9 @@ For self-invoke: the Lambda role needs `lambda:InvokeFunction` on its own ARN.
 - No errors in logs, but batched media is not processed automatically
 - Sending a follow-up text message triggers processing (via `flush_pending_batch_if_stale`)
 
-**Cause**: LWA sends direct-invoke payloads to `/events` by default. The batch handler is at `/api/_internal/whatsapp/batch`, so the request never reaches it.
+**Cause**: LWA sends direct-invoke payloads to `/events` by default. The deferred router is at `/api/_internal/deferred`, so the request never reaches it.
 
-**Solution**: Set `AWS_LWA_PASS_THROUGH_PATH: "/api/_internal/whatsapp/batch"` in the Lambda environment (deploy.yaml). Redeploy so the env var is applied.
+**Solution**: Set `AWS_LWA_PASS_THROUGH_PATH: "/api/_internal/deferred"` in the Lambda environment (deploy.yaml). Redeploy so the env var is applied.
 
 #### Problem: ResourceNotFoundException for batch processor function
 
@@ -462,7 +461,7 @@ For self-invoke: the Lambda role needs `lambda:InvokeFunction` on its own ARN.
 
 **Cause**: `AWS_LAMBDA_FUNCTION_NAME` (set by AWS or deploy config) points to a non-existent or misconfigured Lambda.
 
-**Solution**: Ensure the Lambda function exists and `AWS_LAMBDA_FUNCTION_NAME` matches the deployed function name. Set `AWS_LWA_PASS_THROUGH_PATH: "/api/_internal/whatsapp/batch"` so LWA routes direct-invoke payloads to the batch handler.
+**Solution**: Ensure the Lambda function exists and `AWS_LAMBDA_FUNCTION_NAME` matches the deployed function name. Set `AWS_LWA_PASS_THROUGH_PATH: "/api/_internal/deferred"` so LWA routes direct-invoke payloads to the deferred router.
 
 ### Health Check
 

@@ -21,25 +21,29 @@ ERROR RECOVERY:
 - Timer tasks are cancelled on batch removal to prevent orphaned tasks
 - Per-user locks prevent race conditions during batch operations
 
-BATCH MODES (derived from BACKGROUND_PROCESSING + AWS_LAMBDA_FUNCTION_NAME):
-- async: In-memory batching with background timer tasks. When BACKGROUND_PROCESSING=true.
-- disabled: No batching; each media processed inline. When BACKGROUND_PROCESSING=false and not Lambda.
-- lambda: Persistent batching via MongoDB + Lambda async invoke. When BACKGROUND_PROCESSING=false and
-  AWS_LAMBDA_FUNCTION_NAME is set. Supports self-invoke; LWA routes direct-invoke payloads to
-  POST /api/_internal/whatsapp/batch via AWS_LWA_PASS_THROUGH_PATH.
+BATCH MODES (from ``jvspatial.is_serverless_mode()`` only; uses ``get_current_server().config`` when set):
+- async: In-memory batching with timer tasks via ``create_task`` (Shape B, long-running process).
+- deferred: Persistent batching in the prime database via ``Database.find_one_and_update`` (same
+  compound-op stack as ``claim_record`` / ``delete_claimed_record``), plus ``create_task`` (Shape A)
+  for follow-up processing. Strongest concurrency guarantees on MongoDB; other adapters use RMW paths.
+  Actual transport (Lambda, SQS, EventBridge, noop, etc.) is chosen inside jvspatial.
 """
 
 import asyncio
-import json
 import logging
-import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from jvspatial.async_utils import create_background_task
-from jvspatial.config import use_background_processing
+from fastapi import HTTPException
+from jvspatial import (
+    claim_record,
+    create_task,
+    delete_claimed_record,
+    is_serverless_mode,
+    register_deferred_invoke_handler,
+    release_claim,
+)
 from jvspatial.db import get_prime_database
-from jvspatial.env import load_env
 from jvspatial.exceptions import DatabaseError
 
 from jvagent.core.agent import Agent
@@ -48,6 +52,11 @@ logger = logging.getLogger(__name__)
 
 
 MEDIA_BATCHES_COLLECTION = "media_batches"
+
+BATCH_RECEIVED_RESPONSE: Dict[str, str] = {
+    "status": "received",
+    "response": "media batched",
+}
 
 
 def _get_payload(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -62,146 +71,29 @@ def _is_vision_image(item: Dict[str, Any]) -> bool:
     return mt == "image" or (mime and mime.startswith("image/"))
 
 
+def _media_item(
+    media_url: str, utterance: Optional[str], data_dict: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Single media entry for a batch (types from visitor payload)."""
+    payload = _get_payload(data_dict)
+    return {
+        "url": media_url,
+        "utterance": utterance,
+        "message_type": payload.get("message_type"),
+        "mime_type": payload.get("mime_type"),
+    }
+
+
 # Constants for batch management
 BATCH_MAX_SIZE = 10  # Maximum number of media items per batch
 BATCH_TTL_SECONDS = 300  # Time-to-live for abandoned batches (5 minutes)
 BATCH_CLEANUP_INTERVAL = 60  # Run cleanup every 60 seconds
-INVOKE_DEDUP_SECONDS = 1.0  # Min seconds between batch Lambda invokes per sender
+INVOKE_DEDUP_SECONDS = 1.0  # Min seconds between deferred dispatches per sender
 
 
-def _get_media_batch_mode(whatsapp_action: Any = None) -> str:
-    """Resolve media batch mode from BACKGROUND_PROCESSING and AWS_LAMBDA_FUNCTION_NAME.
-
-    - BACKGROUND_PROCESSING=true -> async (in-memory batching with background tasks)
-    - BACKGROUND_PROCESSING=false + Lambda -> lambda (persistent batching via MongoDB + Lambda)
-    - BACKGROUND_PROCESSING=false + not Lambda -> disabled (inline, no batching)
-
-    The whatsapp_action parameter is ignored; kept for backward compatibility with call sites.
-    """
-    if use_background_processing():
-        return "async"
-    return "lambda" if bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME")) else "disabled"
-
-
-def _get_lambda_client():
-    """Lazy singleton for boto3 Lambda client (avoids per-invoke creation overhead)."""
-    if _lambda_client_cache[0] is None:
-        import boto3
-
-        _lambda_client_cache[0] = boto3.client("lambda")
-    return _lambda_client_cache[0]
-
-
-# Module-level cache for Lambda client; boto3 clients are thread-safe
-_lambda_client_cache: List[Optional[Any]] = [None]
-_scheduler_client_cache: List[Optional[Any]] = [None]
-
-
-def _get_scheduler_client():
-    """Lazy singleton for boto3 EventBridge Scheduler client."""
-    if _scheduler_client_cache[0] is None:
-        import boto3
-
-        _scheduler_client_cache[0] = boto3.client("scheduler")
-    return _scheduler_client_cache[0]
-
-
-def _create_eventbridge_schedule(
-    sender: str,
-    media_batch_window: float,
-    process_at: float,
-) -> bool:
-    """Create one-time EventBridge schedule to invoke batch Lambda at process_at.
-
-    Avoids in-Lambda sleep (billed time). Returns True on success.
-    Requires WHATSAPP_EVENTBRIDGE_SCHEDULER_ENABLED=true and WHATSAPP_EVENTBRIDGE_ROLE_ARN.
-    """
-    import re
-
-    if os.environ.get("WHATSAPP_EVENTBRIDGE_SCHEDULER_ENABLED", "").lower() != "true":
-        return False
-    role_arn = os.environ.get("WHATSAPP_EVENTBRIDGE_ROLE_ARN", "").strip()
-    lambda_arn = os.environ.get("WHATSAPP_EVENTBRIDGE_LAMBDA_ARN", "").strip()
-    if not lambda_arn:
-        func_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME", "").strip()
-        if func_name:
-            region = os.environ.get("AWS_REGION", "us-east-1")
-            account = os.environ.get("AWS_ACCOUNT_ID", "")
-            if account:
-                lambda_arn = f"arn:aws:lambda:{region}:{account}:function:{func_name}"
-    if not role_arn or not lambda_arn:
-        return False
-    try:
-        from datetime import datetime, timezone
-
-        client = _get_scheduler_client()
-        schedule_group = os.environ.get(
-            "WHATSAPP_EVENTBRIDGE_SCHEDULER_GROUP", "default"
-        ).strip()
-        # Sanitize sender for schedule name (alphanumeric, hyphen, underscore)
-        safe_sender = re.sub(r"[^a-zA-Z0-9_-]", "_", sender)[:32]
-        name = f"wa-batch-{safe_sender}-{int(process_at * 1000)}"
-        at_time = datetime.fromtimestamp(process_at, tz=timezone.utc)
-        schedule_expr = f"at({at_time.strftime('%Y-%m-%dT%H:%M:%S')})"
-        payload = json.dumps(
-            {"sender": sender, "media_batch_window": media_batch_window}
-        )
-        client.create_schedule(
-            Name=name,
-            GroupName=schedule_group,
-            ScheduleExpression=schedule_expr,
-            ScheduleExpressionTimezone="UTC",
-            FlexibleTimeWindow={"Mode": "OFF"},
-            Target={
-                "Arn": lambda_arn,
-                "RoleArn": role_arn,
-                "Input": payload,
-            },
-            ActionAfterCompletion="DELETE",
-        )
-        logger.info(
-            f"Created EventBridge schedule for sender {sender} at {schedule_expr}"
-        )
-        return True
-    except Exception as e:
-        logger.warning(
-            f"EventBridge schedule failed for {sender}, falling back to Lambda invoke: {e}"
-        )
-        return False
-
-
-def _invoke_lambda_async(
-    sender: str,
-    media_batch_window: float,
-    process_at: Optional[float] = None,
-) -> None:
-    """Asynchronously invoke the batch processing Lambda (fire-and-forget)."""
-    func_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME", "").strip()
-    if not func_name:
-        logger.warning("AWS_LAMBDA_FUNCTION_NAME not set, skipping async invoke")
-        return
-    try:
-        # Prefer EventBridge Scheduler when process_at set (avoids billed sleep time)
-        if process_at is not None and _create_eventbridge_schedule(
-            sender, media_batch_window, process_at
-        ):
-            return
-        client = _get_lambda_client()
-        payload_dict: Dict[str, Any] = {
-            "sender": sender,
-            "media_batch_window": media_batch_window,
-        }
-        if process_at is not None:
-            payload_dict["process_at"] = process_at
-        payload = json.dumps(payload_dict)
-        client.invoke(
-            FunctionName=func_name,
-            InvocationType="Event",
-            Payload=payload,
-        )
-        logger.info(f"Invoked batch processor Lambda for sender {sender}")
-    except Exception as e:
-        logger.error(f"Failed to invoke batch processor Lambda: {e}", exc_info=True)
+def _get_media_batch_mode() -> str:
+    """Return ``async`` or ``deferred`` based solely on jvspatial serverless detection."""
+    return "deferred" if is_serverless_mode() else "async"
 
 
 class MediaBatchManager:
@@ -215,7 +107,6 @@ class MediaBatchManager:
         self._batches: Dict[str, Dict[str, Any]] = {}
         self._locks: Dict[str, asyncio.Lock] = {}
         self._global_lock = asyncio.Lock()  # For lock creation
-        self._cleanup_task: Optional[asyncio.Task] = None
         self._last_cleanup = time.time()
 
     async def _get_lock(self, sender: str) -> asyncio.Lock:
@@ -235,21 +126,14 @@ class MediaBatchManager:
     ) -> None:
         """Process a single media item inline (no batching).
 
-        Used for Lambda inline-only path and single-media pass-through.
+        Used when batching must not apply (e.g. single-item pass-through).
         """
-        payload = _get_payload(data_dict)
-        media_item = {
-            "url": media_url,
-            "utterance": utterance,
-            "message_type": payload.get("message_type"),
-            "mime_type": payload.get("mime_type"),
-        }
         batch = {
-            "media_items": [media_item],
+            "media_items": [_media_item(media_url, utterance, data_dict)],
             "data": data_dict,
             "agent_id": agent_id,
         }
-        await self._process_batch_internal(sender, batch)
+        await MediaBatchManager.execute_batch_from_record(sender, batch)
 
     async def get_or_create_batch(
         self,
@@ -265,8 +149,8 @@ class MediaBatchManager:
         Returns:
             Dict with status and any relevant info
         """
-        mode = _get_media_batch_mode(whatsapp_action)
-        if mode == "lambda":
+        mode = _get_media_batch_mode()
+        if mode == "deferred":
             return await self._get_or_create_batch_persistent(
                 sender, media_url, utterance, data_dict, agent_id, whatsapp_action
             )
@@ -286,7 +170,7 @@ class MediaBatchManager:
                         f"processing immediately"
                     )
                     # Process current batch immediately
-                    await self._process_batch_internal(sender, batch)
+                    await MediaBatchManager.execute_batch_from_record(sender, batch)
                     # Create new batch for this media
                     batch = self._create_new_batch(
                         media_url,
@@ -299,31 +183,14 @@ class MediaBatchManager:
                     self._batches[sender] = batch
                 else:
                     # Add to existing batch
-                    payload = _get_payload(data_dict)
                     batch["media_items"].append(
-                        {
-                            "url": media_url,
-                            "utterance": utterance,
-                            "message_type": payload.get("message_type"),
-                            "mime_type": payload.get("mime_type"),
-                        }
+                        _media_item(media_url, utterance, data_dict)
                     )
                     batch["updated_at"] = current_time
 
-                    # Cancel existing timer and start a new one
-                    if batch.get("timer_task") and not batch["timer_task"].done():
-                        batch["timer_task"].cancel()
-
-                    task = create_background_task(
-                        self._schedule_batch_processing(
-                            sender, whatsapp_action.media_batch_window
-                        ),
-                        name=f"media_batch_timer_{sender}",
+                    await self._attach_batch_timer_or_run_now(
+                        sender, batch, whatsapp_action.media_batch_window
                     )
-                    if task is not None:
-                        batch["timer_task"] = task
-                    else:
-                        await self._process_batch_internal(sender, batch)
                     logger.debug(
                         f"Added media to existing batch for user {sender}, "
                         f"batch size: {len(batch['media_items'])}, resetting timer"
@@ -340,16 +207,9 @@ class MediaBatchManager:
                 )
                 self._batches[sender] = batch
 
-                task = create_background_task(
-                    self._schedule_batch_processing(
-                        sender, whatsapp_action.media_batch_window
-                    ),
-                    name=f"media_batch_timer_{sender}",
+                await self._attach_batch_timer_or_run_now(
+                    sender, batch, whatsapp_action.media_batch_window
                 )
-                if task is not None:
-                    batch["timer_task"] = task
-                else:
-                    await self._process_batch_internal(sender, batch)
                 logger.debug(
                     f"Created new media batch for user {sender}, "
                     f"will process in {whatsapp_action.media_batch_window}s"
@@ -358,7 +218,29 @@ class MediaBatchManager:
             # Schedule cleanup if needed
             await self._maybe_schedule_cleanup()
 
-            return {"status": "received", "response": "media batched"}
+            return dict(BATCH_RECEIVED_RESPONSE)
+
+    async def _timer_or_flush_in_memory(self, sender: str, window: float) -> None:
+        """Debounce with sleep, or flush immediately on serverless (no background timer)."""
+        if is_serverless_mode():
+            await self.process_batch(sender)
+            return
+        await self._schedule_batch_processing(sender, window)
+
+    async def _attach_batch_timer_or_run_now(
+        self, sender: str, batch: Dict[str, Any], window: float
+    ) -> None:
+        """Reset debounce timer, or run batch immediately if tasks are unavailable."""
+        tt = batch.get("timer_task")
+        if tt and not tt.done():
+            tt.cancel()
+
+        task = await create_task(
+            self._timer_or_flush_in_memory(sender, window),
+            name=f"media_batch_timer_{sender}",
+        )
+        if task is not None:
+            batch["timer_task"] = task
 
     async def _get_or_create_batch_persistent(
         self,
@@ -369,22 +251,15 @@ class MediaBatchManager:
         agent_id: str,
         whatsapp_action: Any,
     ) -> Dict[str, Any]:
-        """Add media to persistent batch (Lambda + MongoDB path).
+        """Add media to persistent batch (serverless / prime database).
 
-        Uses atomic find_one_and_update with $push to avoid race conditions.
-        Invokes batch Lambda only on new batch or when invoked_at is stale
-        (invoke deduplication). Passes process_at so batch Lambda sleeps
-        until the correct time before claiming.
+        Uses ``find_one_and_update`` with ``$push`` (native atomic on MongoDB; default adapter RMW).
+        Dispatches a deferred task when invoke dedup allows; ``process_at`` defers
+        claiming until the batch window has elapsed.
         """
         current_time = time.time()
         db = get_prime_database()
-        payload = _get_payload(data_dict)
-        media_item = {
-            "url": media_url,
-            "utterance": utterance,
-            "message_type": payload.get("message_type"),
-            "mime_type": payload.get("mime_type"),
-        }
+        media_item = _media_item(media_url, utterance, data_dict)
 
         update: Dict[str, Any] = {
             "$push": {"media_items": media_item},
@@ -392,18 +267,12 @@ class MediaBatchManager:
             "$setOnInsert": {"agent_id": agent_id, "created_at": current_time},
         }
 
-        try:
-            result = await db.find_one_and_update(
-                MEDIA_BATCHES_COLLECTION,
-                {"_id": sender},
-                update,
-                upsert=True,
-            )
-        except NotImplementedError:
-            # Fallback for non-MongoDB (e.g. JSON) - not used in persistent path
-            result = await self._get_or_create_batch_persistent_fallback(
-                sender, media_url, utterance, data_dict, agent_id, current_time
-            )
+        result = await db.find_one_and_update(
+            MEDIA_BATCHES_COLLECTION,
+            {"_id": sender},
+            update,
+            upsert=True,
+        )
 
         if result is None:
             return {"status": "error", "response": "batch update failed"}
@@ -414,17 +283,22 @@ class MediaBatchManager:
                 f"Media batch for user {sender} reached max size ({BATCH_MAX_SIZE}), "
                 f"processing immediately"
             )
-            deleted = await db.find_one_and_delete(
-                MEDIA_BATCHES_COLLECTION, {"_id": sender}
+            batch_claim, token = await claim_record(
+                db, MEDIA_BATCHES_COLLECTION, sender
             )
-            if deleted:
-                await self._process_batch_from_store(sender, deleted)
-            return {"status": "received", "response": "media batched"}
+            if batch_claim and token:
+                await MediaBatchManager._finalize_claimed_persistent_batch(
+                    db,
+                    sender,
+                    batch_claim,
+                    token,
+                    exc_log="Failed to process max-size batch for %s: %s",
+                )
+            return dict(BATCH_RECEIVED_RESPONSE)
 
-        # Invoke batch Lambda with process_at so it waits media_batch_window before
-        # claiming. Single media also waits (no inline shortcut) so rapid multi-media
-        # can coalesce into one batch.
-        # Invoke deduplication: atomically claim invoke slot; only winner invokes
+        # Deferred dispatch with process_at so work runs after media_batch_window.
+        # Single media also waits (no inline shortcut) so rapid multi-media coalesce.
+        # Dedup: atomically claim slot; only winner dispatches
         invoke_query: Dict[str, Any] = {
             "_id": sender,
             "$or": [
@@ -432,81 +306,38 @@ class MediaBatchManager:
                 {"invoked_at": {"$lt": current_time - INVOKE_DEDUP_SECONDS}},
             ],
         }
-        try:
-            invoke_winner = await db.find_one_and_update(
-                MEDIA_BATCHES_COLLECTION,
-                invoke_query,
-                {"$set": {"invoked_at": current_time}},
-            )
-        except NotImplementedError:
-            invoke_winner = True  # Fallback: always invoke
+        invoke_winner = await db.find_one_and_update(
+            MEDIA_BATCHES_COLLECTION,
+            invoke_query,
+            {"$set": {"invoked_at": current_time}},
+        )
         if invoke_winner:
             process_at = current_time + whatsapp_action.media_batch_window
-            _invoke_lambda_async(
-                sender,
-                whatsapp_action.media_batch_window,
-                process_at=process_at,
+            await create_task(
+                "jvagent.whatsapp.media_batch",
+                {
+                    "sender": sender,
+                    "media_batch_window": whatsapp_action.media_batch_window,
+                },
+                run_at=process_at,
+                name=f"media_batch_deferred_{sender}",
             )
 
         logger.debug(
             f"Added media to persistent batch for user {sender}, "
             f"batch size: {batch_size}"
         )
-        return {"status": "received", "response": "media batched"}
-
-    async def _get_or_create_batch_persistent_fallback(
-        self,
-        sender: str,
-        media_url: str,
-        utterance: Optional[str],
-        data_dict: Dict[str, Any],
-        agent_id: str,
-        current_time: float,
-    ) -> Optional[Dict[str, Any]]:
-        """Fallback for DBs without find_one_and_update (read-modify-write)."""
-        db = get_prime_database()
-        payload = _get_payload(data_dict)
-        existing = await db.get(MEDIA_BATCHES_COLLECTION, sender)
-        if existing:
-            existing["media_items"].append(
-                {
-                    "url": media_url,
-                    "utterance": utterance,
-                    "message_type": payload.get("message_type"),
-                    "mime_type": payload.get("mime_type"),
-                }
-            )
-            existing["updated_at"] = current_time
-            existing["data"] = data_dict
-            await db.save(MEDIA_BATCHES_COLLECTION, existing)
-            return existing
-        batch = {
-            "_id": sender,
-            "media_items": [
-                {
-                    "url": media_url,
-                    "utterance": utterance,
-                    "message_type": payload.get("message_type"),
-                    "mime_type": payload.get("mime_type"),
-                }
-            ],
-            "data": data_dict,
-            "agent_id": agent_id,
-            "created_at": current_time,
-            "updated_at": current_time,
-        }
-        await db.save(MEDIA_BATCHES_COLLECTION, batch)
-        return batch
+        return dict(BATCH_RECEIVED_RESPONSE)
 
     async def flush_pending_batch_if_stale(
         self, sender: str, media_batch_window: float, whatsapp_action: Any
     ) -> None:
         """Process pending batch for sender if it has exceeded the batch window.
 
-        Safety net for when Lambda async invoke fails. Call at webhook entry
-        before handling the current message. Only runs when mode is lambda.
+        Safety net when deferred dispatch does not run. Call at webhook entry
+        before handling the current message. Serverless only.
         """
-        if _get_media_batch_mode(whatsapp_action) != "lambda":
+        if not is_serverless_mode():
             return
         current_time = time.time()
         db = get_prime_database()
@@ -515,23 +346,52 @@ class MediaBatchManager:
             return
         if current_time - batch.get("updated_at", 0) < media_batch_window:
             return
-        deleted = await db.find_one_and_delete(
-            MEDIA_BATCHES_COLLECTION, {"_id": sender}
+        batch_claim, token = await claim_record(db, MEDIA_BATCHES_COLLECTION, sender)
+        if not batch_claim or not token:
+            return
+        logger.debug(f"Flushing stale batch for user {sender} (safety net)")
+        await MediaBatchManager._finalize_claimed_persistent_batch(
+            db,
+            sender,
+            batch_claim,
+            token,
+            exc_log="Stale batch flush failed for %s: %s",
         )
-        if deleted:
-            logger.debug(f"Flushing stale batch for user {sender} (safety net)")
-            await self._process_batch_from_store(sender, deleted)
 
-    async def _process_batch_from_store(
-        self, sender: str, batch: Dict[str, Any]
-    ) -> None:
-        """Process a batch loaded from persistent store (no action ref)."""
-        batch_for_internal = {
+    @staticmethod
+    async def _finalize_claimed_persistent_batch(
+        db: Any,
+        sender: str,
+        batch_claim: Dict[str, Any],
+        token: str,
+        *,
+        exc_log: str,
+    ) -> bool:
+        """Execute claimed batch, delete document, or release claim on failure.
+
+        Returns True if processing succeeded (delete may still have failed, logged).
+        Returns False if processing failed after releasing the claim.
+        """
+        try:
+            await MediaBatchManager.execute_batch_from_record(sender, batch_claim)
+        except Exception as exc:
+            logger.error(exc_log, sender, exc)
+            await release_claim(db, MEDIA_BATCHES_COLLECTION, sender, token)
+            return False
+
+        if not await delete_claimed_record(db, MEDIA_BATCHES_COLLECTION, sender, token):
+            logger.warning("Could not delete claimed media batch for %s", sender)
+        return True
+
+    @staticmethod
+    async def execute_batch_from_record(sender: str, batch: Dict[str, Any]) -> None:
+        """Normalize in-memory or persisted batch dict (from DB or memory) and process."""
+        normalized = {
             "media_items": batch["media_items"],
             "data": batch["data"],
             "agent_id": batch["agent_id"],
         }
-        await self._process_batch_internal(sender, batch_for_internal)
+        await MediaBatchManager._process_batch_internal(sender, normalized)
 
     def _create_new_batch(
         self,
@@ -543,16 +403,8 @@ class MediaBatchManager:
         current_time: float,
     ) -> Dict[str, Any]:
         """Create a new batch structure with per-item metadata."""
-        payload = _get_payload(data_dict)
         return {
-            "media_items": [
-                {
-                    "url": media_url,
-                    "utterance": utterance,
-                    "message_type": payload.get("message_type"),
-                    "mime_type": payload.get("mime_type"),
-                }
-            ],
+            "media_items": [_media_item(media_url, utterance, data_dict)],
             "data": data_dict,
             "agent_id": agent_id,
             "action": whatsapp_action,
@@ -584,16 +436,80 @@ class MediaBatchManager:
 
             batch = self._batches.pop(sender)
 
-        await self._process_batch_internal(sender, batch)
+        await MediaBatchManager.execute_batch_from_record(sender, batch)
 
-    async def _process_batch_internal(self, sender: str, batch: Dict[str, Any]) -> None:
-        """Internal batch processing logic."""
+    @staticmethod
+    def _batch_utterance_and_media_urls(
+        media_items: List[Dict[str, Any]], payload: Dict[str, Any]
+    ) -> Tuple[str, List[str], List[str]]:
+        """Build combined utterance and URL lists for visitor.data."""
+        from .endpoint_helpers import _build_utterance_with_quoted_context
+
+        all_media = [item["url"] for item in media_items]
+        whatsapp_image_urls = [
+            item["url"] for item in media_items if _is_vision_image(item)
+        ]
+
+        utterances = [
+            item.get("utterance") for item in media_items if item.get("utterance")
+        ]
+        combined_utterance = (
+            " | ".join(utterances)
+            if utterances
+            else "Please receive and interpret the attached media."
+        )
+        quoted = payload.get("quoted_message") or {}
+        combined_utterance = (
+            _build_utterance_with_quoted_context(quoted, combined_utterance)
+            or combined_utterance
+        )
+        return combined_utterance, all_media, whatsapp_image_urls
+
+    @staticmethod
+    async def _spawn_walker_for_media_batch(
+        agent_id: str,
+        combined_utterance: str,
+        sender: str,
+        data: Dict[str, Any],
+    ) -> bool:
+        """Create walker, spawn agent, finalize interaction. Returns False on hard stop."""
         from .endpoint_helpers import (
-            _build_utterance_with_quoted_context,
-            _clear_whatsapp_typing,
             create_whatsapp_walker,
             finalize_whatsapp_interaction,
         )
+
+        walker = await create_whatsapp_walker(
+            agent_id, combined_utterance, sender, data
+        )
+        if not walker:
+            return False
+
+        try:
+            agent = await Agent.get(agent_id)
+            if not agent:
+                logger.error(f"Agent {agent_id} not found for media batch processing")
+                return False
+
+            # Ensure WhatsApp adapter is registered (critical for Lambda batch processor)
+            whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
+            if whatsapp_action:
+                await whatsapp_action.ensure_adapter_registered()
+
+            await walker.spawn(agent)
+        except DatabaseError as e:
+            logger.error(f"Database error spawning walker for user {sender}: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Error spawning walker for user {sender}: {e}")
+            return False
+
+        await finalize_whatsapp_interaction(walker, agent_id, sender)
+        return True
+
+    @staticmethod
+    async def _process_batch_internal(sender: str, batch: Dict[str, Any]) -> None:
+        """Internal batch processing logic (stateless)."""
+        from .endpoint_helpers import _clear_whatsapp_typing
 
         agent_id = batch["agent_id"]
         data = batch["data"]
@@ -602,23 +518,8 @@ class MediaBatchManager:
 
         try:
             media_items: List[Dict[str, Any]] = batch["media_items"]
-            all_media = [item["url"] for item in media_items]
-            whatsapp_image_urls = [
-                item["url"] for item in media_items if _is_vision_image(item)
-            ]
-
-            utterances = [
-                item.get("utterance") for item in media_items if item.get("utterance")
-            ]
-            combined_utterance = (
-                " | ".join(utterances)
-                if utterances
-                else "Please receive and interpret the attached media."
-            )
-            quoted = payload.get("quoted_message") or {}
-            combined_utterance = (
-                _build_utterance_with_quoted_context(quoted, combined_utterance)
-                or combined_utterance
+            combined_utterance, all_media, whatsapp_image_urls = (
+                MediaBatchManager._batch_utterance_and_media_urls(media_items, payload)
             )
 
             # visitor.data pattern: whatsapp_payload + top-level image_urls, whatsapp_media
@@ -634,34 +535,9 @@ class MediaBatchManager:
                 },
             )
 
-            walker = await create_whatsapp_walker(
+            await MediaBatchManager._spawn_walker_for_media_batch(
                 agent_id, combined_utterance, sender, data
             )
-            if not walker:
-                return
-
-            try:
-                agent = await Agent.get(agent_id)
-                if not agent:
-                    logger.error(
-                        f"Agent {agent_id} not found for media batch processing"
-                    )
-                    return
-
-                # Ensure WhatsApp adapter is registered (critical for Lambda batch processor)
-                whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
-                if whatsapp_action:
-                    await whatsapp_action.ensure_adapter_registered()
-
-                await walker.spawn(agent)
-            except DatabaseError as e:
-                logger.error(f"Database error spawning walker for user {sender}: {e}")
-                return
-            except Exception as e:
-                logger.error(f"Error spawning walker for user {sender}: {e}")
-                return
-
-            await finalize_whatsapp_interaction(walker, agent_id, sender)
 
         except Exception as e:
             logger.error(
@@ -689,7 +565,7 @@ class MediaBatchManager:
             await self._cleanup_stale_batches_inline()
 
     async def _cleanup_stale_batches_inline(self) -> None:
-        """Remove batches that have exceeded TTL (inline, Lambda-compatible)."""
+        """Remove batches that have exceeded TTL (in-memory async mode)."""
         current_time = time.time()
         stale_senders = []
 
@@ -718,21 +594,22 @@ async def process_persistent_batch(
     media_batch_window: float,
     process_at: Optional[float] = None,
 ) -> bool:
-    """Process a batch from persistent store if one exists.
+    """Claim and process a persisted media batch after the batch window.
 
-    Called by the batch handler Lambda. Sleeps until process_at (or
-    media_batch_window if process_at not provided) before claiming the batch.
-    Only runs when in lambda mode (BACKGROUND_PROCESSING=false + AWS_LAMBDA_FUNCTION_NAME)
-    and JVSPATIAL_DB_TYPE=mongodb.
+    Invoked from the jvspatial deferred-invoke handler (LWA / Lambda payload) after
+    ``create_task`` (Shape A). Sleeps until ``process_at`` (or ``media_batch_window``
+    when ``process_at`` is unset), then claims the document via ``jvspatial.claim_record``
+    (``find_one_and_update``) and deletes it after successful processing
+    (``find_one_and_delete`` via ``delete_claimed_record``), so crashes can be retried after
+    ``JVSPATIAL_WORK_CLAIM_STALE_SECONDS`` (default 600).
 
-    Uses atomic find-and-delete operation to prevent race conditions where multiple
-    Lambda invocations could process the same batch.
+    Runs only when ``is_serverless_mode()`` is true. Requires a prime database that implements
+    the same compound operations as work-claim helpers; MongoDB gives the strongest guarantees
+    under concurrent writers.
 
-    Returns True if a batch was found and processed, False otherwise.
+    Returns True if a batch was claimed and processed, False otherwise.
     """
-    if _get_media_batch_mode() != "lambda":
-        return False
-    if load_env().db_type != "mongodb":
+    if not is_serverless_mode():
         return False
     if process_at is not None:
         delay = max(0, process_at - time.time())
@@ -743,25 +620,50 @@ async def process_persistent_batch(
 
     db = get_prime_database()
 
-    # Use atomic find-and-delete to prevent race conditions:
-    # If multiple Lambda instances invoke simultaneously, only one will claim the batch
+    batch_claim, token = await claim_record(db, MEDIA_BATCHES_COLLECTION, sender)
+    if not batch_claim or not token:
+        return False
+
+    ok = await MediaBatchManager._finalize_claimed_persistent_batch(
+        db,
+        sender,
+        batch_claim,
+        token,
+        exc_log="Failed to process batch for sender %s: %s",
+    )
+    return ok
+
+
+async def handle_whatsapp_media_batch_deferred_event(
+    event: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Deferred-invoke handler for ``jvagent.whatsapp.media_batch`` (LWA / jvspatial router)."""
+    sender = event.get("sender")
+    if not sender or not isinstance(sender, str):
+        logger.warning("Deferred whatsapp media batch missing sender: %s", event)
+        raise HTTPException(status_code=400, detail="Missing sender")
+
+    media_batch_window = float(event.get("media_batch_window", 1.5))
+    process_at = event.get("process_at")
+    if process_at is not None:
+        process_at = float(process_at)
+
+    logger.debug("Deferred whatsapp media batch for sender %s", sender)
     try:
-        batch = await db.find_one_and_delete(MEDIA_BATCHES_COLLECTION, {"_id": sender})
-    except Exception as exc:
-        logger.error(f"Failed to retrieve batch for sender {sender}: {exc}")
-        return False
+        processed = await process_persistent_batch(
+            sender, media_batch_window, process_at=process_at
+        )
+        if processed:
+            logger.info("Processed media batch for sender %s (deferred invoke)", sender)
+        return {"processed": processed}
+    except Exception as e:
+        logger.error(
+            "Error processing batch for sender %s: %s", sender, e, exc_info=True
+        )
+        raise HTTPException(status_code=500, detail="Batch processing failed") from e
 
-    if not batch:
-        return False
 
-    # Process the claimed batch
-    try:
-        manager = MediaBatchManager()
-        await manager._process_batch_from_store(sender, batch)
-    except Exception as exc:
-        logger.error(f"Failed to process batch for sender {sender}: {exc}")
-        # Batch was already deleted, so it won't be reprocessed
-        # Log error for manual investigation
-        return False
-
-    return True
+register_deferred_invoke_handler(
+    "jvagent.whatsapp.media_batch",
+    handle_whatsapp_media_batch_deferred_event,
+)

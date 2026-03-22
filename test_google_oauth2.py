@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 # Add project paths to find jvagent
 sys.path.append(".")
 
-from jvagent.action.google_actions.google_action import GoogleAction
+from jvagent.action.google.google_action import GoogleAction
 
 
 class MockGoogleAction(GoogleAction):
@@ -39,7 +39,7 @@ class TestGoogleOAuth2Flow(unittest.IsolatedAsyncioTestCase):
         self.action = MockGoogleAction()
         self.action.client_secrets_json = self.mock_client_secrets
 
-    @patch("jvagent.action.google_actions.google_action.Flow.from_client_config")
+    @patch("jvagent.action.google.google_action.Flow.from_client_config")
     async def test_get_authorization_url(self, mock_from_config):
         mock_flow = MagicMock()
         mock_flow.authorization_url.return_value = ("https://mock.auth.url", "state")
@@ -55,7 +55,7 @@ class TestGoogleOAuth2Flow(unittest.IsolatedAsyncioTestCase):
         )
         mock_flow.authorization_url.assert_called_once_with(prompt="consent")
 
-    @patch("jvagent.action.google_actions.google_action.Flow.from_client_config")
+    @patch("jvagent.action.google.google_action.Flow.from_client_config")
     @patch.object(GoogleAction, "save_file", new_callable=AsyncMock)
     async def test_authorize_and_save_credentials(
         self, mock_save_file, mock_from_config
@@ -86,10 +86,8 @@ class TestGoogleOAuth2Flow(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved_data["token"], "mock_access_token")
         self.assertEqual(saved_data["refresh_token"], "mock_refresh_token")
 
-    @patch("jvagent.action.google_actions.google_action.build")
-    @patch(
-        "jvagent.action.google_actions.google_action.Credentials.from_authorized_user_info"
-    )
+    @patch("jvagent.action.google.google_action.build")
+    @patch("jvagent.action.google.google_action.Credentials.from_authorized_user_info")
     @patch.object(GoogleAction, "get_file", new_callable=AsyncMock)
     async def test_get_service_with_cached_token(
         self, mock_get_file, mock_from_info, mock_build

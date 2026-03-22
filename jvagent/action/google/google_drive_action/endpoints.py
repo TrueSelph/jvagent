@@ -5,28 +5,13 @@ from typing import Any, Dict, List, Optional
 
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
+from jvspatial.api.exceptions import ValidationError
+
+from jvagent.action.utils.endpoint_helpers import require_typed_action
 
 from .google_drive_action import GoogleDriveAction
 
 logger = logging.getLogger(__name__)
-
-
-async def _get_drive_action(action_id: str) -> Optional[GoogleDriveAction]:
-    """Resolve action by ID; validate it is a GoogleDriveAction.
-
-    **Args:**
-
-    - action_id: ID of the action to retrieve
-
-    **Returns:**
-
-    GoogleDriveAction instance if found and valid, else None
-    """
-    action = await GoogleDriveAction.get(action_id)
-    if action and isinstance(action, GoogleDriveAction):
-        return action
-    return None
 
 
 @endpoint(
@@ -96,12 +81,12 @@ async def upload_to_drive(
     - ResourceNotFoundError: If the Google Drive action is not found
     - ValidationError: If the upload operation fails
     """
-    action = await _get_drive_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Google Drive action {action_id} not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        GoogleDriveAction,
+        not_found_message=f"Google Drive action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a GoogleDriveAction",
+    )
 
     try:
         result = await action.upload_file(
@@ -174,12 +159,12 @@ async def list_drive_files(
 
     - ResourceNotFoundError: If the Google Drive action is not found
     """
-    action = await _get_drive_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Google Drive action {action_id} not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        GoogleDriveAction,
+        not_found_message=f"Google Drive action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a GoogleDriveAction",
+    )
 
     files = await action.list_files(folder_id=folder_id, with_link=with_link)
     return {"success": True, "files": files}
@@ -224,12 +209,12 @@ async def delete_drive_file(action_id: str, file_id: str) -> Dict[str, Any]:
     - ResourceNotFoundError: If the Google Drive action is not found
     - ValidationError: If the deletion operation fails
     """
-    action = await _get_drive_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Google Drive action {action_id} not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        GoogleDriveAction,
+        not_found_message=f"Google Drive action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a GoogleDriveAction",
+    )
 
     try:
         success = await action.delete_file(file_id=file_id)
@@ -306,12 +291,12 @@ async def share_drive_file(
     - ResourceNotFoundError: If the Google Drive action is not found
     - ValidationError: If sharing parameters are invalid or operation fails
     """
-    action = await _get_drive_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Google Drive action {action_id} not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        GoogleDriveAction,
+        not_found_message=f"Google Drive action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a GoogleDriveAction",
+    )
 
     if share_type == "user" and not email:
         raise ValidationError(
@@ -412,12 +397,12 @@ async def compare_drive_files(
 
     - ResourceNotFoundError: If the Google Drive action is not found
     """
-    action = await _get_drive_action(action_id=action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Google Drive action {action_id} not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        GoogleDriveAction,
+        not_found_message=f"Google Drive action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a GoogleDriveAction",
+    )
 
     diff = action.compare_files(old_files=old_files, new_files=new_files)
     return {"success": True, **diff}

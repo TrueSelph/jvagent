@@ -1,5 +1,5 @@
 # Google Calendar Action Package Descriptor
-# Exposes Google Calendar operations via Calendar API with service account.
+# Exposes Google Calendar operations via Calendar API with OAuth2.
 
 package:
   name: jvagent/google_calendar_action

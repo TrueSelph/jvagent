@@ -28,20 +28,12 @@ class GoogleDriveDocuments(Node):
     )
 
     ingesting_documents: Dict[str, Any] = attribute(
-        default={
-            "added": [],
-            "modified": [],
-            "removed": []
-        },
+        default={"added": [], "modified": [], "removed": []},
         description="contain a list of added, modified and deleted documents",
     )
 
     failed_documents: Dict[str, Any] = attribute(
-        default={
-            "added": [],
-            "modified": [],
-            "removed": []
-        },
+        default={"added": [], "modified": [], "removed": []},
         description="contain a list of failed documents",
     )
 
@@ -49,6 +41,3 @@ class GoogleDriveDocuments(Node):
         default_factory=str,
         description="Document which is currently being processed",
     )
-    
-        
-        

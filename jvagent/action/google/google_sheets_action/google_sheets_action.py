@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleSheetsAction(GoogleAction):
-    """Action for Google Sheets operations using a service account."""
+    """Action for Google Sheets operations using OAuth2 (user-delegated credentials)."""
 
     API_SERVICE_NAME: ClassVar[str] = "sheets"
     API_VERSION: ClassVar[str] = "v4"

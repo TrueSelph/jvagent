@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleDriveAction(GoogleAction):
-    """Action for Google Drive operations using a service account."""
+    """Action for Google Drive operations using OAuth2 (user-delegated credentials)."""
 
     default_parent_id: str = attribute(
         default="root", description="Default parent folder ID for uploads"
@@ -249,17 +249,23 @@ class GoogleDriveAction(GoogleAction):
 
         # 1. Added: IDs in new but not in old
         added = []
-        for fid in (new_ids - old_ids):
+        for fid in new_ids - old_ids:
             # Skip if it's a folder
-            if new_map[fid].get("mimeType") == "application/vnd.google-apps.folder" and ignore_folders:
+            if (
+                new_map[fid].get("mimeType") == "application/vnd.google-apps.folder"
+                and ignore_folders
+            ):
                 continue
             added.append(new_map[fid])
 
         # 2. Removed: IDs in old but not in new
         removed = []
-        for fid in (old_ids - new_ids):
+        for fid in old_ids - new_ids:
             # Skip if it's a folder
-            if old_map[fid].get("mimeType") == "application/vnd.google-apps.folder" and ignore_folders:
+            if (
+                old_map[fid].get("mimeType") == "application/vnd.google-apps.folder"
+                and ignore_folders
+            ):
                 continue
             removed.append(old_map[fid])
 
@@ -267,7 +273,10 @@ class GoogleDriveAction(GoogleAction):
         modified = []
         for fid in old_ids & new_ids:
             # Skip if it's a folder
-            if old_map[fid].get("mimeType") == "application/vnd.google-apps.folder" and ignore_folders:
+            if (
+                old_map[fid].get("mimeType") == "application/vnd.google-apps.folder"
+                and ignore_folders
+            ):
                 continue
             if old_map[fid] != new_map[fid]:
                 modified.append({"id": fid, "old": old_map[fid], "new": new_map[fid]})

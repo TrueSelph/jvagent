@@ -1,22 +1,21 @@
-# Google Gmail Action Package Descriptor
-# Exposes Google Gmail operations via Gmail API with service account.
+# Google Sheets Action Package Descriptor
+# Exposes Google Sheets operations via Sheets API with OAuth2.
 
 package:
-  name: jvagent/google_gmail_action
+  name: jvagent/google_sheets_action
   author: jvagent
-  archetype: GoogleGmailAction
+  archetype: GoogleSheetsAction
   version: 0.0.1
   meta:
-    title: Google Gmail Action
+    title: Google Sheets Action
     description: |
-      Send, list, and read emails using the Google Gmail API.
+      Read from and write to Google Sheets using the Google Sheets API.
     group: jvagent
     type: action
   config:
     singleton: false
   dependencies:
     jvagent: ~0.0.1
-    actions: []
     pip:
       - google-api-python-client>=2.192.0
       - google-auth-httplib2>=0.2.0

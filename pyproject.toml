@@ -28,6 +28,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "aiohttp>=3.9.0",
     "jvspatial>=0.0.5",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.0",

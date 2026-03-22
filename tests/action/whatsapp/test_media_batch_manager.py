@@ -2,12 +2,18 @@
 
 import asyncio
 import os
+import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from jvspatial.db.jsondb import JsonDB
+from jvspatial.runtime.serverless import reset_serverless_mode_cache
 
 pytest.importorskip("filetype")
 try:
+    from jvagent.action.whatsapp.utils import (
+        media_batch_manager as media_batch_manager_mod,
+    )
     from jvagent.action.whatsapp.utils.media_batch_manager import (
         MediaBatchManager,
         _get_media_batch_mode,
@@ -19,40 +25,38 @@ except ImportError as e:
     )
 
 
+@pytest.fixture(autouse=True)
+def _reset_serverless_detection_cache():
+    """Clear jvspatial LRU cache so env changes are visible between tests."""
+    reset_serverless_mode_cache()
+    yield
+    reset_serverless_mode_cache()
+
+
 class TestMediaBatchManagerModeResolution:
-    """Tests for _get_media_batch_mode resolver.
+    """Tests for _get_media_batch_mode (uses ``is_serverless_mode()`` only)."""
 
-    Mode is derived from BACKGROUND_PROCESSING and AWS_LAMBDA_FUNCTION_NAME:
-    - BACKGROUND_PROCESSING=true -> async
-    - BACKGROUND_PROCESSING=false + Lambda -> lambda
-    - BACKGROUND_PROCESSING=false + not Lambda -> disabled
-    """
-
-    def test_async_when_background_processing_true(self):
-        """BACKGROUND_PROCESSING=true -> async mode."""
-        with patch.dict(os.environ, {"BACKGROUND_PROCESSING": "true"}):
+    def test_async_when_not_serverless(self):
+        """SERVERLESS_MODE=false -> async (long-running server)."""
+        with patch.dict(os.environ, {"SERVERLESS_MODE": "false"}, clear=False):
             os.environ.pop("AWS_LAMBDA_FUNCTION_NAME", None)
+            os.environ.pop("AWS_LAMBDA_RUNTIME_API", None)
             assert _get_media_batch_mode() == "async"
 
-    def test_lambda_when_background_processing_false_and_on_lambda(self):
-        """BACKGROUND_PROCESSING=false + AWS_LAMBDA_FUNCTION_NAME -> lambda mode."""
-        with patch.dict(
-            os.environ,
-            {"BACKGROUND_PROCESSING": "false", "AWS_LAMBDA_FUNCTION_NAME": "my-func"},
-        ):
-            assert _get_media_batch_mode() == "lambda"
-
-    def test_disabled_when_background_processing_false_and_not_lambda(self):
-        """BACKGROUND_PROCESSING=false + not Lambda -> disabled mode."""
-        with patch.dict(os.environ, {"BACKGROUND_PROCESSING": "false"}):
+    def test_deferred_when_serverless_explicit(self):
+        """SERVERLESS_MODE=true -> deferred (no cloud-specific env required)."""
+        with patch.dict(os.environ, {"SERVERLESS_MODE": "true"}, clear=False):
             os.environ.pop("AWS_LAMBDA_FUNCTION_NAME", None)
-            assert _get_media_batch_mode() == "disabled"
+            os.environ.pop("AWS_LAMBDA_RUNTIME_API", None)
+            assert _get_media_batch_mode() == "deferred"
 
-    def test_lambda_default_when_unset_and_on_lambda(self):
-        """When BACKGROUND_PROCESSING unset and on Lambda, use_background_processing() is False -> lambda."""
-        with patch.dict(os.environ, {"AWS_LAMBDA_FUNCTION_NAME": "my-func"}):
-            os.environ.pop("BACKGROUND_PROCESSING", None)
-            assert _get_media_batch_mode() == "lambda"
+    def test_deferred_when_platform_detects_serverless(self):
+        """Auto-detect (e.g. AWS_LAMBDA_FUNCTION_NAME) -> serverless -> deferred."""
+        with patch.dict(
+            os.environ, {"AWS_LAMBDA_FUNCTION_NAME": "my-func"}, clear=False
+        ):
+            os.environ.pop("SERVERLESS_MODE", None)
+            assert _get_media_batch_mode() == "deferred"
 
 
 class TestMediaBatchManagerProcessSingleMediaInline:
@@ -111,8 +115,9 @@ class TestMediaBatchManagerAsyncBatching:
         self, batch_manager, mock_action
     ):
         """Multiple media arriving within batch window result in one _process_batch_internal call."""
-        with patch.dict(os.environ, {"BACKGROUND_PROCESSING": "true"}):
+        with patch.dict(os.environ, {"SERVERLESS_MODE": "false"}, clear=False):
             os.environ.pop("AWS_LAMBDA_FUNCTION_NAME", None)
+            os.environ.pop("AWS_LAMBDA_RUNTIME_API", None)
             with patch.object(
                 MediaBatchManager,
                 "_process_batch_internal",
@@ -144,3 +149,54 @@ class TestMediaBatchManagerAsyncBatching:
                     "http://example.com/image_1.jpg",
                     "http://example.com/image_2.jpg",
                 ]
+
+
+class TestProcessPersistentBatchJsonDB:
+    """Deferred path: claim + delete via prime DB compound ops (no Mongo-only gate)."""
+
+    @pytest.mark.asyncio
+    async def test_process_persistent_batch_claims_and_deletes_jsondb(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = JsonDB(base_path=tmp)
+            await db.save(
+                media_batch_manager_mod.MEDIA_BATCHES_COLLECTION,
+                {
+                    "_id": "sender1",
+                    "id": "sender1",
+                    "media_items": [
+                        {
+                            "url": "http://example.com/a.jpg",
+                            "utterance": None,
+                            "message_type": "image",
+                            "mime_type": "image/jpeg",
+                        }
+                    ],
+                    "data": {"whatsapp_payload": {}},
+                    "agent_id": "agent1",
+                },
+            )
+            with patch.object(
+                media_batch_manager_mod,
+                "get_prime_database",
+                return_value=db,
+            ), patch.object(
+                media_batch_manager_mod,
+                "is_serverless_mode",
+                return_value=True,
+            ), patch.object(
+                MediaBatchManager,
+                "_process_batch_internal",
+                new_callable=AsyncMock,
+            ):
+                ok = await media_batch_manager_mod.process_persistent_batch(
+                    "sender1",
+                    0.0,
+                    process_at=None,
+                )
+            assert ok is True
+            assert (
+                await db.get(
+                    media_batch_manager_mod.MEDIA_BATCHES_COLLECTION, "sender1"
+                )
+                is None
+            )

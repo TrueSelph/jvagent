@@ -1,45 +1,21 @@
 import logging
+import time
 from typing import Any, Dict, List, Optional
-from jvagent.core.agent import Agent
 
+from fastapi import HTTPException, Request
+from jvspatial import create_task, is_serverless_mode
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
+from jvspatial.exceptions import DatabaseError
 from pydantic import Field
-from fastapi import HTTPException, Request
-from jvspatial.exceptions import DatabaseError, ValidationError
-from jvspatial.api.exceptions import ResourceNotFoundError
-from jvspatial.async_utils import create_background_task
-from jvspatial.config import use_background_processing
-from .page_index_google_drive_sync_action import PageIndexGoogleDriveSyncAction
-from jvspatial.api.decorators import EndpointField
+
+from jvagent.action.utils.endpoint_helpers import require_typed_action
+from jvagent.core.agent import Agent
+
+from .pageindex_google_drive_sync_action import PageIndexGoogleDriveSyncAction
 
 logger = logging.getLogger(__name__)
-
-
-async def _get_page_index_google_drive_sync_action(
-    action_id: str,
-) -> PageIndexGoogleDriveSyncAction:
-    """Fetch and validate PageIndexGoogleDriveSyncAction by ID.
-
-    Raises ResourceNotFoundError on not found, ValidationError on wrong type.
-    """
-    action = await PageIndexGoogleDriveSyncAction.get(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=(
-                f"PageIndexGoogleDriveSyncAction with ID " f"'{action_id}' not found"
-            ),
-            details={"action_id": action_id},
-        )
-    if not isinstance(action, PageIndexGoogleDriveSyncAction):
-        raise ValidationError(
-            message=(
-                f"Action '{action_id}' is not a " f"PageIndexGoogleDriveSyncAction"
-            ),
-            details={"action_id": action_id},
-        )
-    return action
 
 
 @endpoint(
@@ -63,7 +39,6 @@ async def _get_page_index_google_drive_sync_action(
 )
 async def ingest_google_documents_endpoint(
     action_id: str,
-    # google_drive_folders: List[Dict[str, Any]],
     google_drive_folders: Optional[List[Dict[str, Any]]] = None,
     remove_deleted_documents: bool = Field(
         default=False,
@@ -99,7 +74,16 @@ async def ingest_google_documents_endpoint(
     - ResourceNotFoundError: If action not found
     - ValidationError: If ingestion fails or integration is unavailable
     """
-    action = await _get_page_index_google_drive_sync_action(action_id)
+    action = await require_typed_action(
+        action_id,
+        PageIndexGoogleDriveSyncAction,
+        not_found_message=(
+            f"PageIndexGoogleDriveSyncAction with ID '{action_id}' not found"
+        ),
+        wrong_type_message=(
+            f"Action '{action_id}' is not a PageIndexGoogleDriveSyncAction"
+        ),
+    )
 
     try:
         result = await action.ingest_documents_from_google_drive(
@@ -115,15 +99,11 @@ async def ingest_google_documents_endpoint(
             "result": result.get("documents_ingested", {}),
         }
     except Exception as e:
-        logger.error(f"Error ingesting Google Drive documents: {e}")
+        logger.error("Error ingesting Google Drive documents: %s", e, exc_info=True)
         raise ValidationError(
             message=f"Ingestion failed: {str(e)}",
             details={"error": str(e)},
         )
-
-
-
-
 
 
 @endpoint(
@@ -149,7 +129,16 @@ async def list_google_documents_endpoint(
     action_id: str,
 ) -> Dict[str, Any]:
     """List Google Drive documents."""
-    action = await _get_page_index_google_drive_sync_action(action_id)
+    action = await require_typed_action(
+        action_id,
+        PageIndexGoogleDriveSyncAction,
+        not_found_message=(
+            f"PageIndexGoogleDriveSyncAction with ID '{action_id}' not found"
+        ),
+        wrong_type_message=(
+            f"Action '{action_id}' is not a PageIndexGoogleDriveSyncAction"
+        ),
+    )
     try:
         result = await action.get_google_drive_documents()
         return {
@@ -157,21 +146,20 @@ async def list_google_documents_endpoint(
             "result": {"documents": result},
         }
     except Exception as e:
-        logger.error(f"Error listing Google Drive documents: {e}")
+        logger.error("Error listing Google Drive documents: %s", e, exc_info=True)
         raise ValidationError(
             message=f"Listing failed: {str(e)}",
             details={"error": str(e)},
         )
 
 
-
-
 @endpoint(
     "/actions/{action_id}/delete_google_documents",
-    methods=["GET"],
+    methods=["DELETE"],
     auth=True,
     roles=["admin"],
     tags=["PageIndex Google Drive Sync"],
+    summary="Delete Google Drive documents",
     response=success_response(
         data={
             "message": ResponseField(
@@ -190,7 +178,16 @@ async def delete_google_documents_endpoint(
     document_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Delete Google Drive documents."""
-    action = await _get_page_index_google_drive_sync_action(action_id)
+    action = await require_typed_action(
+        action_id,
+        PageIndexGoogleDriveSyncAction,
+        not_found_message=(
+            f"PageIndexGoogleDriveSyncAction with ID '{action_id}' not found"
+        ),
+        wrong_type_message=(
+            f"Action '{action_id}' is not a PageIndexGoogleDriveSyncAction"
+        ),
+    )
     try:
         result = await action.delete_google_drive_documents(document_id=document_id)
         return {
@@ -198,7 +195,7 @@ async def delete_google_documents_endpoint(
             "result": {"documents": result},
         }
     except Exception as e:
-        logger.error(f"Error deleting Google Drive documents: {e}")
+        logger.error("Error deleting Google Drive documents: %s", e, exc_info=True)
         raise ValidationError(
             message=f"Deletion failed: {str(e)}",
             details={"error": str(e)},
@@ -220,20 +217,22 @@ async def delete_google_documents_endpoint(
             "result": ResponseField(
                 field_type=dict,
                 description="Ingestion results",
-            )
+            ),
         }
     ),
 )
-async def page_index_google_drive_sync_action_interact(request: Request, agent_id: str) -> Dict[str, Any]:
+async def pageindex_google_drive_sync_action_interact(
+    request: Request, agent_id: str
+) -> Dict[str, Any]:
     """PageIndex Google Drive Sync Action Interact Webhook.
 
-    Processes incoming PageIndex Google Drive Sync Action messages and triggers an interaction via InteractWalker.
+    Triggers Google Drive document ingestion for the agent's PageIndexGoogleDriveSyncAction.
 
-    AWS Lambda compatibility: By default, the webhook awaits the full interaction
-    (including response generation and WhatsApp send) before returning the HTTP response.
-    This ensures the interaction completes before Lambda freezes the execution context.
+    When ``is_serverless_mode()`` is true (e.g. ``SERVERLESS_MODE=true`` or Lambda), ingestion
+    is awaited before the HTTP response so work completes before the invocation freezes.
 
-    Set BACKGROUND_PROCESSING=true to use background task mode (for long-running servers).
+    On non-serverless runtimes, ingestion is scheduled with ``create_task`` and the handler
+    returns immediately with a short acknowledgement while work runs in the background.
 
     Args:
         request: FastAPI request object
@@ -246,7 +245,6 @@ async def page_index_google_drive_sync_action_interact(request: Request, agent_i
         ResourceNotFoundError: If agent or action not found
         HTTPException: For validation errors
     """
-    logger = logging.getLogger(__name__)
     try:
         # Validate agent exists
         agent = await Agent.get(agent_id)
@@ -256,8 +254,10 @@ async def page_index_google_drive_sync_action_interact(request: Request, agent_i
                 details={"agent_id": agent_id},
             )
 
-        page_index_google_drive_sync_action = await agent.get_action_by_type("PageIndexGoogleDriveSyncAction")
-        if not page_index_google_drive_sync_action:
+        pageindex_google_drive_sync_action = await agent.get_action_by_type(
+            "PageIndexGoogleDriveSyncAction"
+        )
+        if not pageindex_google_drive_sync_action:
             raise ResourceNotFoundError(
                 message="Action with label 'PageIndexGoogleDriveSyncAction' not found",
                 details={"agent_id": agent_id},
@@ -275,41 +275,73 @@ async def page_index_google_drive_sync_action_interact(request: Request, agent_i
             except Exception:
                 request_data = {}
 
-        if use_background_processing():
-            # Async mode: Return immediately with 200 OK and process in background
-            logger.info(f"Processing ingestion asynchronously for agent {agent_id}")
-            create_background_task(
-                page_index_google_drive_sync_action.ingest_documents_from_google_drive(
-                    google_drive_folders=request_data.get("google_drive_folders"),
-                    remove_deleted_documents=request_data.get("remove_deleted_documents"),
-                    retry_failed_documents=request_data.get("retry_failed_documents"),
-                ),
-                name=f"page_index_ingestion_{agent_id}",
+        folders = request_data.get("google_drive_folders")
+        remove_deleted = request_data.get("remove_deleted_documents")
+        retry_failed = request_data.get("retry_failed_documents")
+        drive_action = pageindex_google_drive_sync_action
+
+        if is_serverless_mode():
+            logger.info(
+                f"Processing ingestion inline (serverless) for agent {agent_id}"
             )
-            return {
-                "status": "received",
-                "response": "Ingestion started in background",
-                "result": {},
-            }
-        else:
-            logger.info(f"Processing ingestion synchronously for agent {agent_id}")
-            # Sync mode (default): Await full interaction before returning
-            result = await page_index_google_drive_sync_action.ingest_documents_from_google_drive(
-                google_drive_folders=request_data.get("google_drive_folders"),
-                remove_deleted_documents=request_data.get("remove_deleted_documents"),
-                retry_failed_documents=request_data.get("retry_failed_documents"),
+            result = await drive_action.ingest_documents_from_google_drive(
+                google_drive_folders=folders,
+                remove_deleted_documents=remove_deleted,
+                retry_failed_documents=retry_failed,
             )
             response = result.get("message") or "No pending documents to ingest"
+            t0 = getattr(request.state, "webhook_start", None)
+            if t0 is not None:
+                elapsed_ms = int((time.perf_counter() - t0) * 1000)
+                logger.debug(
+                    f"PageIndex Drive webhook: ingestion done in {elapsed_ms}ms "
+                    f"(serverless)"
+                )
             return {
                 "status": "received",
                 "response": response,
                 "result": result.get("documents_ingested", {}),
             }
+
+        task = await create_task(
+            drive_action.ingest_documents_from_google_drive(
+                google_drive_folders=folders,
+                remove_deleted_documents=remove_deleted,
+                retry_failed_documents=retry_failed,
+            ),
+            name=f"page_index_ingestion_{agent_id}",
+        )
+        if task is None:
+            logger.info(f"Processing ingestion synchronously for agent {agent_id}")
+        else:
+            logger.info(f"Processing ingestion in background for agent {agent_id}")
+        t0 = getattr(request.state, "webhook_start", None)
+        if t0 is not None:
+            elapsed_ms = int((time.perf_counter() - t0) * 1000)
+            if task is None:
+                logger.debug(
+                    f"PageIndex Drive webhook: ingestion done in {elapsed_ms}ms"
+                )
+            else:
+                logger.debug(
+                    f"PageIndex Drive webhook: queued for async in {elapsed_ms}ms"
+                )
+        return {
+            "status": "received",
+            "response": "Ingestion started in background",
+            "result": {},
+        }
     except (ResourceNotFoundError, HTTPException):
         raise
     except DatabaseError as e:
-        logger.error(f"Database error in PageIndex Google Drive Sync Action Interact Webhook: {e}", exc_info=True)
+        logger.error(
+            f"Database error in PageIndex Google Drive Sync Action Interact Webhook: {e}",
+            exc_info=True,
+        )
         raise HTTPException(status_code=500, detail="Database error")
     except Exception as e:
-        logger.error(f"Unexpected error in PageIndex Google Drive Sync Action Interact Webhook: {e}", exc_info=True)
+        logger.error(
+            f"Unexpected error in PageIndex Google Drive Sync Action Interact Webhook: {e}",
+            exc_info=True,
+        )
         raise HTTPException(status_code=500, detail="Internal server error")

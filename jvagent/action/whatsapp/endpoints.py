@@ -1,17 +1,15 @@
 """WhatsApp Action Endpoints."""
 
 import asyncio
-import json
 import logging
 import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException, Request
+from jvspatial import create_task
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError
-from jvspatial.async_utils import create_background_task
-from jvspatial.config import use_background_processing
 from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.core.agent import Agent
@@ -27,7 +25,6 @@ from .utils.endpoint_helpers import (
     is_directed_message,
     normalize_result,
 )
-from .utils.media_batch_manager import process_persistent_batch
 
 logger = logging.getLogger(__name__)
 
@@ -52,11 +49,13 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
 
     Processes incoming WhatsApp messages and triggers an interaction via InteractWalker.
 
-    AWS Lambda compatibility: By default, the webhook awaits the full interaction
-    (including response generation and WhatsApp send) before returning the HTTP response.
-    This ensures the interaction completes before Lambda freezes the execution context.
+    AWS Lambda compatibility: In serverless mode, the webhook typically awaits the full
+    interaction (including response generation and WhatsApp send) before returning, so work
+    completes before the runtime freezes. jvspatial webhook middleware also avoids unsafe
+    fire-and-forget patterns when serverless.
 
-    Set BACKGROUND_PROCESSING=true to use background task mode (for long-running servers).
+    On long-running servers (not serverless: SERVERLESS_MODE=false or unset on a non-serverless
+    platform), this handler may return early and finish work via a background task.
 
     Args:
         request: FastAPI request object
@@ -202,47 +201,22 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             )
             return {"status": "ignored", "response": "Utterance too long."}
 
-        # Check if webhook should run in async mode (background task)
-        # use_background_processing() returns False for Lambda, True for long-running servers.
-        if use_background_processing():
-            # Async mode: Return immediately with 200 OK and process in background
-            # Falls back to sync when BACKGROUND_PROCESSING is false
-            logger.info(f"Processing interaction asynchronously for {sender}")
-            task = create_background_task(
-                _process_interaction_async(
-                    data, utterance, sender, agent_id, agent, sender_name=sender_name
-                ),
-                name=f"whatsapp_interaction_{sender}",
-            )
-            if task is not None:
-                t0 = getattr(request.state, "webhook_start", None)
-                if t0 is not None:
-                    logger.debug(
-                        f"Webhook: queued for async in {int((time.perf_counter() - t0) * 1000)}ms"
-                    )
-                return {"status": "received"}
-            await _process_interaction_async(
+        task = await create_task(
+            _process_interaction_async(
                 data, utterance, sender, agent_id, agent, sender_name=sender_name
-            )
-            t0 = getattr(request.state, "webhook_start", None)
-            if t0 is not None:
-                logger.debug(
-                    f"Webhook: interaction done in {int((time.perf_counter() - t0) * 1000)}ms"
-                )
-            return {"status": "received"}
-        else:
-            # Sync mode (default): Await full interaction before returning
-            # This ensures Lambda completes the full flow before freezing
+            ),
+            name=f"whatsapp_interaction_{sender}",
+        )
+        if task is None:
             logger.info(f"Processing interaction synchronously for {sender}")
-            await _process_interaction_async(
-                data, utterance, sender, agent_id, agent, sender_name=sender_name
-            )
-            t0 = getattr(request.state, "webhook_start", None)
-            if t0 is not None:
-                logger.debug(
-                    f"Webhook: interaction done in {int((time.perf_counter() - t0) * 1000)}ms"
-                )
-            return {"status": "received"}
+        t0 = getattr(request.state, "webhook_start", None)
+        if t0 is not None:
+            elapsed_ms = int((time.perf_counter() - t0) * 1000)
+            if task is None:
+                logger.debug(f"Webhook: interaction done in {elapsed_ms}ms")
+            else:
+                logger.debug(f"Webhook: queued for async in {elapsed_ms}ms")
+        return {"status": "received"}
 
     except (ResourceNotFoundError, HTTPException):
         raise
@@ -252,106 +226,6 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Unexpected error in WhatsApp webhook: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
-
-
-def _is_batch_payload(event: Any) -> bool:
-    """True if event has batch payload shape (sender + media_batch_window)."""
-    return (
-        isinstance(event, dict)
-        and isinstance(event.get("sender"), str)
-        and "media_batch_window" in event
-    )
-
-
-@endpoint(
-    "/",
-    methods=["POST"],
-    auth=False,
-    tags=["WhatsApp"],
-    response=success_response(
-        data={
-            "processed": ResponseField(field_type=bool, example=True),
-        }
-    ),
-)
-async def whatsapp_batch_invoke_root(request: Request) -> Dict[str, Any]:
-    """Fallback for LWA direct invoke when path is /. Checks body for batch payload."""
-    try:
-        body = await request.body()
-        event = json.loads(body) if body else {}
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=404, detail="Not found")
-    if not _is_batch_payload(event):
-        raise HTTPException(status_code=404, detail="Not found")
-    sender = event.get("sender")
-    media_batch_window = float(event.get("media_batch_window", 1.5))
-    process_at = event.get("process_at")
-    if process_at is not None:
-        process_at = float(process_at)
-    try:
-        processed = await process_persistent_batch(
-            sender, media_batch_window, process_at=process_at
-        )
-        if processed:
-            logger.info("Processed media batch for sender %s (root fallback)", sender)
-        return {"processed": processed}
-    except Exception as e:
-        logger.error(
-            "Error processing batch for sender %s: %s", sender, e, exc_info=True
-        )
-        raise HTTPException(status_code=500, detail="Batch processing failed")
-
-
-@endpoint(
-    "/_internal/whatsapp/batch",
-    methods=["POST"],
-    auth=False,
-    tags=["WhatsApp"],
-    response=success_response(
-        data={
-            "processed": ResponseField(field_type=bool, example=True),
-        }
-    ),
-)
-async def whatsapp_batch_invoke(request: Request) -> Dict[str, Any]:
-    """Handle direct Lambda invoke for media batch processing (self-invoke path).
-
-    LWA converts direct invokes to HTTP; this endpoint processes batch payloads
-    when AWS_LAMBDA_FUNCTION_NAME is set (self-invoke).
-    """
-    try:
-        body = await request.body()
-        event = json.loads(body) if body else {}
-    except json.JSONDecodeError:
-        logger.warning("Batch invoke received invalid JSON")
-        raise HTTPException(status_code=400, detail="Invalid JSON")
-
-    logger.debug(
-        "Batch invoke received for sender %s",
-        event.get("sender") if isinstance(event, dict) else None,
-    )
-    sender = event.get("sender") if isinstance(event, dict) else None
-    if not sender:
-        logger.warning("Batch invoke received event without sender: %s", event)
-        raise HTTPException(status_code=400, detail="Missing sender")
-
-    media_batch_window = float(event.get("media_batch_window", 1.5))
-    process_at = event.get("process_at")
-    if process_at is not None:
-        process_at = float(process_at)
-
-    try:
-        processed = await process_persistent_batch(
-            sender, media_batch_window, process_at=process_at
-        )
-        if processed:
-            logger.info("Processed media batch for sender %s (self-invoke)", sender)
-        return {"processed": processed}
-    except Exception as e:
-        logger.error(
-            "Error processing batch for sender %s: %s", sender, e, exc_info=True
-        )
-        raise HTTPException(status_code=500, detail="Batch processing failed")
 
 
 @endpoint(

@@ -2,7 +2,7 @@
 # Syncs and ingests documents from Google Drive folders into PageIndex for RAG.
 
 package:
-  name: jvagent/page_index_google_drive_sync_action
+  name: jvagent/pageindex_google_drive_sync_action
   author: jvagent
   archetype: PageIndexGoogleDriveSyncAction
   version: 0.0.1

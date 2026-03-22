@@ -134,6 +134,8 @@ DB name resolution when `JVAGENT_PAGEINDEX_DB_NAME` is unset: `{app_id}_pageinde
 | `config.performance.enable_interact_router_cache` | `JVAGENT_ENABLE_INTERACT_ROUTER_CACHE` | false |
 | `config.performance.interact_router_cache_ttl` | `JVAGENT_INTERACT_ROUTER_CACHE_TTL` | 45 |
 
+**Deferred saves and serverless:** Even when `JVSPATIAL_ENABLE_DEFERRED_SAVES` is true, jvspatial disables deferred batching whenever `is_serverless_mode()` is true (Lambda, `SERVERLESS_MODE=true`, etc.). `DeferredSaveMixin` turns batching on at instance construction when allowed; apps do not need to call `enable_deferred_saves()` for that. Use `flush_deferred_entities` from jvspatial (or `await entity.flush()`) at the end of a request.
+
 ## app.yaml-Only Config (No Env Override)
 
 These settings are structural or app-specific and are only configurable in app.yaml:

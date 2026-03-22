@@ -10,21 +10,18 @@ import logging
 import re
 from typing import Any, Dict, Optional, Tuple
 
+from jvspatial import flush_deferred_entities
 from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.action.interact.interact_walker import InteractWalker
-from jvagent.action.interact.utils import flush_deferred_saves
 from jvagent.core.agent import Agent
 from jvagent.core.app import App
 from jvagent.memory.conversation import Conversation
 
 from ..whatsapp_action import WhatsAppAction
 from .conversation_lock_manager import ConversationLockManager
-from .media_batch_manager import (
-    MediaBatchManager,
-    _get_media_batch_mode,
-)
+from .media_batch_manager import MediaBatchManager
 from .media_manager import MediaManager
 
 logger = logging.getLogger(__name__)
@@ -278,8 +275,8 @@ async def finalize_whatsapp_interaction(
     try:
         await interaction.close_interaction()
 
-        # Flush deferred saves (interaction and conversation) with error handling
-        await flush_deferred_saves(interaction, walker.conversation)
+        # Flush deferred saves (interaction and conversation)
+        await flush_deferred_entities(interaction, walker.conversation, strict=True)
 
         # Compute usage after flush so all model_call events are present
         from jvagent.action.interact.endpoints import _finalize_usage
@@ -309,6 +306,7 @@ async def finalize_whatsapp_interaction(
 
     except DatabaseError as e:
         logger.error(f"Database error finalizing interaction for user {sender}: {e}")
+        raise
     except Exception as e:
         logger.error(f"Error finalizing interaction for user {sender}: {e}")
 
@@ -373,9 +371,8 @@ async def _handle_media_batching(
 ) -> Dict[str, Any]:
     """Handle media batching logic with thread-safe batch manager.
 
-    Uses the global _batch_manager for concurrent-safe operations.
-    When in Lambda without persistent batching support, processes each media
-    inline (no background tasks).
+    Uses the global ``_batch_manager``. Mode (in-memory vs persistent) is chosen
+    inside ``get_or_create_batch`` via ``is_serverless_mode()``.
 
     Args:
         sender: User ID / phone number
@@ -389,17 +386,6 @@ async def _handle_media_batching(
         Dict with status and response
     """
     try:
-        mode = _get_media_batch_mode(whatsapp_action)
-        if mode == "disabled":
-            await _batch_manager.process_single_media_inline(
-                sender=sender,
-                media_url=media_url,
-                utterance=utterance,
-                data_dict=data_dict,
-                agent_id=agent_id,
-            )
-            return {"status": "received", "response": "media batched"}
-
         return await _batch_manager.get_or_create_batch(
             sender=sender,
             media_url=media_url,
@@ -690,6 +676,8 @@ async def _process_interaction_async(
         # Finalize interaction using helper function
         await finalize_whatsapp_interaction(walker, agent_id, sender)
 
+    except DatabaseError:
+        raise
     except Exception as e:
         logger.error(
             f"Error processing WhatsApp interaction for agent {agent_id}: {e}",

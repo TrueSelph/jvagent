@@ -4,22 +4,50 @@ This module defines HTTP endpoints for setting, getting and deleting agent avata
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from jvspatial.api import endpoint
-from jvspatial.api.exceptions import ResourceNotFoundError
+from jvspatial.api.exceptions import ValidationError
+
+from jvagent.action.utils.endpoint_helpers import require_typed_action
 
 from .avatar_action import AvatarAction
 
 logger = logging.getLogger(__name__)
 
 
-async def _get_avatar_action(action_id: str) -> Optional[AvatarAction]:
-    """Resolve action by ID; validate it is an AvatarAction."""
-    action = await AvatarAction.get(action_id)
-    if action and isinstance(action, AvatarAction):
-        return action
-    return None
+def _parse_image_payload(data: Any) -> Tuple[Optional[str], Optional[str]]:
+    """Extract base64 image data and mimetype from body or data URI."""
+    image_data = None
+    mimetype = None
+
+    if isinstance(data, str) and data.startswith("data:"):
+        try:
+            header, base64_data = data.split(",", 1)
+            mimetype = header.split(";")[0].split(":")[1]
+            image_data = base64_data
+        except Exception:
+            logger.error("Failed to parse data URI string", exc_info=True)
+        return image_data, mimetype
+
+    if isinstance(data, dict):
+        image_data = data.get("image_data")
+        mimetype = data.get("mimetype")
+        if not image_data and data:
+            for val in data.values():
+                if isinstance(val, str) and val.startswith("data:"):
+                    try:
+                        header, base64_data = val.split(",", 1)
+                        mimetype = header.split(";")[0].split(":")[1]
+                        image_data = base64_data
+                        break
+                    except Exception:
+                        logger.debug(
+                            "Skipping invalid data URI in dict value", exc_info=True
+                        )
+                        continue
+
+    return image_data, mimetype
 
 
 @endpoint(
@@ -28,6 +56,7 @@ async def _get_avatar_action(action_id: str) -> Optional[AvatarAction]:
     auth=True,
     roles=["admin"],
     tags=["Avatar Action"],
+    summary="Set agent avatar image",
 )
 async def set_avatar(action_id: str, data: Any) -> Dict[str, Any]:
     """Set the agent's avatar image.
@@ -40,47 +69,22 @@ async def set_avatar(action_id: str, data: Any) -> Dict[str, Any]:
     Returns:
         Status result
     """
-    action = await _get_avatar_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Avatar action with ID '{action_id}' not found",
+    action = await require_typed_action(
+        action_id,
+        AvatarAction,
+        not_found_message=f"Avatar action with ID '{action_id}' not found",
+        wrong_type_message=f"Action '{action_id}' is not an AvatarAction",
+    )
+
+    image_data, mimetype = _parse_image_payload(data)
+    if not image_data or not mimetype:
+        raise ValidationError(
+            message=(
+                "Could not extract image_data and mimetype. "
+                "Provide them explicitly or use a data URI."
+            ),
             details={"action_id": action_id},
         )
-
-    image_data = None
-    mimetype = None
-
-    if isinstance(data, str):
-        # Handle raw string (possible data URI)
-        if data.startswith("data:"):
-            try:
-                header, base64_data = data.split(",", 1)
-                mimetype = header.split(";")[0].split(":")[1]
-                image_data = base64_data
-            except Exception as e:
-                logger.error(f"Failed to parse data URI string: {e}")
-    elif isinstance(data, dict):
-        image_data = data.get("image_data")
-        mimetype = data.get("mimetype")
-
-        # If not provided explicitly, check if the first value is a data URI
-        if not image_data and len(data) > 0:
-            # Check all values for a data URI
-            for val in data.values():
-                if isinstance(val, str) and val.startswith("data:"):
-                    try:
-                        header, base64_data = val.split(",", 1)
-                        mimetype = header.split(";")[0].split(":")[1]
-                        image_data = base64_data
-                        break
-                    except Exception:
-                        continue
-
-    if not image_data or not mimetype:
-        return {
-            "success": False,
-            "error": "Could not extract image_data and mimetype. Provide them explicitly or use a data URI.",
-        }
 
     success = await action.set_avatar(image_data, mimetype)
 
@@ -96,6 +100,7 @@ async def set_avatar(action_id: str, data: Any) -> Dict[str, Any]:
     auth=True,
     roles=["admin"],
     tags=["Avatar Action"],
+    summary="Get agent avatar image",
 )
 async def get_avatar(action_id: str) -> Dict[str, Any]:
     """Get the agent's avatar image.
@@ -106,12 +111,12 @@ async def get_avatar(action_id: str) -> Dict[str, Any]:
     Returns:
         Avatar data URI
     """
-    action = await _get_avatar_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Avatar action with ID '{action_id}' not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        AvatarAction,
+        not_found_message=f"Avatar action with ID '{action_id}' not found",
+        wrong_type_message=f"Action '{action_id}' is not an AvatarAction",
+    )
 
     avatar_uri = action.get_avatar(with_prefix=True)
 
@@ -128,6 +133,7 @@ async def get_avatar(action_id: str) -> Dict[str, Any]:
     auth=True,
     roles=["admin"],
     tags=["Avatar Action"],
+    summary="Delete agent avatar image",
 )
 async def delete_avatar(action_id: str) -> Dict[str, Any]:
     """Delete the agent's avatar image.
@@ -138,18 +144,20 @@ async def delete_avatar(action_id: str) -> Dict[str, Any]:
     Returns:
         Status result
     """
-    action = await _get_avatar_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Avatar action with ID '{action_id}' not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        AvatarAction,
+        not_found_message=f"Avatar action with ID '{action_id}' not found",
+        wrong_type_message=f"Action '{action_id}' is not an AvatarAction",
+    )
 
     success = await action.delete_avatar()
 
     return {
         "success": success,
-        "message": "Avatar deleted successfully" if success else "Failed to delete avatar",
+        "message": (
+            "Avatar deleted successfully" if success else "Failed to delete avatar"
+        ),
     }
 
 
@@ -159,6 +167,7 @@ async def delete_avatar(action_id: str) -> Dict[str, Any]:
     auth=True,
     roles=["admin"],
     tags=["Avatar Action"],
+    summary="Avatar action health check",
 )
 async def avatar_health_check(action_id: str) -> Dict[str, Any]:
     """Check Avatar action health.
@@ -169,20 +178,20 @@ async def avatar_health_check(action_id: str) -> Dict[str, Any]:
     Returns:
         Health check result
     """
-    action = await _get_avatar_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Avatar action with ID '{action_id}' not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        AvatarAction,
+        not_found_message=f"Avatar action with ID '{action_id}' not found",
+        wrong_type_message=f"Action '{action_id}' is not an AvatarAction",
+    )
 
     health = await action.healthcheck()
 
     return {
-        "healthy": health is True or (isinstance(health, dict) and health.get("healthy", False)),
+        "healthy": health is True
+        or (isinstance(health, dict) and health.get("healthy", False)),
         "details": health if health is not True else None,
     }
-
 
 
 @endpoint(
@@ -191,24 +200,35 @@ async def avatar_health_check(action_id: str) -> Dict[str, Any]:
     auth=True,
     roles=["admin"],
     tags=["Avatar Action"],
+    summary="Set WhatsApp profile picture from stored avatar",
 )
 async def set_whatsapp_avatar(action_id: str) -> Dict[str, Any]:
     """Set the WhatsApp profile picture using the current local avatar image."""
-    action = await _get_avatar_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Avatar action with ID '{action_id}' not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        AvatarAction,
+        not_found_message=f"Avatar action with ID '{action_id}' not found",
+        wrong_type_message=f"Action '{action_id}' is not an AvatarAction",
+    )
 
     try:
         success = await action.set_whatsapp_avatar()
         return {
             "success": success,
-            "message": "WhatsApp profile picture set successfully" if success else "Failed to set WhatsApp profile picture",
+            "message": (
+                "WhatsApp profile picture set successfully"
+                if success
+                else "Failed to set WhatsApp profile picture"
+            ),
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.error(
+            "set_whatsapp_avatar failed for action_id=%s", action_id, exc_info=True
+        )
+        raise ValidationError(
+            message=str(e),
+            details={"action_id": action_id},
+        ) from e
 
 
 @endpoint(
@@ -217,6 +237,7 @@ async def set_whatsapp_avatar(action_id: str) -> Dict[str, Any]:
     auth=True,
     roles=["admin"],
     tags=["Avatar Action"],
+    summary="Pull WhatsApp profile picture into local avatar",
 )
 async def pull_whatsapp_avatar(
     action_id: str, phone: Optional[str] = None
@@ -227,18 +248,28 @@ async def pull_whatsapp_avatar(
         action_id: ID of the Avatar action
         phone: Optional phone number to pull from. If not provided, pulls the agent's own avatar.
     """
-    action = await _get_avatar_action(action_id)
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Avatar action with ID '{action_id}' not found",
-            details={"action_id": action_id},
-        )
+    action = await require_typed_action(
+        action_id,
+        AvatarAction,
+        not_found_message=f"Avatar action with ID '{action_id}' not found",
+        wrong_type_message=f"Action '{action_id}' is not an AvatarAction",
+    )
 
     try:
         success = await action.pull_avatar_from_whatsapp(phone=phone)
         return {
             "success": success,
-            "message": "Avatar pulled from WhatsApp successfully" if success else "Failed to pull avatar from WhatsApp",
+            "message": (
+                "Avatar pulled from WhatsApp successfully"
+                if success
+                else "Failed to pull avatar from WhatsApp"
+            ),
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.error(
+            "pull_whatsapp_avatar failed for action_id=%s", action_id, exc_info=True
+        )
+        raise ValidationError(
+            message=str(e),
+            details={"action_id": action_id},
+        ) from e

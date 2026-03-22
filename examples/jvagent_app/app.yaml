@@ -161,6 +161,7 @@ config:
     # Batch multiple save() calls into a single database write for entities
     # that experience rapid updates (e.g., Conversation, Interaction during processing)
     # When enabled, save() marks entities as dirty; flush() performs the actual write
+    # Serverless mode always disables deferred saves regardless of this flag
     enable_deferred_saves: true
 
     # Cache cleanup probability (env: JVAGENT_CACHE_CLEANUP_PROBABILITY)
