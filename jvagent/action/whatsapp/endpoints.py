@@ -192,7 +192,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         # interactions. Not run on media webhooks so multi-image albums can coalesce
         # without flushing a partial batch when the next image arrives after the window.
         await _batch_manager.flush_pending_batch_if_stale(
-            sender, whatsapp_action.media_batch_window, whatsapp_action
+            sender, whatsapp_action.media_batch_window
         )
 
         quoted = getattr(data, "quoted_message", None) or {}
