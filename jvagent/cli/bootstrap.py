@@ -13,6 +13,7 @@ from jvagent.core import Agents
 from jvagent.core.app import App
 from jvagent.core.app_loader import AppLoader
 from jvagent.core.bootstrap_logger import BootstrapLogger
+from jvagent.core.config import get_file_storage_config, load_app_config
 from jvagent.env import get_jvagent_app_id, load_env
 
 logger = logging.getLogger(__name__)
@@ -58,11 +59,11 @@ async def bootstrap_application_graph(
             bootstrap_log.error(
                 "Declarative bootstrap failed - falling back to manual bootstrap"
             )
-            await _manual_bootstrap()
+            await _manual_bootstrap(app_root)
     else:
         bootstrap_log.start("Application graph (manual mode, no app.yaml)")
         bootstrap_log.info("No app.yaml found - using manual bootstrap")
-        await _manual_bootstrap()
+        await _manual_bootstrap(app_root)
         bootstrap_log.complete("Manual bootstrap complete")
 
     # Apply JVAGENT_APP_ID override to App node if set
@@ -74,8 +75,10 @@ async def bootstrap_application_graph(
             await app.save()
 
 
-async def _manual_bootstrap() -> None:
+async def _manual_bootstrap(app_root: Optional[str] = None) -> None:
     """Manual bootstrap when no app.yaml is available."""
+    if app_root is None:
+        app_root = os.getcwd()
     root = await Root.get()
     logger.info(f"Root node ready: {root.id}")
 
@@ -86,14 +89,15 @@ async def _manual_bootstrap() -> None:
         logger.info(f"App node already exists: {app.id}")
         App._cached_app = app
     else:
-        env = load_env()
+        _cfg = load_app_config(app_root)
+        _fs = get_file_storage_config(app_root, _cfg)
         app = await App.create(
             app_id="jvagent_app",
             name="jvAgent",
             version=__version__,
             description="jvAgent Application",
-            file_storage_provider=env.file_interface,
-            file_storage_root_dir=env.files_root_path,
+            file_storage_provider=_fs["provider"],
+            file_storage_root_dir=_fs["root_dir"],
             file_storage_enabled=True,
         )
         logger.info(f"Created App node: {app.id}")

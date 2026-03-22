@@ -9,9 +9,11 @@ from typing import Any, ClassVar, Dict, Optional, Type, Union
 from jvspatial.api.context import get_current_server
 from jvspatial.core import Node, Root
 from jvspatial.core.annotations import attribute
+from jvspatial.env import resolve_file_storage_root
 from jvspatial.storage import create_storage, get_proxy_manager
 from jvspatial.storage.exceptions import StorageError
 
+from jvagent.core.config import normalize_empty
 from jvagent.env import load_env
 
 
@@ -251,10 +253,14 @@ class App(Node):
             self._file_interface = server._file_interface
             return self._file_interface
 
-        # Resolve provider and root_dir: env > node > default
+        # Align with get_file_storage_config / Server: env overrides, then node / defaults
         env = load_env()
-        provider = env.file_interface or (self.file_storage_provider or "local")
-        root_dir = env.files_root_path or (self.file_storage_root_dir or "./.files")
+        provider = (
+            normalize_empty(os.getenv("JVSPATIAL_FILE_INTERFACE"))
+            or normalize_empty(os.getenv("JVSPATIAL_FILE_STORAGE_PROVIDER"))
+            or (self.file_storage_provider or "local")
+        )
+        root_dir = resolve_file_storage_root(self.file_storage_root_dir or None)
 
         # Create storage based on resolved configuration
         if provider == "local":

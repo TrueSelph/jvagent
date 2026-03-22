@@ -17,6 +17,7 @@ from jvagent.core.agent_loader import AgentLoader, _apply_properties
 from jvagent.core.agents import Agents
 from jvagent.core.app import App
 from jvagent.core.bootstrap_logger import BootstrapLogger
+from jvagent.core.config import get_file_storage_config, load_app_config
 from jvagent.env import load_env
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,9 @@ class AppDescriptor:
     - app: app_name (application identifier)
     - version: at top level
     - author: at top level
-    - context: object containing App node properties (name, description, file_storage_*, etc.)
+    - context: object containing App node properties (name, description, etc.).
+      File storage paths: use ``config.file_storage`` in app.yaml; ``context.file_storage_*``
+      is legacy (App node still stores copies from the resolved descriptor).
     - license: at top level (metadata, not stored in App node)
     - homepage: at top level (metadata, not stored in App node)
     - tags: at top level (metadata, not stored in App node)
@@ -62,14 +65,13 @@ class AppDescriptor:
 
         self.name = context.get("name", "jvagent Application")
         self.description = context.get("description", "")
-        # Env vars override context (env > app.yaml > default)
+        # Same precedence as Server / get_file_storage_config: env > config.file_storage > defaults
+        # (context.file_storage_* are legacy; config.file_storage in app.yaml is canonical)
         env = load_env()
-        self.file_storage_provider = (
-            env.file_interface or context.get("file_storage_provider", "local")
-        ) or "local"
-        self.file_storage_root_dir = (
-            env.files_root_path or context.get("file_storage_root_dir", "./.files")
-        ) or "./.files"
+        _app_config = load_app_config(str(path))
+        _fs = get_file_storage_config(str(path), _app_config)
+        self.file_storage_provider = _fs["provider"]
+        self.file_storage_root_dir = _fs["root_dir"]
         self.file_storage_enabled = context.get("file_storage_enabled", True)
         self.logging_enabled = context.get("logging_enabled", True)
         self.log_retention_days = (
