@@ -68,8 +68,8 @@ class AppDescriptor:
             env.file_interface or context.get("file_storage_provider", "local")
         ) or "local"
         self.file_storage_root_dir = (
-            env.files_root_path or context.get("file_storage_root_dir", ".files")
-        ) or ".files"
+            env.files_root_path or context.get("file_storage_root_dir", "./.files")
+        ) or "./.files"
         self.file_storage_enabled = context.get("file_storage_enabled", True)
         self.logging_enabled = context.get("logging_enabled", True)
         self.log_retention_days = (

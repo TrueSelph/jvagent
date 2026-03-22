@@ -104,7 +104,7 @@ def load_env() -> EnvConfig:
         ),
         # JVSPATIAL
         file_interface=os.getenv("JVSPATIAL_FILE_INTERFACE", "local"),
-        files_root_path=os.getenv("JVSPATIAL_FILES_ROOT_PATH", ".files"),
+        files_root_path=os.getenv("JVSPATIAL_FILES_ROOT_PATH", "./.files"),
         mongodb_uri=os.getenv("JVSPATIAL_MONGODB_URI", "mongodb://localhost:27017"),
         jwt_secret_key=os.getenv("JVSPATIAL_JWT_SECRET_KEY"),
         jwt_secret=jwt_secret,

@@ -49,7 +49,7 @@ class App(Node):
         default="local", description="Storage provider type (local, s3, etc.)"
     )
     file_storage_root_dir: str = attribute(
-        default=".files", description="Root directory for local storage"
+        default="./.files", description="Root directory for local storage"
     )
     file_storage_enabled: bool = attribute(
         default=True, description="Whether file storage is enabled"
@@ -254,7 +254,7 @@ class App(Node):
         # Resolve provider and root_dir: env > node > default
         env = load_env()
         provider = env.file_interface or (self.file_storage_provider or "local")
-        root_dir = env.files_root_path or (self.file_storage_root_dir or ".files")
+        root_dir = env.files_root_path or (self.file_storage_root_dir or "./.files")
 
         # Create storage based on resolved configuration
         if provider == "local":
