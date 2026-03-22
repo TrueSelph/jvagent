@@ -226,8 +226,8 @@ def get_file_storage_config(app_root: str, config: dict) -> dict:
 
     Precedence for provider: JVSPATIAL_FILE_INTERFACE > JVSPATIAL_FILE_STORAGE_PROVIDER >
     config file_storage.provider > default "local".
-    Precedence for root_dir: JVSPATIAL_FILES_ROOT_PATH > JVSPATIAL_FILE_STORAGE_ROOT >
-    config file_storage.root_dir > default ".files".
+    Precedence for root_dir: JVSPATIAL_FILES_ROOT_PATH >
+    config file_storage.root_dir > default "./.files".
 
     Args:
         app_root: Path to app root directory (unused but kept for API consistency)
@@ -246,15 +246,14 @@ def get_file_storage_config(app_root: str, config: dict) -> dict:
     )
     root_dir = (
         normalize_empty(os.getenv("JVSPATIAL_FILES_ROOT_PATH"))
-        or normalize_empty(os.getenv("JVSPATIAL_FILE_STORAGE_ROOT"))
         or get_config_value(
-            config, "file_storage.root_dir", "JVSPATIAL_FILES_ROOT_PATH", ".files"
+            config, "file_storage.root_dir", "JVSPATIAL_FILES_ROOT_PATH", "./.files"
         )
-        or ".files"
+        or "./.files"
     )
     return {
         "provider": provider if provider else "local",
-        "root_dir": root_dir if root_dir else ".files",
+        "root_dir": root_dir if root_dir else "./.files",
         "enabled": get_config_value(
             config, "file_storage.enabled", "JVSPATIAL_FILE_STORAGE_ENABLED", False
         ),

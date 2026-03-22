@@ -136,7 +136,7 @@ Environment Variables:
     JVAGENT_HOST              Server host (default: 127.0.0.1)
     JVAGENT_PORT              Server port (default: 8000)
     JVSPATIAL_DB_PATH         Database path (default: ./jvagent_db)
-    JVSPATIAL_FILES_ROOT_PATH File storage path (default: .files)
+    JVSPATIAL_FILES_ROOT_PATH File storage path (default: ./.files)
 
 Examples:
     jvagent                                    # Run from current directory

@@ -249,7 +249,7 @@ class WhatsAppAction(Action):
             if not app:
                 return
             provider = getattr(app, "file_storage_provider", "") or "local"
-            root = (getattr(app, "file_storage_root_dir", "") or ".files").strip()
+            root = (getattr(app, "file_storage_root_dir", "") or "./.files").strip()
             if provider == "local" and root and not root.startswith("/tmp"):
                 logger.warning(
                     "WhatsApp media on Lambda: file_storage is local with "
