@@ -25,7 +25,9 @@ BATCH MODES (from ``jvspatial.is_serverless_mode()`` only; uses ``get_current_se
 - async: In-memory batching with timer tasks via ``create_task`` (Shape B, long-running process).
 - deferred: Persistent batching in the prime database via ``Database.find_one_and_update`` (same
   compound-op stack as ``claim_record`` / ``delete_claimed_record``), plus ``create_task`` (Shape A)
-  for follow-up processing. Strongest concurrency guarantees on MongoDB; other adapters use RMW paths.
+  for follow-up processing. Deferred dispatch is deduped per sender using ``media_batch_window``;
+  the handler payload includes ``process_at`` so scheduled invokes do not double-wait.
+  Strongest concurrency guarantees on MongoDB; other adapters use RMW paths.
   Actual transport (Lambda, SQS, EventBridge, noop, etc.) is chosen inside jvspatial.
 """
 
@@ -88,7 +90,6 @@ def _media_item(
 BATCH_MAX_SIZE = 10  # Maximum number of media items per batch
 BATCH_TTL_SECONDS = 300  # Time-to-live for abandoned batches (5 minutes)
 BATCH_CLEANUP_INTERVAL = 60  # Run cleanup every 60 seconds
-INVOKE_DEDUP_SECONDS = 1.0  # Min seconds between deferred dispatches per sender
 
 
 def _get_media_batch_mode() -> str:
@@ -221,10 +222,10 @@ class MediaBatchManager:
             return dict(BATCH_RECEIVED_RESPONSE)
 
     async def _timer_or_flush_in_memory(self, sender: str, window: float) -> None:
-        """Debounce with sleep, or flush immediately on serverless (no background timer)."""
-        if is_serverless_mode():
-            await self.process_batch(sender)
-            return
+        """Debounce with sleep until ``window`` elapses, then process in-memory batch.
+
+        Only used in non-serverless (async) mode; deferred path never calls this.
+        """
         await self._schedule_batch_processing(sender, window)
 
     async def _attach_batch_timer_or_run_now(
@@ -298,12 +299,14 @@ class MediaBatchManager:
 
         # Deferred dispatch with process_at so work runs after media_batch_window.
         # Single media also waits (no inline shortcut) so rapid multi-media coalesce.
-        # Dedup: atomically claim slot; only winner dispatches
+        # Dedup: align with media_batch_window so a second invoke is not scheduled
+        # while the first window is still open (avoids redundant Lambda/SQS sends).
+        batch_window = float(whatsapp_action.media_batch_window)
         invoke_query: Dict[str, Any] = {
             "_id": sender,
             "$or": [
                 {"invoked_at": {"$exists": False}},
-                {"invoked_at": {"$lt": current_time - INVOKE_DEDUP_SECONDS}},
+                {"invoked_at": {"$lt": current_time - batch_window}},
             ],
         }
         invoke_winner = await db.find_one_and_update(
@@ -312,12 +315,13 @@ class MediaBatchManager:
             {"$set": {"invoked_at": current_time}},
         )
         if invoke_winner:
-            process_at = current_time + whatsapp_action.media_batch_window
+            process_at = current_time + batch_window
             await create_task(
                 "jvagent.whatsapp.media_batch",
                 {
                     "sender": sender,
-                    "media_batch_window": whatsapp_action.media_batch_window,
+                    "media_batch_window": batch_window,
+                    "process_at": process_at,
                 },
                 run_at=process_at,
                 name=f"media_batch_deferred_{sender}",
@@ -330,7 +334,7 @@ class MediaBatchManager:
         return dict(BATCH_RECEIVED_RESPONSE)
 
     async def flush_pending_batch_if_stale(
-        self, sender: str, media_batch_window: float, whatsapp_action: Any
+        self, sender: str, media_batch_window: float
     ) -> None:
         """Process pending batch for sender if it has exceeded the batch window.
 

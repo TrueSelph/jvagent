@@ -202,6 +202,121 @@ class TestProcessPersistentBatchJsonDB:
                 is None
             )
 
+    @pytest.mark.asyncio
+    async def test_process_persistent_batch_no_sleep_when_process_at_elapsed(self):
+        """When process_at is in the past, do not await asyncio.sleep before claim."""
+        with tempfile.TemporaryDirectory() as tmp:
+            db = JsonDB(base_path=tmp)
+            await db.save(
+                media_batch_manager_mod.MEDIA_BATCHES_COLLECTION,
+                {
+                    "_id": "sender1",
+                    "id": "sender1",
+                    "media_items": [
+                        {
+                            "url": "http://example.com/a.jpg",
+                            "utterance": None,
+                            "message_type": "image",
+                            "mime_type": "image/jpeg",
+                        }
+                    ],
+                    "data": {"whatsapp_payload": {}},
+                    "agent_id": "agent1",
+                },
+            )
+            sleep_mock = AsyncMock()
+            with (
+                patch.object(
+                    media_batch_manager_mod,
+                    "get_prime_database",
+                    return_value=db,
+                ),
+                patch.object(
+                    media_batch_manager_mod,
+                    "is_serverless_mode",
+                    return_value=True,
+                ),
+                patch.object(
+                    MediaBatchManager,
+                    "_process_batch_internal",
+                    new_callable=AsyncMock,
+                ),
+                patch(
+                    "jvagent.action.whatsapp.utils.media_batch_manager.asyncio.sleep",
+                    sleep_mock,
+                ),
+            ):
+                ok = await media_batch_manager_mod.process_persistent_batch(
+                    "sender1",
+                    999.0,
+                    process_at=time_module.time() - 3600.0,
+                )
+            assert ok is True
+            sleep_mock.assert_not_called()
+
+
+class TestDeferredCreateTaskPayload:
+    """Deferred path passes process_at in Shape A payload for correct handler timing."""
+
+    @pytest.mark.asyncio
+    async def test_create_task_payload_includes_process_at(self):
+        mock_action = MagicMock()
+        mock_action.media_batch_window = 2.25
+        clock = {"t": 500_000.0}
+
+        def fake_time():
+            return clock["t"]
+
+        manager = MediaBatchManager()
+        create_mock = AsyncMock()
+        with tempfile.TemporaryDirectory() as tmp:
+            db = JsonDB(base_path=tmp)
+            with (
+                patch.object(
+                    media_batch_manager_mod,
+                    "get_prime_database",
+                    return_value=db,
+                ),
+                patch.object(
+                    media_batch_manager_mod,
+                    "is_serverless_mode",
+                    return_value=True,
+                ),
+                patch.object(
+                    media_batch_manager_mod,
+                    "create_task",
+                    create_mock,
+                ),
+                patch.object(
+                    media_batch_manager_mod.time,
+                    "time",
+                    side_effect=fake_time,
+                ),
+                patch.object(
+                    MediaBatchManager,
+                    "_process_batch_internal",
+                    new_callable=AsyncMock,
+                ),
+            ):
+                await manager.get_or_create_batch(
+                    sender="u_process_at",
+                    media_url="http://example.com/p.jpg",
+                    utterance=None,
+                    data_dict={"whatsapp_payload": {"message_type": "image"}},
+                    agent_id="agent_x",
+                    whatsapp_action=mock_action,
+                )
+
+        create_mock.assert_called_once()
+        args, kwargs = create_mock.call_args
+        assert args[0] == "jvagent.whatsapp.media_batch"
+        payload = args[1]
+        expected_process_at = clock["t"] + 2.25
+        assert payload["sender"] == "u_process_at"
+        assert payload["media_batch_window"] == 2.25
+        assert payload["process_at"] == expected_process_at
+        assert kwargs.get("run_at") == expected_process_at
+
 
 class TestDeferredMediaBatchCoalescing:
     """Serverless persistent batching: slow multi-webhook albums must not split."""
@@ -343,7 +458,6 @@ class TestDeferredMediaBatchCoalescing:
                 await manager.flush_pending_batch_if_stale(
                     "sender_split",
                     mock_action.media_batch_window,
-                    mock_action,
                 )
                 await manager.get_or_create_batch(
                     sender="sender_split",
