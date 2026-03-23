@@ -13,7 +13,7 @@ from jvagent.action.base import Action
 def __getattr__(name: str):
     """Lazy-import heavy loader objects or submodules to avoid circular imports."""
     if name in ("ActionLoader", "ActionMetadata"):
-        from jvagent.action.action_loader import ActionLoader, ActionMetadata
+        from jvagent.action.loader import ActionLoader, ActionMetadata
 
         return ActionLoader if name == "ActionLoader" else ActionMetadata
 

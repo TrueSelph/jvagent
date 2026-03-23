@@ -127,6 +127,10 @@ def install_action_dependencies(
     Extracts pip dependencies from the dependencies.pip field in the action's
     info.yaml metadata and installs them.
 
+    When ``JVAGENT_DISABLE_RUNTIME_PIP_INSTALL=true``, runtime installs are skipped.
+    If the action still declares ``dependencies.pip``, logs an error and returns
+    False so operators pre-install wheels in the image or requirements file.
+
     Args:
         metadata: Action metadata dictionary (from info.yaml)
         action_name: Name of the action (for logging)
@@ -148,6 +152,18 @@ def install_action_dependencies(
     pip_deps = dependencies.get("pip", [])
     if not pip_deps:
         return True
+
+    from jvagent.env import load_env
+
+    if load_env().disable_runtime_pip_install:
+        logger.error(
+            "Action %s declares package.dependencies.pip but "
+            "JVAGENT_DISABLE_RUNTIME_PIP_INSTALL is set; add these packages to your "
+            "deployment image or requirements.txt: %s",
+            action_name,
+            pip_deps,
+        )
+        return False
 
     # Install pip dependencies
     return install_pip_dependencies(pip_deps, action_name, action_path)

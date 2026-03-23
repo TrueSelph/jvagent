@@ -68,14 +68,21 @@ test = [
     "tiktoken>=0.5.0",
 ]
 
+# Documented in README as ``pip install -e ".[pageindex]"`` — LLM + helpers for PageIndex actions.
+pageindex = [
+    "openai>=1.0.0",
+    "tiktoken>=0.5.0",
+    "filetype>=1.2.0",
+]
+
 [project.scripts]
 jvagent = "jvagent.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/your-org/jvagent"
-Repository = "https://github.com/your-org/jvagent"
-Issues = "https://github.com/your-org/jvagent/issues"
-Documentation = "https://github.com/your-org/jvagent/blob/main/README.md"
+Homepage = "https://github.com/trueselph/jvagent"
+Repository = "https://github.com/trueselph/jvagent"
+Issues = "https://github.com/trueselph/jvagent/issues"
+Documentation = "https://github.com/trueselph/jvagent/blob/main/README.md"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -126,6 +133,13 @@ exclude = ["examples/", "tests/"]
 
 [[tool.mypy.overrides]]
 module = [
+    "jvagent.core.app_context",
+    "jvagent.env",
+]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = [
     "httpx.*",
     "jinja2.*",
     "jvspatial.*",
@@ -156,7 +170,7 @@ module = [
     "jvagent.action.vectorstore.*",
     "jvagent.action.base",
     "jvagent.action.actions",
-    "jvagent.action.action_loader",
+    "jvagent.action.loader.action_loader",
     "jvagent.action.endpoints",
     "jvagent.action.interact.*",
     "jvagent.action.user_model.*",

@@ -1,6 +1,12 @@
 """Action loader subpackage."""
 
-from jvagent.action.loader.importer import JvagentActionsImporter
-from jvagent.action.loader.metadata import ActionMetadata, ActionRegistry
+from .action_loader import ActionLoader
+from .importer import JvagentActionsImporter
+from .metadata import ActionMetadata, ActionRegistry
 
-__all__ = ["ActionMetadata", "ActionRegistry", "JvagentActionsImporter"]
+__all__ = [
+    "ActionLoader",
+    "ActionMetadata",
+    "ActionRegistry",
+    "JvagentActionsImporter",
+]

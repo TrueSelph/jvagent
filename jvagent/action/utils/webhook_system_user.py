@@ -12,9 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def _get_jwt_secret() -> Optional[str]:
-    return os.environ.get("JVSPATIAL_JWT_SECRET_KEY") or os.environ.get(
-        "JVSPATIAL_JWT_SECRET"
-    )
+    return os.environ.get("JVSPATIAL_JWT_SECRET_KEY")
 
 
 async def get_or_create_system_user_for_webhook(

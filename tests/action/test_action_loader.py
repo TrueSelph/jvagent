@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from jvagent.action.action_loader import (
+from jvagent.action.loader import (
     ActionLoader,
     ActionRegistry,
     JvagentActionsImporter,

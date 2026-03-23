@@ -207,10 +207,11 @@ def resolve_log_db_path(app_root: str, config: dict) -> Optional[str]:
     Returns:
         Resolved path or None if not configured
     """
-    log_db_path = os.getenv("JVAGENT_LOG_DB_PATH") or get_config_value(
-        config, "logging.database.path", None, "./jvagent_logs"
+    log_db_path = normalize_empty(
+        get_config_value(
+            config, "logging.database.path", "JVSPATIAL_LOG_DB_PATH", "./jvagent_logs"
+        )
     )
-    log_db_path = normalize_empty(log_db_path)
     if not log_db_path:
         return None
 

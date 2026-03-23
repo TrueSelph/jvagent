@@ -1,6 +1,10 @@
 """Centralized environment variable loading for jvagent.
 
-All JVAGENT_* and JVSPATIAL_* env vars used by jvagent core are documented here.
+All ``JVAGENT_*`` and ``JVSPATIAL_*`` env vars used by jvagent core are documented here.
+Log retention default uses ``JVSPATIAL_LOG_RETENTION_DEFAULT_DAYS`` (shared with jvspatial).
+Database log levels use ``JVSPATIAL_DB_LOGGING_LEVELS`` (see ``jvagent.cli.server_config`` / jvspatial ``load_env``); do not use ``JVAGENT_DB_LOGGING_LEVELS``.
+Process log verbosity uses ``JVSPATIAL_LOG_LEVEL`` (same as jvspatial Server / ``load_env().log_level``); do not use ``JVAGENT_LOG_LEVEL``.
+JWT signing uses ``JVSPATIAL_JWT_SECRET_KEY`` only; do not use ``JVSPATIAL_JWT_SECRET``.
 Modules should use load_env() instead of os.getenv.
 """
 
@@ -29,6 +33,9 @@ class EnvConfig:
     """Unified environment configuration for jvagent core.
 
     All JVAGENT_* and JVSPATIAL_* vars used by cli, core, and utils.
+    log_retention_default_days is sourced from JVSPATIAL_LOG_RETENTION_DEFAULT_DAYS.
+    log_level is sourced from JVSPATIAL_LOG_LEVEL.
+    jwt_secret_key and jwt_secret both reflect JVSPATIAL_JWT_SECRET_KEY (or the dev default when unset).
     """
 
     # JVAGENT
@@ -40,6 +47,8 @@ class EnvConfig:
     log_db_path: Optional[str]
     log_db_uri: Optional[str]
     log_retention_default_days: Optional[int]
+    # When True, skip ``pip install`` for action package.dependencies.pip (production / air-gapped)
+    disable_runtime_pip_install: bool
 
     # JVSPATIAL (used by jvagent core)
     file_interface: str
@@ -87,26 +96,28 @@ def load_env() -> EnvConfig:
     admin_email = (
         os.getenv("JVAGENT_ADMIN_EMAIL") or f"{admin_username}@jvagent.example"
     )
-    jwt_secret = os.getenv("JVSPATIAL_JWT_SECRET_KEY") or os.getenv(
-        "JVSPATIAL_JWT_SECRET", "jvagent-secret-key-change-in-production"
-    )
+    _jwt = os.getenv("JVSPATIAL_JWT_SECRET_KEY")
+    jwt_secret = _jwt or "jvagent-secret-key-change-in-production"
     return EnvConfig(
         # JVAGENT
         app_id=os.getenv("JVAGENT_APP_ID") or None,
-        log_level=os.getenv("JVAGENT_LOG_LEVEL"),
+        log_level=os.getenv("JVSPATIAL_LOG_LEVEL"),
         admin_username=admin_username,
         admin_password=os.getenv("JVAGENT_ADMIN_PASSWORD"),
         admin_email=admin_email,
-        log_db_path=os.getenv("JVAGENT_LOG_DB_PATH"),
-        log_db_uri=os.getenv("JVAGENT_LOG_DB_URI"),
+        log_db_path=os.getenv("JVSPATIAL_LOG_DB_PATH"),
+        log_db_uri=os.getenv("JVSPATIAL_LOG_DB_URI"),
         log_retention_default_days=_parse_int(
-            os.getenv("JVAGENT_LOG_RETENTION_DEFAULT_DAYS")
+            os.getenv("JVSPATIAL_LOG_RETENTION_DEFAULT_DAYS")
+        ),
+        disable_runtime_pip_install=_parse_bool(
+            os.getenv("JVAGENT_DISABLE_RUNTIME_PIP_INSTALL", "false")
         ),
         # JVSPATIAL
         file_interface=os.getenv("JVSPATIAL_FILE_INTERFACE", "local"),
         files_root_path=os.getenv("JVSPATIAL_FILES_ROOT_PATH", "./.files"),
         mongodb_uri=os.getenv("JVSPATIAL_MONGODB_URI", "mongodb://localhost:27017"),
-        jwt_secret_key=os.getenv("JVSPATIAL_JWT_SECRET_KEY"),
+        jwt_secret_key=_jwt,
         jwt_secret=jwt_secret,
         # S3
         s3_bucket_name=os.getenv("JVSPATIAL_S3_BUCKET_NAME"),

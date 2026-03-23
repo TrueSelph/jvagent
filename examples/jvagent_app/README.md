@@ -396,7 +396,7 @@ The `.env` file should **ONLY contain sensitive information** that should not be
 **Required Secrets:**
 - `OPENAI_API_KEY` - OpenAI API key (for language model actions)
 - `TYPESENSE_API_KEY` - Typesense API key (for vector store actions)
-- `JVSPATIAL_JWT_SECRET` - JWT secret key (MUST be set in production)
+- `JVSPATIAL_JWT_SECRET_KEY` - JWT secret key (MUST be set in production)
 - `JVAGENT_ADMIN_PASSWORD` - Admin password (MUST be set in production)
 
 **Optional Overrides:**
@@ -404,7 +404,7 @@ You can override any `app.yaml` configuration using environment variables if nee
 - `JVAGENT_HOST`, `JVAGENT_PORT` - Override server host/port
 - `JVSPATIAL_MONGODB_URI` - Override MongoDB URI
 - `JVSPATIAL_MONGODB_DB_NAME` - Override database name
-- `JVAGENT_LOG_LEVEL` - Override log level (`debug`, `info`, `warning`, `error`)
+- `JVSPATIAL_LOG_LEVEL` - Override log level (`debug`, `info`, `warning`, `error`; same as jvspatial)
 
 **Important**:
 - Add `.env` to `.gitignore` to prevent committing secrets

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from jvagent.action.action_loader import ActionLoader
+from jvagent.action.loader import ActionLoader
 from jvagent.core.dependency_installer import (
     check_pip_dependency_installed,
     install_action_dependencies,
@@ -135,6 +135,25 @@ class TestDependencyInstallation:
             )
             assert result is True
             mock_install.assert_not_called()
+
+    def test_install_action_dependencies_skips_when_runtime_pip_disabled(self):
+        """JVAGENT_DISABLE_RUNTIME_PIP_INSTALL skips pip and returns False if deps declared."""
+        metadata = {
+            "package": {
+                "name": "test/action",
+                "dependencies": {"pip": ["somepkg>=1.0"]},
+            }
+        }
+        with patch(
+            "jvagent.core.dependency_installer.install_pip_dependencies"
+        ) as mock_install:
+            with patch("jvagent.env.load_env") as mock_load_env:
+                mock_load_env.return_value.disable_runtime_pip_install = True
+                result = install_action_dependencies(
+                    metadata, "test_action", Path("/tmp/test")
+                )
+                assert result is False
+                mock_install.assert_not_called()
 
     def test_check_pip_dependency_installed_simple_name(self):
         """Test checking if a simple package is installed."""

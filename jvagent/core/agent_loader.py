@@ -94,7 +94,7 @@ class AgentLoader:
         Args:
             base_path: Base path to search for agents. If None, uses current directory.
         """
-        from jvagent.action.action_loader import ActionLoader
+        from jvagent.action.loader import ActionLoader
 
         self.base_path = Path(base_path or os.getcwd())
         self.action_loader = ActionLoader(str(self.base_path))

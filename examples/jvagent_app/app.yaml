@@ -75,7 +75,7 @@ config:
   auth:
     enabled: true
     jwt_expire_minutes: 60
-    # JWT secret should be set via JVSPATIAL_JWT_SECRET environment variable
+    # JWT secret should be set via JVSPATIAL_JWT_SECRET_KEY environment variable
     exempt_paths:
       - "/api/storage/*"
 
@@ -100,7 +100,7 @@ config:
     database:
       # type: mongodb  # Defaults to same as database.type if not set (uncomment for MongoDB)
       # uri: mongodb://localhost:27017  # Defaults to same as database.uri if not set (uncomment for MongoDB)
-      name: jvagent_logs # Defaults to jvagent_logs if not set via JVAGENT_LOG_DB_NAME
+      name: jvagent_logs # Defaults to jvagent_logs if not set via JVSPATIAL_LOG_DB_NAME
       path: ./jvagent_logs # For JSON/SQLite logging databases
       # DynamoDB logging database (uncomment to use DynamoDB for logging)
       # type: dynamodb  # Defaults to same as database.type if not set (uncomment for DynamoDB)
