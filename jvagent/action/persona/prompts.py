@@ -58,7 +58,7 @@ Generate a natural, human-like response executing all directives naturally withi
 """
 
 # ============================================================================
-# User Model Profile (for UserModelAction integration)
+# Optional user profile section (caller supplies formatted text, if any)
 # ============================================================================
 
 USER_MODEL_PROFILE_PROMPT = """### USER PROFILE
