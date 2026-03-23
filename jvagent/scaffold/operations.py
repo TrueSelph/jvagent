@@ -102,6 +102,7 @@ def _write_gitignore(app_root: Path) -> None:
 
 # Runtime data
 jvagent_db/
+*_pageindex_db/
 jvagent_logs/
 .files/
 jvspatial_logs/
