@@ -203,7 +203,7 @@ class AppLoader:
             # - Unused actions remain completely unloaded (no module import, no endpoints)
             # This ensures Action subclasses are available for _collect_class_names()
             # before any queries are executed, while preventing unused endpoints from being accessible
-            from jvagent.action.action_loader import ActionLoader
+            from jvagent.action.loader import ActionLoader
 
             action_loader = ActionLoader(base_path=str(self.base_path))
             # Only pre-import modules for agents listed in app.yaml (with dependency resolution)

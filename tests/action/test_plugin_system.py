@@ -9,8 +9,8 @@ This module tests the complete plugin-based subsystem including:
 
 import pytest
 
-from jvagent.action.action_loader import ActionLoader, ActionMetadata
 from jvagent.action.actions import Actions
+from jvagent.action.loader import ActionLoader, ActionMetadata
 from jvagent.core.agent import Agent
 from jvagent.core.agent_loader import AgentDescriptor, AgentLoader
 from jvagent.core.agents import Agents

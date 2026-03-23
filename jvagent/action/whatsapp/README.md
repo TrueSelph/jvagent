@@ -271,7 +271,7 @@ WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS=120
 WHATSAPP_SKIP_STARTUP_REGISTRATION=false
 
 # Security Configuration
-JVSPATIAL_JWT_SECRET=your_jwt_secret
+JVSPATIAL_JWT_SECRET_KEY=your_jwt_secret
 ```
 
 ### Action Configuration (agent.yaml)

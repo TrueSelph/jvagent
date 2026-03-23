@@ -51,7 +51,7 @@ This document maps `app.yaml` config paths to environment variables and document
 
 | Env var | Description |
 |---------|-------------|
-| `JVSPATIAL_JWT_SECRET` / `JVSPATIAL_JWT_SECRET_KEY` | JWT signing secret. Required when auth enabled. |
+| `JVSPATIAL_JWT_SECRET_KEY` | JWT signing secret. Required when auth enabled. |
 | `JVAGENT_ADMIN_PASSWORD` | Admin bootstrap password. Required to create initial admin. |
 | `JVAGENT_ADMIN_USERNAME` | Admin username (default: admin) |
 | `JVAGENT_ADMIN_EMAIL` | Admin email (default: admin@jvagent.example) |
@@ -75,14 +75,16 @@ This document maps `app.yaml` config paths to environment variables and document
 
 ### Logging
 
+Environment variables match **jvspatial** (`JVSPATIAL_DB_LOGGING_*`, `JVSPATIAL_LOG_DB_*`).
+
 | app.yaml path | Env var | Default |
 |---------------|---------|---------|
-| `config.logging.enabled` | `JVAGENT_LOGGING_ENABLED` | true |
-| `config.logging.levels` | `JVAGENT_DB_LOGGING_LEVELS` | ERROR,CRITICAL |
-| `config.logging.database.type` | `JVAGENT_LOG_DB_TYPE` | (none) |
-| `config.logging.database.uri` | `JVAGENT_LOG_DB_URI` | (none) |
-| `config.logging.database.name` | `JVAGENT_LOG_DB_NAME` | jvagent_logs |
-| `config.logging.database.path` | `JVAGENT_LOG_DB_PATH` | (none) |
+| `config.logging.enabled` | `JVSPATIAL_DB_LOGGING_ENABLED` | true |
+| `config.logging.levels` | `JVSPATIAL_DB_LOGGING_LEVELS` | ERROR,CRITICAL |
+| `config.logging.database.type` | `JVSPATIAL_LOG_DB_TYPE` | (none) |
+| `config.logging.database.uri` | `JVSPATIAL_LOG_DB_URI` | (none) |
+| `config.logging.database.name` | `JVSPATIAL_LOG_DB_NAME` | jvagent_logs |
+| `config.logging.database.path` | `JVSPATIAL_LOG_DB_PATH` | (none) |
 | `config.logging.database.table_name` | `JVSPATIAL_LOG_DB_TABLE_NAME` | (none) |
 | `config.logging.database.region` | `JVSPATIAL_LOG_DB_REGION` | (none) |
 | `config.logging.database.endpoint_url` | `JVSPATIAL_LOG_DB_ENDPOINT_URL` | (none) |
@@ -135,6 +137,14 @@ DB name resolution when `JVAGENT_PAGEINDEX_DB_NAME` is unset: `{app_id}_pageinde
 | `config.performance.interact_router_cache_ttl` | `JVAGENT_INTERACT_ROUTER_CACHE_TTL` | 45 |
 
 **Deferred saves and serverless:** Even when `JVSPATIAL_ENABLE_DEFERRED_SAVES` is true, jvspatial disables deferred batching whenever `is_serverless_mode()` is true (Lambda, `SERVERLESS_MODE=true`, etc.). `DeferredSaveMixin` turns batching on at instance construction when allowed; apps do not need to call `enable_deferred_saves()` for that. Use `flush_deferred_entities` from jvspatial (or `await entity.flush()`) at the end of a request.
+
+### Action runtime pip installs
+
+Actions may declare `package.dependencies.pip` in `info.yaml`. By default jvagent runs `pip install` for missing packages when an action is discovered or loaded.
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL` | false | When `true`, runtime `pip install` is disabled. If an action still lists `dependencies.pip`, startup logs an error and dependency installation returns failure — add those packages to your Docker image, Lambda layer, or a frozen `requirements.txt` instead. Recommended for production and air-gapped deploys. |
 
 ## app.yaml-Only Config (No Env Override)
 

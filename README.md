@@ -124,7 +124,7 @@ cp .env.example .env
 
 Edit `.env` and set at minimum:
 - `JVAGENT_ADMIN_PASSWORD` - Password for the initial admin user
-- `JVSPATIAL_JWT_SECRET` - Secret key for JWT authentication (change from default in production)
+- `JVSPATIAL_JWT_SECRET_KEY` - Secret key for JWT authentication (change from default in production)
 
 ### 2. Run jvagent
 
@@ -1499,7 +1499,7 @@ Key environment variables (see `.env.example` for full list):
 
 **Authentication:**
 - `JVAGENT_AUTH_ENABLED` - Enable authentication (default: `true`)
-- `JVSPATIAL_JWT_SECRET` - JWT secret key (change in production!)
+- `JVSPATIAL_JWT_SECRET_KEY` - JWT secret key (change in production!)
 - `JVSPATIAL_JWT_EXPIRE_MINUTES` - JWT expiration (default: `60`)
 
 **Admin User:**
@@ -1577,7 +1577,10 @@ jvagent/
 │   ├── action/           # Action system
 │   │   ├── base.py       # Action base class
 │   │   ├── actions.py    # Actions manager
-│   │   ├── action_loader.py  # Action loader
+│   │   ├── loader/       # Action discovery & loading
+│   │   │   ├── action_loader.py  # ActionLoader
+│   │   │   ├── metadata.py
+│   │   │   └── ...
 │   │   └── model/        # Model action implementations
 │   ├── core/             # Core entities
 │   │   ├── app.py        # App node

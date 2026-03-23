@@ -64,20 +64,17 @@ graph TB
 
 ### Environment Variables
 
-The logging system can be configured via environment variables:
+The logging system uses **jvspatial** environment variables (`JVSPATIAL_DB_LOGGING_*`, `JVSPATIAL_LOG_DB_*`); jvagent reads the same names when wiring `initialize_logging_database`.
 
-- `JVAGENT_LOGGING_ENABLED` - Global enable/disable flag (defaults to `true`)
-- `JVAGENT_LOG_DB_TYPE` - Database type (defaults to same as `JVSPATIAL_DB_TYPE`)
-- `JVAGENT_LOG_DB_PATH` - Path for JSON/SQLite (defaults to `./jvagent_logs`)
-- `JVAGENT_LOG_DB_URI` - MongoDB URI (if different from prime database)
-- `JVAGENT_LOG_DB_NAME` - MongoDB database name (defaults to `jvagent_logs`)
-- `JVAGENT_LOG_RETENTION_DEFAULT_DAYS` - Default retention period in days (defaults to 60)
-- `JVAGENT_LOG_DB_LEVEL` - Minimum log level to persist to database (defaults to `ERROR`)
-  - Valid values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
-  - **Note**: ERROR and CRITICAL are always logged to database regardless of this setting
-  - Setting to `WARNING` will log WARNING, ERROR, and CRITICAL
-  - Setting to `INFO` will log INFO, WARNING, ERROR, and CRITICAL
-  - Setting to `DEBUG` will log all levels
+- `JVSPATIAL_DB_LOGGING_ENABLED` - Global enable/disable for DB log handler setup (defaults to `true` via app.yaml / jvspatial)
+- `JVSPATIAL_DB_LOGGING_LEVELS` - Comma-separated levels for jvspatial log config (jvagent also passes explicit levels including INTERACTION)
+- `JVSPATIAL_LOG_DB_TYPE` - Database type (defaults to same as `JVSPATIAL_DB_TYPE`)
+- `JVSPATIAL_LOG_DB_PATH` - Path for JSON/SQLite (defaults to `./jvagent_logs`)
+- `JVSPATIAL_LOG_DB_URI` - MongoDB URI (if different from prime database)
+- `JVSPATIAL_LOG_DB_NAME` - MongoDB database name (defaults to `jvagent_logs`)
+- `JVSPATIAL_LOG_RETENTION_DEFAULT_DAYS` - Default retention period in days when unset in app.yaml (optional; `0` = indefinite); same variable as jvspatial `load_env().log_retention_default_days`
+
+**Note:** Use `JVSPATIAL_DB_LOGGING_LEVELS` (comma-separated set of levels to persist), not any `JVAGENT_DB_LOGGING_*` or `JVAGENT_LOG_DB_*` name. There is no `JVAGENT_LOG_DB_LEVEL` in code paths.
 
 ### app.yaml Configuration
 
@@ -279,7 +276,7 @@ Set retention window for an application.
 
 **Disable logging globally:**
 ```bash
-export JVAGENT_LOGGING_ENABLED=false
+export JVSPATIAL_DB_LOGGING_ENABLED=false
 ```
 
 **Disable logging for a specific app (in app.yaml):**
@@ -378,7 +375,7 @@ curl -X PUT "http://localhost:8000/logs/applications/{app_id}/retention" \
 ### Logging Not Working
 
 **Check if logging is enabled:**
-1. Verify `JVAGENT_LOGGING_ENABLED` environment variable (should be `true`)
+1. Verify `JVSPATIAL_DB_LOGGING_ENABLED` environment variable (should be `true`)
 2. Check app-level `logging_enabled` setting in app.yaml
 3. Check application logs for any initialization errors
 
@@ -464,9 +461,7 @@ The jvagent logging system uses jvspatial's `DBLogHandler`, a custom Python logg
 `DBLogHandler` is automatically installed when the logging database is initialized (if logging is enabled). It:
 
 1. **Intercepts all log records** from the Python logging system
-2. **Filters by log level** based on `JVAGENT_LOG_DB_LEVEL` configuration:
-   - **ERROR and CRITICAL** are always logged to database (if logging enabled)
-   - **WARNING, INFO, DEBUG** are logged only if they meet the configured threshold
+2. **Filters by log level** using the level set from `JVSPATIAL_DB_LOGGING_LEVELS` / `config.logging.levels` (comma-separated names). jvagent adds the custom `INTERACTION` level when initializing the handler.
 3. **Extracts context automatically** from:
    - Log record `details` parameter (explicit context)
    - Call stack inspection (finds Action/InteractWalker instances)
@@ -475,16 +470,9 @@ The jvagent logging system uses jvspatial's `DBLogHandler`, a custom Python logg
 4. **Logs asynchronously** to avoid blocking the main application flow
 5. **Fails silently** - never raises exceptions to avoid breaking application execution
 
-### Log Level Configuration
+### Log level configuration
 
-The `JVAGENT_LOG_DB_LEVEL` environment variable controls which log levels are persisted to the database:
-
-- **`ERROR` (default)**: Only ERROR and CRITICAL logs are persisted
-- **`WARNING`**: WARNING, ERROR, and CRITICAL logs are persisted
-- **`INFO`**: INFO, WARNING, ERROR, and CRITICAL logs are persisted
-- **`DEBUG`**: All log levels are persisted
-
-**Important**: ERROR and CRITICAL level logs are always persisted to the database (if logging is enabled), regardless of the `JVAGENT_LOG_DB_LEVEL` setting. This ensures critical errors are never missed.
+Which levels are persisted is controlled by **`JVSPATIAL_DB_LOGGING_LEVELS`** (or `config.logging.levels` in `app.yaml`): a comma-separated list such as `ERROR,CRITICAL` or `INTERACTION,ERROR,CRITICAL`. Only levels in that set (plus any custom levels you register and include) are stored; there is no separate minimum-threshold env var.
 
 ### Providing Explicit Context
 
@@ -545,7 +533,7 @@ The handler automatically extracts the following fields when available:
 
 Automatic database logging respects the existing logging configuration:
 
-- **Global disable**: Set `JVAGENT_LOGGING_ENABLED=false` to prevent handler installation
+- **Global disable**: Set `JVSPATIAL_DB_LOGGING_ENABLED=false` to prevent handler installation
 - **App-level disable**: Set `app.logging_enabled=false` to skip database logging for specific apps (handler still installed but skips logging)
 - **Graceful degradation**: When disabled, logs still go to console/file handlers, only database logging is skipped
 

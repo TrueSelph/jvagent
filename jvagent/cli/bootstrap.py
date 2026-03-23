@@ -133,7 +133,27 @@ async def _manual_bootstrap(app_root: Optional[str] = None) -> None:
 
 
 async def ensure_admin_user() -> bool:
-    """Ensure a single admin user exists."""
+    """Ensure an admin user exists for configured credentials.
+
+    Two mechanisms work together:
+
+    1. **jvspatial server startup** — ``AuthConfig(bootstrap_admin_*)`` runs
+       ``AuthService.bootstrap_admin`` on server start (see
+       ``jvspatial.api.server.Server._bootstrap_admin_startup``). That creates
+       the first admin when the database is empty.
+
+    2. **This function** — Runs during ``pre_startup_bootstrap`` (before
+       ``server.run()``) and during ``jvagent bootstrap`` (no server). It must
+       therefore call ``bootstrap_admin`` when the user table is empty so
+       ``bootstrap`` without ``run`` still creates an admin. When users already
+       exist, it performs **recovery**: if the configured email has no account,
+       creates an admin via ``create_user_with_roles``; if the email exists
+       without the admin role, logs a warning.
+
+    Prefers public auth APIs (``count_users``, ``find_user_by_email``) with
+    fallbacks for older jvspatial pins; uses ``bootstrap_admin`` and
+    ``create_user_with_roles``.
+    """
     logger.debug("Checking for admin user...")
 
     env = load_env()
@@ -148,20 +168,47 @@ async def ensure_admin_user() -> bool:
         return False
 
     auth_service = get_auth_service()
-    user_count = await auth_service._user_count()
+    # count_users / find_user_by_email are public in current jvspatial; fall back for older pins.
+    if hasattr(auth_service, "count_users"):
+        user_count = await auth_service.count_users()
+    else:
+        user_count = await auth_service._user_count()  # type: ignore[attr-defined]
 
     if user_count == 0:
-        return True
+        try:
+            created = await auth_service.bootstrap_admin(
+                email=admin_email,
+                password=admin_password,
+                name=admin_username or admin_email,
+            )
+            if created:
+                logger.info(
+                    "Created admin user (bootstrap): %s (ID: %s)",
+                    admin_email,
+                    created.id,
+                )
+            else:
+                logger.debug(
+                    "bootstrap_admin returned no new user (may be handled by server hook)"
+                )
+            return True
+        except ValueError as e:
+            logger.error("Failed to bootstrap admin user: %s", e)
+            return False
 
-    existing_user = await auth_service._find_user_by_email(admin_email)
+    find_by_email = getattr(
+        auth_service, "find_user_by_email", auth_service._find_user_by_email
+    )
+    existing_user = await find_by_email(admin_email)
     if existing_user:
         roles = getattr(existing_user, "roles", None) or []
         if "admin" in roles:
-            logger.debug(f"Admin user already exists: {admin_email}")
+            logger.debug("Admin user already exists: %s", admin_email)
             return True
         logger.warning(
-            f"User {admin_email} exists but lacks admin role. "
-            "Use admin endpoint to assign admin role."
+            "User %s exists but lacks admin role. "
+            "Use admin endpoint to assign admin role.",
+            admin_email,
         )
         return False
 
@@ -176,18 +223,20 @@ async def ensure_admin_user() -> bool:
             )
         )
         logger.info(
-            f"Created admin user (recovery): {admin_email} (ID: {user_response.id})"
+            "Created admin user (recovery): %s (ID: %s)",
+            admin_email,
+            user_response.id,
         )
         return True
     except ValueError as e:
         if "already exists" in str(e).lower():
-            existing_user = await auth_service._find_user_by_email(admin_email)
+            existing_user = await find_by_email(admin_email)
             if existing_user:
                 roles = getattr(existing_user, "roles", None) or []
                 if "admin" in roles:
                     return True
-        logger.error(f"Failed to create admin user: {e}")
+        logger.error("Failed to create admin user: %s", e)
         return False
     except Exception as e:
-        logger.error(f"Failed to create admin user: {e}", exc_info=True)
+        logger.error("Failed to create admin user: %s", e, exc_info=True)
         return False

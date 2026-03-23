@@ -3,17 +3,19 @@ import importlib.util
 import logging
 import os
 import sys
-import types
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
 
 import yaml
 
 from jvagent.action.base import Action
-from jvagent.action.loader import importer as _importer_module
-from jvagent.action.loader.importer import JvagentActionsImporter
-from jvagent.action.loader.metadata import ActionMetadata, ActionRegistry
 from jvagent.core.env_resolver import resolve_env_placeholders
+
+from . import core_discovery
+from . import importer as _importer_module
+from . import info_yaml, module_loading
+from .importer import JvagentActionsImporter
+from .metadata import ActionMetadata, ActionRegistry
 
 _ACTIONS_PREFIX = _importer_module._ACTIONS_PREFIX
 
@@ -40,60 +42,13 @@ class ActionLoader:
     # ============================================================================
 
     def _has_info_yaml_files(self, path: Path) -> bool:
-        """Check if a directory contains info.yaml files (indicating it's an action directory).
-
-        Args:
-            path: Directory path to check
-
-        Returns:
-            True if info.yaml files are found, False otherwise
-        """
-        return any(
-            info_file.exists()
-            for info_file in path.rglob("info.yaml")
-            if "__pycache__" not in info_file.parts
-            and not any(part.startswith("_") for part in info_file.parts[:-1])
-        )
+        return info_yaml.has_info_yaml_files(path)
 
     def _load_info_yaml(self, info_file: Path) -> Optional[Dict[str, Any]]:
-        """Load and parse info.yaml file with environment variable resolution.
-
-        Args:
-            info_file: Path to info.yaml file
-
-        Returns:
-            Parsed YAML data with resolved environment variables, or None if failed
-        """
-        try:
-            with open(info_file, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-
-            if not data:
-                return None
-
-            # Resolve environment variable placeholders
-            return resolve_env_placeholders(data)
-
-        except Exception as e:
-            logger.debug(f"Error loading info.yaml from {info_file}: {e}")
-            return None
+        return info_yaml.load_info_yaml(info_file)
 
     def _extract_action_name(self, package: Dict[str, Any], action_dir: Path) -> str:
-        """Extract action name from package data.
-
-        Args:
-            package: Package dictionary from info.yaml
-            action_dir: Action directory path (used as fallback)
-
-        Returns:
-            Action name string
-        """
-        package_name = package.get("name", "")
-        if package_name and "/" in package_name:
-            _, action_name = package_name.split("/", 1)
-            return action_name
-        else:
-            return package.get("name", action_dir.name)
+        return info_yaml.extract_action_name(package, action_dir)
 
     def _ensure_dependencies_installed(
         self, data: Dict[str, Any], action_name: str, action_dir: Path
@@ -112,67 +67,6 @@ class ActionLoader:
         except Exception as e:
             logger.warning(f"Error installing dependencies for {action_name}: {e}")
 
-    def _ensure_action_parent_packages(
-        self, module_name: str, action_dir: Path
-    ) -> None:
-        """Ensure parent packages exist in sys.modules with correct __path__ for relative imports.
-
-        Does not rely on JvagentActionsImporter (which may fail in Lambda). Creates namespace
-        packages manually using the same path mapping as the finder.
-
-        Args:
-            module_name: Full module name (e.g., "jvagent.actions.jvagent.iris_ai.jvagent.news_interact_action")
-            action_dir: Directory containing the action (used to derive agents_path)
-        """
-        if not module_name.startswith(_ACTIONS_PREFIX):
-            return
-        rest = module_name[len(_ACTIONS_PREFIX) :]
-        parts = rest.split(".")
-        if len(parts) < 1:
-            return
-        # Derive agents_path: action_dir is .../agents/{agent_ns}/{agent_name}/actions/{action_ns}/{action_name}
-        # Walk up: action_name -> action_ns -> actions -> agent_name -> agent_ns -> agents
-        agents_path = action_dir
-        for _ in range(5):
-            agents_path = agents_path.parent
-        if agents_path.name != "agents":
-            logger.debug(
-                f"Expected 'agents' when walking up from {action_dir}, got {agents_path.name}"
-            )
-            return
-        # jvagent.actions (0 parts)
-        if "jvagent.actions" not in sys.modules:
-            mod = types.ModuleType("jvagent.actions")
-            mod.__path__ = [str(agents_path)]
-            mod.__package__ = "jvagent"
-            sys.modules["jvagent.actions"] = mod
-        # Parents 1..len(parts)-1 (we don't create the full module_name - that's the action we load)
-        for i in range(1, len(parts)):
-            parent_name = _ACTIONS_PREFIX + ".".join(parts[:i])
-            if parent_name in sys.modules:
-                continue
-            if i == 1:
-                dir_path = agents_path / parts[0]
-            elif i == 2:
-                dir_path = agents_path / parts[0] / parts[1] / "actions"
-            elif i == 3:
-                dir_path = agents_path / parts[0] / parts[1] / "actions" / parts[2]
-            else:
-                # Deeper hierarchy (e.g. subpackages under action)
-                dir_path = agents_path / parts[0] / parts[1] / "actions" / parts[2]
-                for j in range(3, i):
-                    dir_path = dir_path / parts[j]
-            if not dir_path.exists() or not dir_path.is_dir():
-                continue
-            mod = types.ModuleType(parent_name)
-            mod.__path__ = [str(dir_path)]
-            mod.__package__ = (
-                "jvagent.actions"
-                if i == 1
-                else _ACTIONS_PREFIX + ".".join(parts[: i - 1])
-            )
-            sys.modules[parent_name] = mod
-
     def _load_action_module(
         self,
         module_name: str,
@@ -180,279 +74,19 @@ class ActionLoader:
         action_name: str,
         archetype: str,
     ) -> Optional[Type[Action]]:
-        """Load an action class from a module or package.
-
-        Tries to load as a package (if __init__.py exists) first, then falls back
-        to loading the module file directly. This ensures endpoints are imported
-        when loading packages.
-
-        Args:
-            module_name: Full module name (e.g., "jvagent.actions.namespace.action_name")
-            action_dir: Directory containing the action
-            action_name: Name of the action (for constructing file paths)
-            archetype: Class name to load
-
-        Returns:
-            Action class if successfully loaded, None otherwise
-        """
-        # Ensure parent packages exist in sys.modules (does not rely on MetaPathFinder)
-        self._ensure_action_parent_packages(module_name, action_dir)
-
-        # Avoid re-loading: module may already be loaded by pre_import_action_modules_for_agents.
-        # Re-execution would re-run @endpoint decorators and cause duplicate route registration.
-        if module_name in sys.modules:
-            existing = sys.modules[module_name]
-            action_class = getattr(existing, archetype, None)
-            if action_class is not None and issubclass(action_class, Action):
-                return action_class
-
-        init_file = action_dir / "__init__.py"
-        module_file = action_dir / f"{action_name}.py"
-
-        # Try loading as package first (if __init__.py exists)
-        # This ensures __init__.py executes, which imports endpoints
-        if init_file.exists():
-            try:
-                spec = importlib.util.spec_from_file_location(
-                    module_name, init_file, submodule_search_locations=[str(action_dir)]
-                )
-
-                if spec is None or spec.loader is None:
-                    logger.debug(f"Could not load spec for package: {init_file}")
-                    # Fall through to try module file
-                else:
-                    package = importlib.util.module_from_spec(spec)
-                    sys.modules[spec.name] = package
-                    try:
-                        spec.loader.exec_module(package)
-                    except (ImportError, NameError, ModuleNotFoundError) as e:
-                        logger.warning(
-                            f"Error importing action package {init_file}: {e}. "
-                            f"This may be due to missing dependencies or import errors."
-                        )
-                        # Fall through to try module file
-                    else:
-                        # Get the action class from the package
-                        # It should be imported in __init__.py
-                        action_class = getattr(package, archetype, None)
-
-                        if action_class is None:
-                            # Try getting from the module file if not in package
-                            if module_file.exists():
-                                module_spec = importlib.util.spec_from_file_location(
-                                    f"{module_name}.{action_name}",
-                                    module_file,
-                                    submodule_search_locations=[str(action_dir)],
-                                )
-                                if module_spec and module_spec.loader:
-                                    module = importlib.util.module_from_spec(
-                                        module_spec
-                                    )
-                                    module_spec.loader.exec_module(module)
-                                    action_class = getattr(module, archetype, None)
-                                    # Also make it available on the package
-                                    if action_class:
-                                        setattr(package, archetype, action_class)
-
-                        if action_class is not None:
-                            # Verify it's a subclass of Action
-                            if not issubclass(action_class, Action):
-                                logger.warning(
-                                    f"Class {archetype} is not a subclass of Action"
-                                )
-                                return None
-                            return action_class
-            except Exception as e:
-                logger.warning(f"Error loading package from {init_file}: {e}")
-                # Fall through to try module file
-
-        # Fall back to loading module file directly
-        if not module_file.exists():
-            return None
-
-        try:
-            spec = importlib.util.spec_from_file_location(
-                module_name, module_file, submodule_search_locations=[str(action_dir)]
-            )
-
-            if spec is None or spec.loader is None:
-                logger.debug(f"Could not load spec for module: {module_file}")
-                return None
-
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[spec.name] = module
-            spec.loader.exec_module(module)
-
-            # Get the action class from the module
-            action_class = getattr(module, archetype, None)
-
-            if action_class is None:
-                logger.warning(f"Class {archetype} not found in module {module_file}")
-                return None
-
-            # Verify it's a subclass of Action
-            if not issubclass(action_class, Action):
-                logger.warning(f"Class {archetype} is not a subclass of Action")
-                return None
-
-            return action_class
-
-        except Exception as e:
-            logger.error(
-                f"Error loading action class from {module_file}: {e}", exc_info=True
-            )
-            return None
+        return module_loading.load_action_module(
+            module_name, action_dir, action_name, archetype, _ACTIONS_PREFIX
+        )
 
     # ============================================================================
     # Core Action Path and Discovery
     # ============================================================================
 
     def _get_core_action_path(self) -> Optional[Path]:
-        """Get the path to the core jvagent action directory.
-
-        Checks both installed package location and development directory.
-        Always re-validates cached path to ensure it still exists (important for app restarts).
-
-        Returns:
-            Path to jvagent/action directory, or None if not found
-        """
-        # Always re-validate cached path to handle app restarts and path changes
-        if self._core_action_path is not None and self._core_action_path.exists():
-            # Verify it's still the right directory by checking for info.yaml files
-            if self._has_info_yaml_files(self._core_action_path):
-                return self._core_action_path
-            else:
-                # Cached path is invalid, reset it
-                self._core_action_path = None
-                self._core_action_cache = None  # Also reset the action cache
-
-        # Try to find via importlib (installed package)
-        try:
-            spec = importlib.util.find_spec("jvagent")
-            if spec and spec.origin:
-                # spec.origin points to __init__.py, get parent directory
-                jvagent_path = Path(spec.origin).parent
-                action_path = jvagent_path / "action"
-                if action_path.exists() and action_path.is_dir():
-                    self._core_action_path = action_path
-                    logger.debug(f"Found core action path (installed): {action_path}")
-                    return action_path
-        except Exception as e:
-            logger.debug(f"Could not find jvagent via importlib: {e}")
-
-        # Try development directory (parent of base_path)
-        dev_paths = [
-            self.base_path.parent / "jvagent" / "action",
-            self.base_path.parent.parent / "jvagent" / "jvagent" / "action",
-            Path(__file__).parent,  # Current file is in jvagent/action/
-        ]
-
-        for dev_path in dev_paths:
-            if dev_path.exists() and dev_path.is_dir():
-                # Verify it's the right directory by checking for info.yaml files
-                if self._has_info_yaml_files(dev_path):
-                    self._core_action_path = dev_path
-                    logger.debug(f"Found core action path (dev): {dev_path}")
-                    return dev_path
-
-        logger.debug("Could not find core action path")
-        return None
+        return core_discovery.get_core_action_path(self)
 
     def _build_core_action_cache(self) -> Dict[str, Dict[str, Any]]:
-        """Dynamically build a cache of core actions by scanning for info.yaml files.
-
-        Scans all subdirectories in the core action path for info.yaml files and
-        builds a mapping from action_name to action metadata.
-
-        Returns:
-            Dictionary mapping action names to action metadata (dir, module_file, class_name, relative_path)
-        """
-        if self._core_action_cache is not None:
-            return self._core_action_cache
-
-        core_path = self._get_core_action_path()
-        if not core_path:
-            self._core_action_cache = {}
-            return self._core_action_cache
-
-        action_cache = {}
-
-        # Recursively scan for info.yaml files
-        for info_file in core_path.rglob("info.yaml"):
-            # Skip if in __pycache__ or hidden directories
-            if "__pycache__" in info_file.parts or any(
-                part.startswith("_") for part in info_file.parts[:-1]
-            ):
-                continue
-
-            # Load info.yaml using helper
-            data = self._load_info_yaml(info_file)
-            if not data:
-                continue
-
-            package = data.get("package", {})
-            if not isinstance(package, dict):
-                continue
-
-            # Extract action name from package.name (format: "jvagent/action_name")
-            full_name = package.get("name", "")
-            if "/" not in full_name:
-                continue
-
-            namespace_part, action_name = full_name.split("/", 1)
-            if namespace_part != "jvagent":
-                continue
-
-            # Get class name from archetype
-            class_name = package.get("archetype", "")
-            if not class_name:
-                continue
-
-            # Get the directory containing the info.yaml
-            action_dir = info_file.parent
-
-            # Determine module file name (look for Python files in the directory)
-            # Prefer base.py if it exists (common pattern), otherwise use first non-__init__.py file
-            module_file = None
-            base_file = action_dir / "base.py"
-            if base_file.exists():
-                module_file = "base"
-            else:
-                for py_file in action_dir.glob("*.py"):
-                    if py_file.name != "__init__.py":
-                        module_file = py_file.stem
-                        break
-
-            # If no Python file found, use directory name as fallback
-            if not module_file:
-                module_file = action_dir.name
-
-            # Build relative path from core_path
-            try:
-                relative_path = action_dir.relative_to(core_path)
-                relative_path_str = str(relative_path).replace("\\", "/")
-            except ValueError:
-                # If relative path can't be computed, use directory name
-                relative_path_str = action_dir.name
-
-            # Store parsed data for reuse in discover_core_action
-            action_cache[action_name] = {
-                "dir": action_dir,
-                "module_file": module_file,
-                "class_name": class_name,
-                "relative_path": relative_path_str,
-                "data": data,  # Store parsed data to avoid re-parsing
-                "info_file": info_file,  # Store path for reference
-            }
-
-            logger.debug(
-                f"Discovered core action: {action_name} -> "
-                f"(dir={action_dir.name}, module={module_file}, class={class_name}, path={relative_path_str})"
-            )
-
-        self._core_action_cache = action_cache
-        logger.debug(f"Built core action cache with {len(action_cache)} actions")
-        return action_cache
+        return core_discovery.build_core_action_cache(self)
 
     def _load_action_metadata_for_deps(
         self, action_ref: str, core_cache: Dict[str, Dict[str, Any]]

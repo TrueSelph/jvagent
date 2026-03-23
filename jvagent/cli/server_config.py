@@ -188,7 +188,9 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         app_config, "auth.api_key_header", "JVAGENT_API_KEY_HEADER", "x-api-key"
     )
 
-    # Bootstrap admin (passed to AuthConfig; jvspatial runs _bootstrap_admin_startup on server start)
+    # Bootstrap admin: jvspatial runs AuthService.bootstrap_admin on server start
+    # (lifecycle hook). jvagent's ensure_admin_user() also calls bootstrap_admin when
+    # count_users()==0 so `jvagent bootstrap` without run still creates an admin.
     _env = load_jvagent_env()
     admin_username = _env.admin_username
     admin_password = _env.admin_password
@@ -346,12 +348,15 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
 
     # Get logging configuration from app.yaml if available
     logging_enabled = get_config_value(
-        app_config, "logging.enabled", "JVAGENT_LOGGING_ENABLED", True
+        app_config, "logging.enabled", "JVSPATIAL_DB_LOGGING_ENABLED", True
     )
     if logging_enabled:
         # Get log levels from app.yaml or environment
         log_levels_str = get_config_value(
-            app_config, "logging.levels", "JVAGENT_DB_LOGGING_LEVELS", "ERROR,CRITICAL"
+            app_config,
+            "logging.levels",
+            "JVSPATIAL_DB_LOGGING_LEVELS",
+            "ERROR,CRITICAL",
         )
         if isinstance(log_levels_str, str):
             log_level_names = [
@@ -376,15 +381,15 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         # Add INTERACTION level to capture interaction logs
         log_levels.add(INTERACTION_LEVEL_NUMBER)
 
-        # Get logging database config from app.yaml
+        # Get logging database config from app.yaml / JVSPATIAL_LOG_DB_*
         log_db_type = get_config_value(
-            app_config, "logging.database.type", "JVAGENT_LOG_DB_TYPE", None
+            app_config, "logging.database.type", "JVSPATIAL_LOG_DB_TYPE", None
         )
         log_db_uri = get_config_value(
-            app_config, "logging.database.uri", "JVAGENT_LOG_DB_URI", None
+            app_config, "logging.database.uri", "JVSPATIAL_LOG_DB_URI", None
         )
         log_db_name = get_config_value(
-            app_config, "logging.database.name", "JVAGENT_LOG_DB_NAME", "jvagent_logs"
+            app_config, "logging.database.name", "JVSPATIAL_LOG_DB_NAME", "jvagent_logs"
         )
 
         # DynamoDB logging database configuration

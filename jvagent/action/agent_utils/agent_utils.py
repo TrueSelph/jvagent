@@ -21,7 +21,7 @@ class AgentUtils(Action):
             List of interaction log contents (dictionaries).
         """
         # Default to jvspatial_logs matching the app structure
-        log_db_name = os.environ.get("JVAGENT_LOG_DB_NAME", "jvagent_logs")
+        log_db_name = os.environ.get("JVSPATIAL_LOG_DB_NAME", "jvagent_logs")
 
         # Resolve to absolute path if it is relative
         # This resolves relative to the current working directory (which is usually the app root)

@@ -21,10 +21,10 @@ Error logging is automatically configured when you run jvagent:
 python -m jvagent serve
 
 # Configure log levels
-JVAGENT_DB_LOGGING_LEVELS=WARNING,ERROR,CRITICAL python -m jvagent serve
+JVSPATIAL_DB_LOGGING_LEVELS=WARNING,ERROR,CRITICAL python -m jvagent serve
 
 # Disable error logging globally
-JVAGENT_LOGGING_ENABLED=false python -m jvagent serve
+JVSPATIAL_DB_LOGGING_ENABLED=false python -m jvagent serve
 ```
 
 ## Configuration
@@ -35,33 +35,33 @@ Configure which log levels to capture (default: ERROR, CRITICAL):
 
 ```bash
 # Capture ERROR and CRITICAL only (default)
-JVAGENT_DB_LOGGING_LEVELS=ERROR,CRITICAL
+JVSPATIAL_DB_LOGGING_LEVELS=ERROR,CRITICAL
 
 # Capture all levels
-JVAGENT_DB_LOGGING_LEVELS=DEBUG,INFO,WARNING,ERROR,CRITICAL
+JVSPATIAL_DB_LOGGING_LEVELS=DEBUG,INFO,WARNING,ERROR,CRITICAL
 
 # Capture warnings and above
-JVAGENT_DB_LOGGING_LEVELS=WARNING,ERROR,CRITICAL
+JVSPATIAL_DB_LOGGING_LEVELS=WARNING,ERROR,CRITICAL
 ```
 
 ### Enable/Disable Logging
 
 ```bash
 # Enable database logging (default)
-JVAGENT_LOGGING_ENABLED=true
+JVSPATIAL_DB_LOGGING_ENABLED=true
 
 # Disable database logging
-JVAGENT_LOGGING_ENABLED=false
+JVSPATIAL_DB_LOGGING_ENABLED=false
 ```
 
 ### API Endpoints
 
 ```bash
-# Enable API endpoints (default)
-JVAGENT_DB_LOGGING_API_ENABLED=true
+# Enable API endpoints (default; jvspatial reads this when initializing logging DB)
+JVSPATIAL_DB_LOGGING_API_ENABLED=true
 
 # Disable API endpoints
-JVAGENT_DB_LOGGING_API_ENABLED=false
+JVSPATIAL_DB_LOGGING_API_ENABLED=false
 ```
 
 ## Usage
@@ -156,14 +156,14 @@ The `DBLogHandler` automatically extracts jvagent-specific context:
 
 ```bash
 # Enable/disable logging globally
-JVAGENT_LOGGING_ENABLED=true
+JVSPATIAL_DB_LOGGING_ENABLED=true
 
 # Logging database configuration
 JVSPATIAL_LOG_DB_TYPE=json
 JVSPATIAL_LOG_DB_PATH=./jvagent_logs
 
-# Minimum log level to persist (ERROR/CRITICAL always logged)
-JVAGENT_LOG_DB_LEVEL=ERROR
+# Comma-separated levels to persist (jvspatial / jvagent; not JVAGENT_DB_LOGGING_LEVELS)
+JVSPATIAL_DB_LOGGING_LEVELS=ERROR,CRITICAL
 ```
 
 ### App-Level Configuration
@@ -324,38 +324,37 @@ logs = await service.get_error_logs(
 ## Environment Variables Reference
 
 ```bash
-# Enable/disable database logging
-JVAGENT_LOGGING_ENABLED=true  # Default: true
-JVAGENT_DB_LOGGING_ENABLED=true  # Alternative name
+# Enable/disable database logging (jvspatial + jvagent)
+JVSPATIAL_DB_LOGGING_ENABLED=true  # Default: true
 
 # Log levels to capture (comma-separated)
-JVAGENT_DB_LOGGING_LEVELS=ERROR,CRITICAL  # Default: ERROR,CRITICAL
+JVSPATIAL_DB_LOGGING_LEVELS=ERROR,CRITICAL  # Default: ERROR,CRITICAL
 # Options: DEBUG,INFO,WARNING,ERROR,CRITICAL
 
-# Enable/disable API endpoints
-JVAGENT_DB_LOGGING_API_ENABLED=true  # Default: true
+# Enable/disable API endpoints (jvspatial)
+JVSPATIAL_DB_LOGGING_API_ENABLED=true  # Default: true
 
-# Log retention (days)
-JVAGENT_LOG_RETENTION_DEFAULT_DAYS=60  # Default: 60
+# Log retention default (days); jvagent app bootstrap + jvspatial load_env
+JVSPATIAL_LOG_RETENTION_DEFAULT_DAYS=60  # Default when env set; else app.yaml / 60
 
 # Database type
-JVAGENT_LOG_DB_TYPE=json  # Default: json
+JVSPATIAL_LOG_DB_TYPE=json  # Default: json
 # Options: json, sqlite, mongodb, dynamodb
 
 # JSON database path
-JVAGENT_LOG_DB_PATH=./jvagent_logs  # Default: ./jvagent_logs
+JVSPATIAL_LOG_DB_PATH=./jvagent_logs  # Default: ./jvagent_logs
 
 # SQLite database path
-JVAGENT_LOG_DB_PATH=./logs/jvagent_logs.db
+JVSPATIAL_LOG_DB_PATH=./logs/jvagent_logs.db
 
 # MongoDB configuration
-JVAGENT_LOG_DB_URI=mongodb://localhost:27017
-JVAGENT_LOG_DB_NAME=jvagent_logs
+JVSPATIAL_LOG_DB_URI=mongodb://localhost:27017
+JVSPATIAL_LOG_DB_NAME=jvagent_logs
 
 # DynamoDB configuration
-JVAGENT_LOG_DB_TABLE_NAME=jvspatial_logs
-JVAGENT_LOG_DB_REGION=us-east-1
-JVAGENT_LOG_DB_ENDPOINT_URL=http://localhost:8000  # For local testing
+JVSPATIAL_LOG_DB_TABLE_NAME=jvspatial_logs
+JVSPATIAL_LOG_DB_REGION=us-east-1
+JVSPATIAL_LOG_DB_ENDPOINT_URL=http://localhost:8000  # For local testing
 ```
 
 ## Best Practices
@@ -375,7 +374,7 @@ JVAGENT_LOG_DB_ENDPOINT_URL=http://localhost:8000  # For local testing
 
 ### Errors Not Being Logged
 
-1. **Check global config**: `JVAGENT_LOGGING_ENABLED=true`
+1. **Check global config**: `JVSPATIAL_DB_LOGGING_ENABLED=true`
 2. **Check app-level config**: `app.logging_enabled == True`
 3. **Check database**: Logging database must be initialized
 4. **Check log level**: Only ERROR/CRITICAL are logged by default
