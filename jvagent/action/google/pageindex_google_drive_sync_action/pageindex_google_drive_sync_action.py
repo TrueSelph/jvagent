@@ -2,14 +2,14 @@ import asyncio
 import logging
 import os
 from typing import Any, Dict, List, Optional
-from jvagent.action.pageindex.documents import assimilate_document
+
 from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.core.annotations import attribute
 from jvspatial.core.context import GraphContext
 from jvspatial.db import get_prime_database
 from jvspatial.exceptions import DatabaseError, ValidationError
 
-from jvagent.action.pageindex.documents import delete_document
+from jvagent.action.pageindex.documents import assimilate_document, delete_document
 
 from ..google_action import GoogleAction
 from .google_drive_documents import GoogleDriveDocuments
@@ -106,6 +106,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         timeout_seconds = self.document_timeout or 60
 
         try:
+
             async def _do_ingest() -> Dict[str, Any]:
                 file_bytes = await google_drive_action.get_media(file_id=file_id)
                 result = await assimilate_document(
@@ -147,12 +148,15 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     else "pending"
                 )
                 await google_drive_documents_node.save()
-                
 
                 return {
                     "success": True,
                     "doc_name": doc_name,
-                    "ingestion_message": f"Added {doc_name}" if doc_type == "added" else f"Updated {doc_name}",
+                    "ingestion_message": (
+                        f"Added {doc_name}"
+                        if doc_type == "added"
+                        else f"Updated {doc_name}"
+                    ),
                 }
             else:
                 raise ValueError("assimilate_document returned no doc_name")
@@ -163,7 +167,9 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 google_drive_documents_node.failed_documents["added"].append(file_info)
             else:
                 docs["modified"].pop(0)
-                google_drive_documents_node.failed_documents["modified"].append(file_info)
+                google_drive_documents_node.failed_documents["modified"].append(
+                    file_info
+                )
             google_drive_documents_node.active_document = ""
             ingesting = google_drive_documents_node.ingesting_documents
             google_drive_documents_node.status = (
@@ -189,7 +195,9 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 google_drive_documents_node.failed_documents["added"].append(file_info)
             else:
                 docs["modified"].pop(0)
-                google_drive_documents_node.failed_documents["modified"].append(file_info)
+                google_drive_documents_node.failed_documents["modified"].append(
+                    file_info
+                )
             google_drive_documents_node.active_document = ""
             ingesting = google_drive_documents_node.ingesting_documents
             google_drive_documents_node.status = (
@@ -206,7 +214,11 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             return {
                 "success": False,
                 "doc_name": doc_name,
-                "ingestion_message": f"Failed to ingest {doc_name}" if doc_type == "added" else f"Failed to update {doc_name}",
+                "ingestion_message": (
+                    f"Failed to ingest {doc_name}"
+                    if doc_type == "added"
+                    else f"Failed to update {doc_name}"
+                ),
             }
         finally:
             # Ensure active_document is always cleared
@@ -353,7 +365,10 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             google_drive_documents_node = await self.node(
                 node="GoogleDriveDocuments", folder_id=google_drive_folder_id
             )
-            if google_drive_documents_node and google_drive_documents_node.active_document:
+            if (
+                google_drive_documents_node
+                and google_drive_documents_node.active_document
+            ):
                 return {
                     "status": "completed",
                     "message": f"Document {google_drive_documents_node.active_document} is currently being processed. Please try again later.",

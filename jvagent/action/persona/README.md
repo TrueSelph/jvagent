@@ -521,6 +521,15 @@ response = await persona.respond(
 # Response is published but not persisted
 ```
 
+### Canned / immediate lead-ins (InteractRouter)
+
+When `InteractRouter` publishes a **canned** acknowledgment (`interaction.canned_response`) with `transient=True`, that text is **not** merged into `interaction.response`. Persona still needs it for continuity so the full reply does not repeat the same greeting or contradict what the user already read.
+
+- **System prompt**: If there is a canned lead-in and no substantive `response` yet, an **IMMEDIATE MESSAGE ALREADY SENT** section is included. If there is already a partial `response` (multi-call), continuation guidance includes both the canned line and the prior assistant content (deduped when `response` already starts with the canned text).
+- **Conversation history**: `Conversation._format_interactions` and Persona’s current-turn tail emit assistant messages in order: optional canned text, then the main `response`. The same shape is used for prior turns when reloading history.
+
+Custom `system_prompt` templates may add `{canned_lead_in_section}` next to `{continuation_guidance}` when they fork the default layout. PersonaAction always supplies this key when formatting; Python ignores unused keys if your template omits the placeholder.
+
 ## Prompt Engineering Details
 
 ### Why This Architecture Works

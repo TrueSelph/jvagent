@@ -18,6 +18,7 @@ from jvagent.action.interact.utils import (
 )
 from jvagent.action.persona.prompts import (
     ACTIVE_TASKS_SECTION_PROMPT,
+    CANNED_LEAD_IN_CONTEXT_PROMPT,
     CHANNEL_OVERRIDE_PREAMBLE,
     CONTINUATION_GUIDANCE_PROMPT,
     DIRECTIVE_COMPLIANCE_CHECK_PROMPT,
@@ -489,23 +490,59 @@ class PersonaAction(Action):
         app = await self.get_app()
         timezone_str = (app.timezone or "UTC") if app else "UTC"
 
-        # Build continuation guidance if in multi-call mode
-        continuation_guidance = ""
-        if interaction.response:
-            from jvagent.memory.conversation import Conversation
+        # Canned lead-in + continuation (multi-call / transient canned before full reply)
+        from jvagent.memory.conversation import Conversation
 
-            previous_response = await Conversation.truncate_statement(
-                interaction.response or "",
-                max_length=2000,
-                keep_last=True,
-                interaction=interaction,
-            )
+        canned_raw = (getattr(interaction, "canned_response", None) or "").strip()
+        response_raw = (interaction.response or "").strip()
+        canned_absorbed_in_response = bool(
+            canned_raw and response_raw and response_raw.startswith(canned_raw)
+        )
+
+        canned_lead_in_section = ""
+        continuation_guidance = ""
+
+        if response_raw:
             user_utterance = await Conversation.truncate_statement(
                 interaction.utterance or "", max_length=500, interaction=interaction
             )
+            if canned_raw and not canned_absorbed_in_response:
+                canned_trunc = await Conversation.truncate_statement(
+                    canned_raw,
+                    max_length=500,
+                    interaction=interaction,
+                )
+                prev_trunc = await Conversation.truncate_statement(
+                    response_raw,
+                    max_length=2000,
+                    keep_last=True,
+                    interaction=interaction,
+                )
+                previous_response = (
+                    "Immediate message (already shown to the user):\n"
+                    f"{canned_trunc or '(No canned text)'}\n\n"
+                    "Further assistant content already sent:\n"
+                    f"{prev_trunc or '(No previous response)'}"
+                )
+            else:
+                previous_response = await Conversation.truncate_statement(
+                    response_raw,
+                    max_length=2000,
+                    keep_last=True,
+                    interaction=interaction,
+                )
             continuation_guidance = CONTINUATION_GUIDANCE_PROMPT.format(
                 previous_response=previous_response or "(No previous response)",
                 user_utterance=user_utterance or "(No user utterance)",
+            )
+        elif canned_raw:
+            canned_trunc = await Conversation.truncate_statement(
+                canned_raw,
+                max_length=500,
+                interaction=interaction,
+            )
+            canned_lead_in_section = CANNED_LEAD_IN_CONTEXT_PROMPT.format(
+                canned_text=canned_trunc or "(No canned text)"
             )
 
         all_capabilities = []
@@ -547,8 +584,6 @@ class PersonaAction(Action):
             has_images = bool(data.get("image_urls"))
             suppressed = data.get("image_interpretation") is False
             if not has_images and not suppressed and interaction.conversation_id:
-                from jvagent.memory.conversation import Conversation
-
                 conversation = await Conversation.get(interaction.conversation_id)
                 if conversation:
                     interactions = await conversation.get_interactions(
@@ -657,6 +692,9 @@ class PersonaAction(Action):
         continuation_guidance = format_conditional_section(
             continuation_guidance, bool(continuation_guidance)
         )
+        canned_lead_in_section = format_conditional_section(
+            canned_lead_in_section, bool(canned_lead_in_section)
+        )
 
         prompt_template = (
             self.system_prompt if self.system_prompt else SYSTEM_PROMPT_TEMPLATE
@@ -672,6 +710,7 @@ class PersonaAction(Action):
             vision_instruction_section=vision_instruction_section,
             interpretation_section=interpretation_section,
             recent_image_context_section=recent_image_context_section,
+            canned_lead_in_section=canned_lead_in_section,
             response_protocol=RESPONSE_PROTOCOL_PROMPT,
             directives_section=directives_section,
             parameters_section=parameters_section,
@@ -724,10 +763,9 @@ class PersonaAction(Action):
     ) -> Optional[List[Dict[str, Any]]]:
         """Get formatted conversation history for the language model.
 
-        Includes previous interactions and the current interaction (if it has a response)
-        as part of the conversation flow. This provides natural multi-call awareness
-        within a single interaction by including the current interaction's existing
-        response in the history.
+        Includes previous interactions and the current interaction when it has a
+        canned lead-in and/or accumulated response, so the model sees the same order
+        the user saw (transient canned message + optional follow-on content).
 
         Args:
             interaction: Current interaction
@@ -769,31 +807,58 @@ class PersonaAction(Action):
                 return content[:max_statement_length] + "..."
             return content
 
-        # Include current interaction's utterance and response in history if present (multi-call awareness)
-        # Important: Add utterance BEFORE response to maintain chronological order
-        if with_utterance and with_response and interaction.response:
-            # Add current utterance first
+        # Current turn tail: user, then canned (if any, deduped), then main response
+        canned_raw = (getattr(interaction, "canned_response", None) or "").strip()
+        response_raw = (interaction.response or "").strip()
+        canned_absorbed = bool(
+            canned_raw and response_raw and response_raw.startswith(canned_raw)
+        )
+        has_canned_only = bool(
+            with_response
+            and canned_raw
+            and not canned_absorbed
+            and not interaction.response
+        )
+        has_response = bool(with_response and interaction.response)
+        has_assistant_tail = has_canned_only or has_response
+
+        if with_utterance and has_assistant_tail:
             history.append(
                 {
                     "role": "user",
-                    "content": _truncate(interaction.utterance),
+                    "content": _truncate(interaction.utterance or ""),
                 }
             )
-            # Then add current response
-            history.append(
-                {
-                    "role": "assistant",
-                    "content": _truncate(interaction.response),
-                }
-            )
-        elif with_response and interaction.response:
-            # Only add response if utterance not requested
-            history.append(
-                {
-                    "role": "assistant",
-                    "content": _truncate(interaction.response),
-                }
-            )
+            if with_response:
+                if canned_raw and not canned_absorbed:
+                    history.append(
+                        {
+                            "role": "assistant",
+                            "content": _truncate(canned_raw),
+                        }
+                    )
+                if interaction.response:
+                    history.append(
+                        {
+                            "role": "assistant",
+                            "content": _truncate(interaction.response),
+                        }
+                    )
+        elif with_response and has_assistant_tail:
+            if canned_raw and not canned_absorbed:
+                history.append(
+                    {
+                        "role": "assistant",
+                        "content": _truncate(canned_raw),
+                    }
+                )
+            if interaction.response:
+                history.append(
+                    {
+                        "role": "assistant",
+                        "content": _truncate(interaction.response),
+                    }
+                )
 
         return history if history else []
 

@@ -491,17 +491,36 @@ class Conversation(DeferredSaveMixin, Node):
                     }
                 )
 
-            # Add assistant response (if present and requested) - truncated if max_statement_length is set
-            if with_response and interaction.response:
-                truncated_response = await Conversation.truncate_statement(
-                    interaction.response, max_statement_length, interaction=interaction
-                )
-                history.append(
-                    {
-                        "role": "assistant",
-                        "content": truncated_response,
-                    }
-                )
+            # Add assistant: optional transient canned lead-in, then main response
+            if with_response:
+                canned_str = (
+                    getattr(interaction, "canned_response", None) or ""
+                ).strip()
+                response_str = (interaction.response or "").strip()
+                if canned_str and not (
+                    response_str and response_str.startswith(canned_str)
+                ):
+                    truncated_canned = await Conversation.truncate_statement(
+                        canned_str, max_statement_length, interaction=interaction
+                    )
+                    history.append(
+                        {
+                            "role": "assistant",
+                            "content": truncated_canned,
+                        }
+                    )
+                if interaction.response:
+                    truncated_response = await Conversation.truncate_statement(
+                        interaction.response,
+                        max_statement_length,
+                        interaction=interaction,
+                    )
+                    history.append(
+                        {
+                            "role": "assistant",
+                            "content": truncated_response,
+                        }
+                    )
 
             # Add events as system messages (if present and requested)
             # Note: events are not truncated
