@@ -169,3 +169,7 @@ config:
 ```
 
 Never put real secret values in app.yaml — use placeholders and set the actual values in .env or deploy injection.
+
+## Related documentation
+
+- [scaffolding.md](scaffolding.md) — CLI to generate new apps (`jvagent app create`), add agents (`jvagent agent create`), and author action profiles under `profiles/`.

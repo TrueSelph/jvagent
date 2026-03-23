@@ -1,5 +1,6 @@
 """CLI command handlers for jvagent."""
 
+import argparse
 import asyncio
 import logging
 import os
@@ -108,14 +109,19 @@ jvagent - Agentive Platform
                                   Discovers action dependencies from info.yaml files
                                   App root can be specified before or after 'bundle' command
                                   Defaults to current working directory if not specified
+    jvagent [<app_root>] agent create [SPEC] [--profile NAME] [--action ID]... [--force]
+                                  Scaffold agents/<ns>/<id>/ and register in app.yaml
+                                  SPEC: namespace/agent or namespace/agent@profile
     jvagent [<app_root>] agent list         List all installed agents
     jvagent [<app_root>] agent uninstall <name>    Uninstall an agent
+    jvagent app create [--dir PATH] [--app-id ID] ...   Scaffold a new application tree
+    jvagent app profile new <name> [--extends PROFILE]   Add profiles/<name>.yaml (from app root)
     jvagent [<app_root>] action list <agent_name>  List actions for an agent
     jvagent [<app_root>] action enable <agent_name> <action_id>   Enable an action
     jvagent [<app_root>] action disable <agent_name> <action_id>  Disable an action
 
 Note: Agents are installed automatically from app.yaml when you run jvagent or bootstrap.
-      There is no direct agent installation command - agents must be defined in app.yaml.
+      Use `jvagent app create` or `jvagent agent create` to scaffold YAML, then bootstrap.
 
 Arguments:
     <app_root>                Path to the app root directory (default: current directory)
@@ -149,6 +155,9 @@ Examples:
     jvagent /path/to/my_app bundle             # Generate Dockerfile in app directory
     jvagent bundle /path/to/my_app             # Generate Dockerfile (path after command)
     jvagent bundle                             # Generate Dockerfile in current directory
+    jvagent app create --yes --dir ./my_app --app-id my_app --title T --description D --author A --agent jvagent/bot@minimal
+    jvagent agent create acme/bot@conversational
+    jvagent app profile new my_profile --extends minimal
     """
     )
 
@@ -407,6 +416,70 @@ async def bootstrap_only(
         root_logger.removeHandler(log_counter)
 
 
+def _handle_agent_create_command(args: List[str], app_root: str = None) -> None:
+    """Scaffold a new agent directory and register it in app.yaml."""
+    if app_root is None:
+        app_root = os.getcwd()
+
+    parser = argparse.ArgumentParser(prog="jvagent agent create")
+    parser.add_argument(
+        "spec",
+        nargs="?",
+        help="namespace/agent_id or namespace/agent_id@profile",
+    )
+    parser.add_argument(
+        "--profile",
+        default="minimal",
+        help="Profile when spec has no @profile (default: minimal)",
+    )
+    parser.add_argument(
+        "--action",
+        action="append",
+        dest="actions",
+        default=[],
+        help="Extra action id (repeatable)",
+    )
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--version", default="1.0.0")
+    parser.add_argument("--author", default=None)
+    parser.add_argument("--jvagent-version", default=None, dest="jvagent_spec")
+
+    ns = parser.parse_args(args)
+    spec = ns.spec
+    if not spec:
+        if sys.stdin.isatty():
+            spec = input("Agent (namespace/agent or namespace/agent@profile): ").strip()
+        if not spec:
+            parser.error("agent spec is required")
+
+    from jvagent import __version__ as jvagent_version
+    from jvagent.scaffold.operations import CreateAgentContext, create_agent_in_app
+
+    jv_spec = ns.jvagent_spec or f"~{jvagent_version}"
+
+    try:
+        create_agent_in_app(
+            CreateAgentContext(
+                app_root=Path(app_root),
+                agent_spec=spec,
+                default_profile=ns.profile,
+                extra_action_flags=list(ns.actions or []),
+                force=ns.force,
+                author=ns.author,
+                version=ns.version,
+                jvagent_spec=jv_spec,
+            )
+        )
+    except (FileExistsError, FileNotFoundError, ValueError) as e:
+        logger.error("%s", e)
+        sys.exit(1)
+
+    print(f"\nAgent scaffolded under {app_root}/agents/")
+    print(
+        "Run: jvagent bootstrap --update   (or jvagent --update) to load the new agent."
+    )
+
+
 def handle_bundle_command(args: List[str], app_root: str = None) -> None:
     """Handle bundle command - generates Dockerfile in app directory.
 
@@ -451,10 +524,10 @@ def handle_bundle_command(args: List[str], app_root: str = None) -> None:
 
 
 def handle_agent_command(args: List[str], app_root: str = None) -> None:
-    """Handle agent management commands.
+    """Handle agent management commands (create, list, uninstall).
 
-    Note: Agents are installed automatically from app.yaml when running jvagent or bootstrap.
-    This command is for listing and uninstalling existing agents only.
+    Agents are loaded from ``app.yaml`` on bootstrap/run. Use ``agent create`` to scaffold
+    YAML under ``agents/`` and register the agent, then ``bootstrap --update``.
 
     Args:
         args: Command arguments
@@ -465,7 +538,7 @@ def handle_agent_command(args: List[str], app_root: str = None) -> None:
 
     if not args:
         print("Usage: jvagent agent <command>")
-        print("Commands: list, uninstall")
+        print("Commands: create, list, uninstall")
         print("\nNote: Agents are installed automatically from app.yaml.")
         print(
             "      To install agents, add them to app.yaml and run 'jvagent' or 'jvagent bootstrap'."
@@ -473,6 +546,10 @@ def handle_agent_command(args: List[str], app_root: str = None) -> None:
         return
 
     command = args[0]
+
+    if command == "create":
+        _handle_agent_create_command(args[1:], app_root=app_root)
+        return
 
     _set_db_env_from_config(app_root)
 
@@ -493,7 +570,7 @@ def handle_agent_command(args: List[str], app_root: str = None) -> None:
         asyncio.run(uninstall_agent(namespace, agent_name, app_root=app_root))
     else:
         print(f"Unknown agent command: {command}")
-        print("Available commands: list, uninstall")
+        print("Available commands: create, list, uninstall")
         print("\nNote: Agents are installed automatically from app.yaml.")
         print(
             "      To install agents, add them to app.yaml and run 'jvagent' or 'jvagent bootstrap'."
