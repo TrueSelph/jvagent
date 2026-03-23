@@ -173,7 +173,6 @@ module = [
     "jvagent.action.loader.action_loader",
     "jvagent.action.endpoints",
     "jvagent.action.interact.*",
-    "jvagent.action.user_model.*",
     "jvagent.action.retrieval.*",
     "jvagent.action.intro.*",
     "jvagent.action.mcp.*",

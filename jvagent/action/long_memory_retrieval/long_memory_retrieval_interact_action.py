@@ -164,7 +164,7 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
         default=None,
         description="Optional key-value filter to narrow search by document metadata. "
         "Supports dynamic placeholders: {user_id}, {session_id}, {agent_id}, or any interaction attribute. "
-        "Example: {'user_id': '{user_id}', 'type': 'user_model'} filters to documents with matching user_id and type.",
+        "Example: {'user_id': '{user_id}', 'type': 'long_memory'} filters to documents with matching user_id and type.",
     )
 
     async def on_register(self) -> None:
