@@ -48,6 +48,8 @@ Generate a natural, human-like response executing all directives naturally withi
 
 {recent_image_context_section}
 
+{canned_lead_in_section}
+
 {continuation_guidance}
 
 {response_protocol}
@@ -107,6 +109,21 @@ The user has attached image(s) to their message. You MUST view and analyze them 
 Do NOT claim you cannot view images—you can and must. Respond to what you see in the images."""
 
 # ============================================================================
+# Canned / immediate lead-in (user already saw a short message)
+# ============================================================================
+
+CANNED_LEAD_IN_CONTEXT_PROMPT = """### IMMEDIATE MESSAGE ALREADY SENT
+
+The user already received this brief message from you (same turn, before your full reply):
+```
+{canned_text}
+```
+
+**Guidelines:**
+- Continue naturally from that lead-in—deliver the substantive answer without repeating the same acknowledgment or greeting unless a directive requires it.
+- Write as the next part of the same assistant turn from the user's perspective; do not say you are sending a second message."""
+
+# ============================================================================
 # Continuation Guidance (Multi-Call Scenarios)
 # ============================================================================
 
@@ -130,6 +147,7 @@ Extending your previous response (NOT a new message) based on new directives/par
 - Match previous tone, style, and structure; maintain format (bullets/lists if used)
 - Add only new information; if already covered, briefly acknowledge ("As mentioned,") and add what's new
 - Write as one continuous message; never mention "continuing", "adding to", or "expanding on"
+- If the previous content includes an immediate lead-in the user already saw, treat the whole block as what they have read; continue without duplicating that lead-in
 """
 
 # ============================================================================
