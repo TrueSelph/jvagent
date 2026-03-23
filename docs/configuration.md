@@ -10,6 +10,12 @@ This document maps `app.yaml` config paths to environment variables and document
 - **.env**: Secrets and local overrides. Copy from `.env.example` and fill in values.
 - **deploy.yaml**: For jvdeploy (Lambda/K8s). Injects env vars at deploy time. Use Secrets Manager or CI/CD for secrets.
 
+### Environment loading and jvspatial cache
+
+- **Editing `.env` on disk** does not affect a **running** server until you **restart** the process (or add your own hot-reload). jvagent loads the app `.env` at CLI startup via `load_app_env`.
+- **jvagent** `jvagent.env.load_env()` reads `os.environ` on every call — it is **not** cached.
+- **jvspatial** `jvspatial.env.load_env()` snapshots environment variables in an **LRU-cached** `EnvConfig`. After changing `os.environ`, code that relies on jvspatial’s `load_env()` must call **`jvspatial.env.clear_load_env_cache()`** so the next read sees updates (jvagent does this after loading `.env`, after applying DB env from config, and before initializing the logging database).
+
 ## Config Mapping Reference
 
 ### Server
@@ -136,7 +142,9 @@ DB name resolution when `JVAGENT_PAGEINDEX_DB_NAME` is unset: `{app_id}_pageinde
 | `config.performance.enable_interact_router_cache` | `JVAGENT_ENABLE_INTERACT_ROUTER_CACHE` | false |
 | `config.performance.interact_router_cache_ttl` | `JVAGENT_INTERACT_ROUTER_CACHE_TTL` | 45 |
 
-**Deferred saves and serverless:** Even when `JVSPATIAL_ENABLE_DEFERRED_SAVES` is true, jvspatial disables deferred batching whenever `is_serverless_mode()` is true (Lambda, `SERVERLESS_MODE=true`, etc.). `DeferredSaveMixin` turns batching on at instance construction when allowed; apps do not need to call `enable_deferred_saves()` for that. Use `flush_deferred_entities` from jvspatial (or `await entity.flush()`) at the end of a request.
+**Deferred saves (effective value):** jvspatial’s `load_env()` resolves the flag with precedence: **process environment** (non-empty `JVSPATIAL_ENABLE_DEFERRED_SAVES`) **>** `.env` on disk (walking up from cwd) **>** `config.performance.enable_deferred_saves` in the **first** `app.yaml` found on that walk **>** default `true`. Booleans accept `true`/`false`, `1`/`0`, `yes`/`no`, `on`/`off`. `load_env()` is cached; jvagent’s `create_server_from_config` calls `clear_load_env_cache()` before returning so `JVSPATIAL_*` mutations apply.
+
+**Deferred saves and serverless:** Even when the resolved flag is on, jvspatial disables deferred batching whenever `is_serverless_mode()` is true (Lambda, `SERVERLESS_MODE=true`, etc.). `DeferredSaveMixin` turns batching on at instance construction when allowed; apps do not need to call `enable_deferred_saves()` for that. Use `flush_deferred_entities` from jvspatial (or `await entity.flush()`) at the end of a request.
 
 ### Action runtime pip installs
 

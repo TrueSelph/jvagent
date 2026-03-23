@@ -173,7 +173,8 @@ def resolve_db_path(
 ) -> str:
     """Resolve database path from config and environment.
 
-    Priority: env (JVSPATIAL_DB_PATH or JVSPATIAL_JSONDB_PATH) > config database.path > default.
+    Priority: env JVSPATIAL_DB_PATH > JVSPATIAL_JSONDB_PATH > config database.path
+    (with JVSPATIAL_DB_PATH env in get_config_value) > default.
     Relative paths are resolved against app_root.
 
     Args:
@@ -184,10 +185,16 @@ def resolve_db_path(
     Returns:
         Resolved absolute database path for json; for other types returns the path/uri as-is
     """
-    db_path = os.getenv("JVSPATIAL_DB_PATH") or get_config_value(
-        config, "database.path", "JVSPATIAL_DB_PATH", "./jvagent_db"
-    )
-    db_path = normalize_empty(db_path) or "./jvagent_db"
+    db_path = normalize_empty(os.getenv("JVSPATIAL_DB_PATH"))
+    if not db_path:
+        db_path = normalize_empty(os.getenv("JVSPATIAL_JSONDB_PATH"))
+    if not db_path:
+        db_path = normalize_empty(
+            get_config_value(
+                config, "database.path", "JVSPATIAL_DB_PATH", "./jvagent_db"
+            )
+        )
+    db_path = db_path or "./jvagent_db"
 
     app_root_path = Path(app_root).resolve()
     db_path_obj = Path(db_path)
@@ -220,6 +227,111 @@ def resolve_log_db_path(app_root: str, config: dict) -> Optional[str]:
     if not log_path_obj.is_absolute():
         return str(app_root_path / log_db_path)
     return log_db_path
+
+
+def load_app_yaml_app_id(app_root: str) -> Optional[str]:
+    """Read top-level ``app:`` identifier from app.yaml (same as AppDescriptor.app_id)."""
+    try:
+        app_yaml_path = Path(app_root) / "app.yaml"
+        if not app_yaml_path.exists():
+            return None
+        import yaml
+
+        with open(app_yaml_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        if not data:
+            return None
+        app = data.get("app")
+        if isinstance(app, str) and app.strip():
+            return app.strip()
+        return None
+    except Exception as e:
+        logger.debug("Could not read app id from app.yaml: %s", e)
+        return None
+
+
+def _resolve_path_under_app_root(app_root: str, path_str: str) -> str:
+    """Resolve path_str relative to app_root when not absolute."""
+    app_root_path = Path(app_root).resolve()
+    p = Path(path_str)
+    if p.is_absolute():
+        return str(p)
+    return str(app_root_path / path_str)
+
+
+def resolve_pageindex_db_name(app_root: str, app_config: dict) -> str:
+    """Resolve PageIndex database name (mirrors jvagent.action.pageindex.config logic)."""
+    explicit = normalize_empty(os.getenv("JVAGENT_PAGEINDEX_DB_NAME"))
+    if explicit:
+        return explicit
+
+    app_id = normalize_empty(os.getenv("JVAGENT_APP_ID")) or load_app_yaml_app_id(
+        app_root
+    )
+    if app_id:
+        sanitized = "".join(c for c in app_id if c.isalnum() or c == "_") or "app"
+        return f"{sanitized}_pageindex_db"
+
+    yaml_name = normalize_empty(
+        get_config_value(app_config, "pageindex.db_name", None, None)
+    )
+    return yaml_name or "pageindex_db"
+
+
+def resolve_pageindex_purge_path(app_root: str, app_config: dict) -> Optional[str]:
+    """Absolute filesystem path to purge for PageIndex when using json or sqlite.
+
+    Returns None for mongodb, dynamodb, or unknown types (no local tree to remove).
+
+    Relative ``config.pageindex.db_root`` / ``JVAGENT_PAGEINDEX_DB_ROOT`` are resolved
+    against ``app_root`` (consistent with other jvagent app data paths).
+    """
+    db_type = (
+        normalize_empty(
+            get_config_value(
+                app_config, "pageindex.db_type", "JVAGENT_PAGEINDEX_DB_TYPE", "json"
+            )
+        )
+        or "json"
+    )
+    if db_type not in ("json", "sqlite"):
+        return None
+
+    explicit = normalize_empty(os.getenv("JVAGENT_PAGEINDEX_DB_PATH"))
+    if explicit:
+        return _resolve_path_under_app_root(app_root, explicit)
+
+    db_name = resolve_pageindex_db_name(app_root, app_config)
+    root_raw = (
+        normalize_empty(
+            get_config_value(
+                app_config, "pageindex.db_root", "JVAGENT_PAGEINDEX_DB_ROOT", "."
+            )
+        )
+        or "."
+    )
+    root_resolved = _resolve_path_under_app_root(app_root, root_raw)
+
+    if db_type == "json":
+        return str(Path(root_resolved) / db_name)
+    return str(Path(root_resolved) / db_name / "sqlite" / "pageindex.db")
+
+
+def effective_log_db_type(app_config: dict) -> str:
+    """Effective logging DB type: explicit log type, else main app database.type."""
+    log_t = normalize_empty(
+        get_config_value(
+            app_config, "logging.database.type", "JVSPATIAL_LOG_DB_TYPE", None
+        )
+    )
+    if log_t:
+        return log_t
+    return (
+        normalize_empty(
+            get_config_value(app_config, "database.type", "JVSPATIAL_DB_TYPE", "json")
+        )
+        or "json"
+    )
 
 
 def get_file_storage_config(app_root: str, config: dict) -> dict:
@@ -303,7 +415,12 @@ def get_performance_config_value(
     env_value = os.getenv(env_var)
     if env_value is not None:
         if config_type == bool:
-            return env_value.lower() == "true"
+            sl = str(env_value).strip().lower()
+            if sl in ("true", "1", "yes", "on"):
+                return True
+            if sl in ("false", "0", "no", "off"):
+                return False
+            return default
         if config_type == int:
             return int(env_value)
         if config_type == float:

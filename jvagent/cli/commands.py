@@ -7,7 +7,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Set
 
 from dotenv import load_dotenv
 from jvspatial import is_serverless_mode
@@ -20,11 +20,14 @@ from jvagent.cli.server_config import (
 )
 from jvagent.core.bootstrap_logger import BootstrapLogger
 from jvagent.core.config import (
+    effective_log_db_type,
     get_config_value,
     is_development_mode,
     load_app_config,
+    normalize_empty,
     resolve_db_path,
     resolve_log_db_path,
+    resolve_pageindex_purge_path,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,11 +55,28 @@ def load_app_env(app_root: str = None) -> None:
         logger.debug(f"No .env in app root: {app_root}")
 
 
-def purge_app_data(app_root: str) -> None:
-    """Purge application data (database and logs).
+def _remove_fs_target(path: Path) -> None:
+    """Remove a local database path (directory tree or single file)."""
+    if not path.exists():
+        logger.debug("Path not found (skipping): %s", path)
+        return
+    try:
+        if path.is_dir():
+            shutil.rmtree(path)
+            logger.info("Deleted directory: %s", path)
+        elif path.is_file():
+            path.unlink()
+            logger.info("Deleted file: %s", path)
+    except Exception as e:
+        logger.error("Failed to delete %s: %s", path, e)
 
-    Reads database configuration from app.yaml and environment variables to determine
-    the actual paths to purge. Resolves relative paths relative to app_root.
+
+def purge_app_data(app_root: str) -> None:
+    """Purge local application data (JSON/SQLite stores only).
+
+    Reads database configuration from app.yaml and environment variables.
+    Remote backends (MongoDB, DynamoDB) are not modified; a warning is logged.
+    Resolves relative paths relative to app_root.
 
     Args:
         app_root: Path to the app root directory.
@@ -65,27 +85,60 @@ def purge_app_data(app_root: str) -> None:
         app_root = os.getcwd()
 
     app_config = load_app_config(app_root)
-    db_type = get_config_value(app_config, "database.type", "JVSPATIAL_DB_TYPE", "json")
-    db_path = resolve_db_path(app_root, app_config, db_type)
-    log_db_path = resolve_log_db_path(app_root, app_config)
+    db_type = (
+        normalize_empty(
+            get_config_value(app_config, "database.type", "JVSPATIAL_DB_TYPE", "json")
+        )
+        or "json"
+    )
+    db_path_str = resolve_db_path(app_root, app_config, db_type)
+    log_type = effective_log_db_type(app_config)
+    log_db_path_str = resolve_log_db_path(app_root, app_config)
+    pageindex_path_str = resolve_pageindex_purge_path(app_root, app_config)
 
-    paths_to_purge = []
-    if db_path:
-        paths_to_purge.append(Path(db_path).resolve())
-    if log_db_path:
-        paths_to_purge.append(Path(log_db_path).resolve())
+    paths_to_purge: Set[Path] = set()
 
-    logger.warning(f"Purging application data from {app_root}...")
+    if db_type in ("json", "sqlite"):
+        paths_to_purge.add(Path(db_path_str).resolve())
+    else:
+        logger.warning(
+            "App database type is %s; --purge does not remove remote data. "
+            "Skipping app database path.",
+            db_type,
+        )
 
-    for dir_path in paths_to_purge:
-        if dir_path.exists():
-            try:
-                shutil.rmtree(dir_path)
-                logger.info(f"Deleted directory: {dir_path}")
-            except Exception as e:
-                logger.error(f"Failed to delete {dir_path}: {e}")
-        else:
-            logger.debug(f"Directory not found (skipping): {dir_path}")
+    if log_type in ("json", "sqlite"):
+        if log_db_path_str:
+            paths_to_purge.add(Path(log_db_path_str).resolve())
+    else:
+        logger.warning(
+            "Logging database type is %s; --purge does not remove remote log data. "
+            "Skipping logging database path.",
+            log_type,
+        )
+
+    if pageindex_path_str:
+        paths_to_purge.add(Path(pageindex_path_str).resolve())
+    else:
+        pi_type = (
+            normalize_empty(
+                get_config_value(
+                    app_config, "pageindex.db_type", "JVAGENT_PAGEINDEX_DB_TYPE", "json"
+                )
+            )
+            or "json"
+        )
+        if pi_type not in ("json", "sqlite"):
+            logger.warning(
+                "PageIndex database type is %s; --purge does not remove remote data. "
+                "Skipping PageIndex storage.",
+                pi_type,
+            )
+
+    logger.warning("Purging local application data under %s...", app_root)
+
+    for target in sorted(paths_to_purge, key=lambda p: str(p)):
+        _remove_fs_target(target)
 
     logger.info("Purge complete.")
 
@@ -133,7 +186,7 @@ Flags:
     --update --source          Destructive update: fully overwrite database state from source YAML files.
                                 Deletes and recreates action nodes (child nodes are lost).
     --update --merge           Explicit non-destructive merge (same as --update alone).
-    --purge                    Delete existing database and logs before starting (development mode only)
+    --purge                    Delete local app, logging, and PageIndex stores (json/sqlite only; development mode)
     --debug                    Enable debug logging (verbose output for troubleshooting)
     --serverless              Simulate serverless execution environment (single-threaded, no background tasks)
 
