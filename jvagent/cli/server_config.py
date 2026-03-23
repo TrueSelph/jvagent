@@ -11,6 +11,7 @@ from jvspatial.api.config_groups import (
     DatabaseConfig,
     FileStorageConfig,
 )
+from jvspatial.env import clear_load_env_cache
 
 from jvagent import __version__
 from jvagent.cli.bootstrap import bootstrap_application_graph, ensure_admin_user
@@ -452,6 +453,9 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
             if log_dynamodb_secret_access_key:
                 os.environ["AWS_SECRET_ACCESS_KEY"] = log_dynamodb_secret_access_key
 
+        # get_logging_config uses cached jvspatial load_env(); refresh after os.environ updates
+        clear_load_env_cache()
+
         # Initialize with updated log_levels
         initialize_logging_database(
             log_levels=log_levels,
@@ -464,6 +468,9 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     # sync_endpoint_modules handles uvicorn --reload double-load. Action-specific
     # endpoints (interact, pageindex, whatsapp, etc.) load via pre_import_action_modules_for_agents.
     _import_core_endpoint_modules()
+
+    # jvspatial load_env() is LRU-cached; refresh after any JVSPATIAL_* os.environ updates above
+    clear_load_env_cache()
 
     return server
 

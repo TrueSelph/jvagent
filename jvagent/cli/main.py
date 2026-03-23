@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 
+from jvspatial.env import clear_load_env_cache
 from jvspatial.logging import configure_standard_logging
 
 from jvagent.cli import app_commands
@@ -66,6 +67,8 @@ def main() -> None:
 
     # Load .env first so JVAGENT_APP_ID and other vars override app.yaml before any other code runs
     load_app_env(app_root=app_root)
+    # jvspatial load_env() is cached; invalidate so JVSPATIAL_* from .env (e.g. log DB path) apply
+    clear_load_env_cache()
 
     # Set the global app root for config loading in other modules
     from jvagent.core.app_context import set_app_root
@@ -89,6 +92,8 @@ def main() -> None:
         )
 
     _set_db_env_from_config(app_root)
+    # jvspatial load_env() is LRU-cached; refresh after DB env vars are applied
+    clear_load_env_cache()
 
     # Check for --debug flag
     debug_flag = "--debug" in args
