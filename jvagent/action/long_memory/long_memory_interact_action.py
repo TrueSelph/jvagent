@@ -264,6 +264,7 @@ class UserLongMemoryInteractAction(InteractAction):
                 updates = json.loads(response_clean)
             else:
                 updates = raw_response
+
         except json.JSONDecodeError as e:
             logger.error(f"UserLongMemoryAction: Failed to parse JSON response: {e}")
             return
@@ -280,13 +281,29 @@ class UserLongMemoryInteractAction(InteractAction):
 
         # ── Write each category into its graph node ───────────────────────────
         any_changed = False
-        for category, new_content in updates.items():
+        for category, data in updates.items():
             if category.startswith("_"):
                 continue  # skip internal sentinels
-            if not isinstance(new_content, str) or not new_content.strip():
+
+            # Handle both old string format and new dict format for backward compatibility
+            if isinstance(data, dict):
+                new_content = data.get("content", "")
+                new_keywords = data.get("keywords", [])
+            else:
+                new_content = str(data)
+                new_keywords = []
+
+            if not new_content.strip():
                 continue
 
             category_node = await user_long_memory.get_or_create_category(category)
+
+            # Update keywords if provided and changed
+            if isinstance(new_keywords, list) and new_keywords != getattr(category_node, "keywords", []):
+                category_node.keywords = new_keywords
+                any_changed = True
+                await category_node.save()
+
             changed = await category_node.update_content(new_content)
             if changed:
                 logger.info(

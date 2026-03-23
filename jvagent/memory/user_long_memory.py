@@ -90,6 +90,10 @@ class UserLongMemoryNode(Node):
         default=False,
         description="Flag denoting if the content is recently updated and needs PageIndex assimilation",
     )
+    keywords: List[str] = attribute(
+        default_factory=list,
+        description="List of key terms or topics extracted from the content for quick indexing",
+    )
 
     def is_empty(self) -> bool:
         """Return True if this category node has no content yet."""

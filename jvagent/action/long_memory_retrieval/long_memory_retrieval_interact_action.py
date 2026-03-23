@@ -13,6 +13,7 @@ from jvspatial.core.annotations import attribute
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.model.context import get_interaction, set_interaction
+from jvagent.memory.user_long_memory import UserLongMemory
 from jvagent.action.pageindex.config import (
     initialize_pageindex_database,
     set_pageindex_doc_description,
@@ -28,7 +29,7 @@ from jvagent.action.pageindex.pageindex_retrieval_interact_action import (
 )
 from jvagent.action.pageindex.retrieval import search_documents
 
-from .prompts import DIRECTIVE_TEMPLATE
+from .prompts import DIRECTIVE_TEMPLATE, SEARCH_DECISION_PROMPT
 
 if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
@@ -121,9 +122,18 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
         description="Number of search results to retrieve",
         ge=1,
     )
+    history_limit: int = attribute(
+        default=3,
+        description="Number of recent history to retrieve",
+        ge=1,
+    )
     weight: int = attribute(
         default=-75,
         description="Execution weight (runs after InteractRouter)",
+    )
+    always_execute: bool = attribute(
+        default=True,
+        description="Always execute to allow autonomous decision making",
     )
     directive: str = attribute(
         default=DIRECTIVE_TEMPLATE,
@@ -166,6 +176,10 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
         "Supports dynamic placeholders: {user_id}, {session_id}, {agent_id}, or any interaction attribute. "
         "Example: {'user_id': '{user_id}', 'type': 'long_memory'} filters to documents with matching user_id and type.",
     )
+    point_of_interest: Optional[str] = attribute(
+        default=None,
+        description="A specific topic or category this action should focus on for retrieval.",
+    )
 
     async def on_register(self) -> None:
         """Register the action with the agent."""
@@ -200,9 +214,27 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
             if model_action:
                 set_pageindex_model_action(model_action)
 
-            query = self._get_search_query(interaction)
+            # --- Autonomous Decision Making ---
+            decision_result = await self._evaluate_search_need(visitor, model_action)
+            decision = decision_result.get("decision", "CONTINUE")
+
+            if decision == "CONTINUE":
+                logger.debug("UserLongMemoryRetrieval: Decision is CONTINUE, skipping search")
+                return
+
+            if decision == "CLARIFY":
+                question = decision_result.get("question")
+                if question:
+                    await self.publish(visitor, content=question)
+                    # Add as event and terminate walk for this interaction
+                    await visitor.add_event(f"Clarification requested: {question}")
+                    await visitor.set_walk_path([])
+                    return
+
+            # If SEARCH, use the query from LLM if provided, else fallback to default
+            query = decision_result.get("query") or self._get_search_query(interaction)
             if not query:
-                logger.debug("PageIndexRetrievalInteractAction: No query")
+                logger.debug("UserLongMemoryRetrieval: No query available for SEARCH")
                 return
 
             initialize_pageindex_database()
@@ -276,3 +308,77 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
             prefix = f"[{doc}] {title}: " if doc or title else ""
             parts.append(f"- {prefix}{content}")
         return self.directive.format(results="\n".join(parts))
+
+    async def _get_recent_history(self, visitor: "InteractWalker") -> str:
+        """Get recent conversation history for context using the Conversation API."""
+        interaction = visitor.interaction
+        if not interaction.conversation_id:
+            return "No history available."
+
+        from jvagent.memory.conversation import Conversation
+
+        conversation = await Conversation.get(interaction.conversation_id)
+        if not conversation:
+            return "No history available."
+
+        # Get formatted history (role/content pairs)
+        history = await conversation.get_interaction_history(
+            limit=self.history_limit,
+            excluded=interaction.id,
+            with_utterance=True,
+            with_response=True,
+            formatted=True,
+        )
+
+        history_lines = []
+        for msg in history:
+            role = "User" if msg["role"] == "user" else "AI"
+            history_lines.append(f"{role}: {msg['content']}")
+
+        formatted_history = "\n".join(history_lines) if history_lines else "No history available."
+
+        return formatted_history
+
+    async def _evaluate_search_need(
+        self, visitor: "InteractWalker", model_action: Any
+    ) -> Dict[str, Any]:
+        """Use LLM to decide if search is needed based on memory categories."""
+        interaction = visitor.interaction
+        user = await interaction.get_user()
+        if not user:
+            return {"decision": "CONTINUE"}
+
+        user_long_memory = await UserLongMemory.get_for_user(user)
+        if not user_long_memory:
+            return {"decision": "CONTINUE"}
+
+        categories = await user_long_memory.get_all_categories()
+        index_parts = []
+        for c in categories:
+            if c.is_empty():
+                continue
+            keywords_str = ", ".join(c.keywords) if getattr(c, "keywords", []) else "None"
+            index_parts.append(f"- {c.title} ({c.category}): Keywords: {keywords_str}")
+
+        memory_index = "\n".join(index_parts)
+        if not index_parts:
+            return {"decision": "CONTINUE"}
+
+        prompt = SEARCH_DECISION_PROMPT.format(
+            memory_index=memory_index,
+            utterance=interaction.utterance or "",
+            interpretation=interaction.interpretation or "None",
+            history=await self._get_recent_history(visitor),
+        )
+
+        try:
+            response = await model_action.generate(
+                prompt=prompt,
+                model=self.model or "gpt-4o-mini",
+                response_format={"type": "json_object"},
+            )
+            import json
+            return json.loads(response)
+        except Exception as e:
+            logger.error(f"UserLongMemoryRetrieval: Decision LLM call failed: {e}")
+            return {"decision": "SEARCH"}  # Fallback to search if LLM fails
