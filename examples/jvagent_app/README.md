@@ -2,6 +2,8 @@
 
 This is a boilerplate project for creating a jvagent application. It provides a structured foundation for developing agentive applications with custom agents and actions.
 
+To **generate a new app** from the command line (with optional `profiles/`, deploy stubs, and built-in action profiles), use **`jvagent app create`** — see the jvagent repo’s [docs/scaffolding.md](../../docs/scaffolding.md).
+
 ## Project Structure
 
 ```

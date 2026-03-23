@@ -88,6 +88,10 @@ Documentation = "https://github.com/trueselph/jvagent/blob/main/README.md"
 where = ["."]
 include = ["jvagent*"]
 
+[tool.setuptools.package-data]
+"jvagent.scaffold.builtin_profiles" = ["*.yaml"]
+"jvagent.scaffold.static" = ["*.txt"]
+
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "-ra -q --strict-markers"

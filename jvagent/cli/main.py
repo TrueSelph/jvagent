@@ -8,6 +8,7 @@ from pathlib import Path
 
 from jvspatial.logging import configure_standard_logging
 
+from jvagent.cli import app_commands
 from jvagent.cli.commands import (
     bootstrap_only,
     handle_action_command,
@@ -42,7 +43,7 @@ def main() -> None:
     # Extract app root path (first positional argument that's not a flag or command)
     # This handles both: "jvagent /path/to/app bundle" and "jvagent bundle /path/to/app"
     app_root = None
-    commands = ["run", "status", "agent", "action", "bootstrap", "bundle"]
+    commands = ["run", "status", "agent", "action", "bootstrap", "bundle", "app"]
     flags = ["--debug", "--update", "--purge", "--source", "--merge", "--serverless"]
 
     # Find app root: first argument that's not a command or flag
@@ -138,6 +139,8 @@ def main() -> None:
     elif args[0] == "status":
         # Show application status
         asyncio.run(show_status(app_root=app_root))
+    elif args[0] == "app":
+        app_commands.handle_app_command(args[1:], default_cwd=app_root)
     elif args[0] == "agent":
         # Agent management commands
         handle_agent_command(args[1:], app_root=app_root)

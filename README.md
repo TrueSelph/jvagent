@@ -5,6 +5,7 @@ A modular, pluggable agentive platform built on jvspatial that provides a produc
 ## Table of Contents
 
 - [Installation](#installation)
+- [Scaffolding](#scaffolding)
 - [Quick Start](#quick-start)
 - [Running jvagent in an App Directory](#running-jvagent-in-an-app-directory)
 - [Core Concepts](#core-concepts)
@@ -112,6 +113,41 @@ jvagent examples/jvagent_app --serverless
    - `OPENAI_API_KEY` - (Optional) For the model_openai action
 
 See [examples/jvagent_app/README.md](examples/jvagent_app/README.md) for detailed information about the example application structure.
+
+## Scaffolding
+
+**Full CLI reference:** [docs/scaffolding.md](docs/scaffolding.md) (flags, agent specs, profile YAML, deployment presets, workflow).
+
+Create a new application directory (with `app.yaml`, `agents/`, `profiles/`, `.env.example`, and optional deploy/Docker stubs):
+
+```bash
+jvagent app create --yes \
+  --dir ./my_app \
+  --app-id my_app \
+  --title "My App" \
+  --description "My jvagent deployment" \
+  --author "Your Name" \
+  --agent jvagent/main_bot@minimal \
+  --profile minimal
+```
+
+Omit `--yes` for interactive prompts. Use `--deployment aws-lambda` for DynamoDB-focused defaults and `deploy.example.yaml` / `Dockerfile` stubs.
+
+**Per-agent profiles:** pass `namespace/agent@profile_key`. Built-in keys include `minimal`, `conversational`, `whatsapp_voice`, and `research`. App-local YAML lives under `profiles/` (see `profiles/README.md` in the generated tree).
+
+**Add a custom profile file** (from an existing app root):
+
+```bash
+jvagent app profile new my_team --extends minimal
+```
+
+**Add another agent** to an existing app:
+
+```bash
+cd my_app
+jvagent agent create acme/support@conversational
+jvagent bootstrap --update
+```
 
 ## Quick Start
 
@@ -650,6 +686,8 @@ jvagent_app/
 ## Configuration Files
 
 For a complete mapping of app.yaml paths to environment variables and secrets, see [docs/configuration.md](docs/configuration.md).
+
+To generate a new app tree from the CLI, see [docs/scaffolding.md](docs/scaffolding.md).
 
 ### app.yaml
 
@@ -1966,6 +2004,7 @@ For more details, see [jvagent/bundle/README.md](jvagent/bundle/README.md).
 
 ### Core Documentation
 
+- [App scaffolding CLI](docs/scaffolding.md) - `jvagent app create`, `agent create`, `app profile new`, action profiles
 - [Memory System](jvagent/memory/README.md) - Conversation, Interaction, User, and Memory APIs
 - [Logging System](docs/logging.md) - Interaction logging, archiving, retention
 - [Interaction Logging](docs/interaction-logging.md) - INTERACTION log level
