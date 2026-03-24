@@ -5,7 +5,9 @@ persisting the resulting structure to the jvspatial graph database.
 """
 
 import asyncio
+import functools
 import logging
+import threading
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -26,9 +28,15 @@ from .config import (
     get_pageindex_node_text,
     get_pageindex_summary_token_threshold,
     initialize_pageindex_database,
+    resolve_pageindex_json_log_dir,
 )
 from .core import md_to_tree, page_index
-from .llm_bridge import set_pageindex_model_action
+from .llm_bridge import (
+    PageIndexCancelled,
+    attach_pageindex_cancel_event,
+    set_pageindex_model_action,
+    signal_pageindex_cancel,
+)
 from .models import DocumentContentEdge, DocumentNode, DocumentRootNode
 
 logger = logging.getLogger(__name__)
@@ -92,6 +100,51 @@ def _get_pageindex_context() -> GraphContext:
     return GraphContext(database=db)
 
 
+def _pdf_page_index_worker(
+    cancel_event: Optional[threading.Event],
+    doc: Any,
+    *,
+    model: str,
+    toc_check_page_num: Optional[int],
+    max_page_num_each_node: Optional[int],
+    max_token_num_each_node: Optional[int],
+    if_add_node_id: str,
+    if_add_node_text: str,
+    if_add_node_summary: str,
+    if_add_doc_description: str,
+    log_dir: Optional[str],
+) -> Dict[str, Any]:
+    """Run sync page_index in a thread with optional cooperative cancel (see llm_bridge)."""
+    attach_pageindex_cancel_event(cancel_event)
+    try:
+        return page_index(
+            doc,
+            model=model,
+            toc_check_page_num=toc_check_page_num,
+            max_page_num_each_node=max_page_num_each_node,
+            max_token_num_each_node=max_token_num_each_node,
+            if_add_node_id=if_add_node_id,
+            if_add_node_text=if_add_node_text,
+            if_add_node_summary=if_add_node_summary,
+            if_add_doc_description=if_add_doc_description,
+            log_dir=log_dir,
+        )
+    finally:
+        attach_pageindex_cancel_event(None)
+
+
+def _discard_pageindex_future(fut: asyncio.Future) -> None:
+    """Avoid 'exception never retrieved' when the waiter was cancelled after timeout."""
+    if fut.cancelled():
+        return
+    try:
+        exc = fut.exception()
+    except (asyncio.CancelledError, asyncio.InvalidStateError):
+        return
+    if exc is not None and not isinstance(exc, PageIndexCancelled):
+        logger.debug("PDF page_index executor finished with error: %s", exc)
+
+
 async def assimilate_document(
     doc: Union[str, Path, bytes],
     *,
@@ -111,6 +164,7 @@ async def assimilate_document(
     metadata: Optional[Dict[str, Any]] = None,
     doc_description: Optional[str] = None,
     doc_url: Optional[str] = None,
+    cancel_event: Optional[threading.Event] = None,
 ) -> Dict[str, Any]:
     """Assimilate a PDF or Markdown document via PageIndex and optionally persist to graph.
 
@@ -119,6 +173,7 @@ async def assimilate_document(
         doc_name: Override document name (default: derived from file)
         model: LLM model for tree generation
         model_action: Optional LanguageModelAction for observability (when in agent context)
+        cancel_event: Optional threading.Event; when set, PDF worker thread stops issuing LLM calls (cooperative cancel)
         if_add_node_id: Add node_id to structure
         if_add_node_text: Add text to nodes
         if_add_node_summary: Add summaries (None = use action config via get_pageindex_node_summary)
@@ -169,10 +224,18 @@ async def assimilate_document(
         if is_pdf:
             # page_index() uses asyncio.run() internally; run in executor to avoid
             # "asyncio.run() cannot be called from a running event loop"
+            from jvagent.core.app import App
+
+            app = await App.get()
+            merged = app.file_storage_root_dir if app else None
+            log_dir = resolve_pageindex_json_log_dir(merged)
+
             loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(
+            fut = loop.run_in_executor(
                 None,
-                lambda: page_index(
+                functools.partial(
+                    _pdf_page_index_worker,
+                    cancel_event,
                     doc,
                     model=model,
                     toc_check_page_num=toc_check_page_num,
@@ -182,8 +245,15 @@ async def assimilate_document(
                     if_add_node_text=if_add_node_text,
                     if_add_node_summary=if_add_node_summary,
                     if_add_doc_description=if_add_doc_description,
+                    log_dir=log_dir,
                 ),
             )
+            fut.add_done_callback(_discard_pageindex_future)
+            try:
+                result = await fut
+            except asyncio.CancelledError:
+                signal_pageindex_cancel(cancel_event)
+                raise
         else:
             result = await md_to_tree(
                 str(doc),

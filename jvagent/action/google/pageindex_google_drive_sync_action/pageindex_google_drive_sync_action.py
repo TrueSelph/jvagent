@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import threading
 from typing import Any, Dict, List, Optional
 
 from jvspatial.api.auth.api_key_service import APIKeyService
@@ -71,7 +72,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
     )
 
     document_timeout: Optional[int] = attribute(
-        default=30,
+        default=600,
         description="Document timeout",
     )
 
@@ -106,6 +107,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         timeout_seconds = self.document_timeout or 60
 
         try:
+            cancel_event = threading.Event()
 
             async def _do_ingest() -> Dict[str, Any]:
                 file_bytes = await google_drive_action.get_media(file_id=file_id)
@@ -119,6 +121,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     collection_name=collection_name,
                     doc_url=doc_url,
                     metadata=metadata,
+                    cancel_event=cancel_event,
                 )
                 # await asyncio.sleep(40)  # Sleep for testing purposes
                 return {"doc_name": doc_name}
@@ -161,6 +164,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             else:
                 raise ValueError("assimilate_document returned no doc_name")
         except asyncio.TimeoutError:
+            cancel_event.set()
             docs = getattr(google_drive_documents_node, source)
             if doc_type == "added":
                 docs["added"].pop(0)

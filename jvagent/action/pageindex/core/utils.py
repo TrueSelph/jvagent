@@ -17,8 +17,15 @@ from dotenv import load_dotenv
 load_dotenv()
 from pathlib import Path
 from types import SimpleNamespace as config
+from typing import Optional
 
 import yaml
+
+from jvagent.action.pageindex.config import resolve_pageindex_json_log_dir
+from jvagent.action.pageindex.llm_bridge import (
+    PageIndexCancelled,
+    check_pageindex_cancelled,
+)
 
 # Support both CHATGPT_API_KEY and OPENAI_API_KEY for compatibility
 CHATGPT_API_KEY = os.getenv("CHATGPT_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -39,6 +46,7 @@ def ChatGPT_API_with_finish_reason(
     client = openai.OpenAI(api_key=api_key)
     for i in range(max_retries):
         try:
+            check_pageindex_cancelled()
             if chat_history:
                 messages = chat_history
                 messages.append({"role": "user", "content": prompt})
@@ -55,6 +63,8 @@ def ChatGPT_API_with_finish_reason(
             else:
                 return response.choices[0].message.content, "finished"
 
+        except PageIndexCancelled:
+            raise
         except Exception as e:
             print("************* Retrying *************")
             logging.error(f"Error: {e}")
@@ -62,7 +72,7 @@ def ChatGPT_API_with_finish_reason(
                 time.sleep(1)  # Wait for 1秒 before retrying
             else:
                 logging.error("Max retries reached for prompt: " + prompt)
-                return "Error"
+                return "Error", "error"
 
 
 def ChatGPT_API(model, prompt, api_key=CHATGPT_API_KEY, chat_history=None):
@@ -70,6 +80,7 @@ def ChatGPT_API(model, prompt, api_key=CHATGPT_API_KEY, chat_history=None):
     client = openai.OpenAI(api_key=api_key)
     for i in range(max_retries):
         try:
+            check_pageindex_cancelled()
             if chat_history:
                 messages = chat_history
                 messages.append({"role": "user", "content": prompt})
@@ -83,6 +94,8 @@ def ChatGPT_API(model, prompt, api_key=CHATGPT_API_KEY, chat_history=None):
             )
 
             return response.choices[0].message.content
+        except PageIndexCancelled:
+            raise
         except Exception as e:
             print("************* Retrying *************")
             logging.error(f"Error: {e}")
@@ -98,6 +111,7 @@ async def ChatGPT_API_async(model, prompt, api_key=CHATGPT_API_KEY):
     messages = [{"role": "user", "content": prompt}]
     for i in range(max_retries):
         try:
+            check_pageindex_cancelled()
             async with openai.AsyncOpenAI(api_key=api_key) as client:
                 response = await client.chat.completions.create(
                     model=model,
@@ -105,6 +119,8 @@ async def ChatGPT_API_async(model, prompt, api_key=CHATGPT_API_KEY):
                     temperature=0,
                 )
                 return response.choices[0].message.content
+        except PageIndexCancelled:
+            raise
         except Exception as e:
             print("************* Retrying *************")
             logging.error(f"Error: {e}")
@@ -330,14 +346,15 @@ def get_pdf_name(pdf_path):
 
 
 class JsonLogger:
-    def __init__(self, file_path):
+    def __init__(self, file_path, log_dir: Optional[str] = None):
         # Extract PDF name for logger name
         pdf_name = get_pdf_name(file_path)
 
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.filename = f"{pdf_name}_{current_time}.json"
-        os.makedirs("./logs", exist_ok=True)
-        # Initialize empty list to store all messages
+        resolved = log_dir if log_dir is not None else resolve_pageindex_json_log_dir()
+        self.log_dir = os.path.abspath(resolved)
+        os.makedirs(self.log_dir, exist_ok=True)
         self.log_data = []
 
     def log(self, level, message, **kwargs):
@@ -365,7 +382,7 @@ class JsonLogger:
         self.log("ERROR", message, **kwargs)
 
     def _filepath(self):
-        return os.path.join("logs", self.filename)
+        return os.path.join(self.log_dir, self.filename)
 
 
 def list_to_tree(data):
