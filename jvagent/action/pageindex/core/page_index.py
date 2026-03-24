@@ -1299,8 +1299,8 @@ async def tree_parser(page_list, opt, doc=None, logger=None):
     return toc_tree
 
 
-def page_index_main(doc, opt=None):
-    logger = JsonLogger(doc)
+def page_index_main(doc, opt=None, log_dir=None):
+    logger = JsonLogger(doc, log_dir=log_dir)
 
     is_valid_pdf = (
         isinstance(doc, str) and os.path.isfile(doc) and doc.lower().endswith(".pdf")
@@ -1357,15 +1357,16 @@ def page_index(
     if_add_node_summary=None,
     if_add_doc_description=None,
     if_add_node_text=None,
+    log_dir=None,
 ):
 
     user_opt = {
         arg: value
         for arg, value in locals().items()
-        if arg != "doc" and value is not None
+        if arg not in ("doc", "log_dir") and value is not None
     }
     opt = ConfigLoader().load(user_opt)
-    return page_index_main(doc, opt)
+    return page_index_main(doc, opt, log_dir=log_dir)
 
 
 def validate_and_truncate_physical_indices(

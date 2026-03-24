@@ -14,8 +14,20 @@ import threading
 from typing import Any, Dict, Optional
 
 from jvspatial.db import create_database, get_database_manager
+from jvspatial.env import resolve_file_storage_root
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_pageindex_json_log_dir(merged_root: Optional[str] = None) -> str:
+    """Directory for PageIndex PDF pipeline trace JSON under the file storage root.
+
+    Same root resolution as App local storage: JVSPATIAL_FILES_ROOT_PATH, then YAML
+    ``file_storage.root_dir`` (via ``merged_root``), then defaults per
+    :func:`jvspatial.env.resolve_file_storage_root`.
+    """
+    return os.path.join(resolve_file_storage_root(merged_root), "pageindex")
+
 
 PAGEINDEX_DB_NAME = "pageindex_db"
 
