@@ -95,6 +95,7 @@ class AppDescriptor:
                 "logging_enabled",
                 "log_retention_days",
                 "timezone",
+                "update_mode",
             ]
         }
 
@@ -279,25 +280,32 @@ class AppLoader:
             if app_nodes:
                 app = app_nodes[0]
                 if update_mode == "source":
-                    app.name = descriptor.name
-                    app.version = descriptor.version
-                    app.description = descriptor.description
-                    app.file_storage_provider = descriptor.file_storage_provider
-                    app.file_storage_root_dir = descriptor.file_storage_root_dir
-                    app.file_storage_enabled = descriptor.file_storage_enabled
-                    app.logging_enabled = descriptor.logging_enabled
-                    app.log_retention_days = descriptor.log_retention_days
-                    app.timezone = descriptor.timezone
-
-                    app.app_id = descriptor.app_id
-
+                    await app.update(
+                        {
+                            "name": descriptor.name,
+                            "version": descriptor.version,
+                            "description": descriptor.description,
+                            "file_storage_provider": descriptor.file_storage_provider,
+                            "file_storage_root_dir": descriptor.file_storage_root_dir,
+                            "file_storage_enabled": descriptor.file_storage_enabled,
+                            "logging_enabled": descriptor.logging_enabled,
+                            "log_retention_days": descriptor.log_retention_days,
+                            "timezone": descriptor.timezone,
+                            "app_id": descriptor.app_id,
+                        },
+                        skip_protected=True,
+                    )
                     self._apply_app_properties(app, descriptor.properties)
                     await app.save()
                     logger.debug(f"Updated App node (source): {app.id}")
                 elif update_mode == "merge":
-                    # Only update source identity metadata; preserve all context config
-                    app.version = descriptor.version
-                    app.app_id = descriptor.app_id
+                    await app.update(
+                        {
+                            "version": descriptor.version,
+                            "app_id": descriptor.app_id,
+                        },
+                        skip_protected=True,
+                    )
                     await app.save()
                     logger.debug(f"Updated App node (merge): {app.id}")
 
@@ -320,7 +328,11 @@ class AppLoader:
 
             if descriptor.properties:
                 for key, value in descriptor.properties.items():
-                    if not key.startswith("_") and key not in ["id", "name"]:
+                    if not key.startswith("_") and key not in [
+                        "id",
+                        "name",
+                        "update_mode",
+                    ]:
                         app_data[key] = value
 
             app = await App.create(**app_data)
@@ -389,7 +401,7 @@ class AppLoader:
 
     def _apply_app_properties(self, app: App, properties: Dict[str, Any]) -> None:
         """Apply property overrides from descriptor to app instance."""
-        _apply_properties(app, properties, reserved={"id", "name"})
+        _apply_properties(app, properties, reserved={"id", "name", "update_mode"})
 
     async def _ensure_agents_node(self, app: App) -> Optional[Agents]:
         """Ensure Agents manager node exists.
@@ -520,6 +532,7 @@ class AppLoader:
                         "id": app.id,
                         "name": app.name,
                         "version": app.version,
+                        "update_mode": getattr(app, "update_mode", "run"),
                     },
                 }
 
@@ -538,6 +551,7 @@ class AppLoader:
                     "version": app.version,
                     "description": app.description,
                     "file_storage_enabled": app.file_storage_enabled,
+                    "update_mode": getattr(app, "update_mode", "run"),
                 },
                 "agents": {
                     "total": agents_manager.total_agents,

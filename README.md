@@ -107,6 +107,8 @@ jvagent examples/jvagent_app --update --source
 jvagent examples/jvagent_app --serverless
 ```
 
+**Persisted `update_mode` (optional):** When you do not pass `--update`, the server reads the App node’s `update_mode` field (`run`, `merge`, or `source`) to decide whether to sync from YAML on that start. Admins can set it with `PUT /api/app/update_mode` (body: `{"update_mode": "merge"}`). After a successful `jvagent run` or `jvagent bootstrap`, it is reset to `run` so cold restarts do not repeat a one-shot merge/source. CLI `--update` / `--source` overrides the stored value for that process only.
+
 **Note:** Before running the example, ensure you have:
 1. Set up a `.env` file in `examples/jvagent_app/` with at least:
    - `JVAGENT_ADMIN_PASSWORD` - Admin user password

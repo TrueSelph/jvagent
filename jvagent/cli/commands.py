@@ -19,6 +19,10 @@ from jvagent.cli.server_config import (
     pre_startup_bootstrap,
 )
 from jvagent.core.bootstrap_logger import BootstrapLogger
+from jvagent.core.bootstrap_update_mode import (
+    reset_app_update_mode_after_successful_bootstrap,
+    resolve_bootstrap_update_mode,
+)
 from jvagent.core.config import (
     effective_log_db_type,
     get_config_value,
@@ -175,6 +179,9 @@ jvagent - Agentive Platform
 
 Note: Agents are installed automatically from app.yaml when you run jvagent or bootstrap.
       Use `jvagent app create` or `jvagent agent create` to scaffold YAML, then bootstrap.
+      Without `--update`, the next YAML sync mode can be set on the App node (`update_mode`: run | merge | source)
+      via admin `PUT /api/app/update_mode` and applies on the next start; after a successful start it resets to run.
+      CLI `--update` always overrides the stored value for that invocation.
 
 Arguments:
     <app_root>                Path to the app root directory (default: current directory)
@@ -426,7 +433,10 @@ async def bootstrap_only(
     root_logger.addHandler(log_counter)
 
     try:
-        await bootstrap_application_graph(update_mode=update_mode, app_root=app_root)
+        effective_update_mode = await resolve_bootstrap_update_mode(update_mode)
+        await bootstrap_application_graph(
+            update_mode=effective_update_mode, app_root=app_root
+        )
 
         # Initialize all actions by calling their on_startup() hooks
         # This ensures runtime components like channel adapters are initialized
@@ -435,6 +445,8 @@ async def bootstrap_only(
         await run_app_startup()
 
         await ensure_admin_user()
+
+        await reset_app_update_mode_after_successful_bootstrap()
 
         # Display bootstrap summary
         summary = log_counter.get_summary()
@@ -456,11 +468,11 @@ async def bootstrap_only(
         else:
             logger.info("✓ Bootstrap Summary: No warnings or errors")
 
-        if update_mode == "source":
+        if effective_update_mode == "source":
             print(
                 "Bootstrap complete! (Updated existing agents and actions from source)"
             )
-        elif update_mode == "merge":
+        elif effective_update_mode == "merge":
             print("Bootstrap complete! (Merged source changes, preserved DB state)")
         else:
             print("Bootstrap complete! (Used existing agents and actions)")
