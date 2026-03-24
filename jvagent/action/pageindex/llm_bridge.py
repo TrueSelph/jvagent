@@ -45,6 +45,7 @@ def signal_pageindex_cancel(event: Optional[threading.Event]) -> None:
     if event is not None:
         event.set()
 
+
 _pageindex_model_action: contextvars.ContextVar[Optional[Any]] = contextvars.ContextVar(
     "_pageindex_model_action", default=None
 )

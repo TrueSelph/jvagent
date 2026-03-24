@@ -615,7 +615,9 @@ async def list_document_chunks(
 
     filtered = [n for n in nodes if _chunk_matches_filter(q, n)]
     filtered.sort(key=_chunk_sort_key)
-    page_chunks, total = _paginate_filtered_nodes(filtered, page=page, per_page=per_page)
+    page_chunks, total = _paginate_filtered_nodes(
+        filtered, page=page, per_page=per_page
+    )
 
     return {
         "chunks": [_document_node_to_chunk_dict(n) for n in page_chunks],
@@ -642,7 +644,9 @@ async def list_collection_chunks(
 
     filtered = [n for n in nodes if _chunk_matches_filter(q, n)]
     filtered.sort(key=_chunk_sort_key_collection)
-    page_chunks, total = _paginate_filtered_nodes(filtered, page=page, per_page=per_page)
+    page_chunks, total = _paginate_filtered_nodes(
+        filtered, page=page, per_page=per_page
+    )
 
     return {
         "chunks": [_document_node_to_chunk_dict(n) for n in page_chunks],
@@ -711,7 +715,11 @@ async def update_document_chunk(
     try:
         set_default_context(context)
         node = await DocumentNode.get(chunk_id)
-        if not node or node.doc_name != doc_name or node.collection_name != collection_name:
+        if (
+            not node
+            or node.doc_name != doc_name
+            or node.collection_name != collection_name
+        ):
             return None
 
         for key, value in updates.items():
@@ -760,7 +768,11 @@ async def delete_document_chunk(
     try:
         set_default_context(context)
         node = await DocumentNode.get(chunk_id)
-        if not node or node.doc_name != doc_name or node.collection_name != collection_name:
+        if (
+            not node
+            or node.doc_name != doc_name
+            or node.collection_name != collection_name
+        ):
             return False
 
         try:
