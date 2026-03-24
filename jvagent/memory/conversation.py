@@ -256,19 +256,22 @@ class Conversation(DeferredSaveMixin, Node):
 
         return interaction
 
-    async def _prune_old_interactions(self) -> None:
+    async def _prune_old_interactions(self) -> int:
         """Prune interactions outside the rolling window limit.
 
         Removes the oldest interactions when the count exceeds interaction_limit.
         Only runs if interaction_limit > 0.
+
+        Returns:
+            Number of interactions removed.
         """
         if self.interaction_limit <= 0:
-            return
+            return 0
 
         # Count how many to remove
         to_remove = self.interaction_count - self.interaction_limit
         if to_remove <= 0:
-            return
+            return 0
 
         # Start from the first interaction and remove the oldest ones
         current = await self.get_first_interaction()
@@ -311,6 +314,7 @@ class Conversation(DeferredSaveMixin, Node):
                     self.last_interaction_id = None
 
         await self.save()
+        return removed
 
     async def create_interaction(
         self,

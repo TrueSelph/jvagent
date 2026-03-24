@@ -11,6 +11,15 @@ Default categories include `interests`, `facts_and_preferences`, `open_threads`,
 3. Calls the configured `LanguageModelAction` with the current memory graph + history.
 4. Parses JSON `category → markdown` and writes each category to its node.
 
+## Background execution and serverless
+
+With `run_in_background: true` (default), this action is **not** scheduled inside its own `asyncio.Task`. The interact pipeline queues it on `InteractWalker.background_actions` and runs it **after** the user-facing response:
+
+- **Non-streaming interact**: the handler `await`s `_run_background_actions`, so Glean finishes before the HTTP response completes (including on AWS Lambda, so work is not cut off when the execution environment freezes).
+- **Streaming (SSE)**: the handler uses `jvspatial.create_task(...)` with the same coroutine. In **serverless mode**, `create_task` **awaits** that coroutine in-process instead of spawning a detached task, which preserves the same guarantee.
+
+Do not rely on ad-hoc background tasks for long memory outside the standard interact entry points.
+
 ## Example `agent.yaml` snippet
 
 ```yaml

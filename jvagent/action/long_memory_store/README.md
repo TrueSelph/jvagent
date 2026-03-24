@@ -20,14 +20,20 @@ Working in tandem with `UserLongMemoryInteractAction`, this action is responsibl
 2. **Checks for Updates**: It queries the `UserLongMemory` subgraph for any category nodes that have been recently updated.
 3. **Short-Circuit**: If there are no nodes with `needs_indexing=True`, the action simply exits with almost zero overhead.
 4. **Markdown Generation**: If updates exist, it reads the current state of all memory categories and converts them into a combined markdown format.
-5. **Assimilates into PageIndex**: Any previous memory documents for the user are deleted, and the new compiled markdown is stored via `_do_assimilate`, making it available for tree search and retrieval.
+5. **Assimilates into PageIndex**: Any previous memory documents for the user are deleted, and the new compiled markdown is stored via `assimilate_document` (same pipeline as REST ingest), making it available for tree search and retrieval.
 6. **Clears Flags**: Resets the `needs_indexing` flag on the modified nodes.
+
+If the combined markdown’s SHA-256 matches the digest stored on `UserLongMemory.pageindex_markdown_sha256`, re-ingestion is skipped and only the flags are cleared (content unchanged). A per-user `asyncio.Lock` avoids duplicate concurrent ingest for the same user.
 
 ### Key Features
 
 - **Decoupled Architecture**: Keeps the slower process of semantic assimilation separated from the core memory analysis step.
 - **Incremental Efficiency**: Since it only triggers assimilation if nodes were specifically marked as `needs_indexing=True` by the `long_memory_interact_action`, it saves database and LLM generation costs natively.
 - **Idempotent Storage**: Prevents clutter by securely clearing out old iterations of the user's profile inside the `LongTermMemory` collection and rebuilding a fresh overview.
+
+## Background execution and serverless
+
+Same contract as `UserLongMemoryInteractAction`: deferred actions run from the interact endpoint after `flush_deferred_entities`. Non-streaming paths `await` background work; streaming uses `jvspatial.create_task`, which **inlines** the await in serverless mode so PageIndex assimilation completes before the Lambda invocation ends. See the long_memory action README for details.
 
 ## Configuration
 
@@ -54,4 +60,4 @@ actions:
 ## Dependencies
 
 - Depends on `UserLongMemoryInteractAction` to write the initial memory updates and set the `needs_indexing` boolean on graph nodes.
-- Requires semantic indexing endpoints from `jvagent/action/pageindex` (specifically `_do_assimilate`).
+- Requires `jvagent.action.pageindex.documents.assimilate_document` (and related PageIndex graph storage).

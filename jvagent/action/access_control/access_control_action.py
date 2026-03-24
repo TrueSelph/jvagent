@@ -11,6 +11,30 @@ from jvagent.core.channel import normalize_channel
 logger = logging.getLogger(__name__)
 
 
+def log_access_denied(
+    *,
+    agent_id: str,
+    user_id: Optional[str],
+    channel: str,
+    action_label: str,
+    stage: str,
+    reason: str = "rule",
+) -> None:
+    """Structured log line for denied access (interact entry, walker, background, whatsapp)."""
+    logger.warning(
+        "access_control_denied",
+        extra={
+            "event": "access_control_denied",
+            "agent_id": agent_id,
+            "user_id": user_id or "",
+            "channel": channel,
+            "action_label": action_label,
+            "stage": stage,
+            "reason": reason,
+        },
+    )
+
+
 class AccessControlAction(Action):
     """Agent access control with permissions per channel, action and user_id."""
 
@@ -37,6 +61,16 @@ class AccessControlAction(Action):
         description="Short name to class name mapping for action_label",
     )
 
+    enforce: bool = attribute(
+        default=True,
+        description="When False, skip permission evaluation (allow all). Use instead of disabling the graph node when possible.",
+    )
+
+    allow_anonymous: bool = attribute(
+        default=False,
+        description="When True, missing/empty user_id is allowed without evaluating rules.",
+    )
+
     @staticmethod
     def _get_default_permissions() -> Dict[str, Dict]:
         """Get default permissions structure."""
@@ -45,6 +79,10 @@ class AccessControlAction(Action):
                 "any": {"deny": [], "allow": [{"group": "all", "enabled": True}]}
             }
         }
+
+    def policy_applies(self) -> bool:
+        """Whether this node should enforce permissions (graph enabled + enforce flag)."""
+        return bool(self.enabled) and bool(self.enforce)
 
     async def has_action_access(
         self,
@@ -55,17 +93,20 @@ class AccessControlAction(Action):
         """Check if user has access to action."""
         try:
             channel = normalize_channel(channel)
-            if not self.enabled:
+            if not self.policy_applies():
                 return True
 
-            if not user_id:
-                return True
+            uid = (user_id or "").strip()
+            if not uid:
+                if self.allow_anonymous:
+                    return True
+                return False
 
             resolved_label = self.action_aliases.get(action_label, action_label)
             if resolved_label in self.exceptions:
                 return True
 
-            return self._check_access(user_id, channel, resolved_label)
+            return self._check_access(uid, channel, resolved_label)
         except Exception as e:
             logger.error(f"Error checking access for user {user_id}: {e}")
             return False
@@ -257,6 +298,10 @@ class AccessControlAction(Action):
             "permissions": self.permissions,
             "user_groups": self.user_groups,
             "exceptions": self.exceptions,
+            "default_deny": self.default_deny,
+            "action_aliases": self.action_aliases,
+            "enforce": self.enforce,
+            "allow_anonymous": self.allow_anonymous,
         }
 
     async def import_config(self, config: Dict[str, Any], purge: bool = False) -> None:
@@ -272,7 +317,11 @@ class AccessControlAction(Action):
                 self.user_groups = config.get(
                     "user_groups", config.get("session_groups", {})
                 )
-                self.exceptions = config.get("exceptions", [])
+                self.exceptions = list(config.get("exceptions", []))
+                self.default_deny = bool(config.get("default_deny", False))
+                self.action_aliases = dict(config.get("action_aliases", {}))
+                self.enforce = bool(config.get("enforce", True))
+                self.allow_anonymous = bool(config.get("allow_anonymous", False))
             else:
                 if "permissions" in config:
                     self.permissions.update(config["permissions"])
@@ -281,7 +330,17 @@ class AccessControlAction(Action):
                 elif "session_groups" in config:
                     self.user_groups.update(config["session_groups"])
                 if "exceptions" in config:
-                    self.exceptions.extend(config["exceptions"])
+                    for ex in config["exceptions"]:
+                        if ex not in self.exceptions:
+                            self.exceptions.append(ex)
+                if "default_deny" in config:
+                    self.default_deny = bool(config["default_deny"])
+                if "action_aliases" in config:
+                    self.action_aliases.update(config["action_aliases"])
+                if "enforce" in config:
+                    self.enforce = bool(config["enforce"])
+                if "allow_anonymous" in config:
+                    self.allow_anonymous = bool(config["allow_anonymous"])
 
             await self.save()
         except Exception as e:

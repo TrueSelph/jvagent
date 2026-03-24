@@ -12,6 +12,7 @@ from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.exceptions import DatabaseError, ValidationError
 
+from jvagent.action.access_control.access_control_action import log_access_denied
 from jvagent.core.agent import Agent
 
 from .utils.endpoint_helpers import (
@@ -123,7 +124,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         sender = data.sender
         sender_name = data.sender_name
 
-        access_control_action = await agent.get_action_by_type("AccessControlAction")
+        access_control_action = await agent.get_access_control_action()
 
         # Run access check and directed-message check in parallel
         async def _check_access():
@@ -138,6 +139,13 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             is_directed_message(whatsapp_action, data),
         )
         if not has_access:
+            log_access_denied(
+                agent_id=agent_id,
+                user_id=sender or None,
+                channel="whatsapp",
+                action_label="WhatsAppAction",
+                stage="whatsapp",
+            )
             return {"status": "received", "response": "Access denied"}
 
         # Validate sender

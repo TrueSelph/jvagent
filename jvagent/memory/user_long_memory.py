@@ -147,6 +147,10 @@ class UserLongMemory(Node):
         default_factory=lambda: datetime.now(timezone.utc),
         description="Timestamp of UserLongMemory node creation",
     )
+    pageindex_markdown_sha256: Optional[str] = attribute(
+        default=None,
+        description="SHA-256 hex digest of markdown last assimilated to PageIndex; skip re-ingest when unchanged",
+    )
 
     # -------------------------------------------------------------------------
     # Category node access
@@ -155,17 +159,18 @@ class UserLongMemory(Node):
     async def get_category(self, category: str) -> Optional[UserLongMemoryNode]:
         """Get the UserLongMemoryNode for a specific category.
 
+        Uses indexed lookup on (user_id, category) instead of scanning all edges.
+
         Args:
             category: Stable category key (e.g., "interests").
 
         Returns:
             UserLongMemoryNode if it exists, None otherwise.
         """
-        nodes = await self.nodes(node=UserLongMemoryNode, direction="out")
-        for node in nodes:
-            if node.category == category:
-                return node
-        return None
+        return await UserLongMemoryNode.find_one(
+            user_id=self.user_id,
+            category=category,
+        )
 
     async def get_or_create_category(
         self, category: str, title: Optional[str] = None
@@ -232,14 +237,18 @@ class UserLongMemory(Node):
         """Ensure all DEFAULT_CATEGORIES exist as connected nodes.
 
         Creates missing category nodes with empty content. Idempotent.
+        When defaults already exist, uses a single graph read plus dict lookup.
 
         Returns:
             List of all default UserLongMemoryNode objects.
         """
-        nodes = []
+        all_nodes = await self.get_all_categories()
+        by_cat = {n.category: n for n in all_nodes}
+        if all(c in by_cat for c in DEFAULT_CATEGORIES):
+            return [by_cat[c] for c in DEFAULT_CATEGORIES]
+        nodes: List[UserLongMemoryNode] = []
         for category in DEFAULT_CATEGORIES:
-            node = await self.get_or_create_category(category)
-            nodes.append(node)
+            nodes.append(await self.get_or_create_category(category))
         return nodes
 
     async def as_markdown(self, include_empty: bool = False) -> str:

@@ -20,7 +20,7 @@ async def _get_access_control(agent_id: str) -> AccessControlAction:
     agent = await Agent.get(agent_id)
     if not agent:
         raise ResourceNotFoundError(f"Agent not found: {agent_id}")
-    action = await agent.get_action_by_type("AccessControlAction")
+    action = await agent.get_access_control_action()
     if not action:
         raise ResourceNotFoundError(
             f"AccessControlAction not configured for agent: {agent_id}"

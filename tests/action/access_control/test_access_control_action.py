@@ -1,6 +1,6 @@
 """Tests for AccessControlAction has_action_access and programmatic API."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -36,6 +36,8 @@ def access_control_action():
         action_aliases={"persona": "PersonaAction"},
     )
     action.enabled = True
+    action.enforce = True
+    action.allow_anonymous = False
     return action
 
 
@@ -108,8 +110,19 @@ async def test_has_action_access_whatsapp_specific_user(
 
 @pytest.mark.asyncio
 @patch(f"{_ACTION_MODULE}.AccessControlAction.save", new_callable=AsyncMock)
-async def test_has_action_access_empty_user_id_allows(mock_save, access_control_action):
-    """Empty user_id should allow (bypass check)."""
+async def test_has_action_access_empty_user_id_denies(mock_save, access_control_action):
+    """Empty user_id denies when allow_anonymous is False (default)."""
+    result = await access_control_action.has_action_access(
+        user_id="", action_label="PersonaAction", channel="default"
+    )
+    assert result is False
+
+
+@pytest.mark.asyncio
+@patch(f"{_ACTION_MODULE}.AccessControlAction.save", new_callable=AsyncMock)
+async def test_has_action_access_allow_anonymous(mock_save, access_control_action):
+    """When allow_anonymous is True, empty user_id bypasses rule evaluation."""
+    access_control_action.allow_anonymous = True
     result = await access_control_action.has_action_access(
         user_id="", action_label="PersonaAction", channel="default"
     )
@@ -118,8 +131,19 @@ async def test_has_action_access_empty_user_id_allows(mock_save, access_control_
 
 @pytest.mark.asyncio
 @patch(f"{_ACTION_MODULE}.AccessControlAction.save", new_callable=AsyncMock)
-async def test_has_action_access_disabled_allows(mock_save, access_control_action):
-    """When disabled, should allow all."""
+async def test_enforce_false_allows_all(mock_save, access_control_action):
+    """When enforce is False, allow regardless of permissions."""
+    access_control_action.enforce = False
+    result = await access_control_action.has_action_access(
+        user_id="user_xyz", action_label="PersonaAction", channel="default"
+    )
+    assert result is True
+
+
+@pytest.mark.asyncio
+@patch(f"{_ACTION_MODULE}.AccessControlAction.save", new_callable=AsyncMock)
+async def test_graph_disabled_allows(mock_save, access_control_action):
+    """When graph node is disabled, policy does not apply."""
     access_control_action.enabled = False
     result = await access_control_action.has_action_access(
         user_id="user_xyz", action_label="PersonaAction", channel="default"
@@ -145,6 +169,7 @@ async def test_report_denied_on_default_channel(mock_save):
         default_deny=False,
     )
     action.enabled = True
+    action.enforce = True
 
     result = await action.has_action_access(
         user_id="user_xyz",
@@ -164,6 +189,7 @@ async def test_default_deny_when_no_rule_matches(mock_save):
         default_deny=True,
     )
     action.enabled = True
+    action.enforce = True
 
     result = await action.has_action_access(
         user_id="user_xyz", action_label="SomeAction", channel="default"
@@ -277,3 +303,54 @@ async def test_export_config_includes_user_groups(mock_save, access_control_acti
     assert "user_groups" in config
     assert "session_groups" not in config
     assert config["user_groups"] == {"admins": ["user_abc", "user_def"]}
+    assert "default_deny" in config
+    assert "action_aliases" in config
+    assert "enforce" in config
+    assert "allow_anonymous" in config
+    assert config["default_deny"] is True
+    assert config["enforce"] is True
+
+
+@pytest.mark.asyncio
+@patch(f"{_ACTION_MODULE}.AccessControlAction.save", new_callable=AsyncMock)
+async def test_import_config_purge_roundtrip(mock_save, access_control_action):
+    """Purge import restores default_deny, aliases, enforce, allow_anonymous."""
+    exported = access_control_action.export_config()
+    fresh = AccessControlAction()
+    await fresh.import_config(exported, purge=True)
+    assert fresh.permissions == access_control_action.permissions
+    assert fresh.default_deny == access_control_action.default_deny
+    assert fresh.action_aliases == access_control_action.action_aliases
+    assert fresh.enforce == access_control_action.enforce
+    assert fresh.allow_anonymous == access_control_action.allow_anonymous
+
+
+@pytest.mark.asyncio
+@patch(f"{_ACTION_MODULE}.AccessControlAction.save", new_callable=AsyncMock)
+async def test_import_config_merge_dedupes_exceptions(mock_save):
+    """Merge import does not duplicate exception entries."""
+    action = AccessControlAction(exceptions=["A"], enforce=True, enabled=True)
+    await action.import_config({"exceptions": ["A", "B"]}, purge=False)
+    assert action.exceptions == ["A", "B"]
+
+
+@pytest.mark.asyncio
+@patch("jvagent.action.base.Action.find", new_callable=AsyncMock)
+async def test_agent_get_access_control_action_uses_first_when_multiple(mock_find):
+    """Multiple AccessControlAction nodes: first returned, error logged."""
+    from jvagent.core.agent import Agent
+
+    a1, a2 = MagicMock(), MagicMock()
+    a1.id = "ac1"
+    a2.id = "ac2"
+    mock_find.return_value = [a1, a2]
+    agent = Agent(
+        namespace="jvagent",
+        name="t",
+        id="agent1",
+        alias="",
+        description="",
+    )
+    got = await agent.get_access_control_action()
+    assert got is a1
+    mock_find.assert_awaited_once()

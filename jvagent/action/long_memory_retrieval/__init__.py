@@ -1,17 +1,11 @@
 """Long memory retrieval action. Searches the user's profile collection in PageIndex.
 
-Uses PageIndex infrastructure to retrieve context from the long_memory_{user_id}
-collection, enabling personalized responses based on stored user profiles.
+Uses PageIndex infrastructure to retrieve context from the
+``user_long_memory_{user_id}`` document. The pageindex package applies the LLM
+bridge monkey-patch on import; load it first via a no-op import.
 """
 
-# Strategic override: inject LLM bridge so core uses jvagent model for observability
-import sys
-
-from jvagent.action.pageindex import llm_override
-
-sys.modules["jvagent.action.pageindex.core.utils"] = llm_override.override_module
-
-from jvagent.action.pageindex import endpoints  # noqa: F401
+import jvagent.action.pageindex  # noqa: F401  # ensures package init / llm_override
 from jvagent.action.pageindex.adapter import persist_structure, tree_to_graph
 from jvagent.action.pageindex.config import (
     PAGEINDEX_DB_NAME,

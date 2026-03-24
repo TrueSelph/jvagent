@@ -3,6 +3,8 @@
 Validates graph structure, removes dead edges, reattaches or removes orphaned
 nodes, and syncs node-edge references. Memory repair (all agents) runs before
 graph repair to ensure a clean memory state prior to structural validation.
+After structural repair, interaction limit pruning runs for each agent's Memory
+(users, then their conversations), last in the pipeline.
 """
 
 import logging
@@ -23,7 +25,9 @@ async def repair_agent_graph(
     Memory repair executes first for all agents to ensure a consistent memory
     state before structural graph validation. Graph repair then validates
     structure, removes dead edges, syncs node edge_ids, reattaches or removes
-    orphaned nodes, and removes duplicate edges.
+    orphaned nodes, and removes duplicate edges. Finally, rolling-window
+    interaction pruning runs per user (each Memory's users and their
+    conversations) when the agent has a positive interaction_limit.
 
     Args:
         dry_run: If True, report issues without making changes.
@@ -37,7 +41,8 @@ async def repair_agent_graph(
         conversation_branch_edges_removed,
         dead_edges_removed,
         orphaned_nodes_reattached, orphaned_nodes_deleted,
-        node_edge_ids_synced, duplicate_edges_removed, message.
+        node_edge_ids_synced, duplicate_edges_removed,
+        interactions_pruned, message.
     """
     context = get_default_context()
     result = {
@@ -52,6 +57,7 @@ async def repair_agent_graph(
         "orphaned_nodes_deleted": 0,
         "node_edge_ids_synced": 0,
         "duplicate_edges_removed": 0,
+        "interactions_pruned": 0,
     }
 
     if dry_run:
@@ -93,6 +99,11 @@ async def repair_agent_graph(
     dup_removed = await _remove_duplicate_edges(context, dry_run)
     result["duplicate_edges_removed"] = dup_removed
 
+    # 5. Interaction limit pruning (per user, last; skipped in dry_run)
+    if not dry_run:
+        prune_result = await _run_interaction_pruning_all_agents()
+        result["interactions_pruned"] = prune_result.get("interactions_pruned", 0)
+
     parts = []
     if memory_result:
         agents_repaired = memory_result.get("memory_repair_agents", 0)
@@ -124,6 +135,10 @@ async def repair_agent_graph(
         parts.append(f"{synced} node(s) edge_ids synced")
     if dup_removed:
         parts.append(f"{dup_removed} duplicate edge(s) removed")
+    if result.get("interactions_pruned"):
+        parts.append(
+            f"{result['interactions_pruned']} interaction(s) pruned (rolling limit)"
+        )
 
     result["message"] = (
         "Repair completed: " + ", ".join(parts) if parts else "No repairs needed"
@@ -176,6 +191,30 @@ async def _run_memory_repair_all_agents(
             aggregated[key] += repair.get(key, 0)
 
     return aggregated
+
+
+async def _run_interaction_pruning_all_agents() -> Dict[str, Any]:
+    """Apply interaction_limit sync and pruning for each agent's Memory users.
+
+    Iterates every User connected to each Memory, then each User's
+    conversations. Caller must not invoke when repair_agent_graph(dry_run=True).
+
+    Returns:
+        Dict with interactions_pruned (total interactions removed).
+    """
+    from jvagent.core.agent import Agent
+
+    total_pruned = 0
+    agents: List[Any] = await Agent.find({})
+    for agent in agents:
+        memory = await agent.get_memory()
+        if not memory:
+            continue
+        total_pruned += (
+            await memory.apply_interaction_limit_pruning_for_connected_users()
+        )
+
+    return {"interactions_pruned": total_pruned}
 
 
 async def _remove_dead_edges(context: Any, dry_run: bool) -> int:
