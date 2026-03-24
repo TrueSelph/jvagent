@@ -150,6 +150,8 @@ actions:
   - action: jvagent/access_control_action
     context:
       enabled: true
+      enforce: true
+      allow_anonymous: false
       description: "Role-based access control with user_id-based permissions for secure agent operations"
       default_deny: false
       action_aliases:

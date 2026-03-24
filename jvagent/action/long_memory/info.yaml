@@ -10,6 +10,6 @@ package:
     type: interact_action
   config:
     order:
-      weight: 0
+      weight: 150
   dependencies:
     jvagent: ~0.0.1

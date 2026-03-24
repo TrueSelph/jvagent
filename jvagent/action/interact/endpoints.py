@@ -82,6 +82,10 @@ async def _run_background_actions(walker: "InteractWalker") -> None:
                 else action.__class__.__name__
             )
             logger.debug(f"Running background action: {action_name}")
+            if not await walker.enforce_interact_action_access(
+                action, stage="background"
+            ):
+                continue
             # Temporarily mark as current action so convenience methods work
             walker._current_action = action
             walker._skip_current_action_record = False
@@ -539,18 +543,6 @@ async def interact_endpoint(
                     details={"agent_id": agent_id},
                 )
 
-            # Optional entry-point access check (user_id only)
-            if user_id:
-                access_control = await agent.get_action_by_type("AccessControlAction")
-                if access_control:
-                    if not await access_control.has_action_access(
-                        user_id=user_id, action_label="interact", channel=channel
-                    ):
-                        raise ValidationError(
-                            message="Access denied",
-                            details={"channel": channel},
-                        )
-
             if not utterance or not utterance.strip():
                 raise ValidationError(
                     message="utterance is required and cannot be empty",
@@ -589,6 +581,12 @@ async def interact_endpoint(
                 # Get interaction result
                 interaction = walker.interaction
                 if not interaction:
+                    for item in report or []:
+                        if isinstance(item, dict) and item.get("access_denied"):
+                            raise ValidationError(
+                                message=str(item.get("error", "Access denied")),
+                                details={"channel": channel},
+                            )
                     raise RuntimeError("Interaction was not created during traversal")
 
                 # Mark interaction as not streamed
@@ -717,6 +715,23 @@ async def _stream_interaction(
             waited += 0.1
 
         if not walker.interaction:
+            try:
+                await walk_task
+            except Exception as e:
+                yield format_sse_chunk(
+                    {"type": "error", "message": f"Walker error: {str(e)}"}
+                )
+                return
+            stream_report = await walker.get_report()
+            for item in stream_report or []:
+                if isinstance(item, dict) and item.get("access_denied"):
+                    yield format_sse_chunk(
+                        {
+                            "type": "error",
+                            "message": str(item.get("error", "Access denied")),
+                        }
+                    )
+                    return
             yield format_sse_chunk(
                 {
                     "type": "error",

@@ -150,6 +150,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
       ['orphaned_nodes_deleted', 'orphan(s) deleted'],
       ['node_edge_ids_synced', 'node(s) edge_ids synced'],
       ['duplicate_edges_removed', 'duplicate edge(s) removed'],
+      ['interactions_pruned', 'interaction(s) pruned (rolling limit)'],
     ]
     const parts = items.map(([key, label]) => {
       const n = Number(result[key]) || 0

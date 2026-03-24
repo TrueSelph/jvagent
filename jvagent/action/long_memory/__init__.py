@@ -1,7 +1,7 @@
-"""User model action package.
+"""Long-term memory interact action package.
 
-Exports the `UserModelInteractAction` which collects simple personal preferences
-to help personalize agent responses.
+Exports `UserLongMemoryInteractAction`, which maintains graph-backed user memory
+from conversation history.
 """
 
 from .long_memory_interact_action import UserLongMemoryInteractAction

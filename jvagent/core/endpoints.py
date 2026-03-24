@@ -5,7 +5,8 @@ This module provides endpoints for:
 - Updating agents (alias, enabled status, description, interaction_limit)
 - Deleting agents
 - Listing agents with pagination and filtering
-- Graph repair (admin): runs memory repair for all agents first, then full graph repair
+- Graph repair (admin): runs memory repair for all agents first, then structural
+  graph repair, then interaction limit pruning per user (last)
 """
 
 import asyncio
@@ -634,6 +635,11 @@ async def get_storage_file(file_path: str):
                 description="Number of duplicate edges removed",
                 example=0,
             ),
+            "interactions_pruned": ResponseField(
+                field_type=int,
+                description="Number of interactions removed by rolling-window limit pruning",
+                example=0,
+            ),
             "message": ResponseField(
                 field_type=str,
                 description="Success message",
@@ -656,14 +662,16 @@ async def repair_graph(
 
     Memory repair executes first for all agents, then validates graph structure,
     removes dead edges, syncs node edge_ids, reattaches or removes orphaned nodes,
-    and removes duplicate edges.
+    and removes duplicate edges. Finally, interaction limit pruning runs for each
+    Memory's connected users and their conversations (skipped when dry_run is True).
 
     Args:
-        dry_run: Optional - report issues without making changes (memory repair skipped)
+        dry_run: Optional - report issues without making changes (memory repair and
+            interaction pruning skipped)
         recent_minutes: Optional - passed to memory repair to limit orphan interaction cleanup
 
     Returns:
-        Dictionary with memory repair counts and graph repair counts
+        Dictionary with memory repair counts, graph repair counts, and interactions_pruned
     """
     result = await repair_agent_graph(
         dry_run=dry_run,

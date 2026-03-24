@@ -13,7 +13,6 @@ from jvspatial.core.annotations import attribute
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.model.context import get_interaction, set_interaction
-from jvagent.memory.user_long_memory import UserLongMemory
 from jvagent.action.pageindex.config import (
     initialize_pageindex_database,
     set_pageindex_doc_description,
@@ -28,8 +27,17 @@ from jvagent.action.pageindex.pageindex_retrieval_interact_action import (
     _push_retrieval_config,
 )
 from jvagent.action.pageindex.retrieval import search_documents
+from jvagent.memory.long_memory_retrieval_utils import (
+    resolve_long_memory_collection,
+    utterance_overlaps_category_keywords,
+)
+from jvagent.memory.user_long_memory import UserLongMemory
 
-from .prompts import DIRECTIVE_TEMPLATE, SEARCH_DECISION_PROMPT
+from .prompts import (
+    CLARIFY_DIRECTIVE_TEMPLATE,
+    DIRECTIVE_TEMPLATE,
+    SEARCH_DECISION_PROMPT,
+)
 
 if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
@@ -174,7 +182,7 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
         default=None,
         description="Optional key-value filter to narrow search by document metadata. "
         "Supports dynamic placeholders: {user_id}, {session_id}, {agent_id}, or any interaction attribute. "
-        "Example: {'user_id': '{user_id}', 'type': 'long_memory'} filters to documents with matching user_id and type.",
+        "Example: {'user_id': '{user_id}', 'type': 'user_long_memory'} filters to documents with matching user_id and type (same as store metadata).",
     )
     point_of_interest: Optional[str] = attribute(
         default=None,
@@ -188,14 +196,11 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
             self.anchors.append(f"needs context from {str(self.point_of_interest)}")
 
     def _resolve_collection(self) -> str:
-        """Resolve collection name from attribute, config, or agent_id."""
-        agent_id = self.agent_id
-        return (
-            f"{agent_id}_{self.collection}"
-            or (self.config.get("collection") if self.config else None)
-            or (self.config.get("collection_name") if self.config else None)
-            or getattr(self, "agent_id", None)
-            or "default"
+        """Resolve PageIndex collection as {agent_id}_{suffix}."""
+        return resolve_long_memory_collection(
+            getattr(self, "agent_id", None),
+            getattr(self, "collection", None),
+            getattr(self, "config", None),
         )
 
     async def execute(self, visitor: "InteractWalker") -> None:
@@ -219,17 +224,18 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
             decision = decision_result.get("decision", "CONTINUE")
 
             if decision == "CONTINUE":
-                logger.debug("UserLongMemoryRetrieval: Decision is CONTINUE, skipping search")
+                logger.debug(
+                    "UserLongMemoryRetrieval: Decision is CONTINUE, skipping search"
+                )
                 return
 
             if decision == "CLARIFY":
                 question = decision_result.get("question")
                 if question:
-                    await self.publish(visitor, content=question)
-                    # Add as event and terminate walk for this interaction
-                    await visitor.add_event(f"Clarification requested: {question}")
-                    await visitor.set_walk_path([])
-                    return
+                    directive = CLARIFY_DIRECTIVE_TEMPLATE.format(question=question)
+                    await visitor.add_directive(directive)
+                    await visitor.add_event(f"Clarification suggested: {question}")
+                return
 
             # If SEARCH, use the query from LLM if provided, else fallback to default
             query = decision_result.get("query") or self._get_search_query(interaction)
@@ -335,7 +341,9 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
             role = "User" if msg["role"] == "user" else "AI"
             history_lines.append(f"{role}: {msg['content']}")
 
-        formatted_history = "\n".join(history_lines) if history_lines else "No history available."
+        formatted_history = (
+            "\n".join(history_lines) if history_lines else "No history available."
+        )
 
         return formatted_history
 
@@ -357,11 +365,28 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
         for c in categories:
             if c.is_empty():
                 continue
-            keywords_str = ", ".join(c.keywords) if getattr(c, "keywords", []) else "None"
+            keywords_str = (
+                ", ".join(c.keywords) if getattr(c, "keywords", []) else "None"
+            )
             index_parts.append(f"- {c.title} ({c.category}): Keywords: {keywords_str}")
 
         memory_index = "\n".join(index_parts)
         if not index_parts:
+            return {"decision": "CONTINUE"}
+
+        if utterance_overlaps_category_keywords(
+            categories,
+            interaction.utterance or "",
+            interaction.interpretation or "",
+        ):
+            q = (interaction.utterance or interaction.interpretation or "").strip()
+            return {
+                "decision": "SEARCH",
+                "reasoning": "Keyword overlap with memory index (fast path)",
+                "query": q or None,
+            }
+
+        if not model_action:
             return {"decision": "CONTINUE"}
 
         prompt = SEARCH_DECISION_PROMPT.format(
@@ -378,7 +403,8 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
                 response_format={"type": "json_object"},
             )
             import json
+
             return json.loads(response)
         except Exception as e:
             logger.error(f"UserLongMemoryRetrieval: Decision LLM call failed: {e}")
-            return {"decision": "SEARCH"}  # Fallback to search if LLM fails
+            return {"decision": "CONTINUE"}

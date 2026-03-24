@@ -92,6 +92,31 @@ class Agent(Node):
             }
         )
 
+    async def get_access_control_action(self) -> Optional[Any]:
+        """Return the agent's AccessControlAction, if any.
+
+        Logs an error when more than one is present (undefined); the first match is returned.
+        """
+        from jvagent.action.base import Action
+
+        found = await Action.find(
+            {
+                "entity": "AccessControlAction",
+                "context.agent_id": self.id,
+            }
+        )
+        if not found:
+            return None
+        if len(found) > 1:
+            logger.error(
+                "Multiple AccessControlAction nodes for agent %s (count=%s ids=%s); "
+                "using the first instance",
+                self.id,
+                len(found),
+                [getattr(a, "id", None) for a in found],
+            )
+        return found[0]
+
     async def get_actions(self, enabled_only: bool = False) -> List[Any]:
         """Get all actions for this agent.
 

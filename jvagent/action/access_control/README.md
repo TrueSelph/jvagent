@@ -14,6 +14,8 @@ The Access Control Action provides user-based permission management and channel/
 - **Allow/Deny rules**: Deny rules checked first; allow rules grant access
 - **default_deny**: When true, deny when no rule matches; when false, allow
 - **action_aliases**: Map short names to action class names in config
+- **enforce**: When false, all `has_action_access` checks succeed (policy off). Prefer this over disabling the graph node when you want the action to remain discoverable.
+- **allow_anonymous**: When false (default), empty/missing `user_id` is denied whenever policy applies. Set true only if anonymous interact is intentional.
 - **Exceptions**: Actions exempt from permission checks
 - **Programmatic API**: Add/remove users, groups, and permission rules
 - **Admin REST endpoints**: All agent-scoped via `agent_id` (singleton per agent)
@@ -28,6 +30,8 @@ actions:
   - action: jvagent/access_control_action
     context:
       enabled: true
+      enforce: true
+      allow_anonymous: false
       description: "Per-user/group access control for interact actions"
       default_deny: false
       action_aliases:
@@ -92,7 +96,7 @@ has_access = await action.has_action_access(
     channel="default",
 )
 
-# Bulk config
+# Bulk config (includes default_deny, action_aliases, enforce, allow_anonymous)
 config = action.export_config()
 await action.import_config(config, purge=True)
 ```
@@ -137,14 +141,24 @@ Resolves AccessControlAction from `agent_id` (no start_node). Request body:
 }
 ```
 
-- **PUT**: Replaces permissions entirely. Preserves `user_groups` and `exceptions`.
+- **PUT**: Replaces permissions entirely. Preserves `user_groups` and `exceptions` (and other non-permissions fields on the node). Use `export_config` / `import_config` in code to replace `default_deny`, `action_aliases`, `enforce`, or `allow_anonymous` in one shot.
 - **PATCH**: Merges permissions at channel level.
 
 ## Integration
 
-- **InteractWalker**: Before each InteractAction executes, `has_action_access(user_id, action_label, channel)` is called. If denied, the action is skipped.
-- **Interact endpoint**: Optional entry-point check for `action_label="interact"` when `user_id` is provided.
-- **WhatsApp webhook**: Uses `sender` (phone) as `user_id` for channel-specific identity.
+- **Policy applies** when the graph node is `enabled` and `enforce` is true (`policy_applies()`). If there is **no** `AccessControlAction` on the agent, interact proceeds without access checks (open by default).
+- **Session gate**: After `memory.get_session()` resolves `user_id`, the walker checks resource `interact` before creating an interaction. Configure `default` / `whatsapp` / … channel keys for `interact` alongside per–class-name keys.
+- **InteractWalker**: Before each foreground `InteractAction` runs, access is checked using that action’s class name. Deferred (`run_in_background`) actions are checked when queued and again before `execute` in the background runner.
+- **HTTP `/interact`**: Entry access is enforced inside the walker (not on the raw request parameter alone), so `session_id`-only clients are evaluated after session resolution.
+- **WhatsApp webhook**: Uses `sender` (phone) as `user_id` for channel `whatsapp`; denials emit structured logs (`access_control_denied`).
+- **Duplicates**: If more than one `AccessControlAction` exists for an agent, an error is logged and the first match is used—fix the graph to a single node.
+
+## Migration (breaking)
+
+- Empty `user_id` no longer bypasses checks when policy applies; set `allow_anonymous: true` only if you need that behavior.
+- Turning off enforcement: set `enforce: false` (or disable the graph node); do not rely on old “empty user always allowed” behavior.
+- Background interact actions are now subject to the same rules as foreground actions.
+- Export/import round-trips `default_deny`, `action_aliases`, `enforce`, and `allow_anonymous`; merge import deduplicates `exceptions` entries.
 
 ## Channel Adapters
 

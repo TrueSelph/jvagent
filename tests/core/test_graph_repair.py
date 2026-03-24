@@ -45,6 +45,7 @@ class TestGraphRepair:
         assert "orphaned_nodes_deleted" in result
         assert "node_edge_ids_synced" in result
         assert "duplicate_edges_removed" in result
+        assert "interactions_pruned" in result
         assert "message" in result
 
     @pytest.mark.asyncio
@@ -122,12 +123,17 @@ author: Test
         with patch(
             "jvagent.core.graph_repair._run_memory_repair_all_agents",
             new_callable=AsyncMock,
-        ) as mock_memory_repair:
+        ) as mock_memory_repair, patch(
+            "jvagent.core.graph_repair._run_interaction_pruning_all_agents",
+            new_callable=AsyncMock,
+        ) as mock_prune:
             result = await repair_agent_graph(dry_run=True)
 
         mock_memory_repair.assert_not_called()
+        mock_prune.assert_not_called()
         assert result["dry_run"] is True
         assert result["memory_repair_agents"] == 0
+        assert result["interactions_pruned"] == 0
 
     @pytest.mark.asyncio
     async def test_repair_orphan_reattachment(self, temp_dir, test_db):
@@ -180,6 +186,10 @@ agents: []
                 "counters_fixed": 0,
             }
 
+        async def fake_interaction_pruning():
+            call_order.append("prune")
+            return {"interactions_pruned": 0}
+
         original_remove_dead_edges = __import__(
             "jvagent.core.graph_repair", fromlist=["_remove_dead_edges"]
         )._remove_dead_edges
@@ -194,9 +204,15 @@ agents: []
         ), patch(
             "jvagent.core.graph_repair._remove_dead_edges",
             side_effect=patched_remove_dead_edges,
+        ), patch(
+            "jvagent.core.graph_repair._run_interaction_pruning_all_agents",
+            side_effect=fake_interaction_pruning,
         ):
             await repair_agent_graph(dry_run=False)
 
         assert call_order[0] == "memory", "Memory repair must run before graph repair"
         assert "graph" in call_order, "Graph repair steps must run"
         assert call_order.index("memory") < call_order.index("graph")
+        assert call_order.index("graph") < call_order.index(
+            "prune"
+        ), "Interaction pruning must run after structural graph repair"

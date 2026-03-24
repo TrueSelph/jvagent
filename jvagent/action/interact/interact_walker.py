@@ -11,6 +11,10 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core import Walker, on_visit
 
+from jvagent.action.access_control.access_control_action import (
+    AccessControlAction,
+    log_access_denied,
+)
 from jvagent.action.interact.base import InteractAction
 from jvagent.core.cache import cache_actions, get_cached_actions
 from jvagent.memory.interaction import Interaction
@@ -165,6 +169,81 @@ class InteractWalker(Walker):
 
         return name
 
+    def _interact_action_class_name(self, here: "InteractAction") -> str:
+        try:
+            return here.get_class_name()
+        except Exception:
+            return here.__class__.__name__
+
+    async def _apply_access_denied_to_interaction(
+        self, here: "InteractAction", action_label: str
+    ) -> None:
+        if self.interaction and getattr(here, "deny_access_directive", None):
+            self.interaction.directives.append(
+                {
+                    "content": here.deny_access_directive,
+                    "action_name": action_label,
+                    "executed": False,
+                }
+            )
+            await self.interaction.save()
+
+        await self.report(
+            {
+                "action_skipped": {
+                    "action": here.label,
+                    "weight": here.weight,
+                    "reason": "access_denied",
+                }
+            }
+        )
+
+    async def enforce_interact_action_access(
+        self,
+        here: "InteractAction",
+        *,
+        stage: str,
+    ) -> bool:
+        """Return True if the action may run; False if denied (directive/report/logging applied)."""
+        if not self._agent:
+            return True
+        access_control = await self._agent.get_access_control_action()
+        if not access_control or not isinstance(access_control, AccessControlAction):
+            return True
+        if not access_control.policy_applies():
+            return True
+
+        action_label = self._interact_action_class_name(here)
+        user_id = (self.user_id or "").strip()
+        if not user_id and not access_control.allow_anonymous:
+            log_access_denied(
+                agent_id=self.agent_id or getattr(self._agent, "id", ""),
+                user_id=None,
+                channel=self.channel,
+                action_label=action_label,
+                stage=stage,
+                reason="missing_user_id",
+            )
+            await self._apply_access_denied_to_interaction(here, action_label)
+            return False
+
+        allowed = await access_control.has_action_access(
+            user_id=user_id,
+            action_label=action_label,
+            channel=self.channel,
+        )
+        if allowed:
+            return True
+        log_access_denied(
+            agent_id=self.agent_id or getattr(self._agent, "id", ""),
+            user_id=user_id or None,
+            channel=self.channel,
+            action_label=action_label,
+            stage=stage,
+        )
+        await self._apply_access_denied_to_interaction(here, action_label)
+        return False
+
     @on_visit("Agent")
     async def on_agent(self, here: "Agent") -> None:
         """Visit Agent node and walk to Actions node.
@@ -198,6 +277,48 @@ class InteractWalker(Walker):
                 self.session_id = resolved_session_id
                 self.new_user = new_user
                 self.conversation = conversation
+
+                access_control = await here.get_access_control_action()
+                if (
+                    access_control
+                    and isinstance(access_control, AccessControlAction)
+                    and access_control.policy_applies()
+                ):
+                    uid = (self.user_id or "").strip()
+                    if not uid and not access_control.allow_anonymous:
+                        log_access_denied(
+                            agent_id=self.agent_id or here.id,
+                            user_id=None,
+                            channel=self.channel,
+                            action_label="interact",
+                            stage="entry",
+                            reason="missing_user_id",
+                        )
+                        await self.report(
+                            {
+                                "access_denied": True,
+                                "error": (
+                                    "Access denied: user identity required for this agent"
+                                ),
+                            }
+                        )
+                        return
+                    if not await access_control.has_action_access(
+                        user_id=uid,
+                        action_label="interact",
+                        channel=self.channel,
+                    ):
+                        log_access_denied(
+                            agent_id=self.agent_id or here.id,
+                            user_id=uid or None,
+                            channel=self.channel,
+                            action_label="interact",
+                            stage="entry",
+                        )
+                        await self.report(
+                            {"access_denied": True, "error": "Access denied"}
+                        )
+                        return
 
                 # Create interaction
                 from jvagent.action.model.context import set_interaction
@@ -358,8 +479,12 @@ class InteractWalker(Walker):
             )
             return
 
-        # Background action check: defer to post-interaction phase
+        # Background action check: defer to post-interaction phase (access enforced here and at run)
         if getattr(here, "run_in_background", False):
+            if not await self.enforce_interact_action_access(
+                here, stage="walker_deferred"
+            ):
+                return
             self.background_actions.append(here)
             await self.report(
                 {
@@ -372,39 +497,8 @@ class InteractWalker(Walker):
             )
             return
 
-        # Access control check (user_id only)
-        if self._agent and self.user_id:
-            access_control = await self._agent.get_action_by_type("AccessControlAction")
-            if access_control:
-                try:
-                    action_label = here.get_class_name()
-                except Exception:
-                    action_label = here.__class__.__name__
-                if not await access_control.has_action_access(
-                    user_id=self.user_id,
-                    action_label=action_label,
-                    channel=self.channel,
-                ):
-                    if here.deny_access_directive:
-                        self.interaction.directives.append(
-                            {
-                                "content": here.deny_access_directive,
-                                "action_name": action_label,
-                                "executed": False,
-                            }
-                        )
-                        await self.interaction.save()
-
-                    await self.report(
-                        {
-                            "action_skipped": {
-                                "action": here.label,
-                                "weight": here.weight,
-                                "reason": "access_denied",
-                            }
-                        }
-                    )
-                    return
+        if not await self.enforce_interact_action_access(here, stage="walker"):
+            return
 
         try:
             # Store current action for convenience methods and reset skip flag

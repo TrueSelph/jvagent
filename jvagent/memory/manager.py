@@ -148,11 +148,14 @@ class Memory(Node):
 
     async def _ensure_conversation_interaction_limit(
         self, conversation: "Conversation"
-    ) -> None:
+    ) -> int:
         """Sync interaction_limit from agent and prune if over limit.
 
         Always syncs from agent when agent has a positive limit, so that changes
         to agent.yaml (increase or decrease) take effect on resume.
+
+        Returns:
+            Number of interactions removed by pruning (0 if none).
         """
         agent = await self.get_agent()
         if (
@@ -160,14 +163,33 @@ class Memory(Node):
             or not hasattr(agent, "interaction_limit")
             or agent.interaction_limit <= 0
         ):
-            return
+            return 0
         agent_limit = agent.interaction_limit
         # Sync conversation limit from agent (handles both increase and decrease)
         if conversation.interaction_limit != agent_limit:
             conversation.interaction_limit = agent_limit
             await conversation.save()
         if conversation.interaction_count > conversation.interaction_limit:
-            await conversation._prune_old_interactions()
+            return await conversation._prune_old_interactions()
+        return 0
+
+    async def apply_interaction_limit_pruning_for_connected_users(self) -> int:
+        """Sync limits and prune for every conversation under this Memory's users.
+
+        Iterates connected User nodes, then each User's Conversation nodes, and
+        runs _ensure_conversation_interaction_limit on each.
+
+        Returns:
+            Total number of interactions removed across all conversations.
+        """
+        from jvagent.memory.conversation import Conversation
+        from jvagent.memory.user import User
+
+        total = 0
+        for user in await self.nodes(node=User):
+            for conv in await user.nodes(node=Conversation):
+                total += await self._ensure_conversation_interaction_limit(conv)
+        return total
 
     async def get_user_by_session(self, session_id: str) -> Optional["User"]:
         """Find the User that owns a specific session.

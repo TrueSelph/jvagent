@@ -298,17 +298,21 @@ class UserLongMemoryInteractAction(InteractAction):
 
             category_node = await user_long_memory.get_or_create_category(category)
 
-            # Update keywords if provided and changed
-            if isinstance(new_keywords, list) and new_keywords != getattr(category_node, "keywords", []):
+            if not isinstance(new_keywords, list):
+                new_keywords = []
+            prev_kw = list(getattr(category_node, "keywords", []) or [])
+            kw_changed = new_keywords != prev_kw
+            if kw_changed:
                 category_node.keywords = new_keywords
-                any_changed = True
-                await category_node.save()
 
             changed = await category_node.update_content(new_content)
             if changed:
                 logger.info(
                     f"UserLongMemoryAction: Updated category '{category}' for user {user_id}"
                 )
+                any_changed = True
+            elif kw_changed:
+                await category_node.save()
                 any_changed = True
 
         if any_changed:
