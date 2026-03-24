@@ -47,7 +47,19 @@ class GoogleAction(Action):
         )
         await self.save()
 
-        self._create_flow()
+        self._warn_if_oauth_unusable()
+
+    def _warn_if_oauth_unusable(self) -> None:
+        """Best-effort OAuth client check for lifecycle hooks; logs warning only."""
+        try:
+            self._create_flow()
+        except Exception as e:
+            logger.warning(
+                "Google action %s (%s): OAuth client is not ready — %s",
+                self.id,
+                self.__class__.__name__,
+                e,
+            )
 
     async def on_register(self) -> None:
         """Called when action is registered. Validates configuration."""

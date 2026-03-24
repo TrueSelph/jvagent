@@ -214,7 +214,18 @@ async def get_google_auth_url(action_id: str) -> HTMLResponse:
     alphabet = string.ascii_letters + string.digits + "-._~"
     code_verifier = "".join(secrets.choice(alphabet) for _ in range(64))
 
-    auth_url = await action.get_authorization_url(code_verifier=code_verifier)
+    try:
+        auth_url = await action.get_authorization_url(code_verifier=code_verifier)
+    except Exception as e:
+        logger.warning(
+            "Google OAuth auth URL failed for action_id=%s: %s", action_id, e
+        )
+        return _oauth_error_html(
+            "OAuth is not configured correctly for this action. "
+            "Set a valid web or installed OAuth client in client_secrets_json, "
+            "ensure APP_BASE_URL matches your Google Cloud redirect URIs, then try again.",
+            status_code=400,
+        )
     logger.info("auth_url generated for action_id=%s", action_id)
 
     agent = await action.get_agent()
