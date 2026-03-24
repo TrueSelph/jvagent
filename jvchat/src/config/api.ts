@@ -15,6 +15,11 @@ import type {
   PageIndexDeleteResponse,
   PageIndexSearchResponse,
   PageIndexSearchParams,
+  PageIndexChunksListResponse,
+  PageIndexChunkDetailResponse,
+  PageIndexChunkUpdatePayload,
+  PageIndexChunkDeleteResponse,
+  PageIndexDocumentMetadataResponse,
 } from '../types/api'
 
 class ApiClient {
@@ -895,6 +900,122 @@ class ApiClient {
     const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents/${encodeURIComponent(docName)}`
     const response = await this._withFallback((baseURL) =>
       this.client.delete(path, { baseURL })
+    )
+    const data = response.data
+    if (data?.success && data?.data) return data.data
+    return data
+  }
+
+  /**
+   * List chunks across all documents in the agent PageIndex collection.
+   * Path: GET /api/agents/{agentId}/pageindex/chunks
+   */
+  async listPageIndexChunksForCollection(
+    agentId: string,
+    params?: { page?: number; per_page?: number; q?: string }
+  ): Promise<PageIndexChunksListResponse> {
+    const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/chunks`
+    const query: Record<string, string | number> = {}
+    if (params?.page != null) query.page = params.page
+    if (params?.per_page != null) query.per_page = params.per_page
+    if (params?.q != null && params.q.trim() !== '') query.q = params.q
+    const response = await this._withFallback((baseURL) =>
+      this.client.get(path, { baseURL, params: query })
+    )
+    const data = response.data
+    if (data?.success && data?.data) return data.data
+    return data
+  }
+
+  /**
+   * List chunks for a PageIndex document.
+   * Path: GET /api/agents/{agentId}/pageindex/documents/{docName}/chunks
+   */
+  async listPageIndexChunks(
+    agentId: string,
+    docName: string,
+    params?: { page?: number; per_page?: number; q?: string }
+  ): Promise<PageIndexChunksListResponse> {
+    const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents/${encodeURIComponent(docName)}/chunks`
+    const query: Record<string, string | number> = {}
+    if (params?.page != null) query.page = params.page
+    if (params?.per_page != null) query.per_page = params.per_page
+    if (params?.q != null && params.q.trim() !== '') query.q = params.q
+    const response = await this._withFallback((baseURL) =>
+      this.client.get(path, { baseURL, params: query })
+    )
+    const data = response.data
+    if (data?.success && data?.data) return data.data
+    return data
+  }
+
+  /**
+   * Get a single PageIndex chunk by graph node id.
+   */
+  async getPageIndexChunk(
+    agentId: string,
+    docName: string,
+    chunkId: string
+  ): Promise<PageIndexChunkDetailResponse> {
+    const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents/${encodeURIComponent(docName)}/chunks/${encodeURIComponent(chunkId)}`
+    const response = await this._withFallback((baseURL) =>
+      this.client.get(path, { baseURL })
+    )
+    const data = response.data
+    if (data?.success && data?.data) return data.data
+    return data
+  }
+
+  /**
+   * Update PageIndex chunk fields.
+   */
+  async updatePageIndexChunk(
+    agentId: string,
+    docName: string,
+    chunkId: string,
+    payload: PageIndexChunkUpdatePayload
+  ): Promise<PageIndexChunkDetailResponse> {
+    const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents/${encodeURIComponent(docName)}/chunks/${encodeURIComponent(chunkId)}`
+    const response = await this._withFallback((baseURL) =>
+      this.client.patch(path, { updates: payload }, { baseURL })
+    )
+    const data = response.data
+    if (data?.success && data?.data) return data.data
+    return data
+  }
+
+  /**
+   * Delete a PageIndex chunk (subtree when cascade is true).
+   */
+  async deletePageIndexChunk(
+    agentId: string,
+    docName: string,
+    chunkId: string,
+    options?: { cascade?: boolean }
+  ): Promise<PageIndexChunkDeleteResponse> {
+    const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents/${encodeURIComponent(docName)}/chunks/${encodeURIComponent(chunkId)}`
+    const params =
+      options?.cascade === false ? { cascade: false } : undefined
+    const response = await this._withFallback((baseURL) =>
+      this.client.delete(path, { baseURL, params })
+    )
+    const data = response.data
+    if (data?.success && data?.data) return data.data
+    return data
+  }
+
+  /**
+   * Update document root metadata (applies to all chunks in that document).
+   * Path: PATCH /api/agents/{agentId}/pageindex/documents/{docName}
+   */
+  async patchPageIndexDocumentMetadata(
+    agentId: string,
+    docName: string,
+    metadata: Record<string, unknown> | null
+  ): Promise<PageIndexDocumentMetadataResponse> {
+    const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents/${encodeURIComponent(docName)}`
+    const response = await this._withFallback((baseURL) =>
+      this.client.patch(path, { updates: { metadata } }, { baseURL })
     )
     const data = response.data
     if (data?.success && data?.data) return data.data

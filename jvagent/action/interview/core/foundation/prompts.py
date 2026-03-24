@@ -57,7 +57,7 @@ Ask: {question}"""
 
 COMPLETION_MESSAGE = "Tell the user: Thank you! Your responses have been recorded."
 
-CANCELLATION_MESSAGE = "Tell the user: I've cancelled the interview. Ask: Let me know if you'd like to start over."
+CANCELLATION_MESSAGE = "Tell the user: I've gone ahead and cancelled the process. Let me know if you'd like to start again."
 
 # =============================================================================
 # System Directive Templates

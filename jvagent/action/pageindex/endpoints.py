@@ -21,12 +21,19 @@ from python_multipart.multipart import FormParser, parse_options_header
 
 from .config import initialize_pageindex_database
 from .documents import (
+    CHUNK_LIST_MAX,
     assimilate_document,
     delete_document,
+    delete_document_chunk,
     export_documents,
+    get_document_chunk,
     get_document_root,
     import_documents,
+    list_collection_chunks,
+    list_document_chunks,
     list_documents,
+    update_document_chunk,
+    update_document_metadata,
 )
 from .pageindex_retrieval_interact_action import ensure_ingestion_config_for_agent
 from .retrieval import search_documents
@@ -369,6 +376,49 @@ async def list_documents_endpoint(
 
 
 @endpoint(
+    "/agents/{agent_id}/pageindex/chunks",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex"],
+    response=success_response(
+        data={
+            "chunks": ResponseField(
+                field_type=List[Dict[str, Any]],
+                description="All DocumentNode chunks in the agent collection",
+            ),
+            "total": ResponseField(
+                field_type=int,
+                description="Total chunks matching filter (before pagination cap)",
+            ),
+        }
+    ),
+)
+async def list_collection_chunks_endpoint(
+    agent_id: str,
+    page: int = Query(default=1, ge=1, description="Page number (1-based)"),
+    per_page: int = Query(
+        default=0,
+        ge=0,
+        le=CHUNK_LIST_MAX,
+        description=f"Chunks per page; 0 = all (capped at {CHUNK_LIST_MAX})",
+    ),
+    q: Optional[str] = Query(
+        default=None,
+        description="Case-insensitive substring filter on title, text, summary, structure",
+    ),
+) -> Dict[str, Any]:
+    """List chunks across all documents in the agent's PageIndex collection."""
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
+    return await list_collection_chunks(
+        collection_name=agent_id,
+        page=page,
+        per_page=per_page,
+        q=q,
+    )
+
+
+@endpoint(
     "/agents/{agent_id}/pageindex/documents/{doc_name}",
     methods=["GET"],
     auth=True,
@@ -385,6 +435,14 @@ async def list_documents_endpoint(
             ),
             "root_id": ResponseField(
                 field_type=str, description="Document root node ID"
+            ),
+            "metadata": ResponseField(
+                field_type=Optional[Dict[str, Any]],
+                description="Document-level metadata",
+            ),
+            "collection_name": ResponseField(
+                field_type=str,
+                description="Collection (typically agent_id)",
             ),
         }
     ),
@@ -414,7 +472,53 @@ async def get_document_endpoint(agent_id: str, doc_name: str) -> Dict[str, Any]:
         "doc_name": root.doc_name,
         "doc_description": root.doc_description,
         "root_id": root.id,
+        "metadata": root.metadata,
+        "collection_name": root.collection_name,
     }
+
+
+@endpoint(
+    "/agents/{agent_id}/pageindex/documents/{doc_name}",
+    methods=["PATCH"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex"],
+    response=success_response(
+        data={
+            "doc_name": ResponseField(field_type=str, description="Document identifier"),
+            "root_id": ResponseField(field_type=str, description="Document root node ID"),
+            "metadata": ResponseField(
+                field_type=Optional[Dict[str, Any]],
+                description="Updated metadata",
+            ),
+        }
+    ),
+)
+async def patch_document_endpoint(
+    agent_id: str,
+    doc_name: str,
+    updates: Dict[str, Any] = EndpointField(
+        description='Must include "metadata": object or null to set document root metadata'
+    ),
+) -> Dict[str, Any]:
+    """Update document root fields (currently metadata only)."""
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
+    if not isinstance(updates, dict):
+        raise ValidationError("Request body must be a JSON object")
+    if "metadata" not in updates:
+        raise ValidationError('updates must include "metadata"')
+    meta = updates["metadata"]
+    if meta is not None and not isinstance(meta, dict):
+        raise ValidationError("metadata must be a JSON object or null")
+    result = await update_document_metadata(
+        doc_name, collection_name=agent_id, metadata=meta
+    )
+    if not result:
+        raise ResourceNotFoundError(
+            message=f"Document '{doc_name}' not found",
+            details={"doc_name": doc_name},
+        )
+    return result
 
 
 @endpoint(
@@ -455,6 +559,166 @@ async def delete_document_endpoint(agent_id: str, doc_name: str) -> Dict[str, An
             details={"doc_name": doc_name},
         )
     return {"message": "Document deleted"}
+
+
+@endpoint(
+    "/agents/{agent_id}/pageindex/documents/{doc_name}/chunks",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex"],
+    response=success_response(
+        data={
+            "chunks": ResponseField(
+                field_type=List[Dict[str, Any]],
+                description="Document section nodes (chunks)",
+            ),
+            "total": ResponseField(
+                field_type=int,
+                description="Total chunks matching filter (before pagination cap)",
+            ),
+        }
+    ),
+)
+async def list_document_chunks_endpoint(
+    agent_id: str,
+    doc_name: str,
+    page: int = Query(default=1, ge=1, description="Page number (1-based)"),
+    per_page: int = Query(
+        default=0,
+        ge=0,
+        le=CHUNK_LIST_MAX,
+        description=f"Chunks per page; 0 = all (capped at {CHUNK_LIST_MAX})",
+    ),
+    q: Optional[str] = Query(
+        default=None,
+        description="Case-insensitive substring filter on title, text, summary, structure",
+    ),
+) -> Dict[str, Any]:
+    """List chunks (DocumentNode) for a document with optional filter and pagination."""
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
+    if not await get_document_root(doc_name, collection_name=agent_id):
+        raise ResourceNotFoundError(
+            message=f"Document '{doc_name}' not found",
+            details={"doc_name": doc_name},
+        )
+    return await list_document_chunks(
+        doc_name,
+        collection_name=agent_id,
+        page=page,
+        per_page=per_page,
+        q=q,
+    )
+
+
+@endpoint(
+    "/agents/{agent_id}/pageindex/documents/{doc_name}/chunks/{chunk_id}",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex"],
+    response=success_response(
+        data={
+            "chunk": ResponseField(
+                field_type=Dict[str, Any],
+                description="Chunk fields",
+            ),
+        }
+    ),
+)
+async def get_document_chunk_endpoint(
+    agent_id: str,
+    doc_name: str,
+    chunk_id: str,
+) -> Dict[str, Any]:
+    """Get a single chunk by graph node id."""
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
+    chunk = await get_document_chunk(chunk_id, doc_name, collection_name=agent_id)
+    if not chunk:
+        raise ResourceNotFoundError(
+            message="Chunk not found",
+            details={"doc_name": doc_name, "chunk_id": chunk_id},
+        )
+    return {"chunk": chunk}
+
+
+@endpoint(
+    "/agents/{agent_id}/pageindex/documents/{doc_name}/chunks/{chunk_id}",
+    methods=["PATCH"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex"],
+    response=success_response(
+        data={
+            "chunk": ResponseField(
+                field_type=Dict[str, Any],
+                description="Updated chunk",
+            ),
+        }
+    ),
+)
+async def update_document_chunk_endpoint(
+    agent_id: str,
+    doc_name: str,
+    chunk_id: str,
+    updates: Dict[str, Any] = EndpointField(
+        description="Partial fields: title, text, summary, prefix_summary, structure, "
+        "node_id, start_index, end_index, physical_index, line_num"
+    ),
+) -> Dict[str, Any]:
+    """Update chunk fields and refresh lexical index for this node."""
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
+    if not isinstance(updates, dict):
+        raise ValidationError("Request body must be a JSON object")
+    chunk = await update_document_chunk(
+        chunk_id, doc_name, collection_name=agent_id, updates=updates
+    )
+    if not chunk:
+        raise ResourceNotFoundError(
+            message="Chunk not found",
+            details={"doc_name": doc_name, "chunk_id": chunk_id},
+        )
+    return {"chunk": chunk}
+
+
+@endpoint(
+    "/agents/{agent_id}/pageindex/documents/{doc_name}/chunks/{chunk_id}",
+    methods=["DELETE"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex"],
+    response=success_response(
+        data={
+            "message": ResponseField(
+                field_type=str,
+                description="Success message",
+            ),
+        }
+    ),
+)
+async def delete_document_chunk_endpoint(
+    agent_id: str,
+    doc_name: str,
+    chunk_id: str,
+    cascade: bool = Query(
+        default=True,
+        description="If true, delete this node and descendants in the document tree",
+    ),
+) -> Dict[str, Any]:
+    """Delete a chunk; by default removes the subtree for tree-structured documents."""
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
+    ok = await delete_document_chunk(
+        chunk_id,
+        doc_name,
+        collection_name=agent_id,
+        cascade=cascade,
+    )
+    if not ok:
+        raise ResourceNotFoundError(
+            message="Chunk not found",
+            details={"doc_name": doc_name, "chunk_id": chunk_id},
+        )
+    return {"message": "Chunk deleted"}
 
 
 @endpoint(

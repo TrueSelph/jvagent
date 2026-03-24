@@ -866,6 +866,15 @@ class ClassificationHandler:
         if not data_input_values:
             return classification_result
 
+        # LLM control intents must not be overridden by data_input_field side-channel
+        # (e.g. persistent whatsapp_media or N/A injected for the current question).
+        if classification_result.intent in (
+            Intent.CANCELLATION.value,
+            Intent.CONFIRMATION.value,
+            Intent.DECLINE.value,
+        ):
+            return classification_result
+
         # Mark that data_input_field contributed to this result
         classification_result.from_data_input_field = True
 

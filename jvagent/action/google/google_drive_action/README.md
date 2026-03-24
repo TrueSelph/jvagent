@@ -64,6 +64,7 @@ OAUTHLIB_RELAX_TOKEN_SCOPE=1
    - Click **Create**
 5. Download the JSON credentials
 6. Minify the JSON and set as `GOOGLE_CLIENT_SECRETS_JSON` in `.env`
+7. Add test user here `https://console.cloud.google.com/auth/audience?project=jvagent`
 
 ## Endpoints
 
