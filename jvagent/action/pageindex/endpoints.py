@@ -485,8 +485,12 @@ async def get_document_endpoint(agent_id: str, doc_name: str) -> Dict[str, Any]:
     tags=["PageIndex"],
     response=success_response(
         data={
-            "doc_name": ResponseField(field_type=str, description="Document identifier"),
-            "root_id": ResponseField(field_type=str, description="Document root node ID"),
+            "doc_name": ResponseField(
+                field_type=str, description="Document identifier"
+            ),
+            "root_id": ResponseField(
+                field_type=str, description="Document root node ID"
+            ),
             "metadata": ResponseField(
                 field_type=Optional[Dict[str, Any]],
                 description="Updated metadata",
