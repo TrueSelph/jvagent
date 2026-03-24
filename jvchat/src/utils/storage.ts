@@ -5,6 +5,18 @@ const CONVERSATIONS_KEY = 'jvchat_conversations'
 const MESSAGES_KEY = 'jvchat_messages'
 const SELECTED_AGENT_KEY = 'jvchat_selected_agent'
 const SAVED_CREDENTIALS_KEY = 'jvchat_saved_credentials_v2'
+const DEBUG_INTERACTIONS_PAGE_SIZE_KEY = 'jvchat_debug_interactions_page_size'
+const DEBUG_INTERACTIONS_USER_FILTER_KEY = 'jvchat_debug_interactions_user_filter'
+
+export const DEBUG_INTERACTIONS_PAGE_SIZES = [10, 20, 40, 80, 100] as const
+export type DebugInteractionsPageSize =
+  (typeof DEBUG_INTERACTIONS_PAGE_SIZES)[number]
+
+const DEFAULT_DEBUG_INTERACTIONS_PAGE_SIZE: DebugInteractionsPageSize = 10
+
+function isAllowedPageSize(n: number): n is DebugInteractionsPageSize {
+  return (DEBUG_INTERACTIONS_PAGE_SIZES as readonly number[]).includes(n)
+}
 
 export interface SavedCredential {
   id: string
@@ -409,6 +421,54 @@ export function getSelectedAgent(): string | null {
 export function removeSelectedAgent(): void {
   if (typeof window === 'undefined') return
   localStorage.removeItem(SELECTED_AGENT_KEY)
+}
+
+export function getDebugInteractionsPageSize(): DebugInteractionsPageSize {
+  if (typeof window === 'undefined') return DEFAULT_DEBUG_INTERACTIONS_PAGE_SIZE
+  try {
+    const raw = localStorage.getItem(DEBUG_INTERACTIONS_PAGE_SIZE_KEY)
+    if (raw == null) return DEFAULT_DEBUG_INTERACTIONS_PAGE_SIZE
+    const n = parseInt(raw, 10)
+    if (!Number.isFinite(n) || !isAllowedPageSize(n)) {
+      return DEFAULT_DEBUG_INTERACTIONS_PAGE_SIZE
+    }
+    return n
+  } catch {
+    return DEFAULT_DEBUG_INTERACTIONS_PAGE_SIZE
+  }
+}
+
+export function setDebugInteractionsPageSize(size: DebugInteractionsPageSize): void {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(DEBUG_INTERACTIONS_PAGE_SIZE_KEY, String(size))
+  } catch (error) {
+    console.error('Failed to save debug interactions page size:', error)
+  }
+}
+
+export function getDebugInteractionsUserFilter(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(DEBUG_INTERACTIONS_USER_FILTER_KEY)
+    if (raw == null || raw === '') return null
+    return raw
+  } catch {
+    return null
+  }
+}
+
+export function setDebugInteractionsUserFilter(userId: string | null): void {
+  if (typeof window === 'undefined') return
+  try {
+    if (userId == null || userId === '') {
+      localStorage.removeItem(DEBUG_INTERACTIONS_USER_FILTER_KEY)
+    } else {
+      localStorage.setItem(DEBUG_INTERACTIONS_USER_FILTER_KEY, userId)
+    }
+  } catch (error) {
+    console.error('Failed to save debug interactions user filter:', error)
+  }
 }
 
 export function isTokenExpired(token: string | null): boolean {

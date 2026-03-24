@@ -7,7 +7,15 @@ import {
   useMemo,
 } from "react";
 import { apiClient } from "../config/api";
-import { getSelectedAgent } from "../utils/storage";
+import {
+  getSelectedAgent,
+  getDebugInteractionsPageSize,
+  setDebugInteractionsPageSize,
+  getDebugInteractionsUserFilter,
+  setDebugInteractionsUserFilter,
+  DEBUG_INTERACTIONS_PAGE_SIZES,
+  type DebugInteractionsPageSize,
+} from "../utils/storage";
 import { useTheme } from "../context/ThemeContext";
 
 interface DebugInteractionsProps {
@@ -48,8 +56,17 @@ export function DebugInteractions({
   const [improveModel, setImproveModel] = useState("gpt-4o");
   const [improving, setImproving] = useState(false);
   const [improveResult, setImproveResult] = useState("");
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(() =>
+    getDebugInteractionsUserFilter(),
+  );
   const selectedUserIdRef = useRef<string | null>(null);
+  const [pageSize, setPageSize] = useState<DebugInteractionsPageSize>(() =>
+    getDebugInteractionsPageSize(),
+  );
+  const pageSizeRef = useRef<DebugInteractionsPageSize>(getDebugInteractionsPageSize());
+  pageSizeRef.current = pageSize;
+  const targetAgentIdRef = useRef<string | null>(null);
+  targetAgentIdRef.current = targetAgentId;
   const [knownUserIds, setKnownUserIds] = useState<string[]>([]);
   const [userNamesByUserId, setUserNamesByUserId] = useState<
     Record<string, string>
@@ -181,7 +198,7 @@ export function DebugInteractions({
         agent_id: targetAgentId,
         user_id: selectedUserId ?? undefined,
         page: nextPage,
-        page_size: 50,
+        page_size: pageSize,
       });
       setPagination(logsResponse.pagination);
       const newParents = mapLogsToParents(logsResponse.logs || []);
@@ -200,6 +217,7 @@ export function DebugInteractions({
     selectedUserId,
     mapLogsToParents,
     extractUserIdsFromLogs,
+    pageSize,
   ]);
 
   const initializeDebugSession = useCallback(async () => {
@@ -247,7 +265,7 @@ export function DebugInteractions({
         agent_id: targetAgent.id,
         user_id: selectedUserIdRef.current ?? undefined,
         page: 1,
-        page_size: 200,
+        page_size: pageSizeRef.current,
       });
 
       setPagination(logsResponse.pagination);
@@ -292,12 +310,18 @@ export function DebugInteractions({
     initializeDebugSession();
   }, [initializeDebugSession]);
 
+  const userIdsForNameLookup = useMemo(() => {
+    const s = new Set(knownUserIds);
+    if (selectedUserId) s.add(selectedUserId);
+    return [...s].sort();
+  }, [knownUserIds, selectedUserId]);
+
   useEffect(() => {
-    if (!targetAgentId || knownUserIds.length === 0) return;
-    apiClient.getUsers(targetAgentId, knownUserIds).then((users) => {
+    if (!targetAgentId || userIdsForNameLookup.length === 0) return;
+    apiClient.getUsers(targetAgentId, userIdsForNameLookup).then((users) => {
       setUserNamesByUserId((prev) => ({ ...prev, ...users }));
     });
-  }, [targetAgentId, knownUserIds.join(",")]);
+  }, [targetAgentId, userIdsForNameLookup.join(",")]);
 
   useEffect(() => {
     if (effectiveParents.length === 0) {
@@ -321,24 +345,29 @@ export function DebugInteractions({
       if (newParentIdx !== selectedParentIndex || selectedMetricIndex !== metricIdx) {
         selectInteraction(newParentIdx, metricIdx, effectiveParents);
       }
-    } else if (!currentParent || selectedParentIndex >= effectiveParents.length) {
+    } else if (
+      !currentParent ||
+      selectedParentIndex == null ||
+      selectedParentIndex >= effectiveParents.length
+    ) {
       selectInteraction(0, effectiveParents[0].metrics.length - 1, effectiveParents);
     }
   }, [effectiveParents, selectedUserId]);
 
   useEffect(() => {
-    if (!initialLoadDone.current || !targetAgentId) return;
+    const agentId = targetAgentIdRef.current;
+    if (!initialLoadDone.current || !agentId) return;
 
-    const refetchWithUserFilter = async () => {
+    const refetchInteractionLogsPage1 = async () => {
       setLoading(true);
       setError(null);
       try {
         const logsResponse = await apiClient.getLogs({
           category: "INTERACTION",
-          agent_id: targetAgentId,
+          agent_id: agentId,
           user_id: selectedUserId ?? undefined,
           page: 1,
-          page_size: 200,
+          page_size: pageSize,
         });
         setPagination(logsResponse.pagination);
         const parents = mapLogsToParents(logsResponse.logs || []);
@@ -360,10 +389,16 @@ export function DebugInteractions({
       }
     };
 
-    refetchWithUserFilter();
-    // Only refetch when user changes the filter; targetAgentId is from closure (set after initial load)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedUserId]);
+    refetchInteractionLogsPage1();
+    // Intentionally omit targetAgentId: initial session load already fetches when it becomes set.
+    // Refetch only when user filter or page size changes after the first load.
+  }, [
+    selectedUserId,
+    pageSize,
+    mapLogsToParents,
+    extractUserIdsFromLogs,
+    selectInteraction,
+  ]);
 
   useEffect(() => {
     const historyData = selectedInteraction?.data?.history;
@@ -777,27 +812,63 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
             <div
               className={`rounded-lg shadow-sm p-4 mb-6 border ${effectiveDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"}`}
             >
-              {knownUserIds.length > 0 && (
-                <div className="mb-4">
+              <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+                {(knownUserIds.length > 0 || selectedUserId) && (
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
+                      User
+                    </label>
+                    <select
+                      className={`w-full max-w-xs p-2 border rounded text-sm ${effectiveDarkMode ? "bg-slate-700 border-slate-600 text-slate-100" : "bg-white border-gray-300"}`}
+                      value={selectedUserId ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value || null;
+                        setSelectedUserId(v);
+                        setDebugInteractionsUserFilter(v);
+                      }}
+                    >
+                      <option value="">All users</option>
+                      {selectedUserId &&
+                        !knownUserIds.includes(selectedUserId) && (
+                          <option value={selectedUserId}>
+                            {formatUserLabel(selectedUserId)}
+                          </option>
+                        )}
+                      {[...knownUserIds].sort().map((id) => (
+                        <option key={id} value={id}>
+                          {formatUserLabel(id)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div>
                   <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
-                    User
+                    Interactions per page
                   </label>
                   <select
                     className={`w-full max-w-xs p-2 border rounded text-sm ${effectiveDarkMode ? "bg-slate-700 border-slate-600 text-slate-100" : "bg-white border-gray-300"}`}
-                    value={selectedUserId ?? ""}
-                    onChange={(e) =>
-                      setSelectedUserId(e.target.value || null)
-                    }
+                    value={pageSize}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (
+                        !DEBUG_INTERACTIONS_PAGE_SIZES.includes(
+                          n as DebugInteractionsPageSize,
+                        )
+                      )
+                        return;
+                      setDebugInteractionsPageSize(n as DebugInteractionsPageSize);
+                      setPageSize(n as DebugInteractionsPageSize);
+                    }}
                   >
-                    <option value="">All users</option>
-                    {[...knownUserIds].sort().map((id) => (
-                      <option key={id} value={id}>
-                        {formatUserLabel(id)}
+                    {DEBUG_INTERACTIONS_PAGE_SIZES.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
                       </option>
                     ))}
                   </select>
                 </div>
-              )}
+              </div>
               {effectiveParents.length === 0 && selectedUserId ? (
                 <p className={`text-sm ${effectiveDarkMode ? "text-slate-400" : "text-gray-500"}`}>
                   No interactions for this user in the current view.

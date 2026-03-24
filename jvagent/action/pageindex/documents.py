@@ -8,7 +8,7 @@ import asyncio
 import logging
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from jvspatial.core.context import (
     GraphContext,
@@ -29,9 +29,12 @@ from .config import (
 )
 from .core import md_to_tree, page_index
 from .llm_bridge import set_pageindex_model_action
-from .models import DocumentRootNode
+from .models import DocumentContentEdge, DocumentNode, DocumentRootNode
 
 logger = logging.getLogger(__name__)
+
+# Max chunks returned in one list response (when per_page is 0 = "all", or cap page size).
+CHUNK_LIST_MAX = 5000
 
 
 async def _get_app_id_from_node() -> Optional[str]:
@@ -414,5 +417,303 @@ async def import_documents(
                     )
             except Exception:
                 logger.debug("Lexical indexing failed during import", exc_info=True)
+    finally:
+        _safe_restore_context(prev)
+
+
+def _document_node_to_chunk_dict(node: DocumentNode) -> Dict[str, Any]:
+    """Serialize a DocumentNode for chunk list/detail API responses."""
+    return {
+        "id": node.id,
+        "title": node.title or "",
+        "text": node.text or "",
+        "summary": node.summary,
+        "prefix_summary": node.prefix_summary,
+        "structure": node.structure or "",
+        "node_id": node.node_id or "",
+        "start_index": node.start_index,
+        "end_index": node.end_index,
+        "physical_index": node.physical_index,
+        "line_num": node.line_num,
+        "doc_name": node.doc_name or "",
+    }
+
+
+def _chunk_matches_filter(query: Optional[str], node: DocumentNode) -> bool:
+    if not query or not str(query).strip():
+        return True
+    needle = str(query).strip().lower()
+    parts = [
+        node.title or "",
+        node.text or "",
+        node.summary or "",
+        node.prefix_summary or "",
+        node.structure or "",
+    ]
+    return any(needle in p.lower() for p in parts)
+
+
+def _chunk_sort_key(node: DocumentNode) -> tuple:
+    return (node.structure or "", node.id or "")
+
+
+def _chunk_sort_key_collection(node: DocumentNode) -> tuple:
+    return (node.doc_name or "", node.structure or "", node.id or "")
+
+
+def _paginate_filtered_nodes(
+    filtered: List[DocumentNode],
+    *,
+    page: int,
+    per_page: int,
+) -> Tuple[List[DocumentNode], int]:
+    """Slice filtered nodes for the current page; per_page <= 0 means all (capped)."""
+    total = len(filtered)
+    if page < 1:
+        page = 1
+    if per_page <= 0:
+        cap = min(total, CHUNK_LIST_MAX)
+        page_chunks = filtered[:cap]
+    else:
+        per_page = min(per_page, CHUNK_LIST_MAX)
+        start = (page - 1) * per_page
+        page_chunks = filtered[start : start + per_page]
+    return page_chunks, total
+
+
+async def _collect_subtree_node_ids(root: DocumentNode) -> List[str]:
+    """All DocumentNode ids in the subtree under root (including root), via outgoing edges."""
+    ordered: List[str] = []
+    seen: set[str] = set()
+    queue: List[DocumentNode] = [root]
+    while queue:
+        current = queue.pop(0)
+        if current.id in seen:
+            continue
+        seen.add(current.id)
+        ordered.append(current.id)
+        children = await current.outgoing(node=DocumentNode, edge=DocumentContentEdge)
+        queue.extend(children)
+    return ordered
+
+
+_CHUNK_UPDATE_FIELDS = frozenset(
+    {
+        "title",
+        "text",
+        "summary",
+        "prefix_summary",
+        "structure",
+        "node_id",
+        "start_index",
+        "end_index",
+        "physical_index",
+        "line_num",
+    }
+)
+
+
+async def list_document_chunks(
+    doc_name: str,
+    collection_name: str,
+    *,
+    page: int = 1,
+    per_page: int = 0,
+    q: Optional[str] = None,
+) -> Dict[str, Any]:
+    """List DocumentNode chunks for a document with optional text filter and pagination.
+
+    per_page <= 0 means return up to CHUNK_LIST_MAX chunks (all by default, capped).
+    """
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
+    root = await get_document_root(doc_name, collection_name=collection_name)
+    if not root:
+        return {"chunks": [], "total": 0}
+
+    context = _get_pageindex_context()
+    prev = _safe_get_prev_context()
+    try:
+        set_default_context(context)
+        nodes = await DocumentNode.find(
+            {
+                "context.doc_name": doc_name,
+                "context.collection_name": collection_name,
+            }
+        )
+    finally:
+        _safe_restore_context(prev)
+
+    filtered = [n for n in nodes if _chunk_matches_filter(q, n)]
+    filtered.sort(key=_chunk_sort_key)
+    page_chunks, total = _paginate_filtered_nodes(filtered, page=page, per_page=per_page)
+
+    return {
+        "chunks": [_document_node_to_chunk_dict(n) for n in page_chunks],
+        "total": total,
+    }
+
+
+async def list_collection_chunks(
+    collection_name: str,
+    *,
+    page: int = 1,
+    per_page: int = 0,
+    q: Optional[str] = None,
+) -> Dict[str, Any]:
+    """List all DocumentNode chunks in a collection (all documents)."""
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
+    context = _get_pageindex_context()
+    prev = _safe_get_prev_context()
+    try:
+        set_default_context(context)
+        nodes = await DocumentNode.find({"context.collection_name": collection_name})
+    finally:
+        _safe_restore_context(prev)
+
+    filtered = [n for n in nodes if _chunk_matches_filter(q, n)]
+    filtered.sort(key=_chunk_sort_key_collection)
+    page_chunks, total = _paginate_filtered_nodes(filtered, page=page, per_page=per_page)
+
+    return {
+        "chunks": [_document_node_to_chunk_dict(n) for n in page_chunks],
+        "total": total,
+    }
+
+
+async def update_document_metadata(
+    doc_name: str,
+    collection_name: str,
+    metadata: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Set DocumentRootNode.metadata (None clears)."""
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
+    root = await get_document_root(doc_name, collection_name=collection_name)
+    if not root:
+        return None
+
+    context = _get_pageindex_context()
+    prev = _safe_get_prev_context()
+    try:
+        set_default_context(context)
+        root.metadata = metadata
+        await root.save()
+        return {
+            "doc_name": root.doc_name,
+            "root_id": root.id,
+            "metadata": root.metadata,
+        }
+    finally:
+        _safe_restore_context(prev)
+
+
+async def get_document_chunk(
+    chunk_id: str,
+    doc_name: str,
+    collection_name: str,
+) -> Optional[Dict[str, Any]]:
+    """Return chunk dict if the node exists and belongs to doc_name/collection."""
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
+    context = _get_pageindex_context()
+    prev = _safe_get_prev_context()
+    try:
+        set_default_context(context)
+        node = await DocumentNode.get(chunk_id)
+    finally:
+        _safe_restore_context(prev)
+
+    if not node:
+        return None
+    if node.doc_name != doc_name or node.collection_name != collection_name:
+        return None
+    return _document_node_to_chunk_dict(node)
+
+
+async def update_document_chunk(
+    chunk_id: str,
+    doc_name: str,
+    collection_name: str,
+    updates: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Apply whitelisted field updates; refresh lexical index for this node."""
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
+    context = _get_pageindex_context()
+    prev = _safe_get_prev_context()
+    try:
+        set_default_context(context)
+        node = await DocumentNode.get(chunk_id)
+        if not node or node.doc_name != doc_name or node.collection_name != collection_name:
+            return None
+
+        for key, value in updates.items():
+            if key not in _CHUNK_UPDATE_FIELDS:
+                continue
+            if hasattr(node, key):
+                setattr(node, key, value)
+
+        await node.save()
+
+        try:
+            from .lexical_index import index_node, remove_node
+
+            await remove_node(node.id, collection_name)
+            await index_node(
+                node_id=node.id,
+                doc_name=node.doc_name,
+                collection_name=collection_name,
+                title=node.title or "",
+                text=node.text or "",
+                summary=node.summary or "",
+                prefix_summary=node.prefix_summary or "",
+            )
+        except Exception:
+            logger.debug(
+                "Lexical index refresh failed after chunk update",
+                exc_info=True,
+            )
+
+        return _document_node_to_chunk_dict(node)
+    finally:
+        _safe_restore_context(prev)
+
+
+async def delete_document_chunk(
+    chunk_id: str,
+    doc_name: str,
+    collection_name: str,
+    *,
+    cascade: bool = True,
+) -> bool:
+    """Delete a chunk node; optionally cascade to descendants. Cleans lexical index first."""
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
+    context = _get_pageindex_context()
+    prev = _safe_get_prev_context()
+    try:
+        set_default_context(context)
+        node = await DocumentNode.get(chunk_id)
+        if not node or node.doc_name != doc_name or node.collection_name != collection_name:
+            return False
+
+        try:
+            from .lexical_index import remove_document_nodes
+
+            if cascade:
+                ids = await _collect_subtree_node_ids(node)
+            else:
+                ids = [node.id]
+            await remove_document_nodes(ids, collection_name)
+        except Exception:
+            logger.debug(
+                "Lexical index cleanup failed before chunk delete",
+                exc_info=True,
+            )
+
+        await node.delete(cascade=cascade)
+        logger.info(
+            "Deleted PageIndex chunk %s (doc=%s, cascade=%s)",
+            chunk_id,
+            doc_name,
+            cascade,
+        )
+        return True
     finally:
         _safe_restore_context(prev)

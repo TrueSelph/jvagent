@@ -148,6 +148,13 @@ export interface PageIndexDeleteResponse {
   message: string
 }
 
+/** PATCH document root metadata response */
+export interface PageIndexDocumentMetadataResponse {
+  doc_name: string
+  root_id: string
+  metadata?: Record<string, unknown> | null
+}
+
 export interface PageIndexSearchResult {
   node_id?: string
   title?: string
@@ -170,4 +177,46 @@ export interface PageIndexSearchParams {
   strategy?: 'tree_search' | 'direct' | 'walker'
   limit?: number
   metadata?: Record<string, unknown>
+}
+
+/** PageIndex document chunk (DocumentNode) */
+export interface PageIndexChunk {
+  id: string
+  title: string
+  text: string
+  summary?: string | null
+  prefix_summary?: string | null
+  structure: string
+  node_id: string
+  start_index?: number | null
+  end_index?: number | null
+  physical_index?: number | null
+  line_num?: number | null
+  doc_name: string
+}
+
+export interface PageIndexChunksListResponse {
+  chunks: PageIndexChunk[]
+  total: number
+}
+
+export interface PageIndexChunkUpdatePayload {
+  title?: string
+  text?: string
+  summary?: string | null
+  prefix_summary?: string | null
+  structure?: string
+  node_id?: string
+  start_index?: number | null
+  end_index?: number | null
+  physical_index?: number | null
+  line_num?: number | null
+}
+
+export interface PageIndexChunkDetailResponse {
+  chunk: PageIndexChunk
+}
+
+export interface PageIndexChunkDeleteResponse {
+  message: string
 }
