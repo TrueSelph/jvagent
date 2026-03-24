@@ -70,6 +70,17 @@ class App(Node):
         description="IANA timezone for app-level datetime (e.g. America/New_York)",
     )
 
+    # Next-start YAML sync intent: run | merge | source (protected from bulk/YAML overwrites;
+    # mutate only via set_app_update_mode — see jvspatial AttributeMixin / Object.update).
+    update_mode: str = attribute(
+        default="run",
+        protected=True,
+        description=(
+            "Stored bootstrap intent for next start: run (default), merge, or source. "
+            "Maps to bootstrap YAML-sync when CLI omits --update."
+        ),
+    )
+
     # Runtime instances (private, transient)
     _file_interface: Any = attribute(private=True, default=None)
     _proxy_manager: Any = attribute(private=True, default=None)
@@ -477,3 +488,9 @@ class App(Node):
             return await self.get_file_url(path)
 
         return None
+
+
+async def set_app_update_mode(app: App, value: str) -> None:
+    """Persist operational ``update_mode`` (protected field; bypasses normal setattr)."""
+    object.__setattr__(app, "update_mode", value)
+    await app.save()

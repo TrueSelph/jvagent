@@ -15,6 +15,10 @@ from jvspatial.env import clear_load_env_cache
 
 from jvagent import __version__
 from jvagent.cli.bootstrap import bootstrap_application_graph, ensure_admin_user
+from jvagent.core.bootstrap_update_mode import (
+    reset_app_update_mode_after_successful_bootstrap,
+    resolve_bootstrap_update_mode,
+)
 from jvagent.core.config import (
     get_config_value,
     get_file_storage_config,
@@ -485,16 +489,19 @@ async def pre_startup_bootstrap(
 
     Args:
         server: Server instance with initialized context
-        update_mode: Update strategy - "merge" for non-destructive merge, "source" for
-                     destructive overwrite from YAML, or None to skip existing.
+        update_mode: From CLI ``--update`` / ``--source`` (``merge``, ``source``, or None).
+                     When None, effective mode may come from persisted ``App.update_mode``
+                     (see ``resolve_bootstrap_update_mode``).
         app_root: Path to the app root directory. If None, uses current working directory.
 
     Returns:
         True if admin user exists, False otherwise
     """
     try:
-        # Bootstrap application graph
-        await bootstrap_application_graph(update_mode=update_mode, app_root=app_root)
+        effective_update_mode = await resolve_bootstrap_update_mode(update_mode)
+        await bootstrap_application_graph(
+            update_mode=effective_update_mode, app_root=app_root
+        )
 
         # Initialize all actions by calling their on_startup() hooks
         # This ensures runtime components like channel adapters are initialized
@@ -504,6 +511,8 @@ async def pre_startup_bootstrap(
 
         # Ensure admin user exists
         admin_exists = await ensure_admin_user()
+
+        await reset_app_update_mode_after_successful_bootstrap()
 
         return admin_exists
     except Exception as e:
