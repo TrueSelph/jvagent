@@ -16,6 +16,7 @@ import { ConversationList } from "./ConversationList";
 import { DebugInteractions } from "./DebugInteractions";
 import { PageIndexDocumentsModal } from "./PageIndexDocumentsModal";
 import { ActionsModal } from "./ActionsModal";
+import { MemoryViewer } from "./MemoryViewer";
 import {
   getMessages,
   deleteMessages,
@@ -55,6 +56,7 @@ export function ChatInterface() {
   const [isDebugModalOpen, setIsDebugModalOpen] = useState(false);
   const [isPageIndexModalOpen, setIsPageIndexModalOpen] = useState(false);
   const [isActionsModalOpen, setIsActionsModalOpen] = useState(false);
+  const [isMemoryModalOpen, setIsMemoryModalOpen] = useState(false);
   const [hasPageIndexAction, setHasPageIndexAction] = useState(false);
 
   const handleMobileMenuClose = useCallback(() => {
@@ -83,6 +85,14 @@ export function ChatInterface() {
 
   const handleCloseActionsModal = useCallback(() => {
     setIsActionsModalOpen(false);
+  }, []);
+
+  const handleToggleMemoryModal = useCallback(() => {
+    setIsMemoryModalOpen((prev) => !prev);
+  }, []);
+
+  const handleCloseMemoryModal = useCallback(() => {
+    setIsMemoryModalOpen(false);
   }, []);
 
   useEffect(() => {
@@ -472,10 +482,32 @@ export function ChatInterface() {
                   </p>
                 )}
               </div>
-
-              {/* Agent actions button */}
-              <button
-                onClick={handleToggleActionsModal}
+ 
+               {/* Memory viewer button */}
+               <button
+                 onClick={handleToggleMemoryModal}
+                 className="flex-shrink-0 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                 aria-label="Memory"
+                 title="Long-Term Memory"
+               >
+                 <svg
+                   className="w-6 h-6"
+                   fill="none"
+                   stroke="currentColor"
+                   viewBox="0 0 24 24"
+                 >
+                   <path
+                     strokeLinecap="round"
+                     strokeLinejoin="round"
+                     strokeWidth={2}
+                     d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                   />
+                 </svg>
+               </button>
+ 
+               {/* Agent actions button */}
+               <button
+                 onClick={handleToggleActionsModal}
                 className="flex-shrink-0 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
                 aria-label="Actions"
                 title="Agent Actions"
@@ -595,6 +627,14 @@ export function ChatInterface() {
             agentId={agentId}
             onClose={handleCloseActionsModal}
             isEmbedded={true}
+          />
+        )}
+
+        {/* Memory Viewer Modal Dialog */}
+        {isMemoryModalOpen && agentId && (
+          <MemoryViewer
+            agentId={agentId}
+            onClose={handleCloseMemoryModal}
           />
         )}
       </div>

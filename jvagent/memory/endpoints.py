@@ -13,6 +13,7 @@ from jvspatial.logging.filter_utils import validate_log_filter
 from jvagent.core.agent import Agent
 from jvagent.memory.manager import Memory
 from jvagent.memory.user import User
+from jvagent.memory.user_long_memory import UserLongMemory
 
 logger = logging.getLogger(__name__)
 
@@ -411,3 +412,124 @@ async def repair_memory(
             f"{conv_branch_removed} conv-branch edge(s) removed"
         ),
     }
+
+
+@endpoint(
+    "/api/agents/{agent_id}/memory/me",
+    methods=["GET"],
+    auth=True,
+    tags=["Memory"],
+    response=success_response(
+        data={
+            "memory": ResponseField(
+                field_type=dict,
+                description="Your long-term memory structured by category",
+            ),
+        }
+    ),
+)
+async def get_my_memory(
+    agent_id: str,
+    user_id: Optional[str] = Query(None, description="Caller's user_id (from client storage)"),
+) -> Dict[str, Any]:
+    """Get the current user's long-term memory for an agent.
+
+    Returns memory categories for the requesting user. Any authenticated user
+    can call this endpoint to see their own stored profile data.
+
+    **Args:**
+    - `agent_id`: Agent node ID
+    - `user_id`: The caller's user identifier (passed as query param from the client)
+
+    **Returns:**
+    - `memory`: { category_key: { title, content, updated_at } }
+    """
+    if not user_id:
+        return {"memory": {}}
+        
+    agent = await Agent.get(agent_id)
+    if not agent:
+        raise ResourceNotFoundError(f"Agent with ID '{agent_id}' not found")
+
+    memory_manager = await agent.get_memory()
+    if not memory_manager:
+        raise ResourceNotFoundError(f"Memory not found for agent '{agent_id}'")
+
+    user = await memory_manager.get_user(user_id)
+    if not user:
+        return {"memory": {}}
+
+    long_memory = await UserLongMemory.get_for_user(user)
+    if not long_memory:
+        return {"memory": {}}
+
+    content_map = {}
+    categories = await long_memory.get_all_categories()
+    for cat in categories:
+        if not cat.is_empty():
+            content_map[cat.category] = {
+                "title": cat.title,
+                "content": cat.content,
+                "updated_at": cat.updated_at.isoformat() if cat.updated_at else None,
+            }
+
+    return {"memory": content_map}
+
+
+@endpoint(
+    "/api/agents/{agent_id}/memory/users/{user_id}/content",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["Memory"],
+    response=success_response(
+        data={
+            "memory": ResponseField(
+                field_type=dict,
+                description="User's long-term memory structured by category",
+            ),
+        }
+    ),
+)
+async def get_user_memory_content(
+    agent_id: str,
+    user_id: str,
+) -> Dict[str, Any]:
+    """Get a specific user's long-term memory for an agent (admin only).
+
+    Returns a dictionary mapping category titles to their markdown content.
+
+    **Args:**
+    - `agent_id`: Agent node ID
+    - `user_id`: Target user's identifier
+
+    **Returns:**
+    - `memory`: { category_title: content }
+    """
+    agent = await Agent.get(agent_id)
+    if not agent:
+        raise ResourceNotFoundError(f"Agent with ID '{agent_id}' not found")
+
+    memory_manager = await agent.get_memory()
+    if not memory_manager:
+        raise ResourceNotFoundError(f"Memory not found for agent '{agent_id}'")
+
+    user = await memory_manager.get_user(user_id)
+    if not user:
+        raise ResourceNotFoundError(f"User '{user_id}' not found")
+
+    long_memory = await UserLongMemory.get_for_user(user)
+    if not long_memory:
+        return {"memory": {}}
+
+    content_map = {}
+    categories = await long_memory.get_all_categories()
+    for cat in categories:
+        if not cat.is_empty():
+            content_map[cat.category] = {
+                "title": cat.title,
+                "content": cat.content,
+                "updated_at": cat.updated_at.isoformat() if cat.updated_at else None,
+            }
+
+    return {"memory": content_map}

@@ -286,6 +286,20 @@ class UserLongMemory(Node):
         return await user.node(node=UserLongMemory, direction="out")
 
     @classmethod
+    async def get_for_user_id(cls, user_id: str) -> Optional["UserLongMemory"]:
+        """Get the UserLongMemory node for a specific user_id.
+
+        Args:
+            user_id: The ID of the user.
+
+        Returns:
+            UserLongMemory node if it exists, None otherwise.
+        """
+        if not user_id:
+            return None
+        return await cls.find_one(user_id=user_id)
+
+    @classmethod
     async def get_or_create_for_user(cls, user: "User") -> "UserLongMemory":
         """Get or create the UserLongMemory node for a user.
 

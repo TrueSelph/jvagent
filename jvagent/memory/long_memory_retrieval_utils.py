@@ -1,11 +1,9 @@
-"""Pure helpers for long-memory PageIndex collection resolution and keyword overlap.
+"""Pure helpers for long-memory PageIndex collection resolution.
 
 Lives under ``jvagent.memory`` so tests can import without loading PageIndex.
 """
 
-from typing import Any, Dict, List, Optional
-
-_KEYWORD_OVERLAP_MIN_LEN = 2
+from typing import Any, Dict, Optional
 
 
 def resolve_long_memory_collection(
@@ -25,24 +23,3 @@ def resolve_long_memory_collection(
     if aid:
         return f"{aid}_{suffix}"
     return suffix or "default"
-
-
-def utterance_overlaps_category_keywords(
-    categories: List[Any],
-    utterance: str,
-    interpretation: str,
-) -> bool:
-    """True if any non-empty category keyword appears as a substring of utterance/interpretation."""
-    blob = " ".join(
-        x for x in ((utterance or "").lower(), (interpretation or "").lower()) if x
-    )
-    if not blob.strip():
-        return False
-    for c in categories:
-        if c.is_empty():
-            continue
-        for kw in getattr(c, "keywords", None) or []:
-            needle = str(kw).strip().lower()
-            if len(needle) >= _KEYWORD_OVERLAP_MIN_LEN and needle in blob:
-                return True
-    return False
