@@ -27,17 +27,10 @@ from jvagent.action.pageindex.pageindex_retrieval_interact_action import (
     _push_retrieval_config,
 )
 from jvagent.action.pageindex.retrieval import search_documents
-from jvagent.memory.long_memory_retrieval_utils import (
-    resolve_long_memory_collection,
-    utterance_overlaps_category_keywords,
-)
+from jvagent.memory.long_memory_retrieval_utils import resolve_long_memory_collection
 from jvagent.memory.user_long_memory import UserLongMemory
 
-from .prompts import (
-    CLARIFY_DIRECTIVE_TEMPLATE,
-    DIRECTIVE_TEMPLATE,
-    SEARCH_DECISION_PROMPT,
-)
+from .prompts import DIRECTIVE_TEMPLATE
 
 if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
@@ -140,8 +133,8 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
         description="Execution weight (runs after InteractRouter)",
     )
     always_execute: bool = attribute(
-        default=True,
-        description="Always execute to allow autonomous decision making",
+        default=False,
+        description="Disabled autonomous decision making as InteractRouter handles this via anchors",
     )
     directive: str = attribute(
         default=DIRECTIVE_TEMPLATE,
@@ -192,8 +185,74 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
     async def on_register(self) -> None:
         """Register the action with the agent."""
         await super().on_register()
+        # Static fallback anchors (used when user context is unavailable, e.g. at startup)
+        self.anchors.extend(
+            [
+                "user interests",
+                "user preferences",
+                "facts about the user",
+                "user profile information",
+                "long-term memory context",
+            ]
+        )
         if self.point_of_interest:
             self.anchors.append(f"needs context from {str(self.point_of_interest)}")
+
+    async def get_anchors(self, conversation=None) -> list:
+        """Return live anchors derived from the user's memory categories.
+
+        Called by InteractRouter at routing time. Fetches category titles + keywords
+        from UserLongMemory so the LLM knows what data is stored and can route here
+        dynamically — even for categories added after deployment.
+
+        Falls back to static self.anchors when:
+        - No conversation or user is available
+        - UserLongMemory has no categories or all are empty
+
+        Args:
+            conversation: Current Conversation node (may be None).
+
+        Returns:
+            A list of anchor strings (always non-empty: falls back to static anchors).
+        """
+        try:
+            if conversation is None:
+                return self.anchors  # type: ignore[return-value]
+
+            user_id = getattr(conversation, "user_id", None)
+            if not user_id:
+                return self.anchors  # type: ignore[return-value]
+
+            user_long_memory = await UserLongMemory.get_for_user_id(str(user_id))
+            if not user_long_memory:
+                return self.anchors  # type: ignore[return-value]
+
+            categories = await user_long_memory.get_all_categories()
+            dynamic: list = []
+            for cat in categories:
+                if cat.is_empty():
+                    continue
+                title = getattr(cat, "title", "") or ""
+                keywords = list(getattr(cat, "keywords", []) or [])
+                if title:
+                    dynamic.append(f"user has stored: {title}")
+                for kw in keywords:
+                    if kw:
+                        dynamic.append(str(kw))
+
+            if dynamic:
+                # Merge with static anchors (dedup, static first)
+                seen = set(self.anchors)
+                extra = [a for a in dynamic if a not in seen]
+                logger.debug(
+                    f"UserLongMemoryRetrieval.get_anchors: {len(extra)} dynamic anchors from memory"
+                )
+                return list(self.anchors) + extra  # type: ignore[return-value]
+        except Exception as exc:
+            logger.warning(f"UserLongMemoryRetrieval.get_anchors failed: {exc}")
+
+        return self.anchors  # type: ignore[return-value]
+
 
     def _resolve_collection(self) -> str:
         """Resolve PageIndex collection as {agent_id}_{suffix}."""
@@ -219,26 +278,8 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
             if model_action:
                 set_pageindex_model_action(model_action)
 
-            # --- Autonomous Decision Making ---
-            decision_result = await self._evaluate_search_need(visitor, model_action)
-            decision = decision_result.get("decision", "CONTINUE")
-
-            if decision == "CONTINUE":
-                logger.debug(
-                    "UserLongMemoryRetrieval: Decision is CONTINUE, skipping search"
-                )
-                return
-
-            if decision == "CLARIFY":
-                question = decision_result.get("question")
-                if question:
-                    directive = CLARIFY_DIRECTIVE_TEMPLATE.format(question=question)
-                    await visitor.add_directive(directive)
-                    await visitor.add_event(f"Clarification suggested: {question}")
-                return
-
-            # If SEARCH, use the query from LLM if provided, else fallback to default
-            query = decision_result.get("query") or self._get_search_query(interaction)
+            # If SEARCH, use the query from LLM if provided, or fallback to default
+            query = self._get_search_query(interaction)
             if not query:
                 logger.debug("UserLongMemoryRetrieval: No query available for SEARCH")
                 return
@@ -315,96 +356,4 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
             parts.append(f"- {prefix}{content}")
         return self.directive.format(results="\n".join(parts))
 
-    async def _get_recent_history(self, visitor: "InteractWalker") -> str:
-        """Get recent conversation history for context using the Conversation API."""
-        interaction = visitor.interaction
-        if not interaction.conversation_id:
-            return "No history available."
 
-        from jvagent.memory.conversation import Conversation
-
-        conversation = await Conversation.get(interaction.conversation_id)
-        if not conversation:
-            return "No history available."
-
-        # Get formatted history (role/content pairs)
-        history = await conversation.get_interaction_history(
-            limit=self.history_limit,
-            excluded=interaction.id,
-            with_utterance=True,
-            with_response=True,
-            formatted=True,
-        )
-
-        history_lines = []
-        for msg in history:
-            role = "User" if msg["role"] == "user" else "AI"
-            history_lines.append(f"{role}: {msg['content']}")
-
-        formatted_history = (
-            "\n".join(history_lines) if history_lines else "No history available."
-        )
-
-        return formatted_history
-
-    async def _evaluate_search_need(
-        self, visitor: "InteractWalker", model_action: Any
-    ) -> Dict[str, Any]:
-        """Use LLM to decide if search is needed based on memory categories."""
-        interaction = visitor.interaction
-        user = await interaction.get_user()
-        if not user:
-            return {"decision": "CONTINUE"}
-
-        user_long_memory = await UserLongMemory.get_for_user(user)
-        if not user_long_memory:
-            return {"decision": "CONTINUE"}
-
-        categories = await user_long_memory.get_all_categories()
-        index_parts = []
-        for c in categories:
-            if c.is_empty():
-                continue
-            keywords_str = (
-                ", ".join(c.keywords) if getattr(c, "keywords", []) else "None"
-            )
-            index_parts.append(f"- {c.title} ({c.category}): Keywords: {keywords_str}")
-
-        memory_index = "\n".join(index_parts)
-        if not index_parts:
-            return {"decision": "CONTINUE"}
-
-        if utterance_overlaps_category_keywords(
-            categories,
-            interaction.utterance or "",
-            interaction.interpretation or "",
-        ):
-            q = (interaction.utterance or interaction.interpretation or "").strip()
-            return {
-                "decision": "SEARCH",
-                "reasoning": "Keyword overlap with memory index (fast path)",
-                "query": q or None,
-            }
-
-        if not model_action:
-            return {"decision": "CONTINUE"}
-
-        prompt = SEARCH_DECISION_PROMPT.format(
-            memory_index=memory_index,
-            utterance=interaction.utterance or "",
-            interpretation=interaction.interpretation or "None",
-            history=await self._get_recent_history(visitor),
-        )
-
-        try:
-            response = await model_action.generate(
-                prompt=prompt,
-                model=self.model or "gpt-4o-mini",
-                response_format={"type": "json_object"},
-            )
-            import json
-
-            return json.loads(response)
-        except Exception as e:
-            logger.error(f"UserLongMemoryRetrieval: Decision LLM call failed: {e}")
-            return {"decision": "CONTINUE"}

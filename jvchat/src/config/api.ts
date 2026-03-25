@@ -20,6 +20,7 @@ import type {
   PageIndexChunkUpdatePayload,
   PageIndexChunkDeleteResponse,
   PageIndexDocumentMetadataResponse,
+  UserMemoryResponse,
 } from '../types/api'
 
 class ApiClient {
@@ -817,6 +818,30 @@ class ApiClient {
     return response.data
   }
 
+  async getMyMemory(agentId: string): Promise<UserMemoryResponse> {
+    const userId = getUserId()
+    const url = `/api/agents/${agentId}/memory/me${userId ? `?user_id=${encodeURIComponent(userId)}` : ''}`
+    const fallbackUrl = `/agents/${agentId}/memory/me${userId ? `?user_id=${encodeURIComponent(userId)}` : ''}`
+
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.get(url, { baseURL })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.get(fallbackUrl, { baseURL })
+        }
+        throw err
+      }
+    })
+
+    const data = response.data
+    // Handle success_response wrapper
+    if (data && data.success && data.data) {
+      return data.data as UserMemoryResponse
+    }
+    return data as UserMemoryResponse
+  }
+
   /**
    * Reload an action after update.
    * Path: POST /api/actions/{actionId}/reload
@@ -1230,4 +1255,3 @@ class ApiClient {
 }
 
 export const apiClient = new ApiClient()
-

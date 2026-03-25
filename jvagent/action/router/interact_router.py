@@ -42,6 +42,7 @@ from jvagent.core.cache import (
     set_interact_router_cache,
 )
 from jvagent.memory.conversation import Conversation
+from jvagent.memory.user_long_memory import UserLongMemory
 
 if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
@@ -286,8 +287,6 @@ class InteractRouter(InteractAction):
                 logger.error("InteractRouter: Model action not found")
                 return
 
-            # Media attached but no media_bypass_actions -> continue to LLM
-            # Collect anchors and history in parallel
             if conversation:
                 anchors_dict, interaction_history = await asyncio.gather(
                     self._collect_anchors(agent, conversation=conversation),
@@ -309,8 +308,11 @@ class InteractRouter(InteractAction):
             if not anchors_dict:
                 logger.warning("InteractRouter: No anchors available for routing")
                 result = RoutingResult.error_result(
-                    "No actions available for routing", interaction.utterance or ""
+                    "No actions available for routing",
+                    utterance=interaction.utterance or "",
+                    session_id=visitor.session_id,
                 )
+
                 await self._finalize_routing(
                     visitor,
                     interaction,
@@ -1053,8 +1055,16 @@ class InteractRouter(InteractAction):
                         )
                         continue
 
-            # Get anchors
-            anchors = getattr(action, "anchors", None)
+            # Get anchors: prefer dynamic (get_anchors hook) over static self.anchors
+            dynamic_anchors = None
+            try:
+                dynamic_anchors = await action.get_anchors(conversation)
+            except Exception as exc:
+                logger.warning(
+                    f"InteractRouter: get_anchors() failed for {entity_name}: {exc}"
+                )
+
+            anchors = dynamic_anchors if dynamic_anchors is not None else getattr(action, "anchors", None)
             description = getattr(action, "description", None)
 
             if anchors is None:

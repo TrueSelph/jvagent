@@ -220,3 +220,11 @@ export interface PageIndexChunkDetailResponse {
 export interface PageIndexChunkDeleteResponse {
   message: string
 }
+
+export interface UserMemoryResponse {
+  memory: Record<string, {
+    title: string
+    content: string
+    updated_at: string | null
+  }>
+}

@@ -83,7 +83,7 @@ POSTURE RULES:
 
 INTENT TYPES (when posture=RESPOND):
 - CONVERSATIONAL: Greeting, thanks, smalltalk only; no request
-- INFORMATIONAL: Question, lookup, knowledge retrieval
+- INFORMATIONAL: Question, lookup, knowledge retrieval (including user profile/memory)
 - INTERACTIVE: Multi-turn (interview) — starting or answering
 - DIRECTIVE: Direct command
 - UNCLEAR: Cannot determine
