@@ -28,6 +28,9 @@ class TestNormalizeChannel:
     def test_whatsapp_passthrough(self):
         assert normalize_channel("whatsapp") == "whatsapp"
 
+    def test_messenger_passthrough(self):
+        assert normalize_channel("messenger") == "messenger"
+
     def test_other_channels_passthrough(self):
         assert normalize_channel("sms") == "sms"
         assert normalize_channel("voice") == "voice"

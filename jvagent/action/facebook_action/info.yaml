@@ -1,0 +1,16 @@
+package:
+  name: jvagent/facebook_action
+  author: V75 Inc.
+  archetype: FacebookAction
+  version: 1.0.0
+  meta:
+    title: Facebook Integration
+    description: Facebook Graph API for Pages and Messenger (posts, comments, webhooks).
+    group: jvagent
+    type: action
+  config:
+    singleton: true
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - requests>=2.28.0

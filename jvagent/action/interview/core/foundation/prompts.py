@@ -127,7 +127,7 @@ def get_state_event_message(state: str, class_name: str) -> str:
 # Task Tracker - Active Task Descriptions
 # =============================================================================
 
-ACTIVE_TASK_DESCRIPTION_TEMPLATE = "Guide user to complete {action_name}"
+ACTIVE_TASK_DESCRIPTION_TEMPLATE = "The user was in the {action_title} (Action Description: {action_description}). If the user diverges, respond naturally without redirecting. Only prompt them to continue at a natural pause or when they seem ready. Avoid repeating reminders."
 
 
 # =============================================================================
