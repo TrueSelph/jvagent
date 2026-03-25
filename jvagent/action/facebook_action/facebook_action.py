@@ -56,7 +56,10 @@ class FacebookAction(Action):
         description="Webhook fields for Feed, Messenger, and Page Mentions.",
     )
     timeout: int = attribute(
-        default=10, description="HTTP timeout in seconds for Graph requests", ge=1, le=120
+        default=10,
+        description="HTTP timeout in seconds for Graph requests",
+        ge=1,
+        le=120,
     )
     published: bool = attribute(
         default=False,
@@ -125,7 +128,9 @@ class FacebookAction(Action):
                 val = os.environ.get(env_key, "").strip()
                 if val:
                     setattr(self, attr, val)
-                    logger.debug("Using %s from environment for Facebook action", env_key)
+                    logger.debug(
+                        "Using %s from environment for Facebook action", env_key
+                    )
 
         pat = getattr(self, "page_access_token", None)
         if pat is None or (isinstance(pat, str) and not pat.strip()):
@@ -135,7 +140,9 @@ class FacebookAction(Action):
 
         if not self.api_url or not str(self.api_url).strip():
             base = os.environ.get("FACEBOOK_GRAPH_BASE", "").strip()
-            version = os.environ.get("FACEBOOK_GRAPH_VERSION", "v25.0").strip() or "v25.0"
+            version = (
+                os.environ.get("FACEBOOK_GRAPH_VERSION", "v25.0").strip() or "v25.0"
+            )
             if base:
                 self.api_url = base.rstrip("/") + f"/{version}/"
             else:
@@ -152,7 +159,9 @@ class FacebookAction(Action):
             try:
                 self.messenger_message_window = float(env_win)
             except ValueError:
-                logger.debug("Invalid MESSENGER_MESSAGE_WINDOW, keeping configured value")
+                logger.debug(
+                    "Invalid MESSENGER_MESSAGE_WINDOW, keeping configured value"
+                )
 
     @staticmethod
     def meta_callback_url_for_subscription(webhook_url: str) -> str:
@@ -166,7 +175,9 @@ class FacebookAction(Action):
     def _base_graph_config_issues(self) -> List[str]:
         issues: List[str] = []
         if not self.api_url or not str(self.api_url).strip():
-            issues.append("api_url (FACEBOOK_API_URL / FACEBOOK_GRAPH_*) is not configured")
+            issues.append(
+                "api_url (FACEBOOK_API_URL / FACEBOOK_GRAPH_*) is not configured"
+            )
         elif not str(self.api_url).strip().startswith(("http://", "https://")):
             issues.append("api_url must be a valid HTTP/HTTPS URL")
         for name, label in [
@@ -633,9 +644,7 @@ class FacebookAction(Action):
             logger.error("MessengerAdapter initialization failed")
 
         skip_reg = (
-            os.environ.get(
-                "FACEBOOK_SKIP_STARTUP_WEBHOOK_REGISTRATION", ""
-            ).lower()
+            os.environ.get("FACEBOOK_SKIP_STARTUP_WEBHOOK_REGISTRATION", "").lower()
             == "true"
         )
         if skip_reg:
@@ -774,7 +783,11 @@ class FacebookAction(Action):
             return {"healthy": False, "error": result.get("error"), "details": result}
         if isinstance(result, dict) and "id" in result:
             return True
-        return {"healthy": False, "error": "Unexpected Graph API response", "details": result}
+        return {
+            "healthy": False,
+            "error": "Unexpected Graph API response",
+            "details": result,
+        }
 
     async def download_url_to_public_url(self, url: str) -> Optional[str]:
         """Download a remote file into this action's storage and return a file URL.
@@ -791,11 +804,15 @@ class FacebookAction(Action):
                 extension = mimetypes.guess_extension(main_type) if main_type else None
                 if not extension:
                     guessed, _ = mimetypes.guess_type(url)
-                    extension = mimetypes.guess_extension(guessed or "") if guessed else None
+                    extension = (
+                        mimetypes.guess_extension(guessed or "") if guessed else None
+                    )
                 if not extension:
                     extension = ".bin"
                 filename = (
-                    "".join(random.choices(string.ascii_lowercase + string.digits, k=10))
+                    "".join(
+                        random.choices(string.ascii_lowercase + string.digits, k=10)
+                    )
                     + extension
                 )
                 rel_path = f"fb/{filename}"

@@ -197,9 +197,7 @@ async def facebook_get_me(
     tags=["Facebook Action"],
     summary="List Pages for the configured token (typically user token; requires permissions)",
 )
-async def facebook_list_pages(
-    action_id: str, limit: int = 100
-) -> Dict[str, Any]:
+async def facebook_list_pages(action_id: str, limit: int = 100) -> Dict[str, Any]:
     action = await _require_facebook_action(action_id)
 
     result = await _run_facebook_graph(
@@ -267,9 +265,7 @@ async def facebook_get_post(action_id: str, post_id: str) -> Dict[str, Any]:
     tags=["Facebook Action"],
     summary="Get permalink URL for a post",
 )
-async def facebook_get_post_permalink(
-    action_id: str, post_id: str
-) -> Dict[str, Any]:
+async def facebook_get_post_permalink(action_id: str, post_id: str) -> Dict[str, Any]:
     action = await _require_facebook_action(action_id)
 
     if not post_id:
@@ -327,9 +323,7 @@ async def facebook_get_post_comments(
     tags=["Facebook Action"],
     summary="List reactions on a post",
 )
-async def facebook_get_post_reactions(
-    action_id: str, post_id: str
-) -> Dict[str, Any]:
+async def facebook_get_post_reactions(action_id: str, post_id: str) -> Dict[str, Any]:
     action = await _require_facebook_action(action_id)
 
     if not post_id:
@@ -624,9 +618,7 @@ async def _agent_and_facebook_action_for_messenger_webhook(
     tags=["Facebook Action", "Messenger"],
     summary="Meta Messenger webhook: GET hub challenge (subscription verify)",
 )
-async def messenger_interact_webhook_verify(
-    request: Request, agent_id: str
-) -> Any:
+async def messenger_interact_webhook_verify(request: Request, agent_id: str) -> Any:
     """Meta webhook verification (hub.challenge) for an agent."""
     _, fb_action = await _agent_and_facebook_action_for_messenger_webhook(agent_id)
     params = getattr(request.state, "parsed_payload", None)
@@ -647,13 +639,9 @@ async def messenger_interact_webhook_verify(
     tags=["Facebook Action", "Messenger"],
     summary="Meta Messenger webhook: POST signed messaging events",
 )
-async def messenger_interact_webhook_events(
-    request: Request, agent_id: str
-) -> Any:
+async def messenger_interact_webhook_events(request: Request, agent_id: str) -> Any:
     """Inbound Messenger events for an agent (same role as WhatsApp interact webhook)."""
-    agent, fb_action = await _agent_and_facebook_action_for_messenger_webhook(
-        agent_id
-    )
+    agent, fb_action = await _agent_and_facebook_action_for_messenger_webhook(agent_id)
 
     fb_action._apply_env_defaults()
     app_secret = str(fb_action.app_secret or "").strip()
@@ -798,9 +786,7 @@ async def facebook_get_messenger_webhook_url(
     tags=["Facebook Action"],
     summary="Register or update Meta app Page webhook subscription (app id|secret)",
 )
-async def facebook_register_webhook(
-    action_id: str, webhook_url: str
-) -> Dict[str, Any]:
+async def facebook_register_webhook(action_id: str, webhook_url: str) -> Dict[str, Any]:
     action = await _require_facebook_action(action_id)
 
     if not webhook_url:

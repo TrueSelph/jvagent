@@ -5,12 +5,17 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core import Node
-from jvspatial.core.annotations import attribute
+from jvspatial.core.annotations import attribute, compound_index
 
 if TYPE_CHECKING:
     from jvagent.memory.conversation import Conversation
 
 
+@compound_index(
+    [("memory_id", 1), ("user_id", 1)],
+    name="memory_user",
+    unique=True,
+)
 class User(Node):
     """Internal user model - identifier only, not an account.
 
@@ -27,17 +32,22 @@ class User(Node):
         - Each Conversation deletion cascades to all its Interactions
 
     Attributes:
-        user_id: Unique user identifier (external reference)
+        memory_id: Owning Memory node id (scopes user_id per agent / deployment)
+        user_id: External user identifier (unique per memory_id)
         usage: Cumulative token spend and model call metrics across all interactions
         created_at: Timestamp of user creation
         last_seen: Timestamp of last user activity
     """
 
+    memory_id: str = attribute(
+        indexed=True,
+        default="",
+        description="Owning Memory node id; pairs with user_id for multi-agent isolation",
+    )
     user_id: str = attribute(
         indexed=True,
-        index_unique=True,
         default="",
-        description="Unique user identifier",
+        description="External user identifier (unique per memory_id)",
     )
     name: Optional[str] = attribute(
         default=None, description="User's preferred name (raw input)"
@@ -104,9 +114,7 @@ class User(Node):
 
         memory = await self.node(direction="in", node=Memory)
         if memory:
-            context = await memory.get_context()
-            await context.atomic_increment(memory.id, "total_conversations", 1)
-            memory.total_conversations += 1
+            await memory.refresh_memory_counters_from_graph()
 
         return conv
 
@@ -114,16 +122,19 @@ class User(Node):
         """Get the Agent node this User belongs to.
 
         Traverses: User -> Memory (incoming edge) -> Agent.
+        When memory_id is set, prefers that Memory if still connected.
 
         Returns:
             Agent instance if found, None otherwise
         """
         from jvagent.memory.manager import Memory
 
-        # Get Memory node (User is connected to Memory via incoming edge)
+        if self.memory_id:
+            memory = await Memory.get(self.memory_id)
+            if memory and await memory.is_connected_to(self):
+                return await memory.get_agent()
         memory = await self.node(direction="in", node=Memory)
         if memory:
-            # Get Agent from Memory using its get_agent() method
             return await memory.get_agent()
         return None
 
@@ -140,14 +151,10 @@ class User(Node):
         """
         from jvagent.memory.conversation import Conversation
 
-        # Use find_one for optimal performance
-        # Filter by both session_id and user_id to ensure it belongs to this user
-        return await Conversation.find_one(
-            {
-                "context.session_id": session_id,
-                "context.user_id": self.user_id,
-            }
-        )
+        for conv in await self.nodes(node=Conversation, direction="out"):
+            if conv.session_id == session_id:
+                return conv
+        return None
 
     async def list_conversations(
         self, active_only: bool = False
@@ -162,12 +169,10 @@ class User(Node):
         """
         from jvagent.memory.conversation import Conversation
 
-        # Use direct database search for optimal performance
-        query = {"context.user_id": self.user_id}
+        convs = await self.nodes(node=Conversation, direction="out")
         if active_only:
-            query["context.status"] = "active"
-
-        return await Conversation.find(query)
+            return [c for c in convs if c.status == "active"]
+        return list(convs)
 
     async def get_active_conversation(self) -> Optional["Conversation"]:
         """Get the most recent active conversation.

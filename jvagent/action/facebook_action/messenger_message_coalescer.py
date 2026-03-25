@@ -68,11 +68,7 @@ def merge_messenger_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
             break
 
     last = sorted_events[-1]
-    merged_mids = [
-        str(e.get("mid") or "")
-        for e in sorted_events
-        if e.get("mid")
-    ]
+    merged_mids = [str(e.get("mid") or "") for e in sorted_events if e.get("mid")]
 
     return {
         "sender_name": str(last.get("sender_name") or ""),

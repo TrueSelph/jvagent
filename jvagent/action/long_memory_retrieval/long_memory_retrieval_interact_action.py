@@ -5,8 +5,11 @@ with LLM-based tree search (default) or text filtering.
 No embeddings, no vector store.
 """
 
+import inspect
+import json
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+import re
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from jvspatial.core.annotations import attribute
 
@@ -28,6 +31,7 @@ from jvagent.action.pageindex.pageindex_retrieval_interact_action import (
 )
 from jvagent.action.pageindex.retrieval import search_documents
 from jvagent.memory.long_memory_retrieval_utils import resolve_long_memory_collection
+from jvagent.memory.user import User
 from jvagent.memory.user_long_memory import UserLongMemory
 
 from .prompts import DIRECTIVE_TEMPLATE
@@ -219,11 +223,11 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
             if conversation is None:
                 return self.anchors  # type: ignore[return-value]
 
-            user_id = getattr(conversation, "user_id", None)
-            if not user_id:
+            graph_user = await conversation.node(direction="in", node=User)
+            if not graph_user:
                 return self.anchors  # type: ignore[return-value]
 
-            user_long_memory = await UserLongMemory.get_for_user_id(str(user_id))
+            user_long_memory = await UserLongMemory.get_for_user(graph_user)
             if not user_long_memory:
                 return self.anchors  # type: ignore[return-value]
 
@@ -260,6 +264,128 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
             getattr(self, "collection", None),
             getattr(self, "config", None),
         )
+
+    @staticmethod
+    async def _evaluate_search_need(
+        act: Any,
+        visitor: Any,
+        model_action: Any,
+    ) -> Dict[str, Any]:
+        """Decide whether to SEARCH user long memory or CONTINUE without retrieval.
+
+        Used by tests and optional callers. Flow:
+
+        1. Keyword fast path: utterance (or interpretation) contains any keyword from a
+           non-empty ``UserLongMemory`` category (case-insensitive substring) → SEARCH
+           with query = utterance/interpretation text (or the keyword if empty).
+        2. If no model action → CONTINUE.
+        3. Otherwise call ``model_action.generate`` with recent history context; on
+           failure → CONTINUE. On success, parse JSON or ``DECISION:`` line for
+           SEARCH vs CONTINUE; default CONTINUE.
+        """
+        inter = getattr(visitor, "interaction", None)
+        if not inter:
+            return {"decision": "CONTINUE"}
+
+        raw_text = (
+            getattr(inter, "utterance", None)
+            or getattr(inter, "interpretation", None)
+            or ""
+        )
+        text = str(raw_text).strip()
+        text_lower = text.lower()
+
+        get_user = getattr(inter, "get_user", None)
+        if not callable(get_user):
+            return {"decision": "CONTINUE"}
+        user = await get_user()
+        if not user:
+            return {"decision": "CONTINUE"}
+
+        ulm = await UserLongMemory.get_for_user(user)
+        if not ulm:
+            return {"decision": "CONTINUE"}
+
+        categories = await ulm.get_all_categories()
+        for cat in categories or []:
+            is_empty_fn = getattr(cat, "is_empty", None)
+            if callable(is_empty_fn) and is_empty_fn():
+                continue
+            for kw in getattr(cat, "keywords", []) or []:
+                if not kw:
+                    continue
+                if str(kw).lower() in text_lower:
+                    return {"decision": "SEARCH", "query": text or str(kw)}
+
+        if model_action is None:
+            return {"decision": "CONTINUE"}
+
+        try:
+            history_ctx = ""
+            gh = getattr(act, "_get_recent_history", None)
+            if callable(gh):
+                h = gh(visitor)
+                if inspect.isawaitable(h):
+                    history_ctx = await h
+                else:
+                    history_ctx = h
+            prompt = (
+                'Reply with JSON only: {"decision":"SEARCH"|"CONTINUE",'
+                '"query":"<optional>"}.\n'
+                f"User message: {text!r}\nRecent context: {history_ctx!r}\n"
+                "SEARCH if user long-term profile/memory is needed to answer well."
+            )
+            raw = await model_action.generate(prompt=prompt)
+        except Exception:
+            logger.debug(
+                "UserLongMemoryRetrieval: _evaluate_search_need LLM failed",
+                exc_info=True,
+            )
+            return {"decision": "CONTINUE"}
+
+        decision, query = UserLongMemoryRetrievalInteractAction._parse_search_decision(
+            raw
+        )
+        if decision == "SEARCH":
+            out: Dict[str, Any] = {"decision": "SEARCH"}
+            if query:
+                out["query"] = query
+            elif text:
+                out["query"] = text
+            return out
+        return {"decision": "CONTINUE"}
+
+    @staticmethod
+    def _parse_search_decision(raw: Any) -> Tuple[str, Optional[str]]:
+        """Parse LLM output into (decision, optional query). decision is SEARCH or CONTINUE."""
+        if raw is None:
+            return "CONTINUE", None
+        s = str(raw).strip()
+        if not s:
+            return "CONTINUE", None
+
+        try:
+            data = json.loads(s)
+            if isinstance(data, dict):
+                d = str(data.get("decision", "")).upper()
+                if d == "SEARCH":
+                    q = data.get("query")
+                    return "SEARCH", str(q).strip() if q else None
+                return "CONTINUE", None
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+
+        m = re.search(
+            r"^\s*DECISION:\s*(SEARCH|CONTINUE)\s*$",
+            s,
+            re.IGNORECASE | re.MULTILINE,
+        )
+        if m:
+            return m.group(1).upper(), None
+
+        if re.search(r"\bSEARCH\b", s, re.IGNORECASE):
+            return "SEARCH", None
+        return "CONTINUE", None
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute vectorless retrieval and add directive to interaction."""

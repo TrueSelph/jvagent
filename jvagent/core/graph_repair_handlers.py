@@ -125,7 +125,10 @@ async def _reattach_user(
             continue
         if not await memory.is_connected_to(node):
             if not dry_run:
+                setattr(node, "memory_id", memory.id)
+                await node.save()
                 await memory.connect(node, direction="out")
+                await memory.refresh_memory_counters_from_graph()
             orphan_ids.discard(node.id)
             return True
     return False
@@ -134,17 +137,24 @@ async def _reattach_user(
 async def _reattach_conversation(
     context: Any, node: Any, orphan_ids: Set[str], dry_run: bool
 ) -> bool:
+    from jvagent.memory.manager import Memory
     from jvagent.memory.user import User
 
     user_id = getattr(node, "user_id", None)
     if not user_id:
         return False
-    user = await User.find_one({"context.user_id": user_id})
-    if user and not await user.is_connected_to(node):
-        if not dry_run:
-            await user.connect(node, direction="out")
-        orphan_ids.discard(node.id)
-        return True
+    for memory in await Memory.find({}):
+        user = await memory.node(node=User, user_id=user_id)
+        if not user:
+            continue
+        mid = getattr(user, "memory_id", None)
+        if mid and mid != memory.id:
+            continue
+        if not await user.is_connected_to(node):
+            if not dry_run:
+                await user.connect(node, direction="out")
+            orphan_ids.discard(node.id)
+            return True
     return False
 
 

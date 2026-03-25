@@ -170,7 +170,10 @@ class FacebookAPI:
         att: Any,
     ) -> Optional[tuple[float, float]]:
         """Return (lat, lon) if this is a Messenger ``location`` attachment."""
-        if not isinstance(att, dict) or str(att.get("type") or "").lower() != "location":
+        if (
+            not isinstance(att, dict)
+            or str(att.get("type") or "").lower() != "location"
+        ):
             return None
         payload = att.get("payload")
         if not isinstance(payload, dict):
@@ -179,9 +182,7 @@ class FacebookAPI:
         if not isinstance(coords, dict):
             return None
         lat = FacebookAPI._messenger_coordinate_value(coords, "lat")
-        lon = FacebookAPI._messenger_coordinate_value(
-            coords, "long", "lng", "lon"
-        )
+        lon = FacebookAPI._messenger_coordinate_value(coords, "long", "lng", "lon")
         if lat is None or lon is None:
             return None
         return (lat, lon)
@@ -243,7 +244,9 @@ class FacebookAPI:
             return None, None
 
     @staticmethod
-    def iter_messenger_user_text_events(request: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def iter_messenger_user_text_events(
+        request: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         """Parse Meta Page webhook JSON and return inbound Messenger user **message** events.
 
         Emits an event when the user message has non-empty ``text`` after strip **or**
@@ -281,8 +284,7 @@ class FacebookAPI:
                 if not isinstance(messaging, dict):
                     continue
                 if any(
-                    k in messaging
-                    for k in ("postback", "delivery", "read", "reaction")
+                    k in messaging for k in ("postback", "delivery", "read", "reaction")
                 ):
                     continue
                 msg = messaging.get("message")
@@ -293,9 +295,7 @@ class FacebookAPI:
                 if not FacebookAPI._messenger_message_has_processable_content(msg):
                     continue
                 raw_text = msg.get("text")
-                message_text = (
-                    str(raw_text).strip() if raw_text is not None else ""
-                )
+                message_text = str(raw_text).strip() if raw_text is not None else ""
                 sender = messaging.get("sender")
                 if not isinstance(sender, dict):
                     continue
@@ -367,9 +367,7 @@ class FacebookAPI:
                     str(from_obj.get("id", "")) if isinstance(from_obj, dict) else ""
                 )
                 sender_name = (
-                    str(from_obj.get("name", ""))
-                    if isinstance(from_obj, dict)
-                    else ""
+                    str(from_obj.get("name", "")) if isinstance(from_obj, dict) else ""
                 )
                 message_type = str(change.get("item", ""))
                 message = change.get("message") or change.get("reaction_type")

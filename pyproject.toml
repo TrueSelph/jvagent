@@ -79,6 +79,12 @@ pageindex = [
     "filetype>=1.2.0",
 ]
 
+# Optional: cluster-wide conversation locks (Redis SET NX or DynamoDB).
+distributed-lock = [
+    "redis>=5.0.0",
+    "boto3>=1.28.0",
+]
+
 [project.scripts]
 jvagent = "jvagent.cli:main"
 

@@ -22,7 +22,7 @@ from jvagent.core.app import App
 logger = logging.getLogger(__name__)
 
 # Same default as WhatsApp batched media (media_batch_manager._batch_utterance_and_media_urls).
-MESSENGER_DEFAULT_MEDIA_UTTERANCE = "Please receive and interpret the attached media." 
+MESSENGER_DEFAULT_MEDIA_UTTERANCE = "Please receive and interpret the attached media."
 
 
 def verify_meta_messenger_signature(
@@ -40,9 +40,7 @@ def verify_meta_messenger_signature(
     signature = str(sig_header).strip()
     if signature.startswith("sha256="):
         signature = signature[len("sha256=") :]
-    expected = hmac.new(
-        secret.encode("utf-8"), raw_body, hashlib.sha256
-    ).hexdigest()
+    expected = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(signature, expected)
 
 
@@ -71,13 +69,11 @@ async def prime_messenger_sender_actions(
         return
     for sa in ("mark_seen", "typing_on"):
         try:
-            result = await run_graph(
-                agent_id,
-                fb_action,
-                lambda action=sa: fb_action.api().send_sender_action(
-                    sender_psid, action
-                ),
-            )
+
+            def _sender_action_call(action_name: str = sa) -> Any:
+                return fb_action.api().send_sender_action(sender_psid, action_name)
+
+            result = await run_graph(agent_id, fb_action, _sender_action_call)
             if isinstance(result, dict) and result.get("error"):
                 logger.debug(
                     "Messenger sender_action %s failed for %s: %s",
@@ -131,7 +127,9 @@ def messenger_event_to_data_payload(event: Dict[str, Any]) -> Dict[str, Any]:
     return payload
 
 
-def _graph_message_attachments_list(graph_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _graph_message_attachments_list(
+    graph_payload: Dict[str, Any]
+) -> List[Dict[str, Any]]:
     atts = graph_payload.get("attachments")
     if isinstance(atts, list):
         return [a for a in atts if isinstance(a, dict)]
@@ -441,9 +439,7 @@ async def resolve_messenger_inbound_event(
     effective = text
     if location_lines:
         loc_block = "\n".join(location_lines)
-        effective = (
-            f"{effective}\n{loc_block}".strip() if effective else loc_block
-        )
+        effective = f"{effective}\n{loc_block}".strip() if effective else loc_block
     if merged_transcript:
         effective = (
             f"{effective}\n{merged_transcript}".strip()
@@ -477,9 +473,7 @@ async def resolve_messenger_inbound_event(
 
     qm = data_dict.get("quoted_message")
     if qm and isinstance(qm, dict):
-        effective = (
-            _build_utterance_with_quoted_context(qm, effective) or effective
-        )
+        effective = _build_utterance_with_quoted_context(qm, effective) or effective
 
     return (effective, data_dict)
 

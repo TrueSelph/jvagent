@@ -6,11 +6,12 @@ allowing targeted read and write access per category rather than a single flat b
 
 Graph structure:
     User
-      └──> UserLongMemoryNode (category="interests")
-      └──> UserLongMemoryNode (category="facts_and_preferences")
-      └──> UserLongMemoryNode (category="open_threads")
-      └──> UserLongMemoryNode (category="recent_events")
-      └──> UserLongMemoryNode (category="<any custom category>")
+      └──> UserLongMemory
+             └──> UserLongMemoryNode (category="interests")
+             └──> UserLongMemoryNode (category="facts_and_preferences")
+             └──> UserLongMemoryNode (category="open_threads")
+             └──> UserLongMemoryNode (category="recent_events")
+             └──> UserLongMemoryNode (category="<any custom category>")
 """
 
 from datetime import datetime, timezone
@@ -40,8 +41,8 @@ CATEGORY_TITLES: Dict[str, str] = {
 
 
 @compound_index(
-    [("context.user_id", 1), ("context.category", 1)],
-    name="user_category",
+    [("context.user_node_id", 1), ("context.category", 1)],
+    name="user_node_category",
     unique=True,
 )
 class UserLongMemoryNode(Node):
@@ -52,7 +53,8 @@ class UserLongMemoryNode(Node):
     The category key acts as a stable identifier (e.g., "interests").
 
     Attributes:
-        user_id:      Owner's user_id (matches User.user_id)
+        user_node_id: Graph id of the owning User node (unique per agent memory)
+        user_id:      Owner's external user_id (matches User.user_id; denormalized)
         category:     Stable key for this category (e.g., "interests")
         title:        Human-readable title (e.g., "Interests")
         content:      Markdown-formatted memory content for this category
@@ -60,10 +62,15 @@ class UserLongMemoryNode(Node):
         created_at:   Timestamp of node creation
     """
 
+    user_node_id: str = attribute(
+        indexed=True,
+        default="",
+        description="Graph id of the owning User node",
+    )
     user_id: str = attribute(
         indexed=True,
         default="",
-        description="Owner's user_id — matches User.user_id",
+        description="Owner's user_id — matches User.user_id (denormalized)",
     )
     category: str = attribute(
         indexed=True,
@@ -133,13 +140,19 @@ class UserLongMemory(Node):
                              ──> UserLongMemoryNode (<custom>)
 
     Attributes:
-        user_id:    Owner's user_id (matches User.user_id)
+        user_node_id: Graph id of the owning User node (unique anchor per User)
+        user_id:      Owner's external user_id (matches User.user_id)
         created_at: Timestamp of creation
     """
 
-    user_id: str = attribute(
+    user_node_id: str = attribute(
         indexed=True,
         index_unique=True,
+        default="",
+        description="Graph id of the owning User node",
+    )
+    user_id: str = attribute(
+        indexed=True,
         default="",
         description="Owner's user_id — matches User.user_id",
     )
@@ -159,7 +172,8 @@ class UserLongMemory(Node):
     async def get_category(self, category: str) -> Optional[UserLongMemoryNode]:
         """Get the UserLongMemoryNode for a specific category.
 
-        Uses indexed lookup on (user_id, category) instead of scanning all edges.
+        Uses indexed lookup on (user_node_id, category) when set; otherwise
+        falls back to (user_id, category) for pre-migration data.
 
         Args:
             category: Stable category key (e.g., "interests").
@@ -167,6 +181,11 @@ class UserLongMemory(Node):
         Returns:
             UserLongMemoryNode if it exists, None otherwise.
         """
+        if self.user_node_id:
+            return await UserLongMemoryNode.find_one(
+                user_node_id=self.user_node_id,
+                category=category,
+            )
         return await UserLongMemoryNode.find_one(
             user_id=self.user_id,
             category=category,
@@ -188,6 +207,14 @@ class UserLongMemory(Node):
         Returns:
             Existing or newly created UserLongMemoryNode.
         """
+        if not self.user_node_id:
+            from jvagent.memory.user import User as UserNode
+
+            owner = await self.node(direction="in", node=UserNode)
+            if owner:
+                self.user_node_id = owner.id
+                await self.save()
+
         existing = await self.get_category(category)
         if existing:
             return existing
@@ -196,6 +223,7 @@ class UserLongMemory(Node):
             title or CATEGORY_TITLES.get(category) or category.replace("_", " ").title()
         )
         node = await UserLongMemoryNode.create(
+            user_node_id=self.user_node_id or "",
             user_id=self.user_id,
             category=category,
             title=resolved_title,
@@ -286,18 +314,11 @@ class UserLongMemory(Node):
         return await user.node(node=UserLongMemory, direction="out")
 
     @classmethod
-    async def get_for_user_id(cls, user_id: str) -> Optional["UserLongMemory"]:
-        """Get the UserLongMemory node for a specific user_id.
-
-        Args:
-            user_id: The ID of the user.
-
-        Returns:
-            UserLongMemory node if it exists, None otherwise.
-        """
-        if not user_id:
+    async def get_for_user_node(cls, user_node_id: str) -> Optional["UserLongMemory"]:
+        """Get UserLongMemory by owning User node's graph id (multi-agent safe)."""
+        if not user_node_id:
             return None
-        return await cls.find_one(user_id=user_id)
+        return await cls.find_one(user_node_id=user_node_id)
 
     @classmethod
     async def get_or_create_for_user(cls, user: "User") -> "UserLongMemory":
@@ -314,9 +335,13 @@ class UserLongMemory(Node):
         """
         existing = await cls.get_for_user(user)
         if existing:
+            if not existing.user_node_id:
+                existing.user_node_id = user.id
+                await existing.save()
             return existing
 
         lm = await UserLongMemory.create(
+            user_node_id=user.id,
             user_id=user.user_id,
             created_at=datetime.now(timezone.utc),
         )

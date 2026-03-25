@@ -33,8 +33,10 @@ class Memory(Node):
         - Delete Memory → Cascades to all Users → All Conversations → All Interactions
 
     Attributes:
-        total_users: Total number of users
-        total_conversations: Total number of conversations
+        total_users: Cached count of outgoing User connections; reconciled with
+            ``total_conversations`` via :meth:`refresh_memory_counters_from_graph`
+        total_conversations: Cached sum of Conversation neighbors under edge-connected
+            Users; reconciled via :meth:`refresh_memory_counters_from_graph`
         total_collections: Total number of collections
         last_cleanup: Timestamp of last cleanup operation
     """
@@ -86,52 +88,123 @@ class Memory(Node):
 
         user = await self.node(node=User, user_id=user_id)
         if user:
-            user.last_seen = now
-            await user.save()
-            return user
+            if user.memory_id and user.memory_id != self.id:
+                user = None
+            else:
+                user.last_seen = now
+                await user.save()
+                return user
 
-        existing_user = await User.find_one({"context.user_id": user_id})
-        if existing_user:
-            if not await self.is_connected_to(existing_user):
-                await self.connect(existing_user)
-            existing_user.last_seen = now
-            await existing_user.save()
-            return existing_user
+        scoped = await User.find_one(
+            {"context.memory_id": self.id, "context.user_id": user_id}
+        )
+        if scoped:
+            if not await self.is_connected_to(scoped):
+                await self.connect(scoped)
+            scoped.last_seen = now
+            await scoped.save()
+            return scoped
 
         if create_if_missing:
-            user = await User.create(user_id=user_id, created_at=now, last_seen=now)
+            user = await User.create(
+                memory_id=self.id,
+                user_id=user_id,
+                created_at=now,
+                last_seen=now,
+            )
             await self.connect(user)
-            context = await self.get_context()
-            await context.atomic_increment(self.id, "total_users", 1)
-            self.total_users += 1
+            await self.refresh_memory_counters_from_graph()
             return user
         return None
 
+    async def refresh_memory_counters_from_graph(self) -> None:
+        """Persist ``total_users`` and ``total_conversations`` from graph neighbor counts.
+
+        Users: ``count_neighbors(node=User)`` from this Memory. Conversations: sum of
+        ``count_neighbors(node=Conversation)`` over those same Users.
+        """
+        from jvagent.memory.conversation import Conversation
+        from jvagent.memory.user import User
+
+        target = await Memory.get(self.id)
+        if target is None:
+            return
+        users = await target.nodes(node=User)
+        n_users = len(users)
+        n_convs = 0
+        for user in users:
+            n_convs += await user.count_neighbors(node=Conversation)
+
+        changed = False
+        if target.total_users != n_users:
+            target.total_users = n_users
+            changed = True
+        if target.total_conversations != n_convs:
+            target.total_conversations = n_convs
+            changed = True
+        if changed:
+            await target.save()
+        self.total_users = n_users
+        self.total_conversations = n_convs
+
+    async def refresh_total_users_from_graph(self) -> None:
+        """Persist user and conversation counters from the graph (see :meth:`refresh_memory_counters_from_graph`)."""
+        await self.refresh_memory_counters_from_graph()
+
+    async def users_scoped_to_this_memory(self) -> List["User"]:
+        """Connected users that belong to this Memory root.
+
+        Includes legacy users with empty ``memory_id``. Excludes users whose
+        ``memory_id`` points at another Memory (stale cross-edges).
+        """
+        from jvagent.memory.user import User
+
+        return [
+            u
+            for u in await self.nodes(node=User)
+            if not u.memory_id or u.memory_id == self.id
+        ]
+
     async def get_users(self) -> List["User"]:
-        """Get all connected Users.
+        """Get all Users under this Memory (edge + ``memory_id`` scope).
 
         Returns:
             List of User nodes
         """
+        return await self.users_scoped_to_this_memory()
+
+    async def _conversation_belongs_to_memory(
+        self, conversation: "Conversation"
+    ) -> bool:
+        """True if the conversation's user is under this Memory root."""
         from jvagent.memory.user import User
 
-        return await self.nodes(node=User)
+        user = await conversation.node(direction="in", node=User)
+        if not user:
+            return False
+        if user.memory_id and user.memory_id != self.id:
+            return False
+        return await self.is_connected_to(user)
 
     async def get_conversation_by_session(
         self, session_id: str
     ) -> Optional["Conversation"]:
-        """Find Conversation by session_id across all Users.
+        """Find Conversation by session_id scoped to this Memory's users.
 
         Args:
             session_id: Session identifier to search for
 
         Returns:
-            Conversation node if found, None otherwise
+            Conversation node if found and owned by this memory, None otherwise
         """
         from jvagent.memory.conversation import Conversation
 
-        # Use find_one for optimal performance
-        return await Conversation.find_one({"context.session_id": session_id})
+        conversation = await Conversation.find_one({"context.session_id": session_id})
+        if not conversation:
+            return None
+        if await self._conversation_belongs_to_memory(conversation):
+            return conversation
+        return None
 
     async def get_agent(self) -> Optional[Any]:
         """Get the Agent node this Memory belongs to.
@@ -176,7 +249,7 @@ class Memory(Node):
     async def apply_interaction_limit_pruning_for_connected_users(self) -> int:
         """Sync limits and prune for every conversation under this Memory's users.
 
-        Iterates connected User nodes, then each User's Conversation nodes, and
+        Iterates users_scoped_to_this_memory(), then each User's Conversation nodes, and
         runs _ensure_conversation_interaction_limit on each.
 
         Returns:
@@ -186,7 +259,7 @@ class Memory(Node):
         from jvagent.memory.user import User
 
         total = 0
-        for user in await self.nodes(node=User):
+        for user in await self.users_scoped_to_this_memory():
             for conv in await user.nodes(node=Conversation):
                 total += await self._ensure_conversation_interaction_limit(conv)
         return total
@@ -200,16 +273,12 @@ class Memory(Node):
         Returns:
             User node if found, None otherwise
         """
-        from jvagent.memory.conversation import Conversation
         from jvagent.memory.user import User
 
-        # Use find_one for optimal performance
-        conversation = await Conversation.find_one({"context.session_id": session_id})
+        conversation = await self.get_conversation_by_session(session_id)
         if not conversation:
             return None
-
-        # Get user by user_id from conversation
-        return await User.find_one({"context.user_id": conversation.user_id})
+        return await conversation.node(direction="in", node=User)
 
     async def get_session(
         self,
@@ -280,6 +349,12 @@ class Memory(Node):
         if user_id and not session_id:
             # Check if user already exists before creating
             existing_user = await self.node(node=User, user_id=user_id)
+            if (
+                existing_user
+                and existing_user.memory_id
+                and existing_user.memory_id != self.id
+            ):
+                existing_user = None
             is_new_user = existing_user is None
 
             user = await self.get_user(user_id, create_if_missing=True)
@@ -331,29 +406,22 @@ class Memory(Node):
         from jvagent.memory.interaction import Interaction
         from jvagent.memory.user import User
 
-        # Use count() for efficient database-level counting without loading records
-        user_query = {}
+        users_under = await self.users_scoped_to_this_memory()
         if user_id:
-            user_query = {"context.user_id": user_id}
+            users_under = [u for u in users_under if u.user_id == user_id]
 
         stats = {
-            "total_users": await User.count(user_query),
+            "total_users": (
+                len(users_under) if user_id else await self.count_neighbors(node=User)
+            ),
             "total_conversations": 0,
             "total_interactions": 0,
         }
-
-        # Count conversations using count() for optimal performance
-        conv_query = {}
-        if user_id:
-            conv_query = {"context.user_id": user_id}
-        stats["total_conversations"] = await Conversation.count(conv_query)
-
-        # Count interactions using count() for optimal performance
-        interaction_query = {}
-        if user_id:
-            interaction_query = {"context.user_id": user_id}
-        stats["total_interactions"] = await Interaction.count(interaction_query)
-
+        for u in users_under:
+            stats["total_conversations"] += await u.count_neighbors(node=Conversation)
+            for c in await u.nodes(node=Conversation):
+                inters = await c.nodes(node=Interaction)
+                stats["total_interactions"] += len(inters)
         return stats
 
     async def purge_user_memory(
@@ -369,32 +437,19 @@ class Memory(Node):
         """
         from jvagent.memory.user import User
 
-        # Use nodes() with filters to leverage graph structure and database-level filtering
+        users = await self.users_scoped_to_this_memory()
         if user_id:
-            users = await self.nodes(node=User, user_id=user_id)
-        else:
-            users = await self.nodes(node=User)
+            users = [u for u in users if u.user_id == user_id]
 
         if not users:
             return None
 
-        context = await self.get_context()
         purged = []
         for user in users:
             purged.append(user)
-            # Count conversations before cascade so we can decrement total_conversations.
-            # Node.delete(cascade=True) deletes child nodes via the base Node.delete(),
-            # bypassing the Conversation.delete() override, so we handle the counter here.
-            from jvagent.memory.conversation import Conversation as _Conv
-
-            user_convs = await user.nodes(node=_Conv)
-            conv_count = len(user_convs)
             await user.delete(cascade=True)
-            await context.atomic_increment(self.id, "total_users", -1)
-            if conv_count:
-                await context.atomic_increment(
-                    self.id, "total_conversations", -conv_count
-                )
+
+        await self.refresh_memory_counters_from_graph()
 
         return purged
 
@@ -433,6 +488,7 @@ class Memory(Node):
             List of purged conversations, or None if no conversations found
         """
         from jvagent.memory.conversation import Conversation
+        from jvagent.memory.user import User
 
         if conversation_id:
             conversation = await Conversation.get(conversation_id)
@@ -440,24 +496,24 @@ class Memory(Node):
                 return None
             conversations_to_purge = [conversation]
         elif user_id:
-            conversations_to_purge = await Conversation.find(
-                {"context.user_id": user_id}
-            )
+            users = [
+                u
+                for u in await self.users_scoped_to_this_memory()
+                if u.user_id == user_id
+            ]
+            if not users:
+                return None
+            conversations_to_purge = []
+            for u in users:
+                conversations_to_purge.extend(await u.nodes(node=Conversation))
             if not conversations_to_purge:
                 return None
         else:
-            # Scope to this Memory's connected users to avoid purging
-            # conversations belonging to other agents
-            from jvagent.memory.user import User
-
-            connected_users = await self.nodes(node=User)
-            connected_user_ids = [u.user_id for u in connected_users]
-            if connected_user_ids:
-                conversations_to_purge = await Conversation.find(
-                    {"context.user_id": {"$in": connected_user_ids}}
-                )
-            else:
-                conversations_to_purge = []
+            # Graph-only: same external user_id can exist on multiple User nodes
+            connected_users = await self.users_scoped_to_this_memory()
+            conversations_to_purge = []
+            for u in connected_users:
+                conversations_to_purge.extend(await u.nodes(node=Conversation))
             if not conversations_to_purge:
                 return None
 
@@ -617,10 +673,10 @@ class Memory(Node):
         return dual_removed, first_restored, conv_branch_removed
 
     async def _reconnect_orphaned_users(self) -> int:
-        """Reconnect orphaned users that belong to this agent's Memory.
+        """Reconnect users with no incoming Memory edge to this Memory.
 
-        Only reconnects users whose conversations reference this Memory's
-        agent, to prevent cross-agent contamination in multi-agent setups.
+        Skips users already connected to any Memory so another agent's users
+        are never stolen. Sets memory_id to this Memory before connecting.
         """
         from jvagent.memory.conversation import Conversation
         from jvagent.memory.user import User
@@ -628,24 +684,21 @@ class Memory(Node):
         connected = await self.nodes(node=User)
         connected_ids = {u.id for u in connected}
 
-        agent = await self.get_agent()
-        agent_id = agent.id if agent else None
-
         all_users = await User.find()
         context = await self.get_context()
         reconnected = 0
         for user in all_users:
             if user.id in connected_ids:
                 continue
-            # Only reconnect if the user has conversations tied to this agent
-            # or has no connections at all (true orphan)
-            has_any_memory_edge = bool(user.edge_ids)
-            if has_any_memory_edge:
-                # User is connected elsewhere; skip to avoid cross-agent reconnect
+            mem_in = await user.nodes(direction="in", node=Memory)
+            if mem_in:
                 continue
+            user.memory_id = self.id
+            await user.save()
             await self.connect(user)
-            await context.atomic_increment(self.id, "total_users", 1)
             reconnected += 1
+        if reconnected:
+            await self.refresh_memory_counters_from_graph()
         return reconnected
 
     async def _recalculate_counters(self) -> int:
@@ -662,7 +715,7 @@ class Memory(Node):
 
         fixed = 0
         users = await self.nodes(node=User)
-        actual_users = len(users)
+        actual_users = await self.count_neighbors(node=User)
         if self.total_users != actual_users:
             self.total_users = actual_users
             fixed += 1
@@ -671,7 +724,7 @@ class Memory(Node):
         all_convs: list = []
         for user in users:
             convs = await user.nodes(node=Conversation)
-            actual_conversations += len(convs)
+            actual_conversations += await user.count_neighbors(node=Conversation)
             all_convs.extend(convs)
         if self.total_conversations != actual_conversations:
             self.total_conversations = actual_conversations
@@ -753,11 +806,9 @@ class Memory(Node):
         from jvagent.memory.interaction import Interaction
         from jvagent.memory.user import User
 
-        # Use nodes() with filters to leverage graph structure and database-level filtering
+        users = await self.users_scoped_to_this_memory()
         if user_id:
-            users = await self.nodes(node=User, user_id=user_id)
-        else:
-            users = await self.nodes(node=User)
+            users = [u for u in users if u.user_id == user_id]
 
         export_data: Dict[str, Any] = {"users": []}
 

@@ -13,7 +13,13 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from jvspatial.core import get_default_context
 
+from jvagent.core.graph_repair import (
+    _legacy_backfill_user_memory_scope,
+    _reconcile_all_memory_counters,
+)
+from jvagent.core.graph_repair_handlers import _reattach_user
 from jvagent.memory.conversation import Conversation
 from jvagent.memory.interaction import Interaction
 from jvagent.memory.manager import Memory
@@ -34,7 +40,10 @@ async def _setup_memory() -> Memory:
 
 
 async def _make_user(memory: Memory, user_id: str | None = None) -> User:
-    user = await User.create(user_id=user_id or _uid())
+    user = await User.create(
+        memory_id=memory.id,
+        user_id=user_id or _uid(),
+    )
     await memory.connect(user)
     memory.total_users += 1
     await memory.save()
@@ -356,3 +365,67 @@ async def test_repair_memory_chains_conversation_branch_interactions(test_db):
     assert next_i2.id == i3.id
     next_i3 = await i3.get_next_interaction()
     assert next_i3 is None
+
+
+# ---------------------------------------------------------------------------
+# total_users writers: backfill split, reattach user, purge instance sync
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_backfill_split_keeps_total_users_aligned_with_graph(test_db):
+    """Splitting a user across two memories must bump secondary Memory.total_users."""
+    m1 = await Memory.create()
+    m2 = await Memory.create()
+    ext_id = f"shared_{uuid.uuid4().hex[:8]}"
+    u = await User.create(memory_id=m1.id, user_id=ext_id)
+    await m1.connect(u)
+    await m2.connect(u)
+    # Each memory has one graph edge to the same user (legacy shared-user shape).
+    m1.total_users = 1
+    m2.total_users = 1
+    await m1.save()
+    await m2.save()
+
+    await _legacy_backfill_user_memory_scope()
+    await _reconcile_all_memory_counters()
+
+    for mem in (m1, m2):
+        fresh = await Memory.get(mem.id)
+        assert fresh is not None
+        n_users = len(await fresh.nodes(node=User))
+        assert n_users == 1
+        assert fresh.total_users == n_users
+        assert fresh.total_users == await fresh.count_neighbors(node=User)
+
+
+@pytest.mark.asyncio
+async def test_reattach_user_increments_memory_total_users(test_db):
+    """Graph repair user reattach must increment total_users like get_user create."""
+    memory = await Memory.create()
+    memory.total_users = 0
+    await memory.save()
+    u = await User.create(memory_id="", user_id=f"orphan_{uuid.uuid4().hex[:8]}")
+    ctx = get_default_context()
+    orphan_ids: set = set()
+    ok = await _reattach_user(ctx, u, orphan_ids, dry_run=False)
+    assert ok is True
+    fresh = await Memory.get(memory.id)
+    assert fresh is not None
+    assert len(await fresh.nodes(node=User)) == 1
+    assert fresh.total_users == 1
+
+
+@pytest.mark.asyncio
+async def test_purge_user_memory_syncs_instance_counters_from_db(test_db):
+    """After purge, the Memory instance should match persisted counters."""
+    memory = await _setup_memory()
+    await _make_user(memory)
+    await _make_user(memory)
+    assert memory.total_users == 2
+
+    await memory.purge_user_memory()
+
+    assert memory.total_users == 0
+    users_left = await memory.nodes(node=User)
+    assert len(users_left) == 0
