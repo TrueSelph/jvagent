@@ -1,8 +1,8 @@
 """Override module for core.utils: injects jvagent LLM bridge for observability.
 
-Loaded via sys.modules injection so core imports see this instead of real utils.
-Re-exports everything from real utils but overrides ChatGPT_API_async,
-ChatGPT_API, ChatGPT_API_with_finish_reason to use jvagent model when in context.
+Loaded via sys.modules injection. Patches ``llm_completion`` / ``llm_acompletion``
+on the executed _real module so internal helpers resolve bridge + cancellation
+at call time.
 """
 
 import importlib.util
@@ -25,6 +25,29 @@ _spec = importlib.util.spec_from_file_location(
 _real = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_real)
 
+_orig_llm_acompletion = _real.llm_acompletion
+_orig_llm_completion = _real.llm_completion
+
+
+async def _llm_acompletion(model, prompt):
+    return await llm_bridge.llm_acompletion(
+        model, prompt, _real_impl=_orig_llm_acompletion
+    )
+
+
+def _llm_completion(model, prompt, chat_history=None, return_finish_reason=False):
+    return llm_bridge.llm_completion(
+        model,
+        prompt,
+        chat_history,
+        return_finish_reason,
+        _real_impl=_orig_llm_completion,
+    )
+
+
+_real.llm_acompletion = _llm_acompletion
+_real.llm_completion = _llm_completion
+
 _override = types.ModuleType("jvagent.action.pageindex.core.utils")
 _override.__file__ = str(_real_utils_path)
 _override.__package__ = "jvagent.action.pageindex.core"
@@ -33,39 +56,4 @@ for _name in dir(_real):
     if not _name.startswith("_"):
         setattr(_override, _name, getattr(_real, _name))
 
-
-# Override the three LLM functions with bridge wrappers
-async def _ChatGPT_API_async(model, prompt, api_key=None):
-    return await llm_bridge.ChatGPT_API_async(
-        model, prompt, api_key, _real_impl=_real.ChatGPT_API_async
-    )
-
-
-def _ChatGPT_API(model, prompt, api_key=None, chat_history=None):
-    return llm_bridge.ChatGPT_API(
-        model,
-        prompt,
-        api_key,
-        chat_history,
-        _real_impl=lambda m, p, k, h=None: _real.ChatGPT_API(m, p, k, h),
-    )
-
-
-def _ChatGPT_API_with_finish_reason(model, prompt, api_key=None, chat_history=None):
-    return llm_bridge.ChatGPT_API_with_finish_reason(
-        model,
-        prompt,
-        api_key,
-        chat_history,
-        _real_impl=lambda m, p, k, h=None: _real.ChatGPT_API_with_finish_reason(
-            m, p, k, h
-        ),
-    )
-
-
-setattr(_override, "ChatGPT_API_async", _ChatGPT_API_async)
-setattr(_override, "ChatGPT_API", _ChatGPT_API)
-setattr(_override, "ChatGPT_API_with_finish_reason", _ChatGPT_API_with_finish_reason)
-
-# Export the override module (used by __init__.py for sys.modules injection)
 override_module = _override

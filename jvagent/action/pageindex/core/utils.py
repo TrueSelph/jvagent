@@ -8,127 +8,85 @@ import time
 from datetime import datetime
 from io import BytesIO
 
-import openai
+import litellm
 import pymupdf
-import pypdf
-import tiktoken
+import PyPDF2
 from dotenv import load_dotenv
 
 load_dotenv()
+import logging
 from pathlib import Path
 from types import SimpleNamespace as config
-from typing import Optional
 
 import yaml
 
-from jvagent.action.pageindex.config import resolve_pageindex_json_log_dir
-from jvagent.action.pageindex.llm_bridge import (
-    PageIndexCancelled,
-    check_pageindex_cancelled,
-)
+# Backward compatibility: support CHATGPT_API_KEY as alias for OPENAI_API_KEY
+if not os.getenv("OPENAI_API_KEY") and os.getenv("CHATGPT_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = os.getenv("CHATGPT_API_KEY")
 
-# Support both CHATGPT_API_KEY and OPENAI_API_KEY for compatibility
-CHATGPT_API_KEY = os.getenv("CHATGPT_API_KEY") or os.getenv("OPENAI_API_KEY")
+litellm.drop_params = True
 
 
 def count_tokens(text, model=None):
     if not text:
         return 0
-    enc = tiktoken.encoding_for_model(model)
-    tokens = enc.encode(text)
-    return len(tokens)
+    return litellm.token_counter(model=model, text=text)
 
 
-def ChatGPT_API_with_finish_reason(
-    model, prompt, api_key=CHATGPT_API_KEY, chat_history=None
-):
+def llm_completion(model, prompt, chat_history=None, return_finish_reason=False):
     max_retries = 10
-    client = openai.OpenAI(api_key=api_key)
+    messages = (
+        list(chat_history) + [{"role": "user", "content": prompt}]
+        if chat_history
+        else [{"role": "user", "content": prompt}]
+    )
     for i in range(max_retries):
         try:
-            check_pageindex_cancelled()
-            if chat_history:
-                messages = chat_history
-                messages.append({"role": "user", "content": prompt})
-            else:
-                messages = [{"role": "user", "content": prompt}]
-
-            response = client.chat.completions.create(
+            response = litellm.completion(
                 model=model,
                 messages=messages,
                 temperature=0,
             )
-            if response.choices[0].finish_reason == "length":
-                return response.choices[0].message.content, "max_output_reached"
-            else:
-                return response.choices[0].message.content, "finished"
-
-        except PageIndexCancelled:
-            raise
+            content = response.choices[0].message.content
+            if return_finish_reason:
+                finish_reason = (
+                    "max_output_reached"
+                    if response.choices[0].finish_reason == "length"
+                    else "finished"
+                )
+                return content, finish_reason
+            return content
         except Exception as e:
             print("************* Retrying *************")
             logging.error(f"Error: {e}")
             if i < max_retries - 1:
-                time.sleep(1)  # Wait for 1秒 before retrying
+                time.sleep(1)
             else:
                 logging.error("Max retries reached for prompt: " + prompt)
-                return "Error", "error"
+                if return_finish_reason:
+                    return "", "error"
+                return ""
 
 
-def ChatGPT_API(model, prompt, api_key=CHATGPT_API_KEY, chat_history=None):
-    max_retries = 10
-    client = openai.OpenAI(api_key=api_key)
-    for i in range(max_retries):
-        try:
-            check_pageindex_cancelled()
-            if chat_history:
-                messages = chat_history
-                messages.append({"role": "user", "content": prompt})
-            else:
-                messages = [{"role": "user", "content": prompt}]
-
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=0,
-            )
-
-            return response.choices[0].message.content
-        except PageIndexCancelled:
-            raise
-        except Exception as e:
-            print("************* Retrying *************")
-            logging.error(f"Error: {e}")
-            if i < max_retries - 1:
-                time.sleep(1)  # Wait for 1秒 before retrying
-            else:
-                logging.error("Max retries reached for prompt: " + prompt)
-                return "Error"
-
-
-async def ChatGPT_API_async(model, prompt, api_key=CHATGPT_API_KEY):
+async def llm_acompletion(model, prompt):
     max_retries = 10
     messages = [{"role": "user", "content": prompt}]
     for i in range(max_retries):
         try:
-            check_pageindex_cancelled()
-            async with openai.AsyncOpenAI(api_key=api_key) as client:
-                response = await client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    temperature=0,
-                )
-                return response.choices[0].message.content
-        except PageIndexCancelled:
-            raise
+            response = await litellm.acompletion(
+                model=model,
+                messages=messages,
+                temperature=0,
+            )
+            return response.choices[0].message.content
         except Exception as e:
             print("************* Retrying *************")
             logging.error(f"Error: {e}")
             if i < max_retries - 1:
-                await asyncio.sleep(1)  # Wait for 1s before retrying
+                await asyncio.sleep(1)
             else:
                 logging.error("Max retries reached for prompt: " + prompt)
-                return "Error"
+                return ""
 
 
 def get_json_content(response):
@@ -277,7 +235,7 @@ def get_last_node(structure):
 
 
 def extract_text_from_pdf(pdf_path):
-    pdf_reader = pypdf.PdfReader(pdf_path)
+    pdf_reader = PyPDF2.PdfReader(pdf_path)
     ###return text not list
     text = ""
     for page_num in range(len(pdf_reader.pages)):
@@ -287,14 +245,14 @@ def extract_text_from_pdf(pdf_path):
 
 
 def get_pdf_title(pdf_path):
-    pdf_reader = pypdf.PdfReader(pdf_path)
+    pdf_reader = PyPDF2.PdfReader(pdf_path)
     meta = pdf_reader.metadata
     title = meta.title if meta and meta.title else "Untitled"
     return title
 
 
 def get_text_of_pages(pdf_path, start_page, end_page, tag=True):
-    pdf_reader = pypdf.PdfReader(pdf_path)
+    pdf_reader = PyPDF2.PdfReader(pdf_path)
     text = ""
     for page_num in range(start_page - 1, end_page):
         page = pdf_reader.pages[page_num]
@@ -338,7 +296,7 @@ def get_pdf_name(pdf_path):
     if isinstance(pdf_path, str):
         pdf_name = os.path.basename(pdf_path)
     elif isinstance(pdf_path, BytesIO):
-        pdf_reader = pypdf.PdfReader(pdf_path)
+        pdf_reader = PyPDF2.PdfReader(pdf_path)
         meta = pdf_reader.metadata
         pdf_name = meta.title if meta and meta.title else "Untitled"
         pdf_name = sanitize_filename(pdf_name)
@@ -346,15 +304,14 @@ def get_pdf_name(pdf_path):
 
 
 class JsonLogger:
-    def __init__(self, file_path, log_dir: Optional[str] = None):
+    def __init__(self, file_path):
         # Extract PDF name for logger name
         pdf_name = get_pdf_name(file_path)
 
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.filename = f"{pdf_name}_{current_time}.json"
-        resolved = log_dir if log_dir is not None else resolve_pageindex_json_log_dir()
-        self.log_dir = os.path.abspath(resolved)
-        os.makedirs(self.log_dir, exist_ok=True)
+        os.makedirs("./logs", exist_ok=True)
+        # Initialize empty list to store all messages
         self.log_data = []
 
     def log(self, level, message, **kwargs):
@@ -382,7 +339,7 @@ class JsonLogger:
         self.log("ERROR", message, **kwargs)
 
     def _filepath(self):
-        return os.path.join(self.log_dir, self.filename)
+        return os.path.join("logs", self.filename)
 
 
 def list_to_tree(data):
@@ -448,15 +405,14 @@ def add_preface_if_needed(data):
     return data
 
 
-def get_page_tokens(pdf_path, model="gpt-4o-2024-11-20", pdf_parser="pypdf"):
-    enc = tiktoken.encoding_for_model(model)
-    if pdf_parser in ("PyPDF2", "pypdf"):
-        pdf_reader = pypdf.PdfReader(pdf_path)
+def get_page_tokens(pdf_path, model=None, pdf_parser="PyPDF2"):
+    if pdf_parser == "PyPDF2":
+        pdf_reader = PyPDF2.PdfReader(pdf_path)
         page_list = []
         for page_num in range(len(pdf_reader.pages)):
             page = pdf_reader.pages[page_num]
             page_text = page.extract_text()
-            token_length = len(enc.encode(page_text))
+            token_length = litellm.token_counter(model=model, text=page_text)
             page_list.append((page_text, token_length))
         return page_list
     elif pdf_parser == "PyMuPDF":
@@ -472,7 +428,7 @@ def get_page_tokens(pdf_path, model="gpt-4o-2024-11-20", pdf_parser="pypdf"):
         page_list = []
         for page in doc:
             page_text = page.get_text()
-            token_length = len(enc.encode(page_text))
+            token_length = litellm.token_counter(model=model, text=page_text)
             page_list.append((page_text, token_length))
         return page_list
     else:
@@ -494,7 +450,7 @@ def get_text_of_pdf_pages_with_labels(pdf_pages, start_page, end_page):
 
 
 def get_number_of_pages(pdf_path):
-    pdf_reader = pypdf.PdfReader(pdf_path)
+    pdf_reader = PyPDF2.PdfReader(pdf_path)
     num = len(pdf_reader.pages)
     return num
 
@@ -578,7 +534,7 @@ def remove_structure_text(data):
 def check_token_limit(structure, limit=110000):
     list = structure_to_list(structure)
     for node in list:
-        num_tokens = count_tokens(node["text"], model="gpt-4o")
+        num_tokens = count_tokens(node["text"], model=None)
         if num_tokens > limit:
             print(f"Node ID: {node['node_id']} has {num_tokens} tokens")
             print("Start Index:", node["start_index"])
@@ -625,84 +581,6 @@ def convert_page_to_int(data):
     return data
 
 
-def split_page_text_by_title(page_text, titles):
-    """Split a full page text into per-title slices.
-
-    Given a page's raw text and an ordered list of section titles that all
-    start on that page, return one text slice per title.  Each slice runs
-    from where that title first appears up to (but not including) where the
-    next title appears.  Falls back to the full page text for any title
-    that cannot be located.
-    """
-    positions = []
-    for title in titles:
-        idx = page_text.find(title)
-        if idx == -1:
-            # Loose match: collapse internal whitespace
-            pattern = r"\s+".join(re.escape(w) for w in title.split())
-            m = re.search(pattern, page_text)
-            idx = m.start() if m else -1
-        positions.append(idx)
-
-    slices = []
-    for i, (title, pos) in enumerate(zip(titles, positions)):
-        if pos == -1:
-            slices.append(page_text)  # fallback: full page
-            continue
-        next_pos = None
-        for j in range(i + 1, len(positions)):
-            if positions[j] != -1:
-                next_pos = positions[j]
-                break
-        slices.append(
-            page_text[pos:next_pos].strip()
-            if next_pos is not None
-            else page_text[pos:].strip()
-        )
-    return slices
-
-
-def _assign_sibling_texts(sibling_list, pdf_pages):
-    """Assign distinct text slices to sibling nodes that share the same page.
-
-    When multiple sibling nodes all have start_index == end_index (and the
-    same value), they would otherwise all receive the identical full-page
-    text.  This function detects such groups and splits the page text by
-    each node's title so every sibling gets its own distinct slice.
-    """
-    i = 0
-    while i < len(sibling_list):
-        node = sibling_list[i]
-        if not isinstance(node, dict):
-            i += 1
-            continue
-        si, ei = node.get("start_index"), node.get("end_index")
-        if si is None or ei is None or si != ei:
-            i += 1
-            continue
-        # Collect the contiguous run of siblings with the same single-page span
-        group = [node]
-        j = i + 1
-        while j < len(sibling_list):
-            peer = sibling_list[j]
-            if (
-                isinstance(peer, dict)
-                and peer.get("start_index") == si
-                and peer.get("end_index") == ei
-            ):
-                group.append(peer)
-                j += 1
-            else:
-                break
-        if len(group) > 1:
-            page_text = get_text_of_pdf_pages(pdf_pages, si, ei)
-            titles = [g.get("title", "") for g in group]
-            slices = split_page_text_by_title(page_text, titles)
-            for g, s in zip(group, slices):
-                g["text"] = s
-        i = j if len(group) > 1 else i + 1
-
-
 def add_node_text(node, pdf_pages):
     if isinstance(node, dict):
         start_page = node.get("start_index")
@@ -711,8 +589,6 @@ def add_node_text(node, pdf_pages):
         if "nodes" in node:
             add_node_text(node["nodes"], pdf_pages)
     elif isinstance(node, list):
-        # Override text for sibling groups that all land on the same page
-        _assign_sibling_texts(node, pdf_pages)
         for index in range(len(node)):
             add_node_text(node[index], pdf_pages)
     return
@@ -728,32 +604,19 @@ def add_node_text_with_labels(node, pdf_pages):
         if "nodes" in node:
             add_node_text_with_labels(node["nodes"], pdf_pages)
     elif isinstance(node, list):
-        # Override text for sibling groups that all land on the same page
-        _assign_sibling_texts(node, pdf_pages)
         for index in range(len(node)):
             add_node_text_with_labels(node[index], pdf_pages)
     return
 
 
 async def generate_node_summary(node, model=None):
-    prompt = f"""You are given a part of a document, your task is to generate a detailed description that preserves all specific information from the text.
-
-    IMPORTANT: You must include ALL specific details exactly as they appear, including:
-    - Account numbers, merchant numbers, and reference codes
-    - Bank names with full account details and SWIFT codes
-    - Phone numbers, email addresses, and contact information
-    - Addresses, dates, amounts, and measurements
-    - Product names, model numbers, and technical specifications
-    - Lists, bullet points, and structured information
-    - Names of people, organizations, and locations
-
-    Format the description to be comprehensive and preserve the structure of lists and multiple options.
+    prompt = f"""You are given a part of a document, your task is to generate a description of the partial document about what are main points covered in the partial document.
 
     Partial Document Text: {node['text']}
 
-    Directly return the detailed description with all specific information preserved, do not include any other text.
+    Directly return the description, do not include any other text.
     """
-    response = await ChatGPT_API_async(model, prompt)
+    response = await llm_acompletion(model, prompt)
     return response
 
 
@@ -800,7 +663,7 @@ def generate_doc_description(structure, model=None):
 
     Directly return the description, do not include any other text.
     """
-    response = ChatGPT_API(model, prompt)
+    response = llm_completion(model, prompt)
     return response
 
 

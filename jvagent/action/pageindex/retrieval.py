@@ -180,9 +180,9 @@ async def _search_via_tree_search(
 ) -> List[Dict[str, Any]]:
     """LLM-based tree search with lexical pre-selection of documents."""
     from .core.utils import (
-        ChatGPT_API_async,
         count_tokens,
         get_json_content,
+        llm_acompletion,
         remove_fields,
     )
 
@@ -295,8 +295,8 @@ Please reply in the following JSON format:
 Directly return the final JSON structure. Do not output anything else.
 """
 
-            response = await ChatGPT_API_async(model, prompt, api_key=api_key)
-            if not response or response == "Error":
+            response = await llm_acompletion(model=model, prompt=prompt)
+            if not response:
                 logger.warning(
                     "PageIndex tree search LLM call failed; falling back to direct"
                 )
