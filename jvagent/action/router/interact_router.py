@@ -1064,7 +1064,11 @@ class InteractRouter(InteractAction):
                     f"InteractRouter: get_anchors() failed for {entity_name}: {exc}"
                 )
 
-            anchors = dynamic_anchors if dynamic_anchors is not None else getattr(action, "anchors", None)
+            anchors = (
+                dynamic_anchors
+                if dynamic_anchors is not None
+                else getattr(action, "anchors", None)
+            )
             description = getattr(action, "description", None)
 
             if anchors is None:

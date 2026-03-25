@@ -430,7 +430,9 @@ async def repair_memory(
 )
 async def get_my_memory(
     agent_id: str,
-    user_id: Optional[str] = Query(None, description="Caller's user_id (from client storage)"),
+    user_id: Optional[str] = Query(
+        None, description="Caller's user_id (from client storage)"
+    ),
 ) -> Dict[str, Any]:
     """Get the current user's long-term memory for an agent.
 
@@ -446,7 +448,7 @@ async def get_my_memory(
     """
     if not user_id:
         return {"memory": {}}
-        
+
     agent = await Agent.get(agent_id)
     if not agent:
         raise ResourceNotFoundError(f"Agent with ID '{agent_id}' not found")
