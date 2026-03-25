@@ -253,7 +253,6 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
 
         return self.anchors  # type: ignore[return-value]
 
-
     def _resolve_collection(self) -> str:
         """Resolve PageIndex collection as {agent_id}_{suffix}."""
         return resolve_long_memory_collection(
@@ -355,5 +354,3 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
             prefix = f"[{doc}] {title}: " if doc or title else ""
             parts.append(f"- {prefix}{content}")
         return self.directive.format(results="\n".join(parts))
-
-

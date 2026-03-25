@@ -23,7 +23,7 @@ export function MemoryViewer({ agentId, onClose }: MemoryViewerProps) {
     try {
       const data = await apiClient.getMyMemory(agentId);
       setMemoryData(data);
-      
+
       // Auto-select first category if none selected
       const categories = Object.keys(data.memory || {});
       if (categories.length > 0 && !selectedCategory) {
@@ -155,7 +155,7 @@ export function MemoryViewer({ agentId, onClose }: MemoryViewerProps) {
                   </span>
                 )}
               </div>
-              
+
               <div className={`prose ${dark ? "prose-invert" : ""} max-w-none`}>
                 <ReactMarkdown
                   components={{

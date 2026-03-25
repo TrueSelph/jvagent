@@ -126,7 +126,9 @@ class InteractAction(Action, ABC):
         """
         return visitor.interaction is not None
 
-    async def get_anchors(self, conversation: Optional[Any] = None) -> Optional[List[str]]:
+    async def get_anchors(
+        self, conversation: Optional[Any] = None
+    ) -> Optional[List[str]]:
         """Return dynamic anchors for this action, or None to use static self.anchors.
 
         Override this in subclasses that need user-specific or runtime-derived anchors

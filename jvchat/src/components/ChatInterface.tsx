@@ -482,7 +482,7 @@ export function ChatInterface() {
                   </p>
                 )}
               </div>
- 
+
                {/* Memory viewer button */}
                <button
                  onClick={handleToggleMemoryModal}
@@ -504,7 +504,7 @@ export function ChatInterface() {
                    />
                  </svg>
                </button>
- 
+
                {/* Agent actions button */}
                <button
                  onClick={handleToggleActionsModal}
