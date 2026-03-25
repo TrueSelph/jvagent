@@ -180,7 +180,9 @@ def _build_utterance_with_quoted_context(
     return f'User replied to: "{quoted_text}" with "{user_utterance}"'
 
 
-async def get_conversation_with_lock(sender: str) -> Optional[Any]:
+async def get_conversation_with_lock(
+    sender: str, agent_id: Optional[str] = None
+) -> Optional[Any]:
     """Get conversation for user with proper locking to prevent duplicates.
 
     This function ensures that only one request at a time can look up or
@@ -188,6 +190,7 @@ async def get_conversation_with_lock(sender: str) -> Optional[Any]:
 
     Args:
         sender: User ID / phone number
+        agent_id: When set, only conversations under that agent's Memory are considered.
 
     Returns:
         Conversation object if found, None otherwise
@@ -196,6 +199,19 @@ async def get_conversation_with_lock(sender: str) -> Optional[Any]:
 
     async with lock:
         try:
+            if agent_id:
+                from jvagent.core.agent import Agent
+                from jvagent.memory.user import User
+
+                agent = await Agent.get(agent_id)
+                if agent:
+                    memory = await agent.get_memory()
+                    if memory:
+                        for user in await memory.nodes(node=User, user_id=sender):
+                            active = await user.get_active_conversation()
+                            if active:
+                                return active
+                return None
             return await Conversation.find_one({"context.user_id": sender})
         except DatabaseError as e:
             logger.error(f"Database error finding conversation for user {sender}: {e}")
@@ -224,7 +240,7 @@ async def create_whatsapp_walker(
     """
     try:
         # Get conversation with locking to prevent duplicates
-        convo_obj = await get_conversation_with_lock(sender)
+        convo_obj = await get_conversation_with_lock(sender, agent_id=agent_id)
 
         if convo_obj and getattr(convo_obj, "session_id", None):
             return InteractWalker(

@@ -95,14 +95,19 @@ class Conversation(DeferredSaveMixin, Node):
     async def get_first_interaction(self) -> Optional["Interaction"]:
         """Get the first interaction in the chain.
 
+        When multiple outgoing Interaction edges exist (e.g. after races), picks
+        the earliest by ``started_at`` then ``id`` for a stable chain head.
+
         Returns:
             First Interaction node, or None if no interactions exist
         """
-        from jvagent.memory.interaction import Interaction
+        from jvagent.memory.interaction import Interaction, interaction_sort_key
 
-        # Get interactions connected directly from conversation (first interaction only)
         interactions = await self.nodes(node=Interaction, direction="out")
-        return interactions[0] if interactions else None
+        if not interactions:
+            return None
+        interactions.sort(key=interaction_sort_key)
+        return interactions[0]
 
     async def _find_last_interaction(self) -> Optional["Interaction"]:
         """Find the last interaction by traversing the chain (used when reference is stale).
@@ -187,11 +192,11 @@ class Conversation(DeferredSaveMixin, Node):
         Raises:
             ValueError: If neither interaction nor utterance is provided
         """
-        from jvagent.memory.lock_manager import get_conversation_lock_manager
+        from jvagent.memory.distributed_conversation_lock import (
+            conversation_mutation_lock,
+        )
 
-        lock_mgr = get_conversation_lock_manager()
-        lock = await lock_mgr.acquire(self.id)
-        async with lock:
+        async with conversation_mutation_lock(self.id):
             return await self._add_interaction_unlocked(
                 interaction=interaction,
                 utterance=utterance,
@@ -1008,12 +1013,11 @@ class Conversation(DeferredSaveMixin, Node):
         await self.save()
 
     async def delete(self, cascade: bool = True) -> None:
-        """Delete this conversation and update Memory's total_conversations counter.
+        """Delete this conversation and refresh Memory counters from the graph.
 
-        This override is triggered when Conversation.delete() is called directly.
-        When a Conversation is deleted via cascade from User.delete(), the base
-        Node.delete() is invoked instead, so purge_user_memory handles the counter
-        decrement for that case.
+        This override runs when :meth:`delete` is called on a Conversation. Cascade
+        deletes from :meth:`User.delete` bypass this override; :meth:`Memory.purge_user_memory`
+        refreshes counters after bulk user deletes.
 
         Args:
             cascade: Whether to cascade deletion to dependent nodes (default: True)
@@ -1021,16 +1025,15 @@ class Conversation(DeferredSaveMixin, Node):
         from jvagent.memory.manager import Memory
         from jvagent.memory.user import User
 
-        # Get Memory node to update counter before deletion
         user = await self.node(direction="in", node=User)
+        memory = None
         if user:
             memory = await user.node(direction="in", node=Memory)
-            if memory:
-                context = await memory.get_context()
-                await context.atomic_increment(memory.id, "total_conversations", -1)
 
-        # Call parent delete to perform actual deletion
         await super().delete(cascade=cascade)
+
+        if memory:
+            await memory.refresh_memory_counters_from_graph()
 
     async def get_statistics(self) -> Dict[str, Any]:
         """Get conversation statistics.

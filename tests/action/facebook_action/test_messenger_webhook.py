@@ -1,8 +1,7 @@
 """Tests for Messenger webhook parsing and Meta signature verification."""
 
-from starlette.requests import Request
-
 from jvspatial.api.integrations.webhooks.utils import generate_hmac_signature
+from starlette.requests import Request
 
 from jvagent.action.facebook_action.facebook_action import FacebookAction
 from jvagent.action.facebook_action.facebook_api import FacebookAPI
@@ -28,7 +27,9 @@ def _req_with_sig(body: bytes, signature: str) -> Request:
 class TestIterMessengerUserTextEvents:
     def test_empty_non_page_object(self):
         assert FacebookAPI.iter_messenger_user_text_events({}) == []
-        assert FacebookAPI.iter_messenger_user_text_events({"object": "instagram"}) == []
+        assert (
+            FacebookAPI.iter_messenger_user_text_events({"object": "instagram"}) == []
+        )
 
     def test_skips_feed_changes(self):
         body = {
@@ -134,7 +135,9 @@ class TestIterMessengerUserTextEvents:
                                 "attachments": [
                                     {
                                         "type": "audio",
-                                        "payload": {"url": "https://cdn.example/clip.mp4"},
+                                        "payload": {
+                                            "url": "https://cdn.example/clip.mp4"
+                                        },
                                     },
                                 ],
                             },

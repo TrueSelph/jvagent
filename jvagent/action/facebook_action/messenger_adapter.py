@@ -75,15 +75,11 @@ class MessengerAdapter(ChannelAdapter):
                         fb_type = "audio"
 
                     def _send_media() -> Any:
-                        return api.send_media(
-                            message.user_id, media_url, fb_type
-                        )
+                        return api.send_media(message.user_id, media_url, fb_type)
 
                     result = await asyncio.to_thread(_send_media)
                     if self._graph_failed(result):
-                        logger.error(
-                            "MessengerAdapter: media send failed: %s", result
-                        )
+                        logger.error("MessengerAdapter: media send failed: %s", result)
                         return False
                     return True
 
@@ -92,13 +88,13 @@ class MessengerAdapter(ChannelAdapter):
                     return False
 
                 for part in chunks:
-                    result = await asyncio.to_thread(
-                        lambda p=part: api.send_text_message(message.user_id, p)
-                    )
+
+                    def _send_text_chunk(text: str = part) -> Any:
+                        return api.send_text_message(message.user_id, text)
+
+                    result = await asyncio.to_thread(_send_text_chunk)
                     if self._graph_failed(result):
-                        logger.error(
-                            "MessengerAdapter: text send failed: %s", result
-                        )
+                        logger.error("MessengerAdapter: text send failed: %s", result)
                         return False
                 return True
             except Exception as e:
@@ -112,9 +108,11 @@ class MessengerAdapter(ChannelAdapter):
             finally:
                 try:
                     uid = message.user_id
-                    await asyncio.to_thread(
-                        lambda: api.send_sender_action(uid, "typing_off")
-                    )
+
+                    def _typing_off() -> Any:
+                        return api.send_sender_action(uid, "typing_off")
+
+                    await asyncio.to_thread(_typing_off)
                 except Exception as e:
                     logger.debug(
                         "MessengerAdapter: typing_off failed for %s: %s",

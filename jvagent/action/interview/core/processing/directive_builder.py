@@ -170,7 +170,7 @@ class DirectiveBuilder:
                 if session:
                     if session.state in (InterviewState.ACTIVE, InterviewState.REVIEW):
                         action_name = self.action.get_class_name()
-                        action_title = self.action.metadata.get('title', '')
+                        action_title = self.action.metadata.get("title", "")
                         action_title = action_title.split("Interact")[0].strip()
                         action_title = action_title.replace("Action", "").strip()
                         action_description = self.action.description
@@ -178,9 +178,8 @@ class DirectiveBuilder:
 
                         description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(
                             action_title=action_title,
-                            action_description=action_description
+                            action_description=action_description,
                         )
-                        
 
                         metadata = {
                             "interview_type": session.interview_type,
@@ -195,15 +194,14 @@ class DirectiveBuilder:
                 else:
                     # No session available, default to active task
                     action_name = self.action.get_class_name()
-                    action_title = self.action.metadata.get('title', '')
+                    action_title = self.action.metadata.get("title", "")
                     action_title = action_title.split("Interact")[0].strip()
                     action_title = action_title.replace("Action", "").strip()
                     action_description = self.action.description
                     # description = f"The user was in the {action_title}. A guide asked if they wanted to continue the {action_title}. (Action Description: {action_description}). If the user message diverges from the active task, respond to it, but close by reminding them to return and complete the {action_title}."
 
                     description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(
-                        action_title=action_title,
-                        action_description=action_description
+                        action_title=action_title, action_description=action_description
                     )
 
                     await visitor.add_active_task(
@@ -240,15 +238,14 @@ class DirectiveBuilder:
         # action_name = self.action.get_class_name()
         # description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(action_name=action_name)
         action_name = self.action.get_class_name()
-        action_title = self.action.metadata.get('title', '')
+        action_title = self.action.metadata.get("title", "")
         action_title = action_title.split("Interact")[0].strip()
         action_title = action_title.replace("Action", "").strip()
         action_description = self.action.description
         # description = f"The user was in the {action_title}. A guide asked if they wanted to continue the {action_title}. (Action Description: {action_description}). If the user message diverges from the active task, respond to it, but close by reminding them to return and complete the {action_title}."
 
         description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(
-            action_title=action_title,
-            action_description=action_description
+            action_title=action_title, action_description=action_description
         )
         await visitor.update_task(
             status=task_status,

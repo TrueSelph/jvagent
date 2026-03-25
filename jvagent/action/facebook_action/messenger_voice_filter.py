@@ -1,8 +1,9 @@
 """Messenger voice response filter for TTS synthesis (WhatsApp parity)."""
 
 import logging
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List, Optional, cast
 
+from jvagent.action.base import Action
 from jvagent.action.response.channel_filter import ChannelFilter
 from jvagent.action.response.message import ResponseMessage
 
@@ -14,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 class MessengerVoiceResponseFilter(ChannelFilter):
     """When ``respond_with_voice`` is True, synthesize reply via TTS and send as audio."""
+
+    action: "FacebookAction"
 
     def __init__(
         self,
@@ -32,7 +35,10 @@ class MessengerVoiceResponseFilter(ChannelFilter):
         if not message.content or not self.action.tts_action:
             return
         try:
-            tts_action = await self.action.get_action(self.action.tts_action)
+            tts_action = cast(
+                Optional[Action],
+                await self.action.get_action(self.action.tts_action),
+            )
             if not tts_action:
                 logger.debug(
                     "MessengerVoiceResponseFilter: TTS action %s not found",

@@ -1,8 +1,14 @@
 """Async lock manager for memory operations.
 
 Provides per-key async locks to prevent race conditions during concurrent
-user/conversation/interaction creation and mutation. Uses TTL-based cleanup
-to avoid unbounded memory growth.
+user/conversation/interaction creation and mutation **within a single Python
+process**. Uses TTL-based cleanup to avoid unbounded memory growth.
+
+For conversation chain mutations across multiple workers (e.g. AWS Lambda),
+configure :mod:`~jvagent.memory.distributed_conversation_lock` via
+``JVAGENT_CONVERSATION_LOCK_REDIS_URL`` or
+``JVAGENT_CONVERSATION_LOCK_DYNAMODB_TABLE``; otherwise concurrent invocations
+do not share these locks.
 """
 
 import asyncio
