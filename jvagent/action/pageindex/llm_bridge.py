@@ -1,7 +1,7 @@
 """LLM bridge for PageIndex: delegates to jvagent LanguageModelAction when available.
 
 When a model action is set in context, LLM calls use it for observability and
-token tracking. Otherwise falls back to core.utils direct OpenAI calls.
+token tracking. Otherwise falls back to core.utils litellm entry points.
 
 Cooperative cancellation: PDF ingestion runs in a thread pool; asyncio timeout
 cannot stop the thread. A shared threading.Event is attached per worker thread
@@ -13,7 +13,7 @@ import contextvars
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -73,19 +73,18 @@ def _run_async_from_sync(coro) -> Any:
         return asyncio.run(coro)
 
 
-async def ChatGPT_API_async(
+async def llm_acompletion(
     model: str,
     prompt: str,
-    api_key: Optional[str] = None,
     _real_impl=None,
 ) -> str:
-    """Async LLM call: uses jvagent model when in context, else real utils."""
+    """Async litellm-style call: jvagent model when in context, else core utils."""
     check_pageindex_cancelled()
     action = get_pageindex_model_action()
     if action:
         try:
             result = await action.query_sync(prompt, model=model)
-            return await result.get_response() if result else "Error"
+            return await result.get_response() if result else ""
         except PageIndexCancelled:
             raise
         except Exception as e:
@@ -93,59 +92,41 @@ async def ChatGPT_API_async(
                 f"PageIndex jvagent LLM call failed, falling back to direct: {e}"
             )
             if _real_impl:
-                return await _real_impl(model, prompt, api_key)
-            return "Error"
+                return await _real_impl(model, prompt)
+            return ""
     if _real_impl:
-        return await _real_impl(model, prompt, api_key)
-    return "Error"
+        return await _real_impl(model, prompt)
+    return ""
 
 
-def ChatGPT_API(
+def llm_completion(
     model: str,
     prompt: str,
-    api_key: Optional[str] = None,
     chat_history: Optional[list] = None,
+    return_finish_reason: bool = False,
     _real_impl=None,
-) -> str:
-    """Sync LLM call: uses jvagent model when in context, else real utils."""
+) -> Union[str, tuple]:
+    """Sync litellm-style call: jvagent model when in context, else core utils."""
     check_pageindex_cancelled()
+    if chat_history:
+        if _real_impl:
+            return _real_impl(model, prompt, chat_history, return_finish_reason)
+        return ("", "error") if return_finish_reason else ""
+
     action = get_pageindex_model_action()
     if action:
         try:
             result = _run_async_from_sync(action.query_sync(prompt, model=model))
-            return _run_async_from_sync(result.get_response()) if result else "Error"
-        except PageIndexCancelled:
-            raise
-        except Exception as e:
-            logger.warning(
-                f"PageIndex jvagent LLM call failed, falling back to direct: {e}"
-            )
-            if _real_impl:
-                return _real_impl(model, prompt, api_key, chat_history)
-            return "Error"
-    if _real_impl:
-        return _real_impl(model, prompt, api_key, chat_history)
-    return "Error"
-
-
-def ChatGPT_API_with_finish_reason(
-    model: str,
-    prompt: str,
-    api_key: Optional[str] = None,
-    chat_history: Optional[list] = None,
-    _real_impl=None,
-) -> tuple:
-    """Sync LLM call with finish reason: uses jvagent model when in context."""
-    check_pageindex_cancelled()
-    action = get_pageindex_model_action()
-    if action:
-        try:
-            result = _run_async_from_sync(action.query_sync(prompt, model=model))
+            if return_finish_reason:
+                if not result:
+                    return "", "error"
+                text = _run_async_from_sync(result.get_response())
+                reason = getattr(result, "finish_reason", None) or "stop"
+                finish = "finished" if reason == "stop" else "max_output_reached"
+                return text, finish
             if not result:
-                return "Error", "error"
-            text = _run_async_from_sync(result.get_response())
-            reason = getattr(result, "finish_reason", None) or "stop"
-            return text, "finished" if reason == "stop" else "max_output_reached"
+                return ""
+            return _run_async_from_sync(result.get_response())
         except PageIndexCancelled:
             raise
         except Exception as e:
@@ -153,8 +134,8 @@ def ChatGPT_API_with_finish_reason(
                 f"PageIndex jvagent LLM call failed, falling back to direct: {e}"
             )
             if _real_impl:
-                return _real_impl(model, prompt, api_key, chat_history)
-            return "Error", "error"
+                return _real_impl(model, prompt, chat_history, return_finish_reason)
+            return ("", "error") if return_finish_reason else ""
     if _real_impl:
-        return _real_impl(model, prompt, api_key, chat_history)
-    return "Error", "error"
+        return _real_impl(model, prompt, chat_history, return_finish_reason)
+    return ("", "error") if return_finish_reason else ""

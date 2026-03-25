@@ -66,10 +66,14 @@ test = [
     "openai>=1.0.0",
     "filetype>=1.2.0",
     "tiktoken>=0.5.0",
+    "litellm>=1.82.0",
+    "PyPDF2>=3.0.1",
 ]
 
 # Documented in README as ``pip install -e ".[pageindex]"`` — LLM + helpers for PageIndex actions.
 pageindex = [
+    "litellm>=1.82.0",
+    "PyPDF2>=3.0.1",
     "openai>=1.0.0",
     "tiktoken>=0.5.0",
     "filetype>=1.2.0",

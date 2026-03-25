@@ -7,6 +7,7 @@ persisting the resulting structure to the jvspatial graph database.
 import asyncio
 import functools
 import logging
+import os
 import threading
 from io import BytesIO
 from pathlib import Path
@@ -104,6 +105,7 @@ def _pdf_page_index_worker(
     cancel_event: Optional[threading.Event],
     doc: Any,
     *,
+    log_base: Optional[str],
     model: str,
     toc_check_page_num: Optional[int],
     max_page_num_each_node: Optional[int],
@@ -112,11 +114,19 @@ def _pdf_page_index_worker(
     if_add_node_text: str,
     if_add_node_summary: str,
     if_add_doc_description: str,
-    log_dir: Optional[str],
 ) -> Dict[str, Any]:
-    """Run sync page_index in a thread with optional cooperative cancel (see llm_bridge)."""
+    """Run sync page_index in a thread with optional cooperative cancel (see llm_bridge).
+
+    When ``log_base`` is set, the process cwd is temporarily changed so vendored
+    PageIndex writes trace JSON under ``{log_base}/logs/`` (upstream uses a
+    relative ``logs`` directory).
+    """
     attach_pageindex_cancel_event(cancel_event)
+    prev_cwd = os.getcwd()
     try:
+        if log_base:
+            os.makedirs(log_base, exist_ok=True)
+            os.chdir(log_base)
         return page_index(
             doc,
             model=model,
@@ -127,9 +137,13 @@ def _pdf_page_index_worker(
             if_add_node_text=if_add_node_text,
             if_add_node_summary=if_add_node_summary,
             if_add_doc_description=if_add_doc_description,
-            log_dir=log_dir,
         )
     finally:
+        try:
+            if log_base:
+                os.chdir(prev_cwd)
+        except OSError:
+            pass
         attach_pageindex_cancel_event(None)
 
 
@@ -193,7 +207,6 @@ async def assimilate_document(
     """
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
 
-    # Core expects a valid model string (tiktoken.encoding_for_model fails on None)
     model = model or "gpt-4o-mini"
 
     # Normalize: true/yes/1 -> "yes", false/no/0 -> "no" for core; use config when None
@@ -228,7 +241,7 @@ async def assimilate_document(
 
             app = await App.get()
             merged = app.file_storage_root_dir if app else None
-            log_dir = resolve_pageindex_json_log_dir(merged)
+            log_base = resolve_pageindex_json_log_dir(merged)
 
             loop = asyncio.get_running_loop()
             fut = loop.run_in_executor(
@@ -237,6 +250,7 @@ async def assimilate_document(
                     _pdf_page_index_worker,
                     cancel_event,
                     doc,
+                    log_base=log_base,
                     model=model,
                     toc_check_page_num=toc_check_page_num,
                     max_page_num_each_node=max_page_num_each_node,
@@ -245,7 +259,6 @@ async def assimilate_document(
                     if_add_node_text=if_add_node_text,
                     if_add_node_summary=if_add_node_summary,
                     if_add_doc_description=if_add_doc_description,
-                    log_dir=log_dir,
                 ),
             )
             fut.add_done_callback(_discard_pageindex_future)
