@@ -6,10 +6,22 @@ import pytest
 
 from jvagent.action.interview.core.foundation.enums import InterviewState
 from jvagent.action.interview.core.foundation.prompts import (
+    ACTIVE_TASK_DESCRIPTION_TEMPLATE,
     CANCELLATION_EVENT_MESSAGE_TEMPLATE,
     CANCELLATION_MESSAGE_TEMPLATE,
 )
 from jvagent.action.interview.core.processing.directive_builder import DirectiveBuilder
+
+
+def _active_task_description(metadata_title: str, action_description: str) -> str:
+    """Mirror DirectiveBuilder title parsing for expected task description strings."""
+    action_title = (
+        metadata_title.split("Interact")[0].strip().replace("Action", "").strip()
+    )
+    return ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(
+        action_title=action_title,
+        action_description=action_description,
+    )
 
 
 class TestDirectiveBuilderResetTaskTracking:
@@ -32,6 +44,8 @@ class TestDirectiveBuilderEventOncePerRun:
         """First queue_directive adds active task; second does not."""
         action = MagicMock()
         action.get_class_name.return_value = "TestInterview"
+        action.metadata = {"title": "TestInterview InteractAction"}
+        action.description = ""
 
         visitor = MagicMock()
         visitor.add_active_task = AsyncMock()
@@ -47,7 +61,9 @@ class TestDirectiveBuilderEventOncePerRun:
 
         visitor.add_active_task.assert_called_once()
         call_kwargs = visitor.add_active_task.call_args[1]
-        assert call_kwargs["description"] == "Guide user to complete TestInterview"
+        assert call_kwargs["description"] == _active_task_description(
+            "TestInterview InteractAction", ""
+        )
         assert call_kwargs["action_name"] == "TestInterview"
         assert visitor.add_directive.call_count == 2
 
@@ -56,6 +72,8 @@ class TestDirectiveBuilderEventOncePerRun:
         """After reset_task_tracking, active task is added again."""
         action = MagicMock()
         action.get_class_name.return_value = "TestInterview"
+        action.metadata = {"title": "TestInterview InteractAction"}
+        action.description = ""
 
         visitor = MagicMock()
         visitor.add_active_task = AsyncMock()
@@ -82,6 +100,8 @@ class TestDirectiveBuilderGenerateCancelledDirective:
         """When user cancels, add_event is called with cancellation event message."""
         action = MagicMock()
         action.get_class_name.return_value = "SignupInterviewInteractAction"
+        action.metadata = {"title": "SignupInterviewInteractAction InteractAction"}
+        action.description = ""
         action.get_cancelled_handler.return_value = None  # Use generic path
         action.get_state_event_message.return_value = (
             CANCELLATION_EVENT_MESSAGE_TEMPLATE.format(
@@ -97,6 +117,7 @@ class TestDirectiveBuilderGenerateCancelledDirective:
 
         session = MagicMock()
         session.interview_type = "default"
+        session.delete = AsyncMock()
 
         builder = DirectiveBuilder(action)
 
@@ -112,7 +133,9 @@ class TestDirectiveBuilderGenerateCancelledDirective:
         visitor.add_event.assert_called_once_with(expected_event)
         visitor.update_task.assert_called_once_with(
             status="cancelled",
-            description="Guide user to complete SignupInterviewInteractAction",
+            description=_active_task_description(
+                "SignupInterviewInteractAction InteractAction", ""
+            ),
             action_name="SignupInterviewInteractAction",
         )
         visitor.add_directive.assert_called_once_with(CANCELLATION_MESSAGE_TEMPLATE)
@@ -126,6 +149,8 @@ class TestDirectiveBuilderGenerateCompletedDirective:
         """When interview completes, update_task is called with completed."""
         action = MagicMock()
         action.get_class_name.return_value = "ReportInterviewInteractAction"
+        action.metadata = {"title": "ReportInterviewInteractAction InteractAction"}
+        action.description = ""
         action.get_completion_handler.return_value = None
         action.get_state_event_message.return_value = "Task completed"
         action.completion_message = "Thanks for completing the report"
@@ -137,6 +162,7 @@ class TestDirectiveBuilderGenerateCompletedDirective:
 
         session = MagicMock()
         session.interview_type = "default"
+        session.delete = AsyncMock()
 
         builder = DirectiveBuilder(action)
 
@@ -148,6 +174,8 @@ class TestDirectiveBuilderGenerateCompletedDirective:
 
         visitor.update_task.assert_called_once_with(
             status="completed",
-            description="Guide user to complete ReportInterviewInteractAction",
+            description=_active_task_description(
+                "ReportInterviewInteractAction InteractAction", ""
+            ),
             action_name="ReportInterviewInteractAction",
         )
