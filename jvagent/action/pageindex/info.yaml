@@ -29,9 +29,10 @@ package:
     jvagent: ~0.0.1
     actions: []
     pip:
-      - "tiktoken>=0.11.0"
+      - "litellm>=1.82.0"
       - "openai>=1.0.0"
-      - "PyPDF2>=3.0.0"
+      - "PyPDF2>=3.0.1"
       - "pymupdf>=1.26.0"
       - "python-dotenv>=1.1.0"
       - "pyyaml>=6.0"
+      - "tiktoken>=0.11.0"

@@ -56,10 +56,7 @@ A modular, pluggable agentive platform built on jvspatial that provides a produc
    pip install -e ".[dev]"
    ```
 
-   Or install with PageIndex support (for document ingestion/retrieval):
-   ```bash
-   pip install -e ".[pageindex]"
-   ```
+   PageIndex (document ingestion/retrieval) lists its Python packages under `package.dependencies.pip` in [`jvagent/action/pageindex/info.yaml`](jvagent/action/pageindex/info.yaml). They are installed automatically when that action loads unless `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL=true` (for air-gapped or pre-baked images, install those pip lines yourself).
 
 ### Install from Distribution
 
@@ -1084,7 +1081,7 @@ actions:
 ```
 
 **Available Core Actions:**
-- **Interact Actions**: `jvagent/interact_router`, `jvagent/retrieval_interact_action`, `jvagent/intro_interact_action`, `jvagent/interview_interact_action`, `jvagent/converse_interact_action`, `jvagent/pageindex_retrieval_interact_action` (requires `[pageindex]` extra)
+- **Interact Actions**: `jvagent/interact_router`, `jvagent/retrieval_interact_action`, `jvagent/intro_interact_action`, `jvagent/interview_interact_action`, `jvagent/converse_interact_action`, `jvagent/pageindex_retrieval_interact_action` (pip deps in `jvagent/action/pageindex/info.yaml`, auto-installed at action load by default)
 - **Language Models**: `jvagent/openai_lm`, `jvagent/openrouter_lm`
 - **Embedding Models**: `jvagent/openai_embedding`, `jvagent/openrouter_embedding`, `jvagent/huggingface_embedding`, `jvagent/generic_embedding`
 - **Vector Stores**: `jvagent/typesense_vectorstore`
@@ -1100,7 +1097,7 @@ actions:
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md) - Vector store retrieval with simplified API
 - [IntroInteractAction](jvagent/action/intro/README.md) - First-time user welcome messages
 - [InterviewInteractAction](jvagent/action/interview/README.md) - Reusable interview system for stepwise information collection with validation
-- [PageIndex](jvagent/action/pageindex/README.md) - Document ingestion and retrieval (requires `[pageindex]` extra)
+- [PageIndex](jvagent/action/pageindex/README.md) - Document ingestion and retrieval (pip deps in action `info.yaml`)
 - [MCPAction](jvagent/action/mcp/README.md) - Gateway for fulfilling natural language commands via an MCP server
 - [Model Actions](jvagent/action/model/README.md) - Language and embedding model integrations
 

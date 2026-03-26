@@ -84,17 +84,39 @@ Retrieval: query -> tree_search/direct/walker -> directive -> PersonaAction
 | `collection_name` | str | "default" | Collection this document belongs to (typically agent_id) |
 | `metadata` | Optional[Dict] | None | Custom key-value metadata for filtering at query time |
 
-### Environment Variables (database and LLM)
+### Environment variables
+
+#### PageIndex database
+
+Read by `get_pageindex_config()` in `jvagent.action.pageindex.config`. See the PAGEINDEX block in [`.env.example`](../../../.env.example) at the jvagent repository root.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `JVSPATIAL_PAGEINDEX_DB_PATH` | Path for json/sqlite | `{parent_of_prime_db}/pageindex_db` |
-| `JVSPATIAL_PAGEINDEX_DB_NAME` | MongoDB database name / DynamoDB table name | pageindex_db |
-| `JVSPATIAL_PAGEINDEX_DB_TYPE` | json, sqlite, mongodb, dynamodb | json |
-| `JVSPATIAL_JSONDB_PATH` | Prime DB path (derives shared root) | - |
-| `JVSPATIAL_SQLITE_PATH` | Prime DB sqlite path | jvdb/sqlite/jvspatial.db |
-| `PAGEINDEX_TREE_SEARCH_MODEL` | LLM for tree_search | gpt-4o-mini |
-| `CHATGPT_API_KEY` / `OPENAI_API_KEY` | API key for tree_search | - |
+| `JVAGENT_APP_ID` | When `JVAGENT_PAGEINDEX_DB_NAME` is unset, db name becomes `{sanitized_app_id}_pageindex_db` | From app config / `.env` |
+| `JVAGENT_PAGEINDEX_DB_TYPE` | Backend: `json`, `sqlite`, `mongodb`, `dynamodb` | `json` |
+| `JVAGENT_PAGEINDEX_DB_PATH` | **json**: base directory for files. **sqlite**: database file path. When set, used as-is for that backend. | — |
+| `JVAGENT_PAGEINDEX_DB_ROOT` | When `JVAGENT_PAGEINDEX_DB_PATH` is unset: **json** uses `{root}/{resolved_db_name}`; **sqlite** uses `{root}/{resolved_db_name}/sqlite/pageindex.db` | `.` |
+| `JVAGENT_PAGEINDEX_DB_NAME` | Overrides auto-derived name; MongoDB database name; DynamoDB table name if `JVAGENT_PAGEINDEX_DB_TABLE_NAME` unset | `pageindex_db`, or `{app_id}_pageindex_db`, or `pageindex.db_name` in app YAML |
+| `JVAGENT_PAGEINDEX_DB_URI` | MongoDB connection URI | `mongodb://localhost:27017` |
+| `JVAGENT_PAGEINDEX_DB_TABLE_NAME` | DynamoDB table name | Resolved db name |
+| `JVAGENT_PAGEINDEX_DB_REGION` | DynamoDB region | `us-east-1` |
+| `JVAGENT_PAGEINDEX_DB_ENDPOINT_URL` | DynamoDB custom endpoint (optional) | — |
+
+#### jvspatial prime graph database (not PageIndex)
+
+These configure the **main** jvspatial graph database (agents, core graph, etc.). PageIndex **does not** read them for its document store; set `JVAGENT_PAGEINDEX_*` above if you want a specific PageIndex location.
+
+| Variable | Description | Typical default |
+|----------|-------------|-----------------|
+| `JVSPATIAL_JSONDB_PATH` | Base directory for JSON-backed prime graph | `./jvdb` (see jvspatial docs) |
+| `JVSPATIAL_SQLITE_PATH` | SQLite file for prime graph when using sqlite backend | `jvdb/sqlite/jvspatial.db` |
+
+#### LLM (`tree_search`)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PAGEINDEX_TREE_SEARCH_MODEL` | Model for tree_search | `gpt-4o-mini` |
+| `CHATGPT_API_KEY` / `OPENAI_API_KEY` | API key for tree_search | — |
 
 ## REST API Endpoints
 
@@ -169,6 +191,6 @@ Documents can have key-value metadata at ingestion; filter at query time.
 
 - Documents must be ingested before retrieval
 - tree_search requires CHATGPT_API_KEY or OPENAI_API_KEY; falls back to direct if missing
-- PageIndex DB path is sibling of prime DB (e.g. `./pageindex_db` next to `./jvagent_db`)
+- Colocating PageIndex with the prime DB (e.g. `./pageindex_db` next to `./jvagent_db`) is optional and **not** inferred from `JVSPATIAL_JSONDB_PATH`; set `JVAGENT_PAGEINDEX_DB_PATH` or `JVAGENT_PAGEINDEX_DB_ROOT` to match the layout you want
 - Use `model_action_type` for token tracking and observability in agent context
 - **Ingestion config**: Put `node_summary`, `node_text`, `doc_description`, etc. under the `config` block (not `context`). These apply when documents are assimilated via API or `assimilate_document()`. REST ingestion uses config pushed when the action registers; if no agent has PageIndex, defaults apply.
