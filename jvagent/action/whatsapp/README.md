@@ -300,7 +300,7 @@ When `stt_action` and `tts_action` are configured, the action supports voice mes
 
 - **Inbound PTT**: Voice messages are transcribed via the STT action. The adapter passes the correct audio format (WhatsApp voice uses OGG-Opus) to the generic STT layer.
 - **Outbound voice reply**: When the user sends a PTT, the agent can respond with a synthesized voice message. PersonaAction applies voice-optimized formatting (short replies, no markdown), and the TTS action generates audio. The adapter sends the result as a voice message.
-- **Media URLs**: TTS and other media may return relative URLs (e.g. `/api/storage/...`). The adapter prepends `base_url` (from `APP_BASE_URL`) to produce absolute URLs before fetching for delivery. Ensure `APP_BASE_URL` is set and publicly reachable.
+- **Media URLs**: TTS and other media may return relative URLs (e.g. `/api/files/...` under the default `JVSPATIAL_API_PREFIX`). The adapter prepends `base_url` (from `APP_BASE_URL`) to produce absolute URLs before fetching for delivery. Ensure `APP_BASE_URL` is set and publicly reachable.
 
 ## Images and Vision
 
@@ -454,7 +454,7 @@ After routing works, deferred logs should include **`Deferred whatsapp media bat
 
 **Symptoms**:
 - TTS voice replies or other media fail with fetch errors
-- Log shows relative URL path (e.g. `/api/storage/...`)
+- Log shows relative URL path (e.g. `/api/files/...`)
 
 **Solutions**:
 1. **Set APP_BASE_URL**: The adapter needs an absolute URL to fetch media. Ensure `APP_BASE_URL` is set (e.g. `https://your-app.com`) and is publicly reachable.

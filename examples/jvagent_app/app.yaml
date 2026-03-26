@@ -76,8 +76,9 @@ config:
     enabled: true
     jwt_expire_minutes: 60
     # JWT secret should be set via JVSPATIAL_JWT_SECRET_KEY environment variable
-    exempt_paths:
-      - "/api/storage/*"
+    # For anonymous media fetch, prefer time-limited proxy URLs or add auth.exempt_paths
+    # (e.g. "/api/files/*") only after reviewing security impact. Prefer proxy URLs or
+    # JVSPATIAL_FILES_PUBLIC_READ=true for anonymous GET when appropriate (default).
 
   # Admin user configuration (defaults - production MUST override password)
   admin:

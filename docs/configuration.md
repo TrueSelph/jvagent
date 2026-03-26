@@ -78,6 +78,8 @@ This document maps `app.yaml` config paths to environment variables and document
 | `config.file_storage.root_dir` | `JVSPATIAL_FILES_ROOT_PATH` | ./.files |
 | `config.file_storage.base_url` | `JVSPATIAL_FILE_STORAGE_BASE_URL` | http://localhost:8000 |
 | `config.file_storage.max_size` | `JVSPATIAL_FILE_STORAGE_MAX_SIZE` | 104857600 |
+| (none) | `JVSPATIAL_FILES_PUBLIC_READ` | true (public `GET` for `{JVSPATIAL_API_PREFIX}/files/...`; set `false` to require auth) |
+| (none) | `JVSPATIAL_API_PREFIX` | /api (file URLs use `{prefix}/files/...`) |
 
 ### Logging
 

@@ -215,7 +215,6 @@ def _build_app_dict(ctx: "CreateAppContext") -> Dict[str, Any]:
             "auth": {
                 "enabled": True,
                 "jwt_expire_minutes": 60,
-                "exempt_paths": ["/api/storage/*"],
             },
             "admin": {
                 "username": "admin",

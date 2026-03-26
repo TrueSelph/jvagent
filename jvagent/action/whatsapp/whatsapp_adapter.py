@@ -92,7 +92,7 @@ class WhatsAppAdapter(ChannelAdapter):
         media_url = message.metadata.get("media_url")
         media_type = message.metadata.get("media_type")
 
-        # Ensure relative URLs (e.g. from TTS /api/storage/...) are absolute for fetch
+        # Ensure relative URLs (e.g. from TTS /api/files/...) are absolute for fetch
         if media_url and media_url.startswith("/"):
             base = (self.action.base_url or "").strip() or os.environ.get(
                 "APP_BASE_URL", ""
