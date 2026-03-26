@@ -519,62 +519,6 @@ async def delete_conversation(
 
 
 @endpoint(
-    "/storage/{file_path:path}",
-    methods=["GET"],
-    auth=False,
-    tags=["Storage"],
-)
-async def get_storage_file(file_path: str):
-    """Serve a file from the application's storage.
-
-    No authentication required. Public access for images and media assets.
-
-    Args:
-        file_path: Relative path to the file in storage
-
-    Returns:
-        FastAPI Response with file content and correct MIME type
-    """
-    import mimetypes
-    import os
-
-    from fastapi import Response
-
-    from jvagent.core.app import App
-
-    app = await App.get()
-    if not app:
-        raise ResourceNotFoundError("Application not found")
-
-    # Security: Prevent path traversal
-    if ".." in file_path or file_path.startswith("/"):
-        raise ValidationError("Invalid file path")
-
-    # Get file content
-    content = await app.get_file(file_path)
-    if content is None:
-        raise ResourceNotFoundError(f"File not found: {file_path}")
-
-    # Determine MIME type
-    mime_type, _ = mimetypes.guess_type(file_path)
-    if mime_type is None:
-        # Default to octet-stream for unknown types
-        mime_type = "application/octet-stream"
-
-    # Extract filename for Content-Disposition
-    filename = os.path.basename(file_path)
-
-    return Response(
-        content=content,
-        media_type=mime_type,
-        headers={
-            "Content-Disposition": f"inline; filename={filename}",
-            "Cache-Control": "public, max-age=3600",
-        },
-    )
-
-
-@endpoint(
     "/app/update_mode",
     methods=["PUT"],
     auth=True,

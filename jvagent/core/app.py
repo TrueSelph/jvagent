@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 from typing import Any, ClassVar, Dict, Optional, Type, Union
 
+from jvspatial.api.constants import APIRoutes
 from jvspatial.api.context import get_current_server
 from jvspatial.core import Node, Root
 from jvspatial.core.annotations import attribute
@@ -436,8 +437,8 @@ class App(Node):
             if metadata and "storage_url" in metadata:
                 return metadata["storage_url"]
 
-            # Use relative path
-            return f"/api/storage/{path}"
+            # Relative URL: matches FileStorageService GET {FILES_ROOT}/{file_path}
+            return f"{APIRoutes.FILES_ROOT}/{path}"
         except StorageError:
             return None
         except Exception:
@@ -482,7 +483,8 @@ class App(Node):
             )
 
             if proxy and hasattr(proxy, "code"):
-                return f"/p/{proxy.code}"
+                pp = str(APIRoutes.PROXY_PREFIX).rstrip("/")
+                return f"{pp}/{proxy.code}"
         except Exception:
             # Use regular file URL
             return await self.get_file_url(path)

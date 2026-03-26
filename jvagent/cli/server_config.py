@@ -283,7 +283,6 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         "/api/auth/login",
         "/api/auth/refresh",
         "/api/auth/logout",
-        "/api/storage/*",  # Public access for images/media
         "/api/agents/*/interact",  # Anonymous interact endpoint
     ]
     app_exempt_paths = get_config_value(app_config, "auth.exempt_paths", None, None)
