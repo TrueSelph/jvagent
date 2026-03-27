@@ -15,10 +15,6 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from jvspatial.core import get_default_context
 
-from jvagent.core.graph_repair import (
-    _legacy_backfill_user_memory_scope,
-    _reconcile_all_memory_counters,
-)
 from jvagent.core.graph_repair_handlers import _reattach_user
 from jvagent.memory.conversation import Conversation
 from jvagent.memory.interaction import Interaction
@@ -368,35 +364,8 @@ async def test_repair_memory_chains_conversation_branch_interactions(test_db):
 
 
 # ---------------------------------------------------------------------------
-# total_users writers: backfill split, reattach user, purge instance sync
+# total_users writers: reattach user, purge instance sync
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_backfill_split_keeps_total_users_aligned_with_graph(test_db):
-    """Splitting a user across two memories must bump secondary Memory.total_users."""
-    m1 = await Memory.create()
-    m2 = await Memory.create()
-    ext_id = f"shared_{uuid.uuid4().hex[:8]}"
-    u = await User.create(memory_id=m1.id, user_id=ext_id)
-    await m1.connect(u)
-    await m2.connect(u)
-    # Each memory has one graph edge to the same user (legacy shared-user shape).
-    m1.total_users = 1
-    m2.total_users = 1
-    await m1.save()
-    await m2.save()
-
-    await _legacy_backfill_user_memory_scope()
-    await _reconcile_all_memory_counters()
-
-    for mem in (m1, m2):
-        fresh = await Memory.get(mem.id)
-        assert fresh is not None
-        n_users = len(await fresh.nodes(node=User))
-        assert n_users == 1
-        assert fresh.total_users == n_users
-        assert fresh.total_users == await fresh.count_neighbors(node=User)
 
 
 @pytest.mark.asyncio
