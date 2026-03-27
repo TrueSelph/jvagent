@@ -613,21 +613,20 @@ async def interact_endpoint(
                     from jvagent.core.app import App
 
                     app = await App.get()
-                    if app:
-                        active_tasks = []
-                        if walker.conversation:
-                            active_tasks = walker.conversation.get_active_tasks(
-                                status="active"
-                            )
-                        log_data, message = _build_interaction_log_data(
-                            interaction,
-                            app.id,
-                            agent_id,
-                            active_tasks=active_tasks,
-                            visitor_data=walker.data,
+                    app_id = app.id if app else ""
+                    active_tasks = []
+                    if walker.conversation:
+                        active_tasks = walker.conversation.get_active_tasks(
+                            status="active"
                         )
-                        # Use logger.log() directly to ensure extra parameter is passed correctly
-                        logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
+                    log_data, message = _build_interaction_log_data(
+                        interaction,
+                        app_id,
+                        agent_id,
+                        active_tasks=active_tasks,
+                        visitor_data=walker.data,
+                    )
+                    logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
                 except Exception as e:
                     # Log error but don't fail the request
                     logger.warning(f"Failed to log interaction: {e}")
@@ -826,24 +825,21 @@ async def _stream_interaction(
                 from jvagent.core.app import App
 
                 app = await App.get()
-                if app:
-                    active_tasks = []
-                    if walker.conversation:
-                        active_tasks = walker.conversation.get_active_tasks(
-                            status="active"
-                        )
-                    agent_id_for_logging = (
-                        walker.agent_id if hasattr(walker, "agent_id") else agent.id
-                    )
-                    log_data, message = _build_interaction_log_data(
-                        interaction,
-                        app.id,
-                        agent_id_for_logging,
-                        active_tasks=active_tasks,
-                        visitor_data=walker.data,
-                    )
-                    # Use logger.log() directly to ensure extra parameter is passed correctly
-                    logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
+                app_id = app.id if app else ""
+                active_tasks = []
+                if walker.conversation:
+                    active_tasks = walker.conversation.get_active_tasks(status="active")
+                agent_id_for_logging = (
+                    walker.agent_id if hasattr(walker, "agent_id") else agent.id
+                )
+                log_data, message = _build_interaction_log_data(
+                    interaction,
+                    app_id,
+                    agent_id_for_logging,
+                    active_tasks=active_tasks,
+                    visitor_data=walker.data,
+                )
+                logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
             except Exception as e:
                 # Log error but don't fail the request
                 logger.warning(f"Failed to log interaction: {e}")
@@ -903,24 +899,21 @@ async def _stream_interaction(
                 from jvagent.core.app import App
 
                 app = await App.get()
-                if app:
-                    active_tasks = []
-                    if walker.conversation:
-                        active_tasks = walker.conversation.get_active_tasks(
-                            status="active"
-                        )
-                    agent_id_from_walker = (
-                        walker.agent_id if hasattr(walker, "agent_id") else None
-                    )
-                    log_data, message = _build_interaction_log_data(
-                        interaction,
-                        app.id,
-                        agent_id_from_walker,
-                        active_tasks=active_tasks,
-                        visitor_data=walker.data,
-                    )
-                    # Use logger.log() directly to ensure extra parameter is passed correctly
-                    logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
+                app_id = app.id if app else ""
+                active_tasks = []
+                if walker.conversation:
+                    active_tasks = walker.conversation.get_active_tasks(status="active")
+                agent_id_from_walker = (
+                    walker.agent_id if hasattr(walker, "agent_id") else None
+                )
+                log_data, message = _build_interaction_log_data(
+                    interaction,
+                    app_id,
+                    agent_id_from_walker,
+                    active_tasks=active_tasks,
+                    visitor_data=walker.data,
+                )
+                logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
             except Exception as e:
                 # Log error but don't fail the request
                 logger.warning(f"Failed to log interaction: {e}")

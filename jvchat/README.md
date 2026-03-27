@@ -113,6 +113,17 @@ jvchat communicates with jvagent via REST API:
 
 All requests require JWT authentication (token stored in localStorage).
 
+### App Graph (memory / structure viewer)
+
+The **App Graph** modal loads a **bounded subgraph** first, then loads more on demand (no full-graph DOT download by default):
+
+- **GET /api/graph/subgraph** — initial view from root `n.Root.root` (`max_depth`, `max_nodes`, `max_edges_per_node`).
+- **GET /api/graph/expand** — neighbors for a single node (`node_id`, `limit`, `cursor` for pagination).
+
+These routes are provided by **jvspatial** on the jvagent server and use the **same JWT** as other protected API routes (including **GET /api/graph**). If they are missing (404), jvchat **falls back** to **GET /api/graph** (Graphviz DOT) so older deployments still work.
+
+Graph **repair** still uses **POST /api/graph/repair** and then refreshes the viewer.
+
 ## Development Workflow
 
 1. Make sure your jvagent server is running

@@ -21,6 +21,8 @@ import type {
   PageIndexChunkDeleteResponse,
   PageIndexDocumentMetadataResponse,
   UserMemoryResponse,
+  GraphExpandResponse,
+  GraphSubgraphResponse,
 } from '../types/api'
 
 class ApiClient {
@@ -738,6 +740,82 @@ class ApiClient {
       throw new Error(
         typeof errorMessage === 'string' ? errorMessage : 'Failed to fetch graph data'
       )
+    }
+  }
+
+  async getGraphSubgraph(params: {
+    root?: string
+    max_depth?: number
+    max_nodes?: number
+    max_edges_per_node?: number
+    detail_level?: 'summary' | 'full'
+  }): Promise<GraphSubgraphResponse> {
+    const query: Record<string, string | number> = {
+      root: params.root ?? 'n.Root.root',
+      max_depth: params.max_depth ?? 2,
+      max_nodes: params.max_nodes ?? 150,
+      max_edges_per_node: params.max_edges_per_node ?? 100,
+      detail_level: params.detail_level ?? 'full',
+    }
+    try {
+      const response = await this._withFallback(async (baseURL) => {
+        try {
+          return await this.client.get<GraphSubgraphResponse>('/api/graph/subgraph', {
+            params: query,
+            baseURL,
+          })
+        } catch (err: any) {
+          if (err.response?.status === 404) {
+            return await this.client.get<GraphSubgraphResponse>('/graph/subgraph', {
+              params: query,
+              baseURL,
+            })
+          }
+          throw err
+        }
+      })
+      return response.data as GraphSubgraphResponse
+    } catch (error: any) {
+      console.error('Error fetching graph subgraph:', error)
+      throw error
+    }
+  }
+
+  async getGraphExpand(params: {
+    node_id: string
+    direction?: string
+    limit?: number
+    cursor?: number
+    detail_level?: 'summary' | 'full'
+  }): Promise<GraphExpandResponse> {
+    const query: Record<string, string | number> = {
+      node_id: params.node_id,
+      direction: params.direction ?? 'both',
+      limit: params.limit ?? 50,
+      cursor: params.cursor ?? 0,
+      detail_level: params.detail_level ?? 'full',
+    }
+    try {
+      const response = await this._withFallback(async (baseURL) => {
+        try {
+          return await this.client.get<GraphExpandResponse>('/api/graph/expand', {
+            params: query,
+            baseURL,
+          })
+        } catch (err: any) {
+          if (err.response?.status === 404) {
+            return await this.client.get<GraphExpandResponse>('/graph/expand', {
+              params: query,
+              baseURL,
+            })
+          }
+          throw err
+        }
+      })
+      return response.data as GraphExpandResponse
+    } catch (error: any) {
+      console.error('Error fetching graph expand:', error)
+      throw error
     }
   }
 
