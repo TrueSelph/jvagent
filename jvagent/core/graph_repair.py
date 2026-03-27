@@ -2,8 +2,8 @@
 
 Validates graph structure, removes dead edges, reattaches or removes orphaned
 nodes, and syncs node-edge references. Memory repair (all agents) runs before
-graph repair: a temporary legacy user/memory backfill, a full Memory counter
-reconcile, then per-agent ``repair_memory``. After structural repair,
+graph repair: a full Memory counter reconcile, then per-agent ``repair_memory``.
+After structural repair,
 interaction limit pruning runs for each agent's Memory (users, then their
 conversations), last in the pipeline.
 """
@@ -150,92 +150,8 @@ async def repair_agent_graph(
     return result
 
 
-async def _legacy_backfill_user_memory_scope() -> Dict[str, int]:
-    """TODO(remove): Backfill User.memory_id, split multi-memory users, long-memory ids.
-
-    Idempotent migration run only from graph repair before per-agent memory repair.
-    Memory.total_users is reconciled via _reconcile_all_memory_counters afterward.
-    """
-    from copy import deepcopy
-
-    from jvagent.memory.manager import Memory
-    from jvagent.memory.user import User
-    from jvagent.memory.user_long_memory import UserLongMemory, UserLongMemoryNode
-
-    users_updated = 0
-    users_split = 0
-
-    for user in await User.find({}):
-        mems = await user.nodes(direction="in", node=Memory)
-        if not mems:
-            continue
-        mems_sorted = sorted(mems, key=lambda m: m.id)
-
-        if len(mems_sorted) == 1:
-            m0 = mems_sorted[0]
-            if user.memory_id != m0.id:
-                user.memory_id = m0.id
-                await user.save()
-                users_updated += 1
-            continue
-
-        primary = mems_sorted[0]
-        if user.memory_id != primary.id or not user.memory_id:
-            user.memory_id = primary.id
-            await user.save()
-            users_updated += 1
-        for mem in mems_sorted[1:]:
-            nu = await User.create(
-                memory_id=mem.id,
-                user_id=user.user_id,
-                created_at=user.created_at,
-                last_seen=user.last_seen,
-                name=user.name,
-                display_name=user.display_name,
-                user_model=deepcopy(user.user_model) if user.user_model else {},
-                usage=deepcopy(user.usage) if user.usage else {},
-            )
-            await mem.disconnect(user)
-            await mem.connect(nu)
-            users_split += 1
-
-    lm_updated = 0
-    for lm in await UserLongMemory.find({}):
-        if getattr(lm, "user_node_id", None):
-            continue
-        u = await lm.node(direction="in", node=User)
-        if u:
-            lm.user_node_id = u.id
-            await lm.save()
-            lm_updated += 1
-
-    n_updated = 0
-    for node in await UserLongMemoryNode.find({}):
-        if getattr(node, "user_node_id", None):
-            continue
-        parent = await node.node(direction="in", node=UserLongMemory)
-        uid = None
-        if parent and getattr(parent, "user_node_id", None):
-            uid = parent.user_node_id
-        elif parent:
-            pu = await parent.node(direction="in", node=User)
-            if pu:
-                uid = pu.id
-        if uid:
-            node.user_node_id = uid
-            await node.save()
-            n_updated += 1
-
-    return {
-        "user_memory_id_backfilled": users_updated,
-        "users_split_from_multi_memory": users_split,
-        "user_long_memory_node_ids_backfilled": lm_updated,
-        "user_long_memory_category_node_ids_backfilled": n_updated,
-    }
-
-
 async def _reconcile_all_memory_counters() -> int:
-    """Run _recalculate_counters on every Memory (e.g. after legacy backfill)."""
+    """Run _recalculate_counters on every Memory."""
     from jvagent.memory.manager import Memory
 
     total_fixed = 0
@@ -267,7 +183,6 @@ async def _run_memory_repair_all_agents(
         "conversation_branch_edges_removed": 0,
         "counters_fixed": 0,
     }
-    aggregated.update(await _legacy_backfill_user_memory_scope())
     aggregated["counters_fixed"] += await _reconcile_all_memory_counters()
 
     agents: List[Any] = await Agent.find({})
