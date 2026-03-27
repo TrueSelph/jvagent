@@ -125,3 +125,16 @@ Save the following, as you will need them for configuration:
 1. Click on webhook on the left sidebar
 2. select page and subscribe to the field you want to use.
 3. enter the webhook_url and the verify_token and click verify
+
+or
+
+call the register endpoint
+
+```
+curl -X 'POST' \
+  'http://localhost:8000/api/actions/{facebook_action}/facebook/webhook/register' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer {token}' \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```

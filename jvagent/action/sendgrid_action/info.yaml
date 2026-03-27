@@ -1,0 +1,18 @@
+# SendGrid Action — transactional email via Mail Send API v3 (REST).
+package:
+  name: jvagent/sendgrid_action
+  author: jvagent
+  archetype: SendGridAction
+  version: 0.0.1
+  meta:
+    title: SendGrid Email
+    description: |
+      Send email via SendGrid v3 Mail Send (plain, HTML, templates, attachments, arbitrary v3 payloads).
+    group: jvagent
+    type: action
+  config:
+    singleton: true
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []
+    pip: []
