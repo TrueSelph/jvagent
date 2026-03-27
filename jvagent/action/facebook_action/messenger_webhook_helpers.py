@@ -539,18 +539,18 @@ async def finalize_messenger_interaction(
 
         try:
             app = await App.get()
-            if app:
-                active_tasks = []
-                if walker.conversation:
-                    active_tasks = walker.conversation.get_active_tasks(status="active")
-                log_data, message = _build_interaction_log_data(
-                    interaction,
-                    app.id,
-                    agent_id,
-                    active_tasks=active_tasks,
-                    visitor_data=walker.data,
-                )
-                logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
+            app_id = app.id if app else ""
+            active_tasks = []
+            if walker.conversation:
+                active_tasks = walker.conversation.get_active_tasks(status="active")
+            log_data, message = _build_interaction_log_data(
+                interaction,
+                app_id,
+                agent_id,
+                active_tasks=active_tasks,
+                visitor_data=walker.data,
+            )
+            logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
         except Exception as log_err:
             logger.debug("Messenger interaction log failed: %s", log_err)
 

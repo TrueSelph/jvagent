@@ -4,9 +4,10 @@ import logging
 from typing import Any, Dict, Optional
 
 import requests
+from httpx import AsyncClient, Timeout
+from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
-from jvspatial.core.annotations import attribute
 
 logger = logging.getLogger(__name__)
 
@@ -28,41 +29,23 @@ class HeygenVideoAction(Action):
     Users must configure the ``api_key`` field (either in ``agent.yaml`` or
     via the ``HEYGEN_API_KEY`` environment variable).
     """
+
     avatar_type: str = attribute(
-        default="avatar", # avatar or talking_photo
-        description="wheter to use an avatar or a talking photo"
+        default="avatar",  # avatar or talking_photo
+        description="wheter to use an avatar or a talking photo",
     )
     api_key: str = attribute(
         default="",
         description="API key for video generation service",
     )
-    template_id: str = attribute(
-        default="",
-        description="Template ID"
-    )
-    avatar_id: str = attribute(
-        default="",
-        description="Avatar ID"
-    )
-    talking_photo_id: str = attribute(
-        default="",
-        description="Talking Photo ID"
-    )
-    voice_id: str = attribute(
-        default="",
-        description="Voice ID to use for the avatar"
-    )
-    emotion: str = attribute(
-        default="Broadcaster",
-        description="Emotion of the avatar"
-    )
-    locale: str = attribute(
-        default="en_US",
-        description="Locale"
-    )
+    template_id: str = attribute(default="", description="Template ID")
+    avatar_id: str = attribute(default="", description="Avatar ID")
+    talking_photo_id: str = attribute(default="", description="Talking Photo ID")
+    voice_id: str = attribute(default="", description="Voice ID to use for the avatar")
+    emotion: str = attribute(default="Broadcaster", description="Emotion of the avatar")
+    locale: str = attribute(default="en_US", description="Locale")
     elevenlabs_settings: Dict[str, Any] = attribute(
-        default={},
-        description="ElevenLabs Settings"
+        default={}, description="ElevenLabs Settings"
     )
     audio_url: str = attribute(default="", description="Audio URL")
     audio_asset_id: str = attribute(default="", description="Audio Asset ID")
@@ -72,7 +55,6 @@ class HeygenVideoAction(Action):
     dimension: Dict[str, Any] = attribute(default={}, description="Dimension")
     folder_id: str = attribute(default="", description="Folder ID")
     callback_url: str = attribute(default="", description="Callback URL")
-
 
     def _apply_env_defaults(self) -> None:
         """Populate fields from environment variables when missing."""
@@ -84,7 +66,9 @@ class HeygenVideoAction(Action):
                 self.api_key = env
                 logger.debug("Using HEYGEN_API_KEY from environment")
 
-    async def create_video(self, script: str, title: str = "Video", **kwargs: Any) -> Optional[Dict[str, Any]]:
+    async def create_video(
+        self, script: str, title: str = "Video", **kwargs: Any
+    ) -> Optional[Dict[str, Any]]:
         """Create a video and return the provider response."""
         # lazily load from environment if necessary
         try:
@@ -105,7 +89,7 @@ class HeygenVideoAction(Action):
             "video_inputs": [
                 {
                     "character": {
-                        "type": "avatar", # avatar or talking_photo
+                        "type": "avatar",  # avatar or talking_photo
                         "avatar_id": self.avatar_id,
                         "talking_photo_id": self.talking_photo_id,
                         "scale": 1,
@@ -118,7 +102,7 @@ class HeygenVideoAction(Action):
                         #     "x": 0,
                         #     "y": 0
                         # },
-                        "talking_style": "expressive", #stable, expressive
+                        "talking_style": "expressive",  # stable, expressive
                         "expression": "default",
                         "super_resolution": True,
                         "matting": True,
@@ -146,7 +130,7 @@ class HeygenVideoAction(Action):
                         "type": "color",
                         "value": "#FFFFFF",
                         "play_style": "freeze",
-                        "fit": "cover"
+                        "fit": "cover",
                     },
                     "text": {
                         "type": "text",
@@ -160,11 +144,11 @@ class HeygenVideoAction(Action):
                         #     "y": 0
                         # },
                         "text_align": "left",
-                        "line_height": 1
+                        "line_height": 1,
                         # "width": 0
-                    }
+                    },
                 }
-            ]
+            ],
             # "dimension": {
             #     "width": 0,
             #     "height": 0
@@ -179,14 +163,30 @@ class HeygenVideoAction(Action):
         headers = {
             "accept": "application/json",
             "content-type": "application/json",
-            "x-api-key": self.api_key
+            "x-api-key": self.api_key,
         }
 
         response = requests.post(url, json=payload, headers=headers)
+        try:
+            body: Any = response.json()
+        except ValueError:
+            logger.error("HeygenVideoAction: response was not valid JSON")
+            return None
+        if not response.ok:
+            logger.error(
+                "HeygenVideoAction: HTTP %s: %s",
+                response.status_code,
+                body,
+            )
+            return None
+        if not isinstance(body, dict):
+            logger.error("HeygenVideoAction: expected JSON object, got %s", type(body))
+            return None
+        return body
 
-        return response
-
-    async def create_video_from_template(self, script: dict, **kwargs: Any) -> Optional[Dict[str, Any]]:
+    async def create_video_from_template(
+        self, script: dict, **kwargs: Any
+    ) -> Optional[Dict[str, Any]]:
         """Generate a video from a HeyGen template, replacing scene scripts with the provided script dict.
 
         Args:
@@ -205,7 +205,8 @@ class HeygenVideoAction(Action):
         # Identify speaking scenes — scenes that have a character-type variable
         # These are eligible to receive script text from the provided script dict.
         speaking_scene_indices = [
-            i for i, scene in enumerate(scenes)
+            i
+            for i, scene in enumerate(scenes)
             if any(v.get("type") == "character" for v in scene.get("variables", []))
         ]
 
@@ -267,10 +268,7 @@ class HeygenVideoAction(Action):
 
         url = f"https://api.heygen.com/v3/template/{template_id}"
 
-        headers = {
-            "accept": "application/json",
-            "x-api-key": self.api_key
-        }
+        headers = {"accept": "application/json", "x-api-key": self.api_key}
 
         response = requests.get(url, headers=headers)
         return response.json()
@@ -281,16 +279,13 @@ class HeygenVideoAction(Action):
         url = "https://api.heygen.com/v1/video_agent/generate"
 
         payload = {
-            "config": {
-                "orientation": "portrait",
-                "avatar_id": self.avatar_id
-            },
-            "prompt": prompt
+            "config": {"orientation": "portrait", "avatar_id": self.avatar_id},
+            "prompt": prompt,
         }
         headers = {
             "accept": "application/json",
             "content-type": "application/json",
-            "x-api-key": self.api_key
+            "x-api-key": self.api_key,
         }
 
         response = requests.post(url, json=payload, headers=headers)
@@ -304,10 +299,7 @@ class HeygenVideoAction(Action):
 
         url = f"https://api.heygen.com/v1/video_status.get?video_id={video_id}"
 
-        headers = {
-            "accept": "application/json",
-            "x-api-key": self.api_key
-        }
+        headers = {"accept": "application/json", "x-api-key": self.api_key}
 
         response = requests.get(url, headers=headers)
         status = response.json()["data"]["status"]
@@ -350,7 +342,7 @@ class HeygenVideoAction(Action):
 
         # attempt a simple request to verify credentials
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout)) as client:
+            async with AsyncClient(timeout=Timeout(self.timeout)) as client:
                 resp = await client.get(
                     f"{self.api_base.rstrip('/')}/videos",
                     headers={"Authorization": f"Bearer {self.api_key}"},

@@ -151,8 +151,9 @@ export function ActionsModal({
       );
       if (propsKeys.length > 0) {
         const changed: Record<string, unknown> = {};
+        const ctxRec = ctx as Record<string, unknown>
         for (const k of propsKeys) {
-          if (JSON.stringify(parsed[k]) !== JSON.stringify(ctx[k])) {
+          if (JSON.stringify(parsed[k]) !== JSON.stringify(ctxRec[k])) {
             changed[k] = parsed[k];
           }
         }

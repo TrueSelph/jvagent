@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -56,7 +57,9 @@ class PostizAction(Action):
                 response.raise_for_status()
                 return response.json()
             except httpx.HTTPStatusError as e:
-                logger.error(f"Postiz API error listing integrations: {e.response.text}")
+                logger.error(
+                    f"Postiz API error listing integrations: {e.response.text}"
+                )
                 raise
             except Exception as e:
                 logger.error(f"Unexpected error listing Postiz integrations: {e}")
@@ -98,10 +101,14 @@ class PostizAction(Action):
                 data = response.json()
                 auth_url = data.get("url")
                 if not auth_url:
-                    raise ValueError(f"Postiz API response missing 'url' for {provider}")
+                    raise ValueError(
+                        f"Postiz API response missing 'url' for {provider}"
+                    )
                 return str(auth_url)
             except httpx.HTTPStatusError as e:
-                logger.error(f"Postiz API error getting auth URL for {provider}: {e.response.text}")
+                logger.error(
+                    f"Postiz API error getting auth URL for {provider}: {e.response.text}"
+                )
                 raise
             except Exception as e:
                 logger.error(f"Unexpected error getting Postiz auth URL: {e}")
@@ -124,7 +131,7 @@ class PostizAction(Action):
         # but let's try the public-facing path first or a generic one.
         base_api = self.base_url.split("/public/v1")[0]
         url = f"{base_api.rstrip('/')}/integrations"
-        
+
         # Comprehensive fallback list based on Postiz source code
         fallback_providers = [
             {"id": "x", "name": "X (Twitter)"},
@@ -166,10 +173,18 @@ class PostizAction(Action):
                 if response.status_code == 200:
                     data = response.json()
                     if isinstance(data, list):
-                        return [{"id": p.get("id"), "name": p.get("name", p.get("id").capitalize())} for p in data]
+                        return [
+                            {
+                                "id": p.get("id"),
+                                "name": p.get("name", p.get("id").capitalize()),
+                            }
+                            for p in data
+                        ]
             except Exception as e:
-                logger.debug(f"Could not fetch available providers from API, using fallback: {e}")
-        
+                logger.debug(
+                    f"Could not fetch available providers from API, using fallback: {e}"
+                )
+
         return fallback_providers
 
     async def create_post(
@@ -200,24 +215,22 @@ class PostizAction(Action):
         else:
             app = await App.get()
             if app:
-                # Use timezone-aware 'now' from the app configuration
-                date_str = await app.now()
+                now_val = await app.now()
+                date_str = now_val if isinstance(now_val, str) else now_val.isoformat()
             else:
-                from datetime import datetime
                 date_str = datetime.utcnow().isoformat() + "Z"
 
         posts = []
         for integration_id in integrations:
             post_item = {
                 "integration": {"id": integration_id},
-                "value": [{
-                    "content": content,
-                    "image": media if media else []
-                }],
+                "value": [{"content": content, "image": media if media else []}],
                 "settings": {
-                    "title": str(content)[:100],  # Default title for platforms like YouTube
-                    "type": "public"              # Default visibility
-                }
+                    "title": str(content)[
+                        :100
+                    ],  # Default title for platforms like YouTube
+                    "type": "public",  # Default visibility
+                },
             }
             posts.append(post_item)
 
