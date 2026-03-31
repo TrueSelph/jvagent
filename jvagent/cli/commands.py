@@ -264,8 +264,8 @@ def run_server(
     if app_root is None:
         app_root = os.getcwd()
 
-    # Note: Database path environment variables are set in create_server_from_config
-    # with proper resolution against app_root
+    # Database path env vars: ``main`` sets ``_set_db_env_from_config`` before this runs;
+    # ``create_server_from_config`` also sets ``JVSPATIAL_DB_PATH`` / pops forbidden keys.
 
     # Install log counter to track warnings and errors during startup
     log_counter = StartupLogCounter()

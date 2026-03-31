@@ -119,7 +119,7 @@ This scales to large document bases without full-corpus scans. When the lexical 
 | `JVAGENT_PAGEINDEX_DB_TABLE_NAME` | DynamoDB table name | derived from db_name |
 | `JVAGENT_PAGEINDEX_DB_REGION` | AWS region for DynamoDB | us-east-1 |
 | `PAGEINDEX_TREE_SEARCH_MODEL` | LLM for tree_search | gpt-4o-mini |
-| `CHATGPT_API_KEY` / `OPENAI_API_KEY` | API key for tree_search | - |
+| `OPENAI_API_KEY` | API key for tree_search | - |
 
 **DB name resolution** (when `JVAGENT_PAGEINDEX_DB_NAME` is unset): `{app_id}_pageindex_db` — one db per app; multiple agents share it, documents scoped by collection (agent_id). Fallback: `config.pageindex.db_name` in app.yaml, else `pageindex_db`.
 
@@ -211,7 +211,7 @@ All strategies use the lexical index when available (documents ingested after th
 
 - Documents must be ingested before retrieval
 - **Lexical index and re-ingestion**: The lexical index is built during ingestion. Documents ingested *before* the two-stage retrieval feature will work (graceful fallback) but will not benefit from BM25 candidate selection. To get the scaling benefits, re-ingest those documents (delete and assimilate again) or use `lexical_index.reindex_nodes()` to rebuild the index from existing graph nodes.
-- tree_search requires CHATGPT_API_KEY or OPENAI_API_KEY; falls back to direct if missing
+- tree_search requires `OPENAI_API_KEY` or a configured model action; falls back to direct if missing
 - PageIndex DB path defaults to `{JVAGENT_PAGEINDEX_DB_ROOT}/{db_name}` when `JVAGENT_PAGEINDEX_DB_PATH` is unset
 - Use `model_action_type` for token tracking and observability in agent context
 - **Ingestion config**: Put `node_summary`, `node_text`, `doc_description`, etc. under the `config` block (not `context`). These apply when documents are assimilated via API or `assimilate_document()`. REST ingestion uses config pushed when the action registers; if no agent has PageIndex, defaults apply.

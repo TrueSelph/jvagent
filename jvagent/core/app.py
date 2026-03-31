@@ -267,10 +267,8 @@ class App(Node):
 
         # Align with get_file_storage_config / Server: env overrides, then node / defaults
         env = load_env()
-        provider = (
-            normalize_empty(os.getenv("JVSPATIAL_FILE_INTERFACE"))
-            or normalize_empty(os.getenv("JVSPATIAL_FILE_STORAGE_PROVIDER"))
-            or (self.file_storage_provider or "local")
+        provider = normalize_empty(os.getenv("JVSPATIAL_FILE_STORAGE_PROVIDER")) or (
+            self.file_storage_provider or "local"
         )
         root_dir = resolve_file_storage_root(self.file_storage_root_dir or None)
 

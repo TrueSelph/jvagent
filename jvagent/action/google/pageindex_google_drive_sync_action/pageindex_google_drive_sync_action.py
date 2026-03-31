@@ -11,6 +11,7 @@ from jvspatial.db import get_prime_database
 from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.action.pageindex.documents import assimilate_document, delete_document
+from jvagent.core.public_url import get_public_base_url
 
 from ..google_action import GoogleAction
 from .google_drive_documents import GoogleDriveDocuments
@@ -68,7 +69,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
 
     base_url: Optional[str] = attribute(
         default=None,
-        description="Application base URL for webhook generation (APP_BASE_URL env var, e.g., https://myapp.example.com)",
+        description="Application base URL for webhook generation (JVAGENT_PUBLIC_BASE_URL env var, e.g., https://myapp.example.com)",
     )
 
     document_timeout: Optional[int] = attribute(
@@ -580,14 +581,14 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         """Apply environment variable defaults for missing configuration.
 
         Sets the following from environment variables if not already configured:
-        - base_url from APP_BASE_URL
+        - base_url from JVAGENT_PUBLIC_BASE_URL
 
         This allows users to set these values once in their .env file
         instead of configuring them per-action in agent.yaml.
         """
         # Application Base URL
         if not self.base_url or not self.base_url.strip():
-            env_base_url = os.environ.get("APP_BASE_URL", "").strip()
+            env_base_url = get_public_base_url()
             if env_base_url:
                 self.base_url = env_base_url
                 await self.save()
@@ -617,7 +618,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         """Generate or retrieve secure webhook URL with API key authentication."""
         if not self.base_url or not self.base_url.strip():
             raise ValidationError(
-                "base_url (APP_BASE_URL) is required for webhook URL generation"
+                "base_url (JVAGENT_PUBLIC_BASE_URL) is required for webhook URL generation"
             )
         if not self.base_url.startswith(("http://", "https://")):
             raise ValidationError(

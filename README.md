@@ -2003,6 +2003,8 @@ For more details, see [jvagent/bundle/README.md](jvagent/bundle/README.md).
 
 ### Core Documentation
 
+- [Configuration reference](docs/configuration.md) — `app.yaml` ↔ env mapping, prefix rules, jvspatial alignment
+- [Integration environment variables](docs/integrations-environment.md) — Vendor and action env inventory
 - [App scaffolding CLI](docs/scaffolding.md) - `jvagent app create`, `agent create`, `app profile new`, action profiles
 - [Memory System](jvagent/memory/README.md) - Conversation, Interaction, User, and Memory APIs
 - [Logging System](docs/logging.md) - Interaction logging, archiving, retention

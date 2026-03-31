@@ -223,7 +223,7 @@ async def get_google_auth_url(action_id: str) -> HTMLResponse:
         return _oauth_error_html(
             "OAuth is not configured correctly for this action. "
             "Set a valid web or installed OAuth client in client_secrets_json, "
-            "ensure APP_BASE_URL matches your Google Cloud redirect URIs, then try again.",
+            "ensure JVAGENT_PUBLIC_BASE_URL matches your Google Cloud redirect URIs, then try again.",
             status_code=400,
         )
     logger.info("auth_url generated for action_id=%s", action_id)

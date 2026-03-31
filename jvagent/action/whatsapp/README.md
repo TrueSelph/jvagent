@@ -254,7 +254,7 @@ WHATSAPP_TOKEN=your_token
 # Application Base URL (required for webhooks and media delivery)
 # Used for webhook generation and to resolve relative media URLs (e.g. TTS audio)
 # to absolute URLs when the adapter fetches files for sending
-APP_BASE_URL=https://your-app.com
+JVAGENT_PUBLIC_BASE_URL=https://your-app.com
 
 # Session Registration Timeout (optional, default: 120 seconds)
 # HTTP client timeout for session registration during startup
@@ -286,7 +286,7 @@ actions:
       api_key: "${WHATSAPP_API_KEY}"
       session: "${WHATSAPP_SESSION}"
       token: "${WHATSAPP_TOKEN}"
-      base_url: "${APP_BASE_URL}"
+      base_url: "${JVAGENT_PUBLIC_BASE_URL}"
       request_timeout: 60
       chunk_length: 4000
       media_batch_window: 1.5
@@ -300,7 +300,7 @@ When `stt_action` and `tts_action` are configured, the action supports voice mes
 
 - **Inbound PTT**: Voice messages are transcribed via the STT action. The adapter passes the correct audio format (WhatsApp voice uses OGG-Opus) to the generic STT layer.
 - **Outbound voice reply**: When the user sends a PTT, the agent can respond with a synthesized voice message. PersonaAction applies voice-optimized formatting (short replies, no markdown), and the TTS action generates audio. The adapter sends the result as a voice message.
-- **Media URLs**: TTS and other media may return relative URLs (e.g. `/api/files/...` under the default `JVSPATIAL_API_PREFIX`). The adapter prepends `base_url` (from `APP_BASE_URL`) to produce absolute URLs before fetching for delivery. Ensure `APP_BASE_URL` is set and publicly reachable.
+- **Media URLs**: TTS and other media may return relative URLs (e.g. `/api/files/...` under the default `JVSPATIAL_API_PREFIX`). The adapter prepends `base_url` (from `JVAGENT_PUBLIC_BASE_URL`) to produce absolute URLs before fetching for delivery. Ensure `JVAGENT_PUBLIC_BASE_URL` is set and publicly reachable.
 
 ## Images and Vision
 
@@ -326,7 +326,7 @@ Media URLs are built as `whatsapp_action.base_url + media_url`. The LLM (e.g. Op
 
 On AWS Lambda, the deployment root (`/var/task`) is read-only. Local file storage with `root_dir: ./.files` or `.files` will fail. For Lambda deployments:
 
-- **Recommended:** Configure `file_storage.provider: s3` (or `JVSPATIAL_FILE_INTERFACE=s3`) with an S3 bucket. Ensure `APP_BASE_URL` and file proxy/URL generation serve media from S3.
+- **Recommended:** Configure `file_storage.provider: s3` (or `JVSPATIAL_FILE_STORAGE_PROVIDER=s3`) with an S3 bucket. Ensure `JVAGENT_PUBLIC_BASE_URL` and file proxy/URL generation serve media from S3.
 - **Alternative:** Set `JVSPATIAL_FILES_ROOT_PATH=/tmp` for ephemeral storage (cleared between invocations; not suitable for media that must persist across requests).
 
 ### Persona Capabilities
@@ -374,7 +374,7 @@ For AWS Lambda deployments, configure the following:
 |----------|-------------|
 | `WHATSAPP_API_URL` | WhatsApp API endpoint URL |
 | `WHATSAPP_API_KEY` | WhatsApp API authentication key |
-| `APP_BASE_URL` | Public base URL for webhooks and media (e.g. API Gateway URL) |
+| `JVAGENT_PUBLIC_BASE_URL` | Public base URL for webhooks and media (e.g. API Gateway URL) |
 | `JVSPATIAL_JWT_SECRET_KEY` | JWT secret for webhook API key auth |
 
 ### Lambda-Specific Configuration
@@ -382,7 +382,7 @@ For AWS Lambda deployments, configure the following:
 | Variable | Description |
 |----------|-------------|
 | `SERVERLESS_MODE` | Optional override; Lambda sets serverless automatically. See jvspatial serverless docs. |
-| `JVSPATIAL_FILE_INTERFACE` | Set to `s3` for media storage. Local storage fails on Lambda (read-only `/var/task`). |
+| `JVSPATIAL_FILE_STORAGE_PROVIDER` | Set to `s3` for media storage. Local storage fails on Lambda (read-only `/var/task`). |
 | `JVSPATIAL_DB_TYPE` | `mongodb` recommended for deferred media batching under concurrency; json/sqlite and other adapters work via jvspatial compound operations (best-effort RMW where not native) |
 | `AWS_LWA_PASS_THROUGH_PATH` | Route direct-invoke payloads to deferred router: `/api/_internal/deferred` (or `{JVSPATIAL_API_PREFIX}/_internal/deferred`) |
 | `WHATSAPP_SKIP_STARTUP_REGISTRATION` | Set to `true` to skip session registration on cold start; use manual endpoint instead |
@@ -405,7 +405,7 @@ Use this when logs show `Invoked deferred task jvagent.whatsapp.media_batch` but
 | 2. App auth middleware | **`POST …/_internal/deferred` must bypass `AuthenticationMiddleware`** (no JWT on LWA pass-through). jvspatial **`PathMatcher` always exempts** `/_internal/deferred` so custom **`JVSPATIAL_AUTH_EXEMPT_PATHS`** cannot accidentally drop it. If you still see **`[401] path=/api/_internal/deferred has_auth_header=False`**, upgrade jvspatial to a version with that fix. Separately: if **`JVSPATIAL_DEFERRED_INVOKE_SECRET`** is set, the **deferred route** returns **401** unless you send `X-JVSPATIAL-Deferred-Authorize` / `Bearer` (LWA does not add these by default)—prefer unset for self-invoke. | No **401** from `auth_middleware` on `/_internal/deferred`; no **401** from deferred secret unless you intend to enforce it. |
 | 3. Lambda timeout | Timeout must exceed **`media_batch_window`** + full interact (LLM) + WhatsApp send. Typical **30–120s+**; default **300s** in example deploy templates is safe. | REPORT for the deferred `RequestId` is not `Status: timeout`. |
 | 4. IAM self-invoke | Execution role allows **`lambda:InvokeFunction`** on **this** function’s ARN. | No `AccessDeniedException` on invoke in logs. |
-| 5. Shared media storage | Webhook and deferred run may be **different instances**. Local files under instance-only disk are invisible to the deferred worker. Use **S3** (`JVSPATIAL_FILE_INTERFACE=s3`) or **EFS** mounted at the same path for **all** invocations (e.g. `/mnt/jvspatial/.files`). | `GET` the saved media URL succeeds from a cold invocation / different instance. |
+| 5. Shared media storage | Webhook and deferred run may be **different instances**. Local files under instance-only disk are invisible to the deferred worker. Use **S3** (`JVSPATIAL_FILE_STORAGE_PROVIDER=s3`) or **EFS** mounted at the same path for **all** invocations (e.g. `/mnt/jvspatial/.files`). | `GET` the saved media URL succeeds from a cold invocation / different instance. |
 
 After routing works, deferred logs should include **`Deferred whatsapp media batch invoked for sender ...`** and either **`Processed media batch ...`** or **`processed=False`** (INFO) with a hint for claim races / empty batch.
 
@@ -445,7 +445,7 @@ After routing works, deferred logs should include **`Deferred whatsapp media bat
 - Webhooks still not arriving
 
 **Solutions**:
-1. **Check webhook URL**: Verify `APP_BASE_URL` is set correctly and publicly accessible
+1. **Check webhook URL**: Verify `JVAGENT_PUBLIC_BASE_URL` is set correctly and publicly accessible
 2. **Check adapter initialization**: Health check should show `adapter_initialized: true`
 3. **Verify API key**: Webhook URL includes API key - ensure it's valid and not expired
 4. **Check provider configuration**: Verify WhatsApp provider has the correct webhook URL registered
@@ -457,8 +457,8 @@ After routing works, deferred logs should include **`Deferred whatsapp media bat
 - Log shows relative URL path (e.g. `/api/files/...`)
 
 **Solutions**:
-1. **Set APP_BASE_URL**: The adapter needs an absolute URL to fetch media. Ensure `APP_BASE_URL` is set (e.g. `https://your-app.com`) and is publicly reachable.
-2. **Configure base_url on action**: In agent.yaml, set `base_url: "${APP_BASE_URL}"` for the WhatsApp action.
+1. **Set JVAGENT_PUBLIC_BASE_URL**: The adapter needs an absolute URL to fetch media. Ensure `JVAGENT_PUBLIC_BASE_URL` is set (e.g. `https://your-app.com`) and is publicly reachable.
+2. **Configure base_url on action**: In agent.yaml, set `base_url: "${JVAGENT_PUBLIC_BASE_URL}"` for the WhatsApp action.
 
 #### Problem: Lambda batch mode - media not processed until follow-up message
 

@@ -252,7 +252,9 @@ def get_pageindex_config(app_id: Optional[str] = None) -> Dict[str, Any]:
         JVAGENT_PAGEINDEX_DB_PATH: Path for file-based databases (json, sqlite).
         JVAGENT_PAGEINDEX_DB_ROOT: Root for path when DB_PATH not set (default: .)
         JVAGENT_PAGEINDEX_DB_NAME: Explicit db name (overrides autogeneration)
-        JVAGENT_PAGEINDEX_DB_URI: Connection URI for MongoDB
+        JVAGENT_PAGEINDEX_DB_URI: MongoDB connection URI; if unset or blank, uses
+            JVSPATIAL_MONGODB_URI, then mongodb://localhost:27017
+        JVSPATIAL_MONGODB_URI: Fallback Mongo URI when JVAGENT_PAGEINDEX_DB_URI unset (mongodb only)
         JVAGENT_PAGEINDEX_DB_TABLE_NAME: Table name for DynamoDB
         JVAGENT_PAGEINDEX_DB_REGION: AWS region for DynamoDB
     """
@@ -272,7 +274,11 @@ def get_pageindex_config(app_id: Optional[str] = None) -> Dict[str, Any]:
             db_path = os.path.join(root, db_name, "sqlite", "pageindex.db")
         return {"db_type": db_type, "db_path": db_path}
     elif db_type == "mongodb":
-        db_uri = os.getenv("JVAGENT_PAGEINDEX_DB_URI", "mongodb://localhost:27017")
+        db_uri = (
+            (os.getenv("JVAGENT_PAGEINDEX_DB_URI") or "").strip()
+            or (os.getenv("JVSPATIAL_MONGODB_URI") or "").strip()
+            or "mongodb://localhost:27017"
+        )
         return {"db_type": db_type, "db_uri": db_uri, "db_name": db_name}
     elif db_type == "dynamodb":
         table_name = os.getenv("JVAGENT_PAGEINDEX_DB_TABLE_NAME", db_name)

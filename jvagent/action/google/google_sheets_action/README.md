@@ -10,10 +10,12 @@ Exposes Google Sheets operations (read, write, append) via the Google Sheets API
 
 ## Configuration
 
-| Attribute             | Description                                                         | Required |
-| --------------------- | ------------------------------------------------------------------- | -------- |
-| `client_secrets_json` | OAuth2 Client Secrets JSON (string or object)                       | Yes      |
-| `redirect_uri`        | Redirect URI for OAuth2 flow (default: `urn:ietf:wg:oauth:2.0:oob`) | No       |
+| Attribute             | Description                                                                 | Required |
+| --------------------- | --------------------------------------------------------------------------- | -------- |
+| `client_secrets_json` | OAuth2 Client Secrets JSON (string or object)                               | Yes      |
+| `redirect_uri`        | OAuth redirect URI (overwritten on startup from **`JVAGENT_PUBLIC_BASE_URL`**) | No       |
+
+On register, reload, and startup, `GoogleSheetsAction` (via `GoogleAction`) sets `auth_url` to `{JVAGENT_PUBLIC_BASE_URL}/api/google/{action_id}` and `redirect_uri` to `{JVAGENT_PUBLIC_BASE_URL}/api/google/callback/`, then persists the action. Register that exact **`redirect_uri`** in [Google Cloud credentials](https://console.cloud.google.com/apis/credentials) (must match the client secrets JSON).
 
 ## Agent wiring (agent.yaml)
 

@@ -87,6 +87,20 @@ def normalize_empty(value: Optional[str]) -> Optional[str]:
     return s if s else None
 
 
+def parse_env_bool(raw: Optional[str]) -> Optional[bool]:
+    """Parse common truthy/falsey env tokens. None if empty or unrecognized."""
+    if raw is None:
+        return None
+    s = str(raw).strip().lower()
+    if not s:
+        return None
+    if s in ("true", "1", "yes", "on"):
+        return True
+    if s in ("false", "0", "no", "off"):
+        return False
+    return None
+
+
 def load_app_config(app_root: Optional[str] = None) -> dict:
     """Load app.yaml config section with environment variable resolution.
 
@@ -124,8 +138,8 @@ def get_config_value(
     """Get configuration value from nested dict path with environment variable fallback.
 
     Priority: env var > config path > default.
-    For string values, empty strings from unresolved placeholders are normalized to None
-    when the default is not a string (e.g. None). Bool/int coercion applied for env vars.
+    Empty env values are treated as unset (fall through to yaml/default).
+    Bool coercion: ``true``/``1``/``yes``/``on`` and ``false``/``0``/``no``/``off``.
 
     Args:
         config: Configuration dictionary (from app.yaml)
@@ -136,18 +150,28 @@ def get_config_value(
     Returns:
         Configuration value
     """
-    if env_var and os.getenv(env_var) is not None:
-        value = os.getenv(env_var)
-        if isinstance(value, str) and value.lower() in ("true", "false"):
-            return value.lower() == "true"
-        if isinstance(default, int) and isinstance(value, str) and value.isdigit():
-            return int(value)
-        if isinstance(default, float) and isinstance(value, str):
-            try:
-                return float(value)
-            except ValueError:
-                pass
-        return value
+    if env_var:
+        raw_env = os.getenv(env_var)
+        if raw_env is not None:
+            s = str(raw_env).strip()
+            if s != "":
+                if isinstance(default, bool):
+                    pb = parse_env_bool(s)
+                    return default if pb is None else pb
+                if isinstance(default, int):
+                    try:
+                        return int(s)
+                    except ValueError:
+                        return default
+                if isinstance(default, float):
+                    try:
+                        return float(s)
+                    except ValueError:
+                        return default
+                pb = parse_env_bool(s)
+                if pb is not None:
+                    return pb
+                return s
 
     if config:
         keys = path.split(".")
@@ -173,8 +197,7 @@ def resolve_db_path(
 ) -> str:
     """Resolve database path from config and environment.
 
-    Priority: env JVSPATIAL_DB_PATH > JVSPATIAL_JSONDB_PATH > config database.path
-    (with JVSPATIAL_DB_PATH env in get_config_value) > default.
+    Priority: env ``JVSPATIAL_DB_PATH`` > ``config.database.path`` > default.
     Relative paths are resolved against app_root.
 
     Args:
@@ -186,8 +209,6 @@ def resolve_db_path(
         Resolved absolute database path for json; for other types returns the path/uri as-is
     """
     db_path = normalize_empty(os.getenv("JVSPATIAL_DB_PATH"))
-    if not db_path:
-        db_path = normalize_empty(os.getenv("JVSPATIAL_JSONDB_PATH"))
     if not db_path:
         db_path = normalize_empty(
             get_config_value(
@@ -337,10 +358,10 @@ def effective_log_db_type(app_config: dict) -> str:
 def get_file_storage_config(app_root: str, config: dict) -> dict:
     """Get file storage configuration with unified fallback precedence.
 
-    Precedence for provider: JVSPATIAL_FILE_INTERFACE > JVSPATIAL_FILE_STORAGE_PROVIDER >
-    config file_storage.provider > default "local".
-    Precedence for root_dir: JVSPATIAL_FILES_ROOT_PATH >
-    config file_storage.root_dir > default "./.files".
+    Precedence for provider: ``JVSPATIAL_FILE_STORAGE_PROVIDER`` >
+    ``config.file_storage.provider`` > default ``local``.
+    Precedence for root_dir: ``JVSPATIAL_FILES_ROOT_PATH`` >
+    ``config.file_storage.root_dir`` > default ``./.files``.
 
     Args:
         app_root: Path to app root directory (unused but kept for API consistency)
@@ -350,10 +371,12 @@ def get_file_storage_config(app_root: str, config: dict) -> dict:
         Dict with provider, root_dir, enabled, base_url, max_size
     """
     provider = (
-        normalize_empty(os.getenv("JVSPATIAL_FILE_INTERFACE"))
-        or normalize_empty(os.getenv("JVSPATIAL_FILE_STORAGE_PROVIDER"))
+        normalize_empty(os.getenv("JVSPATIAL_FILE_STORAGE_PROVIDER"))
         or get_config_value(
-            config, "file_storage.provider", "JVSPATIAL_FILE_INTERFACE", "local"
+            config,
+            "file_storage.provider",
+            "JVSPATIAL_FILE_STORAGE_PROVIDER",
+            "local",
         )
         or "local"
     )
@@ -413,19 +436,21 @@ def get_performance_config_value(
         raw = None
 
     env_value = os.getenv(env_var)
-    if env_value is not None:
+    if env_value is not None and str(env_value).strip() != "":
         if config_type == bool:
-            sl = str(env_value).strip().lower()
-            if sl in ("true", "1", "yes", "on"):
-                return True
-            if sl in ("false", "0", "no", "off"):
-                return False
-            return default
+            pb = parse_env_bool(env_value)
+            return default if pb is None else pb
         if config_type == int:
-            return int(env_value)
+            try:
+                return int(str(env_value).strip())
+            except ValueError:
+                return default
         if config_type == float:
-            return float(env_value)
-        return env_value
+            try:
+                return float(str(env_value).strip())
+            except ValueError:
+                return default
+        return str(env_value).strip()
 
     if raw is not None:
         return raw
