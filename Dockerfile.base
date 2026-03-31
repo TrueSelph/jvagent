@@ -12,36 +12,32 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /var/task
 
-# Create and use virtual environment
+# Stage 1: OS packages and source (isolates dnf/git/clone failures)
 RUN set -eux && \
-    # Install git (use dnf for Python 3.12+ images)
     dnf -y update && \
     dnf install -y git && \
-    # Create virtual environment
-    python -m venv /opt/venv && \
-    # Clone repositories
     git clone --depth 1 --single-branch --branch dev https://github.com/TrueSelph/jvagent && \
-    git clone --depth 1 --single-branch --branch dev https://github.com/TrueSelph/jvspatial && \
-    # Upgrade pip
+    git clone --depth 1 --single-branch --branch dev https://github.com/TrueSelph/jvspatial
+
+# Stage 2: venv and Python deps (Lambda image provides python3.12 under /var/lang/bin)
+RUN set -eux && \
+    /var/lang/bin/python3.12 -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    # Install numpy 1.26.x first with only binary wheels
     /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'numpy>=1.26.0,<2.0' && \
-    # Install tiktoken with only binary wheels
     /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'tiktoken<0.8.0' && \
-    # Install pydantic
     /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'pydantic[email]' && \
-    # Install jvagent and jvspatial (this creates CLI entry points)
-    /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: -e ./jvagent || \
-    /opt/venv/bin/pip install --no-cache-dir -e ./jvagent && \
-    # Install dependencies from requirements-all.txt in jvagent directory
-    /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: -r ./jvagent/requirements-all.txt || \
-    /opt/venv/bin/pip install --no-cache-dir -r ./jvagent/requirements-all.txt && \
-    /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: -e './jvspatial[lambda]' || \
-    /opt/venv/bin/pip install --no-cache-dir -e './jvspatial[lambda]' && \
-    # Verify jvagent CLI is available (use the actual CLI command)
+    (/opt/venv/bin/pip install --no-cache-dir --only-binary=:all: -e './jvspatial[lambda]' || \
+        /opt/venv/bin/pip install --no-cache-dir -e './jvspatial[lambda]') && \
+    (/opt/venv/bin/pip install --no-cache-dir --only-binary=:all: -e ./jvagent || \
+        /opt/venv/bin/pip install --no-cache-dir -e ./jvagent) && \
+    (/opt/venv/bin/pip install --no-cache-dir --only-binary=:all: -r ./jvagent/requirements-all.txt || \
+        /opt/venv/bin/pip install --no-cache-dir -r ./jvagent/requirements-all.txt)
+
+# Stage 3: verify CLI and drop build-only packages
+RUN set -eux && \
     echo "Checking jvagent CLI availability..." && \
+    ls -l /opt/venv/bin/jvagent && \
     /opt/venv/bin/jvagent --help && \
-    # Cleanup - remove git and perl-Git together
     dnf -y remove git perl-Git && \
     dnf clean all
 
