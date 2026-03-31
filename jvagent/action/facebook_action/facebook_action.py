@@ -17,6 +17,7 @@ from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.action.base import Action
 from jvagent.action.whatsapp.webhook_auth import get_or_create_system_user
+from jvagent.core.public_url import get_public_base_url
 
 from .facebook_api import FacebookAPI
 
@@ -69,7 +70,7 @@ class FacebookAction(Action):
         default=None,
         description=(
             "Application base URL for Messenger webhook generation "
-            "(APP_BASE_URL env, e.g. https://myapp.example.com)"
+            "(JVAGENT_PUBLIC_BASE_URL env, e.g. https://myapp.example.com)"
         ),
     )
     webhook_url: Optional[str] = attribute(
@@ -149,10 +150,12 @@ class FacebookAction(Action):
                 self.api_url = f"https://graph.facebook.com/{version}/"
 
         if not self.base_url or not str(self.base_url).strip():
-            env_base = os.environ.get("APP_BASE_URL", "").strip()
+            env_base = get_public_base_url()
             if env_base:
                 self.base_url = env_base
-                logger.debug("Using APP_BASE_URL from environment for Facebook action")
+                logger.debug(
+                    "Using JVAGENT_PUBLIC_BASE_URL from environment for Facebook action"
+                )
 
         env_win = os.environ.get("MESSENGER_MESSAGE_WINDOW", "").strip()
         if env_win:
@@ -366,7 +369,7 @@ class FacebookAction(Action):
         if not self.base_url or not str(self.base_url).strip():
             logger.warning(
                 "FacebookAction id=%s label=%s: skip ensure messenger webhook_url "
-                "(set base_url or APP_BASE_URL)",
+                "(set base_url or JVAGENT_PUBLIC_BASE_URL)",
                 action_id,
                 action_label,
             )
@@ -427,7 +430,7 @@ class FacebookAction(Action):
         self._apply_env_defaults()
         if not self.base_url or not str(self.base_url).strip():
             raise ValidationError(
-                "base_url (APP_BASE_URL) is required for webhook URL generation"
+                "base_url (JVAGENT_PUBLIC_BASE_URL) is required for webhook URL generation"
             )
         if not str(self.base_url).strip().startswith(("http://", "https://")):
             raise ValidationError(
@@ -512,7 +515,7 @@ class FacebookAction(Action):
         if not self.base_url or not str(self.base_url).strip():
             return {
                 "status": "skipped",
-                "reason": "base_url (APP_BASE_URL) is not set",
+                "reason": "base_url (JVAGENT_PUBLIC_BASE_URL) is not set",
             }
         try:
             if not self.webhook_url:
@@ -539,7 +542,7 @@ class FacebookAction(Action):
                 if "502" in err_msg or "Callback verification" in err_msg:
                     logger.warning(
                         "Meta could not verify the callback URL (often HTTP 502 from "
-                        "your edge). Ensure APP_BASE_URL is public HTTPS, your tunnel "
+                        "your edge). Ensure JVAGENT_PUBLIC_BASE_URL is public HTTPS, your tunnel "
                         "or load balancer is up, and GET "
                         "/api/messenger/interact/webhook/{agent_id}?hub.mode=subscribe&… "
                         "returns 200 before subscribing. Try "

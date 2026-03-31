@@ -190,9 +190,7 @@ class GoogleSheetsAction(GoogleAction):
             "Provide spreadsheet_url_or_id, or set spreadsheet_url on the GoogleSheetsAction"
         )
 
-    def _a1_range(
-        self, range_name: str, worksheet_title: Optional[str] = None
-    ) -> str:
+    def _a1_range(self, range_name: str, worksheet_title: Optional[str] = None) -> str:
         return compose_a1_range(
             self._effective_worksheet_title(worksheet_title),
             range_name if range_name else None,
@@ -230,7 +228,9 @@ class GoogleSheetsAction(GoogleAction):
         service = await self.get_service()
         meta = (
             service.spreadsheets()
-            .get(spreadsheetId=spreadsheet_id, fields="sheets(properties(sheetId,title))")
+            .get(
+                spreadsheetId=spreadsheet_id, fields="sheets(properties(sheetId,title))"
+            )
             .execute()
         )
         for sheet in meta.get("sheets", []):
@@ -459,9 +459,7 @@ class GoogleSheetsAction(GoogleAction):
         )
         service = await self.get_service()
         body = {
-            "requests": [
-                {"mergeCells": {"range": grid_range, "mergeType": merge_type}}
-            ]
+            "requests": [{"mergeCells": {"range": grid_range, "mergeType": merge_type}}]
         }
         return (
             service.spreadsheets()

@@ -495,3 +495,40 @@ def test_get_pageindex_config_explicit_db_name():
         config = get_pageindex_config(app_id="jvagent_demo_app")
     assert config["db_type"] == "json"
     assert "custom_pageindex_db" in config["db_path"]
+
+
+def test_get_pageindex_config_mongodb_uri_falls_back_to_jvspatial():
+    """When DB_TYPE is mongodb and PAGEINDEX URI unset, use JVSPATIAL_MONGODB_URI."""
+    env = {
+        "JVAGENT_PAGEINDEX_DB_TYPE": "mongodb",
+        "JVAGENT_PAGEINDEX_DB_URI": "",
+        "JVSPATIAL_MONGODB_URI": "mongodb://cluster.example:27017",
+    }
+    with patch.dict("os.environ", env, clear=False):
+        config = get_pageindex_config(app_id="jvagent_demo_app")
+    assert config["db_type"] == "mongodb"
+    assert config["db_uri"] == "mongodb://cluster.example:27017"
+
+
+def test_get_pageindex_config_mongodb_uri_explicit_wins_over_jvspatial():
+    """JVAGENT_PAGEINDEX_DB_URI takes precedence over JVSPATIAL_MONGODB_URI."""
+    env = {
+        "JVAGENT_PAGEINDEX_DB_TYPE": "mongodb",
+        "JVAGENT_PAGEINDEX_DB_URI": "mongodb://pageindex-only:27017",
+        "JVSPATIAL_MONGODB_URI": "mongodb://cluster.example:27017",
+    }
+    with patch.dict("os.environ", env, clear=False):
+        config = get_pageindex_config(app_id="jvagent_demo_app")
+    assert config["db_uri"] == "mongodb://pageindex-only:27017"
+
+
+def test_get_pageindex_config_mongodb_uri_localhost_when_both_unset():
+    """Whitespace-only URIs fall through to localhost default."""
+    env = {
+        "JVAGENT_PAGEINDEX_DB_TYPE": "mongodb",
+        "JVAGENT_PAGEINDEX_DB_URI": "   ",
+        "JVSPATIAL_MONGODB_URI": "",
+    }
+    with patch.dict("os.environ", env, clear=False):
+        config = get_pageindex_config(app_id="jvagent_demo_app")
+    assert config["db_uri"] == "mongodb://localhost:27017"

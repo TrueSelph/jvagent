@@ -2,12 +2,12 @@
 
 import asyncio
 import logging
-import os
 import re
 from typing import Any, Dict, List, Optional
 
 from jvagent.action.response.channel_adapter import ChannelAdapter
 from jvagent.action.response.message import ResponseMessage
+from jvagent.core.public_url import get_public_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +94,7 @@ class WhatsAppAdapter(ChannelAdapter):
 
         # Ensure relative URLs (e.g. from TTS /api/files/...) are absolute for fetch
         if media_url and media_url.startswith("/"):
-            base = (self.action.base_url or "").strip() or os.environ.get(
-                "APP_BASE_URL", ""
-            ).strip()
+            base = (self.action.base_url or "").strip() or get_public_base_url()
             if base:
                 media_url = f"{base.rstrip('/')}{media_url}"
 

@@ -36,15 +36,16 @@ def _set_db_env_from_config(app_root: str) -> None:
     """Set database environment variables from app config.
 
     Must be called before any database initialization.
+    Uses canonical ``JVSPATIAL_DB_PATH`` only (jvspatial forbids JSONDB/SQLITE env keys).
     """
     app_config = load_app_config(app_root)
     db_type = get_config_value(app_config, "database.type", "JVSPATIAL_DB_TYPE", "json")
     db_path = resolve_db_path(app_root, app_config, db_type)
     os.environ["JVSPATIAL_DB_TYPE"] = db_type
-    if db_type == "json":
-        os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
-    elif db_type == "sqlite":
-        os.environ["JVSPATIAL_SQLITE_PATH"] = db_path
+    if db_type in ("json", "sqlite"):
+        os.environ["JVSPATIAL_DB_PATH"] = db_path
+    for _removed in ("JVSPATIAL_JSONDB_PATH", "JVSPATIAL_SQLITE_PATH"):
+        os.environ.pop(_removed, None)
 
 
 def _import_core_endpoint_modules() -> None:
@@ -104,12 +105,6 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     if normalize_empty(mongodb_uri) is None:
         mongodb_uri = load_jvagent_env().mongodb_uri
 
-    # Set MongoDB environment variables if using MongoDB
-    if db_type == "mongodb":
-        os.environ["JVSPATIAL_MONGODB_URI"] = mongodb_uri
-        if mongodb_db_name:
-            os.environ["JVSPATIAL_MONGODB_DB_NAME"] = mongodb_db_name
-
     # DynamoDB configuration
     dynamodb_table_name = get_config_value(
         app_config, "database.table_name", "JVSPATIAL_DYNAMODB_TABLE_NAME", None
@@ -133,24 +128,12 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     dynamodb_access_key_id = normalize_empty(dynamodb_access_key_id) or None
     dynamodb_secret_access_key = normalize_empty(dynamodb_secret_access_key) or None
 
-    # Set DynamoDB environment variables if using DynamoDB (for backward compatibility)
-    if db_type == "dynamodb":
-        if dynamodb_table_name:
-            os.environ["JVSPATIAL_DYNAMODB_TABLE_NAME"] = dynamodb_table_name
-        if dynamodb_region:
-            os.environ["JVSPATIAL_DYNAMODB_REGION"] = dynamodb_region
-        if dynamodb_endpoint_url:
-            os.environ["JVSPATIAL_DYNAMODB_ENDPOINT_URL"] = dynamodb_endpoint_url
-        if dynamodb_access_key_id:
-            os.environ["AWS_ACCESS_KEY_ID"] = dynamodb_access_key_id
-        if dynamodb_secret_access_key:
-            os.environ["AWS_SECRET_ACCESS_KEY"] = dynamodb_secret_access_key
+    # MongoDB / DynamoDB: pass via DatabaseConfig only (avoid mutating os.environ).
 
-    # Set JVSPATIAL_JSONDB_PATH unconditionally to ensure DatabaseManager uses the correct path
-    # (DatabaseManager uses JVSPATIAL_JSONDB_PATH, not JVSPATIAL_DB_PATH)
-    # This must be set before any database initialization occurs
-    if db_type == "json":
-        os.environ["JVSPATIAL_JSONDB_PATH"] = db_path
+    if db_type in ("json", "sqlite"):
+        os.environ["JVSPATIAL_DB_PATH"] = db_path
+    for _removed in ("JVSPATIAL_JSONDB_PATH", "JVSPATIAL_SQLITE_PATH"):
+        os.environ.pop(_removed, None)
 
     # Graph endpoint configuration
     graph_endpoint_enabled = get_config_value(
@@ -164,7 +147,13 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     auth_enabled = get_config_value(
         app_config, "auth.enabled", "JVAGENT_AUTH_ENABLED", True
     )
-    jwt_secret = load_jvagent_env().jwt_secret
+    jwt_secret_raw = normalize_empty(load_jvagent_env().jwt_secret_key)
+    jwt_secret = jwt_secret_raw or ""
+    if auth_enabled and not jwt_secret_raw:
+        raise ValueError(
+            "Authentication is enabled but JVSPATIAL_JWT_SECRET_KEY is not set (or is empty). "
+            "Set a strong secret in the environment or disable auth with JVAGENT_AUTH_ENABLED=false."
+        )
     jwt_expire_minutes = int(
         get_config_value(
             app_config, "auth.jwt_expire_minutes", "JVSPATIAL_JWT_EXPIRE_MINUTES", 60
@@ -472,7 +461,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     # endpoints (interact, pageindex, whatsapp, etc.) load via pre_import_action_modules_for_agents.
     _import_core_endpoint_modules()
 
-    # jvspatial load_env() is LRU-cached; refresh after any JVSPATIAL_* os.environ updates above
+    # jvspatial load_env() is LRU-cached; refresh after JVSPATIAL_* updates (DB path, logging DB).
     clear_load_env_cache()
 
     return server

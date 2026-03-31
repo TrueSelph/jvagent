@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 from datetime import datetime
 from typing import Any, ClassVar, Dict, List, Optional, Union
 
@@ -11,6 +10,7 @@ from googleapiclient.discovery import build
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
+from jvagent.core.public_url import get_public_base_url
 
 from .google_token import GoogleToken
 
@@ -39,12 +39,9 @@ class GoogleAction(Action):
     SCOPES: ClassVar[List[str]] = []
 
     async def _apply_env_defaults(self) -> None:
-        self.auth_url = (
-            os.environ.get("APP_BASE_URL", "").strip() + f"/api/google/{self.id}"
-        )
-        self.redirect_uri = (
-            os.environ.get("APP_BASE_URL", "").strip() + f"/api/google/callback/"
-        )
+        base = get_public_base_url()
+        self.auth_url = base + f"/api/google/{self.id}"
+        self.redirect_uri = base + f"/api/google/callback/"
         await self.save()
 
         self._warn_if_oauth_unusable()

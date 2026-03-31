@@ -5,8 +5,8 @@ import os
 from typing import Any, Dict, List, Optional, Union
 
 import httpx
-from jvspatial.core.annotations import attribute
 from jvspatial.api.exceptions import ValidationError
+from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
 
@@ -126,8 +126,7 @@ class SendGridAction(Action):
 
         base = os.environ.get("SENDGRID_API_BASE_URL", "").strip()
         if base and (
-            not self.api_base_url
-            or self.api_base_url == "https://api.sendgrid.com/v3"
+            not self.api_base_url or self.api_base_url == "https://api.sendgrid.com/v3"
         ):
             self.api_base_url = base.rstrip("/")
             logger.debug("Using SENDGRID_API_BASE_URL from environment")

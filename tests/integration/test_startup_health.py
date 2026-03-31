@@ -1,5 +1,7 @@
 """Integration: server config, pre-startup bootstrap, admin user, health route."""
 
+import os
+
 import pytest
 from starlette.testclient import TestClient
 
@@ -46,6 +48,8 @@ async def test_pre_startup_bootstrap_admin_and_health(tmp_path, monkeypatch):
     try:
         _set_db_env_from_config(app_root)
         server = create_server_from_config(debug=False, app_root=app_root)
+        assert "JVSPATIAL_JSONDB_PATH" not in os.environ
+        assert "JVSPATIAL_SQLITE_PATH" not in os.environ
         admin_ok = await pre_startup_bootstrap(server, app_root=app_root)
         assert admin_ok is True
 

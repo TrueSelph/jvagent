@@ -445,7 +445,7 @@ This agent uses environment variables for configuration:
 **Required:**
 
 - `${OPENAI_API_KEY}` - OpenAI API key for LLM and embeddings
-- `${APP_BASE_URL}` - Base URL for the application
+- `${JVAGENT_PUBLIC_BASE_URL}` - Public base URL for webhooks and integrations
 
 **Resolv Demo Project API:**
 

@@ -5,6 +5,7 @@ Log retention default uses ``JVSPATIAL_LOG_RETENTION_DEFAULT_DAYS`` (shared with
 Database log levels use ``JVSPATIAL_DB_LOGGING_LEVELS`` (see ``jvagent.cli.server_config`` / jvspatial ``load_env``); do not use ``JVAGENT_DB_LOGGING_LEVELS``.
 Process log verbosity uses ``JVSPATIAL_LOG_LEVEL`` (same as jvspatial Server / ``load_env().log_level``); do not use ``JVAGENT_LOG_LEVEL``.
 JWT signing uses ``JVSPATIAL_JWT_SECRET_KEY`` only; do not use ``JVSPATIAL_JWT_SECRET``.
+There is no implicit dev default for the JWT secret; set the env var when auth is enabled.
 Modules should use load_env() instead of os.getenv.
 """
 
@@ -13,8 +14,25 @@ from dataclasses import dataclass
 from typing import Optional
 
 
-def _parse_bool(val: str) -> bool:
-    return str(val).strip().lower() in ("true", "1", "yes")
+def _normalize_empty(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    s = str(value).strip()
+    return s if s else None
+
+
+def _parse_env_bool(raw: Optional[str]) -> Optional[bool]:
+    """Parse truthy/falsey tokens; None if empty or unrecognized (matches core.config.parse_env_bool)."""
+    if raw is None:
+        return None
+    s = str(raw).strip().lower()
+    if not s:
+        return None
+    if s in ("true", "1", "yes", "on"):
+        return True
+    if s in ("false", "0", "no", "off"):
+        return False
+    return None
 
 
 def _parse_int(val: Optional[str]) -> Optional[int]:
@@ -35,7 +53,7 @@ class EnvConfig:
     All JVAGENT_* and JVSPATIAL_* vars used by cli, core, and utils.
     log_retention_default_days is sourced from JVSPATIAL_LOG_RETENTION_DEFAULT_DAYS.
     log_level is sourced from JVSPATIAL_LOG_LEVEL.
-    jwt_secret_key and jwt_secret both reflect JVSPATIAL_JWT_SECRET_KEY (or the dev default when unset).
+    jwt_secret_key and jwt_secret both reflect ``JVSPATIAL_JWT_SECRET_KEY`` when set (else None).
     """
 
     # JVAGENT
@@ -96,8 +114,15 @@ def load_env() -> EnvConfig:
     admin_email = (
         os.getenv("JVAGENT_ADMIN_EMAIL") or f"{admin_username}@jvagent.example"
     )
-    _jwt = os.getenv("JVSPATIAL_JWT_SECRET_KEY")
-    jwt_secret = _jwt or "jvagent-secret-key-change-in-production"
+    _jwt = _normalize_empty(os.getenv("JVSPATIAL_JWT_SECRET_KEY"))
+    _pip_raw = os.getenv("JVAGENT_DISABLE_RUNTIME_PIP_INSTALL")
+    if _pip_raw is None or not str(_pip_raw).strip():
+        disable_runtime_pip = False
+    else:
+        _pb = _parse_env_bool(_pip_raw)
+        disable_runtime_pip = False if _pb is None else _pb
+    _file_provider = _normalize_empty(os.getenv("JVSPATIAL_FILE_STORAGE_PROVIDER"))
+    file_interface = _file_provider or "local"
     return EnvConfig(
         # JVAGENT
         app_id=os.getenv("JVAGENT_APP_ID") or None,
@@ -110,19 +135,18 @@ def load_env() -> EnvConfig:
         log_retention_default_days=_parse_int(
             os.getenv("JVSPATIAL_LOG_RETENTION_DEFAULT_DAYS")
         ),
-        disable_runtime_pip_install=_parse_bool(
-            os.getenv("JVAGENT_DISABLE_RUNTIME_PIP_INSTALL", "false")
-        ),
+        disable_runtime_pip_install=disable_runtime_pip,
         # JVSPATIAL
-        file_interface=os.getenv("JVSPATIAL_FILE_INTERFACE", "local"),
+        file_interface=file_interface,
         files_root_path=os.getenv("JVSPATIAL_FILES_ROOT_PATH", "./.files"),
         mongodb_uri=os.getenv("JVSPATIAL_MONGODB_URI", "mongodb://localhost:27017"),
         jwt_secret_key=_jwt,
-        jwt_secret=jwt_secret,
-        # S3
-        s3_bucket_name=os.getenv("JVSPATIAL_S3_BUCKET_NAME"),
-        s3_region_name=os.getenv("JVSPATIAL_S3_REGION_NAME", "us-east-1"),
-        s3_access_key_id=os.getenv("JVSPATIAL_S3_ACCESS_KEY_ID"),
-        s3_secret_access_key=os.getenv("JVSPATIAL_S3_SECRET_ACCESS_KEY"),
-        s3_endpoint_url=os.getenv("JVSPATIAL_S3_ENDPOINT_URL"),
+        jwt_secret=_jwt,
+        # S3 (canonical env names; see docs/configuration.md)
+        s3_bucket_name=_normalize_empty(os.getenv("JVSPATIAL_S3_BUCKET_NAME")),
+        s3_region_name=_normalize_empty(os.getenv("JVSPATIAL_S3_REGION"))
+        or "us-east-1",
+        s3_access_key_id=_normalize_empty(os.getenv("JVSPATIAL_S3_ACCESS_KEY")),
+        s3_secret_access_key=_normalize_empty(os.getenv("JVSPATIAL_S3_SECRET_KEY")),
+        s3_endpoint_url=_normalize_empty(os.getenv("JVSPATIAL_S3_ENDPOINT_URL")),
     )

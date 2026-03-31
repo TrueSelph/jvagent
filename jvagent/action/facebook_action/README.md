@@ -23,7 +23,7 @@ actions:
   - action: jvagent/facebook_action
     context:
       label: FacebookAction
-      api_url: https://graph.facebook.com/v21.0/
+      api_url: https://graph.facebook.com/v25.0/
       app_id: "${FACEBOOK_APP_ID}"
       app_secret: "${FACEBOOK_APP_SECRET}"
       page_id: "${FACEBOOK_PAGE_ID}"
@@ -36,7 +36,9 @@ actions:
       # fields: "messages,messaging_postbacks"
 ```
 
-Alternatively, omit `context` fields and set environment variables: `FACEBOOK_API_URL` (optional), `FACEBOOK_APP_SECRET`, `FACEBOOK_APP_ID`, `FACEBOOK_PAGE_ID`, `FACEBOOK_ACCESS_TOKEN`, optional `FACEBOOK_PAGE_ACCESS_TOKEN`, `FACEBOOK_VERIFY_TOKEN`, `FACEBOOK_WEBHOOK_FIELDS`. If `api_url` is unset, `FACEBOOK_GRAPH_BASE` + `FACEBOOK_GRAPH_VERSION` (default `v21.0`) or `https://graph.facebook.com/{version}/` is used.
+Alternatively, omit `context` fields and set environment variables: `FACEBOOK_API_URL` (optional), `FACEBOOK_APP_SECRET`, `FACEBOOK_APP_ID`, `FACEBOOK_PAGE_ID`, `FACEBOOK_ACCESS_TOKEN`, optional `FACEBOOK_PAGE_ACCESS_TOKEN`, `FACEBOOK_VERIFY_TOKEN`, `FACEBOOK_WEBHOOK_FIELDS`. If `api_url` is unset, `FACEBOOK_GRAPH_BASE` + `FACEBOOK_GRAPH_VERSION` (default `v25.0`) or `https://graph.facebook.com/{version}/` is used.
+
+**Public base URL:** Set **`JVAGENT_PUBLIC_BASE_URL`** to the HTTPS origin of your deployed API (no trailing slash). The action uses it when `base_url` is empty—for example re-hosting Messenger image URLs for the model, building absolute webhook targets, and `download_url_to_public_url`. You can also set `base_url` explicitly in `agent.yaml` context.
 
 ## HTTP API (admin)
 

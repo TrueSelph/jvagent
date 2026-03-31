@@ -221,11 +221,11 @@ async def _search_via_tree_search(
         return []
 
     model = model or os.getenv("PAGEINDEX_TREE_SEARCH_MODEL", "gpt-4o-mini")
-    api_key = os.getenv("CHATGPT_API_KEY") or os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key and not get_pageindex_model_action():
         logger.warning(
-            "PageIndex tree search requires CHATGPT_API_KEY or OPENAI_API_KEY "
-            "(or model_action in context); falling back to direct search"
+            "PageIndex tree search requires OPENAI_API_KEY or a model action in context; "
+            "falling back to direct search"
         )
         return await _search_via_direct(
             context,

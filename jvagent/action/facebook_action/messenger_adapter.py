@@ -2,11 +2,11 @@
 
 import asyncio
 import logging
-import os
 from typing import Any, Dict, List
 
 from jvagent.action.response.channel_adapter import ChannelAdapter
 from jvagent.action.response.message import ResponseMessage
+from jvagent.core.public_url import get_public_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class MessengerAdapter(ChannelAdapter):
         media_type = (message.metadata.get("media_type") or "").strip().lower()
 
         if media_url and media_url.startswith("/"):
-            base = os.environ.get("APP_BASE_URL", "").strip()
+            base = get_public_base_url()
             if base:
                 media_url = f"{base.rstrip('/')}{media_url}"
 

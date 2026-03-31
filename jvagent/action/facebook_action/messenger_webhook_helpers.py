@@ -18,6 +18,7 @@ from jvagent.action.whatsapp.utils.endpoint_helpers import (
 )
 from jvagent.action.whatsapp.utils.media_manager import MediaManager
 from jvagent.core.app import App
+from jvagent.core.public_url import get_public_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -335,6 +336,8 @@ async def resolve_messenger_inbound_event(
             pub_base = str(fb_action.base_url or "").strip()
         except Exception:
             pub_base = ""
+        if not pub_base:
+            pub_base = get_public_base_url()
         try:
             page_token = (fb_action.api().page_access_token or "").strip()
         except Exception:

@@ -184,5 +184,5 @@ actions:
       api_url: ${WHATSAPP_API_URL}
       api_key: ${WHATSAPP_API_KEY}
       session: ${WHATSAPP_SESSION}
-      base_url: ${APP_BASE_URL}
+      base_url: ${JVAGENT_PUBLIC_BASE_URL}
       token: ${WHATSAPP_TOKEN}

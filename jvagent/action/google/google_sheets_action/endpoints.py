@@ -651,9 +651,7 @@ async def unmerge_sheets_cells(
             "result": ResponseField(
                 field_type=Dict[str, Any],
                 description="batchUpdate response including replies with new sheet metadata",
-                example={
-                    "replies": [{"addSheet": {"properties": {"sheetId": 123}}}]
-                },
+                example={"replies": [{"addSheet": {"properties": {"sheetId": 123}}}]},
             ),
             "success": ResponseField(
                 field_type=bool,
@@ -790,10 +788,7 @@ async def update_worksheet_endpoint(
 
     ref = _spreadsheet_ref(action, spreadsheet_id, spreadsheet_url)
 
-    if all(
-        x is None
-        for x in (new_title, rows, cols, hidden, tab_color)
-    ):
+    if all(x is None for x in (new_title, rows, cols, hidden, tab_color)):
         raise ValidationError(
             message="Provide at least one of: new_title, rows, cols, hidden, tab_color",
             details={"action_id": action_id},

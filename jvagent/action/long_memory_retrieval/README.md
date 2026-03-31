@@ -108,15 +108,14 @@ These configure the **main** jvspatial graph database (agents, core graph, etc.)
 
 | Variable | Description | Typical default |
 |----------|-------------|-----------------|
-| `JVSPATIAL_JSONDB_PATH` | Base directory for JSON-backed prime graph | `./jvdb` (see jvspatial docs) |
-| `JVSPATIAL_SQLITE_PATH` | SQLite file for prime graph when using sqlite backend | `jvdb/sqlite/jvspatial.db` |
+| `JVSPATIAL_DB_PATH` | File DB root path for **json** / **sqlite** prime graph (with `JVSPATIAL_DB_TYPE`) | `./jvagent_db` / `./jvdb` (see jvspatial docs) |
 
 #### LLM (`tree_search`)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `PAGEINDEX_TREE_SEARCH_MODEL` | Model for tree_search | `gpt-4o-mini` |
-| `CHATGPT_API_KEY` / `OPENAI_API_KEY` | API key for tree_search | — |
+| `OPENAI_API_KEY` | API key for tree_search | — |
 
 ## REST API Endpoints
 
@@ -190,7 +189,7 @@ Documents can have key-value metadata at ingestion; filter at query time.
 ## Troubleshooting / Best Practices
 
 - Documents must be ingested before retrieval
-- tree_search requires CHATGPT_API_KEY or OPENAI_API_KEY; falls back to direct if missing
-- Colocating PageIndex with the prime DB (e.g. `./pageindex_db` next to `./jvagent_db`) is optional and **not** inferred from `JVSPATIAL_JSONDB_PATH`; set `JVAGENT_PAGEINDEX_DB_PATH` or `JVAGENT_PAGEINDEX_DB_ROOT` to match the layout you want
+- tree_search requires `OPENAI_API_KEY` (or a configured model action); falls back to direct if missing
+- Colocating PageIndex with the prime DB (e.g. `./pageindex_db` next to `./jvagent_db`) is optional and **not** inferred from `JVSPATIAL_DB_PATH`; set `JVAGENT_PAGEINDEX_DB_PATH` or `JVAGENT_PAGEINDEX_DB_ROOT` to match the layout you want
 - Use `model_action_type` for token tracking and observability in agent context
 - **Ingestion config**: Put `node_summary`, `node_text`, `doc_description`, etc. under the `config` block (not `context`). These apply when documents are assimilated via API or `assimilate_document()`. REST ingestion uses config pushed when the action registers; if no agent has PageIndex, defaults apply.

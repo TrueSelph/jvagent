@@ -786,7 +786,9 @@ async def facebook_get_messenger_webhook_url(
     tags=["Facebook Action"],
     summary="Register or update Meta app Page webhook subscription (app id|secret)",
 )
-async def facebook_register_webhook(action_id: str, webhook_url: Optional[str] = None) -> Dict[str, Any]:
+async def facebook_register_webhook(
+    action_id: str, webhook_url: Optional[str] = None
+) -> Dict[str, Any]:
     action = await _require_facebook_action(action_id)
 
     if not webhook_url:

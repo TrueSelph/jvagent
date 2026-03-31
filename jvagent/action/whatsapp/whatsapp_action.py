@@ -11,6 +11,7 @@ from jvspatial.db import get_prime_database
 from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.action.base import Action
+from jvagent.core.public_url import get_public_base_url
 
 from .modules.ultramsg import UltraMsgAPI
 from .modules.wppconnect import WPPConnectAPI
@@ -61,7 +62,7 @@ class WhatsAppAction(Action):
 
     base_url: Optional[str] = attribute(
         default=None,
-        description="Application base URL for webhook generation (APP_BASE_URL env var, e.g., https://myapp.example.com)",
+        description="Application base URL for webhook generation (JVAGENT_PUBLIC_BASE_URL env var, e.g., https://myapp.example.com)",
     )
 
     webhook_url: Optional[str] = attribute(
@@ -120,7 +121,7 @@ class WhatsAppAction(Action):
         Sets the following from environment variables if not already configured:
         - api_url from WHATSAPP_API_URL
         - api_key from WHATSAPP_API_KEY
-        - base_url from APP_BASE_URL
+        - base_url from JVAGENT_PUBLIC_BASE_URL
 
         This allows users to set these values once in their .env file
         instead of configuring them per-action in agent.yaml.
@@ -141,10 +142,12 @@ class WhatsAppAction(Action):
 
         # Application Base URL
         if not self.base_url or not self.base_url.strip():
-            env_base_url = os.environ.get("APP_BASE_URL", "").strip()
+            env_base_url = get_public_base_url()
             if env_base_url:
                 self.base_url = env_base_url
-                logger.debug(f"Using APP_BASE_URL from environment: {env_base_url}")
+                logger.debug(
+                    "Using JVAGENT_PUBLIC_BASE_URL from environment: %s", env_base_url
+                )
 
     def is_configured(self) -> bool:
         """Check if the WhatsApp action has required configuration.
@@ -193,7 +196,7 @@ class WhatsAppAction(Action):
         if not self.api_key or not self.api_key.strip():
             issues.append("api_key (WHATSAPP_API_KEY) is not configured")
         if not self.base_url:
-            issues.append("base_url (APP_BASE_URL) is not configured")
+            issues.append("base_url (JVAGENT_PUBLIC_BASE_URL) is not configured")
         elif not self.base_url.startswith(("http://", "https://")):
             issues.append("base_url must be a valid HTTP/HTTPS URL")
         return issues
@@ -424,7 +427,7 @@ class WhatsAppAction(Action):
         """Generate or retrieve secure webhook URL with API key authentication."""
         if not self.base_url or not self.base_url.strip():
             raise ValidationError(
-                "base_url (APP_BASE_URL) is required for webhook URL generation"
+                "base_url (JVAGENT_PUBLIC_BASE_URL) is required for webhook URL generation"
             )
         if not self.base_url.startswith(("http://", "https://")):
             raise ValidationError(
