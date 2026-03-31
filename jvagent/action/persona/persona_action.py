@@ -23,6 +23,7 @@ from jvagent.action.persona.prompts import (
     CONTINUATION_GUIDANCE_PROMPT,
     DIRECTIVE_COMPLIANCE_CHECK_PROMPT,
     DIRECTIVES_SECTION_PROMPT,
+    EXAMPLES_SECTION_PROMPT,
     INTERPRETATION_INSIGHTS_PROMPT,
     NO_DIRECTIVES_SUB_PROMPT,
     PARAMETERS_SUB_PROMPT,
@@ -63,6 +64,10 @@ class PersonaAction(Action):
     persona_description: str = attribute(
         default="You are friendly and helpful",
         description="Detailed agent description",
+    )
+    expression_examples: List[Dict[str, str]] = attribute(
+        default_factory=list,
+        description="List of user/assistant example pairs for few-shot learning",
     )
     persona_capabilities: List[str] = attribute(
         default_factory=list, description="List of agent capabilities"
@@ -696,6 +701,20 @@ class PersonaAction(Action):
             canned_lead_in_section, bool(canned_lead_in_section)
         )
 
+        # Build examples section
+        examples_section = ""
+        if self.expression_examples:
+            examples_list = "\n".join(
+                f"User: {ex.get('user', '')}\nAssistant: {ex.get('assistant', '')}\n"
+                for ex in self.expression_examples
+            )
+            examples_section = EXAMPLES_SECTION_PROMPT.format(
+                examples_list=examples_list
+            )
+        examples_section = format_conditional_section(
+            examples_section, bool(examples_section)
+        )
+
         prompt_template = (
             self.system_prompt if self.system_prompt else SYSTEM_PROMPT_TEMPLATE
         )
@@ -707,6 +726,7 @@ class PersonaAction(Action):
             date=date_str,
             time=time_str,
             timezone=timezone_str,
+            examples_section=examples_section,
             vision_instruction_section=vision_instruction_section,
             interpretation_section=interpretation_section,
             recent_image_context_section=recent_image_context_section,
