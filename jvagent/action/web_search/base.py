@@ -28,10 +28,11 @@ class BaseWebSearchAction(Action, ABC):
         link: Page URL
         snippet: Short description / excerpt
 
-    Common Configuration:
-        api_key: Authentication key for the provider API
+    Common configuration:
         timeout: Request timeout in seconds
         max_results: Maximum number of results to return
+
+    Provider API keys are read from the environment (``.env``), not stored on the action.
 
     Usage (agent.yaml):
         Register a concrete provider action at the agent level. Then point
@@ -39,7 +40,6 @@ class BaseWebSearchAction(Action, ABC):
         class name (e.g., ``"SerperWebSearchAction"`` or ``"SerpAPIWebSearchAction"``).
     """
 
-    api_key: str = attribute(default="", description="API key for the provider")
     timeout: int = attribute(default=30, description="Request timeout in seconds", ge=1)
     max_results: int = attribute(
         default=5, description="Maximum number of search results to return", ge=1

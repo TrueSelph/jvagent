@@ -29,11 +29,11 @@ def mock_agent():
 
 
 @pytest.fixture
-def whatsapp_action(mock_agent):
+def whatsapp_action(mock_agent, monkeypatch):
     """Create a WhatsAppAction instance for testing."""
+    monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "http://localhost:8000")
     action = WhatsAppAction(
         id="n.WhatsAppAction.test456",
-        base_url="http://localhost:8000",
         provider="wppconnect",
     )
 

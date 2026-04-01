@@ -8,6 +8,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from jvspatial.core.annotations import attribute
+from jvspatial.env import env
 
 from jvagent.action.base import Action
 from jvagent.core.public_url import get_public_base_url
@@ -20,9 +21,6 @@ logger = logging.getLogger(__name__)
 class GoogleAction(Action):
     """Base class for Google actions using OAuth2 authentication."""
 
-    client_secrets_json: Union[str, Dict[str, Any]] = attribute(
-        default="", description="Client secrets JSON (string or object) for OAuth2"
-    )
     redirect_uri: str = attribute(
         default="http://localhost:8080/",
         description="The redirect URI used in the OAuth2 flow.",
@@ -142,21 +140,28 @@ class GoogleAction(Action):
         await self._save_credentials(creds)
         return True
 
+    def _raw_client_secrets(self) -> Union[str, Dict[str, Any], Any]:
+        """``GOOGLE_CLIENT_SECRETS_JSON`` env: path to client secrets file or raw JSON string."""
+        return env("GOOGLE_CLIENT_SECRETS_JSON") or ""
+
     def _create_flow(self) -> Flow:
         """Creates the OAuth2 flow object from client secrets."""
-        if not self.client_secrets_json:
-            raise ValueError("client_secrets_json is required for OAuth2 flow.")
+        raw = self._raw_client_secrets()
+        if not raw:
+            raise ValueError(
+                "OAuth client config required: set GOOGLE_CLIENT_SECRETS_JSON (path or JSON string)."
+            )
 
         client_config = None
-        if isinstance(self.client_secrets_json, str):
+        if isinstance(raw, str):
             try:
-                client_config = json.loads(self.client_secrets_json)
+                client_config = json.loads(raw)
             except json.JSONDecodeError:
                 # Assume it's a file path
-                with open(self.client_secrets_json, "r") as f:
+                with open(raw, "r") as f:
                     client_config = json.load(f)
         else:
-            client_config = self.client_secrets_json
+            client_config = raw
 
         # Check for redirect_uris in the config (Google web secrets)
         if "web" in client_config and "redirect_uris" in client_config["web"]:

@@ -11,8 +11,7 @@ actions:
   - action: jvagent/openai_lm
     context:
       enabled: true
-      description: OpenAI language model
-      api_key: ${OPENAI_API_KEY}
+      description: OpenAI language model (OPENAI_API_KEY in .env)
       api_endpoint: https://api.openai.com/v1
       model: gpt-4o-mini
       temperature: 0.2

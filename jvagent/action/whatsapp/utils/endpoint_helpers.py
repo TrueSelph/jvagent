@@ -17,6 +17,7 @@ from jvspatial.exceptions import DatabaseError, ValidationError
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.core.agent import Agent
 from jvagent.core.app import App
+from jvagent.core.public_url import get_public_base_url
 from jvagent.memory.conversation import Conversation
 
 from ..whatsapp_action import WhatsAppAction
@@ -336,7 +337,8 @@ async def _clear_whatsapp_typing(
             return
         whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
         if whatsapp_action and whatsapp_action.is_configured():
-            await whatsapp_action.api().set_typing_status(
+            wa = await whatsapp_action.api()
+            await wa.set_typing_status(
                 phone=sender, value=False, is_group=is_group
             )
     except Exception as e:
@@ -439,7 +441,8 @@ async def _handle_media_message(
     try:
         # Trigger typing
         try:
-            typing_result = await whatsapp_action.api().set_typing_status(
+            wa = await whatsapp_action.api()
+            typing_result = await wa.set_typing_status(
                 phone=sender, value=True, is_group=data.isGroup
             )
             if not typing_result.get("ok", True):
@@ -470,7 +473,8 @@ async def _handle_media_message(
 
                 if media_url:
                     # Construct safe media URL
-                    media_url = whatsapp_action.base_url + media_url
+                    pub = get_public_base_url().rstrip("/")
+                    media_url = f"{pub}{media_url}" if pub else media_url
                     logger.debug(f"Saved media for user {sender}: {media_url}")
 
                     # visitor.data pattern: whatsapp_payload + top-level keys
@@ -562,7 +566,8 @@ async def _handle_voice_message(
                     sender, value=True, is_group=data.isGroup
                 )
             else:
-                typing_result = await whatsapp_action.api().set_typing_status(
+                wa = await whatsapp_action.api()
+                typing_result = await wa.set_typing_status(
                     phone=sender, value=True, is_group=data.isGroup
                 )
                 if not typing_result.get("ok", True):
@@ -730,9 +735,10 @@ async def is_directed_message(action_node: WhatsAppAction, data: Any) -> bool:
 
     receiver = data.receiver.split("@")[0]
 
+    wa = await action_node.api()
     if action_node.provider == "wwebjs":
         tagged_phones = await asyncio.gather(
-            *[action_node.api().convert_lid_to_phone_number(tid) for tid in matches]
+            *[wa.convert_lid_to_phone_number(tid) for tid in matches]
         )
     else:
         tagged_phones = matches
@@ -743,7 +749,7 @@ async def is_directed_message(action_node: WhatsAppAction, data: Any) -> bool:
 
     # Check group members if direct match failed
     group_id = data.sender
-    result = await action_node.api().group_members(group_id)
+    result = await wa.group_members(group_id)
     if result and result.get("status") == "success":
         group_members = result.get("response", [])
         for item in group_members:

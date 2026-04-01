@@ -30,31 +30,27 @@ class WhatsAppAction(Action):
     """Action for WhatsApp integration using multiple providers.
 
     This action is optional and will gracefully skip initialization if the
-    required environment variables (WHATSAPP_API_URL, WHATSAPP_API_KEY, etc.)
+    required environment variables (WHATSAPP_API_URL,
+    JVAGENT_PUBLIC_BASE_URL, WHATSAPP_API_KEY, etc.)
     are not configured. When unconfigured, the action will remain inactive
     but will not cause errors during agent startup.
+
+    ``WHATSAPP_API_URL`` and ``JVAGENT_PUBLIC_BASE_URL`` are read only from the
+    environment at runtime (not persisted on the action). The WhatsApp session
+    name is resolved in order: ``WHATSAPP_SESSION`` env, then optional persisted
+    ``session`` on this action, then the current agent's name.
     """
 
     provider: str = attribute(
-        default="wppconnect",
+        default="wwebjs",
         description="WhatsApp provider (wppconnect, ultramsg, ts-whatsapp, wwebjs)",
         pattern=r"^(wppconnect|ultramsg|ts-whatsapp|wwebjs)$",
     )
 
-    # Optional configuration fields - no strict validators to allow empty/unconfigured state
-    # Validation is done in is_configured() and healthcheck() methods
-    api_url: Optional[str] = attribute(
-        default=None,
-        description="WhatsApp API Endpoint URL (e.g., https://api.whatsapp.example.com)",
-    )
-
     session: Optional[str] = attribute(
-        default=None, description="WhatsApp session identifier", max_length=100
-    )
-
-    base_url: Optional[str] = attribute(
         default=None,
-        description="Application base URL for webhook generation (JVAGENT_PUBLIC_BASE_URL env var, e.g., https://myapp.example.com)",
+        description="WhatsApp session identifier",
+        max_length=100,
     )
 
     webhook_url: Optional[str] = attribute(
@@ -115,56 +111,51 @@ class WhatsAppAction(Action):
     def _env_token() -> str:
         return env("WHATSAPP_API_KEY") or env("WHATSAPP_TOKEN") or ""
 
-    def _apply_env_defaults(self) -> None:
-        """Apply environment variable defaults for missing configuration.
+    @staticmethod
+    def _whatsapp_api_url() -> str:
+        return (
+            env("WHATSAPP_API_URL") or os.environ.get("WHATSAPP_API_URL") or ""
+        ).strip()
 
-        Sets the following from environment variables if not already configured:
-        - api_url from WHATSAPP_API_URL
-        - api_key from WHATSAPP_API_KEY
-        - base_url from JVAGENT_PUBLIC_BASE_URL
+    @staticmethod
+    def _whatsapp_session_env() -> str:
+        return (
+            env("WHATSAPP_SESSION") or os.environ.get("WHATSAPP_SESSION") or ""
+        ).strip()
 
-        This allows users to set these values once in their .env file
-        instead of configuring them per-action in agent.yaml.
-        """
-        # WhatsApp API URL
-        if not self.api_url or not self.api_url.strip():
-            env_api_url = os.environ.get("WHATSAPP_API_URL", "").strip()
-            if env_api_url:
-                self.api_url = env_api_url
-                logger.debug(f"Using WHATSAPP_API_URL from environment: {env_api_url}")
-
-        # Application Base URL
-        if not self.base_url or not self.base_url.strip():
-            env_base_url = get_public_base_url()
-            if env_base_url:
-                self.base_url = env_base_url
-                logger.debug(
-                    "Using JVAGENT_PUBLIC_BASE_URL from environment: %s", env_base_url
-                )
+    async def _effective_whatsapp_session(self) -> str:
+        name = self._whatsapp_session_env()
+        if name:
+            return name
+        stored = (self.session or "").strip()
+        if stored:
+            return stored
+        agent = await self.get_agent()
+        return (agent.name if agent else "") or ""
 
     def is_configured(self) -> bool:
         """Check if the WhatsApp action has required configuration.
 
         Required configuration:
-        - api_url: WhatsApp API endpoint URL
-        - api_key: WhatsApp API authentication key
-        - base_url: Application base URL for webhook generation
+        - ``WHATSAPP_API_URL`` in the environment
+        - WHATSAPP_API_KEY (or ``WHATSAPP_TOKEN``) in the environment
+        - ``JVAGENT_PUBLIC_BASE_URL`` (via ``get_public_base_url()``)
 
         Returns:
             True if required configuration is present and valid, False otherwise.
         """
-        # Check for required fields - must be non-empty strings
-        if not self.api_url or not self.api_url.strip():
+        api_url = self._whatsapp_api_url()
+        if not api_url:
             return False
         if not self._env_api_key():
             return False
-        if not self.base_url:
+        base_url = get_public_base_url()
+        if not base_url:
             return False
 
-        # Validate URL formats
-        if not self.api_url.startswith(("http://", "https://")):
+        if not api_url.startswith(("http://", "https://")):
             return False
-        if not self.base_url.startswith(("http://", "https://")):
+        if not base_url.startswith(("http://", "https://")):
             return False
 
         return True
@@ -182,21 +173,22 @@ class WhatsAppAction(Action):
     def _config_issues(self) -> list[str]:
         """Get list of configuration issues."""
         issues = []
-        if not self.api_url or not self.api_url.strip():
+        api_url = self._whatsapp_api_url()
+        if not api_url:
             issues.append("api_url (WHATSAPP_API_URL) is not configured")
-        elif not self.api_url.startswith(("http://", "https://")):
+        elif not api_url.startswith(("http://", "https://")):
             issues.append("api_url must be a valid HTTP/HTTPS URL")
         if not self._env_api_key():
             issues.append("api_key (WHATSAPP_API_KEY) is not configured")
-        if not self.base_url:
+        base_url = get_public_base_url()
+        if not base_url:
             issues.append("base_url (JVAGENT_PUBLIC_BASE_URL) is not configured")
-        elif not self.base_url.startswith(("http://", "https://")):
+        elif not base_url.startswith(("http://", "https://")):
             issues.append("base_url must be a valid HTTP/HTTPS URL")
         return issues
 
     async def on_register(self) -> None:
         """Called when action is registered. Validates configuration."""
-        self._apply_env_defaults()
         if not self.is_configured():
             logger.debug("WhatsApp action not configured")
             return
@@ -204,7 +196,6 @@ class WhatsAppAction(Action):
 
     async def on_reload(self) -> None:
         """Called when action is reloaded. Re-registers session with current webhook URL."""
-        self._apply_env_defaults()
         if not self.is_configured():
             logger.debug("WhatsApp action not configured, skipping reload")
             return
@@ -259,7 +250,6 @@ class WhatsAppAction(Action):
 
     async def on_startup(self) -> None:
         """Initialize filter and adapter, attempt session registration with configurable timeout."""
-        self._apply_env_defaults()
         if not self.is_configured() or not self.enabled:
             return
 
@@ -316,7 +306,10 @@ class WhatsAppAction(Action):
                 and result.get("status") != "ERROR"
             ):
                 self._session_registered = True
-                logger.info(f"WhatsApp session '{self.session}' registered on startup")
+                sess = await self._effective_whatsapp_session()
+                logger.info(
+                    "WhatsApp session %r registered on startup", sess or "(unknown)"
+                )
             else:
                 error_msg = (
                     result.get("error") or result.get("message", "Unknown error")
@@ -362,11 +355,18 @@ class WhatsAppAction(Action):
             logger.error(f"Error ensuring adapter registration: {e}", exc_info=True)
             return False
 
-    def api(self) -> Union[WPPConnectAPI, WWebJSAPI, UltraMsgAPI]:
+    async def api(self) -> Union[WPPConnectAPI, WWebJSAPI, UltraMsgAPI]:
         """Get API instance for the configured provider."""
         if not self.is_configured():
             raise ValidationError(
                 f"WhatsApp action is not configured: {'; '.join(self._config_issues())}"
+            )
+
+        session = await self._effective_whatsapp_session()
+        if not session or not session.strip():
+            raise ValidationError(
+                "WhatsApp session name is unavailable (set WHATSAPP_SESSION, "
+                "configure session on the action, or ensure agent name is available)"
             )
 
         # Shorter timeout for webhook path to avoid Lambda stalls (env overrides default only)
@@ -379,27 +379,29 @@ class WhatsAppAction(Action):
                 except ValueError:
                     pass
 
+        api_url = self._whatsapp_api_url()
+
         try:
             if self.provider == "wppconnect":
                 return WPPConnectAPI(
-                    api_url=self.api_url,
-                    session=self.session,
+                    api_url=api_url,
+                    session=session,
                     token=self._env_token(),
                     secret_key=self._env_api_key(),
                     timeout=timeout,
                 )
             elif self.provider == "wwebjs":
                 return WWebJSAPI(
-                    api_url=self.api_url,
-                    session=self.session,
+                    api_url=api_url,
+                    session=session,
                     token=self._env_token(),
                     secret_key=self._env_api_key(),
                     timeout=timeout,
                 )
             elif self.provider == "ultramsg":
                 return UltraMsgAPI(
-                    api_url=self.api_url,
-                    session=self.session,
+                    api_url=api_url,
+                    session=session,
                     token=self._env_token(),
                     secret_key=self._env_api_key(),
                     timeout=timeout,
@@ -418,20 +420,21 @@ class WhatsAppAction(Action):
         self, allowed_ip: Optional[str] = None, regenerate: bool = False
     ) -> str:
         """Generate or retrieve secure webhook URL with API key authentication."""
-        if not self.base_url or not self.base_url.strip():
+        base_url = get_public_base_url()
+        if not base_url or not base_url.strip():
             raise ValidationError(
                 "base_url (JVAGENT_PUBLIC_BASE_URL) is required for webhook URL generation"
             )
-        if not self.base_url.startswith(("http://", "https://")):
+        if not base_url.startswith(("http://", "https://")):
             raise ValidationError(
-                f"base_url must be a valid HTTP/HTTPS URL, got: {self.base_url}"
+                f"base_url must be a valid HTTP/HTTPS URL, got: {base_url}"
             )
 
         try:
             agent = await self.get_agent()
             agent_id = str(agent.id)
             expected_url_base = (
-                f"{self.base_url}/api/whatsapp/interact/webhook/{agent_id}"
+                f"{base_url}/api/whatsapp/interact/webhook/{agent_id}"
             )
 
             prime_ctx = GraphContext(database=get_prime_database())
@@ -499,7 +502,8 @@ class WhatsAppAction(Action):
         if not self.is_configured():
             return
         try:
-            await self.api().set_recording_status(
+            api = await self.api()
+            await api.set_recording_status(
                 phone=phone, value=value, is_group=is_group, duration=duration
             )
         except Exception as e:
@@ -520,15 +524,19 @@ class WhatsAppAction(Action):
 
         try:
             agent = await self.get_agent()
-
-            if not self.session or not self.session.strip():
-                self.session = agent.name
-                await self.save()
+            if not agent:
+                return {
+                    "status": "ERROR",
+                    "ok": False,
+                    "error": "Agent not available for WhatsApp session registration",
+                }
 
             if not self.webhook_url:
                 self.webhook_url = await self.get_webhook_url()
 
-            result = await self.api().register_session(
+            session_name = await self._effective_whatsapp_session()
+            wa = await self.api()
+            result = await wa.register_session(
                 webhook_url=self.webhook_url,
                 wait_qr_code=True,
                 auto_register=True,
@@ -546,11 +554,11 @@ class WhatsAppAction(Action):
                     "message", "Unknown error"
                 )
                 logger.warning(
-                    f"Session registration failed for '{self.session}': {error_msg}"
+                    f"Session registration failed for '{session_name}': {error_msg}"
                 )
                 return result
 
-            logger.debug(f"Session registered: {self.session}")
+            logger.debug("Session registered: %s", session_name)
             return result
 
         except DatabaseError:
@@ -626,6 +634,6 @@ class WhatsAppAction(Action):
         if result["healthy"]:
             result["status"] = "active"
             result["provider"] = self.provider
-            result["api_url"] = self.api_url
+            result["api_url"] = self._whatsapp_api_url()
 
         return result

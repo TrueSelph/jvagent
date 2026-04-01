@@ -26,11 +26,10 @@ class BaseSTTAction(Action, ABC):
     Usage (agent.yaml):
         Register a concrete provider action (e.g. jvagent/deepgram_stt).
         Point WhatsAppAction.stt_action at its class name (e.g. DeepgramSTTAction).
+
+        Provider API keys are read from the environment (``.env``), not stored on the action.
     """
 
-    api_key: Optional[str] = attribute(
-        default=None, description="API key for the provider"
-    )
     timeout: int = attribute(default=30, description="Request timeout in seconds", ge=1)
 
     @abstractmethod

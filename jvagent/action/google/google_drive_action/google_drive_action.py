@@ -4,7 +4,7 @@ from typing import Any, ClassVar, Dict, List, Optional
 
 from googleapiclient.http import MediaIoBaseDownload
 from jvspatial.core.annotations import attribute
-
+from jvspatial.env import env
 from ..google_action import GoogleAction
 
 logger = logging.getLogger(__name__)
@@ -13,13 +13,18 @@ logger = logging.getLogger(__name__)
 class GoogleDriveAction(GoogleAction):
     """Action for Google Drive operations using OAuth2 (user-delegated credentials)."""
 
-    default_parent_id: str = attribute(
-        default="root", description="Default parent folder ID for uploads"
-    )
+    # default_parent_id: str = attribute(
+    #     default="root", description="Default parent folder ID for uploads"
+    # )
 
     API_SERVICE_NAME: ClassVar[str] = "drive"
     API_VERSION: ClassVar[str] = "v3"
     SCOPES: ClassVar[List[str]] = ["https://www.googleapis.com/auth/drive"]
+
+
+    @staticmethod
+    def _env_default_parent_id() -> str:
+        return env("GOOGLE_DRIVE_PARENT_FOLDER_ID")
 
     async def upload_file(
         self,
@@ -31,7 +36,7 @@ class GoogleDriveAction(GoogleAction):
     ) -> Dict[str, Any]:
         """Upload a file to Google Drive."""
         service = await self.get_service()
-        parent_id = parent_folder_id or self.default_parent_id
+        parent_id = parent_folder_id or self._env_default_parent_id()
 
         file_metadata = {"name": name, "parents": [parent_id]}
 
@@ -85,7 +90,7 @@ class GoogleDriveAction(GoogleAction):
             return []
 
         service = await self.get_service()
-        parent_id = folder_id or self.default_parent_id
+        parent_id = folder_id or self._env_default_parent_id()
 
         q = f"'{parent_id}' in parents and trashed = false"
         fields = (

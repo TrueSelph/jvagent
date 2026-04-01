@@ -8,6 +8,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
+from jvspatial.env import env
 
 from jvagent.action.vectorstore.base import VectorStore
 
@@ -36,7 +37,7 @@ class TypesenseVectorStore(VectorStore):
         host: Typesense server host
         port: Typesense server port
         protocol: Protocol to use (http or https)
-        api_key: Typesense API key
+        TYPESENSE_API_KEY: Set in ``.env`` (not stored on this node)
         connection_timeout_seconds: Connection timeout in seconds
         embedding_dimensions: Number of dimensions for embeddings (default: 384 for sentence-transformers)
     """
@@ -62,10 +63,6 @@ class TypesenseVectorStore(VectorStore):
         default="vector",
         description="Name of the vector field in the collection schema (default: 'vector')",
     )
-    api_key: str = attribute(
-        default="",
-        description="Typesense API key",
-    )
     connection_timeout_seconds: int = attribute(
         default=2,
         description="Connection timeout in seconds",
@@ -78,6 +75,10 @@ class TypesenseVectorStore(VectorStore):
     # Internal state
     _client: Optional[Any] = None
     _collections: Dict[str, bool] = {}  # Track created collections
+
+    @staticmethod
+    def _env_api_key() -> str:
+        return env("TYPESENSE_API_KEY")
 
     async def _initialize_client(self) -> None:
         """Initialize Typesense client connection.
@@ -95,8 +96,9 @@ class TypesenseVectorStore(VectorStore):
                 "Please install the typesense package: pip install typesense"
             )
 
-        if not self.api_key:
-            raise ValueError("Typesense API key is required")
+        api_key = (self._env_api_key() or "").strip()
+        if not api_key:
+            raise ValueError("TYPESENSE_API_KEY environment variable is required")
 
         try:
             self._client = typesense.Client(
@@ -108,7 +110,7 @@ class TypesenseVectorStore(VectorStore):
                             "protocol": self.protocol,
                         }
                     ],
-                    "api_key": self.api_key,
+                    "api_key": api_key,
                     "connection_timeout_seconds": self.connection_timeout_seconds,
                 }
             )

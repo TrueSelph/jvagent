@@ -279,25 +279,26 @@ async def append_sheets(
 ) -> Dict[str, Any]:
     """Append ``values`` as new rows after existing data (Sheets API ``values.append``).
 
-    ``range_name`` is **required** (non-empty): it is the **table anchor**—typically a single
-    cell or row in A1 notation (e.g. ``A1`` or ``A1:Z1``) on the target tab. The API finds the
-    table extent from that anchor and appends below it. Combine with ``worksheet_title`` when
+    ``range_name`` is **optional**. When omitted or blank, the range is the **entire worksheet**
+    named by ``worksheet_title`` (defaulting to the action's tab), and Google picks the table
+    extent and insertion point. When set, ``range_name`` is the **table anchor**—often a single
+    cell or header row (e.g. ``A1`` or ``A1:Z1``). Combine with ``worksheet_title`` when
     ``range_name`` does not include a sheet name.
 
     Args:
         action_id: Google Sheets action resource id (path).
         spreadsheet_id: Optional spreadsheet id.
         spreadsheet_url: Optional full Sheets URL or id.
-        range_name: Append anchor range (required).
+        range_name: Append anchor A1 range, or empty for whole-tab append.
         values: Rows to append as a 2D list (required).
         value_input_option: ``RAW`` (default) or ``USER_ENTERED``.
         worksheet_title: Tab when ``range_name`` is not sheet-qualified.
 
     Returns:
-        ``{"success": True, "result": ...}`` including ``updates`` with the range that was written.
+        ``{"success": True, "result": ...}`` including ``updates`` / ``tableRange`` from the API.
 
     Raises:
-        ValidationError: Missing ``values``, empty ``range_name``, missing spreadsheet ref, or API error.
+        ValidationError: Missing ``values``, missing spreadsheet ref, or API error.
     """
     action = await require_typed_action(
         action_id,

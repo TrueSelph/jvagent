@@ -26,11 +26,9 @@ class BaseTTSAction(Action, ABC):
     Usage (agent.yaml):
         Register a concrete provider action (e.g. jvagent/elevenlabs_tts).
         Point WhatsAppAction.tts_action at its class name (e.g. ElevenLabsTTSAction).
-    """
 
-    api_key: Optional[str] = attribute(
-        default=None, description="API key for the provider"
-    )
+        Provider API keys are read from the environment (``.env``), not stored on the action.
+    """
 
     @abstractmethod
     async def invoke(
