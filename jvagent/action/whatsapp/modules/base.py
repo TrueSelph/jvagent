@@ -323,7 +323,15 @@ class BaseWhatsAppAPI(ABC):
                     if resp.content_length and resp.content_length > 0:
                         try:
                             return await resp.json()
-                        except:
+                        except (
+                            json.JSONDecodeError,
+                            aiohttp.ContentTypeError,
+                            ValueError,
+                        ) as e:
+                            self.logger.debug(
+                                "Response body is not JSON, returning raw bytes: %s",
+                                e,
+                            )
                             return {"ok": True, "raw": await resp.read()}
                     return {"ok": True, "no_content": True}
             except BaseException as e:
@@ -399,8 +407,10 @@ class BaseWhatsAppAPI(ABC):
                 if fresh_session and session:
                     try:
                         await session.close()
-                    except:
-                        pass
+                    except Exception as e:
+                        self.logger.debug(
+                            "Fresh session close failed (non-fatal): %s", e
+                        )
 
         # Should not reach here, but just in case
         return {"ok": False, "error": "Request failed after all retries"}

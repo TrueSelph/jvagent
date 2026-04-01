@@ -16,6 +16,7 @@ import yaml
 from jvagent.action.actions import Actions
 from jvagent.action.base import Action
 from jvagent.core.agent import Agent
+from jvagent.core.agent_yaml_validator import warn_agent_yaml
 from jvagent.core.agents import Agents
 from jvagent.core.app import App
 from jvagent.memory import Memory
@@ -129,6 +130,7 @@ class AgentLoader:
             from jvagent.core.env_resolver import resolve_env_placeholders
 
             data = resolve_env_placeholders(data)
+            warn_agent_yaml(data, source=str(agent_file))
 
             return AgentDescriptor(data, agent_path, namespace=namespace)
 

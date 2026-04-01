@@ -11,14 +11,15 @@ from typing import Any, Dict, Optional
 
 import yaml
 from jvspatial.core import Root
+from jvspatial.env import env
 
 from jvagent.core.agent import Agent  # noqa: F401
 from jvagent.core.agent_loader import AgentLoader, _apply_properties
 from jvagent.core.agents import Agents
 from jvagent.core.app import App
+from jvagent.core.app_yaml_validator import warn_app_yaml_descriptor
 from jvagent.core.bootstrap_logger import BootstrapLogger
 from jvagent.core.config import get_file_storage_config, load_app_config
-from jvagent.env import load_env
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +32,7 @@ class AppDescriptor:
     - version: at top level
     - author: at top level
     - context: object containing App node properties (name, description, etc.).
-      File storage paths: use ``config.file_storage`` in app.yaml; ``context.file_storage_*``
-      is legacy (App node still stores copies from the resolved descriptor).
+      File storage paths come from ``config.file_storage`` (or env overrides).
     - license: at top level (metadata, not stored in App node)
     - homepage: at top level (metadata, not stored in App node)
     - tags: at top level (metadata, not stored in App node)
@@ -67,16 +67,22 @@ class AppDescriptor:
         self.description = context.get("description", "")
         # Same precedence as Server / get_file_storage_config: env > config.file_storage > defaults
         # (context.file_storage_* are legacy; config.file_storage in app.yaml is canonical)
-        env = load_env()
         _app_config = load_app_config(str(path))
         _fs = get_file_storage_config(str(path), _app_config)
         self.file_storage_provider = _fs["provider"]
         self.file_storage_root_dir = _fs["root_dir"]
         self.file_storage_enabled = context.get("file_storage_enabled", True)
         self.logging_enabled = context.get("logging_enabled", True)
+        retention_raw = env("JVSPATIAL_LOG_RETENTION_DEFAULT_DAYS", default="")
+        try:
+            default_retention = int(retention_raw) if retention_raw else None
+            if default_retention is not None and default_retention < 0:
+                default_retention = None
+        except ValueError:
+            default_retention = None
         self.log_retention_days = (
-            env.log_retention_default_days
-            if env.log_retention_default_days is not None
+            default_retention
+            if default_retention is not None
             else context.get("log_retention_days", 60)
         )
         self.timezone = context.get("timezone")
@@ -161,6 +167,7 @@ class AppLoader:
             from jvagent.core.env_resolver import resolve_env_placeholders
 
             data = resolve_env_placeholders(data)
+            warn_app_yaml_descriptor(data, source=str(app_file))
 
             return AppDescriptor(data, self.base_path)
 

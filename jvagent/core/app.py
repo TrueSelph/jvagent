@@ -10,12 +10,9 @@ from jvspatial.api.constants import APIRoutes
 from jvspatial.api.context import get_current_server
 from jvspatial.core import Node, Root
 from jvspatial.core.annotations import attribute
-from jvspatial.env import resolve_file_storage_root
+from jvspatial.env import env, resolve_file_storage_root
 from jvspatial.storage import create_storage, get_proxy_manager
 from jvspatial.storage.exceptions import StorageError
-
-from jvagent.core.config import normalize_empty
-from jvagent.env import load_env
 
 
 class App(Node):
@@ -266,8 +263,7 @@ class App(Node):
             return self._file_interface
 
         # Align with get_file_storage_config / Server: env overrides, then node / defaults
-        env = load_env()
-        provider = normalize_empty(os.getenv("JVSPATIAL_FILE_STORAGE_PROVIDER")) or (
+        provider = env("JVSPATIAL_FILE_STORAGE_PROVIDER", default="") or (
             self.file_storage_provider or "local"
         )
         root_dir = resolve_file_storage_root(self.file_storage_root_dir or None)
@@ -278,11 +274,11 @@ class App(Node):
         elif provider == "s3":
             self._file_interface = create_storage(
                 provider="s3",
-                bucket_name=env.s3_bucket_name or "",
-                region_name=env.s3_region_name,
-                access_key_id=env.s3_access_key_id,
-                secret_access_key=env.s3_secret_access_key,
-                endpoint_url=env.s3_endpoint_url,
+                bucket_name=env("JVSPATIAL_S3_BUCKET_NAME", default=""),
+                region_name=env("JVSPATIAL_S3_REGION", default="us-east-1"),
+                access_key_id=env("JVSPATIAL_S3_ACCESS_KEY", default="") or None,
+                secret_access_key=env("JVSPATIAL_S3_SECRET_KEY", default="") or None,
+                endpoint_url=env("JVSPATIAL_S3_ENDPOINT_URL", default="") or None,
             )
         else:
             self._file_interface = create_storage(provider=provider, root_dir=root_dir)

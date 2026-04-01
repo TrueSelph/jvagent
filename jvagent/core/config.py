@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 from typing import Any, Literal, Optional
 
+from jvagent.core.app_yaml_validator import warn_app_yaml_config
 from jvagent.core.env_resolver import resolve_env_placeholders
 
 logger = logging.getLogger(__name__)
@@ -16,50 +17,23 @@ logger = logging.getLogger(__name__)
 EnvironmentMode = Literal["development", "production"]
 
 
-def _get_environment_from_app_config() -> Optional[str]:
-    """Read environment mode from app.yaml.
-
-    Checks config.environment first, then config.development.environment (legacy).
-
-    Returns:
-        'production' or 'development' if found in config, None otherwise
-    """
-    try:
-        from jvagent.core.app_context import get_app_root
-        from jvagent.core.app_loader import AppLoader
-
-        loader = AppLoader(get_app_root())
-        descriptor = loader.load_app_descriptor()
-        if descriptor and descriptor.config:
-            config = descriptor.config
-            val = config.get("environment")
-            if isinstance(val, str):
-                return val.lower()
-            dev_config = config.get("development", {})
-            if isinstance(dev_config, dict) and "environment" in dev_config:
-                val = dev_config["environment"]
-                if isinstance(val, str):
-                    return val.lower()
-    except Exception:
-        pass
-    return None
-
-
 def get_environment_mode() -> EnvironmentMode:
     """Get the current environment mode.
 
     Configuration priority:
-    1. JVAGENT_ENVIRONMENT env var (highest)
-    2. app.yaml config.environment (or config.development.environment legacy)
-    3. Default: development
+    1. JVSPATIAL_ENVIRONMENT env var
+    2. Default: development
 
     Returns:
         'production' if configured as production (case-insensitive),
         'development' otherwise
     """
-    from jvspatial.env import get_environment_mode as _get_mode
+    raw = os.getenv("JVSPATIAL_ENVIRONMENT")
+    if raw is not None and str(raw).strip():
+        mode = str(raw).strip().lower()
+        return "production" if mode == "production" else "development"
 
-    return _get_mode(_get_environment_from_app_config)
+    return "development"
 
 
 def is_development_mode() -> bool:
@@ -101,6 +75,11 @@ def parse_env_bool(raw: Optional[str]) -> Optional[bool]:
     return None
 
 
+def _strict_app_config_load() -> bool:
+    """When True, ``load_app_config`` re-raises after logging (fail-fast)."""
+    return parse_env_bool(os.getenv("JVAGENT_STRICT_CONFIG")) is True
+
+
 def load_app_config(app_root: Optional[str] = None) -> dict:
     """Load app.yaml config section with environment variable resolution.
 
@@ -114,8 +93,8 @@ def load_app_config(app_root: Optional[str] = None) -> dict:
         app_root = os.getcwd()
 
     app_config: dict = {}
+    app_yaml_path = Path(app_root) / "app.yaml"
     try:
-        app_yaml_path = Path(app_root) / "app.yaml"
         if app_yaml_path.exists():
             import yaml
 
@@ -123,8 +102,19 @@ def load_app_config(app_root: Optional[str] = None) -> dict:
                 yaml_data = yaml.safe_load(f)
                 if yaml_data and "config" in yaml_data:
                     app_config = resolve_env_placeholders(yaml_data.get("config", {}))
+                    if isinstance(app_config, dict):
+                        warn_app_yaml_config(
+                            app_config, source=f"{app_yaml_path}:config"
+                        )
     except Exception as e:
-        logger.debug("Could not load app.yaml config: %s", e)
+        logger.warning(
+            "Could not load app.yaml config from %s: %s",
+            app_yaml_path,
+            e,
+            exc_info=True,
+        )
+        if _strict_app_config_load():
+            raise
 
     return app_config
 
@@ -262,6 +252,7 @@ def load_app_yaml_app_id(app_root: str) -> Optional[str]:
             data = yaml.safe_load(f)
         if not data:
             return None
+        data = resolve_env_placeholders(data)
         app = data.get("app")
         if isinstance(app, str) and app.strip():
             return app.strip()
@@ -453,6 +444,26 @@ def get_performance_config_value(
         return str(env_value).strip()
 
     if raw is not None:
-        return raw
+        if config_type == bool:
+            if isinstance(raw, bool):
+                return raw
+            if isinstance(raw, str):
+                pb = parse_env_bool(raw)
+                return default if pb is None else pb
+            return bool(raw)
+        if config_type == int:
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                return default
+        if config_type == float:
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                return default
+        try:
+            return config_type(raw)
+        except Exception:
+            return default
 
     return default

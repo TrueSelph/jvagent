@@ -29,6 +29,7 @@ classifiers = [
 
 dependencies = [
     "aiohttp>=3.9.0",
+    # CI records the resolved jvspatial version after install (see .github/workflows/test-jvagent.yaml).
     "jvspatial>=0.0.6",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.0",

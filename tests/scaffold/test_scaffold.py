@@ -66,6 +66,12 @@ def test_create_app_minimal(tmp_path: Path) -> None:
     with open(out / "app.yaml", "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     assert "jvagent/bot" in data["agents"]
+    assert "database" not in data.get("config", {})
+    assert "logging" not in data.get("config", {})
+    assert "paths" not in data.get("config", {})
+    assert "admin" not in data.get("config", {})
+    assert "host" not in data.get("config", {}).get("server", {})
+    assert "file_storage_provider" not in data.get("context", {})
 
 
 def test_agent_create_adds_to_app(tmp_path: Path) -> None:
@@ -114,3 +120,23 @@ def test_duplicate_agent_in_yaml_raises(tmp_path: Path) -> None:
                 agent_spec="jvagent/first@minimal",
             )
         )
+
+
+def test_create_app_email_updates_env_example(tmp_path: Path) -> None:
+    out = tmp_path / "app_email"
+    create_app(
+        CreateAppContext(
+            output_dir=out,
+            app_id="email_app",
+            title="Email App",
+            description="Desc",
+            author="Tester",
+            agent_specs=["jvagent/bot@minimal"],
+            default_profile="minimal",
+            copy_builtin_profiles=False,
+            init_git=False,
+            admin_email="ops@example.com",
+        )
+    )
+    env_example = (out / ".env.example").read_text(encoding="utf-8")
+    assert "JVAGENT_ADMIN_EMAIL=ops@example.com" in env_example

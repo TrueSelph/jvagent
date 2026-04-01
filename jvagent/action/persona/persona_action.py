@@ -9,6 +9,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
+from jvspatial.api.exceptions import ValidationError
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
@@ -205,6 +206,7 @@ class PersonaAction(Action):
             Generated response string from the language model
 
         Raises:
+            ValidationError: If there are no directives or parameters to apply for this turn.
             RuntimeError: If PersonaAction is not attached to an agent or model action not found
         """
         # Get model action (required=True raises error if not found)
@@ -241,11 +243,13 @@ class PersonaAction(Action):
         # Validate that there are directives and/or parameters to proceed
         # applicable_parameters now includes persona parameters from the interaction
         if not (applicable_directives or applicable_parameters):
-            raise ValueError(
-                "PersonaAction.respond: Cannot proceed - no directives or parameters found. "
-                "At least one of the following must be present: "
-                "unexecuted directives from other actions, unexecuted parameters from other actions, "
-                "or PersonaAction's own parameters."
+            raise ValidationError(
+                message=(
+                    "No persona directives or parameters are available for this turn. "
+                    "Ensure the interaction has unexecuted directives or parameters, "
+                    "or configure PersonaAction parameters."
+                ),
+                details={"reason": "no_directives_or_parameters"},
             )
 
         # Generate response using direct prompt approach (pass model_action to avoid second lookup)

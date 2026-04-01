@@ -38,7 +38,7 @@ Creates the output directory and writes:
 | `--dir PATH` | Output directory (default: current working directory) |
 | `--app-id ID` | Value for `app:` in `app.yaml` and typical `JVAGENT_APP_ID` |
 | `--title`, `--description`, `--author` | Metadata (required with `--yes`) |
-| `--email` | Admin email in `app.yaml` (`config.admin.email`) |
+| `--email` | Admin email in generated `.env.example` (`JVAGENT_ADMIN_EMAIL`) |
 | `--version`, `--license`, `--homepage` | App metadata defaults |
 | `--jvagent-version SPEC` | `jvagent:` semver in YAML (default `~<installed version>`) |
 | `--deployment` | `local` (default), `aws-lambda`, or `azure-functions` |

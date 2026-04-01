@@ -99,7 +99,7 @@ After installing jvagent, you can run this example application:
 
 The `app.yaml` file is the main application descriptor that defines:
 - Application metadata (name, version, description, etc.)
-- Application configuration defaults
+- Safe application configuration defaults
 - List of agents (agents listed here are automatically installed when you run jvagent)
 - Location of each agent package (discovered from the `agents/` directory structure)
 
@@ -110,16 +110,26 @@ The `app.yaml` file is the main application descriptor that defines:
 app: jvagent_demo_app
 
 # Application metadata
-  version: 1.0.0
+version: 1.0.0
 author: Your Name/Organization
 
 # Application context: Properties that configure the App node
 context:
   name: jvagent Demo App
   description: Demo application
-  file_storage_provider: local
-  file_storage_root_dir: ./.files
-  file_storage_enabled: true
+
+config:
+  server:
+    title: Demo API
+    description: API for demo app
+    version: 0.0.1
+
+  auth:
+    enabled: true
+    exempt_paths:
+      - /health
+      - /docs
+      - /openapi.json
 
 # Agents (list of namespace/agent_name strings)
 # Agents listed here are automatically installed when you run jvagent or bootstrap
@@ -332,6 +342,11 @@ actions:
       api_endpoint: "https://prod.api.example.com"
 ```
 
+`agent.yaml` uses warn-only structural validation:
+- expected top-level structure is validated (`agent`, metadata, `context`, `actions`)
+- each `actions[]` entry is validated for shape (`action`, optional `context`, optional `config`)
+- custom keys inside `actions[].context` and `actions[].config` are allowed for custom actions
+
 ## Configuration
 
 ### Configuration Priority
@@ -343,57 +358,29 @@ Configuration is loaded with the following priority (highest to lowest):
 
 ### Application Configuration (app.yaml)
 
-The `app.yaml` file includes a comprehensive `config` section with application-level defaults. Most non-sensitive configuration should be in `app.yaml`:
+Use `app.yaml` for app structure and high-convenience defaults that are safe in git:
 
-**Server Configuration:**
-- `server.title`, `server.description`, `server.version`
-- `server.host`, `server.port`
+- `app`, `context` metadata, `agents`
+- `config.server` metadata (`title`, `description`, `version`, docs routes)
+- `config.auth.enabled` and `config.auth.exempt_paths`
+- `config.interact` limits
+- `config.cors` defaults
+- `config.performance` defaults
 
-**Database Configuration:**
-- `database.type` - Database type (`json`, `mongodb`, `sqlite`, `dynamodb`)
-- `database.uri` - MongoDB connection URI (default: `mongodb://localhost:27017`)
-- `database.name` - Database name (default: `jvagent_db`)
-- `database.path` - Path for JSON/SQLite databases
+Keep these env-first (even when YAML fallbacks exist):
 
-**File Storage Configuration:**
-- `file_storage.provider` - Storage provider (`local`, `s3`)
-- `file_storage.root_dir` - Root directory for local storage
-- `file_storage.enabled` - Enable/disable file storage
+- Secrets (`JVSPATIAL_JWT_SECRET_KEY`, `JVAGENT_ADMIN_PASSWORD`, vendor API keys)
+- System/runtime and deploy-specific values (`JVAGENT_HOST`, `JVAGENT_PORT`, DB/storage/log backend keys)
+- Credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, S3 keys)
 
-**Authentication Configuration:**
-- `auth.enabled` - Enable authentication
-- `auth.jwt_expire_minutes` - JWT expiration time
+The descriptor follows an expected-key model:
 
-**Logging Configuration:**
-- `logging.enabled` - Enable/disable logging
-- `logging.levels` - Comma-separated log levels (e.g., `INTERACTION,ERROR,CRITICAL`)
-- `logging.retention_days` - Log retention period in days
-- `logging.database` - Logging database configuration
-
-**CORS Configuration:**
-- `cors.enabled` - Enable CORS
-- `cors.origins` - Comma-separated list of allowed origins
-
-**Runtime Environment:**
-- `environment` - Environment mode (`development` or `production`). Set to `production` for shorter, secure interact payloads (excludes actions, directives, observability metrics, report). Override via `JVAGENT_ENVIRONMENT` env var.
-
-**API Configuration:**
-- `api.prefix` - API route prefix
-- `api.graph_endpoint_enabled` - Enable graph visualization endpoint
-
-**Performance Configuration:**
-- `performance.enable_profiling` - Enable request latency profiling (default: `false`)
-- `performance.enable_agent_cache` - Enable agent node caching (env: JVAGENT_ENABLE_AGENT_CACHE, default: `true`)
-- `performance.agent_cache_ttl` - Agent cache TTL in seconds (default: `300`)
-- `performance.enable_action_cache` - Enable action caching during discovery (default: `true`)
-- `performance.action_cache_ttl` - Action cache TTL in seconds (default: `60`)
-- `performance.enable_deferred_saves` - Batch entity saves for rapid updates (default: `true`)
-
-**Note**: Configuration in `app.yaml` can use environment variable placeholders (e.g., `${VAR_NAME}`) which are automatically resolved when the app is loaded.
+- use only documented top-level keys and documented `config` sections
+- any key outside the expected model is flagged as unexpected at startup
 
 ### Environment Configuration (.env)
 
-The `.env` file should **ONLY contain sensitive information** that should not be committed to version control:
+The `.env` file should contain secrets and environment-specific overrides:
 
 **Required Secrets:**
 - `OPENAI_API_KEY` - OpenAI API key (for language model actions)
@@ -411,7 +398,7 @@ You can override any `app.yaml` configuration using environment variables if nee
 **Important**:
 - Add `.env` to `.gitignore` to prevent committing secrets
 - In production, use secure secret management (environment variables, secret managers, etc.)
-- Non-sensitive configuration should be in `app.yaml`, not `.env`
+- Put deploy-specific values in env even when YAML fallbacks exist
 
 ## Running the Application
 

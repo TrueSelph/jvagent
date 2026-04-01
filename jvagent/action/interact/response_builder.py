@@ -12,7 +12,7 @@ def build_interaction_payload(
 ) -> Dict[str, Any]:
     """Build interaction payload, filtering debug data in production.
 
-    In production mode (JVAGENT_ENVIRONMENT or config.environment), returns
+    In production mode (JVSPATIAL_ENVIRONMENT=production), returns
     minimal payload with only: id, utterance, response.
 
     In development mode, returns full payload with: id, utterance, response,

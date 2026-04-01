@@ -268,6 +268,17 @@ async def update_parameter_endpoint(
             details={},
         )
 
+    if "condition" in updates and not updates["condition"]:
+        raise ValidationError(
+            message="condition cannot be empty",
+            details={"condition": updates.get("condition")},
+        )
+    if "response" in updates and not updates["response"]:
+        raise ValidationError(
+            message="response cannot be empty",
+            details={"response": updates.get("response")},
+        )
+
     if action_node.parameters is None:
         action_node.parameters = []
     param_index = _parse_param_id(param_id, action_node.parameters)
@@ -336,6 +347,16 @@ async def delete_parameter_endpoint(
                 description="Number of parameters imported",
                 example=5,
             ),
+            "skipped": ResponseField(
+                field_type=int,
+                description="Rows not imported (invalid or empty condition/response)",
+                example=0,
+            ),
+            "skipped_details": ResponseField(
+                field_type=List[Dict[str, Any]],
+                description="Per-row skip reasons (0-based index in request list)",
+                example=[{"index": 2, "reason": "condition and response required"}],
+            ),
             "message": ResponseField(
                 field_type=str,
                 description="Success message",
@@ -372,19 +393,52 @@ async def import_parameters_endpoint(
     if action_node.parameters is None:
         action_node.parameters = []
 
-    # Add all parameters
     imported_count = 0
-    for param in parameters:
-        # Validate required fields
-        if not param.get("condition") or not param.get("response"):
+    skipped_details: List[Dict[str, Any]] = []
+    for idx, param in enumerate(parameters):
+        if not isinstance(param, dict):
+            skipped_details.append(
+                {"index": idx, "reason": "each entry must be an object"}
+            )
+            continue
+        raw_c = param.get("condition")
+        raw_r = param.get("response")
+        if not isinstance(raw_c, str) or not isinstance(raw_r, str):
+            skipped_details.append(
+                {
+                    "index": idx,
+                    "reason": "condition and response must be strings",
+                }
+            )
+            continue
+        cond = raw_c.strip()
+        resp = raw_r.strip()
+        if not cond or not resp:
+            skipped_details.append(
+                {
+                    "index": idx,
+                    "reason": "condition and response are required and non-empty",
+                }
+            )
             continue
 
-        action_node.parameters.append(param)
+        row = dict(param)
+        row["condition"] = cond
+        row["response"] = resp
+        action_node.parameters.append(row)
         imported_count += 1
 
     await action_node.save()
 
+    skipped = len(skipped_details)
+    if skipped:
+        msg = f"Imported {imported_count} parameter(s), skipped {skipped}"
+    else:
+        msg = f"Imported {imported_count} parameters"
+
     return {
         "imported": imported_count,
-        "message": f"Imported {imported_count} parameters",
+        "skipped": skipped,
+        "skipped_details": skipped_details,
+        "message": msg,
     }

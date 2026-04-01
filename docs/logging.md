@@ -72,7 +72,7 @@ The logging system uses **jvspatial** environment variables (`JVSPATIAL_DB_LOGGI
 - `JVSPATIAL_LOG_DB_PATH` - Path for JSON/SQLite (defaults to `./jvagent_logs`)
 - `JVSPATIAL_LOG_DB_URI` - MongoDB URI (if different from prime database)
 - `JVSPATIAL_LOG_DB_NAME` - MongoDB database name (defaults to `jvagent_logs`)
-- `JVSPATIAL_LOG_RETENTION_DEFAULT_DAYS` - Default retention period in days when unset in app.yaml (optional; `0` = indefinite); same variable as jvspatial `load_env().log_retention_default_days`
+- `JVSPATIAL_LOG_RETENTION_DEFAULT_DAYS` - Default retention period in days when unset in app.yaml (optional; `0` = indefinite); same variable read by jvspatial live env helpers
 
 **Note:** Use `JVSPATIAL_DB_LOGGING_LEVELS` (comma-separated set of levels to persist), not any `JVAGENT_DB_LOGGING_*` or `JVAGENT_LOG_DB_*` name. There is no `JVAGENT_LOG_DB_LEVEL` in code paths.
 

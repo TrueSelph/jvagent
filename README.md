@@ -376,7 +376,7 @@ This will:
 - Start with a completely fresh database
 - Bootstrap the application from scratch
 
-**Note:** The `--purge` flag is only available in development mode (`JVAGENT_ENVIRONMENT=development`, which is the default). It will be blocked in production mode to prevent accidental data loss.
+**Note:** The `--purge` flag is only available in development mode (`JVSPATIAL_ENVIRONMENT=development`, which is the default). It will be blocked in production mode to prevent accidental data loss.
 
 ### Running Without an App Directory
 
@@ -1076,9 +1076,10 @@ actions:
   - action: jvagent/openai_lm
     context:
       enabled: true
-      api_key: ${OPENAI_API_KEY}
       model: gpt-4o-mini
 ```
+
+OpenAI actions read credentials from environment (`OPENAI_API_KEY`).
 
 **Available Core Actions:**
 - **Interact Actions**: `jvagent/interact_router`, `jvagent/retrieval_interact_action`, `jvagent/intro_interact_action`, `jvagent/interview_interact_action`, `jvagent/converse_interact_action`, `jvagent/pageindex_retrieval_interact_action` (pip deps in `jvagent/action/pageindex/info.yaml`, auto-installed at action load by default)
@@ -1525,10 +1526,10 @@ Key environment variables (see `.env.example` for full list):
 - `JVAGENT_PORT` - Server port (default: `8000`)
 - `JVAGENT_TITLE` - API title
 - `JVAGENT_VERSION` - Application version
-- `JVAGENT_ENVIRONMENT` - Environment mode: `development` or `production` (default: `development`)
+- `JVSPATIAL_ENVIRONMENT` - Environment mode: `development` or `production` (default: `development`)
   - In `production` mode: Shorter, secure interact payloads—API responses exclude observability metrics, walker reports, and debugging data (id, utterance, response only)
   - In `development` mode: API responses include full debugging and observability information
-  - Case-insensitive. Can also be set via `config.environment` in app.yaml (env var takes precedence)
+  - Case-insensitive. Environment-variable only.
 
 **Database Configuration:**
 - `JVSPATIAL_DB_TYPE` - Database type: `json` or `mongodb` (default: `json`)
@@ -1965,7 +1966,7 @@ docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-jvagent-app:latest
 Then deploy as a container-based Lambda function with:
 - Container image from ECR
 - EFS mount point configured (for `/mnt/venv`)
-- Environment variables configured (set `JVAGENT_ENVIRONMENT=production` for shorter, secure interact payloads)
+- Environment variables configured (set `JVSPATIAL_ENVIRONMENT=production` for shorter, secure interact payloads)
 - API Gateway HTTP API trigger
 
 **Local Testing:**
@@ -2004,6 +2005,8 @@ For more details, see [jvagent/bundle/README.md](jvagent/bundle/README.md).
 ### Core Documentation
 
 - [Configuration reference](docs/configuration.md) — `app.yaml` ↔ env mapping, prefix rules, jvspatial alignment
+- [app.yaml migration playbook](docs/app-yaml-migration-playbook.md) - AI-agent-ready retrofit guide from legacy descriptors
+- [agent.yaml migration playbook](docs/agent-yaml-migration-playbook.md) - AI-agent-ready structural migration guide with custom-action-safe rules
 - [Integration environment variables](docs/integrations-environment.md) — Vendor and action env inventory
 - [App scaffolding CLI](docs/scaffolding.md) - `jvagent app create`, `agent create`, `app profile new`, action profiles
 - [Memory System](jvagent/memory/README.md) - Conversation, Interaction, User, and Memory APIs

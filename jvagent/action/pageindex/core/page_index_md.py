@@ -5,7 +5,7 @@ import re
 
 try:
     from .utils import *
-except:
+except ImportError:
     from utils import *
 
 

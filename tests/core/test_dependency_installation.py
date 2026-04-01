@@ -147,8 +147,7 @@ class TestDependencyInstallation:
         with patch(
             "jvagent.core.dependency_installer.install_pip_dependencies"
         ) as mock_install:
-            with patch("jvagent.env.load_env") as mock_load_env:
-                mock_load_env.return_value.disable_runtime_pip_install = True
+            with patch("jvspatial.env.env", return_value="true"):
                 result = install_action_dependencies(
                     metadata, "test_action", Path("/tmp/test")
                 )

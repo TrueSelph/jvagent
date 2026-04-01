@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from jvspatial.env import clear_load_env_cache
+from jvspatial.env import env
 from jvspatial.logging import configure_standard_logging
 
 from jvagent.cli import app_commands
@@ -19,14 +19,14 @@ from jvagent.cli.commands import (
     print_usage,
     purge_app_data,
     run_server,
+    run_validate,
     show_status,
 )
 from jvagent.cli.server_config import _set_db_env_from_config
 from jvagent.core.config import is_development_mode
-from jvagent.env import load_env
 
 configure_standard_logging(
-    level=load_env().log_level or "INFO",
+    level=env("JVSPATIAL_LOG_LEVEL", default="INFO"),
     enable_colors=True,
     preserve_handler_class_names=["DBLogHandler", "StartupLogCounter"],
 )
@@ -44,7 +44,16 @@ def main() -> None:
     # Extract app root path (first positional argument that's not a flag or command)
     # This handles both: "jvagent /path/to/app bundle" and "jvagent bundle /path/to/app"
     app_root = None
-    commands = ["run", "status", "agent", "action", "bootstrap", "bundle", "app"]
+    commands = [
+        "run",
+        "status",
+        "agent",
+        "action",
+        "bootstrap",
+        "bundle",
+        "app",
+        "validate",
+    ]
     flags = ["--debug", "--update", "--purge", "--source", "--merge", "--serverless"]
 
     # Find app root: first argument that's not a command or flag
@@ -67,8 +76,6 @@ def main() -> None:
 
     # Load .env first so JVAGENT_APP_ID and other vars override app.yaml before any other code runs
     load_app_env(app_root=app_root)
-    # jvspatial load_env() is cached; invalidate so JVSPATIAL_* from .env (e.g. log DB path) apply
-    clear_load_env_cache()
 
     # Set the global app root for config loading in other modules
     from jvagent.core.app_context import set_app_root
@@ -92,8 +99,6 @@ def main() -> None:
         )
 
     _set_db_env_from_config(app_root)
-    # jvspatial load_env() is LRU-cached; refresh after DB env vars are applied
-    clear_load_env_cache()
 
     # Check for --debug flag
     debug_flag = "--debug" in args
@@ -132,7 +137,7 @@ def main() -> None:
         if not is_development_mode():
             logger.error("The --purge flag is only allowed in development mode.")
             logger.error(
-                "Set JVAGENT_ENVIRONMENT=development or ensure you are not in production mode."
+                "Set JVSPATIAL_ENVIRONMENT=development or ensure you are not in production mode."
             )
             sys.exit(1)
 
@@ -158,5 +163,7 @@ def main() -> None:
     elif args[0] == "bundle":
         # Bundle application for deployment
         handle_bundle_command(args[1:], app_root=app_root)
+    elif args[0] == "validate":
+        sys.exit(run_validate(app_root))
     else:
         print_usage()

@@ -25,6 +25,12 @@ jobs:
       - name: Install jvagent package with test dependencies
         run: python -m pip install -e '.[test]'
 
+      - name: Record jvspatial version (integration smoke)
+        run: python -c "import importlib.metadata as m; print('jvspatial', m.version('jvspatial'))"
+
+      - name: Validate example app YAML
+        run: python -m jvagent.cli validate examples/jvagent_app
+
       - name: Run tests
         run: pytest tests/ -v --tb=short
 

@@ -44,8 +44,7 @@ class MyTopLevelAction(InteractAction):
 
 The `/agents/{agent_id}/interact` endpoint response format varies based on environment mode. Use **production** mode for shorter, more secure payloads (minimal fields only). Configuration:
 
-- **`JVAGENT_ENVIRONMENT`** env var (highest priority)
-- **`config.environment`** in app.yaml (fallback)
+- **`JVSPATIAL_ENVIRONMENT`** env var
 
 ### Production Mode (shorter, secure payloads)
 
@@ -74,7 +73,7 @@ The `/agents/{agent_id}/interact` endpoint response format varies based on envir
 - `interaction.observability_metrics` - Model calls, token counts, etc.
 - `interaction.streamed` - Streaming flag
 
-### Development Mode (`JVAGENT_ENVIRONMENT=development`, default)
+### Development Mode (`JVSPATIAL_ENVIRONMENT=development`, default)
 
 **Full payload** - includes all debugging and observability data:
 
@@ -136,7 +135,7 @@ For streaming responses (`stream=true`), stream chunk messages also respect the 
 - **Observability data**: Never included in stream chunks (keeps payloads lightweight)
 - **Timestamp**: Omitted for `stream_chunk` messages (not useful - chunks arrive in order)
 - **Delivered status**: Omitted (only meaningful for channel adapters, not SSE streaming)
-- **Final chunk**: Uses the same filtering as non-streaming responses based on `JVAGENT_ENVIRONMENT`
+- **Final chunk**: Uses the same filtering as non-streaming responses based on `JVSPATIAL_ENVIRONMENT`
 
 ### Configuration
 
@@ -145,19 +144,13 @@ For shorter, secure interact payloads in production, set environment mode to `pr
 **Option 1: Environment variable** (`.env` or deployment config)
 ```bash
 # Development (default) - includes all debug data
-JVAGENT_ENVIRONMENT=development
+JVSPATIAL_ENVIRONMENT=development
 
 # Production - minimal payload only (recommended for production)
-JVAGENT_ENVIRONMENT=production
+JVSPATIAL_ENVIRONMENT=production
 ```
 
-**Option 2: app.yaml** (`config.environment`)
-```yaml
-config:
-  environment: production  # Shorter, secure interact payloads
-```
-
-The environment variable takes precedence over app config. Both are case-insensitive. Defaults to `development` if neither is set.
+The environment variable is case-insensitive. Defaults to `development` if unset.
 
 ## respond() Method
 

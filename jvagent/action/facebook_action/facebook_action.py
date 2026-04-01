@@ -13,6 +13,7 @@ from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.core.annotations import attribute
 from jvspatial.core.context import GraphContext
 from jvspatial.db import get_prime_database
+from jvspatial.env import env
 from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.action.base import Action
@@ -31,26 +32,9 @@ class FacebookAction(Action):
         default=None,
         description="Graph API base URL (e.g. https://graph.facebook.com/v25.0/)",
     )
-    app_secret: Optional[str] = attribute(
-        default=None, description="Facebook app secret"
-    )
     app_id: Optional[str] = attribute(default=None, description="Facebook app ID")
     page_id: Optional[str] = attribute(
         default=None, description="Facebook Page ID for API calls"
-    )
-    access_token: Optional[str] = attribute(
-        default=None,
-        description=(
-            "User OAuth access token for /me and /me/accounts (Page token resolution)"
-        ),
-    )
-    page_access_token: Optional[str] = attribute(
-        default=None,
-        description="Page access token for Page-scoped Graph API (feed, Messenger, etc.)",
-    )
-    verify_token: Optional[str] = attribute(
-        default=None,
-        description="Webhook verify token (hub.verify_token) for Meta subscriptions",
     )
     fields: Optional[str] = attribute(
         default="feed,messages,messaging_postbacks,message_deliveries,standby,mention",
@@ -76,6 +60,10 @@ class FacebookAction(Action):
     webhook_url: Optional[str] = attribute(
         default=None,
         description="Facebook webhook URL (auto-generated if not provided)",
+    )
+    verify_token: Optional[str] = attribute(
+        default=None,
+        description="Webhook verify token (falls back to FACEBOOK_VERIFY_TOKEN)",
     )
 
     webhook_api_key_id: Optional[str] = attribute(
@@ -111,16 +99,31 @@ class FacebookAction(Action):
         ge=0.0,
         le=60.0,
     )
+    _resolved_page_access_token: Optional[str] = attribute(private=True, default=None)
+
+    @staticmethod
+    def _app_secret() -> str:
+        return env("FACEBOOK_APP_SECRET")
+
+    @staticmethod
+    def _access_token() -> str:
+        return env("FACEBOOK_ACCESS_TOKEN")
+
+    def _page_access_token(self) -> str:
+        return self._resolved_page_access_token or env("FACEBOOK_PAGE_ACCESS_TOKEN")
+
+    def _verify_token(self) -> str:
+        configured = getattr(self, "verify_token", None)
+        if isinstance(configured, str) and configured.strip():
+            return configured.strip()
+        return env("FACEBOOK_VERIFY_TOKEN")
 
     def _apply_env_defaults(self) -> None:
         """Fill missing config from FACEBOOK_* and optional GRAPH_API_VERSION."""
         env_map = [
             ("api_url", "FACEBOOK_API_URL"),
-            ("app_secret", "FACEBOOK_APP_SECRET"),
             ("app_id", "FACEBOOK_APP_ID"),
             ("page_id", "FACEBOOK_PAGE_ID"),
-            ("access_token", "FACEBOOK_ACCESS_TOKEN"),
-            ("verify_token", "FACEBOOK_VERIFY_TOKEN"),
             ("fields", "FACEBOOK_WEBHOOK_FIELDS"),
         ]
         for attr, env_key in env_map:
@@ -132,12 +135,6 @@ class FacebookAction(Action):
                     logger.debug(
                         "Using %s from environment for Facebook action", env_key
                     )
-
-        pat = getattr(self, "page_access_token", None)
-        if pat is None or (isinstance(pat, str) and not pat.strip()):
-            val = os.environ.get("FACEBOOK_PAGE_ACCESS_TOKEN", "").strip()
-            if val:
-                self.page_access_token = val
 
         if not self.api_url or not str(self.api_url).strip():
             base = os.environ.get("FACEBOOK_GRAPH_BASE", "").strip()
@@ -183,20 +180,18 @@ class FacebookAction(Action):
             )
         elif not str(self.api_url).strip().startswith(("http://", "https://")):
             issues.append("api_url must be a valid HTTP/HTTPS URL")
-        for name, label in [
-            ("app_secret", "FACEBOOK_APP_SECRET"),
-            ("app_id", "FACEBOOK_APP_ID"),
-            ("page_id", "FACEBOOK_PAGE_ID"),
-        ]:
-            val = getattr(self, name, None)
-            if not val or not str(val).strip():
-                issues.append(f"{name} ({label}) is not configured")
+        if not self._app_secret():
+            issues.append("app_secret (FACEBOOK_APP_SECRET) is not configured")
+        if not self.app_id or not str(self.app_id).strip():
+            issues.append("app_id (FACEBOOK_APP_ID) is not configured")
+        if not self.page_id or not str(self.page_id).strip():
+            issues.append("page_id (FACEBOOK_PAGE_ID) is not configured")
         return issues
 
     def _config_issues(self) -> List[str]:
         issues = self._base_graph_config_issues()
-        has_user = bool(self.access_token and str(self.access_token).strip())
-        has_page = bool(self.page_access_token and str(self.page_access_token).strip())
+        has_user = bool(self._access_token())
+        has_page = bool(self._page_access_token())
         if not has_user and not has_page:
             issues.append(
                 "Set FACEBOOK_ACCESS_TOKEN (user) and/or FACEBOOK_PAGE_ACCESS_TOKEN (Page)"
@@ -210,20 +205,20 @@ class FacebookAction(Action):
         self._apply_env_defaults()
         if self._base_graph_config_issues():
             return None
-        page_tok = str(self.page_access_token).strip() if self.page_access_token else ""
+        page_tok = self._page_access_token()
         if not page_tok:
             return None
         api_url = str(self.api_url).strip()
         if not api_url.endswith("/"):
             api_url = api_url + "/"
-        user_tok = str(self.access_token).strip() if self.access_token else ""
+        user_tok = self._access_token()
         return FacebookAPI(
             api_url=api_url,
-            app_secret=str(self.app_secret).strip(),
+            app_secret=self._app_secret(),
             app_id=str(self.app_id).strip(),
             page_id=str(self.page_id).strip(),
             page_access_token=page_tok,
-            verify_token=str(self.verify_token or "").strip(),
+            verify_token=self._verify_token(),
             fields=(str(self.fields).strip() if self.fields else None) or None,
             timeout=int(self.timeout),
             published=bool(self.published),
@@ -236,7 +231,7 @@ class FacebookAction(Action):
         self._apply_env_defaults()
         if self._base_graph_config_issues():
             return None
-        user_tok = str(self.access_token).strip() if self.access_token else ""
+        user_tok = self._access_token()
         if not user_tok:
             return None
         api_url = str(self.api_url).strip()
@@ -244,11 +239,11 @@ class FacebookAction(Action):
             api_url = api_url + "/"
         return FacebookAPI(
             api_url=api_url,
-            app_secret=str(self.app_secret).strip(),
+            app_secret=self._app_secret(),
             app_id=str(self.app_id).strip(),
             page_id=str(self.page_id).strip(),
             page_access_token="",
-            verify_token=str(self.verify_token or "").strip(),
+            verify_token=self._verify_token(),
             fields=(str(self.fields).strip() if self.fields else None) or None,
             timeout=int(self.timeout),
             published=bool(self.published),
@@ -283,11 +278,11 @@ class FacebookAction(Action):
             api_url = api_url + "/"
         return FacebookAPI(
             api_url=api_url,
-            app_secret=str(self.app_secret).strip(),
+            app_secret=self._app_secret(),
             app_id=str(self.app_id).strip(),
             page_id=str(self.page_id).strip(),
             page_access_token="",
-            verify_token=str(self.verify_token or "").strip(),
+            verify_token=self._verify_token(),
             fields=(str(self.fields).strip() if self.fields else None) or None,
             timeout=int(self.timeout),
             published=bool(self.published),
@@ -306,7 +301,7 @@ class FacebookAction(Action):
                 ),
                 details={"action_id": getattr(self, "id", None)},
             )
-        page_tok = str(self.page_access_token).strip() if self.page_access_token else ""
+        page_tok = self._page_access_token()
         if not page_tok:
             raise ValidationError(
                 message=(
@@ -328,9 +323,9 @@ class FacebookAction(Action):
         return client
 
     async def _maybe_resolve_page_access_token(self) -> None:
-        if self.page_access_token and str(self.page_access_token).strip():
+        if self._page_access_token():
             return
-        user_tok = str(self.access_token).strip() if self.access_token else ""
+        user_tok = self._access_token()
         page_id = str(self.page_id).strip() if self.page_id else ""
         if not user_tok or not page_id:
             return
@@ -343,7 +338,7 @@ class FacebookAction(Action):
     ) -> Union[str, Dict[str, Any]]:
         """Meta GET webhook verification (hub.* query params). No Graph token required."""
         self._apply_env_defaults()
-        expected = str(self.verify_token or "").strip()
+        expected = self._verify_token()
         mode = query.get("hub.mode")
         hub_verify = query.get("hub.verify_token")
         challenge = query.get("hub.challenge")
@@ -718,12 +713,12 @@ class FacebookAction(Action):
     async def ensure_page_access_token(self) -> Dict[str, Any]:
         """Resolve Page token from ``me/accounts`` when unset; persist on match."""
         self._apply_env_defaults()
-        if self.page_access_token and str(self.page_access_token).strip():
+        if self._page_access_token():
             return {"updated": False, "reason": "already_set"}
         page_id = str(self.page_id).strip() if self.page_id else ""
         if not page_id:
             return {"updated": False, "reason": "no_page_id"}
-        user_tok = str(self.access_token).strip() if self.access_token else ""
+        user_tok = self._access_token()
         if not user_tok:
             return {"updated": False, "reason": "no_user_access_token"}
 
@@ -748,7 +743,7 @@ class FacebookAction(Action):
             token = entry.get("access_token")
             if not token or not str(token).strip():
                 return {"updated": False, "reason": "page_entry_missing_token"}
-            self.page_access_token = str(token).strip()
+            self._resolved_page_access_token = str(token).strip()
             await self.save()
             self._apply_env_defaults()
             return {"updated": True, "page_id": page_id}
@@ -765,7 +760,7 @@ class FacebookAction(Action):
                 "healthy": False,
                 "issues": self._config_issues(),
             }
-        if not (self.page_access_token and str(self.page_access_token).strip()):
+        if not self._page_access_token():
             return {
                 "healthy": False,
                 "issues": [

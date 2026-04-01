@@ -8,6 +8,7 @@ from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.core.annotations import attribute
 from jvspatial.core.context import GraphContext
 from jvspatial.db import get_prime_database
+from jvspatial.env import env
 from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.action.base import Action
@@ -47,17 +48,8 @@ class WhatsAppAction(Action):
         description="WhatsApp API Endpoint URL (e.g., https://api.whatsapp.example.com)",
     )
 
-    api_key: Optional[str] = attribute(
-        default=None, description="WhatsApp API Key / Token"
-    )
-
     session: Optional[str] = attribute(
         default=None, description="WhatsApp session identifier", max_length=100
-    )
-
-    token: Optional[str] = attribute(
-        default=None,
-        description="WhatsApp token (alternative to api_key for some providers)",
     )
 
     base_url: Optional[str] = attribute(
@@ -115,6 +107,14 @@ class WhatsAppAction(Action):
 
     # action configuration
 
+    @staticmethod
+    def _env_api_key() -> str:
+        return env("WHATSAPP_API_KEY")
+
+    @staticmethod
+    def _env_token() -> str:
+        return env("WHATSAPP_API_KEY") or env("WHATSAPP_TOKEN") or ""
+
     def _apply_env_defaults(self) -> None:
         """Apply environment variable defaults for missing configuration.
 
@@ -132,13 +132,6 @@ class WhatsAppAction(Action):
             if env_api_url:
                 self.api_url = env_api_url
                 logger.debug(f"Using WHATSAPP_API_URL from environment: {env_api_url}")
-
-        # WhatsApp API Key
-        if not self.api_key or not self.api_key.strip():
-            env_api_key = os.environ.get("WHATSAPP_API_KEY", "").strip()
-            if env_api_key:
-                self.api_key = env_api_key
-                logger.debug("Using WHATSAPP_API_KEY from environment")
 
         # Application Base URL
         if not self.base_url or not self.base_url.strip():
@@ -163,7 +156,7 @@ class WhatsAppAction(Action):
         # Check for required fields - must be non-empty strings
         if not self.api_url or not self.api_url.strip():
             return False
-        if not self.api_key or not self.api_key.strip():
+        if not self._env_api_key():
             return False
         if not self.base_url:
             return False
@@ -193,7 +186,7 @@ class WhatsAppAction(Action):
             issues.append("api_url (WHATSAPP_API_URL) is not configured")
         elif not self.api_url.startswith(("http://", "https://")):
             issues.append("api_url must be a valid HTTP/HTTPS URL")
-        if not self.api_key or not self.api_key.strip():
+        if not self._env_api_key():
             issues.append("api_key (WHATSAPP_API_KEY) is not configured")
         if not self.base_url:
             issues.append("base_url (JVAGENT_PUBLIC_BASE_URL) is not configured")
@@ -391,24 +384,24 @@ class WhatsAppAction(Action):
                 return WPPConnectAPI(
                     api_url=self.api_url,
                     session=self.session,
-                    token=self.token,
-                    secret_key=self.api_key,
+                    token=self._env_token(),
+                    secret_key=self._env_api_key(),
                     timeout=timeout,
                 )
             elif self.provider == "wwebjs":
                 return WWebJSAPI(
                     api_url=self.api_url,
                     session=self.session,
-                    token=self.token,
-                    secret_key=self.api_key,
+                    token=self._env_token(),
+                    secret_key=self._env_api_key(),
                     timeout=timeout,
                 )
             elif self.provider == "ultramsg":
                 return UltraMsgAPI(
                     api_url=self.api_url,
                     session=self.session,
-                    token=self.token,
-                    secret_key=self.api_key,
+                    token=self._env_token(),
+                    secret_key=self._env_api_key(),
                     timeout=timeout,
                 )
             else:

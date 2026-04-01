@@ -2,12 +2,18 @@
 
 Variables used by **actions** and **integrations** outside the `JVSPATIAL_*` / `JVAGENT_*` core matrices in [configuration.md](configuration.md).
 
+For the complete consolidated key inventory, see [environment-keys-reference.md](environment-keys-reference.md).
+
 ## OpenAI and PageIndex tree search
 
 | Variable | Role |
 |----------|------|
 | **`OPENAI_API_KEY`** | OpenAI-compatible APIs and PageIndex `tree_search`. |
 | **`PAGEINDEX_TREE_SEARCH_MODEL`** | Model id for tree search (default `gpt-4o-mini`). |
+
+Actions resolve secrets from environment only (env-first) and do not rely on
+persisted DB secret values. Secret-like keys provided in `agent.yaml` context are
+ignored with a warning when they do not exist on the action class.
 
 ## Public app URL (jvagent)
 
@@ -56,8 +62,6 @@ Variables used by **actions** and **integrations** outside the `JVSPATIAL_*` / `
 | `SENDGRID_FROM_NAME` | Default from display name when `default_from_name` is unset |
 
 ## Web search (Serper)
-
-Typically set via `app.yaml` placeholder (e.g. `api_key: ${SERPER_API_KEY}`):
 
 | Variable | Role |
 |----------|------|

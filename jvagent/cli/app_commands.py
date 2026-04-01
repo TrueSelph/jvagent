@@ -75,7 +75,7 @@ jvagent app — scaffold applications
       --title TEXT
       --description TEXT
       --author TEXT
-      --email TEXT            Admin email in app.yaml
+      --email TEXT            Admin email in generated .env.example
       --version VER           Default 1.0.0
       --license TEXT          Default MIT
       --homepage URL
@@ -102,7 +102,12 @@ def _handle_app_create(rest: List[str], *, default_cwd: str) -> None:
     parser.add_argument("--title", default=None)
     parser.add_argument("--description", default=None)
     parser.add_argument("--author", default=None)
-    parser.add_argument("--email", default=None, dest="admin_email")
+    parser.add_argument(
+        "--email",
+        default=None,
+        dest="admin_email",
+        help="Admin email written to generated .env.example",
+    )
     parser.add_argument("--version", default="1.0.0")
     parser.add_argument("--license", default="MIT")
     parser.add_argument("--homepage", default="https://example.com")

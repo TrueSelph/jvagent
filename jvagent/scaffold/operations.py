@@ -169,17 +169,6 @@ providers may detect as serverless but deferred scheduling may require a custom 
 
 
 def _build_app_dict(ctx: "CreateAppContext") -> Dict[str, Any]:
-    db_block: Dict[str, Any] = {"type": "json", "path": "./jvagent_db"}
-    if ctx.deployment == "aws-lambda":
-        db_block = {
-            "type": "dynamodb",
-            "table_name": "jvspatial",
-            "region": "us-east-1",
-            # "endpoint_url": "http://localhost:8000",  # DynamoDB Local
-            # "access_key_id": "${AWS_ACCESS_KEY_ID}",
-            # "secret_access_key": "${AWS_SECRET_ACCESS_KEY}",
-        }
-
     agents_list = [parse_agent_spec(s)[0] for s in ctx.agent_specs]
 
     return {
@@ -191,9 +180,6 @@ def _build_app_dict(ctx: "CreateAppContext") -> Dict[str, Any]:
             "name": ctx.title,
             "description": ctx.description,
             "timezone": "America/New_York",
-            "file_storage_provider": "local",
-            "file_storage_root_dir": "./.files",
-            "file_storage_enabled": True,
         },
         "license": ctx.license,
         "homepage": ctx.homepage,
@@ -203,43 +189,20 @@ def _build_app_dict(ctx: "CreateAppContext") -> Dict[str, Any]:
                 "title": f"{ctx.title} API",
                 "description": f"API for {ctx.title}",
                 "version": ctx.version,
-                "host": "0.0.0.0",
-                "port": 8000,
-            },
-            "database": db_block,
-            "file_storage": {
-                "provider": "local",
-                "root_dir": "./.files",
-                "enabled": True,
             },
             "auth": {
                 "enabled": True,
                 "jwt_expire_minutes": 60,
-            },
-            "admin": {
-                "username": "admin",
-                "email": ctx.admin_email or "admin@jvagent.example",
+                "exempt_paths": ["/health", "/docs", "/openapi.json"],
             },
             "interact": {
                 "rate_limit_per_minute": 60,
                 "max_utterance_length": 2000,
             },
-            "logging": {
-                "enabled": True,
-                "levels": "INTERACTION,ERROR,CRITICAL",
-                "retention_days": 60,
-                "database": {
-                    "name": "jvagent_logs",
-                    "path": "./jvagent_logs",
-                },
-            },
             "cors": {
                 "enabled": True,
                 "origins": "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173",
             },
-            "environment": "development",
-            "api": {"prefix": "/api", "graph_endpoint_enabled": True},
-            "paths": {"agents": "./agents"},
             "performance": {
                 "enable_profiling": False,
                 "enable_agent_cache": True,
@@ -248,7 +211,7 @@ def _build_app_dict(ctx: "CreateAppContext") -> Dict[str, Any]:
                 "action_cache_ttl": 60,
                 "enable_deferred_saves": True,
                 "cache_cleanup_probability": 0.1,
-                "enable_interact_router_cache": True,
+                "enable_interact_router_cache": False,
                 "interact_router_cache_ttl": 45,
             },
         },
@@ -256,8 +219,15 @@ def _build_app_dict(ctx: "CreateAppContext") -> Dict[str, Any]:
     }
 
 
-def _write_packaged_env_example(app_root: Path) -> None:
+def _write_packaged_env_example(
+    app_root: Path, admin_email: Optional[str] = None
+) -> None:
     text = read_package_text("jvagent.scaffold.static", "env.example.txt")
+    if admin_email:
+        text = text.replace(
+            "JVAGENT_ADMIN_EMAIL=admin@jvagent.example",
+            f"JVAGENT_ADMIN_EMAIL={admin_email}",
+        )
     (app_root / ".env.example").write_text(text, encoding="utf-8")
 
 
@@ -393,7 +363,7 @@ def create_app(ctx: CreateAppContext) -> None:
     _write_gitignore(root)
     _write_license_mit(root, ctx.author, ctx.year)
     _write_docs_architecture(root, ctx.title)
-    _write_packaged_env_example(root)
+    _write_packaged_env_example(root, admin_email=ctx.admin_email)
     _patch_env_for_deployment(root, ctx.deployment)
     if ctx.deployment == "azure-functions":
         (root / ".env.example").write_text(

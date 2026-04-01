@@ -1,4 +1,15 @@
-"""Import hook for jvagent.actions.* module resolution."""
+"""Import hook for jvagent.actions.* module resolution.
+
+Invariants (keep in sync with ``ActionLoader`` and app layout):
+
+- Only module names under ``jvagent.actions.`` are handled; all others are ignored.
+- ``ActionLoader.__init__`` sets ``_actions_importer_base_path`` to the app root before
+  loading actions; the finder resolves paths under ``{base}/agents/``.
+- Layout: ``agents/{agent_ns}/{agent_name}/actions/{action_ns}/{action_name}/`` with
+  optional ``__init__.py`` or ``{module}.py`` for Python submodules.
+- The hook is registered at import time (``sys.meta_path``); tests that load multiple
+  app roots must not assume the base path is process-global without resetting the loader.
+"""
 
 import importlib
 import importlib.abc

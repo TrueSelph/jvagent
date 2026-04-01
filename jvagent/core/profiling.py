@@ -38,7 +38,10 @@ def _get_profiling_config() -> bool:
     # Environment variable takes priority
     env_value = os.getenv("JVAGENT_ENABLE_PROFILING")
     if env_value is not None:
-        return env_value.lower() == "true"
+        from jvagent.core.config import parse_env_bool
+
+        parsed = parse_env_bool(env_value)
+        return False if parsed is None else parsed
 
     # Try app.yaml
     try:
@@ -51,7 +54,15 @@ def _get_profiling_config() -> bool:
         if descriptor and descriptor.config:
             perf_config = descriptor.config.get("performance", {})
             if "enable_profiling" in perf_config:
-                return bool(perf_config["enable_profiling"])
+                raw = perf_config["enable_profiling"]
+                if isinstance(raw, bool):
+                    return raw
+                if isinstance(raw, str):
+                    from jvagent.core.config import parse_env_bool
+
+                    parsed = parse_env_bool(raw)
+                    return False if parsed is None else parsed
+                return bool(raw)
     except Exception:
         pass
 
