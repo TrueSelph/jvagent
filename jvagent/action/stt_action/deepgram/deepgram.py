@@ -7,6 +7,7 @@ from typing import Dict, Optional, Union
 from deepgram import AsyncDeepgramClient
 from deepgram.core.api_error import ApiError
 from jvspatial.core.annotations import attribute
+from jvspatial.env import env
 
 from jvagent.action.stt_action.base import BaseSTTAction
 
@@ -25,13 +26,20 @@ class DeepgramSTTAction(BaseSTTAction):
         description="Enable smart formatting for transcripts",
     )
 
+    @staticmethod
+    def _env_api_key() -> str:
+        return env("DEEPGRAM_API_KEY")
+
     def _get_client(self) -> AsyncDeepgramClient:
         """Lazy-initialize and return the async Deepgram client."""
+        key = (self._env_api_key() or "").strip()
         client = getattr(self, "_deepgram_client", None)
-        if client is None:
-            client = AsyncDeepgramClient(api_key=self.api_key or "")
-            self._deepgram_client = client
-        return client
+        prev_key = getattr(self, "_deepgram_client_key", None)
+        if client is not None and prev_key == key:
+            return client
+        self._deepgram_client = AsyncDeepgramClient(api_key=key)
+        self._deepgram_client_key = key
+        return self._deepgram_client
 
     def _extract_transcript(self, response) -> Optional[str]:
         """Extract transcript from SDK response."""
@@ -53,7 +61,7 @@ class DeepgramSTTAction(BaseSTTAction):
 
     async def invoke(self, audio_url: str) -> Optional[str]:
         """Convert audio from URL to text using Deepgram API."""
-        if not self.api_key:
+        if not (self._env_api_key() or "").strip():
             return None
 
         try:
@@ -81,7 +89,7 @@ class DeepgramSTTAction(BaseSTTAction):
         self, audio_base64: str, audio_type: str = "audio/mp3"
     ) -> Optional[str]:
         """Convert audio from base64 to text using Deepgram API."""
-        if not self.api_key:
+        if not (self._env_api_key() or "").strip():
             return None
 
         data = base64.b64decode(audio_base64)
@@ -110,7 +118,7 @@ class DeepgramSTTAction(BaseSTTAction):
         self, audio_content: bytes, audio_type: str = "audio/mp3"
     ) -> Optional[Dict[str, Union[str, float]]]:
         """Convert audio file content to text using Deepgram API."""
-        if not self.api_key:
+        if not (self._env_api_key() or "").strip():
             return None
 
         try:
@@ -140,10 +148,10 @@ class DeepgramSTTAction(BaseSTTAction):
 
     async def healthcheck(self) -> Union[bool, Dict[str, str]]:
         """Perform health check for Deepgram API."""
-        if not self.api_key:
+        if not (self._env_api_key() or "").strip():
             return {
                 "status": False,
-                "message": "Deepgram API key is not set",
+                "message": "DEEPGRAM_API_KEY is not set",
                 "severity": "error",
             }
 

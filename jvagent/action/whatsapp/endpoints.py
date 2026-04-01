@@ -92,7 +92,8 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             request_data = await request.json()
 
         try:
-            data = await whatsapp_action.api().parse_inbound_message(request_data)
+            wa = await whatsapp_action.api()
+            data = await wa.parse_inbound_message(request_data)
         except ValidationError as e:
             logger.debug(f"Validation error parsing WhatsApp webhook request: {e}")
             raise HTTPException(status_code=400, detail=f"Invalid request format: {e}")
@@ -112,7 +113,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
 
         # Skip LID conversion for groups - @g.us IDs are not LIDs and cause "No LID for user" errors
         if "@lid" in data.sender and "@g.us" not in data.sender:
-            data.sender = await whatsapp_action.api().convert_lid_to_phone_number(
+            data.sender = await wa.convert_lid_to_phone_number(
                 data.sender
             )
             t0 = getattr(request.state, "webhook_start", None)
@@ -169,14 +170,14 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             voice_result = await _handle_voice_message(data, sender, whatsapp_action)
             utterance = voice_result.get("transcript", "")
         elif data.message_type in ["location"] and data.location:
-            typing_result = await whatsapp_action.api().set_typing_status(
+            typing_result = await wa.set_typing_status(
                 phone=sender, value=True, is_group=data.isGroup
             )
             utterance = f"Location: {data.location.get('latitude')}, {data.location.get('longitude')}"
         elif utterance:
             # Trigger typing immediately
             try:
-                typing_result = await whatsapp_action.api().set_typing_status(
+                typing_result = await wa.set_typing_status(
                     phone=sender, value=True, is_group=data.isGroup
                 )
                 t0 = getattr(request.state, "webhook_start", None)
@@ -281,7 +282,8 @@ async def send_message(
         logger.debug("Outbox not implemented yet")
         return {"status": "outbox not implemented yet"}
 
-    result = await whatsapp_action.api().send_message(
+    wa = await whatsapp_action.api()
+    result = await wa.send_message(
         phone=to,
         message=message,
         is_group=is_group,
@@ -326,7 +328,8 @@ async def send_image(
         Dict[str, Any]: Result of the image send operation
     """
     whatsapp_action = await get_whatsapp_action(action_id)
-    result = await whatsapp_action.api().send_image(
+    wa = await whatsapp_action.api()
+    result = await wa.send_image(
         phone=to,
         file_url=image_url,
         caption=caption,
@@ -370,7 +373,8 @@ async def send_file(
         Dict[str, Any]: Result of the file send operation
     """
     whatsapp_action = await get_whatsapp_action(action_id)
-    result = await whatsapp_action.api().send_file(
+    wa = await whatsapp_action.api()
+    result = await wa.send_file(
         phone=to,
         file_url=file_url,
         caption=caption,
@@ -412,7 +416,8 @@ async def send_voice(
         Dict[str, Any]: Result of the voice send operation
     """
     whatsapp_action = await get_whatsapp_action(action_id)
-    result = await whatsapp_action.api().send_voice(
+    wa = await whatsapp_action.api()
+    result = await wa.send_voice(
         phone=to,
         file_url=voice_url,
         is_group=is_group,
@@ -455,7 +460,8 @@ async def send_location(
         Dict[str, Any]: Result of the location send operation
     """
     whatsapp_action = await get_whatsapp_action(action_id)
-    result = await whatsapp_action.api().send_location(
+    wa = await whatsapp_action.api()
+    result = await wa.send_location(
         phone=to, latitude=latitude, longitude=longitude, title=title, is_group=is_group
     )
     return normalize_result(result, "sent")
@@ -494,7 +500,8 @@ async def create_group(
         Dict[str, Any]: Result of the group creation
     """
     whatsapp_action = await get_whatsapp_action(action_id)
-    result = await whatsapp_action.api().create_group(
+    wa = await whatsapp_action.api()
+    result = await wa.create_group(
         name=name, participants=participants
     )
     return normalize_result(result, "created")
@@ -528,7 +535,8 @@ async def add_group_participant(
         Dict[str, Any]: Result of the operation
     """
     whatsapp_action = await get_whatsapp_action(action_id)
-    result = await whatsapp_action.api().add_group_participant(
+    wa = await whatsapp_action.api()
+    result = await wa.add_group_participant(
         group_id=group_id, phone=phone
     )
     return normalize_result(result, "added")
@@ -562,7 +570,8 @@ async def remove_group_participant(
         Dict[str, Any]: Result of the operation
     """
     whatsapp_action = await get_whatsapp_action(action_id)
-    result = await whatsapp_action.api().remove_group_participant(
+    wa = await whatsapp_action.api()
+    result = await wa.remove_group_participant(
         group_id=group_id, phone=phone
     )
     return normalize_result(result, "removed")
@@ -594,7 +603,8 @@ async def get_profile_picture(
         Dict[str, Any]: Profile picture URL
     """
     whatsapp_action = await get_whatsapp_action(action_id)
-    return await whatsapp_action.api().get_profile_picture(phone=phone)
+    wa = await whatsapp_action.api()
+    return await wa.get_profile_picture(phone=phone)
 
 
 # ========================================================================
@@ -626,7 +636,8 @@ async def get_session_status(
         Dict[str, Any]: Session status information
     """
     whatsapp_action = await get_whatsapp_action(action_id)
-    return await whatsapp_action.api().status()
+    wa = await whatsapp_action.api()
+    return await wa.status()
 
 
 @endpoint(
@@ -706,7 +717,8 @@ async def get_qrcode(
         Dict[str, Any]: QR code as base64 image
     """
     whatsapp_action = await get_whatsapp_action(action_id)
-    return await whatsapp_action.api().qrcode()
+    wa = await whatsapp_action.api()
+    return await wa.qrcode()
 
 
 @endpoint(
@@ -733,7 +745,8 @@ async def get_device_info(
         Dict[str, Any]: Device information
     """
     whatsapp_action = await get_whatsapp_action(action_id)
-    return await whatsapp_action.api().get_host_device()
+    wa = await whatsapp_action.api()
+    return await wa.get_host_device()
 
 
 @endpoint(
@@ -760,7 +773,8 @@ async def logout(
         Dict[str, Any]: Result of the operation
     """
     whatsapp_action = await get_whatsapp_action(action_id)
-    result = await whatsapp_action.api().logout_session()
+    wa = await whatsapp_action.api()
+    result = await wa.logout_session()
     return normalize_result(result, "logout")
 
 
@@ -788,5 +802,6 @@ async def close(
         Dict[str, Any]: Result of the operation
     """
     whatsapp_action = await get_whatsapp_action(action_id)
-    result = await whatsapp_action.api().close_session()
+    wa = await whatsapp_action.api()
+    result = await wa.close_session()
     return normalize_result(result, "close")

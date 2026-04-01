@@ -94,7 +94,7 @@ class WhatsAppAdapter(ChannelAdapter):
 
         # Ensure relative URLs (e.g. from TTS /api/files/...) are absolute for fetch
         if media_url and media_url.startswith("/"):
-            base = (self.action.base_url or "").strip() or get_public_base_url()
+            base = get_public_base_url()
             if base:
                 media_url = f"{base.rstrip('/')}{media_url}"
 
@@ -108,7 +108,7 @@ class WhatsAppAdapter(ChannelAdapter):
             f"WhatsAppAdapter: Processing adhoc message {message.id} for user {message.user_id}"
         )
 
-        api = self.action.api()
+        api = await self.action.api()
 
         # Extract is_group from message.metadata.whatsapp_payload
         whatsapp_payload = message.metadata.get("whatsapp_payload", {})

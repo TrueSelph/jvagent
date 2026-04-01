@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 
 import httpx
 from jvspatial.core.annotations import attribute
+from jvspatial.env import env
 
 from jvagent.action.web_search.base import BaseWebSearchAction
 
@@ -23,7 +24,7 @@ class BraveWebSearchAction(BaseWebSearchAction):
     API docs: https://api.search.brave.com/app/documentation/web-search
 
     Configuration:
-        api_key: Your Brave Search API subscription token
+        BRAVE_SEARCH_KEY in ``.env``
         api_endpoint: Brave Search API endpoint URL
         country: Two-letter country code for result localization (default: GY)
         search_lang: Language for search results (default: en)
@@ -53,6 +54,10 @@ class BraveWebSearchAction(BaseWebSearchAction):
         description="SafeSearch filter level: off, moderate, or strict",
     )
 
+    @staticmethod
+    def _env_api_key() -> str:
+        return env("BRAVE_SEARCH_KEY")
+
     async def search(self, query: str, **kwargs: Any) -> List[Dict[str, str]]:
         """Execute a Brave Search query and return normalized results.
 
@@ -72,10 +77,11 @@ class BraveWebSearchAction(BaseWebSearchAction):
             "safesearch": kwargs.get("safesearch", self.safesearch),
         }
 
+        api_key = (self._env_api_key() or "").strip()
         headers = {
             "Accept": "application/json",
             "Accept-Encoding": "gzip",
-            "X-Subscription-Token": self.api_key,
+            "X-Subscription-Token": api_key,
         }
 
         try:

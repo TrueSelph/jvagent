@@ -1,8 +1,17 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { apiClient } from '../config/api'
 import { saveMessages, getMessages, getUserId } from '../utils/storage'
-import type { InteractionRequest, SSEChunk } from '../types/api'
+import type { InteractionRequest, ResponseMessageData, SSEChunk } from '../types/api'
 import type { Message } from '../types/message'
+
+function mergeResponseMetadata(
+  existing: Record<string, unknown> | undefined,
+  incoming: ResponseMessageData['metadata'] | undefined
+): Record<string, unknown> | undefined {
+  const hasIncoming = incoming && Object.keys(incoming).length > 0
+  if (!hasIncoming) return existing
+  return { ...(existing ?? {}), ...incoming }
+}
 
 export function useStreaming(agentId: string, sessionId?: string) {
   const [messages, setMessages] = useState<Message[]>([])
@@ -165,7 +174,13 @@ export function useStreaming(agentId: string, sessionId?: string) {
                     const updatedContent = (existing.content || '') + (msg.content || '')
                     updated = filtered.map((m, idx) =>
                       idx === existingIndex
-                        ? { ...m, content: updatedContent, streaming: true, interactionId: m.interactionId || msg.interaction_id }
+                        ? {
+                            ...m,
+                            content: updatedContent,
+                            streaming: true,
+                            interactionId: m.interactionId || msg.interaction_id,
+                            metadata: mergeResponseMetadata(m.metadata, msg.metadata),
+                          }
                         : m
                     )
                   } else {
@@ -176,6 +191,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                       interactionId: msg.interaction_id,
                       timestamp: msg.timestamp || new Date().toISOString(),
                       streaming: true,
+                      metadata: mergeResponseMetadata(undefined, msg.metadata),
                     }
                     updated = [...filtered, newMessage]
                   }
@@ -196,6 +212,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                             content: updatedContent,
                             streaming: true,
                             interactionId: m.interactionId || msg.interaction_id,
+                            metadata: mergeResponseMetadata(m.metadata, msg.metadata),
                           }
                         : m
                     )
@@ -207,6 +224,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                       interactionId: msg.interaction_id,
                       timestamp: msg.timestamp || new Date().toISOString(),
                       streaming: true,
+                      metadata: mergeResponseMetadata(undefined, msg.metadata),
                     }
                     return [...filtered, newMessage]
                   }
@@ -307,6 +325,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                   content: msg.content || '',
                   timestamp: msg.timestamp || new Date().toISOString(),
                   streaming: false,
+                  metadata: mergeResponseMetadata(undefined, msg.metadata),
                 }
                 const streamSessionId = streamSessionIdRef.current
                 const currentView = sessionIdRef.current

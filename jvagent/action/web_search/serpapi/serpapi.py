@@ -7,6 +7,7 @@ import logging
 from typing import Any, Dict, List
 
 from jvspatial.core.annotations import attribute
+from jvspatial.env import env
 
 from jvagent.action.web_search.base import BaseWebSearchAction
 
@@ -19,7 +20,7 @@ class SerpAPIWebSearchAction(BaseWebSearchAction):
     Uses the ``google-search-results`` library to query Google via SerpAPI.
 
     Configuration:
-        api_key: Your SerpAPI API key
+        SERPAPI_API_KEY in ``.env``
         engine: Search engine to use (default: google_light)
         location: Geographic location bias for results
         google_domain: Google domain to use (default: google.com)
@@ -45,6 +46,10 @@ class SerpAPIWebSearchAction(BaseWebSearchAction):
     gl: str = attribute(
         default="gy", description="Country code for search results (e.g., us, gy, gb)"
     )
+
+    @staticmethod
+    def _env_api_key() -> str:
+        return env("SERPAPI_API_KEY")
 
     async def search(self, query: str, **kwargs: Any) -> List[Dict[str, str]]:
         """Execute a Google search via SerpAPI and return normalized results.
@@ -72,7 +77,7 @@ class SerpAPIWebSearchAction(BaseWebSearchAction):
             "google_domain": kwargs.get("google_domain", self.google_domain),
             "hl": kwargs.get("hl", self.hl),
             "gl": kwargs.get("gl", self.gl),
-            "api_key": self.api_key,
+            "api_key": (self._env_api_key() or "").strip(),
         }
 
         try:

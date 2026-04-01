@@ -6,6 +6,7 @@ import uuid
 from typing import Dict, List, Optional, Union
 
 from jvspatial.core.annotations import attribute
+from jvspatial.env import env
 
 from jvagent.action.tts_action.base import BaseTTSAction
 
@@ -18,18 +19,23 @@ class ElevenLabsTTSAction(BaseTTSAction):
     model: str = attribute(default="eleven_turbo_v2", description="Model to use")
     voice: str = attribute(default="Sarah", description="Voice to use for synthesis")
 
+    @staticmethod
+    def _env_api_key() -> str:
+        return env("ELEVENLABS_API_KEY")
+
     async def invoke(
         self, text: str, as_base64: bool = False, as_url: bool = False
     ) -> Optional[Union[str, bytes]]:
         """Convert text to speech using ElevenLabs API."""
-        if not self.api_key:
+        api_key = (self._env_api_key() or "").strip()
+        if not api_key:
             return None
 
         audio = None
         try:
             from elevenlabs.client import ElevenLabs
 
-            client = ElevenLabs(api_key=self.api_key)
+            client = ElevenLabs(api_key=api_key)
             voice_id = await self._get_voice_id(self.voice)
             response = client.text_to_speech.convert(
                 voice_id=voice_id,
@@ -84,13 +90,14 @@ class ElevenLabsTTSAction(BaseTTSAction):
 
     async def get_voices(self) -> List[Dict[str, str]]:
         """Get all available voices."""
-        if not self.api_key:
+        api_key = (self._env_api_key() or "").strip()
+        if not api_key:
             return []
 
         try:
             from elevenlabs.client import ElevenLabs
 
-            client = ElevenLabs(api_key=self.api_key)
+            client = ElevenLabs(api_key=api_key)
             result = client.voices.get_all()
 
             if result:
@@ -111,13 +118,14 @@ class ElevenLabsTTSAction(BaseTTSAction):
         self, name: str
     ) -> Optional[Union[str, Dict[str, str]]]:
         """Get voice_id by name. Returns voice_id string for API use."""
-        if not self.api_key:
+        api_key = (self._env_api_key() or "").strip()
+        if not api_key:
             return None
 
         try:
             from elevenlabs.client import ElevenLabs
 
-            client = ElevenLabs(api_key=self.api_key)
+            client = ElevenLabs(api_key=api_key)
             voices = client.voices.get_all().voices
 
             name_lower = name.strip().lower()
@@ -140,13 +148,14 @@ class ElevenLabsTTSAction(BaseTTSAction):
 
     async def get_models(self) -> List[Dict[str, str]]:
         """Get all available models."""
-        if not self.api_key:
+        api_key = (self._env_api_key() or "").strip()
+        if not api_key:
             return []
 
         try:
             from elevenlabs.client import ElevenLabs
 
-            client = ElevenLabs(api_key=self.api_key)
+            client = ElevenLabs(api_key=api_key)
             result = client.models.get_all()
 
             if result:
@@ -165,10 +174,10 @@ class ElevenLabsTTSAction(BaseTTSAction):
 
     async def healthcheck(self) -> Union[bool, Dict[str, str]]:
         """Perform health check for ElevenLabs API."""
-        if not self.api_key:
+        if not (self._env_api_key() or "").strip():
             return {
                 "status": False,
-                "message": "ElevenLabs API key is not set.",
+                "message": "ELEVENLABS_API_KEY is not set.",
                 "severity": "error",
             }
 

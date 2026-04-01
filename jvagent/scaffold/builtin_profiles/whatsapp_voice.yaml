@@ -5,19 +5,15 @@ actions:
       enabled: true
       description: WhatsApp integration (configure provider and credentials in .env)
       provider: wwebjs
-      api_url: ${WHATSAPP_API_URL}
-      api_key: ${WHATSAPP_API_KEY}
-      session: ${WHATSAPP_SESSION}
-      base_url: ${JVAGENT_PUBLIC_BASE_URL}
+
+
 
   - action: jvagent/deepgram_stt
     context:
       enabled: true
-      description: Deepgram speech-to-text
-      api_key: ${DEEPGRAM_API_KEY}
+      description: Deepgram speech-to-text (DEEPGRAM_API_KEY in .env)
 
   - action: jvagent/elevenlabs_tts
     context:
       enabled: true
-      description: ElevenLabs text-to-speech
-      api_key: ${ELEVENLABS_API_KEY}
+      description: ElevenLabs text-to-speech (ELEVENLABS_API_KEY in .env)

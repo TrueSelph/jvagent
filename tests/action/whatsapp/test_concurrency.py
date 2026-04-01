@@ -347,7 +347,7 @@ class TestWhatsAppActionConcurrency:
         # Mock the API
         mock_api = MagicMock()
         mock_api.set_typing_status = AsyncMock(return_value={"ok": True})
-        action.api = MagicMock(return_value=mock_api)
+        action.api = AsyncMock(return_value=mock_api)
 
         return action
 
@@ -362,7 +362,8 @@ class TestWhatsAppActionConcurrency:
             manager = action._typing_manager
             state_changed = await manager.set_typing(user_id, True)
             if state_changed:
-                await action.api().set_typing_status(phone=user_id, value=True)
+                wa = await action.api()
+                await wa.set_typing_status(phone=user_id, value=True)
             return user_id
 
         # 50 users set typing concurrently

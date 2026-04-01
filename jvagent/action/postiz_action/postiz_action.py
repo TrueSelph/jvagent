@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 from jvspatial.core.annotations import attribute
+from jvspatial.env import env
 
 from jvagent.action.base import Action
 from jvagent.core.app import App
@@ -15,15 +16,11 @@ logger = logging.getLogger(__name__)
 class PostizAction(Action):
     """Core action for interacting with the Postiz social media management API.
 
+    Configure ``POSTIZ_API_KEY`` in ``.env``. Non-secret settings use attributes below.
+
     Attributes:
-        api_key: The Public API key from Postiz settings.
         base_url: The base URL for the Postiz Public API (v1).
     """
-
-    api_key: str = attribute(
-        default="",
-        description="Public API key from Postiz (Settings > Developers > Public API)",
-    )
 
     base_url: str = attribute(
         default="http://localhost:4007/api/public/v1",
@@ -35,10 +32,14 @@ class PostizAction(Action):
         description="Timeout for API requests in seconds",
     )
 
+    @staticmethod
+    def _env_api_key() -> str:
+        return env("POSTIZ_API_KEY")
+
     async def _get_headers(self) -> Dict[str, str]:
         """Prepare headers for Postiz API requests."""
         return {
-            "Authorization": f"{self.api_key}",
+            "Authorization": f"{(self._env_api_key() or '').strip()}",
             "Content-Type": "application/json",
         }
 

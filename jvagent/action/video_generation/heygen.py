@@ -27,8 +27,7 @@ class HeygenVideoAction(Action):
         result = await action.create_video("Hello world", voice="en_us_female")
         url = result.get("video_url") if result else None
 
-    Users must configure the ``api_key`` field (either in ``agent.yaml`` or
-    via the ``HEYGEN_API_KEY`` environment variable).
+    Configure the API key via the ``HEYGEN_API_KEY`` environment variable (``.env``).
     """
 
     avatar_type: str = attribute(

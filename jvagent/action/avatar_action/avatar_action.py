@@ -32,9 +32,10 @@ class AvatarAction(Action):
         if not whatsapp_action:
             raise Exception("WhatsApp action not found")
 
+        wa = await whatsapp_action.api()
         if not phone:
             # Try to get own device number
-            device_info = await whatsapp_action.api().get_host_device()
+            device_info = await wa.get_host_device()
             if device_info.get("ok", True):
                 # Try various common response formats for WPPConnect/WWebJS
                 phone = (
@@ -48,7 +49,7 @@ class AvatarAction(Action):
                     "Phone number not provided and couldn't be determined from session"
                 )
 
-        result = await whatsapp_action.api().get_profile_picture(phone=phone)
+        result = await wa.get_profile_picture(phone=phone)
         if isinstance(result, dict) and not result.get("ok", True):
             raise Exception(
                 f"Failed to get profile picture: {result.get('error', 'Unknown error')}"
@@ -97,7 +98,8 @@ class AvatarAction(Action):
         # Convert base64 data back to bytes for the API
         file_data = base64.b64decode(self.image_data)
 
-        result = await whatsapp_action.api().set_profile_pic(file_data=file_data)
+        wa = await whatsapp_action.api()
+        result = await wa.set_profile_pic(file_data=file_data)
         if not result.get("ok", True):
             raise Exception(
                 f"Failed to set profile picture: {result.get('error', 'Unknown error')}"

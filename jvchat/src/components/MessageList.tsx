@@ -3,6 +3,91 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Message } from "../types/message";
 import React from "react";
+import { resolveMediaUrl } from "../utils/mediaUrl";
+
+function metaString(v: unknown): string {
+  if (typeof v === "string") return v.trim();
+  if (typeof v === "number") return String(v);
+  return "";
+}
+
+function MetadataImage({
+  src,
+  role,
+}: {
+  src: string;
+  role: Message["role"];
+}) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (failed) {
+    return (
+      <p
+        className={`text-sm my-2 italic ${
+          role === "user"
+            ? "text-slate-300 dark:text-indigo-200/80"
+            : "text-slate-600 dark:text-slate-400"
+        }`}
+      >
+        Image is not available.
+      </p>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt=""
+      className="max-w-full h-auto rounded-lg my-2 block"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function MessageMediaBlock({ message }: { message: Message }) {
+  const meta = message.metadata;
+  if (!meta) return null;
+  const rawUrl = metaString(meta.media_url);
+  if (!rawUrl) return null;
+  const src = resolveMediaUrl(rawUrl);
+  const type = metaString(meta.media_type).toLowerCase();
+
+  if (type === "video") {
+    return (
+      <video
+        controls
+        className="max-w-full rounded-lg my-2 block"
+        src={src}
+      />
+    );
+  }
+  if (type === "audio" || type === "voice") {
+    return <audio controls className="w-full my-2" src={src} />;
+  }
+  if (type === "document" || type === "file" || type === "docs") {
+    const label =
+      metaString(meta.filename) || rawUrl.split("/").pop() || "Attachment";
+    return (
+      <a
+        href={src}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`underline block my-2 ${
+          message.role === "user"
+            ? "text-slate-200 hover:text-white dark:text-indigo-200"
+            : "text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+        }`}
+      >
+        {label}
+      </a>
+    );
+  }
+  return <MetadataImage src={src} role={message.role} />;
+}
 
 interface MessageListProps {
   messages: Message[];
@@ -48,6 +133,8 @@ export function MessageList({
               }`}
             >
               <div className="break-words text-sm sm:text-base">
+                <MessageMediaBlock message={message} />
+                {message.content?.trim() ? (
                 <div className="markdown-content">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
@@ -219,6 +306,7 @@ export function MessageList({
                     {message.content}
                   </ReactMarkdown>
                 </div>
+                ) : null}
               </div>
               <div className="flex items-center justify-between mt-1 sm:mt-2 gap-2">
                 <div

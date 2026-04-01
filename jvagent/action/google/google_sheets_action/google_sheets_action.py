@@ -1,4 +1,8 @@
-"""Google Sheets via Sheets API v4 and Drive v3 (share/delete file). No gspread."""
+"""Google Sheets via Sheets API v4 and Drive v3 (share/delete file). No gspread.
+
+Helpers and :class:`GoogleSheetsAction` use A1 notation. Spreadsheet targets are resolved
+from a full ``docs.google.com`` URL or a raw spreadsheet id via :func:`resolve_spreadsheet_id`.
+"""
 
 import logging
 import re
@@ -15,7 +19,18 @@ _SPREADSHEET_URL_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9-_]+)")
 
 
 def resolve_spreadsheet_id(spreadsheet_url_or_id: str) -> str:
-    """Return spreadsheet id from a full Google Sheets URL or pass through a raw id."""
+    """Extract the spreadsheet id from input, accepting either a URL or a raw id string.
+
+    Args:
+        spreadsheet_url_or_id: Full Google Sheets URL (``.../spreadsheets/d/<id>/...``)
+            or a spreadsheet id alone.
+
+    Returns:
+        The spreadsheet id substring.
+
+    Raises:
+        ValueError: If the string looks like a Sheets URL but the id cannot be parsed.
+    """
     s = spreadsheet_url_or_id.strip()
     if "docs.google.com/spreadsheets/d/" in s:
         m = _SPREADSHEET_URL_RE.search(s)
@@ -26,7 +41,18 @@ def resolve_spreadsheet_id(spreadsheet_url_or_id: str) -> str:
 
 
 def qualify_sheet_title(title: str) -> str:
-    """Quote sheet title for A1 notation when needed (spaces, specials, leading digit)."""
+    """Return an A1-safe sheet title token (quote when required by Sheets rules).
+
+    Args:
+        title: Worksheet (tab) title.
+
+    Returns:
+        Either the title unchanged or wrapped in single quotes with embedded ``'``
+        doubled (e.g. ``O'Brien`` → ``'O''Brien'``).
+
+    Raises:
+        None from this helper; an empty title is returned unchanged.
+    """
     if not title:
         return title
     needs_quote = (
@@ -41,7 +67,17 @@ def qualify_sheet_title(title: str) -> str:
 
 
 def col_letters_to_index(letters: str) -> int:
-    """Convert Excel-style column letters (A, B, …, Z, AA, …) to a 0-based index."""
+    """Map Excel-style column letters to a 0-based column index.
+
+    Args:
+        letters: Such as ``A``, ``Z``, ``AA`` (case-insensitive).
+
+    Returns:
+        Zero-based column index.
+
+    Raises:
+        ValueError: If ``letters`` is empty, non-alphabetic, or invalid.
+    """
     u = letters.upper().strip()
     if not u or not u.isalpha():
         raise ValueError(f"Invalid column letters: {letters!r}")
@@ -54,7 +90,17 @@ def col_letters_to_index(letters: str) -> int:
 
 
 def parse_a1_cell(ref: str) -> Tuple[int, int]:
-    """Parse a single A1/R1C1-style cell ref into (row_index, col_index), 0-based."""
+    """Parse one A1 cell reference into zero-based row and column indices.
+
+    Args:
+        ref: Cell reference such as ``B2`` or ``$A$1`` (``$`` is ignored).
+
+    Returns:
+        ``(row_index, col_index)`` both 0-based.
+
+    Raises:
+        ValueError: Empty ref, missing row digits, or invalid letters/digits.
+    """
     ref = ref.replace("$", "").strip()
     if not ref:
         raise ValueError("Empty cell reference")
@@ -72,7 +118,18 @@ def parse_a1_cell(ref: str) -> Tuple[int, int]:
 
 
 def a1_area_to_grid_range(cell_area: str) -> Tuple[int, int, int, int]:
-    """Return (start_row, end_row, start_col, end_col) with end indices exclusive (API style)."""
+    """Convert an A1 rectangle (no sheet prefix) to grid indices for the Sheets API.
+
+    Args:
+        cell_area: A single cell (``A1``) or range (``A1:C3``).
+
+    Returns:
+        ``(start_row, end_row, start_col, end_col)`` with **end** indices exclusive,
+        matching ``GridRange`` in the API.
+
+    Raises:
+        ValueError: If ``cell_area`` is empty or malformed.
+    """
     cell_area = cell_area.strip()
     if not cell_area:
         raise ValueError("Cell range is empty")
@@ -91,7 +148,17 @@ def a1_area_to_grid_range(cell_area: str) -> Tuple[int, int, int, int]:
 
 
 def split_qualified_a1(qualified: str) -> Tuple[str, str]:
-    """Split ``Sheet!A1:B2`` into (sheet_title, cell_area). Supports quoted sheet titles."""
+    """Split a qualified A1 range into worksheet title and cell/range part.
+
+    Args:
+        qualified: Such as ``Sheet1!A1:B2`` or ``'My Tab'!A1``.
+
+    Returns:
+        ``(sheet_title, cell_area)`` where ``cell_area`` is the fragment after ``!``.
+
+    Raises:
+        ValueError: No ``!``, malformed quotes, or missing A1 part after ``!``.
+    """
     q = qualified.strip()
     if "!" not in q:
         raise ValueError(
@@ -129,11 +196,22 @@ def compose_a1_range(
     worksheet_title: str,
     range_name: Optional[str],
 ) -> str:
-    """
-    Build an A1 range for the Sheets API.
+    """Build a single range string for ``values.get`` / ``values.update`` / ``values.append``.
 
-    If range_name already includes a sheet (contains '!'), return it unchanged.
-    If range_name is empty or None, return only the qualified sheet title (whole tab).
+    If ``range_name`` already contains ``!``, it is treated as fully qualified and returned
+    unchanged. If ``range_name`` is empty or ``None``, only the qualified worksheet title
+    is returned (entire tab). Otherwise the result is ``<qualified_title>!<range_name>``.
+
+    Args:
+        worksheet_title: Tab name used when ``range_name`` is not qualified.
+        range_name: Local A1 fragment, full ``Sheet!A1`` string, or empty/``None`` for whole tab.
+
+    Returns:
+        A range string accepted by the Sheets API.
+
+    Raises:
+        None; an empty ``worksheet_title`` with a local ``range_name`` still produces
+        a valid ``!`` suffix (callers should ensure the tab exists).
     """
     if range_name and "!" in range_name:
         return range_name
@@ -144,10 +222,14 @@ def compose_a1_range(
 
 
 class GoogleSheetsAction(GoogleAction):
-    """Action for Google Sheets using OAuth2 (user-delegated credentials).
+    """Google Sheets operations with OAuth2 (user-delegated credentials).
 
     Uses google-api-python-client (Sheets v4, Drive v3). Adding ``drive.file`` scope may
     require users to re-authorize if they previously granted only spreadsheets scope.
+
+    Instance attributes :attr:`worksheet_title` and :attr:`spreadsheet_url` supply defaults
+    when methods omit ``worksheet_title`` or ``spreadsheet_url_or_id`` (same resolution idea
+    as HTTP handlers that fall back to the action configuration).
     """
 
     worksheet_title: str = attribute(
@@ -173,6 +255,7 @@ class GoogleSheetsAction(GoogleAction):
     _built_drive_service: Optional[Any] = None
 
     def _effective_worksheet_title(self, worksheet_title: Optional[str]) -> str:
+        """Return explicit ``worksheet_title`` if set, else the action default tab name."""
         return (
             worksheet_title
             if worksheet_title is not None and worksheet_title != ""
@@ -182,6 +265,7 @@ class GoogleSheetsAction(GoogleAction):
     def _resolve_spreadsheet_url_or_id(
         self, spreadsheet_url_or_id: Optional[str] = None
     ) -> str:
+        """Resolve non-empty spreadsheet URL or id from arguments or ``spreadsheet_url``."""
         if spreadsheet_url_or_id and str(spreadsheet_url_or_id).strip():
             return str(spreadsheet_url_or_id).strip()
         if self.spreadsheet_url and str(self.spreadsheet_url).strip():
@@ -191,6 +275,7 @@ class GoogleSheetsAction(GoogleAction):
         )
 
     def _a1_range(self, range_name: str, worksheet_title: Optional[str] = None) -> str:
+        """Combine default/explicit tab with a local A1 fragment via :func:`compose_a1_range`."""
         return compose_a1_range(
             self._effective_worksheet_title(worksheet_title),
             range_name if range_name else None,
@@ -201,6 +286,7 @@ class GoogleSheetsAction(GoogleAction):
         ranges: List[str],
         worksheet_title: Optional[str] = None,
     ) -> List[str]:
+        """Qualify each non-blank range string with ``worksheet_title`` when needed."""
         ws = self._effective_worksheet_title(worksheet_title)
         out: List[str] = []
         for r in ranges:
@@ -210,7 +296,8 @@ class GoogleSheetsAction(GoogleAction):
             out.append(compose_a1_range(ws, r))
         return out
 
-    async def _get_drive_service(self):
+    async def _get_sheets_service(self):
+        """Lazy Drive API v3 client (permissions, delete file); rebuilds if credentials expire."""
         if self._built_drive_service and getattr(
             self._built_drive_service._http, "credentials", None
         ):
@@ -225,6 +312,11 @@ class GoogleSheetsAction(GoogleAction):
         return self._built_drive_service
 
     async def _get_sheet_id_by_title(self, spreadsheet_id: str, title: str) -> int:
+        """Return the numeric ``sheetId`` for a tab title (for ``batchUpdate`` grid ranges).
+
+        Raises:
+            ValueError: No worksheet with ``title`` exists on the spreadsheet.
+        """
         service = await self.get_service()
         meta = (
             service.spreadsheets()
@@ -245,8 +337,26 @@ class GoogleSheetsAction(GoogleAction):
         range_name: str = "",
         worksheet_title: Optional[str] = None,
     ) -> List[List[Any]]:
-        """Read values. Pass range_name like A1:C10 or leave empty for the whole tab."""
+        """Read cell values (Sheets API ``spreadsheets.values.get``).
 
+        The spreadsheet is taken from ``spreadsheet_url_or_id`` if non-empty, otherwise from
+        :attr:`spreadsheet_url`. Use **sheet-qualified** ``range_name`` (e.g. ``Sheet1!A1:C10``)
+        or a **local** fragment (e.g. ``A1:C10``) together with ``worksheet_title`` (defaulting
+        to :attr:`worksheet_title`). An empty ``range_name`` reads the **entire** tab named by
+        ``worksheet_title``.
+
+        Args:
+            spreadsheet_url_or_id: Full URL, id, or ``None`` to use the action default.
+            range_name: A1 range, qualified range, or ``""`` for the whole worksheet.
+            worksheet_title: Tab when ``range_name`` has no ``!``.
+
+        Returns:
+            ``values`` from the API: list of rows, each row a list of cell values. Trailing
+            empty cells may be omitted per API behavior.
+
+        Raises:
+            ValueError: Missing spreadsheet configuration or invalid id resolution.
+        """
         if not spreadsheet_url_or_id:
             spreadsheet_url_or_id = self.spreadsheet_url
 
@@ -266,6 +376,51 @@ class GoogleSheetsAction(GoogleAction):
         )
         return result.get("values", [])
 
+    async def last_filled_row_1based(
+        self,
+        spreadsheet_url_or_id: Optional[str] = None,
+        column: str = "A",
+        worksheet_title: Optional[str] = None,
+    ) -> int:
+        """Best-effort last 1-based row that has a non-empty value in the given column.
+
+        Performs a ``values.get`` on ``<column>:<column>`` (e.g. ``A:A``) on the target tab,
+        then scans from the bottom of the returned rows. This is useful before a targeted
+        ``update``; for appending, prefer :meth:`append_spreadsheet` with an empty range or
+        inspect the append response ``updates.updatedRange``.
+
+        **Caveats:** Large columns transfer more data. Sparse tables (gaps below the last value)
+        are handled only insofar as the API returns rows—trailing blank rows are omitted by the
+        API, so the last populated row in the response matches the last row with data in that
+        column for typical contiguous tables.
+
+        Args:
+            spreadsheet_url_or_id: Same resolution as :meth:`read_spreadsheet`.
+            column: Column letters only (e.g. ``A`` or ``AB``); not a full cell ref.
+            worksheet_title: Tab when reading a non-qualified fragment.
+
+        Returns:
+            1-based row index of the last non-empty cell in that column, or ``0`` if none.
+
+        Raises:
+            ValueError: Invalid ``column`` letters.
+        """
+        col = column.strip().upper().replace("$", "")
+        if not col or not col.isalpha():
+            raise ValueError(f"column must be letters only (e.g. 'A'); got {column!r}")
+        col_letters_to_index(col)
+        range_name = f"{col}:{col}"
+        rows = await self.read_spreadsheet(
+            spreadsheet_url_or_id=spreadsheet_url_or_id,
+            range_name=range_name,
+            worksheet_title=worksheet_title,
+        )
+        for i in range(len(rows) - 1, -1, -1):
+            row = rows[i]
+            if row and any(str(c).strip() != "" for c in row):
+                return i + 1
+        return 0
+
     async def update_spreadsheet(
         self,
         spreadsheet_url_or_id: Optional[str] = None,
@@ -274,8 +429,25 @@ class GoogleSheetsAction(GoogleAction):
         value_input_option: str = "RAW",
         worksheet_title: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Update values in a range (sheet-local A1 allowed when worksheet_title is set)."""
+        """Overwrite a rectangular range (Sheets API ``spreadsheets.values.update``).
 
+        ``range_name`` is **required** (non-empty after strip): local A1 or sheet-qualified
+        range. ``values`` is a 2D list aligned with that range. ``value_input_option`` is
+        passed through (e.g. ``RAW`` vs ``USER_ENTERED``).
+
+        Args:
+            spreadsheet_url_or_id: Target spreadsheet URL/id or action default.
+            range_name: A1 target range (required).
+            values: Replacement cell values (required).
+            value_input_option: Sheets API value input mode.
+            worksheet_title: Tab when ``range_name`` is not qualified.
+
+        Returns:
+            API response dict (e.g. ``updatedRange``, ``updatedRows``, ``updatedCells``).
+
+        Raises:
+            ValueError: If ``values`` is ``None`` or ``range_name`` is blank.
+        """
         if not spreadsheet_url_or_id:
             spreadsheet_url_or_id = self.spreadsheet_url
 
@@ -307,12 +479,34 @@ class GoogleSheetsAction(GoogleAction):
     async def append_spreadsheet(
         self,
         spreadsheet_url_or_id: Optional[str] = None,
-        range_name: str = "",
+        range_name: Optional[str] = None,
         values: Optional[List[List[Any]]] = None,
         value_input_option: str = "RAW",
         worksheet_title: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Append rows; range is usually a single cell or row anchor (e.g. A1)."""
+        """Append rows after existing table data (Sheets API ``spreadsheets.values.append``).
+
+        When ``range_name`` is ``None``, empty, or whitespace-only, the range is the **entire
+        worksheet** named by ``worksheet_title`` (qualified tab only), and Google determines the
+        table extent and where new rows go. Otherwise ``range_name`` is the usual **table
+        anchor** (e.g. ``A1`` or ``A:C`` header columns) on that tab.
+
+        The response often includes ``tableRange`` and ``updates.updatedRange``—use those to
+        see exactly where rows were written.
+
+        Args:
+            spreadsheet_url_or_id: Target spreadsheet URL/id or action default.
+            range_name: Optional A1 anchor; omit for whole-tab append.
+            values: Rows to append as a 2D list (required).
+            value_input_option: Sheets API value input mode.
+            worksheet_title: Tab when ``range_name`` is not sheet-qualified.
+
+        Returns:
+            Full append API response (including ``updates``, ``tableRange``, etc.).
+
+        Raises:
+            ValueError: If ``values`` is ``None`` or spreadsheet resolution fails.
+        """
         if not spreadsheet_url_or_id:
             spreadsheet_url_or_id = self.spreadsheet_url
 
@@ -324,9 +518,8 @@ class GoogleSheetsAction(GoogleAction):
         )
         if values is None:
             raise ValueError("values is required")
-        if not range_name.strip():
-            raise ValueError("range_name is required for append")
-        full_range = self._a1_range(range_name, worksheet_title)
+        anchor = (range_name or "").strip()
+        full_range = self._a1_range(anchor, worksheet_title)
         service = await self.get_service()
         body = {"values": values}
         return (
@@ -347,8 +540,22 @@ class GoogleSheetsAction(GoogleAction):
         ranges: Optional[List[str]] = None,
         worksheet_title: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Clear one or more ranges; list items may be sheet-local A1."""
+        """Clear values from one or more ranges (``spreadsheets.values.batchClear``).
 
+        Each entry in ``ranges`` may be local A1 or already qualified; blanks are skipped.
+        At least one non-empty range is required after qualification.
+
+        Args:
+            spreadsheet_url_or_id: Target spreadsheet URL/id or action default.
+            ranges: List of A1 ranges to clear.
+            worksheet_title: Tab used to qualify unqualified strings.
+
+        Returns:
+            The API ``batchClear`` response body.
+
+        Raises:
+            ValueError: If ``ranges`` is ``None`` or none remain after filtering.
+        """
         if not spreadsheet_url_or_id:
             spreadsheet_url_or_id = self.spreadsheet_url
 
@@ -377,6 +584,7 @@ class GoogleSheetsAction(GoogleAction):
         range_name: str,
         worksheet_title: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """Build a ``GridRange`` dict for ``batchUpdate`` from an A1 ``range_name``."""
         if not str(range_name).strip():
             raise ValueError("range_name is required")
         full = self._a1_range(range_name.strip(), worksheet_title)
@@ -399,8 +607,21 @@ class GoogleSheetsAction(GoogleAction):
         user_entered_format: Optional[Dict[str, Any]] = None,
         fields: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Apply ``userEnteredFormat`` to a range via ``repeatCell`` (batchUpdate)."""
+        """Apply ``userEnteredFormat`` via ``repeatCell`` (``spreadsheets.batchUpdate``).
 
+        Args:
+            spreadsheet_url_or_id: Target spreadsheet URL/id or action default.
+            range_name: Rectangular A1 range (local or qualified).
+            worksheet_title: Tab when ``range_name`` is not qualified.
+            user_entered_format: Nested format dict per Sheets API (fonts, colors, etc.).
+            fields: Field mask for ``repeatCell``; defaults to ``userEnteredFormat``.
+
+        Returns:
+            ``batchUpdate`` response.
+
+        Raises:
+            ValueError: If ``user_entered_format`` is missing or ``range_name`` is invalid.
+        """
         if not spreadsheet_url_or_id:
             spreadsheet_url_or_id = self.spreadsheet_url
         if not worksheet_title:
@@ -441,8 +662,20 @@ class GoogleSheetsAction(GoogleAction):
         worksheet_title: Optional[str] = None,
         merge_type: str = "MERGE_ALL",
     ) -> Dict[str, Any]:
-        """Merge a rectangular range (``mergeCells`` batchUpdate)."""
+        """Merge a rectangle of cells (``mergeCells`` in ``batchUpdate``).
 
+        Args:
+            spreadsheet_url_or_id: Target spreadsheet URL/id or action default.
+            range_name: Rectangular A1 range.
+            worksheet_title: Tab when ``range_name`` is not qualified.
+            merge_type: ``MERGE_ALL``, ``MERGE_ROWS``, or ``MERGE_COLUMNS``.
+
+        Returns:
+            ``batchUpdate`` response.
+
+        Raises:
+            ValueError: Invalid ``merge_type`` or range/metadata errors from the API layer.
+        """
         if merge_type not in self._MERGE_TYPES:
             raise ValueError(
                 f"merge_type must be one of {sorted(self._MERGE_TYPES)}; got {merge_type!r}"
@@ -473,8 +706,16 @@ class GoogleSheetsAction(GoogleAction):
         range_name: str = "",
         worksheet_title: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Split merged cells in a rectangular range (``unmergeCells`` batchUpdate)."""
+        """Split merged cells in a rectangle (``unmergeCells`` in ``batchUpdate``).
 
+        Args:
+            spreadsheet_url_or_id: Target spreadsheet URL/id or action default.
+            range_name: Rectangular A1 range covering merged cells.
+            worksheet_title: Tab when ``range_name`` is not qualified.
+
+        Returns:
+            ``batchUpdate`` response.
+        """
         if not spreadsheet_url_or_id:
             spreadsheet_url_or_id = self.spreadsheet_url
         if not worksheet_title:
@@ -494,7 +735,15 @@ class GoogleSheetsAction(GoogleAction):
         )
 
     async def create_spreadsheet(self, title: str) -> Dict[str, Any]:
-        """Create a spreadsheet; response includes id, url, and title."""
+        """Create a new spreadsheet file (``spreadsheets.create``).
+
+        Args:
+            title: Document title (first tab may default per Google).
+
+        Returns:
+            Dict with ``spreadsheetId``, ``spreadsheetUrl``, and ``properties.title``
+            (per requested fields).
+        """
         service = await self.get_service()
         spreadsheet = {"properties": {"title": title}}
         return (
@@ -513,8 +762,17 @@ class GoogleSheetsAction(GoogleAction):
         rows: int = 1000,
         cols: int = 26,
     ) -> Dict[str, Any]:
-        """Add a new tab (worksheet) to an existing spreadsheet."""
+        """Add a worksheet (tab) to an existing spreadsheet (``addSheet``).
 
+        Args:
+            title: New tab name.
+            spreadsheet_url_or_id: Parent spreadsheet URL/id or action default.
+            rows: Initial row count for the grid.
+            cols: Initial column count for the grid.
+
+        Returns:
+            ``batchUpdate`` response (includes replies with new sheet metadata).
+        """
         if not spreadsheet_url_or_id:
             spreadsheet_url_or_id = self.spreadsheet_url
 
@@ -553,8 +811,25 @@ class GoogleSheetsAction(GoogleAction):
         hidden: Optional[bool] = None,
         tab_color: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
-        """Rename a tab and/or resize grid, visibility, or tab color (Sheets batchUpdate)."""
+        """Update tab metadata (``updateSheetProperties`` in ``batchUpdate``).
 
+        Provide at least one of ``new_title``, ``rows``, ``cols``, ``hidden``, ``tab_color``.
+
+        Args:
+            worksheet_title: Current tab name to update (required).
+            spreadsheet_url_or_id: Target spreadsheet URL/id or action default.
+            new_title: Rename the tab.
+            rows: New row count (grid size).
+            cols: New column count (grid size).
+            hidden: Whether the tab is hidden.
+            tab_color: Tab color (RGB components 0–1 per API).
+
+        Returns:
+            ``batchUpdate`` response.
+
+        Raises:
+            ValueError: Missing worksheet title, no fields to update, or tab not found.
+        """
         if not spreadsheet_url_or_id:
             spreadsheet_url_or_id = self.spreadsheet_url
 
@@ -617,8 +892,15 @@ class GoogleSheetsAction(GoogleAction):
         worksheet_title: str,
         spreadsheet_url_or_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Remove a tab by title."""
+        """Delete a tab by title (``deleteSheet`` in ``batchUpdate``).
 
+        Args:
+            worksheet_title: Tab name to remove.
+            spreadsheet_url_or_id: Target spreadsheet URL/id or action default.
+
+        Returns:
+            ``batchUpdate`` response.
+        """
         spreadsheet_id = resolve_spreadsheet_id(
             self._resolve_spreadsheet_url_or_id(spreadsheet_url_or_id)
         )
@@ -639,15 +921,31 @@ class GoogleSheetsAction(GoogleAction):
         email: Optional[str] = None,
         role: str = "reader",
     ) -> Dict[str, Any]:
-        """Share via Drive permissions (same semantics as GoogleDriveAction.share_file)."""
+        """Create a Drive permission on the spreadsheet file (share by link or user).
 
+        Same general idea as ``GoogleDriveAction.share_file``: uses Drive API permissions.
+
+        Args:
+            spreadsheet_url_or_id: File URL/id or action default.
+            share_type: ``"link"`` for a link permission, otherwise interpreted as user invite
+                when combined with ``email``.
+            link_scope: Drive permission ``type`` for link sharing (e.g. ``"anyone"``).
+            email: Recipient email when not using link sharing.
+            role: Drive role (e.g. ``"reader"``, ``"writer"``).
+
+        Returns:
+            For link shares, ``{"webViewLink": ...}`` from ``files.get``; else ``{"success": True}``.
+
+        Raises:
+            Google API errors propagate from the client library if the call fails.
+        """
         if not spreadsheet_url_or_id:
             spreadsheet_url_or_id = self.spreadsheet_url
 
         file_id = resolve_spreadsheet_id(
             self._resolve_spreadsheet_url_or_id(spreadsheet_url_or_id)
         )
-        service = await self._get_drive_service()
+        service = await self._get_sheets_service()
 
         if share_type == "link":
             permission = {"type": link_scope, "role": role}
@@ -665,14 +963,23 @@ class GoogleSheetsAction(GoogleAction):
     async def delete_spreadsheet(
         self, spreadsheet_url_or_id: Optional[str] = None
     ) -> bool:
-        """Permanently delete the spreadsheet file (Drive API)."""
+        """Permanently delete the spreadsheet file (Drive ``files.delete``).
 
+        Args:
+            spreadsheet_url_or_id: File URL/id or action default.
+
+        Returns:
+            ``True`` if the delete call completed without raising.
+
+        Raises:
+            Google API errors propagate from the client library if the call fails.
+        """
         if not spreadsheet_url_or_id:
             spreadsheet_url_or_id = self.spreadsheet_url
 
         file_id = resolve_spreadsheet_id(
             self._resolve_spreadsheet_url_or_id(spreadsheet_url_or_id)
         )
-        service = await self._get_drive_service()
+        service = await self._get_sheets_service()
         service.files().delete(fileId=file_id).execute()
         return True

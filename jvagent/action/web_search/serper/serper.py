@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 from urllib.parse import urlparse
 
 from jvspatial.core.annotations import attribute
+from jvspatial.env import env
 
 from jvagent.action.web_search.base import BaseWebSearchAction
 
@@ -24,7 +25,7 @@ class SerperWebSearchAction(BaseWebSearchAction):
     API docs: https://serper.dev/search
 
     Configuration:
-        api_key: Your Serper API subscription token
+        SERPER_API_KEY in ``.env``
         api_endpoint: Serper API endpoint URL
         gl: Two-letter country code for result localization (default: gy)
         hl: Language for search results (default: en)
@@ -51,6 +52,10 @@ class SerperWebSearchAction(BaseWebSearchAction):
         default=5, description="The maximum number of results to return"
     )
 
+    @staticmethod
+    def _env_api_key() -> str:
+        return env("SERPER_API_KEY")
+
     async def search(self, query: str, **kwargs: Any) -> List[Dict[str, str]]:
         """Execute a Google search via Serper and return normalized results.
 
@@ -72,7 +77,8 @@ class SerperWebSearchAction(BaseWebSearchAction):
             "engine": kwargs.get("engine", self.engine),
         }
 
-        headers = {"X-API-KEY": self.api_key, "Content-Type": "application/json"}
+        api_key = (self._env_api_key() or "").strip()
+        headers = {"X-API-KEY": api_key, "Content-Type": "application/json"}
 
         try:
             conn = http.client.HTTPSConnection(host)
