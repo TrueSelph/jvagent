@@ -8,6 +8,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+from jvspatial.api.exceptions import ValidationError
 from jvspatial.core import on_visit
 from jvspatial.core.annotations import attribute
 
@@ -386,6 +387,8 @@ class InteractAction(Action, ABC):
             )
 
             return response
+        except ValidationError:
+            raise
         except Exception as e:
             logger.error(
                 f"InteractAction.respond: Error calling PersonaAction: {e}",

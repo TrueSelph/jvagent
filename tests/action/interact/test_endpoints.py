@@ -14,169 +14,75 @@ from jvagent.action.interact.response_builder import (
 from jvagent.core.config import get_environment_mode, is_production_mode
 
 
-@patch("jvagent.core.config._get_environment_from_app_config", return_value=None)
 class TestEnvironmentMode:
     """Test environment mode detection functions."""
 
-    def test_get_environment_mode_defaults_to_development(self, mock_app_config):
-        """Verify default mode is development when env and app config are unset."""
-        original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
+    def test_get_environment_mode_defaults_to_development(self):
+        """Verify default mode is development when env var is unset."""
+        original = os.environ.pop("JVSPATIAL_ENVIRONMENT", None)
         try:
             mode = get_environment_mode()
             assert mode == "development"
         finally:
             if original:
-                os.environ["JVAGENT_ENVIRONMENT"] = original
+                os.environ["JVSPATIAL_ENVIRONMENT"] = original
 
-    def test_get_environment_mode_production(self, mock_app_config):
+    def test_get_environment_mode_production(self):
         """Verify production mode is detected."""
-        original = os.environ.get("JVAGENT_ENVIRONMENT")
+        original = os.environ.get("JVSPATIAL_ENVIRONMENT")
         try:
-            os.environ["JVAGENT_ENVIRONMENT"] = "production"
+            os.environ["JVSPATIAL_ENVIRONMENT"] = "production"
             mode = get_environment_mode()
             assert mode == "production"
         finally:
             if original:
-                os.environ["JVAGENT_ENVIRONMENT"] = original
+                os.environ["JVSPATIAL_ENVIRONMENT"] = original
             else:
-                os.environ.pop("JVAGENT_ENVIRONMENT", None)
+                os.environ.pop("JVSPATIAL_ENVIRONMENT", None)
 
-    def test_get_environment_mode_case_insensitive(self, mock_app_config):
-        """Verify JVAGENT_ENVIRONMENT is case-insensitive."""
-        original = os.environ.get("JVAGENT_ENVIRONMENT")
+    def test_get_environment_mode_case_insensitive(self):
+        """Verify JVSPATIAL_ENVIRONMENT is case-insensitive."""
+        original = os.environ.get("JVSPATIAL_ENVIRONMENT")
         try:
             for value in ["PRODUCTION", "Production", "production", "PrOdUcTiOn"]:
-                os.environ["JVAGENT_ENVIRONMENT"] = value
+                os.environ["JVSPATIAL_ENVIRONMENT"] = value
                 assert is_production_mode() is True
 
             for value in ["DEVELOPMENT", "Development", "development", "DeVeLoPmEnT"]:
-                os.environ["JVAGENT_ENVIRONMENT"] = value
+                os.environ["JVSPATIAL_ENVIRONMENT"] = value
                 assert is_production_mode() is False
         finally:
             if original:
-                os.environ["JVAGENT_ENVIRONMENT"] = original
+                os.environ["JVSPATIAL_ENVIRONMENT"] = original
             else:
-                os.environ.pop("JVAGENT_ENVIRONMENT", None)
+                os.environ.pop("JVSPATIAL_ENVIRONMENT", None)
 
-    def test_is_production_mode(self, mock_app_config):
+    def test_is_production_mode(self):
         """Test is_production_mode helper."""
-        original = os.environ.get("JVAGENT_ENVIRONMENT")
+        original = os.environ.get("JVSPATIAL_ENVIRONMENT")
         try:
-            os.environ["JVAGENT_ENVIRONMENT"] = "production"
+            os.environ["JVSPATIAL_ENVIRONMENT"] = "production"
             assert is_production_mode() is True
 
-            os.environ["JVAGENT_ENVIRONMENT"] = "development"
+            os.environ["JVSPATIAL_ENVIRONMENT"] = "development"
             assert is_production_mode() is False
         finally:
             if original:
-                os.environ["JVAGENT_ENVIRONMENT"] = original
+                os.environ["JVSPATIAL_ENVIRONMENT"] = original
             else:
-                os.environ.pop("JVAGENT_ENVIRONMENT", None)
+                os.environ.pop("JVSPATIAL_ENVIRONMENT", None)
 
-    def test_get_environment_mode_from_app_config_production(self, mock_app_config):
-        """Verify app config (legacy config.development.environment): production yields production mode."""
-        original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
+    def test_invalid_env_value_defaults_to_development(self):
+        """Verify unsupported values are treated as development."""
+        original = os.environ.get("JVSPATIAL_ENVIRONMENT")
         try:
-            with patch(
-                "jvagent.core.config._get_environment_from_app_config",
-                return_value="production",
-            ):
-                mode = get_environment_mode()
-                assert mode == "production"
+            os.environ["JVSPATIAL_ENVIRONMENT"] = "staging"
+            assert get_environment_mode() == "development"
         finally:
             if original:
-                os.environ["JVAGENT_ENVIRONMENT"] = original
-
-    @patch(
-        "jvagent.core.config._get_environment_from_app_config",
-        return_value="development",
-    )
-    def test_get_environment_mode_from_app_config_development(
-        self, mock_app_config_development, mock_app_config
-    ):
-        """Verify app config (legacy config.development.environment): development yields development mode."""
-        original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
-        try:
-            mode = get_environment_mode()
-            assert mode == "development"
-        finally:
-            if original:
-                os.environ["JVAGENT_ENVIRONMENT"] = original
-
-    @patch(
-        "jvagent.core.config._get_environment_from_app_config",
-        return_value="production",
-    )
-    def test_env_var_overrides_app_config(
-        self, mock_app_config_production, mock_app_config
-    ):
-        """Verify JVAGENT_ENVIRONMENT overrides app config when both are set."""
-        original = os.environ.get("JVAGENT_ENVIRONMENT")
-        try:
-            os.environ["JVAGENT_ENVIRONMENT"] = "development"
-            mode = get_environment_mode()
-            assert mode == "development"
-            mock_app_config.assert_not_called()
-        finally:
-            if original:
-                os.environ["JVAGENT_ENVIRONMENT"] = original
+                os.environ["JVSPATIAL_ENVIRONMENT"] = original
             else:
-                os.environ.pop("JVAGENT_ENVIRONMENT", None)
-
-
-class TestConfigEnvironmentPath:
-    """Test config.environment (top-level) path is read correctly."""
-
-    def test_config_environment_top_level_yields_production(self):
-        """Verify config.environment (top-level) is read and yields production mode."""
-        original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
-        try:
-            mock_descriptor = MagicMock()
-            mock_descriptor.config = {"environment": "production"}
-            with patch("jvagent.core.app_loader.AppLoader") as MockLoader:
-                mock_loader_instance = MagicMock()
-                mock_loader_instance.load_app_descriptor.return_value = mock_descriptor
-                MockLoader.return_value = mock_loader_instance
-                mode = get_environment_mode()
-                assert mode == "production"
-        finally:
-            if original:
-                os.environ["JVAGENT_ENVIRONMENT"] = original
-
-    def test_config_environment_top_level_yields_development(self):
-        """Verify config.environment (top-level): development yields development mode."""
-        original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
-        try:
-            mock_descriptor = MagicMock()
-            mock_descriptor.config = {"environment": "development"}
-            with patch("jvagent.core.app_loader.AppLoader") as MockLoader:
-                mock_loader_instance = MagicMock()
-                mock_loader_instance.load_app_descriptor.return_value = mock_descriptor
-                MockLoader.return_value = mock_loader_instance
-                mode = get_environment_mode()
-                assert mode == "development"
-        finally:
-            if original:
-                os.environ["JVAGENT_ENVIRONMENT"] = original
-
-    def test_config_environment_precedence_over_legacy(self):
-        """Verify config.environment takes precedence over config.development.environment."""
-        original = os.environ.pop("JVAGENT_ENVIRONMENT", None)
-        try:
-            mock_descriptor = MagicMock()
-            mock_descriptor.config = {
-                "environment": "production",
-                "development": {"environment": "development"},
-            }
-            with patch("jvagent.core.app_loader.AppLoader") as MockLoader:
-                mock_loader_instance = MagicMock()
-                mock_loader_instance.load_app_descriptor.return_value = mock_descriptor
-                MockLoader.return_value = mock_loader_instance
-                mode = get_environment_mode()
-                assert mode == "production"
-        finally:
-            if original:
-                os.environ["JVAGENT_ENVIRONMENT"] = original
+                os.environ.pop("JVSPATIAL_ENVIRONMENT", None)
 
 
 class TestResponseBuilder:
@@ -184,9 +90,9 @@ class TestResponseBuilder:
 
     def test_build_interaction_payload_production_mode(self):
         """Verify production mode returns minimal payload."""
-        original = os.environ.get("JVAGENT_ENVIRONMENT")
+        original = os.environ.get("JVSPATIAL_ENVIRONMENT")
         try:
-            os.environ["JVAGENT_ENVIRONMENT"] = "production"
+            os.environ["JVSPATIAL_ENVIRONMENT"] = "production"
 
             # Create mock interaction
             interaction = MagicMock()
@@ -216,15 +122,15 @@ class TestResponseBuilder:
             assert "streamed" not in payload
         finally:
             if original:
-                os.environ["JVAGENT_ENVIRONMENT"] = original
+                os.environ["JVSPATIAL_ENVIRONMENT"] = original
             else:
-                os.environ.pop("JVAGENT_ENVIRONMENT", None)
+                os.environ.pop("JVSPATIAL_ENVIRONMENT", None)
 
     def test_build_interaction_payload_development_mode(self):
         """Verify development mode returns full payload."""
-        original = os.environ.get("JVAGENT_ENVIRONMENT")
+        original = os.environ.get("JVSPATIAL_ENVIRONMENT")
         try:
-            os.environ["JVAGENT_ENVIRONMENT"] = "development"
+            os.environ["JVSPATIAL_ENVIRONMENT"] = "development"
 
             # Create mock interaction
             interaction = MagicMock()
@@ -260,16 +166,16 @@ class TestResponseBuilder:
             }
         finally:
             if original:
-                os.environ["JVAGENT_ENVIRONMENT"] = original
+                os.environ["JVSPATIAL_ENVIRONMENT"] = original
             else:
-                os.environ.pop("JVAGENT_ENVIRONMENT", None)
+                os.environ.pop("JVSPATIAL_ENVIRONMENT", None)
 
     @pytest.mark.asyncio
     async def test_build_interact_response_production_mode(self):
         """Verify production mode excludes report."""
-        original = os.environ.get("JVAGENT_ENVIRONMENT")
+        original = os.environ.get("JVSPATIAL_ENVIRONMENT")
         try:
-            os.environ["JVAGENT_ENVIRONMENT"] = "production"
+            os.environ["JVSPATIAL_ENVIRONMENT"] = "production"
 
             # Create mock interaction
             interaction = MagicMock()
@@ -300,16 +206,16 @@ class TestResponseBuilder:
             assert "interaction" not in response
         finally:
             if original:
-                os.environ["JVAGENT_ENVIRONMENT"] = original
+                os.environ["JVSPATIAL_ENVIRONMENT"] = original
             else:
-                os.environ.pop("JVAGENT_ENVIRONMENT", None)
+                os.environ.pop("JVSPATIAL_ENVIRONMENT", None)
 
     @pytest.mark.asyncio
     async def test_build_interact_response_development_mode(self):
         """Verify development mode includes report."""
-        original = os.environ.get("JVAGENT_ENVIRONMENT")
+        original = os.environ.get("JVSPATIAL_ENVIRONMENT")
         try:
-            os.environ["JVAGENT_ENVIRONMENT"] = "development"
+            os.environ["JVSPATIAL_ENVIRONMENT"] = "development"
 
             # Create mock interaction
             interaction = MagicMock()
@@ -340,16 +246,16 @@ class TestResponseBuilder:
             assert response["report"] == [{"test": "report"}]
         finally:
             if original:
-                os.environ["JVAGENT_ENVIRONMENT"] = original
+                os.environ["JVSPATIAL_ENVIRONMENT"] = original
             else:
-                os.environ.pop("JVAGENT_ENVIRONMENT", None)
+                os.environ.pop("JVSPATIAL_ENVIRONMENT", None)
 
     @pytest.mark.asyncio
     async def test_build_interact_response_no_report(self):
         """Verify response works without report."""
-        original = os.environ.get("JVAGENT_ENVIRONMENT")
+        original = os.environ.get("JVSPATIAL_ENVIRONMENT")
         try:
-            os.environ["JVAGENT_ENVIRONMENT"] = "development"
+            os.environ["JVSPATIAL_ENVIRONMENT"] = "development"
 
             # Create mock interaction
             interaction = MagicMock()
@@ -374,9 +280,9 @@ class TestResponseBuilder:
             assert "report" not in response
         finally:
             if original:
-                os.environ["JVAGENT_ENVIRONMENT"] = original
+                os.environ["JVSPATIAL_ENVIRONMENT"] = original
             else:
-                os.environ.pop("JVAGENT_ENVIRONMENT", None)
+                os.environ.pop("JVSPATIAL_ENVIRONMENT", None)
 
 
 class TestFinalizeUsage:

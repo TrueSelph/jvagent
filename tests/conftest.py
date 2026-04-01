@@ -1,6 +1,5 @@
 """Shared pytest fixtures for jvagent tests."""
 
-import os
 import tempfile
 from pathlib import Path
 
@@ -11,14 +10,7 @@ from jvspatial.db.jsondb import JsonDB
 
 @pytest.fixture(autouse=True)
 def _clear_jvspatial_load_env_cache():
-    """Invalidate jvspatial :func:`load_env` so per-test env changes apply.
-
-    jvagent uses :func:`jvspatial.env.get_environment_mode` and deferred-save
-    settings from cached env; tests patch ``os.environ`` or use ``monkeypatch``.
-    """
-    from jvspatial.env import clear_load_env_cache
-
-    clear_load_env_cache()
+    """Shared test setup hook (kept for fixture compatibility)."""
     yield
 
 
@@ -35,9 +27,6 @@ async def test_db(temp_dir, monkeypatch):
     # Immediate persistence: deferred Interaction/Conversation saves break tests
     # that reload entities with Interaction.get() or aggregate from the DB.
     monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "false")
-    from jvspatial.env import clear_load_env_cache
-
-    clear_load_env_cache()
 
     test_db_path = temp_dir / "test_jvdb"
     test_db_path.mkdir()

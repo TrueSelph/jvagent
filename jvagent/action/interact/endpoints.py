@@ -115,6 +115,22 @@ from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
 
 _TRUNCATE_LEN = 200
 
+_STREAM_CLIENT_ERROR = (
+    "Something went wrong while processing your request. "
+    "If you need help, contact support with the request_id from this response."
+)
+
+
+def _sse_error_event(
+    request_id: str, *, message: Optional[str] = None
+) -> Dict[str, Any]:
+    """Build a client-safe SSE error payload (no exception text)."""
+    return {
+        "type": "error",
+        "message": message or _STREAM_CLIENT_ERROR,
+        "request_id": request_id,
+    }
+
 
 def _sanitize_visitor_data_for_log(visitor_data: Dict[str, Any]) -> Dict[str, Any]:
     """Sanitize visitor.data for safe logging (no PII bloat, no media/base64).
@@ -312,38 +328,41 @@ def _initialize_rate_limiter_from_config() -> None:
     max_length: Optional[int] = 2000
 
     try:
-        import os
+        from jvagent.core.app_context import get_app_root
+        from jvagent.core.config import get_config_value, load_app_config
 
-        from jvagent.core.app_loader import AppLoader
-
-        # Env vars take precedence over app.yaml
-        env_rate = os.getenv("JVAGENT_INTERACT_RATE_LIMIT_PER_MINUTE")
-        if env_rate is not None and env_rate.isdigit():
-            rate_limit = int(env_rate)
-
-        env_max = os.getenv("JVAGENT_INTERACT_MAX_UTTERANCE_LENGTH")
-        if env_max is not None:
-            if env_max.lower() in ("none", "null", ""):
-                max_length = None
-            elif env_max.isdigit():
-                max_length = int(env_max)
-
-        # Fall back to app.yaml if env vars not set
-        if env_rate is None or env_max is None:
-            app_path = os.getcwd()
-            loader = AppLoader(app_path)
-            descriptor = loader.load_app_descriptor()
-
-            if descriptor and descriptor.config:
-                interact_config = descriptor.config.get("interact", {})
-                if env_rate is None:
-                    rate_limit = interact_config.get("rate_limit_per_minute", 60)
-                if env_max is None:
-                    raw = interact_config.get("max_utterance_length", 2000)
-                    max_length = None if raw in ("None", None) else raw
-
-        if max_length == "None":
+        app_config = load_app_config(get_app_root())
+        rate_limit = int(
+            get_config_value(
+                app_config,
+                "interact.rate_limit_per_minute",
+                "JVAGENT_INTERACT_RATE_LIMIT_PER_MINUTE",
+                60,
+            )
+        )
+        raw_max = get_config_value(
+            app_config,
+            "interact.max_utterance_length",
+            "JVAGENT_INTERACT_MAX_UTTERANCE_LENGTH",
+            2000,
+        )
+        if raw_max is None:
             max_length = None
+        elif isinstance(raw_max, str) and raw_max.strip().lower() in (
+            "none",
+            "null",
+            "",
+        ):
+            max_length = None
+        else:
+            try:
+                max_length = int(raw_max)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Invalid interact.max_utterance_length value %r; using default 2000",
+                    raw_max,
+                )
+                max_length = 2000
 
         initialize_rate_limiter(
             rate_limit_per_minute=rate_limit,
@@ -584,8 +603,11 @@ async def interact_endpoint(
                     for item in report or []:
                         if isinstance(item, dict) and item.get("access_denied"):
                             raise ValidationError(
-                                message=str(item.get("error", "Access denied")),
-                                details={"channel": channel},
+                                message="Access denied.",
+                                details={
+                                    "channel": channel,
+                                    "request_id": profile.request_id,
+                                },
                             )
                     raise RuntimeError("Interaction was not created during traversal")
 
@@ -649,11 +671,16 @@ async def interact_endpoint(
         except ValueError as e:
             raise ValidationError(message=str(e), details={"error": str(e)})
         except Exception as e:
-            logger.error(f"Error in interact endpoint: {e}", exc_info=True)
-            raise ValidationError(
-                message=f"Interaction failed: {str(e)}",
-                details={"error": str(e)},
+            logger.error(
+                "Error in interact endpoint: %s request_id=%s",
+                e,
+                profile.request_id,
+                exc_info=True,
             )
+            raise ValidationError(
+                message=_STREAM_CLIENT_ERROR,
+                details={"request_id": profile.request_id},
+            ) from e
         finally:
             # Clear profile context
             set_current_profile(None)
@@ -717,25 +744,28 @@ async def _stream_interaction(
             try:
                 await walk_task
             except Exception as e:
-                yield format_sse_chunk(
-                    {"type": "error", "message": f"Walker error: {str(e)}"}
+                logger.error(
+                    "Stream walker failed before interaction: request_id=%s",
+                    profile.request_id,
+                    exc_info=True,
                 )
+                yield format_sse_chunk(_sse_error_event(profile.request_id))
                 return
             stream_report = await walker.get_report()
             for item in stream_report or []:
                 if isinstance(item, dict) and item.get("access_denied"):
                     yield format_sse_chunk(
-                        {
-                            "type": "error",
-                            "message": str(item.get("error", "Access denied")),
-                        }
+                        _sse_error_event(
+                            profile.request_id,
+                            message="Access denied.",
+                        )
                     )
                     return
             yield format_sse_chunk(
-                {
-                    "type": "error",
-                    "message": "Interaction was not created during traversal",
-                }
+                _sse_error_event(
+                    profile.request_id,
+                    message="Interaction was not created during traversal.",
+                )
             )
             return
 
@@ -781,13 +811,16 @@ async def _stream_interaction(
                             profile.record(
                                 "walker_execution", time.time() - walker_start
                             )
-                        except Exception as e:
+                        except Exception:
                             profile.record(
                                 "walker_execution", time.time() - walker_start
                             )
-                            yield format_sse_chunk(
-                                {"type": "error", "message": f"Walker error: {str(e)}"}
+                            logger.error(
+                                "Stream walker task failed: request_id=%s",
+                                profile.request_id,
+                                exc_info=True,
                             )
+                            yield format_sse_chunk(_sse_error_event(profile.request_id))
                         break
 
                     try:
@@ -947,17 +980,17 @@ async def _stream_interaction(
             await finalize_profile(profile.request_id, log=True)
 
     except Exception as e:
-        logger.error(f"Error in stream_interaction: {e}", exc_info=True)
+        logger.error(
+            "Error in stream_interaction: %s request_id=%s",
+            e,
+            profile.request_id,
+            exc_info=True,
+        )
         # Still log profile on error
         profile.record("total_stream_time", time.time() - stream_start_time)
         profile.record("error", 0)  # Mark that an error occurred
         await finalize_profile(profile.request_id, log=True)
-        yield format_sse_chunk(
-            {
-                "type": "error",
-                "message": f"Streaming error: {str(e)}",
-            }
-        )
+        yield format_sse_chunk(_sse_error_event(profile.request_id))
     finally:
         # Clear profile context
         set_current_profile(None)

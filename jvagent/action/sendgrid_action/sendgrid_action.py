@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 import httpx
 from jvspatial.api.exceptions import ValidationError
 from jvspatial.core.annotations import attribute
+from jvspatial.env import env
 
 from jvagent.action.base import Action
 
@@ -94,10 +95,6 @@ def _normalize_reply_to(
 class SendGridAction(Action):
     """Send email via SendGrid HTTP API v3 (Mail Send)."""
 
-    api_key: Optional[str] = attribute(
-        default=None,
-        description="SendGrid API key (Bearer token for /v3/mail/send)",
-    )
     api_base_url: str = attribute(
         default="https://api.sendgrid.com/v3",
         description="SendGrid API base URL (no trailing slash required)",
@@ -117,13 +114,11 @@ class SendGridAction(Action):
         description="Default From display name when payload omits name",
     )
 
-    def _apply_env_defaults(self) -> None:
-        if not self.api_key or not str(self.api_key).strip():
-            val = os.environ.get("SENDGRID_API_KEY", "").strip()
-            if val:
-                self.api_key = val
-                logger.debug("Using SENDGRID_API_KEY from environment")
+    @staticmethod
+    def _api_key() -> str:
+        return env("SENDGRID_API_KEY")
 
+    def _apply_env_defaults(self) -> None:
         base = os.environ.get("SENDGRID_API_BASE_URL", "").strip()
         if base and (
             not self.api_base_url or self.api_base_url == "https://api.sendgrid.com/v3"
@@ -143,10 +138,8 @@ class SendGridAction(Action):
 
     def _config_issues(self) -> List[str]:
         issues: List[str] = []
-        if not self.api_key or not str(self.api_key).strip():
-            issues.append(
-                "api_key is not set (use context.api_key or SENDGRID_API_KEY)"
-            )
+        if not self._api_key():
+            issues.append("SENDGRID_API_KEY is not configured")
         base = str(self.api_base_url or "").strip()
         if not base:
             issues.append("api_base_url is empty")
@@ -166,7 +159,7 @@ class SendGridAction(Action):
         ]
 
     def _auth_headers(self) -> Dict[str, str]:
-        key = str(self.api_key).strip()
+        key = self._api_key()
         return {
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",

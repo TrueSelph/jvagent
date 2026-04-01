@@ -1,56 +1,59 @@
 # jvagent Configuration Reference
 
-This document maps `app.yaml` config paths to environment variables and documents the configuration merge order. Use it to understand where to set each value and which settings are secrets.
+This document defines how to split configuration between `app.yaml` and environment variables for jvagent apps.
+
+For complete canonical key inventory (including integrations and relevant `JVSPATIAL_*` keys), see [environment-keys-reference.md](environment-keys-reference.md).
 
 ## Configuration Priority
 
 **env var > app.yaml config > hardcoded default**
 
-- **Empty env values** are treated as unset (fall through to yaml/default) for jvagent `get_config_value` / `get_performance_config_value`.
+- **Empty env values** are treated as unset for `get_config_value` / `get_performance_config_value`.
 - **Booleans** (where coerced): `true`/`false`, `1`/`0`, `yes`/`no`, `on`/`off`.
-- **app.yaml**: App structure, defaults, agent list. Use `${VAR}` placeholders for secrets — never real values.
-- **.env**: Secrets and local overrides. Copy from `.env.example` and fill in values.
-- **deploy.yaml**: For jvdeploy (Lambda/K8s). Injects env vars at deploy time. Use Secrets Manager or CI/CD for secrets.
+- **app.yaml** should hold app structure and high-convenience defaults that are safe in git.
+- **.env / deploy env** should hold secrets, deploy-specific values, and system-level runtime settings.
 
-### Environment loading and jvspatial cache
+## Keep / Move / Deprecate Matrix
 
-- **Editing `.env` on disk** does not affect a **running** server until you **restart** the process (or add your own hot-reload). jvagent loads the app `.env` at CLI startup via `load_app_env`.
-- **jvagent** `jvagent.env.load_env()` reads `os.environ` on every call — it is **not** cached.
-- **jvspatial** `jvspatial.env.load_env()` snapshots environment variables in an **LRU-cached** `EnvConfig`. After changing `os.environ`, code that relies on jvspatial’s `load_env()` must call **`jvspatial.env.clear_load_env_cache()`** so the next read sees updates (jvagent does this after loading `.env`, after applying DB env from config, and before initializing the logging database).
+This matrix is the recommended baseline for new apps and refreshed templates.
 
-## Prefix rules
+| Area | Keep in `app.yaml` | Move to env-first | Notes |
+|------|---------------------|-------------------|-------|
+| App identity and graph | `app`, `jvagent`, `context` (name/description/timezone), `agents` | `JVAGENT_APP_ID` (optional override) | `agents` remains descriptor-only. |
+| Server | `config.server.title`, `description`, `version`, `docs_url`, `redoc_url` | `JVAGENT_HOST`, `JVAGENT_PORT`, `JVAGENT_PUBLIC_BASE_URL` | Host/port are deploy/runtime concerns. |
+| Auth | `config.auth.enabled`, `config.auth.exempt_paths` | `JVSPATIAL_JWT_SECRET_KEY`, admin credentials (`JVAGENT_ADMIN_*`) | Keep non-secret policy in YAML; keep credentials in env. |
+| Interact | `config.interact.*` limits | env overrides (`JVAGENT_INTERACT_*`) | Good YAML defaults; easy env override. |
+| CORS | `config.cors.enabled`, `config.cors.origins` | env overrides (`JVSPATIAL_CORS_*`) | Keep defaults in repo, override per deploy. |
+| Performance | `config.performance.*` | env overrides (`JVAGENT_*`, `JVSPATIAL_ENABLE_DEFERRED_SAVES`) | Recommended to keep practical defaults in YAML. |
+| DB / Storage / Logging backends | Optional local-dev defaults only | `JVSPATIAL_DB_*`, `JVSPATIAL_FILE_STORAGE_*`, `JVSPATIAL_LOG_DB_*`, AWS creds | Treat as system/deploy configuration for production. |
+| Any non-expected key | Not part of the expected-key model | Move to env or remove | Startup flags unexpected keys uniformly. |
 
-- **`JVSPATIAL_*`** — Use only for knobs that jvspatial’s server / strict env validation and merge logic consume (database, JWT, file storage, CORS, graph REST, deferred saves, logging DB, caches, serverless, etc.). Names must stay aligned with jvspatial’s `docs/md/environment-configuration.md` allowlist.
-- **`JVAGENT_*`** — App and CLI settings outside that contract (host/port/title, interact limits, PageIndex DB naming, profiling, caches, **`JVAGENT_PUBLIC_BASE_URL`**, pip install toggle, etc.).
-- **Vendor / unprefixed** — Integration secrets and endpoints owned by specific actions (`OPENAI_API_KEY`, `WHATSAPP_*`, `FACEBOOK_*`, `SERPER_API_KEY`, …). See [integrations-environment.md](integrations-environment.md).
+## Validation Behavior
 
-## Config Mapping Reference
+`app.yaml` is validated against the expected-key model:
+
+- expected top-level keys: `app`, `version`, `author`, `jvagent`, `context`, `license`, `homepage`, `tags`, `config`, `agents`
+- expected `config` sections: `server`, `auth`, `interact`, `cors`, `performance`
+- expected keys inside those sections are validated by type where applicable
+- any other key path is flagged as an unexpected key at startup
+
+## Prefix Rules
+
+- **`JVSPATIAL_*`**: framework/system concerns (database, JWT, file storage, CORS, graph REST, deferred saves, logging DB, serverless).
+- **`JVAGENT_*`**: jvagent app/CLI/runtime controls (server metadata overrides, interact limits, PageIndex naming, profiling/caches).
+- **Vendor keys**: action integration secrets (`OPENAI_API_KEY`, `WHATSAPP_*`, `FACEBOOK_*`, etc.).
+
+## Core Mapping (Commonly Used)
 
 ### Server
 
 | app.yaml path | Env var | Default |
 |---------------|---------|---------|
-| (none) | `JVAGENT_APP_ID` | (app node's app_id) |
 | `config.server.title` | `JVAGENT_TITLE` | jvagent API |
 | `config.server.description` | `JVAGENT_DESCRIPTION` | jvagent Agentive Platform API |
 | `config.server.version` | `JVAGENT_VERSION` | (package version) |
 | `config.server.host` | `JVAGENT_HOST` | 127.0.0.1 |
 | `config.server.port` | `JVAGENT_PORT` | 8000 |
-| (none) | `JVAGENT_PUBLIC_BASE_URL` | (empty) — public origin for webhooks, OAuth callbacks (Google), and absolute media URLs (WhatsApp, Messenger); set in production |
-
-### Database
-
-| app.yaml path | Env var | Default |
-|---------------|---------|---------|
-| `config.database.type` | `JVSPATIAL_DB_TYPE` | json |
-| `config.database.path` | `JVSPATIAL_DB_PATH` | ./jvagent_db |
-| `config.database.uri` | `JVSPATIAL_MONGODB_URI` | mongodb://localhost:27017 |
-| `config.database.name` | `JVSPATIAL_MONGODB_DB_NAME` | (none) |
-| `config.database.table_name` | `JVSPATIAL_DYNAMODB_TABLE_NAME` | (none) |
-| `config.database.region` | `JVSPATIAL_DYNAMODB_REGION` | (none) |
-| `config.database.endpoint_url` | `JVSPATIAL_DYNAMODB_ENDPOINT_URL` | (none) |
-| `config.database.access_key_id` | `AWS_ACCESS_KEY_ID` | (none) |
-| `config.database.secret_access_key` | `AWS_SECRET_ACCESS_KEY` | (none) |
 
 ### Authentication
 
@@ -62,77 +65,18 @@ This document maps `app.yaml` config paths to environment variables and document
 | `config.auth.api_key_prefix` | `JVAGENT_API_KEY_PREFIX` | jv_ |
 | `config.auth.api_key_header` | `JVAGENT_API_KEY_HEADER` | x-api-key |
 
-**Secrets (env only):**
-
-| Env var | Description |
-|---------|-------------|
-| `JVSPATIAL_JWT_SECRET_KEY` | JWT signing secret. **Required** when auth is enabled; there is **no** implicit dev default. |
-| `JVAGENT_ADMIN_PASSWORD` | Admin bootstrap password. Required to create initial admin. |
-| `JVAGENT_ADMIN_USERNAME` | Admin username (default: admin) |
-| `JVAGENT_ADMIN_EMAIL` | Admin email (default: admin@jvagent.example) |
+Secrets (env only):
+- `JVSPATIAL_JWT_SECRET_KEY`
+- `JVAGENT_ADMIN_PASSWORD`
+- `JVAGENT_ADMIN_USERNAME`
+- `JVAGENT_ADMIN_EMAIL`
 
 ### Interact Endpoint
 
 | app.yaml path | Env var | Default |
 |---------------|---------|---------|
 | `config.interact.rate_limit_per_minute` | `JVAGENT_INTERACT_RATE_LIMIT_PER_MINUTE` | 60 |
-| `config.interact.max_utterance_length` | `JVAGENT_INTERACT_MAX_UTTERANCE_LENGTH` | 2000 (null = unlimited) |
-
-### File Storage
-
-| app.yaml path | Env var | Default |
-|---------------|---------|---------|
-| `config.file_storage.enabled` | `JVSPATIAL_FILE_STORAGE_ENABLED` | false |
-| `config.file_storage.provider` | `JVSPATIAL_FILE_STORAGE_PROVIDER` | local |
-| `config.file_storage.root_dir` | `JVSPATIAL_FILES_ROOT_PATH` | ./.files |
-| `config.file_storage.base_url` | `JVSPATIAL_FILE_STORAGE_BASE_URL` | http://localhost:8000 |
-| `config.file_storage.max_size` | `JVSPATIAL_FILE_STORAGE_MAX_SIZE` | 104857600 |
-| (none) | `JVSPATIAL_FILES_PUBLIC_READ` | true (public `GET` for `{JVSPATIAL_API_PREFIX}/files/...`; set `false` to require auth) |
-| (none) | `JVSPATIAL_API_PREFIX` | /api (file URLs use `{prefix}/files/...`) |
-
-**S3 (App / file storage backend)** — canonical env names only:
-
-| Env var | Description |
-|---------|-------------|
-| `JVSPATIAL_S3_BUCKET_NAME` | Bucket name |
-| `JVSPATIAL_S3_REGION` | AWS region (default `us-east-1` in `jvagent.env.load_env`) |
-| `JVSPATIAL_S3_ACCESS_KEY` | Access key |
-| `JVSPATIAL_S3_SECRET_KEY` | Secret key |
-| `JVSPATIAL_S3_ENDPOINT_URL` | Custom endpoint (optional) |
-
-Use only the S3 variable names in the table above.
-
-File storage backend is selected with **`JVSPATIAL_FILE_STORAGE_PROVIDER`** and related `JVSPATIAL_FILE_STORAGE_*` keys (or `config.file_storage.provider` in app.yaml).
-
-### Logging
-
-Environment variables match **jvspatial** (`JVSPATIAL_DB_LOGGING_*`, `JVSPATIAL_LOG_DB_*`).
-
-| app.yaml path | Env var | Default |
-|---------------|---------|---------|
-| `config.logging.enabled` | `JVSPATIAL_DB_LOGGING_ENABLED` | true |
-| `config.logging.levels` | `JVSPATIAL_DB_LOGGING_LEVELS` | ERROR,CRITICAL |
-| `config.logging.database.type` | `JVSPATIAL_LOG_DB_TYPE` | (none) |
-| `config.logging.database.uri` | `JVSPATIAL_LOG_DB_URI` | (none) |
-| `config.logging.database.name` | `JVSPATIAL_LOG_DB_NAME` | jvagent_logs |
-| `config.logging.database.path` | `JVSPATIAL_LOG_DB_PATH` | (none) |
-| `config.logging.database.table_name` | `JVSPATIAL_LOG_DB_TABLE_NAME` | (none) |
-| `config.logging.database.region` | `JVSPATIAL_LOG_DB_REGION` | (none) |
-| `config.logging.database.endpoint_url` | `JVSPATIAL_LOG_DB_ENDPOINT_URL` | (none) |
-
-### PageIndex (document indexing/retrieval)
-
-| app.yaml path | Env var | Default |
-|---------------|---------|---------|
-| `config.pageindex.db_name` | `JVAGENT_PAGEINDEX_DB_NAME` | (derived: `{app_id}_pageindex_db`) |
-| `config.pageindex.db_root` | `JVAGENT_PAGEINDEX_DB_ROOT` | . |
-| (none) | `JVAGENT_PAGEINDEX_DB_TYPE` | json |
-| (none) | `JVAGENT_PAGEINDEX_DB_PATH` | (none) |
-| (none) | `JVAGENT_PAGEINDEX_DB_URI` | `JVSPATIAL_MONGODB_URI`, else mongodb://localhost:27017 |
-| (none) | `JVAGENT_PAGEINDEX_DB_TABLE_NAME` | (derived from db_name) |
-| (none) | `JVAGENT_PAGEINDEX_DB_REGION` | us-east-1 |
-
-DB name resolution when `JVAGENT_PAGEINDEX_DB_NAME` is unset: `{app_id}_pageindex_db` — one db per app (agents share it, documents scoped by collection). Fallback: `config.pageindex.db_name` in app.yaml, else `pageindex_db`.
+| `config.interact.max_utterance_length` | `JVAGENT_INTERACT_MAX_UTTERANCE_LENGTH` | 2000 |
 
 ### CORS
 
@@ -141,21 +85,7 @@ DB name resolution when `JVAGENT_PAGEINDEX_DB_NAME` is unset: `{app_id}_pageinde
 | `config.cors.enabled` | `JVSPATIAL_CORS_ENABLED` | true |
 | `config.cors.origins` | `JVSPATIAL_CORS_ORIGINS` | (comma-separated list) |
 
-### Development
-
-| app.yaml path | Env var | Default |
-|---------------|---------|---------|
-| `config.development.debug` | `JVSPATIAL_DEBUG` | false |
-
-### API
-
-| app.yaml path | Env var | Default |
-|---------------|---------|---------|
-| `config.api.graph_endpoint_enabled` | `JVSPATIAL_GRAPH_ENDPOINT_ENABLED` | false |
-
-Allowlisted by jvspatial (`docs/md/environment-configuration.md` in the jvspatial package).
-
-### Performance (config.performance)
+### Performance
 
 | app.yaml path | Env var | Default |
 |---------------|---------|---------|
@@ -169,56 +99,21 @@ Allowlisted by jvspatial (`docs/md/environment-configuration.md` in the jvspatia
 | `config.performance.enable_interact_router_cache` | `JVAGENT_ENABLE_INTERACT_ROUTER_CACHE` | false |
 | `config.performance.interact_router_cache_ttl` | `JVAGENT_INTERACT_ROUTER_CACHE_TTL` | 45 |
 
-**Deferred saves (effective value):** jvspatial’s `load_env()` resolves the flag with precedence: **process environment** (non-empty `JVSPATIAL_ENABLE_DEFERRED_SAVES`) **>** `.env` on disk (walking up from cwd) **>** `config.performance.enable_deferred_saves` in the **first** `app.yaml` found on that walk **>** default `true`. Booleans accept `true`/`false`, `1`/`0`, `yes`/`no`, `on`/`off`. `load_env()` is cached; jvagent’s `create_server_from_config` calls `clear_load_env_cache()` before returning so `JVSPATIAL_*` updates (e.g. DB path, logging DB) apply.
-
-**Deferred saves and serverless:** Even when the resolved flag is on, jvspatial disables deferred batching whenever `is_serverless_mode()` is true (Lambda, `SERVERLESS_MODE=true`, etc.). `DeferredSaveMixin` turns batching on at instance construction when allowed; apps do not need to call `enable_deferred_saves()` for that. Use `flush_deferred_entities` from jvspatial (or `await entity.flush()`) at the end of a request.
-
-### Action runtime pip installs
-
-Actions may declare `package.dependencies.pip` in `info.yaml`. By default jvagent runs `pip install` for missing packages when an action is discovered or loaded.
-
-| Env var | Default | Description |
-|---------|---------|-------------|
-| `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL` | false | When `true`, runtime `pip install` is disabled. If an action still lists `dependencies.pip`, startup logs an error and dependency installation returns failure — add those packages to your Docker image, Lambda layer, or a frozen `requirements.txt` instead. Recommended for production and air-gapped deploys. |
-
-## app.yaml-Only Config (No Env Override)
-
-These settings are structural or app-specific and are only configurable in app.yaml:
-
-| app.yaml path | Description |
-|---------------|-------------|
-| `config.auth.exempt_paths` | List of paths to merge with default auth-exempt paths |
-| `config.paths.agents` | Path to agents directory (default: ./agents) |
-| `agents` | List of agents to install (required; no env equivalent) |
-
 ## Placeholder Resolution
 
-app.yaml supports `${VAR_NAME}` placeholders. At load time, these are resolved from `os.environ`. Use for secrets in app.yaml:
+`app.yaml` supports `${VAR_NAME}` placeholders resolved from process environment at load time:
 
 ```yaml
 config:
   database:
     type: dynamodb
     access_key_id: ${AWS_ACCESS_KEY_ID}
-    secret_access_key: ${AWS_SECRET_ACCESS_KEY}
 ```
 
-Never put real secret values in app.yaml — use placeholders and set the actual values in .env or deploy injection.
+Do not commit real secret values in `app.yaml`.
 
-## `JVSPATIAL_*` environment keys
+## Related Documentation
 
-jvspatial’s `Server` validates `JVSPATIAL_*` names against an allowlist. **jvagent** uses the same names as in this document and in jvspatial’s **`docs/md/environment-configuration.md`**. Examples include `JVSPATIAL_DB_TYPE`, `JVSPATIAL_DB_PATH`, MongoDB/DynamoDB keys, `JVSPATIAL_JWT_SECRET_KEY`, `JVSPATIAL_JWT_EXPIRE_MINUTES`, `JVSPATIAL_FILE_STORAGE_PROVIDER`, `JVSPATIAL_FILES_ROOT_PATH`, the S3 keys in the table above, `JVSPATIAL_GRAPH_ENDPOINT_ENABLED`, and logging/cache/redis/serverless keys as documented in jvspatial.
-
-Only allowlisted `JVSPATIAL_*` keys may be set; unrecognized names cause startup validation to fail.
-
-For public webhook and OAuth URLs, set **`JVAGENT_PUBLIC_BASE_URL`**. For the file storage backend, set **`JVSPATIAL_FILE_STORAGE_PROVIDER`** (or `config.file_storage.provider`).
-
-## Integration variables
-
-Third-party and action-specific environment variables (WhatsApp, Facebook, Serper, OpenAI, TTS/STT, etc.) are listed in **[integrations-environment.md](integrations-environment.md)**.
-
-## Related documentation
-
-- [integrations-environment.md](integrations-environment.md) — Integration env inventory (vendor keys).
-- [scaffolding.md](scaffolding.md) — CLI to generate new apps (`jvagent app create`), add agents (`jvagent agent create`), and author action profiles under `profiles/`.
-- jvspatial: `docs/md/environment-configuration.md` (strict `JVSPATIAL_*` policy).
+- [environment-keys-reference.md](environment-keys-reference.md) - Canonical env key inventory.
+- [integrations-environment.md](integrations-environment.md) - Integration/vendor env keys.
+- [scaffolding.md](scaffolding.md) - CLI app and agent scaffolding flow.

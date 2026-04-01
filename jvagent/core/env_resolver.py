@@ -1,7 +1,8 @@
 """Environment variable resolution for YAML descriptors.
 
-Provides functionality to resolve environment variable placeholders
-like ${VAR_NAME} in YAML configuration files.
+Resolves ``${VAR_NAME}`` in YAML strings (missing vars become ``""``; debug log by default).
+Use ``${VAR_NAME:?}`` to emit a warning when the variable is unset or empty.
+Set ``JVAGENT_WARN_EMPTY_PLACEHOLDERS=true`` to warn on every empty ``${VAR}`` (not ``:?``).
 """
 
 import logging
@@ -11,8 +12,13 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Pattern to match ${VAR_NAME} placeholders
-ENV_PLACEHOLDER_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+# ${VAR} optional; ${VAR:?} logs WARNING when unset or empty (required placeholder)
+ENV_PLACEHOLDER_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:\?)?\}")
+
+
+def _warn_all_empty_placeholders() -> bool:
+    raw = os.getenv("JVAGENT_WARN_EMPTY_PLACEHOLDERS", "")
+    return str(raw).strip().lower() in ("true", "1", "yes", "on")
 
 
 def resolve_env_placeholders(value: Any) -> Any:
@@ -59,8 +65,7 @@ def resolve_env_placeholders(value: Any) -> Any:
 def _resolve_string_placeholders(text: str) -> str:
     """Resolve environment variable placeholders in a string.
 
-    Supports ${VAR_NAME} syntax. If the environment variable is not found,
-    the placeholder is replaced with an empty string.
+    Supports ``${VAR_NAME}`` and ``${VAR_NAME:?}`` (required; warns if empty).
 
     Handles multiple placeholders in a single string:
     - "${VAR1}_${VAR2}" resolves both placeholders
@@ -85,15 +90,27 @@ def _resolve_string_placeholders(text: str) -> str:
 
     def replace_placeholder(match: re.Match[str]) -> str:
         var_name = match.group(1)
-        # Get environment variable value, defaulting to empty string if not found
-        # This ensures that missing env vars result in empty string as prescribed
+        required = match.group(2) == ":?"
         value = os.getenv(var_name, "")
         if not value:
-            logger.debug(
-                f"Environment variable '{var_name}' not found in environment, "
-                f"replacing placeholder with empty string"
-            )
+            if required:
+                logger.warning(
+                    "Required env placeholder ${%s:?} is unset or empty; "
+                    "replacing with empty string",
+                    var_name,
+                )
+            elif _warn_all_empty_placeholders():
+                logger.warning(
+                    "Environment variable '%s' not set; ${%s} replaced with empty string",
+                    var_name,
+                    var_name,
+                )
+            else:
+                logger.debug(
+                    "Environment variable '%s' not found in environment, "
+                    "replacing placeholder with empty string",
+                    var_name,
+                )
         return value
 
-    # Replace all ${VAR_NAME} patterns in the string
     return ENV_PLACEHOLDER_PATTERN.sub(replace_placeholder, text)

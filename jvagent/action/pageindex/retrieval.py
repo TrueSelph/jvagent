@@ -11,7 +11,6 @@ data (e.g. documents ingested before the index existed).
 import asyncio
 import json
 import logging
-import os
 import re
 from typing import Any, Dict, List, Optional, Set
 
@@ -21,6 +20,7 @@ from jvspatial.core.context import (
     set_default_context,
 )
 from jvspatial.db import get_database_manager
+from jvspatial.env import env
 
 from .config import (
     PAGEINDEX_DB_NAME,
@@ -220,8 +220,8 @@ async def _search_via_tree_search(
     if not roots:
         return []
 
-    model = model or os.getenv("PAGEINDEX_TREE_SEARCH_MODEL", "gpt-4o-mini")
-    api_key = os.getenv("OPENAI_API_KEY")
+    model = model or env("PAGEINDEX_TREE_SEARCH_MODEL", default="gpt-4o-mini")
+    api_key = env("OPENAI_API_KEY")
     if not api_key and not get_pageindex_model_action():
         logger.warning(
             "PageIndex tree search requires OPENAI_API_KEY or a model action in context; "

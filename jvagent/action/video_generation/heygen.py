@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 import requests
 from httpx import AsyncClient, Timeout
 from jvspatial.core.annotations import attribute
+from jvspatial.env import env
 
 from jvagent.action.base import Action
 
@@ -34,10 +35,6 @@ class HeygenVideoAction(Action):
         default="avatar",  # avatar or talking_photo
         description="wheter to use an avatar or a talking photo",
     )
-    api_key: str = attribute(
-        default="",
-        description="API key for video generation service",
-    )
     template_id: str = attribute(default="", description="Template ID")
     avatar_id: str = attribute(default="", description="Avatar ID")
     talking_photo_id: str = attribute(default="", description="Talking Photo ID")
@@ -56,27 +53,16 @@ class HeygenVideoAction(Action):
     folder_id: str = attribute(default="", description="Folder ID")
     callback_url: str = attribute(default="", description="Callback URL")
 
-    def _apply_env_defaults(self) -> None:
-        """Populate fields from environment variables when missing."""
-        import os
-
-        if not self.api_key or not self.api_key.strip():
-            env = os.environ.get("HEYGEN_API_KEY", "").strip()
-            if env:
-                self.api_key = env
-                logger.debug("Using HEYGEN_API_KEY from environment")
+    @staticmethod
+    def _api_key() -> str:
+        return env("HEYGEN_API_KEY")
 
     async def create_video(
         self, script: str, title: str = "Video", **kwargs: Any
     ) -> Optional[Dict[str, Any]]:
         """Create a video and return the provider response."""
-        # lazily load from environment if necessary
-        try:
-            self._apply_env_defaults()
-        except Exception:
-            pass
-
-        if not self.api_key or not self.api_key.strip():
+        api_key = self._api_key()
+        if not api_key:
             logger.error("HeygenVideoAction: API key is not configured")
             return None
 
@@ -163,7 +149,7 @@ class HeygenVideoAction(Action):
         headers = {
             "accept": "application/json",
             "content-type": "application/json",
-            "x-api-key": self.api_key,
+            "x-api-key": api_key,
         }
 
         response = requests.post(url, json=payload, headers=headers)
@@ -240,12 +226,17 @@ class HeygenVideoAction(Action):
         if kwargs.get("variables"):
             variables.update(kwargs["variables"])
 
+        api_key = self._api_key()
+        if not api_key:
+            logger.error("HeygenVideoAction: API key is not configured")
+            return None
+
         url = f"https://api.heygen.com/v2/template/{template_id}/generate"
 
         headers = {
             "accept": "application/json",
             "content-type": "application/json",
-            "x-api-key": self.api_key,
+            "x-api-key": api_key,
         }
 
         payload = {
@@ -265,16 +256,24 @@ class HeygenVideoAction(Action):
 
     async def retrieve_template(self, template_id: str) -> Any:
         """Retrieve a template by ID."""
+        api_key = self._api_key()
+        if not api_key:
+            logger.error("HeygenVideoAction: API key is not configured")
+            return {}
 
         url = f"https://api.heygen.com/v3/template/{template_id}"
 
-        headers = {"accept": "application/json", "x-api-key": self.api_key}
+        headers = {"accept": "application/json", "x-api-key": api_key}
 
         response = requests.get(url, headers=headers)
         return response.json()
 
     async def create_video_from_prompt(self, prompt: str, **kwargs: Any) -> Any:
         """Generate a video from a prompt."""
+        api_key = self._api_key()
+        if not api_key:
+            logger.error("HeygenVideoAction: API key is not configured")
+            return None
 
         url = "https://api.heygen.com/v1/video_agent/generate"
 
@@ -285,7 +284,7 @@ class HeygenVideoAction(Action):
         headers = {
             "accept": "application/json",
             "content-type": "application/json",
-            "x-api-key": self.api_key,
+            "x-api-key": api_key,
         }
 
         response = requests.post(url, json=payload, headers=headers)
@@ -296,10 +295,14 @@ class HeygenVideoAction(Action):
 
     async def get_video(self, video_id: str) -> Any:
         """Get a video status by ID."""
+        api_key = self._api_key()
+        if not api_key:
+            logger.error("HeygenVideoAction: API key is not configured")
+            return None
 
         url = f"https://api.heygen.com/v1/video_status.get?video_id={video_id}"
 
-        headers = {"accept": "application/json", "x-api-key": self.api_key}
+        headers = {"accept": "application/json", "x-api-key": api_key}
 
         response = requests.get(url, headers=headers)
         status = response.json()["data"]["status"]
@@ -327,13 +330,8 @@ class HeygenVideoAction(Action):
         case this implementation simply attempts to list videos or perform a
         lightweight noop.  For now we just validate that ``api_key`` is set.
         """
-        # ensure env defaults are applied before checking
-        try:
-            self._apply_env_defaults()
-        except Exception:
-            pass
-
-        if not self.api_key or not self.api_key.strip():
+        api_key = self._api_key()
+        if not api_key:
             return {
                 "status": False,
                 "message": "HeyGen API key is not configured",
@@ -345,7 +343,7 @@ class HeygenVideoAction(Action):
             async with AsyncClient(timeout=Timeout(self.timeout)) as client:
                 resp = await client.get(
                     f"{self.api_base.rstrip('/')}/videos",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    headers={"Authorization": f"Bearer {api_key}"},
                 )
                 if resp.status_code == 200:
                     return True

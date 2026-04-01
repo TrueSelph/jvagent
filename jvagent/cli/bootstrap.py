@@ -7,6 +7,7 @@ from typing import Optional
 from jvspatial.api import get_auth_service
 from jvspatial.api.auth.models import UserCreateAdmin
 from jvspatial.core import Root
+from jvspatial.env import env
 
 from jvagent import __version__
 from jvagent.core import Agents
@@ -14,7 +15,7 @@ from jvagent.core.app import App
 from jvagent.core.app_loader import AppLoader
 from jvagent.core.bootstrap_logger import BootstrapLogger
 from jvagent.core.config import get_file_storage_config, load_app_config
-from jvagent.env import get_jvagent_app_id, load_env
+from jvagent.env import get_jvagent_app_id
 
 logger = logging.getLogger(__name__)
 
@@ -156,10 +157,11 @@ async def ensure_admin_user() -> bool:
     """
     logger.debug("Checking for admin user...")
 
-    env = load_env()
-    admin_username = env.admin_username
-    admin_password = env.admin_password
-    admin_email = env.admin_email
+    admin_username = env("JVAGENT_ADMIN_USERNAME", default="admin")
+    admin_password = env("JVAGENT_ADMIN_PASSWORD", default="")
+    admin_email = env(
+        "JVAGENT_ADMIN_EMAIL", default=f"{admin_username}@jvagent.example"
+    )
 
     if not admin_password:
         logger.warning(

@@ -11,7 +11,7 @@ from jvspatial.api.config_groups import (
     DatabaseConfig,
     FileStorageConfig,
 )
-from jvspatial.env import clear_load_env_cache
+from jvspatial.env import env
 
 from jvagent import __version__
 from jvagent.cli.bootstrap import bootstrap_application_graph, ensure_admin_user
@@ -27,7 +27,6 @@ from jvagent.core.config import (
     resolve_db_path,
     resolve_log_db_path,
 )
-from jvagent.env import load_env as load_jvagent_env
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +102,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     )
 
     if normalize_empty(mongodb_uri) is None:
-        mongodb_uri = load_jvagent_env().mongodb_uri
+        mongodb_uri = env("JVSPATIAL_MONGODB_URI", default="mongodb://localhost:27017")
 
     # DynamoDB configuration
     dynamodb_table_name = get_config_value(
@@ -147,7 +146,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     auth_enabled = get_config_value(
         app_config, "auth.enabled", "JVAGENT_AUTH_ENABLED", True
     )
-    jwt_secret_raw = normalize_empty(load_jvagent_env().jwt_secret_key)
+    jwt_secret_raw = normalize_empty(env("JVSPATIAL_JWT_SECRET_KEY", default=""))
     jwt_secret = jwt_secret_raw or ""
     if auth_enabled and not jwt_secret_raw:
         raise ValueError(
@@ -185,10 +184,11 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     # Bootstrap admin: jvspatial runs AuthService.bootstrap_admin on server start
     # (lifecycle hook). jvagent's ensure_admin_user() also calls bootstrap_admin when
     # count_users()==0 so `jvagent bootstrap` without run still creates an admin.
-    _env = load_jvagent_env()
-    admin_username = _env.admin_username
-    admin_password = _env.admin_password
-    admin_email = _env.admin_email
+    admin_username = env("JVAGENT_ADMIN_USERNAME", default="admin")
+    admin_password = env("JVAGENT_ADMIN_PASSWORD", default="")
+    admin_email = env(
+        "JVAGENT_ADMIN_EMAIL", default=f"{admin_username}@jvagent.example"
+    )
 
     # Log server creation details only in debug mode
     if debug:
@@ -212,7 +212,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
                 logger.debug(f"    API Key Header: {api_key_header}")
 
     # Determine log level based on debug flag or environment variable
-    log_level = _env.log_level or ("debug" if debug else "info")
+    log_level = env("JVSPATIAL_LOG_LEVEL", default=("debug" if debug else "info"))
 
     # Override with app.yaml development.debug if available
     debug_mode = get_config_value(
@@ -412,7 +412,7 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         )
 
         if normalize_empty(log_db_uri) is None:
-            log_db_uri = load_jvagent_env().log_db_uri or mongodb_uri
+            log_db_uri = env("JVSPATIAL_LOG_DB_URI", default="") or mongodb_uri
         log_db_path = resolve_log_db_path(app_root, app_config)
         log_dynamodb_table_name = normalize_empty(log_dynamodb_table_name) or None
         log_dynamodb_region = normalize_empty(log_dynamodb_region) or None
@@ -445,9 +445,6 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
             if log_dynamodb_secret_access_key:
                 os.environ["AWS_SECRET_ACCESS_KEY"] = log_dynamodb_secret_access_key
 
-        # get_logging_config uses cached jvspatial load_env(); refresh after os.environ updates
-        clear_load_env_cache()
-
         # Initialize with updated log_levels
         initialize_logging_database(
             log_levels=log_levels,
@@ -460,9 +457,6 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     # sync_endpoint_modules handles uvicorn --reload double-load. Action-specific
     # endpoints (interact, pageindex, whatsapp, etc.) load via pre_import_action_modules_for_agents.
     _import_core_endpoint_modules()
-
-    # jvspatial load_env() is LRU-cached; refresh after JVSPATIAL_* updates (DB path, logging DB).
-    clear_load_env_cache()
 
     return server
 

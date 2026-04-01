@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
 import yaml
 
 from jvagent.action.base import Action
+from jvagent.core.agent_yaml_validator import warn_agent_yaml
 from jvagent.core.env_resolver import resolve_env_placeholders
 
 from . import core_discovery
@@ -674,6 +675,7 @@ class ActionLoader:
 
                 # Resolve environment variable placeholders
                 data = resolve_env_placeholders(data)
+                warn_agent_yaml(data, source=str(agent_file))
 
                 # Extract action references from actions list
                 actions = data.get("actions", [])

@@ -1,14 +1,15 @@
 # jvagent Application Descriptor
-# This file defines the application metadata, configuration defaults, and lists agents.
+# This file defines app metadata, safe defaults, and the agent install list.
 # Agents listed in the 'agents' section are automatically installed when you run jvagent or bootstrap.
 #
-# In production, this package will be used to bootstrap a running jvagent instance.
-# Runtime-specific settings (paths, secrets) should be configured via .env or environment variables.
+# Recommended split:
+# - app.yaml: app structure + non-secret convenience defaults
+# - env vars (.env/deploy): secrets, system-level config, deploy/runtime overrides
 
 # Application reference
 app: jvagent_demo_app
 
-# Application metadata
+# Descriptor metadata
 version: 1.0.0
 author: Your Name/Organization
 
@@ -20,9 +21,6 @@ context:
   name: jvagent Demo App
   description: A demo application showcasing jvagent capabilities
   timezone: America/New_York
-  file_storage_provider: local
-  file_storage_root_dir: ./.files
-  file_storage_enabled: true
 
 # Application metadata (not stored in App node)
 license: MIT
@@ -32,162 +30,49 @@ tags:
   - example
   - boilerplate
 
-# Application configuration defaults
-# Env vars override. Use ${VAR} for secrets — never real values.
-# See docs/configuration.md for app.yaml path → env var mapping.
+# Application-level convenience defaults.
+# Env vars still override: env > app.yaml > code default.
+# Keep secrets/system-level config in environment variables.
 config:
-  # Server configuration
+  # Server metadata (host/port should be env-driven)
   server:
     title: jvagent Demo App API
     description: API for jvagent Demo App
     version: 0.0.1
-    host: 0.0.0.0
-    port: 8000
 
-  # Database configuration (defaults - production will override)
-  database:
-    type: json
-    path: ./jvagent_db
-    # MongoDB configuration (uncomment to use MongoDB instead of JSON)
-    # type: mongodb
-    # uri: mongodb://localhost:27017
-    # name: jvagent_db  # Optional: specify database name (defaults to "jvdb" if not set via JVSPATIAL_MONGODB_DB_NAME)
-    # Note: MongoDB database names cannot contain dots (.) - use underscores instead
-    # DynamoDB configuration (uncomment to use DynamoDB instead of JSON)
-    # Ideal for AWS Lambda serverless deployments and production AWS environments
-    # type: dynamodb
-    # table_name: jvspatial  # Base table name (default: "jvspatial")
-    # region: us-east-1  # AWS region name (default: "us-east-1")
-    # endpoint_url: http://localhost:8000  # Optional: for local DynamoDB testing (DynamoDB Local)
-    # access_key_id: ${AWS_ACCESS_KEY_ID}  # Optional: AWS access key (uses IAM role if not set)
-    # secret_access_key: ${AWS_SECRET_ACCESS_KEY}  # Optional: AWS secret key (uses IAM role if not set)
-    # Note: For local development, use DynamoDB Local with endpoint_url set to "http://localhost:8000"
-    # Note: In AWS Lambda, IAM role credentials are automatically used if access_key_id is not set
-    # Note: You can use environment variable placeholders (e.g., ${AWS_ACCESS_KEY_ID}) for sensitive values
-
-  # File storage configuration (defaults - production will override)
-  file_storage:
-    provider: local
-    root_dir: ./.files
-    enabled: true
-
-  # Authentication configuration (defaults - production MUST override secrets)
+  # Authentication policy defaults (secret stays in env: JVSPATIAL_JWT_SECRET_KEY)
   auth:
     enabled: true
     jwt_expire_minutes: 60
-    # JWT secret should be set via JVSPATIAL_JWT_SECRET_KEY environment variable
-    # For anonymous media fetch, prefer time-limited proxy URLs or add auth.exempt_paths
-    # (e.g. "/api/files/*") only after reviewing security impact. Prefer proxy URLs or
-    # JVSPATIAL_FILES_PUBLIC_READ=true for anonymous GET when appropriate (default).
+    exempt_paths:
+      - /health
+      - /docs
+      - /openapi.json
 
-  # Admin user configuration (defaults - production MUST override password)
-  admin:
-    username: admin
-    email: admin@jvagent.example
-    # Password should be set via JVAGENT_ADMIN_PASSWORD environment variable
-
-  # Interact endpoint configuration
+  # Interact endpoint defaults
   interact:
-    rate_limit_per_minute: 60 # per IP+agent_id combination
-    max_utterance_length: 2000 # maximum characters for utterance input (set to null to disable)
+    rate_limit_per_minute: 60
+    max_utterance_length: 2000
 
-  # Logging system configuration
-  logging:
-    enabled: true
-    levels: INTERACTION,ERROR,CRITICAL # Comma-separated log levels to capture
-    retention_days: 60 # Log retention period in days (0 = indefinite)
-    # Logging database configuration
-    # If not specified, logging database defaults to same as main database
-    database:
-      # type: mongodb  # Defaults to same as database.type if not set (uncomment for MongoDB)
-      # uri: mongodb://localhost:27017  # Defaults to same as database.uri if not set (uncomment for MongoDB)
-      name: jvagent_logs # Defaults to jvagent_logs if not set via JVSPATIAL_LOG_DB_NAME
-      path: ./jvagent_logs # For JSON/SQLite logging databases
-      # DynamoDB logging database (uncomment to use DynamoDB for logging)
-      # type: dynamodb  # Defaults to same as database.type if not set (uncomment for DynamoDB)
-      # table_name: jvagent_logs  # Table name for logging (default: "jvagent_logs")
-      # region: us-east-1  # AWS region name (defaults to main database region if not set)
-      # endpoint_url: http://localhost:8000  # Optional: for local DynamoDB testing
-      # access_key_id: ${AWS_ACCESS_KEY_ID}  # Optional: AWS access key (uses IAM role if not set)
-      # secret_access_key: ${AWS_SECRET_ACCESS_KEY}  # Optional: AWS secret key (uses IAM role if not set)
-      # Note: If not specified, logging database uses same configuration as main database
-      # Note: You can use environment variable placeholders (e.g., ${AWS_ACCESS_KEY_ID}) for sensitive values
-
-  # CORS configuration
+  # CORS defaults (deploy-specific values may override via env)
   cors:
     enabled: true
     origins: http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:5173,http://localhost:5173
 
-  # Runtime environment (development or production)
-  # Override via JVAGENT_ENVIRONMENT env var
-  environment: development # development or production
-
-  # API configuration
-  api:
-    prefix: /api
-    graph_endpoint_enabled: true
-
-  # Paths configuration
-  paths:
-    agents: ./agents
-
-  # PageIndex (document indexing/retrieval) - optional
-  # pageindex:
-  #   db_name: "{agent_name}_{app_name}_pageindex_db"  # template or explicit name
-  #   db_root: "."  # root for path when DB_PATH not set
-
-  # Performance optimization configuration
-  # These settings can also be overridden via environment variables
+  # Performance defaults (all env-overridable)
   performance:
-    # Enable request latency profiling (env: JVAGENT_ENABLE_PROFILING)
-    # When enabled, profiles are logged at DEBUG level with latency breakdowns
     enable_profiling: false
-
-    # Agent node caching (env: JVAGENT_ENABLE_AGENT_CACHE)
-    # Cache Agent nodes to reduce database lookups
     enable_agent_cache: true
-
-    # Agent cache TTL in seconds (env: JVAGENT_AGENT_CACHE_TTL)
     agent_cache_ttl: 300
-
-    # Action caching (env: JVAGENT_ENABLE_ACTION_CACHE)
-    # Cache InteractAction instances to reduce database queries during action discovery
-    # Automatically invalidated when actions are registered/deregistered
     enable_action_cache: true
-
-    # Action cache TTL in seconds (env: JVAGENT_ACTION_CACHE_TTL)
     action_cache_ttl: 60
-
-    # Deferred saves (env: JVSPATIAL_ENABLE_DEFERRED_SAVES)
-    # Batch multiple save() calls into a single database write for entities
-    # that experience rapid updates (e.g., Conversation, Interaction during processing)
-    # When enabled, save() marks entities as dirty; flush() performs the actual write
-    # Serverless mode always disables deferred saves regardless of this flag
     enable_deferred_saves: true
-
-    # Cache cleanup probability (env: JVAGENT_CACHE_CLEANUP_PROBABILITY)
-    # Probability (0.0-1.0) of running cache cleanup at the end of each request
-    # This serverless-friendly approach replaces background cleanup tasks
-    # Set to 0 to disable cleanup, 1.0 to run on every request
     cache_cleanup_probability: 0.1
-
-    # Interact router cache (env: JVAGENT_ENABLE_INTERACT_ROUTER_CACHE)
-    # Skip LLM for repeated context when enabled; requires enable_routing_cache in agent.yaml
     enable_interact_router_cache: true
-
-    # Interact router cache TTL in seconds (env: JVAGENT_INTERACT_ROUTER_CACHE_TTL)
     interact_router_cache_ttl: 45
 
 # Agents
-# List of agents (automatically installed when you run jvagent or bootstrap)
-# Agents are referenced using the format: namespace/agent_name
-# Agents are discovered from the agents/ folder structure: agents/{namespace}/{agent_name}/
-# Note: Agents can only be installed via this list in app.yaml - there is no direct agent installation
+# Agents are discovered from agents/{namespace}/{agent_name}/ and installed from this list.
 agents:
-  # Example agent - will be loaded from agents/jvagent/example_agent/
   - jvagent/example_agent
   - resolv/resolv_demo
-
-  # Add more agents here - they will be installed automatically when you run jvagent
-  # - contrib/another_agent
-  # - custom/custom_agent

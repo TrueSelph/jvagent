@@ -147,6 +147,92 @@ def purge_app_data(app_root: str) -> None:
     logger.info("Purge complete.")
 
 
+def run_validate(app_root: str) -> int:
+    """Validate ``app.yaml`` and discovered ``agent.yaml`` files.
+
+    Runs the same structural checks as runtime (``validate_*`` helpers).
+    Prints issues to the log and returns 1 if any warning-level issue is found
+    (suitable for CI).
+
+    Args:
+        app_root: Application root directory containing ``app.yaml``.
+
+    Returns:
+        0 if no issues, 1 otherwise.
+    """
+    import yaml
+
+    from jvagent.core.agent_loader import AgentLoader
+    from jvagent.core.agent_yaml_validator import (
+        _reset_warning_cache_for_tests as reset_agent_yaml_warnings,
+    )
+    from jvagent.core.agent_yaml_validator import (
+        validate_agent_yaml,
+    )
+    from jvagent.core.app_yaml_validator import (
+        _reset_warning_cache_for_tests as reset_app_yaml_warnings,
+    )
+    from jvagent.core.app_yaml_validator import (
+        validate_app_yaml_descriptor,
+    )
+    from jvagent.core.env_resolver import resolve_env_placeholders
+
+    root = Path(app_root).resolve()
+    app_yaml = root / "app.yaml"
+
+    reset_app_yaml_warnings()
+    reset_agent_yaml_warnings()
+
+    if not app_yaml.is_file():
+        logger.error("app.yaml not found: %s", app_yaml)
+        return 1
+
+    try:
+        with open(app_yaml, encoding="utf-8") as f:
+            raw = yaml.safe_load(f)
+    except Exception as e:
+        logger.error("Failed to read or parse app.yaml: %s", e, exc_info=True)
+        return 1
+
+    if not isinstance(raw, dict):
+        logger.error("app.yaml must contain a mapping at the root")
+        return 1
+
+    data = resolve_env_placeholders(raw)
+    issues: List[str] = []
+    for w in validate_app_yaml_descriptor(data):
+        suffix = f" Hint: {w.hint}" if w.hint else ""
+        issues.append(f"app.yaml [{w.path}] {w.message}{suffix}")
+
+    loader = AgentLoader(str(root))
+    for namespace, agent_name in loader.discover_agents():
+        agent_file = root / "agents" / namespace / agent_name / "agent.yaml"
+        try:
+            with open(agent_file, encoding="utf-8") as f:
+                agent_raw = yaml.safe_load(f)
+        except Exception as e:
+            issues.append(f"{agent_file}: failed to load ({e})")
+            continue
+        if not isinstance(agent_raw, dict):
+            issues.append(f"{agent_file}: expected mapping at root")
+            continue
+        agent_data = resolve_env_placeholders(agent_raw)
+        for agent_issue in validate_agent_yaml(agent_data):
+            suffix = f" Hint: {agent_issue.hint}" if agent_issue.hint else ""
+            issues.append(
+                f"{agent_file} [{agent_issue.path}] {agent_issue.message}{suffix}"
+            )
+
+    if issues:
+        for line in issues:
+            logger.error("validate: %s", line)
+        logger.error("validate failed: %d issue(s) in %s", len(issues), root)
+        return 1
+
+    logger.info("validate OK: %s", root)
+    return 0
+
+
 def print_usage() -> None:
     """Print CLI usage information."""
     print(
@@ -159,6 +245,7 @@ jvagent - Agentive Platform
                                 --update: Update existing agents/actions from YAML files
                                 --serverless: Simulate serverless runtime (single-threaded, no background tasks)
     jvagent [<app_root>] status             Show application status
+    jvagent [<app_root>] validate         Check app.yaml and agent.yaml structure (exit 1 if issues; for CI)
     jvagent [<app_root>] bootstrap [--update]  Bootstrap application graph
                                   --update: Update existing agents/actions from YAML files
     jvagent [<app_root>] bundle [<app_root>]

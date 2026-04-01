@@ -12,6 +12,7 @@ import litellm
 import pymupdf
 import PyPDF2
 from dotenv import load_dotenv
+from jvspatial.env import env
 
 load_dotenv()
 import logging
@@ -21,8 +22,10 @@ from types import SimpleNamespace as config
 import yaml
 
 # Backward compatibility: support CHATGPT_API_KEY as alias for OPENAI_API_KEY
-if not os.getenv("OPENAI_API_KEY") and os.getenv("CHATGPT_API_KEY"):
-    os.environ["OPENAI_API_KEY"] = os.getenv("CHATGPT_API_KEY")
+if not os.getenv("OPENAI_API_KEY"):
+    openai_key = env("OPENAI_API_KEY")
+    if openai_key:
+        os.environ["OPENAI_API_KEY"] = openai_key
 
 litellm.drop_params = True
 
@@ -133,8 +136,8 @@ def extract_json(content):
             # Remove any trailing commas before closing brackets/braces
             json_content = json_content.replace(",]", "]").replace(",}", "}")
             return json.loads(json_content)
-        except:
-            logging.error("Failed to parse JSON even after cleanup")
+        except Exception as e:
+            logging.error("Failed to parse JSON even after cleanup: %s", e)
             return {}
     except Exception as e:
         logging.error(f"Unexpected error while extracting JSON: {e}")

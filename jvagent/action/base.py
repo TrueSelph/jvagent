@@ -12,7 +12,16 @@ import logging
 import os
 import traceback
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type, TypeVar, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    Optional,
+    Type,
+    TypeVar,
+    Union,
+)
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute, compound_index

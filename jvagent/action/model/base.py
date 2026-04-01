@@ -8,7 +8,7 @@ import asyncio
 import logging
 import time
 from abc import ABC
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 from jvspatial.core.annotations import attribute
@@ -25,7 +25,6 @@ class BaseModelAction(Action, ABC):
     with shared configuration, metrics tracking, and lifecycle management.
 
     Common Attributes:
-        api_key: Provider API key for authentication
         api_endpoint: Base API endpoint URL
         model: Model identifier/name
         timeout: Request timeout in seconds
@@ -38,7 +37,6 @@ class BaseModelAction(Action, ABC):
     """
 
     # Common configuration attributes
-    api_key: str = attribute(default="", description="API key for the provider")
     api_endpoint: str = attribute(default="", description="API endpoint URL")
     model: str = attribute(default="", description="Model identifier")
     timeout: int = attribute(default=30, description="Request timeout in seconds", ge=1)

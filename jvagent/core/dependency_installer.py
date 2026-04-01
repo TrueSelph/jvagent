@@ -153,9 +153,10 @@ def install_action_dependencies(
     if not pip_deps:
         return True
 
-    from jvagent.env import load_env
+    from jvspatial.env import env
 
-    if load_env().disable_runtime_pip_install:
+    disable_runtime_pip = env("JVAGENT_DISABLE_RUNTIME_PIP_INSTALL", default="").lower()
+    if disable_runtime_pip in ("true", "1", "yes", "on"):
         logger.error(
             "Action %s declares package.dependencies.pip but "
             "JVAGENT_DISABLE_RUNTIME_PIP_INSTALL is set; add these packages to your "

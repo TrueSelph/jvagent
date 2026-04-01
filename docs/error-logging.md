@@ -334,7 +334,7 @@ JVSPATIAL_DB_LOGGING_LEVELS=ERROR,CRITICAL  # Default: ERROR,CRITICAL
 # Enable/disable API endpoints (jvspatial)
 JVSPATIAL_DB_LOGGING_API_ENABLED=true  # Default: true
 
-# Log retention default (days); jvagent app bootstrap + jvspatial load_env
+# Log retention default (days); jvagent app bootstrap + jvspatial live env helpers
 JVSPATIAL_LOG_RETENTION_DEFAULT_DAYS=60  # Default when env set; else app.yaml / 60
 
 # Database type
