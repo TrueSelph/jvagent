@@ -52,14 +52,16 @@ ignored with a warning when they do not exist on the action class.
 | `FACEBOOK_SKIP_STARTUP_WEBHOOK_REGISTRATION` | Defer Meta subscription |
 | `FACEBOOK_WEBHOOK_REGISTER_DELAY_SECONDS` | Delay before deferred Meta subscribe (default `8`) |
 
-## SendGrid
+## Email (`jvagent/email_action`, provider `gmail` or `sendgrid`)
 
 | Variable | Role |
 |----------|------|
-| `SENDGRID_API_KEY` | API key (`Authorization: Bearer …`) when `api_key` is unset in context |
-| `SENDGRID_API_BASE_URL` | API base (default `https://api.sendgrid.com/v3`) when still default |
-| `SENDGRID_FROM_EMAIL` | Default from address when `default_from_email` is unset |
-| `SENDGRID_FROM_NAME` | Default from display name when `default_from_name` is unset |
+| `GOOGLE_CLIENT_SECRETS_JSON` | Gmail (and Google OAuth actions): client secrets path or JSON |
+| `EMAIL_DEFAULT_SENDER` | Default From; optional for Gmail if OAuth profile has an address; required for SendGrid send |
+| `EMAIL_DEFAULT_SENDER_NAME` | Optional From display name |
+| `SENDGRID_API_KEY` | SendGrid Mail Send v3 when `provider=sendgrid` |
+| `SENDGRID_API_BASE_URL` | Optional API base override (default `https://api.sendgrid.com/v3`) |
+| `SENDGRID_FROM_EMAIL` / `SENDGRID_FROM_NAME` | Optional fallback if `EMAIL_DEFAULT_SENDER` / name unset |
 
 ## Web search (Serper)
 

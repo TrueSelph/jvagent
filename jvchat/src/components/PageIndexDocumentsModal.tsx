@@ -1,6 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { apiClient } from '../config/api'
-import type { PageIndexChunk, PageIndexDocument } from '../types/api'
+import type {
+  PageIndexChunk,
+  PageIndexChunkMergeStrategy,
+  PageIndexChunkUpdatePayload,
+  PageIndexDocument,
+} from '../types/api'
 import { useTheme } from '../context/ThemeContext'
 
 interface PageIndexDocumentsModalProps {
@@ -10,6 +15,147 @@ interface PageIndexDocumentsModalProps {
 }
 
 const CHUNK_PAGE_SIZES = [0, 10, 25, 50, 100] as const
+
+const MERGE_QUEUE_MAX = 20
+
+/** Matches server `documents._TEXT_JOIN` for merge preview. */
+const MERGE_TEXT_JOIN = '\n\n---\n\n'
+
+type ChunkEnabledFilter = 'all' | 'rag_enabled' | 'rag_disabled'
+
+type ChunkSortKey = 'title' | 'content_type' | 'enabled'
+
+const CHUNK_CONTENT_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: '—' },
+  { value: 'substantive', label: 'substantive' },
+  { value: 'heading_like', label: 'heading_like' },
+  { value: 'appendix', label: 'appendix' },
+  { value: 'introduction', label: 'introduction' },
+  { value: 'empty', label: 'empty' },
+  { value: 'table_of_contents', label: 'table_of_contents' },
+  { value: 'bibliography', label: 'bibliography' },
+  { value: 'foreword', label: 'foreword' },
+  { value: 'copyright', label: 'copyright' },
+  { value: 'standard_title', label: 'standard_title' },
+  { value: 'running_header', label: 'running_header' },
+]
+
+function chunkSortComparable(c: PageIndexChunk, key: ChunkSortKey): string | number | boolean | null {
+  switch (key) {
+    case 'title':
+      return (c.title || '').toLowerCase()
+    case 'content_type':
+      return (c.content_type || '').toLowerCase()
+    case 'enabled':
+      return c.enabled !== false
+    default:
+      return ''
+  }
+}
+
+function compareChunksForSort(
+  a: PageIndexChunk,
+  b: PageIndexChunk,
+  key: ChunkSortKey,
+  dir: 'asc' | 'desc'
+): number {
+  const mult = dir === 'asc' ? 1 : -1
+  const va = chunkSortComparable(a, key)
+  const vb = chunkSortComparable(b, key)
+  const tie = (a.id || '').localeCompare(b.id || '')
+
+  if (typeof va === 'boolean' && typeof vb === 'boolean') {
+    if (va === vb) return tie
+    return (Number(va) - Number(vb)) * mult
+  }
+  const sa = String(va)
+  const sb = String(vb)
+  if (sa === sb) return tie
+  return sa.localeCompare(sb, undefined, { numeric: true, sensitivity: 'base' }) * mult
+}
+
+function mergeNonemptyStrParts(values: (string | null | undefined)[]): string[] {
+  const parts: string[] = []
+  for (const v of values) {
+    if (v == null) continue
+    const s = String(v).trim()
+    if (s) parts.push(s)
+  }
+  return parts
+}
+
+function mergeFirstContentType(chunks: PageIndexChunk[]): string | null {
+  for (const c of chunks) {
+    const ct = c.content_type
+    if (ct == null || ct === '') continue
+    const s = String(ct).trim()
+    if (s) return s
+  }
+  return null
+}
+
+/** Computed baseline for editable merge fields (order + strategy). */
+function computeMergePreview(
+  queue: PageIndexChunk[],
+  strategy: PageIndexChunkMergeStrategy
+): {
+  title: string
+  text: string
+  summary: string | null
+  prefix_summary: string | null
+  enabled: boolean
+  content_type: string | null
+  sameDocument: boolean
+} | null {
+  if (queue.length < 2) return null
+  const docNames = new Set(queue.map((c) => c.doc_name).filter(Boolean))
+  const sameDocument = docNames.size === 1
+  const ordered = queue
+  const keep = queue[0]
+  const rest = queue.slice(1)
+
+  let title: string
+  let text: string
+  let summary: string | null
+  let prefix_summary: string | null
+
+  if (strategy === 'concatenate') {
+    title = mergeNonemptyStrParts(ordered.map((c) => c.title)).join(' / ')
+    text = mergeNonemptyStrParts(ordered.map((c) => c.text)).join(MERGE_TEXT_JOIN)
+    const sumParts = mergeNonemptyStrParts(ordered.map((c) => c.summary ?? null))
+    summary = sumParts.length ? sumParts.join(MERGE_TEXT_JOIN) : null
+    const prefParts = mergeNonemptyStrParts(ordered.map((c) => c.prefix_summary ?? null))
+    prefix_summary = prefParts.length ? prefParts.join(MERGE_TEXT_JOIN) : null
+  } else {
+    title = (keep.title || '').trim()
+    const bodyParts = mergeNonemptyStrParts([keep.text, ...rest.map((c) => c.text)])
+    text = bodyParts.join(MERGE_TEXT_JOIN)
+    const sumParts = mergeNonemptyStrParts([
+      keep.summary ?? null,
+      ...rest.map((c) => c.summary ?? null),
+    ])
+    summary = sumParts.length ? sumParts.join(MERGE_TEXT_JOIN) : null
+    const prefParts = mergeNonemptyStrParts([
+      keep.prefix_summary ?? null,
+      ...rest.map((c) => c.prefix_summary ?? null),
+    ])
+    prefix_summary = prefParts.length ? prefParts.join(MERGE_TEXT_JOIN) : null
+  }
+
+  const enabled = ordered.some((c) => c.enabled !== false)
+  const content_type = mergeFirstContentType(ordered)
+
+  return { title, text, summary, prefix_summary, enabled, content_type, sameDocument }
+}
+
+type MergeDraft = {
+  title: string
+  text: string
+  summary: string
+  prefixSummary: string
+  enabled: boolean
+  contentType: string
+}
 
 export function PageIndexDocumentsModal({
   agentId,
@@ -36,13 +182,15 @@ export function PageIndexDocumentsModal({
   const [importText, setImportText] = useState('')
   const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const [exportCollectionName, setExportCollectionName] = useState('default')
+  const [exportCollectionName, setExportCollectionName] = useState(agentId)
+  const [exportRootId, setExportRootId] = useState('')
   const [importExportError, setImportExportError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'import-export' | 'documents' | 'chunks'>(
     'documents'
   )
 
   const [chunksDocName, setChunksDocName] = useState('')
+  const [chunkEnabledFilter, setChunkEnabledFilter] = useState<ChunkEnabledFilter>('all')
   const [chunkFilterInput, setChunkFilterInput] = useState('')
   const [chunkFilterQ, setChunkFilterQ] = useState('')
   const [chunksPerPage, setChunksPerPage] = useState<number>(0)
@@ -60,6 +208,20 @@ export function PageIndexDocumentsModal({
   const [savingChunk, setSavingChunk] = useState(false)
   const [saveChunkError, setSaveChunkError] = useState<string | null>(null)
   const [deletingChunkId, setDeletingChunkId] = useState<string | null>(null)
+  const [editEnabled, setEditEnabled] = useState(true)
+  const [editContentType, setEditContentType] = useState('')
+  const [chunkSort, setChunkSort] = useState<{
+    key: ChunkSortKey
+    dir: 'asc' | 'desc'
+  }>({ key: 'title', dir: 'asc' })
+  const [quickSavingChunkId, setQuickSavingChunkId] = useState<string | null>(null)
+  const [mergeQueue, setMergeQueue] = useState<PageIndexChunk[]>([])
+  const [mergeStrategy, setMergeStrategy] =
+    useState<PageIndexChunkMergeStrategy>('concatenate')
+  const [mergingChunks, setMergingChunks] = useState(false)
+  const [mergeDraft, setMergeDraft] = useState<MergeDraft | null>(null)
+  const [applyMergeUpdate, setApplyMergeUpdate] = useState(true)
+  const [applyMergeDeleteOthers, setApplyMergeDeleteOthers] = useState(true)
 
   const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 
@@ -93,6 +255,34 @@ export function PageIndexDocumentsModal({
   }, [fetchDocuments])
 
   useEffect(() => {
+    setMergeQueue([])
+    setMergeStrategy('concatenate')
+    setMergeDraft(null)
+    setApplyMergeUpdate(true)
+    setApplyMergeDeleteOthers(true)
+  }, [agentId])
+
+  useEffect(() => {
+    if (mergeQueue.length < 2) {
+      setMergeDraft(null)
+      return
+    }
+    const baseline = computeMergePreview(mergeQueue, mergeStrategy)
+    if (!baseline) {
+      setMergeDraft(null)
+      return
+    }
+    setMergeDraft({
+      title: baseline.title,
+      text: baseline.text,
+      summary: baseline.summary ?? '',
+      prefixSummary: baseline.prefix_summary ?? '',
+      enabled: baseline.enabled,
+      contentType: baseline.content_type ?? '',
+    })
+  }, [mergeQueue, mergeStrategy])
+
+  useEffect(() => {
     const t = window.setTimeout(() => setChunkFilterQ(chunkFilterInput), 300)
     return () => window.clearTimeout(t)
   }, [chunkFilterInput])
@@ -109,17 +299,24 @@ export function PageIndexDocumentsModal({
 
   useEffect(() => {
     setChunksPage(1)
-  }, [chunksDocName, chunkFilterQ, chunksPerPage])
+  }, [chunksDocName, chunkFilterQ, chunksPerPage, chunkEnabledFilter])
 
   const fetchChunks = useCallback(async () => {
     if (activeTab !== 'chunks') return
     setChunksLoading(true)
     setChunksError(null)
     try {
+      const chunk_enabled =
+        chunkEnabledFilter === 'rag_enabled'
+          ? 'true'
+          : chunkEnabledFilter === 'rag_disabled'
+            ? 'false'
+            : undefined
       const params = {
         page: chunksPerPage === 0 ? 1 : chunksPage,
         per_page: chunksPerPage,
         q: chunkFilterQ.trim() || undefined,
+        chunk_enabled,
       }
       const res = chunksDocName
         ? await apiClient.listPageIndexChunks(agentId, chunksDocName, params)
@@ -134,7 +331,15 @@ export function PageIndexDocumentsModal({
     } finally {
       setChunksLoading(false)
     }
-  }, [agentId, chunksDocName, activeTab, chunksPage, chunksPerPage, chunkFilterQ])
+  }, [
+    agentId,
+    chunksDocName,
+    activeTab,
+    chunksPage,
+    chunksPerPage,
+    chunkFilterQ,
+    chunkEnabledFilter,
+  ])
 
   useEffect(() => {
     fetchChunks()
@@ -148,6 +353,11 @@ export function PageIndexDocumentsModal({
     window.addEventListener('keydown', handleEscape)
     return () => window.removeEventListener('keydown', handleEscape)
   }, [isEmbedded, onClose])
+
+  useEffect(() => {
+    setExportCollectionName(agentId)
+    setExportRootId('')
+  }, [agentId])
 
   const normalizeMarkdownForUpload = async (file: File): Promise<File> => {
     const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
@@ -215,12 +425,35 @@ export function PageIndexDocumentsModal({
     setExporting(true)
     setImportExportError(null)
     try {
-      const data = await apiClient.exportPageIndex('json', exportCollectionName)
+      const data = await apiClient.exportPageIndex(
+        'json',
+        exportCollectionName,
+        exportRootId || undefined
+      )
+      const selectedDoc = exportRootId
+        ? documents.find((d) => d.root_id === exportRootId)
+        : undefined
+      // 1. Get the raw name first
+      let namePart = selectedDoc?.doc_name || (exportRootId ? exportRootId.split('.').pop() : 'all');
+
+      // 2. STRIP THE EXTENSION FIRST (Before cleaning/slicing)
+      // This ensures we don't accidentally slice off the "." we need to find the extension.
+      if (namePart && namePart.includes('.')) {
+          namePart = namePart.split('.').slice(0, -1).join('.');
+      }
+
+      // 3. CLEAN THE FILENAME (Sanitize special characters)
+      const cleanName = (namePart ?? 'export')
+        .replace(/[^a-zA-Z0-9._-]+/g, '_')
+        .replace(/_+/g, '_')
+        .slice(0, 48);                    // Limit length for OS compatibility
+
+
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `pageindex-${exportCollectionName}-${Date.now()}.json`
+      a.download = `${cleanName || 'export'}.json`;
       a.click()
       URL.revokeObjectURL(url)
     } catch (err: any) {
@@ -256,6 +489,8 @@ export function PageIndexDocumentsModal({
     setEditTitle(c.title ?? '')
     setEditText(c.text ?? '')
     setEditSummary(c.summary ?? '')
+    setEditEnabled(c.enabled !== false)
+    setEditContentType(c.content_type ?? '')
     const docRow = documents.find((d) => d.doc_name === c.doc_name)
     const meta = docRow?.metadata
     const metaStr =
@@ -308,6 +543,8 @@ export function PageIndexDocumentsModal({
         title: editTitle,
         text: editText,
         summary: editSummary || null,
+        enabled: editEnabled,
+        content_type: editContentType.trim() ? editContentType.trim() : null,
       })
       const metaChanged =
         normalizeJsonForCompare(editRootMetadataJson) !==
@@ -336,6 +573,7 @@ export function PageIndexDocumentsModal({
     try {
       await apiClient.deletePageIndexChunk(agentId, c.doc_name, c.id, { cascade: true })
       if (editingChunk?.id === c.id) closeEditChunk()
+      setMergeQueue((q) => q.filter((x) => x.id !== c.id))
       await fetchChunks()
     } catch (err: any) {
       console.error('Chunk delete failed:', err)
@@ -353,11 +591,151 @@ export function PageIndexDocumentsModal({
   const totalChunkPages =
     chunksPerPage > 0 ? Math.max(1, Math.ceil(chunksTotal / chunksPerPage)) : 1
 
+  const sortedChunks = useMemo(() => {
+    const copy = [...chunks]
+    copy.sort((a, b) => compareChunksForSort(a, b, chunkSort.key, chunkSort.dir))
+    return copy
+  }, [chunks, chunkSort.key, chunkSort.dir])
+
+  const mergeQueueIds = useMemo(() => new Set(mergeQueue.map((c) => c.id)), [mergeQueue])
+
+  const tableChunks = useMemo(
+    () => sortedChunks.filter((c) => !mergeQueueIds.has(c.id)),
+    [sortedChunks, mergeQueueIds]
+  )
+
+  const mergeSameDocument = useMemo(() => {
+    if (mergeQueue.length < 2) return true
+    const docNames = new Set(mergeQueue.map((c) => c.doc_name).filter(Boolean))
+    return docNames.size === 1
+  }, [mergeQueue])
+
+  const mergeFieldsLabelClass = dark ? 'text-xs text-slate-400' : 'text-xs text-gray-600'
+
+  const mergeTextareaClass = dark
+    ? 'w-full mt-0.5 px-2 py-1.5 text-sm rounded border border-slate-600 bg-slate-800 text-slate-100 resize-y min-h-[4rem] max-h-48'
+    : 'w-full mt-0.5 px-2 py-1.5 text-sm rounded border border-gray-300 bg-white text-gray-900 resize-y min-h-[4rem] max-h-48'
+
+  const toggleChunkSort = (key: ChunkSortKey) => {
+    setChunkSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: 'asc' }
+    )
+  }
+
+  const handleChunkQuickPatch = async (c: PageIndexChunk, patch: PageIndexChunkUpdatePayload) => {
+    if (!c.doc_name) return
+    setQuickSavingChunkId(c.id)
+    setChunksError(null)
+    try {
+      await apiClient.updatePageIndexChunk(agentId, c.doc_name, c.id, patch)
+      await fetchChunks()
+    } catch (err: any) {
+      console.error('Chunk quick update failed:', err)
+      setChunksError(err.message || 'Update failed')
+    } finally {
+      setQuickSavingChunkId(null)
+    }
+  }
+
+  const addToMergeQueue = (c: PageIndexChunk) => {
+    setMergeQueue((prev) => {
+      if (prev.some((x) => x.id === c.id)) return prev
+      if (prev.length >= MERGE_QUEUE_MAX) {
+        setChunksError(`Merge queue limited to ${MERGE_QUEUE_MAX} chunks.`)
+        return prev
+      }
+      setChunksError(null)
+      return [...prev, c]
+    })
+  }
+
+  const removeFromMergeQueue = (chunkId: string) => {
+    setMergeQueue((prev) => prev.filter((x) => x.id !== chunkId))
+  }
+
+  const clearMergeQueue = () => {
+    setMergeQueue([])
+    setChunksError(null)
+  }
+
+  const moveMergeQueueItem = (index: number, delta: -1 | 1) => {
+    setMergeQueue((prev) => {
+      const j = index + delta
+      if (j < 0 || j >= prev.length) return prev
+      const next = [...prev]
+      const tmp = next[index]
+      next[index] = next[j]
+      next[j] = tmp
+      return next
+    })
+  }
+
+  const handleMergeChunks = async () => {
+    if (mergeQueue.length < 2 || mergingChunks) return
+    if (!applyMergeUpdate && !applyMergeDeleteOthers) return
+    if (applyMergeUpdate && !mergeDraft) return
+
+    const docNames = new Set(mergeQueue.map((c) => c.doc_name).filter(Boolean))
+    if (docNames.size !== 1) {
+      setChunksError('All chunks in the merge list must belong to the same document.')
+      return
+    }
+    const doc = mergeQueue[0].doc_name
+    if (!doc) {
+      setChunksError('Each chunk must have a document name to merge.')
+      return
+    }
+    const keepId = mergeQueue[0].id
+
+    setMergingChunks(true)
+    setChunksError(null)
+    try {
+      if (applyMergeUpdate && mergeDraft) {
+        await apiClient.updatePageIndexChunk(agentId, doc, keepId, {
+          title: mergeDraft.title,
+          text: mergeDraft.text,
+          summary: mergeDraft.summary.trim() ? mergeDraft.summary : null,
+          prefix_summary: mergeDraft.prefixSummary.trim() ? mergeDraft.prefixSummary : null,
+          enabled: mergeDraft.enabled,
+          content_type: mergeDraft.contentType.trim() ? mergeDraft.contentType.trim() : null,
+        })
+      }
+      if (applyMergeDeleteOthers) {
+        for (const c of mergeQueue.slice(1)) {
+          await apiClient.deletePageIndexChunk(agentId, doc, c.id, { cascade: false })
+        }
+      }
+      setMergeQueue([])
+      setApplyMergeUpdate(true)
+      setApplyMergeDeleteOthers(true)
+      await fetchChunks()
+    } catch (err: unknown) {
+      console.error('Chunk merge failed:', err)
+      const msg = err instanceof Error ? err.message : 'Merge failed'
+      setChunksError(msg)
+      await fetchChunks()
+    } finally {
+      setMergingChunks(false)
+    }
+  }
+
   const inputClass = dark
     ? 'w-full px-3 py-2 border border-slate-600 rounded-lg text-sm bg-slate-800 text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
     : 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
 
   const labelClass = dark ? 'text-xs text-slate-400' : 'text-xs text-gray-600'
+
+  const chunkSortBtnClass = `inline-flex items-center gap-1 w-full text-left uppercase font-medium ${
+    dark ? 'text-slate-400 hover:text-slate-200' : 'text-gray-500 hover:text-gray-800'
+  }`
+
+  const chunkThClass = (extra = '') =>
+    `px-3 py-2 text-left text-xs ${dark ? 'text-slate-400' : 'text-gray-500'} ${extra}`
+
+  const chunkSortCaret = (key: ChunkSortKey) =>
+    chunkSort.key === key ? (chunkSort.dir === 'asc' ? ' ▲' : ' ▼') : ''
 
   const content = (
     <div
@@ -442,15 +820,31 @@ export function PageIndexDocumentsModal({
       <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-4">
         {activeTab === 'import-export' && (
           <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row gap-3 items-end">
-              <div className="flex-1">
-                <label className={`block ${labelClass} mb-1`}>Collection name</label>
+            <div className="flex flex-col sm:flex-row gap-3 items-end flex-wrap">
+              <div className="flex-1 min-w-[200px]">
+                <label className={`block ${labelClass} mb-1`}>Collection / agent ID</label>
                 <input
                   type="text"
                   value={exportCollectionName}
                   onChange={(e) => setExportCollectionName(e.target.value)}
                   className={inputClass}
                 />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <label className={`block ${labelClass} mb-1`}>Export scope</label>
+                <select
+                  value={exportRootId}
+                  onChange={(e) => setExportRootId(e.target.value)}
+                  className={inputClass}
+                  aria-label="Export all documents or one document by root id"
+                >
+                  <option value="">All documents</option>
+                  {documents.map((d) => (
+                    <option key={d.root_id} value={d.root_id}>
+                      {d.doc_name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <button
                 onClick={handleExport}
@@ -560,6 +954,20 @@ export function PageIndexDocumentsModal({
                   ))}
                 </select>
               </div>
+              <div className="w-full sm:w-auto">
+                <label className={`block ${labelClass} mb-1`}>RAG / chunks</label>
+                <select
+                  value={chunkEnabledFilter}
+                  onChange={(e) =>
+                    setChunkEnabledFilter(e.target.value as ChunkEnabledFilter)
+                  }
+                  className={`${inputClass} min-w-[180px]`}
+                >
+                  <option value="all">All chunks</option>
+                  <option value="rag_enabled">RAG-enabled only</option>
+                  <option value="rag_disabled">Disabled only</option>
+                </select>
+              </div>
             </div>
 
             <p className={`text-sm ${dark ? 'text-slate-400' : 'text-gray-600'}`}>
@@ -578,19 +986,320 @@ export function PageIndexDocumentsModal({
                   (list capped at 5000 per request)
                 </span>
               )}
+              {chunksPerPage > 0 && (
+                <span className={`block sm:inline sm:ml-2 mt-1 sm:mt-0 ${dark ? 'text-slate-500' : 'text-gray-500'}`}>
+                  Sorting applies to this page only; choose &quot;All&quot; or a larger page size to sort the full
+                  filtered list.
+                </span>
+              )}
             </p>
 
             {chunksLoading ? (
               <div className="flex items-center justify-center py-12">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400" />
               </div>
-            ) : chunksError ? (
-              <p className="text-sm text-red-600 dark:text-red-400 py-4">{chunksError}</p>
-            ) : chunks.length === 0 ? (
-              <p className={`text-sm py-4 ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
-                No chunks match the current filter.
-              </p>
             ) : (
+              <>
+                {chunksError ? (
+                  <p className="text-sm text-red-600 dark:text-red-400 py-2" role="alert">
+                    {chunksError}
+                  </p>
+                ) : null}
+                {chunks.length === 0 && mergeQueue.length === 0 ? (
+                  <p className={`text-sm py-4 ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                    No chunks match the current filter.
+                  </p>
+                ) : (
+              <div className="space-y-3">
+                {mergeQueue.length > 0 && (
+                  <div
+                    className={`rounded-lg border p-3 sm:p-4 space-y-3 ${
+                      dark ? 'border-indigo-500/40 bg-slate-800/80' : 'border-indigo-200 bg-indigo-50/60'
+                    }`}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                      <div>
+                        <h4
+                          className={`text-sm font-semibold ${dark ? 'text-indigo-200' : 'text-indigo-900'}`}
+                        >
+                          Merge queue
+                        </h4>
+                        <p className={`text-xs mt-0.5 ${dark ? 'text-slate-400' : 'text-gray-600'}`}>
+                          First row is the kept chunk. Reorder with arrows, pick strategy, edit fields
+                          if updating, choose actions, then apply.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className={`text-xs ${dark ? 'text-slate-400' : 'text-gray-600'}`}>
+                          Strategy
+                          <select
+                            value={mergeStrategy}
+                            onChange={(e) =>
+                              setMergeStrategy(e.target.value as PageIndexChunkMergeStrategy)
+                            }
+                            disabled={mergingChunks}
+                            className={`${inputClass} min-w-[160px] mt-0.5 text-xs py-1.5`}
+                          >
+                            <option value="concatenate">Concatenate titles &amp; text</option>
+                            <option value="keep_first">Keep first title, append text</option>
+                          </select>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleMergeChunks}
+                          disabled={
+                            mergeQueue.length < 2 ||
+                            mergingChunks ||
+                            !mergeSameDocument ||
+                            (!applyMergeUpdate && !applyMergeDeleteOthers) ||
+                            (applyMergeUpdate && mergeDraft == null)
+                          }
+                          className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {mergingChunks ? 'Applying…' : 'Apply merge'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={clearMergeQueue}
+                          disabled={mergingChunks}
+                          className={`px-3 py-1.5 text-sm font-medium rounded-lg border ${
+                            dark
+                              ? 'border-slate-600 text-slate-200 hover:bg-slate-700'
+                              : 'border-gray-300 text-gray-800 hover:bg-gray-100'
+                          } disabled:opacity-50`}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+
+                    <div
+                      className={`space-y-2 text-xs ${dark ? 'text-slate-300' : 'text-gray-800'}`}
+                    >
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={applyMergeUpdate}
+                          onChange={(e) => setApplyMergeUpdate(e.target.checked)}
+                          disabled={mergingChunks}
+                          className="mt-0.5 rounded border-gray-300 dark:border-slate-600 text-indigo-600"
+                        />
+                        <span>
+                          Update kept chunk (first in list) with the merged fields below{' '}
+                          <span className={dark ? 'text-slate-500' : 'text-gray-500'}>
+                            (PATCH)
+                          </span>
+                        </span>
+                      </label>
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={applyMergeDeleteOthers}
+                          onChange={(e) => setApplyMergeDeleteOthers(e.target.checked)}
+                          disabled={mergingChunks}
+                          className="mt-0.5 rounded border-gray-300 dark:border-slate-600 text-indigo-600"
+                        />
+                        <span>
+                          Delete other chunks in this list{' '}
+                          <span className={dark ? 'text-slate-500' : 'text-gray-500'}>
+                            (no subtree). Sections with children may fail or leave an inconsistent
+                            tree; use row <strong>Delete</strong> with subtree for parents when needed.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+
+                    <ol
+                      className={`list-decimal list-outside ml-5 space-y-2 text-sm ${dark ? 'text-slate-200' : 'text-gray-900'}`}
+                    >
+                      {mergeQueue.map((c, index) => (
+                        <li key={c.id} className="pl-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="line-clamp-2 min-w-0 flex-1">
+                              <span className="font-medium">{c.title || 'Untitled'}</span>
+                              <span
+                                className={`text-xs ml-2 ${dark ? 'text-slate-500' : 'text-gray-500'}`}
+                              >
+                                ({c.doc_name || '—'})
+                              </span>
+                            </span>
+                            <div className="flex flex-wrap items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => moveMergeQueueItem(index, -1)}
+                                disabled={mergingChunks || index === 0}
+                                className="px-1.5 py-0.5 text-xs rounded border border-slate-500/50 dark:border-slate-600 disabled:opacity-40"
+                                aria-label="Move up"
+                              >
+                                Up
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveMergeQueueItem(index, 1)}
+                                disabled={mergingChunks || index === mergeQueue.length - 1}
+                                className="px-1.5 py-0.5 text-xs rounded border border-slate-500/50 dark:border-slate-600 disabled:opacity-40"
+                                aria-label="Move down"
+                              >
+                                Down
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeFromMergeQueue(c.id)}
+                                disabled={mergingChunks}
+                                className="text-xs text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+
+                    {mergeQueue.length === 1 ? (
+                      <p className={`text-xs ${dark ? 'text-slate-500' : 'text-gray-500'}`}>
+                        Add another chunk to compute merged fields.
+                      </p>
+                    ) : null}
+
+                    {mergeDraft && mergeQueue.length >= 2 ? (
+                      <div
+                        className={`rounded-md border p-3 space-y-3 ${
+                          dark
+                            ? 'border-slate-500/60 bg-slate-900/50'
+                            : 'border-gray-300 bg-white/80'
+                        }`}
+                      >
+                        <h5
+                          className={`text-xs font-semibold uppercase tracking-wide ${
+                            dark ? 'text-slate-300' : 'text-gray-700'
+                          }`}
+                        >
+                          Merged fields (editable if updating)
+                        </h5>
+                        {!mergeSameDocument ? (
+                          <p className="text-xs text-amber-700 dark:text-amber-300" role="status">
+                            Chunks must belong to the same document before you can apply.
+                          </p>
+                        ) : null}
+                        <p className={`text-xs ${dark ? 'text-slate-500' : 'text-gray-500'}`}>
+                          Baseline refreshes when order or strategy changes. Clear fields to omit
+                          summary or type when saving.
+                        </p>
+                        <div>
+                          <label className={mergeFieldsLabelClass}>Title</label>
+                          <input
+                            type="text"
+                            value={mergeDraft.title}
+                            onChange={(e) =>
+                              setMergeDraft((d) => (d ? { ...d, title: e.target.value } : d))
+                            }
+                            disabled={mergingChunks || !applyMergeUpdate}
+                            className={`${inputClass} mt-0.5 text-sm`}
+                            aria-label="Merged title"
+                          />
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={mergeDraft.enabled}
+                            onChange={(e) =>
+                              setMergeDraft((d) =>
+                                d ? { ...d, enabled: e.target.checked } : d
+                              )
+                            }
+                            disabled={mergingChunks || !applyMergeUpdate}
+                            className="rounded border-gray-300 dark:border-slate-600 text-indigo-600"
+                          />
+                          <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-800'}`}>
+                            Include chunk in RAG (enabled)
+                          </span>
+                        </label>
+                        <div>
+                          <label className={mergeFieldsLabelClass}>Content type</label>
+                          <select
+                            value={mergeDraft.contentType}
+                            onChange={(e) =>
+                              setMergeDraft((d) =>
+                                d ? { ...d, contentType: e.target.value } : d
+                              )
+                            }
+                            disabled={mergingChunks || !applyMergeUpdate}
+                            className={`w-full max-w-xs mt-0.5 text-sm rounded-md border py-1.5 pl-2 pr-1 ${
+                              dark
+                                ? 'border-slate-600 bg-slate-800 text-slate-100'
+                                : 'border-gray-300 bg-white text-gray-900'
+                            } disabled:opacity-50`}
+                            aria-label="Merged content type"
+                          >
+                            {CHUNK_CONTENT_TYPE_OPTIONS.map((o) => (
+                              <option key={o.value || '__empty'} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                            {mergeDraft.contentType &&
+                              !CHUNK_CONTENT_TYPE_OPTIONS.some(
+                                (o) => o.value === mergeDraft.contentType
+                              ) && (
+                                <option value={mergeDraft.contentType}>
+                                  {mergeDraft.contentType}
+                                </option>
+                              )}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={mergeFieldsLabelClass}>Summary</label>
+                          <textarea
+                            value={mergeDraft.summary}
+                            onChange={(e) =>
+                              setMergeDraft((d) =>
+                                d ? { ...d, summary: e.target.value } : d
+                              )
+                            }
+                            disabled={mergingChunks || !applyMergeUpdate}
+                            rows={4}
+                            className={mergeTextareaClass}
+                            aria-label="Merged summary"
+                          />
+                        </div>
+                        <div>
+                          <label className={mergeFieldsLabelClass}>Prefix summary</label>
+                          <textarea
+                            value={mergeDraft.prefixSummary}
+                            onChange={(e) =>
+                              setMergeDraft((d) =>
+                                d ? { ...d, prefixSummary: e.target.value } : d
+                              )
+                            }
+                            disabled={mergingChunks || !applyMergeUpdate}
+                            rows={3}
+                            className={mergeTextareaClass}
+                            aria-label="Merged prefix summary"
+                          />
+                        </div>
+                        <div>
+                          <label className={mergeFieldsLabelClass}>Text</label>
+                          <textarea
+                            value={mergeDraft.text}
+                            onChange={(e) =>
+                              setMergeDraft((d) => (d ? { ...d, text: e.target.value } : d))
+                            }
+                            disabled={mergingChunks || !applyMergeUpdate}
+                            rows={6}
+                            className={mergeTextareaClass}
+                            aria-label="Merged text"
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+
+                {chunks.length === 0 ? (
+                  <p className={`text-sm py-2 ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                    No further rows match the filter; adjust filters or clear the merge queue.
+                  </p>
+                ) : (
               <div
                 className={`border rounded-lg overflow-hidden ${
                   dark ? 'border-slate-600' : 'border-gray-200'
@@ -600,73 +1309,155 @@ export function PageIndexDocumentsModal({
                   <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-600">
                     <thead className={dark ? 'bg-slate-800' : 'bg-gray-50'}>
                       <tr>
-                        <th
-                          className={`px-3 py-2 text-left text-xs font-medium uppercase ${
-                            dark ? 'text-slate-400' : 'text-gray-500'
-                          }`}
-                        >
-                          Title
+                        <th className={chunkThClass('max-w-[200px]')}>
+                          <button
+                            type="button"
+                            className={chunkSortBtnClass}
+                            onClick={() => toggleChunkSort('title')}
+                          >
+                            Title{chunkSortCaret('title')}
+                          </button>
                         </th>
-                        <th
-                          className={`px-3 py-2 text-left text-xs font-medium uppercase hidden md:table-cell ${
-                            dark ? 'text-slate-400' : 'text-gray-500'
-                          }`}
-                        >
-                          Text
+                        <th className={chunkThClass('min-w-[140px] max-w-[180px]')}>
+                          <button
+                            type="button"
+                            className={chunkSortBtnClass}
+                            onClick={() => toggleChunkSort('content_type')}
+                          >
+                            Type{chunkSortCaret('content_type')}
+                          </button>
                         </th>
-                        <th
-                          className={`px-3 py-2 text-right text-xs font-medium uppercase ${
-                            dark ? 'text-slate-400' : 'text-gray-500'
-                          }`}
-                        >
-                          Actions
+                        <th className={chunkThClass('whitespace-nowrap w-px')}>
+                          <button
+                            type="button"
+                            className={chunkSortBtnClass}
+                            onClick={() => toggleChunkSort('enabled')}
+                          >
+                            RAG{chunkSortCaret('enabled')}
+                          </button>
                         </th>
+                        <th className={chunkThClass('hidden md:table-cell max-w-md')}>Text</th>
+                        <th className={chunkThClass('text-right')}>Actions</th>
                       </tr>
                     </thead>
                     <tbody className={`divide-y ${dark ? 'divide-slate-700 bg-slate-900' : 'divide-gray-200 bg-white'}`}>
-                      {chunks.map((c) => (
-                        <tr key={c.id}>
-                          <td className="px-3 py-2 text-sm max-w-[240px]">
-                            {!chunksDocName && (
-                              <div
-                                className={`text-xs mb-0.5 truncate ${
-                                  dark ? 'text-slate-500' : 'text-gray-500'
-                                }`}
-                                title={c.doc_name}
+                      {tableChunks.map((c) => {
+                        const busy = quickSavingChunkId === c.id
+                        const ctVal = c.content_type ?? ''
+                        return (
+                          <tr key={c.id} className={busy ? 'opacity-70' : undefined}>
+                            <td className="px-3 py-2 text-sm max-w-[240px]">
+                              <span className="line-clamp-2">{c.title || '—'}</span>
+                              {!chunksDocName && c.doc_name ? (
+                                <div
+                                  className={`text-xs mt-0.5 truncate ${dark ? 'text-slate-500' : 'text-gray-500'}`}
+                                  title={c.doc_name}
+                                >
+                                  {c.doc_name}
+                                </div>
+                              ) : null}
+                            </td>
+                            <td className="px-3 py-2 text-sm min-w-[140px] max-w-[200px]">
+                              <select
+                                value={ctVal}
+                                onChange={(e) => {
+                                  const v = e.target.value
+                                  handleChunkQuickPatch(c, {
+                                    content_type: v.trim() ? v.trim() : null,
+                                  })
+                                }}
+                                disabled={busy}
+                                className={`w-full max-w-[180px] text-xs rounded-md border py-1 pl-2 pr-1 ${
+                                  dark
+                                    ? 'border-slate-600 bg-slate-800 text-slate-100'
+                                    : 'border-gray-300 bg-white text-gray-900'
+                                } disabled:opacity-50`}
                               >
-                                {c.doc_name || '—'}
+                                {CHUNK_CONTENT_TYPE_OPTIONS.map((o) => (
+                                  <option key={o.value || '__empty'} value={o.value}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                                {ctVal &&
+                                  !CHUNK_CONTENT_TYPE_OPTIONS.some((o) => o.value === ctVal) && (
+                                    <option value={ctVal}>{ctVal}</option>
+                                  )}
+                              </select>
+                            </td>
+                            <td className="px-3 py-2 text-sm whitespace-nowrap">
+                              <label className="inline-flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={c.enabled !== false}
+                                  disabled={busy}
+                                  onChange={(e) =>
+                                    handleChunkQuickPatch(c, { enabled: e.target.checked })
+                                  }
+                                  className="rounded border-gray-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+                                />
+                                <span
+                                  className={`text-xs font-medium ${
+                                    c.enabled === false
+                                      ? dark
+                                        ? 'text-amber-200'
+                                        : 'text-amber-900'
+                                      : dark
+                                        ? 'text-emerald-200'
+                                        : 'text-emerald-900'
+                                  }`}
+                                >
+                                  {c.enabled === false ? 'Off' : 'On'}
+                                </span>
+                              </label>
+                            </td>
+                            <td className="px-3 py-2 text-sm max-w-md hidden md:table-cell">
+                              <span className={`line-clamp-3 ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                                {truncate(c.text || c.summary || '', 240)}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <div className="flex flex-col items-end gap-1 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-x-2 sm:gap-y-1">
+                                <button
+                                  type="button"
+                                  onClick={() => addToMergeQueue(c)}
+                                  disabled={
+                                    busy ||
+                                    mergingChunks ||
+                                    mergeQueueIds.has(c.id) ||
+                                    mergeQueue.length >= MERGE_QUEUE_MAX
+                                  }
+                                  className="text-amber-700 dark:text-amber-400 hover:underline text-sm font-medium disabled:opacity-50 whitespace-nowrap"
+                                >
+                                  Add to merge
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openEditChunk(c)}
+                                  className="text-indigo-600 dark:text-indigo-400 hover:underline text-sm font-medium whitespace-nowrap"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteChunk(c)}
+                                  disabled={deletingChunkId === c.id || busy}
+                                  className="text-red-600 dark:text-red-400 hover:underline text-sm font-medium disabled:opacity-50 whitespace-nowrap"
+                                >
+                                  {deletingChunkId === c.id ? 'Deleting…' : 'Delete'}
+                                </button>
                               </div>
-                            )}
-                            <span className="line-clamp-2">{c.title || '—'}</span>
-                          </td>
-                          <td className="px-3 py-2 text-sm max-w-md hidden md:table-cell">
-                            <span className={`line-clamp-3 ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
-                              {truncate(c.text || c.summary || '', 240)}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-right whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => openEditChunk(c)}
-                              className="text-indigo-600 dark:text-indigo-400 hover:underline text-sm font-medium mr-3"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteChunk(c)}
-                              disabled={deletingChunkId === c.id}
-                              className="text-red-600 dark:text-red-400 hover:underline text-sm font-medium disabled:opacity-50"
-                            >
-                              {deletingChunkId === c.id ? 'Deleting…' : 'Delete'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
               </div>
+                )}
+              </div>
+                )}
+              </>
             )}
 
             {chunksPerPage > 0 && totalChunkPages > 1 && (
@@ -780,7 +1571,7 @@ export function PageIndexDocumentsModal({
               <div className="w-full">
                 <input
                   type="text"
-                  placeholder='Metadata (optional JSON, e.g. {"topic": "finance", "year": 2024})'
+                  placeholder='Metadata (optional JSON, e.g. {"doc_name":"","doc_url":"","access":"public"})'
                   value={metadataJson}
                   onChange={(e) => setMetadataJson(e.target.value)}
                   className={`block w-full px-3 py-2 border rounded-lg text-sm ${
@@ -963,8 +1754,43 @@ export function PageIndexDocumentsModal({
                     agentId}
                 </p>
               </div>
+              {editingChunk.hierarchy && editingChunk.hierarchy.length > 0 && (
+                <div>
+                  <span className="font-medium">hierarchy</span>
+                  <p className="mt-0.5 text-xs break-words">
+                    {editingChunk.hierarchy.join(' › ')}
+                  </p>
+                </div>
+              )}
             </div>
             <div className="space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editEnabled}
+                  onChange={(e) => setEditEnabled(e.target.checked)}
+                  className="rounded border-gray-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                  Include chunk in RAG (enabled)
+                </span>
+              </label>
+              <div>
+                <label className={`block ${labelClass} mb-1`}>Content type</label>
+                <input
+                  type="text"
+                  className={inputClass}
+                  list="pageindex-content-type-suggestions"
+                  value={editContentType}
+                  onChange={(e) => setEditContentType(e.target.value)}
+                  placeholder="substantive, heading_like, appendix, … (empty to clear)"
+                />
+                <datalist id="pageindex-content-type-suggestions">
+                  {CHUNK_CONTENT_TYPE_OPTIONS.filter((o) => o.value).map((o) => (
+                    <option key={o.value} value={o.value} />
+                  ))}
+                </datalist>
+              </div>
               <div>
                 <label className={`block ${labelClass} mb-1`}>Title</label>
                 <input

@@ -61,6 +61,9 @@ _pageindex_candidate_k: contextvars.ContextVar[Optional[int]] = contextvars.Cont
 _pageindex_max_docs_for_tree_search: contextvars.ContextVar[Optional[int]] = (
     contextvars.ContextVar("_pageindex_max_docs_for_tree_search", default=None)
 )
+_pageindex_retrieval_excerpt_source: contextvars.ContextVar[Optional[str]] = (
+    contextvars.ContextVar("_pageindex_retrieval_excerpt_source", default=None)
+)
 
 
 def set_pageindex_node_summary(value: Optional[bool]) -> None:
@@ -136,6 +139,24 @@ def get_pageindex_max_tree_prompt_tokens() -> int:
     """Get max_tree_prompt_tokens. Defaults to 16000 when not set."""
     v = _pageindex_max_tree_prompt_tokens.get()
     return v if v is not None else 16000
+
+
+def set_pageindex_retrieval_excerpt_source(value: Optional[str]) -> None:
+    """Set tree prompt + directive excerpt source: 'summary' or 'text' (None = unset → default summary)."""
+    if value is None:
+        _pageindex_retrieval_excerpt_source.set(None)
+        return
+    s = str(value).lower().strip()
+    _pageindex_retrieval_excerpt_source.set("text" if s == "text" else "summary")
+
+
+def get_pageindex_retrieval_excerpt_source() -> str:
+    """Return 'summary' or 'text'. Defaults to 'summary' when not set."""
+    v = _pageindex_retrieval_excerpt_source.get()
+    if v is None:
+        return "summary"
+    s = str(v).lower().strip()
+    return "text" if s == "text" else "summary"
 
 
 def set_pageindex_enable_lexical_index(value: Optional[bool]) -> None:
@@ -391,6 +412,7 @@ __all__ = [
     "get_pageindex_max_tree_prompt_tokens",
     "get_pageindex_node_summary",
     "get_pageindex_node_text",
+    "get_pageindex_retrieval_excerpt_source",
     "get_pageindex_summary_token_threshold",
     "initialize_pageindex_database",
     "PAGEINDEX_DB_NAME",
@@ -403,5 +425,6 @@ __all__ = [
     "set_pageindex_max_tree_prompt_tokens",
     "set_pageindex_node_summary",
     "set_pageindex_node_text",
+    "set_pageindex_retrieval_excerpt_source",
     "set_pageindex_summary_token_threshold",
 ]

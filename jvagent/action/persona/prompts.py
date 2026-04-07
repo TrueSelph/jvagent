@@ -372,15 +372,15 @@ def get_channel_directive(
             "- Style: Use formatting sparingly to highlight key points; keep most text plain"
         ),
         "email": (
-            "Format for Email:\n"
+            "Format for Email (rendered as HTML for recipients):\n"
             "- Bold: *text*\n"
             "- Italic: _text_\n"
-            "- Bullet lists: * or - at line start\n"
+            "- Bullet lists: * or - at line start (one item per line)\n"
             "- Quotes: > at line start\n"
-            "- URLs: Use raw URLs (no hyperlinks)\n"
-            "- Subject: Maximum 60 characters\n"
-            "- Tone: Include formal greetings and closings\n"
-            "- Style: Use formatting sparingly to highlight key points; keep most text plain"
+            "- URLs: Use raw https URLs; they are turned into clickable links\n"
+            "- Subject line is chosen by the system for replies (Re: …); focus on body\n"
+            "- Tone: Include formal greetings and closings when appropriate\n"
+            "- Style: Use formatting sparingly; keep most text plain"
         ),
         "sms": (
             "Format for SMS:\n"

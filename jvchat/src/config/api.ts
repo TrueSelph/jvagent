@@ -1015,13 +1015,15 @@ class ApiClient {
    */
   async listPageIndexChunksForCollection(
     agentId: string,
-    params?: { page?: number; per_page?: number; q?: string }
+    params?: { page?: number; per_page?: number; q?: string; chunk_enabled?: string }
   ): Promise<PageIndexChunksListResponse> {
     const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/chunks`
     const query: Record<string, string | number> = {}
     if (params?.page != null) query.page = params.page
     if (params?.per_page != null) query.per_page = params.per_page
     if (params?.q != null && params.q.trim() !== '') query.q = params.q
+    if (params?.chunk_enabled != null && params.chunk_enabled !== '')
+      query.chunk_enabled = params.chunk_enabled
     const response = await this._withFallback((baseURL) =>
       this.client.get(path, { baseURL, params: query })
     )
@@ -1037,13 +1039,15 @@ class ApiClient {
   async listPageIndexChunks(
     agentId: string,
     docName: string,
-    params?: { page?: number; per_page?: number; q?: string }
+    params?: { page?: number; per_page?: number; q?: string; chunk_enabled?: string }
   ): Promise<PageIndexChunksListResponse> {
     const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents/${encodeURIComponent(docName)}/chunks`
     const query: Record<string, string | number> = {}
     if (params?.page != null) query.page = params.page
     if (params?.per_page != null) query.per_page = params.per_page
     if (params?.q != null && params.q.trim() !== '') query.q = params.q
+    if (params?.chunk_enabled != null && params.chunk_enabled !== '')
+      query.chunk_enabled = params.chunk_enabled
     const response = await this._withFallback((baseURL) =>
       this.client.get(path, { baseURL, params: query })
     )
@@ -1141,6 +1145,7 @@ class ApiClient {
     }
     if (params.doc_name != null) body.doc_name = params.doc_name
     if (params.metadata != null) body.metadata = JSON.stringify(params.metadata)
+    if (params.include_references !== undefined) body.include_references = params.include_references
 
     const response = await this._withFallback((baseURL) =>
       this.client.post(path, body, { baseURL })
@@ -1154,10 +1159,16 @@ class ApiClient {
    * Export PageIndex data.
    * Path: GET /api/agents/{agentId}/pageindex/export
    */
-  async exportPageIndex(format: 'json' = 'json', collectionName: string = 'default'): Promise<any> {
+  async exportPageIndex(
+    format: 'json' = 'json',
+    collectionName: string = 'default',
+    rootId?: string
+  ): Promise<any> {
     const path = `/api/agents/${encodeURIComponent(collectionName)}/pageindex/export`
+    const params: Record<string, string> = { format }
+    if (rootId) params.root_id = rootId
     const response = await this._withFallback((baseURL) =>
-      this.client.get(path, { baseURL, params: { format } })
+      this.client.get(path, { baseURL, params })
     )
     return response.data.data
   }

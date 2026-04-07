@@ -51,3 +51,33 @@ class GoogleGmailAction(GoogleAction):
         """Get user Gmail profile."""
         service = await self.get_service()
         return service.users().getProfile(userId=user_id).execute()
+
+    async def get_message(
+        self,
+        message_id: str,
+        *,
+        user_id: str = "me",
+        fmt: str = "full",
+    ) -> Dict[str, Any]:
+        """Fetch one message by id (format ``full`` or ``raw``)."""
+        service = await self.get_service()
+        return (
+            service.users()
+            .messages()
+            .get(userId=user_id, id=message_id, format=fmt)
+            .execute()
+        )
+
+    async def mark_read(self, message_id: str, user_id: str = "me") -> Dict[str, Any]:
+        """Remove UNREAD label (mark as read)."""
+        service = await self.get_service()
+        return (
+            service.users()
+            .messages()
+            .modify(
+                userId=user_id,
+                id=message_id,
+                body={"removeLabelIds": ["UNREAD"]},
+            )
+            .execute()
+        )

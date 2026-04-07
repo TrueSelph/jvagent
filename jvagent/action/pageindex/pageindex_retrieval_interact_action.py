@@ -24,6 +24,7 @@ from jvagent.action.pageindex.config import (
     set_pageindex_max_tree_prompt_tokens,
     set_pageindex_node_summary,
     set_pageindex_node_text,
+    set_pageindex_retrieval_excerpt_source,
     set_pageindex_summary_token_threshold,
 )
 from jvagent.action.pageindex.llm_bridge import set_pageindex_model_action
@@ -76,6 +77,13 @@ def _push_retrieval_config(retrieval: Dict[str, Any]) -> None:
         and retrieval["max_docs_for_tree_search"] is not None
     ):
         set_pageindex_max_docs_for_tree_search(retrieval["max_docs_for_tree_search"])
+    if (
+        "retrieval_excerpt_source" in retrieval
+        and retrieval["retrieval_excerpt_source"] is not None
+    ):
+        set_pageindex_retrieval_excerpt_source(
+            str(retrieval["retrieval_excerpt_source"])
+        )
 
 
 def _get_ingestion_config(
@@ -98,6 +106,15 @@ def _get_ingestion_config(
     }
 
 
+def _normalize_retrieval_excerpt_source(value: Any, fallback: str) -> str:
+    """Return 'text' or 'summary' for tree prompt and directive excerpts."""
+    if value is None:
+        v = str(fallback).lower().strip()
+    else:
+        v = str(value).lower().strip()
+    return "text" if v == "text" else "summary"
+
+
 def _format_page_range(r: Dict[str, Any]) -> str:
     """Format page range from result dict, e.g. 'pp. 5-8' or 'p. 5'."""
     start = r.get("start_index")
@@ -113,7 +130,7 @@ async def ensure_ingestion_config_for_agent(agent_id: str) -> None:
     """Push ingestion config from agent's PageIndex action to config module.
 
     Used when REST ingest does not receive if_add_node_summary in the form.
-    Resolves config from cached actions; falls back to node_summary=True when
+    Resolves config from cached actions; falls back to text-first ingestion when
     cache miss or no PageIndex action (agent-scoped routes assume PageIndex).
     """
     from jvagent.core.cache import get_cached_actions
@@ -126,10 +143,10 @@ async def ensure_ingestion_config_for_agent(agent_id: str) -> None:
             ingestion = _get_ingestion_config(config, node_summary_attr)
             _push_ingestion_config(ingestion)
             return
-    # Fallback: default to summaries for agent-scoped routes
+    # Fallback: text-first tree excerpts; LLM summaries off unless config enables them
     _push_ingestion_config(
         {
-            "node_summary": True,
+            "node_summary": False,
             "node_text": True,
             "doc_description": False,
             "max_token_num_each_node": None,
@@ -189,8 +206,13 @@ class PageIndexRetrievalInteractAction(InteractAction):
     )
     node_summary: bool = attribute(
         default=False,
-        description="When True, generate node summaries during ingestion (if_add_node_summary='yes'). "
-        "Required for tree search to work well.",
+        description="When True, generate LLM node summaries during ingestion (if_add_node_summary='yes'). "
+        "Recommended when using retrieval_excerpt_source summary (default).",
+    )
+    retrieval_excerpt_source: str = attribute(
+        default="summary",
+        description="What to show in tree_search prompts and directive excerpts: 'summary' "
+        "(prefer stored summaries, else body text) or 'text' (prefer full section text, else summaries).",
     )
     collection: Optional[str] = attribute(
         default=None,
@@ -215,6 +237,15 @@ class PageIndexRetrievalInteractAction(InteractAction):
         description="When True, render numbered source references with page numbers and "
         "document URLs in the directive. Set False to disable and save tokens.",
     )
+    only_enabled: bool = attribute(
+        default=True,
+        description="When True, retrieval skips DocumentNodes with enabled=false.",
+    )
+    retrieval_include: Optional[List[str]] = attribute(
+        default=None,
+        description="Optional extra fields per hit (e.g. hierarchy, content_type, "
+        "pageindex_node_id). Same as REST search body `include`.",
+    )
     user_groups: Dict[str, List[str]] = attribute(
         default_factory=dict,
         description="Add user groups to use document filter. group to user ids.",
@@ -229,9 +260,88 @@ class PageIndexRetrievalInteractAction(InteractAction):
             or "default"
         )
 
+    def _resolved_metadata_filter(self, visitor: "InteractWalker") -> Any:
+        """Merge config/attribute metadata_filter with optional user_groups access rules."""
+        cfg = self.config or {}
+        base = self.metadata_filter or cfg.get("metadata_filter")
+        if not self.user_groups:
+            return base
+        mf = copy.deepcopy(base) if base is not None else {}
+        for group, users in self.user_groups.items():
+            if visitor.user_id in users:
+                if isinstance(mf, dict) and "access" in mf:
+                    mf["access"].append(group)
+                else:
+                    mf = {"access": [group]}
+        return mf if mf else base
+
+    def _retrieval_runtime_config(self, visitor: "InteractWalker") -> Dict[str, Any]:
+        """Resolved limits, strategy, filters, and retrieval excerpt mode for one execute."""
+        cfg = self.config or {}
+        max_summary_chars = (
+            cfg.get("max_summary_chars")
+            if cfg.get("max_summary_chars") is not None
+            else self.max_summary_chars
+        )
+        max_tree_prompt_tokens = (
+            cfg.get("max_tree_prompt_tokens")
+            if cfg.get("max_tree_prompt_tokens") is not None
+            else self.max_tree_prompt_tokens
+        )
+        only_en = (
+            _bool_from_config(cfg["only_enabled"], self.only_enabled)
+            if "only_enabled" in cfg and cfg["only_enabled"] is not None
+            else self.only_enabled
+        )
+        inc = cfg.get("include")
+        if inc is None:
+            inc = cfg.get("include_fields")
+        include_list = self._coerce_include_list(inc)
+        if include_list is None:
+            include_list = self._coerce_include_list(self.retrieval_include)
+
+        return {
+            "limit": cfg.get("limit") if cfg.get("limit") is not None else self.limit,
+            "strategy": cfg.get("strategy") or self.strategy,
+            "model": cfg.get("model") or self.model,
+            "doc_name": self.doc_name or cfg.get("doc_name"),
+            "collection_name": self._resolve_collection(),
+            "metadata_filter": self._resolved_metadata_filter(visitor),
+            "max_summary_chars": max_summary_chars,
+            "max_tree_prompt_tokens": max_tree_prompt_tokens,
+            "retrieval_excerpt_source": self._resolve_retrieval_excerpt_source(),
+            "enable_lexical_index": cfg.get("enable_lexical_index"),
+            "candidate_k": cfg.get("candidate_k"),
+            "max_docs_for_tree_search": cfg.get("max_docs_for_tree_search"),
+            "only_enabled": only_en,
+            "include": include_list,
+        }
+
+    @staticmethod
+    def _coerce_include_list(val: Any) -> Optional[List[str]]:
+        if val is None:
+            return None
+        if isinstance(val, list):
+            out = [str(x).strip() for x in val if str(x).strip()]
+            return out or None
+        if isinstance(val, str):
+            out = [s.strip() for s in val.split(",") if s.strip()]
+            return out or None
+        return None
+
     def _apply_ingestion_config(self) -> None:
         """Push ingestion config values from this action to the config module."""
         _push_ingestion_config(_get_ingestion_config(self.config, self.node_summary))
+
+    def _resolve_retrieval_excerpt_source(self) -> str:
+        cfg = self.config or {}
+        if "retrieval_excerpt_source" in cfg and cfg["retrieval_excerpt_source"] is not None:
+            return _normalize_retrieval_excerpt_source(
+                cfg["retrieval_excerpt_source"], "summary"
+            )
+        return _normalize_retrieval_excerpt_source(
+            self.retrieval_excerpt_source, "summary"
+        )
 
     async def on_register(self) -> None:
         """Push ingestion config and initialize PageIndex db when action is registered."""
@@ -271,57 +381,30 @@ class PageIndexRetrievalInteractAction(InteractAction):
                 return
 
             initialize_pageindex_database()
-            cfg = self.config or {}
-            limit = cfg.get("limit") if cfg.get("limit") is not None else self.limit
-            strategy = cfg.get("strategy") or self.strategy
-            model = cfg.get("model") or self.model
-            doc_name = self.doc_name or cfg.get("doc_name")
-            collection_name = self._resolve_collection()
-            metadata_filter = self.metadata_filter or cfg.get("metadata_filter")
-
-            # apply user group filter
-            if self.user_groups:
-                metadata_filter = copy.deepcopy(self.metadata_filter)
-                if self.user_groups:
-                    for group, users in self.user_groups.items():
-                        if visitor.user_id in users:
-                            if (
-                                isinstance(metadata_filter, Dict)
-                                and "access" in metadata_filter
-                            ):
-                                metadata_filter["access"].append(group)
-                            else:
-                                metadata_filter = {"access": [group]}
-
-            max_summary_chars = (
-                cfg.get("max_summary_chars")
-                if cfg.get("max_summary_chars") is not None
-                else self.max_summary_chars
-            )
-            max_tree_prompt_tokens = (
-                cfg.get("max_tree_prompt_tokens")
-                if cfg.get("max_tree_prompt_tokens") is not None
-                else self.max_tree_prompt_tokens
-            )
+            rtc = self._retrieval_runtime_config(visitor)
             _push_retrieval_config(
                 {
-                    "max_summary_chars": max_summary_chars,
-                    "max_tree_prompt_tokens": max_tree_prompt_tokens,
-                    "enable_lexical_index": cfg.get("enable_lexical_index"),
-                    "candidate_k": cfg.get("candidate_k"),
-                    "max_docs_for_tree_search": cfg.get("max_docs_for_tree_search"),
+                    "max_summary_chars": rtc["max_summary_chars"],
+                    "max_tree_prompt_tokens": rtc["max_tree_prompt_tokens"],
+                    "enable_lexical_index": rtc["enable_lexical_index"],
+                    "candidate_k": rtc["candidate_k"],
+                    "max_docs_for_tree_search": rtc["max_docs_for_tree_search"],
+                    "retrieval_excerpt_source": rtc["retrieval_excerpt_source"],
                 }
             )
             results = await search_documents(
                 query=query,
-                doc_name=doc_name,
-                strategy=strategy,
-                limit=limit,
-                model=model,
-                collection_name=collection_name,
-                metadata_filter=metadata_filter,
-                max_summary_chars=max_summary_chars,
-                max_tree_prompt_tokens=max_tree_prompt_tokens,
+                doc_name=rtc["doc_name"],
+                strategy=rtc["strategy"],
+                limit=rtc["limit"],
+                model=rtc["model"],
+                collection_name=rtc["collection_name"],
+                metadata_filter=rtc["metadata_filter"],
+                max_summary_chars=rtc["max_summary_chars"],
+                max_tree_prompt_tokens=rtc["max_tree_prompt_tokens"],
+                include_references=self._resolve_include_references(),
+                only_enabled=rtc["only_enabled"],
+                include=rtc["include"],
             )
 
             if results:
