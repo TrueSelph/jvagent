@@ -1,7 +1,7 @@
 """PageIndex document operations.
 
-Wraps vendored PageIndex core (page_index, md_to_tree) for document assimilation,
-persisting the resulting structure to the jvspatial graph database.
+Wraps vendored PageIndex core (PDF ``page_index``) and enriched Markdown
+(``md_tree_enriched.md_to_tree``) for assimilation, persisting structure to jvspatial.
 """
 
 import asyncio
@@ -13,6 +13,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.core.context import (
     GraphContext,
     get_default_context,
@@ -20,7 +21,7 @@ from jvspatial.core.context import (
 )
 from jvspatial.db import get_database_manager
 
-from .adapter import tree_to_graph
+from .adapter import _count_structure_nodes, tree_to_graph
 from .config import (
     PAGEINDEX_DB_NAME,
     get_pageindex_doc_description,
@@ -31,14 +32,19 @@ from .config import (
     initialize_pageindex_database,
     resolve_pageindex_json_log_dir,
 )
-from .core import md_to_tree, page_index
+from .core import page_index
+from .md_tree_enriched import (
+    annotate_content_type_and_enabled,
+    assign_hierarchy_breadcrumbs,
+    md_to_tree,
+)
 from .llm_bridge import (
     PageIndexCancelled,
     attach_pageindex_cancel_event,
     set_pageindex_model_action,
     signal_pageindex_cancel,
 )
-from .models import DocumentContentEdge, DocumentNode, DocumentRootNode
+from .models import DocumentContentEdge, DocumentNode, DocumentRootNode, node_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +54,14 @@ CHUNK_LIST_MAX = 5000
 
 async def _get_app_id_from_node() -> Optional[str]:
     """Get app_id from App node. JVAGENT_APP_ID env overrides when set in config."""
-    from jvagent.core.app import App
+    try:
+        from jvagent.core.app import App
 
-    app = await App.get()
-    return getattr(app, "app_id", None) if app else None
+        app = await App.get()
+        return getattr(app, "app_id", None) if app else None
+    except RuntimeError:
+        # No default GraphContext (e.g. unit tests, scripts without Server startup)
+        return None
 
 
 def _safe_get_prev_context() -> Optional[GraphContext]:
@@ -74,6 +84,29 @@ def _to_yes_no(value: Any, default: bool) -> str:
         return "yes" if default else "no"
     v = str(value).lower().strip()
     return "yes" if v in ("yes", "true", "1") else "no"
+
+
+def enrich_structure_titles(structure: Any) -> Any:
+    """Prefix node titles with hierarchy ``structure`` (e.g. 1.2.3) when missing."""
+    if isinstance(structure, list):
+        return [enrich_structure_titles(item) for item in structure]
+    if not isinstance(structure, dict):
+        return structure
+    out = dict(structure)
+    struct_code = str(out.get("structure") or "").strip()
+    title = (out.get("title") or "").strip()
+    if struct_code and struct_code != "0" and title:
+        prefixed = (
+            title.startswith(f"{struct_code} ")
+            or title.startswith(f"{struct_code}.")
+            or title == struct_code
+        )
+        if not prefixed:
+            out["title"] = f"{struct_code} {title}".strip()
+    nodes = out.get("nodes")
+    if nodes:
+        out["nodes"] = enrich_structure_titles(nodes)
+    return out
 
 
 def _build_metadata_query(metadata_filter: Dict[str, Any]) -> Dict[str, Any]:
@@ -278,10 +311,27 @@ async def assimilate_document(
                 summary_token_threshold=summary_token_threshold or 200,
             )
 
+        if result.get("structure"):
+            result["structure"] = enrich_structure_titles(result["structure"])
+
+        if result.get("structure"):
+            assign_hierarchy_breadcrumbs(result["structure"])
+            annotate_content_type_and_enabled(result["structure"])
+
         name = result.get("doc_name", "")
         if doc_name:
             result["doc_name"] = doc_name
             name = doc_name
+
+        if result.get("structure"):
+            logger.info(
+                "pageindex ingest complete ingest_kind=%s doc_name=%s "
+                "structure_nodes=%s persist=%s",
+                "pdf_pageindex" if is_pdf else "markdown_enriched",
+                name,
+                _count_structure_nodes(result["structure"]),
+                persist,
+            )
 
         if persist and result.get("structure"):
             result["collection_name"] = collection_name
@@ -290,6 +340,10 @@ async def assimilate_document(
                 result["doc_description"] = doc_description
             if doc_url is not None:
                 result["doc_url"] = doc_url
+            elif isinstance(metadata, dict):
+                meta_url = metadata.get("doc_url")
+                if meta_url is not None and str(meta_url).strip():
+                    result["doc_url"] = str(meta_url).strip()
             root_id = await tree_to_graph(result)
             result["_root_id"] = root_id
             logger.info(f"Assimilated document '{name}' (root={root_id})")
@@ -409,8 +463,14 @@ async def delete_document(
 async def export_documents(
     collection_name: str = "default",
     doc_name: Optional[str] = None,
+    root_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Export documents and their graph structure."""
+    """Export documents and their graph structure.
+
+    When ``root_id`` is set, exports exactly that DocumentRootNode and its document
+    nodes (``root_id`` takes precedence over ``doc_name``). When neither ``root_id``
+    nor ``doc_name`` is set, exports the entire collection.
+    """
     from .models import DocumentContentEdge, DocumentNode
 
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
@@ -419,11 +479,26 @@ async def export_documents(
     logger.debug(f"Exporting documents in collection: {collection_name}")
     try:
         set_default_context(context)
-        query: Dict[str, Any] = {"context.collection_name": collection_name}
-        if doc_name:
-            query["context.doc_name"] = doc_name
-        roots = await DocumentRootNode.find(query)
-        nodes = await DocumentNode.find(query)
+        if root_id:
+            root_entity = await DocumentRootNode.get(root_id)
+            if root_entity is None or not isinstance(root_entity, DocumentRootNode):
+                raise ResourceNotFoundError(f"No document root with id {root_id!r}")
+            if root_entity.collection_name != collection_name:
+                raise ResourceNotFoundError(
+                    f"Document root {root_id!r} is not in collection {collection_name!r}"
+                )
+            node_query: Dict[str, Any] = {
+                "context.collection_name": collection_name,
+                "context.doc_name": root_entity.doc_name,
+            }
+            roots = [root_entity]
+            nodes = await DocumentNode.find(node_query)
+        else:
+            query: Dict[str, Any] = {"context.collection_name": collection_name}
+            if doc_name:
+                query["context.doc_name"] = doc_name
+            roots = await DocumentRootNode.find(query)
+            nodes = await DocumentNode.find(query)
 
         node_ids = {r.id for r in roots} | {n.id for n in nodes}
         all_edges = await DocumentContentEdge.find({})
@@ -519,6 +594,9 @@ def _document_node_to_chunk_dict(node: DocumentNode) -> Dict[str, Any]:
         "physical_index": node.physical_index,
         "line_num": node.line_num,
         "doc_name": node.doc_name or "",
+        "enabled": node_enabled(node),
+        "content_type": getattr(node, "content_type", None),
+        "hierarchy": getattr(node, "hierarchy", None),
     }
 
 
@@ -592,6 +670,8 @@ _CHUNK_UPDATE_FIELDS = frozenset(
         "end_index",
         "physical_index",
         "line_num",
+        "enabled",
+        "content_type",
     }
 )
 
@@ -603,6 +683,7 @@ async def list_document_chunks(
     page: int = 1,
     per_page: int = 0,
     q: Optional[str] = None,
+    enabled_filter: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """List DocumentNode chunks for a document with optional text filter and pagination.
 
@@ -627,6 +708,8 @@ async def list_document_chunks(
         _safe_restore_context(prev)
 
     filtered = [n for n in nodes if _chunk_matches_filter(q, n)]
+    if enabled_filter is not None:
+        filtered = [n for n in filtered if node_enabled(n) == enabled_filter]
     filtered.sort(key=_chunk_sort_key)
     page_chunks, total = _paginate_filtered_nodes(
         filtered, page=page, per_page=per_page
@@ -644,6 +727,7 @@ async def list_collection_chunks(
     page: int = 1,
     per_page: int = 0,
     q: Optional[str] = None,
+    enabled_filter: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """List all DocumentNode chunks in a collection (all documents)."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
@@ -656,6 +740,8 @@ async def list_collection_chunks(
         _safe_restore_context(prev)
 
     filtered = [n for n in nodes if _chunk_matches_filter(q, n)]
+    if enabled_filter is not None:
+        filtered = [n for n in filtered if node_enabled(n) == enabled_filter]
     filtered.sort(key=_chunk_sort_key_collection)
     page_chunks, total = _paginate_filtered_nodes(
         filtered, page=page, per_page=per_page
@@ -738,8 +824,18 @@ async def update_document_chunk(
         for key, value in updates.items():
             if key not in _CHUNK_UPDATE_FIELDS:
                 continue
-            if hasattr(node, key):
-                setattr(node, key, value)
+            if not hasattr(node, key):
+                continue
+            if key == "enabled" and value is not None and not isinstance(value, bool):
+                value = bool(value)
+            if key == "content_type":
+                if value is None or value == "":
+                    value = None
+                elif not isinstance(value, str):
+                    value = str(value) if value is not None else None
+                else:
+                    value = value.strip() or None
+            setattr(node, key, value)
 
         await node.save()
 

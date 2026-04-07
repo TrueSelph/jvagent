@@ -29,13 +29,46 @@ from .config import (
     get_pageindex_max_docs_for_tree_search,
     get_pageindex_max_summary_chars,
     get_pageindex_max_tree_prompt_tokens,
+    get_pageindex_retrieval_excerpt_source,
 )
 from .document_walker import DocumentWalker
 from .documents import get_document_root, get_document_roots
 from .llm_bridge import get_pageindex_model_action
-from .models import DocumentContentEdge, DocumentNode, DocumentRootNode, node_to_result
+from .models import (
+    DocumentContentEdge,
+    DocumentNode,
+    DocumentRootNode,
+    copy_included_fields,
+    node_enabled,
+    node_to_result,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _row_from_node(
+    node: DocumentNode,
+    include: Optional[List[str]],
+) -> Dict[str, Any]:
+    base = node_to_result(node)
+    return copy_included_fields(node, base, include)
+
+
+def _parse_llm_json_object(raw: str) -> Dict[str, Any]:
+    """Parse the first JSON object from model output (ignore trailing prose)."""
+    decoder = json.JSONDecoder()
+    obj, _ = decoder.raw_decode(raw.strip())
+    if not isinstance(obj, dict):
+        raise ValueError("expected JSON object from tree search")
+    return obj
+
+
+def _truncate_tree_excerpt(text: str, max_chars: int) -> str:
+    if not text:
+        return ""
+    if len(text) > max_chars:
+        return text[:max_chars] + "\u2026"
+    return text
 
 
 def _build_text_query(query: str) -> Dict[str, Any]:
@@ -114,13 +147,15 @@ def _top_doc_names(candidates: List[Dict[str, Any]], max_docs: int) -> List[str]
 
 
 # ---------------------------------------------------------------------------
-# Tree building (unchanged)
+# Tree building
 # ---------------------------------------------------------------------------
 
 
 async def _graph_to_tree(
     root: DocumentRootNode,
     max_summary_chars: Optional[int] = None,
+    excerpt_source: Optional[str] = None,
+    only_enabled: bool = True,
 ) -> List[Dict[str, Any]]:
     """Build PageIndex-style tree from jvspatial graph."""
     max_chars = (
@@ -128,22 +163,36 @@ async def _graph_to_tree(
         if max_summary_chars is not None
         else get_pageindex_max_summary_chars()
     )
+    mode = (
+        excerpt_source
+        if excerpt_source is not None
+        else get_pageindex_retrieval_excerpt_source()
+    )
 
-    async def _node_to_dict(node: DocumentNode) -> Dict[str, Any]:
+    async def _node_to_dict(node: DocumentNode) -> Optional[Dict[str, Any]]:
+        if only_enabled and not node_enabled(node):
+            return None
         children = await node.outgoing(node=DocumentNode, edge=DocumentContentEdge)
-        summary_val = node.summary or node.prefix_summary
-        if summary_val is None and node.text:
-            summary_val = (
-                (node.text[:max_chars] + "\u2026")
-                if len(node.text) > max_chars
-                else node.text
-            )
-        elif summary_val and len(summary_val) > max_chars:
-            summary_val = summary_val[:max_chars] + "\u2026"
+        text_body = node.text or ""
+        text_stripped = text_body.strip()
+        summary_fields = node.summary or node.prefix_summary or ""
+        if mode == "text":
+            if text_stripped:
+                summary_val = _truncate_tree_excerpt(text_body, max_chars)
+            else:
+                summary_val = _truncate_tree_excerpt(summary_fields, max_chars)
+        else:
+            summary_fields_strip = (summary_fields or "").strip()
+            if summary_fields_strip:
+                summary_val = _truncate_tree_excerpt(summary_fields, max_chars)
+            elif text_stripped:
+                summary_val = _truncate_tree_excerpt(text_body, max_chars)
+            else:
+                summary_val = ""
         d: Dict[str, Any] = {
             "title": node.title or "",
             "node_id": str(node.node_id or ""),
-            "summary": summary_val,
+            "summary": summary_val or node.title or "",
         }
         prefix_val = node.prefix_summary
         if prefix_val is not None and prefix_val != summary_val:
@@ -153,13 +202,15 @@ async def _graph_to_tree(
                 else prefix_val
             )
         if children:
-            d["nodes"] = await asyncio.gather(*(_node_to_dict(c) for c in children))
+            child_parts = await asyncio.gather(*(_node_to_dict(c) for c in children))
+            d["nodes"] = [c for c in child_parts if c is not None]
         return d
 
     children = await root.outgoing(node=DocumentNode, edge=DocumentContentEdge)
     if not children:
         return []
-    return list(await asyncio.gather(*(_node_to_dict(c) for c in children)))
+    top = await asyncio.gather(*(_node_to_dict(c) for c in children))
+    return [c for c in top if c is not None]
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +228,8 @@ async def _search_via_tree_search(
     model: Optional[str] = None,
     max_summary_chars: Optional[int] = None,
     max_tree_prompt_tokens: Optional[int] = None,
+    only_enabled: bool = True,
+    include: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """LLM-based tree search with lexical pre-selection of documents."""
     from .core.utils import (
@@ -234,12 +287,21 @@ async def _search_via_tree_search(
             limit,
             collection_name=collection_name,
             metadata_filter=metadata_filter,
+            only_enabled=only_enabled,
+            include=include,
         )
 
     all_results: List[Dict[str, Any]] = []
 
     trees = await asyncio.gather(
-        *(_graph_to_tree(r, max_summary_chars=max_summary_chars) for r in roots)
+        *(
+            _graph_to_tree(
+                r,
+                max_summary_chars=max_summary_chars,
+                only_enabled=only_enabled,
+            )
+            for r in roots
+        )
     )
 
     for root, tree in zip(roots, trees):
@@ -272,6 +334,8 @@ async def _search_via_tree_search(
                     limit,
                     collection_name=collection_name,
                     metadata_filter=metadata_filter,
+                    only_enabled=only_enabled,
+                    include=include,
                 )
                 all_results.extend(direct_results[: limit - len(all_results)])
                 if len(all_results) >= limit:
@@ -279,7 +343,7 @@ async def _search_via_tree_search(
                 continue
 
             prompt = f"""You are given a question and a tree structure of a document.
-Each node contains a node id, node title, and a corresponding summary.
+Each node contains a node id, node title, and a section excerpt (truncated text from the document body).
 Your task is to find all nodes that are likely to contain the answer to the question.
 
 Question: {query}
@@ -307,10 +371,12 @@ Directly return the final JSON structure. Do not output anything else.
                     limit,
                     collection_name=collection_name,
                     metadata_filter=metadata_filter,
+                    only_enabled=only_enabled,
+                    include=include,
                 )
 
             raw = get_json_content(response)
-            parsed_resp = json.loads(raw)
+            parsed_resp = _parse_llm_json_object(raw)
             node_list = parsed_resp.get("node_list") or []
             if not isinstance(node_list, list):
                 node_list = []
@@ -327,7 +393,9 @@ Directly return the final JSON structure. Do not output anything else.
                 nid_order = {nid: idx for idx, nid in enumerate(unique_nids)}
                 nodes.sort(key=lambda n: nid_order.get(n.node_id, float("inf")))
                 for node in nodes:
-                    all_results.append(node_to_result(node))
+                    if only_enabled and not node_enabled(node):
+                        continue
+                    all_results.append(_row_from_node(node, include))
                     if len(all_results) >= limit:
                         break
 
@@ -342,6 +410,8 @@ Directly return the final JSON structure. Do not output anything else.
                 limit,
                 collection_name=collection_name,
                 metadata_filter=metadata_filter,
+                only_enabled=only_enabled,
+                include=include,
             )
         except Exception:
             logger.exception(
@@ -354,6 +424,8 @@ Directly return the final JSON structure. Do not output anything else.
                 limit,
                 collection_name=collection_name,
                 metadata_filter=metadata_filter,
+                only_enabled=only_enabled,
+                include=include,
             )
 
         if len(all_results) >= limit:
@@ -369,6 +441,8 @@ Directly return the final JSON structure. Do not output anything else.
             limit,
             collection_name=collection_name,
             metadata_filter=metadata_filter,
+            only_enabled=only_enabled,
+            include=include,
         )
     )
 
@@ -385,6 +459,8 @@ async def _search_via_direct(
     limit: int,
     collection_name: str = "default",
     metadata_filter: Optional[Dict[str, Any]] = None,
+    only_enabled: bool = True,
+    include: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Search using lexical candidates then hydrate, or fall back to regex scan."""
 
@@ -396,7 +472,8 @@ async def _search_via_direct(
         metadata_filter=metadata_filter,
     )
     if candidates:
-        candidate_ids = [c["node_id"] for c in candidates[: limit * 3]]
+        mult = 12 if only_enabled else 3
+        candidate_ids = [c["node_id"] for c in candidates[: limit * mult]]
         out: List[Dict[str, Any]] = []
         for nid in candidate_ids:
             try:
@@ -410,7 +487,9 @@ async def _search_via_direct(
                     continue
                 if doc_name and node.doc_name != doc_name:
                     continue
-                out.append(node_to_result(node))
+                if only_enabled and not node_enabled(node):
+                    continue
+                out.append(_row_from_node(node, include))
                 if len(out) >= limit:
                     break
             except Exception as e:
@@ -426,6 +505,8 @@ async def _search_via_direct(
         limit,
         collection_name=collection_name,
         metadata_filter=metadata_filter,
+        only_enabled=only_enabled,
+        include=include,
     )
 
 
@@ -436,6 +517,8 @@ async def _search_via_direct_scan(
     limit: int,
     collection_name: str = "default",
     metadata_filter: Optional[Dict[str, Any]] = None,
+    only_enabled: bool = True,
+    include: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Original full-scan regex search (fallback when lexical index is empty)."""
     db_query = _build_text_query(query)
@@ -460,12 +543,17 @@ async def _search_via_direct_scan(
 
     results = await context.database.find("node", db_query)
     out: List[Dict[str, Any]] = []
-    for data in results[:limit]:
+    cap = limit * 25 if only_enabled else limit
+    for data in results[:cap]:
         try:
             node = await context._deserialize_entity(DocumentNode, data)
             if not node:
                 continue
-            out.append(node_to_result(node))
+            if only_enabled and not node_enabled(node):
+                continue
+            out.append(_row_from_node(node, include))
+            if len(out) >= limit:
+                break
         except Exception as e:
             logger.debug(f"Skipping invalid node: {e}")
     return out
@@ -483,6 +571,8 @@ async def _search_via_walker(
     limit: int,
     collection_name: str = "default",
     metadata_filter: Optional[Dict[str, Any]] = None,
+    only_enabled: bool = True,
+    include: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Search using DocumentWalker traversal from document roots.
 
@@ -516,7 +606,12 @@ async def _search_via_walker(
 
     all_results: List[Dict[str, Any]] = []
     for root in roots:
-        walker = DocumentWalker(query=query, limit=limit - len(all_results))
+        walker = DocumentWalker(
+            query=query,
+            limit=limit - len(all_results),
+            only_enabled=only_enabled,
+            include=include,
+        )
         await walker.spawn(root)
         report = await walker.get_report()
         for item in report:
@@ -529,7 +624,7 @@ async def _search_via_walker(
 
 
 # ---------------------------------------------------------------------------
-# URL enrichment (unchanged)
+# URL enrichment (for citations when include_references is True)
 # ---------------------------------------------------------------------------
 
 
@@ -554,7 +649,7 @@ async def _resolve_doc_urls(
         if root:
             url = getattr(root, "doc_url", None)
             if not url and root.metadata:
-                url = root.metadata.get("url")
+                url = root.metadata.get("doc_url") or root.metadata.get("url")
             url_map[name] = url
         else:
             url_map[name] = None
@@ -578,6 +673,9 @@ async def search_documents(
     metadata_filter: Optional[Dict[str, Any]] = None,
     max_summary_chars: Optional[int] = None,
     max_tree_prompt_tokens: Optional[int] = None,
+    include_references: bool = True,
+    only_enabled: bool = True,
+    include: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Search documents using vectorless retrieval.
 
@@ -592,10 +690,13 @@ async def search_documents(
         metadata_filter: Optional key-value filter to narrow results by document metadata
         max_summary_chars: Max chars per node summary in tree prompt (default from config: 300)
         max_tree_prompt_tokens: Max tokens for tree in tree-search prompt (default from config: 16000)
+        include_references: When True, resolve and attach doc_url per result; when False, omit doc_url
+        only_enabled: When True, omit chunks with enabled=false from all strategies
+        include: Optional extra node metadata keys per hit (e.g. hierarchy, content_type, pageindex_node_id)
 
     Returns:
         List of dicts with title, text, summary, doc_name, node_id, structure, content,
-        start_index, end_index, physical_index, doc_url
+        start_index, end_index, physical_index, and doc_url when include_references is True
     """
     try:
         manager = get_database_manager()
@@ -624,6 +725,8 @@ async def search_documents(
                 model=model,
                 max_summary_chars=max_summary_chars,
                 max_tree_prompt_tokens=max_tree_prompt_tokens,
+                only_enabled=only_enabled,
+                include=include,
             )
         elif strategy == "walker":
             results = await _search_via_walker(
@@ -633,6 +736,8 @@ async def search_documents(
                 limit,
                 collection_name=collection_name,
                 metadata_filter=metadata_filter,
+                only_enabled=only_enabled,
+                include=include,
             )
         else:
             results = await _search_via_direct(
@@ -642,9 +747,15 @@ async def search_documents(
                 limit,
                 collection_name=collection_name,
                 metadata_filter=metadata_filter,
+                only_enabled=only_enabled,
+                include=include,
             )
 
-        await _resolve_doc_urls(results, collection_name)
+        if include_references:
+            await _resolve_doc_urls(results, collection_name)
+        else:
+            for r in results:
+                r.pop("doc_url", None)
         return results
     finally:
         if prev is not None:

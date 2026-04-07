@@ -21,7 +21,7 @@ Unlike RetrievalInteractAction (which uses a vector store), PageIndex uses reaso
 ### Execution Flow
 
 ```
-Ingestion: PDF/MD -> PageIndex core (page_index/md_to_tree) -> tree_to_graph -> jvspatial + lexical index
+Ingestion: PDF -> PageIndex core `page_index`; Markdown -> `md_tree_enriched.md_to_tree` (outside core; hierarchy/content_type/enabled) -> tree_to_graph -> jvspatial + lexical index
 Retrieval: query -> lexical candidates (BM25) -> tree_search/direct/walker -> directive -> PersonaAction
 ```
 
@@ -52,7 +52,7 @@ This scales to large document bases without full-corpus scans. When the lexical 
 
 | Config key | Type | Default | Description |
 |------------|------|---------|-------------|
-| `node_summary` | bool | false | Generate node summaries during ingestion. Config can override. Required for tree_search. |
+| `node_summary` | bool | false | Generate node summaries during ingestion. Use with default `retrieval_excerpt_source: summary` so tree Search and directives use those summaries (falls back to body text when absent). |
 | `node_text` | bool | true | Add node text to structure |
 | `doc_description` | bool | false | Add document description |
 | `max_token_num_each_node` | Optional[int] | 20000 | Max tokens per node (PDF only) |
@@ -60,6 +60,7 @@ This scales to large document bases without full-corpus scans. When the lexical 
 | `max_node_tokens` | Optional[int] | - | Alias for `summary_token_threshold` |
 | `limit` | int | 10 | Number of results to retrieve (retrieval) |
 | `strategy` | str | "tree_search" | Retrieval strategy (retrieval) |
+| `retrieval_excerpt_source` | str | summary | `summary`: tree_search + directive use stored summaries first (fallback: body text). `text`: prefer full section text (prior behavior). Requires meaningful summaries in the graph (use `node_summary` at ingest). |
 | `include_references` | bool | true | Render numbered source references (page numbers, URLs) in directive. Set false to save tokens. |
 | `collection` | Optional[str] | null | Override collection name (default: agent_id) |
 | `metadata_filter` | Optional[Dict] | null | Key-value filter to narrow search by document metadata |
@@ -75,6 +76,7 @@ This scales to large document bases without full-corpus scans. When the lexical 
 | `collection` | Optional[str] | None | Override collection (default: agent_id) |
 | `metadata_filter` | Optional[Dict] | None | Filter by document metadata |
 | `limit` | int | 10 | Number of results to retrieve |
+| `retrieval_excerpt_source` | str | summary | `summary` or `text` — see config table |
 | `include_references` | bool | true | Render numbered source references in directive; set false to save tokens |
 | `weight` | int | -75 | Execution order (after InteractRouter) |
 | `strategy` | str | "tree_search" | "tree_search", "direct", or "walker" |
@@ -175,7 +177,8 @@ When `include_references` is true (default), retrieval results include page numb
     strategy: "tree_search"
     include_references: true   # Set false to save tokens (plain directive, no citations)
     # metadata_filter: {"access": "internal"}  # Optional: narrow search by metadata
-    node_summary: true      # Required for tree_search; generates summaries during ingestion
+    node_summary: true      # Recommended with default summary excerpts; generates LLM summaries at ingest
+    # retrieval_excerpt_source: text   # Optional: full section text in tree + directive (legacy)
     node_text: true
     doc_description: false
     max_token_num_each_node: 20000   # PDF only
@@ -188,6 +191,7 @@ When `include_references` is true (default), retrieval results include page numb
 
 ## Usage
 
+- **Retrieval excerpts (default `summary`)**: Tree-search prompts and directive excerpts prefer stored node summaries when present. Agents that relied on full section text everywhere should set `retrieval_excerpt_source: text` in config.
 - **Basic setup**: Ingest documents via API or `assimilate_document()`, add action to agent
 - **Query selection**: Uses `interaction.utterance` (preferred) or `interaction.interpretation`
 - **Directive format**: With `include_references: true`, numbered excerpts plus a References section (document name, page range, URL). With `include_references: false`, plain flat format. References section is omitted when no page/URL metadata exists

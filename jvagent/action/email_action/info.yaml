@@ -1,0 +1,20 @@
+package:
+  name: jvagent/email_action
+  author: V75 Inc.
+  archetype: EmailAction
+  version: 1.0.0
+  meta:
+    title: Email Integration
+    description: >-
+      Email channel: Gmail (OAuth + inbox poll) or SendGrid (API key + inbound webhook).
+      Gmail: GOOGLE_CLIENT_SECRETS_JSON and GoogleGmailAction on the agent; optional
+      EMAIL_DEFAULT_SENDER. SendGrid: SENDGRID_API_KEY and EMAIL_DEFAULT_SENDER.
+      Inbound: Gmail polling or SendGrid Inbound Parse POST to the email webhook URL.
+    group: jvagent
+    type: action
+  config:
+    singleton: true
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - httpx>=0.27.0

@@ -6,11 +6,18 @@ via text/substring matching (no embeddings, no vector store).
 
 import logging
 import re
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from jvspatial.core import Walker, on_visit
 
-from .models import DocumentContentEdge, DocumentNode, DocumentRootNode, node_to_result
+from .models import (
+    DocumentContentEdge,
+    DocumentNode,
+    DocumentRootNode,
+    copy_included_fields,
+    node_enabled,
+    node_to_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +33,22 @@ class DocumentWalker(Walker):
     Stops traversal when report size reaches limit (early termination).
     """
 
-    def __init__(self, query: str = "", limit: Optional[int] = None, **kwargs):
+    def __init__(
+        self,
+        query: str = "",
+        limit: Optional[int] = None,
+        *,
+        only_enabled: bool = True,
+        include: Optional[List[str]] = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self._query = (query or "").strip()
         self._query_lower = self._query.lower()
         self._query_regex: Optional[re.Pattern] = None
         self._limit = limit
+        self._only_enabled = only_enabled
+        self._include = include
         if self._query:
             self._query_regex = re.compile(re.escape(self._query), re.IGNORECASE)
 
@@ -56,13 +73,22 @@ class DocumentWalker(Walker):
                 return True
         return False
 
+    def _row(self, node: DocumentNode) -> Dict[str, Any]:
+        base = node_to_result(node)
+        return copy_included_fields(node, base, self._include)
+
     @on_visit(DocumentNode)
     async def on_document_node(self, here: DocumentNode) -> None:
         """Visit DocumentNode: if it matches query, add to report; queue children."""
         if self._at_limit():
             return
+        if self._only_enabled and not node_enabled(here):
+            children = await here.outgoing(node=DocumentNode, edge=DocumentContentEdge)
+            if children:
+                await self.visit(children)
+            return
         if self._matches(here):
-            await self.report(node_to_result(here))
+            await self.report(self._row(here))
         if self._at_limit():
             return
         children = await here.outgoing(node=DocumentNode, edge=DocumentContentEdge)

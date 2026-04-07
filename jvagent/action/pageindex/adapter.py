@@ -20,8 +20,26 @@ from .models import DocumentContentEdge, DocumentNode, DocumentRootNode
 logger = logging.getLogger(__name__)
 
 
+def _count_structure_nodes(structure: Any) -> int:
+    if isinstance(structure, dict):
+        return 1 + sum(
+            _count_structure_nodes(c) for c in (structure.get("nodes") or [])
+        )
+    if isinstance(structure, list):
+        return sum(_count_structure_nodes(item) for item in structure)
+    return 0
+
+
 def _extract_node_data(item: Dict[str, Any]) -> Dict[str, Any]:
     """Extract DocumentNode fields from a PageIndex structure item."""
+    hier = item.get("hierarchy")
+    if hier is not None and not isinstance(hier, list):
+        hier = list(hier) if isinstance(hier, (tuple,)) else None
+    enabled = item.get("enabled", True)
+    if enabled is not None and not isinstance(enabled, bool):
+        enabled = bool(enabled)
+    if enabled is None:
+        enabled = True
     return {
         "title": item.get("title", ""),
         "node_id": str(item.get("node_id", "")),
@@ -33,6 +51,9 @@ def _extract_node_data(item: Dict[str, Any]) -> Dict[str, Any]:
         "end_index": item.get("end_index"),
         "structure": str(item.get("structure", "")),
         "line_num": item.get("line_num"),
+        "enabled": enabled,
+        "content_type": item.get("content_type"),
+        "hierarchy": hier,
     }
 
 
@@ -161,8 +182,12 @@ async def persist_structure(
         for node in top_level:
             await root.connect(node, edge=DocumentContentEdge, direction="out")
 
+        persisted_nodes = _count_structure_nodes(structure)
         logger.info(
-            f"Persisted document '{doc_name}' to PageIndex graph (root={root.id})"
+            "Persisted document '%s' to PageIndex graph root=%s persisted_document_nodes=%s",
+            doc_name,
+            root.id,
+            persisted_nodes,
         )
         return root.id
     finally:

@@ -65,6 +65,39 @@ def _parse_metadata(value: Optional[str]) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _form_yes_no_optional(value: Optional[str]) -> Optional[bool]:
+    """Parse optional multipart yes/no to bool; unknown or empty -> None."""
+    if value is None or not str(value).strip():
+        return None
+    v = str(value).lower().strip()
+    if v in ("yes", "true", "1"):
+        return True
+    if v in ("no", "false", "0"):
+        return False
+    return None
+
+
+def _form_int_optional(value: Optional[str]) -> Optional[int]:
+    if value is None or not str(value).strip():
+        return None
+    try:
+        return int(str(value).strip())
+    except ValueError:
+        return None
+
+
+def _parse_chunk_enabled_filter(raw: Optional[str]) -> Optional[bool]:
+    """Tri-state: None = all chunks; True = RAG-enabled only; False = disabled only."""
+    if raw is None or not str(raw).strip():
+        return None
+    v = str(raw).lower().strip()
+    if v in ("true", "1", "yes", "enabled"):
+        return True
+    if v in ("false", "0", "no", "disabled"):
+        return False
+    return None
+
+
 def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
     bytes,
     str,
@@ -407,6 +440,11 @@ async def list_collection_chunks_endpoint(
         default=None,
         description="Case-insensitive substring filter on title, text, summary, structure",
     ),
+    chunk_enabled: Optional[str] = Query(
+        default=None,
+        description='Omit for all chunks; "true"/"enabled" = RAG-enabled only; '
+        '"false"/"disabled" = disabled only',
+    ),
 ) -> Dict[str, Any]:
     """List chunks across all documents in the agent's PageIndex collection."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
@@ -415,6 +453,7 @@ async def list_collection_chunks_endpoint(
         page=page,
         per_page=per_page,
         q=q,
+        enabled_filter=_parse_chunk_enabled_filter(chunk_enabled),
     )
 
 
@@ -598,6 +637,11 @@ async def list_document_chunks_endpoint(
         default=None,
         description="Case-insensitive substring filter on title, text, summary, structure",
     ),
+    chunk_enabled: Optional[str] = Query(
+        default=None,
+        description='Omit for all chunks; "true"/"enabled" = RAG-enabled only; '
+        '"false"/"disabled" = disabled only',
+    ),
 ) -> Dict[str, Any]:
     """List chunks (DocumentNode) for a document with optional filter and pagination."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
@@ -612,6 +656,7 @@ async def list_document_chunks_endpoint(
         page=page,
         per_page=per_page,
         q=q,
+        enabled_filter=_parse_chunk_enabled_filter(chunk_enabled),
     )
 
 
@@ -667,7 +712,7 @@ async def update_document_chunk_endpoint(
     chunk_id: str,
     updates: Dict[str, Any] = EndpointField(
         description="Partial fields: title, text, summary, prefix_summary, structure, "
-        "node_id, start_index, end_index, physical_index, line_num"
+        "node_id, start_index, end_index, physical_index, line_num, enabled, content_type"
     ),
 ) -> Dict[str, Any]:
     """Update chunk fields and refresh lexical index for this node."""
@@ -767,6 +812,19 @@ async def search_documents_endpoint(
     metadata: Optional[str] = Field(
         None, description='Metadata filter as JSON, e.g. {"topic": "finance"}'
     ),
+    include_references: bool = Field(
+        default=True,
+        description="When True, include doc_url on each hit (for citations). When False, omit doc_url.",
+    ),
+    only_enabled: bool = Field(
+        default=True,
+        description="When True, omit chunks with enabled=false from retrieval",
+    ),
+    include: Optional[List[str]] = Field(
+        default=None,
+        description="Extra metadata keys per hit: hierarchy, content_type, "
+        "pageindex_node_id, line_num, etc.",
+    ),
 ) -> Dict[str, Any]:
     """Search documents in the agent's PageIndex collection using vectorless retrieval.
 
@@ -779,6 +837,9 @@ async def search_documents_endpoint(
     | strategy | string | No | `tree_search` (default), `direct`, or `walker` |
     | limit | integer | No | Max results (default: 10, max: 200) |
     | metadata | string | No | JSON object to filter by document metadata |
+    | include_references | bool | No | When true (default), resolve doc_url per hit; when false, omit |
+    | only_enabled | bool | No | When true (default), skip disabled chunks |
+    | include | string[] | No | Extra fields per hit (e.g. hierarchy, content_type, pageindex_node_id) |
 
     **Response:** `results` — array of `{node_id, title, doc_name, content, text, summary, start_index, end_index, physical_index, doc_url}`
 
@@ -793,6 +854,9 @@ async def search_documents_endpoint(
         limit=limit,
         collection_name=agent_id,
         metadata_filter=metadata_filter,
+        include_references=include_references,
+        only_enabled=only_enabled,
+        include=include,
     )
     return {"results": results}
 
@@ -817,13 +881,23 @@ async def export_documents_endpoint(
     doc_name: Optional[str] = Query(
         default=None, description="Optional document name to export single document"
     ),
+    root_id: Optional[str] = Query(
+        default=None,
+        description="Optional DocumentRootNode id (e.g. n.DocumentRootNode.{uuid}). "
+        "Exports that document only; takes precedence over doc_name. Omit both to export the entire collection.",
+    ),
     export_format: str = Query(
         default="json", description="Export format: json or yaml"
     ),
 ) -> Dict[str, Any]:
-    """Export PageIndex graph data."""
+    """Export PageIndex graph data.
+
+    Omit ``doc_name`` and ``root_id`` to export all documents in the agent collection.
+    """
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
-    data = await export_documents(collection_name=agent_id, doc_name=doc_name)
+    data = await export_documents(
+        collection_name=agent_id, doc_name=doc_name, root_id=root_id
+    )
 
     if export_format.lower() == "yaml":
         try:

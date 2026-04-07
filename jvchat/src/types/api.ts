@@ -177,6 +177,8 @@ export interface PageIndexSearchParams {
   strategy?: 'tree_search' | 'direct' | 'walker'
   limit?: number
   metadata?: Record<string, unknown>
+  /** When false, search results omit doc_url */
+  include_references?: boolean
 }
 
 /** PageIndex document chunk (DocumentNode) */
@@ -193,6 +195,10 @@ export interface PageIndexChunk {
   physical_index?: number | null
   line_num?: number | null
   doc_name: string
+  /** When false, chunk is excluded from RAG if only_enabled (default true from API) */
+  enabled?: boolean
+  content_type?: string | null
+  hierarchy?: string[] | null
 }
 
 export interface PageIndexChunksListResponse {
@@ -211,11 +217,16 @@ export interface PageIndexChunkUpdatePayload {
   end_index?: number | null
   physical_index?: number | null
   line_num?: number | null
+  enabled?: boolean
+  /** Structural tag (e.g. substantive, heading_like, appendix); null/omit clears */
+  content_type?: string | null
 }
 
 export interface PageIndexChunkDetailResponse {
   chunk: PageIndexChunk
 }
+
+export type PageIndexChunkMergeStrategy = 'concatenate' | 'keep_first'
 
 export interface PageIndexChunkDeleteResponse {
   message: string
