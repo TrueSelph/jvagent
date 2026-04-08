@@ -1,0 +1,18 @@
+package:
+  name: jvagent/microsoft_excel_action
+  author: jvagent
+  archetype: MicrosoftExcelAction
+  version: 0.0.1
+  meta:
+    title: Microsoft Excel Action
+    description: |
+      Read and update Excel workbooks on OneDrive via Microsoft Graph (subset of Sheets parity).
+    group: jvagent
+    type: action
+  config:
+    singleton: false
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - httpx>=0.24.0
+      - openpyxl>=3.1.0

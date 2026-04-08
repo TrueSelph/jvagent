@@ -1,6 +1,7 @@
 import json
 import logging
-from datetime import datetime
+import os
+from contextlib import contextmanager
 from typing import Any, ClassVar, Dict, List, Optional, Union
 
 from google.auth.transport.requests import Request
@@ -16,6 +17,26 @@ from jvagent.core.public_url import get_public_base_url
 from .google_token import GoogleToken
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _oauthlib_relax_token_scope():
+    """Allow token responses whose scope is a superset of the Flow request.
+
+    Google may return merged scopes when ``include_granted_scopes`` is used or
+    when the user has prior grants for the same OAuth client; oauthlib would
+    otherwise raise ``Warning: Scope has changed...`` during ``fetch_token``.
+    """
+    key = "OAUTHLIB_RELAX_TOKEN_SCOPE"
+    previous = os.environ.get(key)
+    os.environ[key] = "1"
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = previous
 
 
 class GoogleAction(Action):
@@ -135,7 +156,8 @@ class GoogleAction(Action):
         flow = self._create_flow()
         if code_verifier:
             flow.code_verifier = code_verifier
-        flow.fetch_token(code=code)
+        with _oauthlib_relax_token_scope():
+            flow.fetch_token(code=code)
         creds = flow.credentials
         await self._save_credentials(creds)
         return True
@@ -199,9 +221,7 @@ class GoogleAction(Action):
                     "client_secret": token_node.client_secret,
                     "scopes": token_node.scopes,
                     "expiry": (
-                        token_node.expiry.isoformat()
-                        if isinstance(token_node.expiry, datetime)
-                        else token_node.expiry
+                        token_node.expiry.isoformat() if token_node.expiry else None
                     ),
                 }
                 creds = Credentials.from_authorized_user_info(token_info, self.SCOPES)
@@ -241,7 +261,7 @@ class GoogleAction(Action):
             "client_secret": creds.client_secret,
             "scopes": creds.scopes,
             "agent_id": self.agent_id,
-            "expiry": creds.expiry.isoformat() if creds.expiry else None,
+            "expiry": creds.expiry,
         }
 
         # Update existing token or create new one
@@ -253,7 +273,7 @@ class GoogleAction(Action):
             token_node.client_id = creds.client_id
             token_node.client_secret = creds.client_secret
             token_node.scopes = creds.scopes
-            token_node.expiry = creds.expiry.isoformat() if creds.expiry else None
+            token_node.expiry = creds.expiry
             await token_node.save()
         else:
             token_node = await GoogleToken.create(**token_data)

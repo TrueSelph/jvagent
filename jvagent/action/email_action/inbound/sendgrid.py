@@ -153,15 +153,23 @@ async def parse_sendgrid_inbound(form: FormData) -> List[InboundTuple]:
         else:
             return []
 
+    email_inbound: Dict[str, Any] = {
+        "Subject": subject,
+        "MessageId": message_id or None,
+        "InReplyTo": in_reply_to or None,
+        "To": to_val or _get_str("to") or None,
+        "FromName": from_name,
+    }
+    if text:
+        email_inbound["BodyPlain"] = text
+    if html:
+        email_inbound["BodyHtml"] = html
+    if html and not text:
+        email_inbound["BodyPlain"] = utterance
+
     data_dict: Dict[str, Any] = {
         "email_provider": "sendgrid",
-        "email_inbound": {
-            "Subject": subject,
-            "MessageId": message_id or None,
-            "InReplyTo": in_reply_to or None,
-            "To": to_val or _get_str("to") or None,
-            "FromName": from_name,
-        },
+        "email_inbound": email_inbound,
     }
     if email_attachments:
         data_dict["email_attachments"] = email_attachments

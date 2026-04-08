@@ -1,11 +1,13 @@
-import base64
-import logging
-from email.mime.text import MIMEText
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List
+
+from jvagent.action.email_action.canonical_send_builder import (
+    build_canonical_send_message,
+    resolve_outbound_sender_for_standalone_mailbox,
+    standalone_mailbox_effective_sender_name,
+)
+from jvagent.action.email_action.modules.gmail import GmailEmailProvider
 
 from ..google_action import GoogleAction
-
-logger = logging.getLogger(__name__)
 
 
 class GoogleGmailAction(GoogleAction):
@@ -19,20 +21,23 @@ class GoogleGmailAction(GoogleAction):
         "https://www.googleapis.com/auth/gmail.modify",
     ]
 
-    async def send_email(
-        self, to: str, subject: str, body: str, user_id: str = "me"
-    ) -> Dict[str, Any]:
-        """Send an email via Gmail API."""
-        service = await self.get_service()
+    async def send_email(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Send mail using the same canonical payload as EmailAction / HTTP ``/send``.
 
-        message = MIMEText(body)
-        message["to"] = to
-        message["subject"] = subject
+        ``data`` matches the inner object of ``{"data": { ... }}`` (``to``, optional
+        ``subject``, ``html_content`` / ``text_content``, attachments, etc.).
 
-        raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
-        return (
-            service.users().messages().send(userId=user_id, body={"raw": raw}).execute()
+        Raises:
+            ValidationError: From :func:`~jvagent.action.email_action.canonical_send_builder.build_canonical_send_message` on invalid input.
+        """
+        canonical = await build_canonical_send_message(
+            data,
+            action_id=self.id,
+            resolve_sender=lambda: resolve_outbound_sender_for_standalone_mailbox(self),
+            effective_sender_name=standalone_mailbox_effective_sender_name,
         )
+        provider = GmailEmailProvider(gmail_action=self)
+        return await provider.send_canonical(canonical)
 
     async def list_messages(
         self, query: str = "", max_results: int = 10, user_id: str = "me"

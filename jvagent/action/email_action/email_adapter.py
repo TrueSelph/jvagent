@@ -83,7 +83,8 @@ class EmailAdapter(ChannelAdapter):
         sender_email, sender_name = await self.action.resolve_outbound_sender()
         if not sender_email:
             logger.error(
-                "EmailAdapter: no sender email (set EMAIL_DEFAULT_SENDER or complete Gmail OAuth)"
+                "EmailAdapter: no sender email (set EMAIL_DEFAULT_SENDER or complete "
+                "mailbox OAuth for Gmail/Outlook)"
             )
             return False
         to_name = (meta.get("to_name") or "").strip() or None

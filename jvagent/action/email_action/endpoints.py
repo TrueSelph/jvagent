@@ -1,4 +1,4 @@
-"""HTTP endpoints for EmailAction (Gmail poll + SendGrid webhook).
+"""HTTP endpoints for EmailAction (Gmail/Outlook inbox webhook + SendGrid inbound).
 
 Public webhook routes authenticate via jvspatial API keys (``webhook:email``).
 Authenticated admin routes require a logged-in user; some require the ``admin`` role.
@@ -17,13 +17,11 @@ from jvspatial.exceptions import ValidationError as SpatialValidationError
 from jvagent.action.access_control.access_control_action import log_access_denied
 from jvagent.core.agent import Agent
 
+from .canonical_send_builder import build_canonical_send_message
 from .email_action import EmailAction
-from .email_payload import CanonicalSendMessage, normalize_attachments_from_body
-from .email_webhook_helpers import (
-    DEFAULT_EMAIL_UTTERANCE_MAX,
-    process_email_interaction_async,
-)
-from .gmail_poll import poll_gmail_inbox_once
+from .email_webhook_helpers import process_email_interaction_async
+from .gmail_inbox import fetch_next_gmail_inbox_message
+from .outlook_inbox import fetch_next_outlook_inbox_message
 from .inbound.sendgrid import parse_sendgrid_inbound
 from .modules.sendgrid import SendGridEmailProvider
 from .utils.endpoint_helpers import get_email_action
@@ -56,10 +54,10 @@ async def _agent_and_email_action_for_webhook(agent_id: str) -> tuple[Agent, Ema
     tags=["Email Action"],
     summary="Receive inbound parsed email webhooks",
     description=(
-        "Used when **EmailAction.provider** is **sendgrid**. **SendGrid Inbound Parse:** "
-        "multipart or urlencoded form (**from**, **subject**, **text**, **html**, "
-        "**headers**, attachments). **Gmail** uses server-side polling instead of this "
-        "URL. Authenticate with **api_key** query or header."
+        "**SendGrid:** multipart or urlencoded Inbound Parse (**from**, **subject**, "
+        "**text**, **html**, **headers**, attachments). **Gmail** and **Outlook:** POST with "
+        "**api_key** triggers **one** inbox fetch (same as admin fetch-once routes); request body "
+        "is ignored. Authenticate with **api_key** query or header."
     ),
     response=success_response(
         data={
@@ -67,30 +65,68 @@ async def _agent_and_email_action_for_webhook(agent_id: str) -> tuple[Agent, Ema
             "response": ResponseField(
                 field_type=Optional[str], example=None, default=None
             ),
+            "gmail_inbound": ResponseField(
+                field_type=Optional[Dict[str, Any]],
+                description="When provider is gmail: fetch outcome (scanned, processed, …)",
+                default=None,
+            ),
+            "outlook_inbound": ResponseField(
+                field_type=Optional[Dict[str, Any]],
+                description="When provider is outlook: fetch outcome (scanned, processed, …)",
+                default=None,
+            ),
         }
     ),
 )
 async def email_interact_webhook(request: Request, agent_id: str) -> Any:
-    """Handle POST from the email provider; enqueue one interaction per parsed item."""
+    """Handle POST: SendGrid inbound form or Gmail/Outlook one-shot inbox fetch."""
     agent, email_action = await _agent_and_email_action_for_webhook(agent_id)
     email_action._apply_env_defaults()
-    utterance_max = int(
-        getattr(email_action, "utterance_max_length", None)
-        or DEFAULT_EMAIL_UTTERANCE_MAX
-    )
 
     provider = (email_action.provider or "gmail").strip().lower()
     ct = (request.headers.get("content-type") or "").lower()
 
     if provider == "gmail":
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "EmailAction provider is gmail: inbound uses Gmail API polling, "
-                "not HTTP webhooks. Use POST .../email/gmail/poll-once or enable "
-                "gmail_poll_interval_seconds on the action."
-            ),
-        )
+        if not email_action.is_configured():
+            raise HTTPException(
+                status_code=400,
+                detail="EmailAction is not configured for Gmail inbound",
+            )
+        result = await fetch_next_gmail_inbox_message(email_action, agent=agent)
+        if result.get("processed"):
+            return {
+                "status": "received",
+                "response": None,
+                "gmail_inbound": result,
+                "outlook_inbound": None,
+            }
+        return {
+            "status": "ignored",
+            "response": None,
+            "gmail_inbound": result,
+            "outlook_inbound": None,
+        }
+
+    if provider == "outlook":
+        if not email_action.is_configured():
+            raise HTTPException(
+                status_code=400,
+                detail="EmailAction is not configured for Outlook inbound",
+            )
+        result = await fetch_next_outlook_inbox_message(email_action, agent=agent)
+        if result.get("processed"):
+            return {
+                "status": "received",
+                "response": None,
+                "gmail_inbound": None,
+                "outlook_inbound": result,
+            }
+        return {
+            "status": "ignored",
+            "response": None,
+            "gmail_inbound": None,
+            "outlook_inbound": result,
+        }
 
     if provider == "sendgrid":
         if (
@@ -114,21 +150,18 @@ async def email_interact_webhook(request: Request, agent_id: str) -> Any:
         )
 
     if not tuples:
-        return {"status": "ignored", "response": None}
+        return {
+            "status": "ignored",
+            "response": None,
+            "gmail_inbound": None,
+            "outlook_inbound": None,
+        }
 
     access_control_action = await agent.get_access_control_action()
 
     async def handle_one(
-        user_id: str, utterance: str, data_dict: Dict[str, Any]
+        user_id: str, _utterance: str, data_dict: Dict[str, Any]
     ) -> None:
-        if len(utterance) > utterance_max:
-            logger.warning(
-                "Email utterance too long from %s (%s chars; max %s)",
-                user_id,
-                len(utterance),
-                utterance_max,
-            )
-            return
         has_access = True
         if access_control_action:
             has_access = await access_control_action.has_action_access(
@@ -151,7 +184,6 @@ async def email_interact_webhook(request: Request, agent_id: str) -> Any:
 
         task = await create_task(
             process_email_interaction_async(
-                utterance,
                 user_id,
                 agent_id,
                 agent,
@@ -162,7 +194,6 @@ async def email_interact_webhook(request: Request, agent_id: str) -> Any:
         )
         if task is None:
             await process_email_interaction_async(
-                utterance,
                 user_id,
                 agent_id,
                 agent,
@@ -173,7 +204,12 @@ async def email_interact_webhook(request: Request, agent_id: str) -> Any:
     for user_id, utterance, data_dict in tuples:
         await handle_one(user_id, utterance, data_dict)
 
-    return {"status": "received", "response": None}
+    return {
+        "status": "received",
+        "response": None,
+        "gmail_inbound": None,
+        "outlook_inbound": None,
+    }
 
 
 @endpoint(
@@ -219,7 +255,8 @@ async def email_get_webhook_url(
     description=(
         "Runs **EmailAction.healthcheck()**. For **sendgrid**, validates the API key "
         "via **GET /user/profile**. For **gmail**, checks **GoogleGmailAction** and "
-        "**users.getProfile**. Admin only."
+        "**users.getProfile**. For **outlook**, checks **MicrosoftOutlookMailAction** and "
+        "**GET /me**. Admin only."
     ),
 )
 async def email_health(action_id: str) -> Dict[str, Any]:
@@ -244,7 +281,9 @@ async def email_health(action_id: str) -> Dict[str, Any]:
     description=(
         "Sends through **EmailAction**’s configured provider using one canonical JSON "
         "shape. **Gmail:** **GOOGLE_CLIENT_SECRETS_JSON** and **GoogleGmailAction** OAuth; "
-        "optional **EMAIL_DEFAULT_SENDER** (else mailbox profile address). **SendGrid:** "
+        "optional **EMAIL_DEFAULT_SENDER** (else mailbox profile address). **Outlook:** "
+        "**MICROSOFT_CLIENT_ID** and **MicrosoftOutlookMailAction** OAuth; optional "
+        "**EMAIL_DEFAULT_SENDER** (else mailbox profile). **SendGrid:** "
         "**SENDGRID_API_KEY** and **EMAIL_DEFAULT_SENDER**.\n\n"
         "**Body:** **to** (email), **subject** (optional), **html_content** / "
         "**htmlContent** and/or **text_content** / **textContent**, optional "
@@ -292,76 +331,11 @@ async def email_send(
             )
         return {"success": True, "result": result}
 
-    to = (data.get("to") or "").strip()
-    if not to or "@" not in to:
-        raise ValidationError(
-            message="Field 'to' must be a valid email address",
-            details={"action_id": action_id},
-        )
-    subject = (data.get("subject") or "").strip() or "Message"
-    html_content = data.get("htmlContent") or data.get("html_content")
-    text_content = data.get("textContent") or data.get("text_content")
-    if html_content:
-        html_content = str(html_content)
-    if text_content:
-        text_content = str(text_content)
-    if not html_content and not text_content:
-        raise ValidationError(
-            message="Provide htmlContent or textContent (or mail for SendGrid)",
-            details={"action_id": action_id},
-        )
-
-    sender_email = (data.get("sender_email") or "").strip()
-    sender_name = data.get("sender_name")
-    if not sender_email:
-        resolved_email, resolved_name = await action.resolve_outbound_sender()
-        sender_email = resolved_email
-        if sender_name is None:
-            sender_name = resolved_name
-    if not sender_email:
-        raise ValidationError(
-            message=(
-                "sender_email, EMAIL_DEFAULT_SENDER, or Gmail OAuth profile address is required"
-            ),
-            details={"action_id": action_id},
-        )
-
-    to_name = data.get("to_name")
-    if to_name is not None:
-        to_name = str(to_name).strip() or None
-    reply_to = data.get("reply_to")
-    if reply_to is not None:
-        reply_to = str(reply_to).strip() or None
-
-    if sender_name is None:
-        sender_name = EmailAction._effective_sender_name(action)
-    elif isinstance(sender_name, str):
-        sender_name = sender_name.strip() or None
-
-    headers = data.get("headers")
-    if headers is not None:
-        if not isinstance(headers, dict):
-            raise ValidationError(
-                message="headers must be an object with string values",
-                details={"action_id": action_id},
-            )
-        headers = {str(k): str(v) for k, v in headers.items()}
-    else:
-        headers = None
-
-    attachments = normalize_attachments_from_body(data.get("attachments"))
-
-    canonical = CanonicalSendMessage(
-        to_email=to,
-        to_name=to_name,
-        subject=subject,
-        html_content=html_content,
-        text_content=text_content,
-        sender_email=sender_email,
-        sender_name=sender_name,
-        reply_to=reply_to,
-        headers=headers,
-        attachments=attachments,
+    canonical = await build_canonical_send_message(
+        data,
+        action_id=action_id,
+        resolve_sender=action.resolve_outbound_sender,
+        effective_sender_name=lambda: EmailAction._effective_sender_name(action),
     )
 
     provider = await action.api()
@@ -375,12 +349,12 @@ async def email_send(
 
 
 @endpoint(
-    "/actions/{action_id}/email/gmail/poll-once",
+    "/actions/{action_id}/email/gmail/fetch-inbox-once",
     methods=["POST"],
     auth=True,
     roles=["admin"],
     tags=["Email Action"],
-    summary="Poll Gmail inbox once (EmailAction provider=gmail)",
+    summary="Fetch Gmail inbox once (EmailAction provider=gmail)",
     description=(
         "Lists messages with the action’s **gmail_list_query**, then processes the first "
         "that passes access control (same rules as inbound webhooks). That message is "
@@ -390,21 +364,55 @@ async def email_send(
         data={
             "result": ResponseField(
                 field_type=Dict[str, Any],
-                description="Poll outcome (scanned, processed, errors, etc.)",
+                description="Fetch outcome (scanned, processed, errors, etc.)",
                 example={"scanned": 1, "processed": True},
             ),
             "success": ResponseField(field_type=bool, example=True),
         }
     ),
 )
-async def email_gmail_poll_once(action_id: str) -> Dict[str, Any]:
+async def email_gmail_fetch_inbox_once(action_id: str) -> Dict[str, Any]:
     action = await get_email_action(action_id)
     if not action.is_configured():
         raise ValidationError(
             message="EmailAction is not configured",
             details={"issues": action._config_issues()},
         )
-    result = await poll_gmail_inbox_once(action)
+    result = await fetch_next_gmail_inbox_message(action)
+    return {"success": True, "result": result}
+
+
+@endpoint(
+    "/actions/{action_id}/email/outlook/fetch-inbox-once",
+    methods=["POST"],
+    auth=True,
+    roles=["admin"],
+    tags=["Email Action"],
+    summary="Fetch Outlook inbox once (EmailAction provider=outlook)",
+    description=(
+        "Lists Inbox messages with the action’s **outlook_mail_filter**, then processes the first "
+        "that passes access control (same rules as inbound webhooks). That message is "
+        "marked read before the agent runs. Admin only."
+    ),
+    response=success_response(
+        data={
+            "result": ResponseField(
+                field_type=Dict[str, Any],
+                description="Fetch outcome (scanned, processed, errors, etc.)",
+                example={"scanned": 1, "processed": True},
+            ),
+            "success": ResponseField(field_type=bool, example=True),
+        }
+    ),
+)
+async def email_outlook_fetch_inbox_once(action_id: str) -> Dict[str, Any]:
+    action = await get_email_action(action_id)
+    if not action.is_configured():
+        raise ValidationError(
+            message="EmailAction is not configured",
+            details={"issues": action._config_issues()},
+        )
+    result = await fetch_next_outlook_inbox_message(action)
     return {"success": True, "result": result}
 
 
@@ -418,8 +426,9 @@ async def email_gmail_poll_once(action_id: str) -> Dict[str, Any]:
     description=(
         "Attempts **create_inbound_webhook** on the configured provider. "
         "**SendGrid** does not support API registration (returns not supported). "
-        "**Gmail** uses polling, not webhooks. Prefer configuring SendGrid Inbound Parse "
-        "in the Twilio/SendGrid console. Admin only."
+        "**Gmail** and **Outlook** inbound are triggered by POSTing to the shared email webhook "
+        "URL (with **api_key**); there is no provider API to register here. Prefer configuring "
+        "SendGrid Inbound Parse in the Twilio/SendGrid console. Admin only."
     ),
 )
 async def email_register_inbound_webhook(
@@ -429,9 +438,12 @@ async def email_register_inbound_webhook(
     """Provider-specific inbound registration (mostly a no-op for current providers)."""
     action = await get_email_action(action_id)
     prov = (action.provider or "gmail").strip().lower()
-    if prov == "gmail":
+    if prov in ("gmail", "outlook"):
         raise ValidationError(
-            message="Gmail inbound uses polling, not webhook registration",
+            message=(
+                "Gmail and Outlook inbound are triggered via the shared webhook URL "
+                "(POST with api_key); there is no provider API registration step"
+            ),
             details={"action_id": action_id},
         )
     if not action.is_configured():
