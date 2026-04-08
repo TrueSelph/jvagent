@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 from pydantic import field_validator
 
@@ -7,8 +7,8 @@ from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
 
 
-class GoogleToken(Node):
-    """Google OAuth2 token node."""
+class MicrosoftToken(Node):
+    """Microsoft / Entra ID OAuth2 token node (delegated permissions)."""
 
     action_id: str = attribute(
         indexed=True,
@@ -25,11 +25,11 @@ class GoogleToken(Node):
     )
     token_uri: str = attribute(
         default_factory=str,
-        description="Token URI",
+        description="Token endpoint URL for this tenant",
     )
     client_id: str = attribute(
         default_factory=str,
-        description="Client ID",
+        description="Application (client) ID",
     )
     client_secret: str = attribute(
         default_factory=str,
@@ -44,10 +44,9 @@ class GoogleToken(Node):
         default_factory=str,
         description="ID of the agent this token belongs to",
     )
-
     expiry: Optional[datetime] = attribute(
         default=None,
-        description="Token expiry timestamp",
+        description="Access token expiry",
     )
 
     @field_validator("expiry", mode="before")

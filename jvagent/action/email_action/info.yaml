@@ -6,10 +6,11 @@ package:
   meta:
     title: Email Integration
     description: >-
-      Email channel: Gmail (OAuth + inbox poll) or SendGrid (API key + inbound webhook).
-      Gmail: GOOGLE_CLIENT_SECRETS_JSON and GoogleGmailAction on the agent; optional
-      EMAIL_DEFAULT_SENDER. SendGrid: SENDGRID_API_KEY and EMAIL_DEFAULT_SENDER.
-      Inbound: Gmail polling or SendGrid Inbound Parse POST to the email webhook URL.
+      Email channel: Gmail, Outlook (OAuth + inbound webhook), or SendGrid (API key + inbound webhook).
+      Gmail: GOOGLE_CLIENT_SECRETS_JSON and GoogleGmailAction on the agent; optional EMAIL_DEFAULT_SENDER.
+      Outlook: MICROSOFT_CLIENT_ID, MicrosoftOutlookMailAction on the agent; optional EMAIL_DEFAULT_SENDER;
+      inbound uses OData outlook_mail_filter on Inbox. SendGrid: SENDGRID_API_KEY and EMAIL_DEFAULT_SENDER.
+      Inbound: Gmail or Outlook inbox fetch (webhook POST) or SendGrid Inbound Parse POST to the email webhook URL.
     group: jvagent
     type: action
   config:

@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from jvspatial.exceptions import DatabaseError
 
+from jvagent.action.email_action.email_utterance import build_email_interaction_utterance
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.whatsapp.utils.endpoint_helpers import get_conversation_with_lock
 from jvagent.core.app import App
@@ -120,14 +121,13 @@ async def finalize_email_interaction(
 
 
 async def process_email_interaction_async(
-    utterance: str,
     sender: str,
     agent_id: str,
     agent: Any,
     data_dict: Dict[str, Any],
     sender_name: Optional[str] = None,
 ) -> None:
-    """Background: ensure adapter, spawn walker, finalize."""
+    """Background: compose/truncate utterance, ensure adapter, spawn walker, finalize."""
     email_action: Any = None
     try:
         email_action = await agent.get_action_by_type("EmailAction")
@@ -135,6 +135,20 @@ async def process_email_interaction_async(
             await email_action.ensure_adapter_registered()
     except Exception as e:
         logger.warning("Email adapter ensure failed for agent %s: %s", agent_id, e)
+
+    max_chars = int(
+        (getattr(email_action, "utterance_max_length", None) if email_action else None)
+        or DEFAULT_EMAIL_UTTERANCE_MAX
+    )
+    try:
+        utterance = await build_email_interaction_utterance(
+            data_dict, agent=agent, final_max_chars=max_chars
+        )
+    except Exception as e:
+        logger.error(
+            "Email utterance build failed for %s: %s", sender, e, exc_info=True
+        )
+        return
 
     try:
         walker = await create_email_walker(

@@ -1,0 +1,17 @@
+package:
+  name: jvagent/microsoft_onedrive_action
+  author: jvagent
+  archetype: MicrosoftOneDriveAction
+  version: 0.0.1
+  meta:
+    title: Microsoft OneDrive Action
+    description: |
+      Upload, list, share, and delete files in OneDrive via Microsoft Graph.
+    group: jvagent
+    type: action
+  config:
+    singleton: false
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - httpx>=0.24.0

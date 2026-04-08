@@ -45,9 +45,10 @@ def test_gmail_raw_message_extracts_user_and_body():
     assert out is not None
     uid, utt, data = out
     assert uid == "alice@example.com"
-    assert utt == "Hi there"
+    assert utt == "Hello"
     assert data["email_provider"] == "gmail"
     assert data["email_inbound"]["Subject"] == "Hello"
+    assert data["email_inbound"]["BodyPlain"] == "Hi there"
     assert data["email_inbound"]["GmailMessageId"] == "gmail-msg-1"
 
 
@@ -55,7 +56,9 @@ def test_gmail_raw_html_falls_back_to_text():
     resource = _gmail_raw_resource(content_type="html", body="Yo")
     out = gmail_raw_message_to_tuple(resource)
     assert out is not None
-    assert "Yo" in out[1]
+    assert out[1] == "Hello"
+    assert "Yo" in (out[2]["email_inbound"].get("BodyPlain") or "")
+    assert "Yo" in (out[2]["email_inbound"].get("BodyHtml") or "")
 
 
 def test_gmail_multipart_prefers_plain():
@@ -69,7 +72,49 @@ def test_gmail_multipart_prefers_plain():
     out = gmail_raw_message_to_tuple({"id": "m2", "raw": raw})
     assert out is not None
     assert out[0] == "mix@example.com"
-    assert out[1] == "plain part"
+    assert out[1] == "S"
+    assert out[2]["email_inbound"]["BodyPlain"] == "plain part"
+    assert "<b>html</b>" in (out[2]["email_inbound"].get("BodyHtml") or "")
+
+
+def test_gmail_subject_only_still_processes():
+    resource = _gmail_raw_resource(body="")
+    out = gmail_raw_message_to_tuple(resource)
+    assert out is not None
+    assert out[1] == "Hello"
+    assert "BodyPlain" not in out[2]["email_inbound"]
+
+
+def test_gmail_no_subject_uses_placeholder():
+    msg = MIMEText("body only", "plain", "utf-8")
+    msg["From"] = "bob@example.com"
+    msg["To"] = "x@y.com"
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    out = gmail_raw_message_to_tuple({"id": "m3", "raw": raw})
+    assert out is not None
+    assert out[1] == "(no subject)"
+    assert out[2]["email_inbound"]["BodyPlain"] == "body only"
+
+
+def test_gmail_inline_image_adds_image_urls():
+    from email.mime.image import MIMEImage
+
+    tiny_png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+    mixed = MIMEMultipart("mixed")
+    mixed["Subject"] = "pic"
+    mixed["From"] = "cam@example.com"
+    mixed["To"] = "x@y.com"
+    mixed.attach(MIMEText("see image", "plain", "utf-8"))
+    mixed.attach(MIMEImage(tiny_png, _subtype="png"))
+    raw = base64.urlsafe_b64encode(mixed.as_bytes()).decode()
+    out = gmail_raw_message_to_tuple({"id": "m4", "raw": raw})
+    assert out is not None
+    assert out[1] == "pic"
+    urls = out[2].get("image_urls") or []
+    assert len(urls) == 1
+    assert urls[0].startswith("data:image/png;base64,")
 
 
 def test_parse_inbound_payload_legacy_empty():
@@ -96,9 +141,26 @@ async def test_parse_sendgrid_inbound_form():
     assert utt == "SG body"
     assert data["email_provider"] == "sendgrid"
     assert data["email_inbound"]["Subject"] == "SG subject"
+    assert data["email_inbound"]["BodyPlain"] == "SG body"
     assert data["email_inbound"]["MessageId"] == "<sg@example.com>"
     assert data["email_inbound"]["InReplyTo"] == "<prior@example.com>"
     assert data["email_inbound"]["FromName"] == "Carol"
+
+
+@pytest.mark.asyncio
+async def test_parse_sendgrid_inbound_html_sets_body_fields():
+    fd = FormData(
+        [
+            ("from", "dan@example.com"),
+            ("subject", "H"),
+            ("html", "<p>Hi HTML</p>"),
+        ]
+    )
+    rows = await parse_sendgrid_inbound(fd)
+    assert len(rows) == 1
+    _uid, _utt, data = rows[0]
+    assert "<p>Hi HTML</p>" in (data["email_inbound"].get("BodyHtml") or "")
+    assert "Hi HTML" in (data["email_inbound"].get("BodyPlain") or "")
 
 
 def test_email_action_gmail_config_issues(monkeypatch):

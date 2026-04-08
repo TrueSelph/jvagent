@@ -1,4 +1,4 @@
-"""API endpoints for Google Gmail action."""
+"""API endpoints for Microsoft Outlook mail action."""
 
 import logging
 from typing import Any, Dict, List
@@ -9,7 +9,7 @@ from jvspatial.api.exceptions import ValidationError
 
 from jvagent.action.utils.endpoint_helpers import require_typed_action
 
-from .google_gmail_action import GoogleGmailAction
+from .microsoft_outlook_mail_action import MicrosoftOutlookMailAction
 
 logger = logging.getLogger(__name__)
 
@@ -19,26 +19,22 @@ logger = logging.getLogger(__name__)
     methods=["POST"],
     auth=True,
     roles=["admin"],
-    tags=["Google Gmail Action"],
-    summary="Send an email via Gmail (canonical payload)",
+    tags=["Microsoft Outlook Action"],
+    summary="Send an email via Microsoft Graph (canonical payload)",
     description=(
         "Same JSON body as **EmailAction** ``/email/send`` (without SendGrid-only **mail**). "
         "**to** (email), optional **subject**, **html_content** / **htmlContent** and/or "
         "**text_content** / **textContent**, optional **to_name**, **sender_email**, "
         "**sender_name**, **reply_to**, **headers**, **attachments**. "
-        "Uses Gmail API with **userId=me** (OAuth mailbox). "
-        "Do not name query/body fields **user_id** — use **mailbox_user_id** only on list/profile."
+        "Sends as the signed-in user (**/me/sendMail**). "
+        "Do not name query fields **user_id** — use **mailbox_user_id** on list/profile if needed."
     ),
     response=success_response(
         data={
             "result": ResponseField(
                 field_type=Dict[str, Any],
-                description="The sent message metadata returned by the Gmail API",
-                example={
-                    "id": "18e2f3a4b5c6d7e8",  # pragma: allowlist secret
-                    "threadId": "18e2f3a4b5c6d7e8",  # pragma: allowlist secret
-                    "labelIds": ["SENT"],
-                },
+                description="Send outcome; Graph sendMail returns 204/202 with no message body (ok flag)",
+                example={"ok": True},
             ),
             "success": ResponseField(
                 field_type=bool,
@@ -48,13 +44,13 @@ logger = logging.getLogger(__name__)
         }
     ),
 )
-async def send_gmail(action_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
-    """Send email via Gmail using the canonical message shape (see EmailAction email/send)."""
+async def send_outlook_mail(action_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Send email via Microsoft Graph using the canonical message shape."""
     action = await require_typed_action(
         action_id,
-        GoogleGmailAction,
-        not_found_message=f"Google Gmail action {action_id} not found",
-        wrong_type_message=f"Action '{action_id}' is not a GoogleGmailAction",
+        MicrosoftOutlookMailAction,
+        not_found_message=f"Microsoft Outlook mail action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a MicrosoftOutlookMailAction",
     )
 
     try:
@@ -68,9 +64,9 @@ async def send_gmail(action_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
     except ValidationError:
         raise
     except Exception as e:
-        logger.error(f"Failed to send Gmail message: {e}", exc_info=True)
+        logger.error("Failed to send Outlook mail message: %s", e, exc_info=True)
         raise ValidationError(
-            message=f"Failed to send email: {str(e)}",
+            message=f"Failed to send email: {e}",
             details={"action_id": action_id},
         )
 
@@ -80,18 +76,15 @@ async def send_gmail(action_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
     methods=["GET"],
     auth=True,
     roles=["admin"],
-    tags=["Google Gmail Action"],
-    summary="List Gmail messages",
+    tags=["Microsoft Outlook Action"],
+    summary="List Outlook mail messages",
     response=success_response(
         data={
             "messages": ResponseField(
                 field_type=List[Dict[str, Any]],
-                description="List of message stubs matching the query",
+                description="List of message stubs from the mailbox",
                 example=[
-                    {
-                        "id": "18e2f3a4b5c6d7e8",  # pragma: allowlist secret
-                        "threadId": "18e2f3a4b5c6d7e8",  # pragma: allowlist secret
-                    },
+                    {"id": "AQMkADAw...", "threadId": "AAQkADAw..."}  # pragma: allowlist secret
                 ],
             ),
             "success": ResponseField(
@@ -102,24 +95,21 @@ async def send_gmail(action_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         }
     ),
 )
-async def list_gmail_messages(
+async def list_outlook_mail_messages(
     action_id: str,
     query: str = "",
     max_results: int = 10,
     mailbox_user_id: str = "me",
 ) -> Dict[str, Any]:
-    """List messages in a Gmail inbox.
+    """List messages in the mailbox (Microsoft Graph).
 
-    **Args:**
-
-    - mailbox_user_id: Gmail API **userId** (default **me**). Not the spatial platform user id.
-
+    **mailbox_user_id** is reserved for API parity; the client always uses **/me**.
     """
     action = await require_typed_action(
         action_id,
-        GoogleGmailAction,
-        not_found_message=f"Google Gmail action {action_id} not found",
-        wrong_type_message=f"Action '{action_id}' is not a GoogleGmailAction",
+        MicrosoftOutlookMailAction,
+        not_found_message=f"Microsoft Outlook mail action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a MicrosoftOutlookMailAction",
     )
 
     messages = await action.list_messages(
@@ -133,18 +123,16 @@ async def list_gmail_messages(
     methods=["GET"],
     auth=True,
     roles=["admin"],
-    tags=["Google Gmail Action"],
-    summary="Get Gmail profile info",
+    tags=["Microsoft Outlook Action"],
+    summary="Get Outlook / Microsoft 365 mailbox profile",
     response=success_response(
         data={
             "profile": ResponseField(
                 field_type=Dict[str, Any],
-                description="Gmail profile information for the authenticated user",
+                description="User and mailbox profile from Microsoft Graph",
                 example={
-                    "emailAddress": "user@example.com",
-                    "messagesTotal": 1234,
-                    "threadsTotal": 456,
-                    "historyId": "7890",
+                    "mail": "user@contoso.com",
+                    "displayName": "Example User",
                 },
             ),
             "success": ResponseField(
@@ -155,15 +143,15 @@ async def list_gmail_messages(
         }
     ),
 )
-async def get_gmail_profile(
+async def get_outlook_mail_profile(
     action_id: str, mailbox_user_id: str = "me"
 ) -> Dict[str, Any]:
-    """Get the Gmail profile for an authenticated mailbox userId (default me)."""
+    """Get mailbox profile for the authenticated user (**/me**)."""
     action = await require_typed_action(
         action_id,
-        GoogleGmailAction,
-        not_found_message=f"Google Gmail action {action_id} not found",
-        wrong_type_message=f"Action '{action_id}' is not a GoogleGmailAction",
+        MicrosoftOutlookMailAction,
+        not_found_message=f"Microsoft Outlook mail action {action_id} not found",
+        wrong_type_message=f"Action '{action_id}' is not a MicrosoftOutlookMailAction",
     )
 
     profile = await action.get_profile(user_id=mailbox_user_id)

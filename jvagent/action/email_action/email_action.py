@@ -1,8 +1,7 @@
-"""Email action with pluggable providers (Gmail via OAuth, SendGrid)."""
+"""Email action with pluggable providers (Gmail, Outlook via OAuth, SendGrid)."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -19,24 +18,24 @@ from jvagent.core.public_url import get_public_base_url
 
 from .modules.base import EmailProvider
 from .modules.gmail import GmailEmailProvider
+from .modules.outlook import OutlookEmailProvider
 from .modules.sendgrid import SendGridEmailProvider
 
 logger = logging.getLogger(__name__)
 
-_gmail_poll_tasks: Dict[str, asyncio.Task] = {}
-
 
 class EmailAction(Action):
-    """Send and receive email via Gmail (OAuth + poll) or SendGrid (API key + webhook).
+    """Send and receive email via Gmail, Outlook (OAuth + inbound webhook), or SendGrid.
 
-    ``is_configured()`` does **not** require ``JVAGENT_PUBLIC_BASE_URL`` for Gmail
-    outbound send. SendGrid inbound still needs a public URL for webhook generation.
+    ``is_configured()`` does **not** require ``JVAGENT_PUBLIC_BASE_URL`` for Gmail or Outlook
+    outbound send. Inbound webhook URL generation still needs a public base URL for
+    all providers that use the email webhook.
     """
 
     provider: str = attribute(
         default="gmail",
-        description="Email provider: gmail or sendgrid",
-        pattern=r"^(gmail|sendgrid)$",
+        description="Email provider: gmail, outlook, or sendgrid",
+        pattern=r"^(gmail|sendgrid|outlook)$",
     )
 
     api_base: Optional[str] = attribute(
@@ -47,8 +46,7 @@ class EmailAction(Action):
     base_url: Optional[str] = attribute(
         default=None,
         description=(
-            "Public app base URL for inbound webhook (JVAGENT_PUBLIC_BASE_URL "
-            "when unset); used for SendGrid inbound only"
+            "Public app base URL for inbound webhook (JVAGENT_PUBLIC_BASE_URL when unset)"
         ),
     )
 
@@ -65,28 +63,37 @@ class EmailAction(Action):
     gmail_action_label: Optional[str] = attribute(
         default=None,
         description=(
-            "Label of the agent's GoogleGmailAction to use when multiple exist; "
-            "otherwise the first GoogleGmailAction on the agent is used"
+            "Entity type of the agent's Gmail action (default GoogleGmailAction when "
+            "provider is gmail)"
+        ),
+    )
+
+    outlook_action_label: Optional[str] = attribute(
+        default=None,
+        description=(
+            "Entity type of the agent's Outlook mail action (default "
+            "MicrosoftOutlookMailAction when provider is outlook)"
+        ),
+    )
+
+    outlook_mail_filter: str = attribute(
+        default="isRead eq false",
+        description=(
+            "OData $filter for Outlook inbox list (mailFolders/inbox/messages); "
+            "not Gmail search syntax"
         ),
     )
 
     gmail_list_query: str = attribute(
         default="is:unread in:inbox",
-        description="Gmail search query for inbox polling (users.messages.list)",
+        description="Gmail search query for inbox fetch (users.messages.list)",
     )
 
     gmail_list_max_results: int = attribute(
         default=25,
-        description="Max message stubs to scan per poll (1–100)",
+        description="Max message stubs to scan per inbound fetch (1–100)",
         ge=1,
         le=100,
-    )
-
-    gmail_poll_interval_seconds: float = attribute(
-        default=60.0,
-        description="Background poll interval; 0 disables the asyncio poll loop",
-        ge=0.0,
-        le=3600.0,
     )
 
     request_timeout: float = attribute(
@@ -97,11 +104,17 @@ class EmailAction(Action):
     )
 
     utterance_max_length: int = attribute(
-        default=500_000,
-        description="Maximum inbound email body length (characters) accepted",
-        ge=100,
-        le=2_000_000,
+        default=2000,
+        description=(
+            "Maximum length (characters) of composed inbound email text "
+            "(subject plus body block); longer content is truncated with an ellipsis"
+        ),
     )
+
+    @staticmethod
+    def _env_microsoft_client_id() -> str:
+        cid = env("MICROSOFT_CLIENT_ID") or os.environ.get("MICROSOFT_CLIENT_ID") or ""
+        return str(cid).strip()
 
     @staticmethod
     def _env_google_client_secrets() -> str:
@@ -150,6 +163,11 @@ class EmailAction(Action):
             elif not self.api_base or not str(self.api_base).strip():
                 self.api_base = "https://api.sendgrid.com/v3"
 
+        if prov == "gmail":
+            self.gmail_action_label = "GoogleGmailAction"
+        if prov == "outlook":
+            self.outlook_action_label = "MicrosoftOutlookMailAction"
+
     @staticmethod
     def _effective_api_key(action: "EmailAction") -> str:
         action._apply_env_defaults()
@@ -188,26 +206,40 @@ class EmailAction(Action):
                 except Exception:
                     logger.debug("Gmail profile fetch for sender failed", exc_info=True)
             return "", name
+        if prov == "outlook":
+            env_e = self._env_default_sender()
+            if env_e:
+                return env_e, name
+            o = await self.get_linked_outlook_mail_action()
+            if o:
+                try:
+                    prof = await o.get_profile()
+                    e = (prof.get("emailAddress") or "").strip()
+                    if e:
+                        return e, name
+                except Exception:
+                    logger.debug("Outlook profile fetch for sender failed", exc_info=True)
+            return "", name
         return self._effective_sender_email(self), name
 
     async def get_linked_gmail_action(self) -> Any:
         """Return ``GoogleGmailAction`` for this agent, if any."""
-        from jvagent.action.google.google_gmail_action.google_gmail_action import (
-            GoogleGmailAction,
-        )
-
         agent = await self.get_agent()
         if not agent:
             return None
         label = (self.gmail_action_label or "").strip()
         if label:
-            act = await agent.get_action_by_label(label)
-            if isinstance(act, GoogleGmailAction):
-                return act
+            return await agent.get_action_by_type(label)
+        return None
+
+    async def get_linked_outlook_mail_action(self) -> Any:
+        """Return ``MicrosoftOutlookMailAction`` for this agent, if any."""
+        agent = await self.get_agent()
+        if not agent:
             return None
-        act = await agent.get_action_by_type("GoogleGmailAction")
-        if isinstance(act, GoogleGmailAction):
-            return act
+        label = (self.outlook_action_label or "").strip()
+        if label:
+            return await agent.get_action_by_type(label)
         return None
 
     def get_capabilities(self) -> List[str]:
@@ -222,8 +254,15 @@ class EmailAction(Action):
         ]
         if prov == "gmail":
             base_caps.append(
-                "Receive inbound email via Gmail polling (first unread in inbox query that passes access control); "
-                "requires GoogleGmailAction on the same agent with OAuth."
+                "Receive inbound email via the email webhook (POST triggers one Gmail inbox fetch: first message "
+                "matching gmail_list_query that passes access control); requires GoogleGmailAction on the same agent "
+                "with OAuth."
+            )
+        elif prov == "outlook":
+            base_caps.append(
+                "Receive inbound email via the email webhook (POST triggers one Outlook inbox fetch: first message "
+                "in Inbox matching outlook_mail_filter OData expression that passes access control); requires "
+                "MicrosoftOutlookMailAction on the same agent with OAuth (MICROSOFT_CLIENT_ID and Graph consent)."
             )
         else:
             base_caps.append(
@@ -235,13 +274,19 @@ class EmailAction(Action):
         self._apply_env_defaults()
         issues: List[str] = []
         prov = (self.provider or "gmail").strip().lower()
-        if prov not in ("gmail", "sendgrid"):
+        if prov not in ("gmail", "sendgrid", "outlook"):
             issues.append(f"Unsupported provider: {self.provider}")
         if prov == "gmail":
             if not self._env_google_client_secrets():
                 issues.append(
                     "GOOGLE_CLIENT_SECRETS_JSON is not set in the environment "
                     "(required for Google OAuth / Gmail)"
+                )
+        elif prov == "outlook":
+            if not self._env_microsoft_client_id():
+                issues.append(
+                    "MICROSOFT_CLIENT_ID is not set in the environment "
+                    "(required for Microsoft OAuth / Outlook)"
                 )
         elif prov == "sendgrid":
             if not self._env_sendgrid_key():
@@ -281,6 +326,15 @@ class EmailAction(Action):
                 )
             return GmailEmailProvider(gmail_action=ga)
 
+        if prov == "outlook":
+            oa = await self.get_linked_outlook_mail_action()
+            if not oa:
+                raise ValidationError(
+                    "No MicrosoftOutlookMailAction on this agent; add the Outlook mail action "
+                    "or set outlook_action_label to the correct action entity type"
+                )
+            return OutlookEmailProvider(outlook_action=oa)
+
         if prov == "sendgrid":
             key = self._effective_api_key(self)
             base = (self.api_base or "https://api.sendgrid.com/v3").strip()
@@ -309,12 +363,10 @@ class EmailAction(Action):
 
         errors: List[str] = []
         prov = (self.provider or "gmail").strip().lower()
-        if prov not in ("gmail", "sendgrid"):
+        if prov not in ("gmail", "sendgrid", "outlook"):
             errors.append(f"Invalid provider: {self.provider}")
         if self.request_timeout <= 0:
             errors.append("request_timeout must be positive")
-        if self.utterance_max_length <= 0:
-            errors.append("utterance_max_length must be positive")
 
         adapter_initialized = False
         try:
@@ -363,6 +415,20 @@ class EmailAction(Action):
                 result["healthy"] = False
                 result["errors"] = result.get("errors", []) + [str(e)]
 
+        if result["healthy"] and prov == "outlook":
+            try:
+                oa = await self.get_linked_outlook_mail_action()
+                if not oa:
+                    result["healthy"] = False
+                    result["errors"] = result.get("errors", []) + [
+                        "No MicrosoftOutlookMailAction on this agent"
+                    ]
+                else:
+                    await oa.get_profile()
+            except Exception as e:
+                result["healthy"] = False
+                result["errors"] = result.get("errors", []) + [str(e)]
+
         if result["healthy"]:
             result["status"] = "active"
             result["provider"] = prov
@@ -378,7 +444,8 @@ class EmailAction(Action):
         """Persist webhook_url with API key when base_url and agent exist (SendGrid)."""
         if not self.enabled:
             return
-        if (self.provider or "").strip().lower() != "sendgrid":
+        if not (self.provider or "").strip().lower():
+        # if (self.provider or "").strip().lower() != "sendgrid":
             return
         action_id = getattr(self, "id", None)
         if not action_id:
@@ -490,49 +557,6 @@ class EmailAction(Action):
         except Exception as e:
             raise ValidationError(f"Webhook URL generation failed: {e}") from e
 
-    def _start_gmail_poll_loop_if_needed(self) -> None:
-        if (self.provider or "").strip().lower() != "gmail":
-            return
-        interval = float(self.gmail_poll_interval_seconds or 0.0)
-        if interval <= 0:
-            return
-        action_id = str(getattr(self, "id", "") or "")
-        if not action_id:
-            return
-
-        prev = _gmail_poll_tasks.get(action_id)
-        if prev and not prev.done():
-            prev.cancel()
-
-        async def _loop() -> None:
-            from .gmail_poll import poll_gmail_inbox_once
-
-            while True:
-                try:
-                    fresh = await EmailAction.get(action_id)
-                    if (
-                        not fresh
-                        or not fresh.enabled
-                        or (fresh.provider or "").strip().lower() != "gmail"
-                    ):
-                        break
-                    if not fresh.is_configured():
-                        await asyncio.sleep(interval)
-                        continue
-                    await poll_gmail_inbox_once(fresh)
-                except asyncio.CancelledError:
-                    break
-                except Exception as e:
-                    logger.error(
-                        "EmailAction Gmail poll error (id=%s): %s",
-                        action_id,
-                        e,
-                        exc_info=True,
-                    )
-                await asyncio.sleep(interval)
-
-        _gmail_poll_tasks[action_id] = asyncio.create_task(_loop())
-
     async def on_register(self) -> None:
         self._apply_env_defaults()
         if not self.is_configured():
@@ -556,22 +580,11 @@ class EmailAction(Action):
                 "EmailAction: agent not found; skipping email channel registration"
             )
             return
+        
 
         if (self.base_url or "").strip() or get_public_base_url():
             await self._ensure_email_webhook_url()
 
-        from .email_adapter import EmailAdapter
-        from .email_filter import EmailFilter
-
-        if not await EmailFilter(channels=["email"], priority=100).initialize(
-            agent=agent
-        ):
-            logger.warning("EmailFilter initialization failed")
-
-        if not await EmailAdapter(action=self).initialize(agent=agent):
-            logger.error("EmailAdapter initialization failed")
-
-        self._start_gmail_poll_loop_if_needed()
 
     async def ensure_adapter_registered(self) -> bool:
         if not self.is_configured():
