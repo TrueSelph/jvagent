@@ -81,9 +81,7 @@ async def test_build_email_interaction_utterance_final_max_chars_overrides_inter
             "BodyPlain": "x" * 200,
         }
     }
-    utt = await build_email_interaction_utterance(
-        data, agent=_Ag(), final_max_chars=80
-    )
+    utt = await build_email_interaction_utterance(data, agent=_Ag(), final_max_chars=80)
     assert len(utt) == 83
     assert utt.endswith("...")
 

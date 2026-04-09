@@ -33,16 +33,16 @@ from .config import (
     resolve_pageindex_json_log_dir,
 )
 from .core import page_index
-from .md_tree_enriched import (
-    annotate_content_type_and_enabled,
-    assign_hierarchy_breadcrumbs,
-    md_to_tree,
-)
 from .llm_bridge import (
     PageIndexCancelled,
     attach_pageindex_cancel_event,
     set_pageindex_model_action,
     signal_pageindex_cancel,
+)
+from .md_tree_enriched import (
+    annotate_content_type_and_enabled,
+    assign_hierarchy_breadcrumbs,
+    md_to_tree,
 )
 from .models import DocumentContentEdge, DocumentNode, DocumentRootNode, node_enabled
 

@@ -65,6 +65,4 @@ async def build_email_interaction_utterance(
         if final_max_chars is not None
         else _interact_max_utterance_length()
     )
-    return await Conversation.truncate_statement(
-        full, utterance_max, interaction=None
-    )
+    return await Conversation.truncate_statement(full, utterance_max, interaction=None)

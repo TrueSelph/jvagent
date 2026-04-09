@@ -21,15 +21,17 @@ from .canonical_send_builder import build_canonical_send_message
 from .email_action import EmailAction
 from .email_webhook_helpers import process_email_interaction_async
 from .gmail_inbox import fetch_next_gmail_inbox_message
-from .outlook_inbox import fetch_next_outlook_inbox_message
 from .inbound.sendgrid import parse_sendgrid_inbound
 from .modules.sendgrid import SendGridEmailProvider
+from .outlook_inbox import fetch_next_outlook_inbox_message
 from .utils.endpoint_helpers import get_email_action
 
 logger = logging.getLogger(__name__)
 
 
-async def _agent_and_email_action_for_webhook(agent_id: str) -> tuple[Agent, EmailAction]:
+async def _agent_and_email_action_for_webhook(
+    agent_id: str,
+) -> tuple[Agent, EmailAction]:
     agent = await Agent.get(agent_id)
     if not agent:
         raise ResourceNotFoundError(

@@ -5,7 +5,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from jvspatial.exceptions import DatabaseError
 
-from jvagent.action.email_action.email_utterance import build_email_interaction_utterance
+from jvagent.action.email_action.email_utterance import (
+    build_email_interaction_utterance,
+)
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.whatsapp.utils.endpoint_helpers import get_conversation_with_lock
 from jvagent.core.app import App
@@ -161,6 +163,4 @@ async def process_email_interaction_async(
     except DatabaseError:
         raise
     except Exception as e:
-        logger.error(
-            "Error in email interaction for %s: %s", sender, e, exc_info=True
-        )
+        logger.error("Error in email interaction for %s: %s", sender, e, exc_info=True)

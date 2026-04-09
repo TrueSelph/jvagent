@@ -136,7 +136,9 @@ class MicrosoftAction(Action):
         expires_in = int(payload.get("expires_in") or 3600)
         expiry = datetime.now(timezone.utc) + timedelta(seconds=max(0, expires_in - 60))
         scope_raw = payload.get("scope") or " ".join(self.SCOPES)
-        scopes_list = scope_raw.split() if isinstance(scope_raw, str) else list(self.SCOPES)
+        scopes_list = (
+            scope_raw.split() if isinstance(scope_raw, str) else list(self.SCOPES)
+        )
         await self._save_token_payload(
             access_token=payload.get("access_token") or "",
             refresh_token=payload.get("refresh_token") or "",
@@ -197,7 +199,9 @@ class MicrosoftAction(Action):
         if secret:
             data["client_secret"] = secret
         async with httpx.AsyncClient() as client:
-            resp = await client.post(token_node.token_uri or self._token_url(), data=data)
+            resp = await client.post(
+                token_node.token_uri or self._token_url(), data=data
+            )
             resp.raise_for_status()
             payload = resp.json()
         expires_in = int(payload.get("expires_in") or 3600)
@@ -243,7 +247,11 @@ class MicrosoftAction(Action):
         headers: Optional[Dict[str, str]] = None,
     ) -> httpx.Response:
         token = await self._get_access_token()
-        url = path if path.startswith("http") else f"{GRAPH_V1.rstrip('/')}/{path.lstrip('/')}"
+        url = (
+            path
+            if path.startswith("http")
+            else f"{GRAPH_V1.rstrip('/')}/{path.lstrip('/')}"
+        )
         h = {"Authorization": f"Bearer {token}"}
         if headers:
             h.update(headers)

@@ -1,0 +1,22 @@
+# Anthropic Language Model Action Package Descriptor
+
+package:
+  name: jvagent/anthropic_lm
+  author: jvagent
+  archetype: AnthropicLanguageModelAction
+  version: 0.0.1
+
+  meta:
+    title: Anthropic Language Model Action
+    description: Native Anthropic Messages API integration with sync/stream support, tool calling, and multimodal input handling.
+    group: jvagent
+    type: language_model_action
+
+  config:
+    order:
+      weight: 0
+
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - httpx>=0.24.0

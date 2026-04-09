@@ -113,9 +113,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
 
         # Skip LID conversion for groups - @g.us IDs are not LIDs and cause "No LID for user" errors
         if "@lid" in data.sender and "@g.us" not in data.sender:
-            data.sender = await wa.convert_lid_to_phone_number(
-                data.sender
-            )
+            data.sender = await wa.convert_lid_to_phone_number(data.sender)
             t0 = getattr(request.state, "webhook_start", None)
             if t0 is not None:
                 logger.debug(
@@ -501,9 +499,7 @@ async def create_group(
     """
     whatsapp_action = await get_whatsapp_action(action_id)
     wa = await whatsapp_action.api()
-    result = await wa.create_group(
-        name=name, participants=participants
-    )
+    result = await wa.create_group(name=name, participants=participants)
     return normalize_result(result, "created")
 
 
@@ -536,9 +532,7 @@ async def add_group_participant(
     """
     whatsapp_action = await get_whatsapp_action(action_id)
     wa = await whatsapp_action.api()
-    result = await wa.add_group_participant(
-        group_id=group_id, phone=phone
-    )
+    result = await wa.add_group_participant(group_id=group_id, phone=phone)
     return normalize_result(result, "added")
 
 
@@ -571,9 +565,7 @@ async def remove_group_participant(
     """
     whatsapp_action = await get_whatsapp_action(action_id)
     wa = await whatsapp_action.api()
-    result = await wa.remove_group_participant(
-        group_id=group_id, phone=phone
-    )
+    result = await wa.remove_group_participant(group_id=group_id, phone=phone)
     return normalize_result(result, "removed")
 
 

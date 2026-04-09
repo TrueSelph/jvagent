@@ -53,9 +53,7 @@ async def list_outlook_calendar_events(
     action = await require_typed_action(
         action_id,
         MicrosoftOutlookCalendarAction,
-        not_found_message=(
-            f"Microsoft Outlook calendar action {action_id} not found"
-        ),
+        not_found_message=(f"Microsoft Outlook calendar action {action_id} not found"),
         wrong_type_message=(
             f"Action '{action_id}' is not a MicrosoftOutlookCalendarAction"
         ),
@@ -105,9 +103,7 @@ async def create_outlook_calendar_event(
     action = await require_typed_action(
         action_id,
         MicrosoftOutlookCalendarAction,
-        not_found_message=(
-            f"Microsoft Outlook calendar action {action_id} not found"
-        ),
+        not_found_message=(f"Microsoft Outlook calendar action {action_id} not found"),
         wrong_type_message=(
             f"Action '{action_id}' is not a MicrosoftOutlookCalendarAction"
         ),
@@ -155,9 +151,7 @@ async def delete_outlook_calendar_event(
     action = await require_typed_action(
         action_id,
         MicrosoftOutlookCalendarAction,
-        not_found_message=(
-            f"Microsoft Outlook calendar action {action_id} not found"
-        ),
+        not_found_message=(f"Microsoft Outlook calendar action {action_id} not found"),
         wrong_type_message=(
             f"Action '{action_id}' is not a MicrosoftOutlookCalendarAction"
         ),

@@ -338,9 +338,7 @@ async def _clear_whatsapp_typing(
         whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
         if whatsapp_action and whatsapp_action.is_configured():
             wa = await whatsapp_action.api()
-            await wa.set_typing_status(
-                phone=sender, value=False, is_group=is_group
-            )
+            await wa.set_typing_status(phone=sender, value=False, is_group=is_group)
     except Exception as e:
         logger.debug(f"Failed to clear typing status for {sender}: {e}")
 

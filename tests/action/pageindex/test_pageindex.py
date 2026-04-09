@@ -26,8 +26,8 @@ from jvagent.action.pageindex.config import (
     set_pageindex_node_summary,
     set_pageindex_retrieval_excerpt_source,
 )
-from jvagent.action.pageindex.document_walker import DocumentWalker
 from jvagent.action.pageindex.core.utils import list_to_tree
+from jvagent.action.pageindex.document_walker import DocumentWalker
 from jvagent.action.pageindex.documents import (
     assimilate_document,
     delete_document,
@@ -37,16 +37,16 @@ from jvagent.action.pageindex.documents import (
     list_document_chunks,
     list_documents,
 )
+from jvagent.action.pageindex.endpoints import _do_assimilate
 from jvagent.action.pageindex.md_tree_enriched import (
     annotate_content_type_and_enabled,
     assign_hierarchy_breadcrumbs,
 )
-from jvagent.action.pageindex.endpoints import _do_assimilate
+from jvagent.action.pageindex.models import DocumentNode, node_to_result
 from jvagent.action.pageindex.pageindex_retrieval_interact_action import (
     PageIndexRetrievalInteractAction,
     ensure_ingestion_config_for_agent,
 )
-from jvagent.action.pageindex.models import DocumentNode, node_to_result
 from jvagent.action.pageindex.retrieval import (
     _graph_to_tree,
     _parse_llm_json_object,
@@ -817,9 +817,9 @@ def test_finalize_pdf_shaped_tree_hierarchy_and_content_type():
         "This section defines the scope of the document.\n\n"
         "Additional paragraph with enough characters for substantive classification."
     )
-    tree[1]["text"] = (
-        "ISO 9001 and related standards are cited in this clause.\n\nSecond paragraph here."
-    )
+    tree[1][
+        "text"
+    ] = "ISO 9001 and related standards are cited in this clause.\n\nSecond paragraph here."
     assign_hierarchy_breadcrumbs(tree)
     annotate_content_type_and_enabled(tree)
 
@@ -884,4 +884,3 @@ async def test_assimilate_markdown_chunks_have_hierarchy_and_content_type(
     assert sec2["hierarchy"] == ["Introduction", "Section Two"]
     assert sec2["content_type"] == "substantive"
     assert sec2["enabled"] is True
-

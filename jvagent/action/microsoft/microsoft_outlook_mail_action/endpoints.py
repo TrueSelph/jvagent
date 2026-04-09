@@ -84,7 +84,10 @@ async def send_outlook_mail(action_id: str, data: Dict[str, Any]) -> Dict[str, A
                 field_type=List[Dict[str, Any]],
                 description="List of message stubs from the mailbox",
                 example=[
-                    {"id": "AQMkADAw...", "threadId": "AAQkADAw..."}  # pragma: allowlist secret
+                    {
+                        "id": "AQMkADAw...",
+                        "threadId": "AAQkADAw...",
+                    }  # pragma: allowlist secret
                 ],
             ),
             "success": ResponseField(

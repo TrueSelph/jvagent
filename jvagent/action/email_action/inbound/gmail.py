@@ -109,10 +109,7 @@ def gmail_raw_message_to_tuple(
             ctype = part.get_content_type() or ""
             if ctype.startswith("image/"):
                 blob = part.get_payload(decode=True)
-                if (
-                    isinstance(blob, bytes)
-                    and 0 < len(blob) <= _MAX_INLINE_IMAGE_BYTES
-                ):
+                if isinstance(blob, bytes) and 0 < len(blob) <= _MAX_INLINE_IMAGE_BYTES:
                     b64 = base64.standard_b64encode(blob).decode("ascii")
                     image_urls.append(f"data:{ctype};base64,{b64}")
 
@@ -125,10 +122,7 @@ def gmail_raw_message_to_tuple(
         ctype = parsed.get_content_type() or ""
         if ctype.startswith("image/"):
             blob = parsed.get_payload(decode=True)
-            if (
-                isinstance(blob, bytes)
-                and 0 < len(blob) <= _MAX_INLINE_IMAGE_BYTES
-            ):
+            if isinstance(blob, bytes) and 0 < len(blob) <= _MAX_INLINE_IMAGE_BYTES:
                 b64 = base64.standard_b64encode(blob).decode("ascii")
                 image_urls.append(f"data:{ctype};base64,{b64}")
 
@@ -145,7 +139,9 @@ def gmail_raw_message_to_tuple(
 
     fn_strip = (from_name or "").strip() or None
     inbound: Dict[str, Any] = {
-        "MessageId": _normalize_msg_id(mid_hdr) if mid_hdr else message_resource.get("id"),
+        "MessageId": (
+            _normalize_msg_id(mid_hdr) if mid_hdr else message_resource.get("id")
+        ),
         "Subject": subject,
         "InReplyTo": _normalize_msg_id(irt) if irt else None,
         "To": to_hdr or None,

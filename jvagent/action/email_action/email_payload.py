@@ -55,7 +55,11 @@ def normalize_attachments_from_body(items: Any) -> List[EmailAttachment]:
                     or "application/octet-stream"
                 ),
                 disposition=(str(d) if (d := raw.get("disposition")) else None),
-                content_id=(str(c) if (c := raw.get("content_id") or raw.get("contentId")) else None),
+                content_id=(
+                    str(c)
+                    if (c := raw.get("content_id") or raw.get("contentId"))
+                    else None
+                ),
             )
         )
     return out

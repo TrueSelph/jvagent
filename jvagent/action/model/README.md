@@ -6,7 +6,7 @@ A lightweight, extensible language model integration system for jvagent that pro
 
 - **Programmatic Interface**: Actions can call model actions directly as a library
 - **API Interface**: HTTP endpoints wrapping programmatic calls
-- **Multiple Providers**: OpenAI, OpenRouter, and extensible for custom providers
+- **Multiple Providers**: OpenAI, Anthropic, OpenRouter, and extensible custom providers
 - **Sync & Streaming**: Both synchronous and streaming response modes
 - **Standardized Results**: `ModelActionResult` works seamlessly for both modes
 - **ResponseBus Integration**: Direct publishing to ResponseBus for streaming and non-streaming responses
@@ -64,7 +64,8 @@ This structure provides clear separation between:
 3. **LanguageModelAction**: Base class for language model actions (text generation and multimodal) extending BaseModelAction
 4. **EmbeddingModelAction**: Base class for embedding model actions extending BaseModelAction
 5. **OpenAILanguageModelAction**: OpenAI Chat Completions API implementation (extends LanguageModelAction)
-6. **OpenRouterLanguageModelAction**: OpenRouter API implementation (extends LanguageModelAction)
+6. **AnthropicLanguageModelAction**: Anthropic Messages API implementation (extends LanguageModelAction)
+7. **OpenRouterLanguageModelAction**: OpenRouter API implementation (extends LanguageModelAction)
 7. **OpenAIEmbeddingModelAction**: OpenAI embeddings API implementation (extends EmbeddingModelAction)
 8. **HuggingFaceEmbeddingModelAction**: HuggingFace Inference API implementation (extends EmbeddingModelAction)
 9. **OpenRouterEmbeddingModelAction**: OpenRouter embeddings API implementation (extends EmbeddingModelAction)
@@ -79,6 +80,7 @@ Action (base)
 └── BaseModelAction (generic base with common attributes/operations)
     ├── LanguageModelAction (text generation and multimodal - chat completions)
     │   ├── OpenAILanguageModelAction
+    │   ├── AnthropicLanguageModelAction
     │   └── OpenRouterLanguageModelAction
     └── EmbeddingModelAction (embeddings)
         ├── OpenAIEmbeddingModelAction
@@ -115,8 +117,12 @@ Set API keys in environment or `.env`:
 
 ```bash
 export OPENAI_API_KEY="sk-..."
+export ANTHROPIC_API_KEY="sk-ant-..."
 export OPENROUTER_API_KEY="sk-or-..."
 ```
+
+For local Ollama usage, no API key is required by default. Ensure the daemon is
+running (`ollama serve`) and the model is pulled (`ollama pull <model>`).
 
 ## Usage
 
@@ -561,6 +567,9 @@ Models:
 - `google/gemini-pro`
 - Many more...
 
+Use this provider when you want OpenRouter routing. For direct Anthropic API
+integration and native message semantics, use `jvagent/anthropic_lm`.
+
 Configuration:
 ```yaml
 actions:
@@ -571,6 +580,64 @@ actions:
       http_referer: https://yoursite.com
       site_name: YourApp
 ```
+
+### Anthropic (Native Messages API)
+
+Default endpoint: `https://api.anthropic.com/v1`
+
+Models:
+- `claude-3-5-sonnet-latest` (default)
+- `claude-3-5-haiku-latest`
+- `claude-3-opus-latest`
+
+Configuration:
+```yaml
+actions:
+  - action: jvagent/anthropic_lm
+    context:
+      api_key: ${ANTHROPIC_API_KEY}
+      model: claude-3-5-sonnet-latest
+      temperature: 0.7
+      max_tokens: 1000
+```
+
+Native behavior notes:
+- Uses Anthropic Messages API directly (no OpenAI compatibility shim).
+- Maps system prompts to top-level `system` and user/assistant turns to `messages`.
+- Supports tool definitions and parses `tool_use` blocks into shared `tool_calls`.
+- Supports multimodal images via `image_url` data URI/base64 content parts.
+
+### Ollama (Native API)
+
+Default endpoint: `http://localhost:11434`
+
+Language model action (`jvagent/ollama_lm`) uses Ollama native `/api/chat`.
+Embedding action (`jvagent/ollama_embedding`) uses native `/api/embed`.
+
+Language model configuration:
+```yaml
+actions:
+  - action: jvagent/ollama_lm
+    context:
+      api_endpoint: http://localhost:11434
+      model: llama3.1
+      temperature: 0.7
+      max_tokens: 512
+```
+
+Embedding configuration:
+```yaml
+actions:
+  - action: jvagent/ollama_embedding
+    context:
+      api_endpoint: http://localhost:11434
+      model: nomic-embed-text
+```
+
+Native behavior notes:
+- Images are supported when provided as base64/data URI multimodal parts.
+- Remote image URLs are ignored by this first native implementation.
+- Tool definitions are forwarded to Ollama when provided; behavior depends on model support.
 
 ### Custom Providers
 
