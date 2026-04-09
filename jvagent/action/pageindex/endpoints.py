@@ -108,11 +108,14 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
     Optional[str],
     Optional[str],
     Optional[str],
+    Optional[str],
+    Optional[str],
 ]:
     """Parse multipart form-data from raw body without decoding file content.
 
     Returns (file_content, filename, doc_name, model, if_add_node_summary,
-             collection_name, metadata, doc_description, doc_url).
+             collection_name, metadata, doc_description, doc_url,
+             convert_to_markdown, ocr).
     Uses latin-1 for headers to avoid UTF-8 decode errors on non-ASCII filenames or field values.
     """
     content_type_bytes = (
@@ -136,6 +139,8 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
     metadata_raw: Optional[str] = None
     doc_description: Optional[str] = None
     doc_url: Optional[str] = None
+    convert_to_markdown: Optional[str] = None
+    ocr: Optional[str] = None
 
     def _safe_str(b: bytes) -> str:
         try:
@@ -144,7 +149,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
             return b.decode("latin-1")
 
     def on_field(field) -> None:
-        nonlocal doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description, doc_url
+        nonlocal doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description, doc_url, convert_to_markdown, ocr
         name = _safe_str(field.field_name) if field.field_name else ""
         val = field.value
         value = _safe_str(val) if val is not None else ""
@@ -162,6 +167,10 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
             doc_description = value or None
         elif name == "doc_url":
             doc_url = value or None
+        elif name == "convert_to_markdown":
+            convert_to_markdown = value or None
+        elif name == "ocr":
+            ocr = value or None
 
     def on_file(f) -> None:
         nonlocal file_content, filename
@@ -193,6 +202,8 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
         metadata_raw,
         doc_description,
         doc_url,
+        convert_to_markdown,
+        ocr,
     )
 
 
@@ -207,6 +218,8 @@ async def _do_assimilate(
     metadata: Optional[Dict[str, Any]] = None,
     doc_description: Optional[str] = None,
     doc_url: Optional[str] = None,
+    convert_to_markdown: bool = False,
+    ocr: bool = False,
 ) -> Dict[str, Any]:
     """Run assimilate_document on content. Handles PDF vs Markdown and temp files."""
     assimilate_kw = {
@@ -217,6 +230,8 @@ async def _do_assimilate(
         "metadata": metadata,
         "doc_description": doc_description,
         "doc_url": doc_url,
+        "convert_to_markdown": convert_to_markdown,
+        "ocr": ocr,
     }
 
     if ext == ".pdf":
@@ -290,6 +305,8 @@ async def ingest_document_endpoint(
     | doc_description | string | No | Human-readable document description |
     | doc_url | string | No | Source URL of the document resource (used for reference citations) |
     | if_add_node_summary | string | No | "yes" or "no" – generate LLM summaries per node (default: from agent's PageIndex config) |
+    | convert_to_markdown | string | No | "yes" or "no" – use Docling to convert PDF to Markdown first (default: no) |
+    | ocr | string | No | "yes" or "no" – enable OCR when using Docling on PDF (default: no) |
     | metadata | string | No | JSON object for tagging, e.g. `{"topic": "finance", "year": 2024}` |
 
     **Response:** `doc_name`, `root_id`, `doc_description`
@@ -317,12 +334,19 @@ async def ingest_document_endpoint(
         metadata_raw,
         doc_description,
         doc_url,
+        convert_to_markdown_raw,
+        ocr_raw,
     ) = _parse_multipart_safe(body, content_type)
     collection_name = collection_name or agent_id
     metadata = _parse_metadata(metadata_raw)
 
     if if_add_node_summary is None:
         await ensure_ingestion_config_for_agent(agent_id)
+
+    convert_opt = _form_yes_no_optional(convert_to_markdown_raw)
+    convert_to_markdown = False if convert_opt is None else convert_opt
+    ocr_opt = _form_yes_no_optional(ocr_raw)
+    ocr_flag = False if ocr_opt is None else ocr_opt
 
     ext = Path(filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -344,6 +368,8 @@ async def ingest_document_endpoint(
             metadata=metadata,
             doc_description=doc_description,
             doc_url=doc_url,
+            convert_to_markdown=convert_to_markdown,
+            ocr=ocr_flag,
         )
     except ImportError as e:
         raise ValidationError(str(e))

@@ -8,6 +8,7 @@ import asyncio
 import functools
 import logging
 import os
+import tempfile
 import threading
 from io import BytesIO
 from pathlib import Path
@@ -38,6 +39,11 @@ from .llm_bridge import (
     attach_pageindex_cancel_event,
     set_pageindex_model_action,
     signal_pageindex_cancel,
+)
+from .docling_convert import convert_document_to_markdown_sync
+from .markdown_pages import (
+    annotate_markdown_structure_pages,
+    strip_page_markers_and_build_line_page_map,
 )
 from .md_tree_enriched import (
     annotate_content_type_and_enabled,
@@ -212,6 +218,8 @@ async def assimilate_document(
     doc_description: Optional[str] = None,
     doc_url: Optional[str] = None,
     cancel_event: Optional[threading.Event] = None,
+    convert_to_markdown: bool = False,
+    ocr: bool = False,
 ) -> Dict[str, Any]:
     """Assimilate a PDF or Markdown document via PageIndex and optionally persist to graph.
 
@@ -234,6 +242,9 @@ async def assimilate_document(
         metadata: Custom key-value metadata for filtering at query time
         doc_description: Optional user-provided document description (overrides LLM-generated if set)
         doc_url: Source URL of the document resource (stored on DocumentRootNode for reference citations)
+        convert_to_markdown: If True, convert PDF inputs with Docling to Markdown first (requires
+            ``jvagent[docling]``). Non-PDF paths ignore this flag.
+        ocr: When using Docling on PDF, enable OCR for scanned pages.
 
     Returns:
         Dict with doc_name, structure, doc_description (if requested), _root_id (if persist)
@@ -253,6 +264,7 @@ async def assimilate_document(
     if summary_token_threshold is None:
         summary_token_threshold = get_pageindex_summary_token_threshold() or 200
 
+    tmp_paths: List[str] = []
     if model_action:
         set_pageindex_model_action(model_action)
     try:
@@ -267,7 +279,43 @@ async def assimilate_document(
             ext = path.suffix.lower()
             is_pdf = ext == ".pdf"
 
-        if is_pdf:
+        use_pdf_page_index = is_pdf and not convert_to_markdown
+        ingest_kind = "pdf_pageindex" if use_pdf_page_index else "markdown_enriched"
+
+        if is_pdf and convert_to_markdown:
+            if isinstance(doc, BytesIO):
+                doc.seek(0)
+                pdf_bytes = doc.read()
+                t_pdf = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+                t_pdf.write(pdf_bytes)
+                t_pdf.close()
+                tmp_paths.append(t_pdf.name)
+                pdf_path = t_pdf.name
+            else:
+                pdf_path = str(doc)
+
+            loop = asyncio.get_running_loop()
+            md_text = await loop.run_in_executor(
+                None,
+                functools.partial(
+                    convert_document_to_markdown_sync,
+                    pdf_path,
+                    ocr=ocr,
+                ),
+            )
+            t_md = tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                suffix=".md",
+                delete=False,
+            )
+            t_md.write(md_text)
+            t_md.close()
+            tmp_paths.append(t_md.name)
+            doc = t_md.name
+            is_pdf = False
+
+        if use_pdf_page_index:
             # page_index() uses asyncio.run() internally; run in executor to avoid
             # "asyncio.run() cannot be called from a running event loop"
             from jvagent.core.app import App
@@ -301,8 +349,26 @@ async def assimilate_document(
                 signal_pageindex_cancel(cancel_event)
                 raise
         else:
+            md_path = Path(doc)
+            raw_text = md_path.read_text(encoding="utf-8")
+            cleaned, line_map = strip_page_markers_and_build_line_page_map(raw_text)
+            if cleaned != raw_text:
+                t_clean = tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    suffix=".md",
+                    delete=False,
+                )
+                t_clean.write(cleaned)
+                t_clean.close()
+                tmp_paths.append(t_clean.name)
+                path_for_tree = t_clean.name
+            else:
+                path_for_tree = str(md_path)
+
+            num_lines = cleaned.count("\n") + (1 if cleaned else 0)
             result = await md_to_tree(
-                str(doc),
+                path_for_tree,
                 if_add_node_id=if_add_node_id,
                 if_add_node_text=if_add_node_text,
                 if_add_node_summary=if_add_node_summary,
@@ -310,6 +376,19 @@ async def assimilate_document(
                 model=model,
                 summary_token_threshold=summary_token_threshold or 200,
             )
+            heading_line_offset = int(result.pop("_heading_line_offset", 0) or 0)
+            if line_map and result.get("structure"):
+                annotate_markdown_structure_pages(
+                    result["structure"],
+                    line_map,
+                    num_lines + heading_line_offset,
+                    source_line_offset=heading_line_offset,
+                )
+            if persist and not result.get("structure"):
+                raise ValueError(
+                    "Markdown produced no indexable sections (empty or whitespace-only). "
+                    "Add headings (# Title) or non-empty body text."
+                )
 
         if result.get("structure"):
             result["structure"] = enrich_structure_titles(result["structure"])
@@ -327,7 +406,7 @@ async def assimilate_document(
             logger.info(
                 "pageindex ingest complete ingest_kind=%s doc_name=%s "
                 "structure_nodes=%s persist=%s",
-                "pdf_pageindex" if is_pdf else "markdown_enriched",
+                ingest_kind,
                 name,
                 _count_structure_nodes(result["structure"]),
                 persist,
@@ -350,6 +429,8 @@ async def assimilate_document(
 
         return result
     finally:
+        for p in tmp_paths:
+            Path(p).unlink(missing_ok=True)
         if model_action:
             set_pageindex_model_action(None)
 

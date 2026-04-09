@@ -177,6 +177,8 @@ export function PageIndexDocumentsModal({
   const [docUrl, setDocUrl] = useState('')
   const [metadataJson, setMetadataJson] = useState('')
   const [addNodeSummary, setAddNodeSummary] = useState(true)
+  const [convertToMarkdown, setConvertToMarkdown] = useState(false)
+  const [doclingOcr, setDoclingOcr] = useState(false)
   const [purgeOnImport, setPurgeOnImport] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importText, setImportText] = useState('')
@@ -388,6 +390,8 @@ export function PageIndexDocumentsModal({
         docUrl: docUrl || undefined,
         metadata: parseMetadata(),
         ifAddNodeSummary: addNodeSummary,
+        convertToMarkdown,
+        ocr: doclingOcr,
       })
       setSelectedFile(null)
       setDocName('')
@@ -1566,6 +1570,29 @@ export function PageIndexDocumentsModal({
                 />
                 <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
                   Generate node summaries (recommended for tree search)
+                </span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={convertToMarkdown}
+                  onChange={(e) => setConvertToMarkdown(e.target.checked)}
+                  className="rounded border-gray-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                  Convert PDF with Docling to Markdown first (requires server docling extra)
+                </span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={doclingOcr}
+                  onChange={(e) => setDoclingOcr(e.target.checked)}
+                  disabled={!convertToMarkdown}
+                  className="rounded border-gray-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+                />
+                <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                  Enable OCR in Docling (scanned PDFs)
                 </span>
               </label>
               <div className="w-full">

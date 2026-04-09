@@ -18,6 +18,7 @@ from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.core.pager import ObjectPager
 
 from jvagent.action.base import Action
+from jvagent.core.agent import Agent
 
 logger = logging.getLogger(__name__)
 
@@ -255,6 +256,57 @@ async def update_action(
 
 
 @endpoint(
+    "/agents/{agent_id}/actions/by-entity/{entity}",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["Action"],
+    response=success_response(
+        data={
+            "action": ResponseField(
+                field_type=Dict[str, Any],
+                description="Action information",
+                example={
+                    "id": "action_123",
+                    "agent_id": "agent_456",
+                    "namespace": "jvagent",
+                    "label": "example_action",
+                    "description": "Example action",
+                    "enabled": True,
+                },
+            )
+        }
+    ),
+)
+async def get_agent_action_by_entity(agent_id: str, entity: str) -> Dict[str, Any]:
+    """Get an action for an agent by entity type name (e.g. AccessControlAction).
+
+    Uses the first matching node when multiple actions share the same entity type
+    for this agent (same semantics as ``Agent.get_action_by_type``). e.g. AvatarAction
+    
+
+    **Raises:**
+
+    - ResourceNotFoundError: If the agent does not exist or no action matches the entity.
+    """
+    agent = await Agent.get(agent_id)
+    if not agent:
+        raise ResourceNotFoundError(
+            message=f"Agent with ID '{agent_id}' not found",
+            details={"agent_id": agent_id},
+        )
+    action = await agent.get_action_by_type(entity)
+    if not action:
+        raise ResourceNotFoundError(
+            message=(
+                f"No action with entity '{entity}' found for agent '{agent_id}'"
+            ),
+            details={"agent_id": agent_id, "entity": entity},
+        )
+    return {"action": await action.export()}
+
+
+@endpoint(
     "/agents/{agent_id}/actions",
     methods=["GET"],
     auth=True,
@@ -279,7 +331,7 @@ async def update_action(
             "per_page": ResponseField(
                 field_type=int,
                 description="Number of actions per page",
-                example=10,
+                example=100,
             ),
             "total_pages": ResponseField(
                 field_type=int,
@@ -312,7 +364,7 @@ async def update_action(
 async def list_agent_actions(
     agent_id: str,
     page: int = 1,
-    per_page: int = 10,
+    per_page: int = 100,
     enabled_only: bool = False,
 ) -> Dict[str, Any]:
     """List actions for an agent using entity-centric pagination.
