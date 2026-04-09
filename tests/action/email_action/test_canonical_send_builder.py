@@ -3,7 +3,9 @@
 import pytest
 from jvspatial.api.exceptions import ValidationError
 
-from jvagent.action.email_action.canonical_send_builder import build_canonical_send_message
+from jvagent.action.email_action.canonical_send_builder import (
+    build_canonical_send_message,
+)
 
 
 async def _fixed_sender() -> tuple[str, str | None]:

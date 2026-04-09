@@ -2,16 +2,22 @@
 
 import base64
 import json
-import pytest
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from starlette.datastructures import FormData
 
 from jvagent.action.email_action.email_action import EmailAction
-from jvagent.action.email_action.email_adapter import EmailAdapter, _subject_and_thread_headers
-from jvagent.action.email_action.email_filter import EmailFilter, plain_text_to_email_html
+from jvagent.action.email_action.email_adapter import (
+    EmailAdapter,
+    _subject_and_thread_headers,
+)
+from jvagent.action.email_action.email_filter import (
+    EmailFilter,
+    plain_text_to_email_html,
+)
 from jvagent.action.email_action.email_payload import CanonicalSendMessage
 from jvagent.action.email_action.email_webhook_helpers import parse_inbound_payload
 from jvagent.action.email_action.inbound.gmail import gmail_raw_message_to_tuple

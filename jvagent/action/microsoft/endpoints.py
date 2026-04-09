@@ -274,16 +274,16 @@ async def microsoft_oauth_callback(code: str, state: str) -> HTMLResponse:
         agent_name = "Agent"
         agent_description = ""
         if agent:
-            agent_name = getattr(agent, "alias", None) or getattr(agent, "name", "Agent")
+            agent_name = getattr(agent, "alias", None) or getattr(
+                agent, "name", "Agent"
+            )
             agent_description = getattr(agent, "description", "")
 
         action_label = html.escape(
             action.metadata.get("title", "Microsoft 365").replace(" Action", "")
         )
         agent_name = html.escape(agent_name)
-        agent_description = (
-            html.escape(agent_description) if agent_description else ""
-        )
+        agent_description = html.escape(agent_description) if agent_description else ""
 
         icon_svg = """
                 <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary)">

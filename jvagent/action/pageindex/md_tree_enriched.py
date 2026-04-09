@@ -267,7 +267,11 @@ def _structural_tag_from_title(title: Optional[str]) -> Optional[str]:
         return "foreword"
     if re.match(r"^introduction\b", tl):
         return "introduction"
-    if re.match(r"^©", t) or re.match(r"^copyright\b", tl) or "copyright protected" in tl:
+    if (
+        re.match(r"^©", t)
+        or re.match(r"^copyright\b", tl)
+        or "copyright protected" in tl
+    ):
         return "copyright"
     if re.match(r"^annex\s+", tl):
         return "appendix"
@@ -491,7 +495,9 @@ def tree_thinning_for_index(node_list, min_node_token=None, model=None):
 
                 result_list[i]["text"] = merged_text
 
-                result_list[i]["text_token_count"] = count_tokens(merged_text, model=model)
+                result_list[i]["text_token_count"] = count_tokens(
+                    merged_text, model=model
+                )
 
     for index in sorted(nodes_to_remove, reverse=True):
         result_list.pop(index)
@@ -584,9 +590,7 @@ async def md_to_tree(
         nodes_with_content, markdown_lines
     )
     print("Merging page-break running-header splits where applicable...")
-    nodes_with_content = merge_running_header_blocks(
-        nodes_with_content, markdown_lines
-    )
+    nodes_with_content = merge_running_header_blocks(nodes_with_content, markdown_lines)
     print("Building hierarchy (clause + heading level)...")
     assign_inferred_hierarchy(nodes_with_content)
 

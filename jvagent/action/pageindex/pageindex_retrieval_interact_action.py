@@ -335,7 +335,10 @@ class PageIndexRetrievalInteractAction(InteractAction):
 
     def _resolve_retrieval_excerpt_source(self) -> str:
         cfg = self.config or {}
-        if "retrieval_excerpt_source" in cfg and cfg["retrieval_excerpt_source"] is not None:
+        if (
+            "retrieval_excerpt_source" in cfg
+            and cfg["retrieval_excerpt_source"] is not None
+        ):
             return _normalize_retrieval_excerpt_source(
                 cfg["retrieval_excerpt_source"], "summary"
             )

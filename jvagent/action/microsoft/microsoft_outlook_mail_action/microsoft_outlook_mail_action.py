@@ -63,11 +63,13 @@ class MicrosoftOutlookMailAction(MicrosoftAction):
             headers=headers,
         )
         if resp.status_code != 200:
-            raise RuntimeError(f"Graph list messages failed: {resp.status_code} {resp.text[:400]}")
+            raise RuntimeError(
+                f"Graph list messages failed: {resp.status_code} {resp.text[:400]}"
+            )
         data = resp.json()
         raw = data.get("value") or []
         out: List[Dict[str, Any]] = []
-        for m in raw[: max_results]:
+        for m in raw[:max_results]:
             out.append(
                 {
                     "id": m.get("id"),

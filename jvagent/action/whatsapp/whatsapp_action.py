@@ -433,9 +433,7 @@ class WhatsAppAction(Action):
         try:
             agent = await self.get_agent()
             agent_id = str(agent.id)
-            expected_url_base = (
-                f"{base_url}/api/whatsapp/interact/webhook/{agent_id}"
-            )
+            expected_url_base = f"{base_url}/api/whatsapp/interact/webhook/{agent_id}"
 
             prime_ctx = GraphContext(database=get_prime_database())
             api_key_service = APIKeyService(context=prime_ctx)

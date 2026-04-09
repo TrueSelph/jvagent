@@ -52,9 +52,8 @@ async def fetch_next_outlook_inbox_message(
 
     agent_id = str(ag.id)
     flt = (
-        (getattr(email_action, "outlook_mail_filter", None) or "isRead eq false")
-        .strip()
-    )
+        getattr(email_action, "outlook_mail_filter", None) or "isRead eq false"
+    ).strip()
     max_results = int(email_action.gmail_list_max_results or 25)
     max_results = max(1, min(max_results, 100))
 

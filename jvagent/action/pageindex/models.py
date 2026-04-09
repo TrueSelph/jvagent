@@ -8,9 +8,9 @@ from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 from jvspatial.core import Edge, Node
+from jvspatial.core.annotations import attribute
 
 from .config import get_pageindex_retrieval_excerpt_source
-from jvspatial.core.annotations import attribute
 
 _MAX_CONTENT_CHARS = 2000
 

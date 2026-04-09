@@ -10,12 +10,14 @@ from jvagent.action.model.embedding import endpoints  # noqa: F401
 from jvagent.action.model.embedding.base import EmbeddingModelAction
 from jvagent.action.model.embedding.generic import GenericEmbeddingModelAction
 from jvagent.action.model.embedding.huggingface import HuggingFaceEmbeddingModelAction
+from jvagent.action.model.embedding.ollama import OllamaEmbeddingModelAction
 from jvagent.action.model.embedding.openai import OpenAIEmbeddingModelAction
 from jvagent.action.model.embedding.openrouter import OpenRouterEmbeddingModelAction
 
 __all__ = [
     "EmbeddingModelAction",
     "OpenAIEmbeddingModelAction",
+    "OllamaEmbeddingModelAction",
     "HuggingFaceEmbeddingModelAction",
     "OpenRouterEmbeddingModelAction",
     "GenericEmbeddingModelAction",

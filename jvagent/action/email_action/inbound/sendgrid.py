@@ -62,6 +62,7 @@ def _header_casefold_lookup(headers: Dict[str, str], *names: str) -> str:
 
 async def parse_sendgrid_inbound(form: FormData) -> List[InboundTuple]:
     """Convert SendGrid Inbound Parse form to one jvagent tuple (single message per POST)."""
+
     # FormData.get returns str | UploadFile
     def _get_str(key: str) -> str:
         v = form.get(key)

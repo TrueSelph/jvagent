@@ -15,6 +15,7 @@ from jvagent.action.model.embedding import (
     EmbeddingModelAction,
     GenericEmbeddingModelAction,
     HuggingFaceEmbeddingModelAction,
+    OllamaEmbeddingModelAction,
     OpenAIEmbeddingModelAction,
     OpenRouterEmbeddingModelAction,
 )
@@ -26,6 +27,8 @@ from jvagent.action.model.embedding import (  # noqa: F401
 # This must be imported for endpoint discovery to work
 from jvagent.action.model.language import endpoints  # noqa: F401
 from jvagent.action.model.language import (
+    AnthropicLanguageModelAction,
+    OllamaLanguageModelAction,
     OpenAILanguageModelAction,
     OpenRouterLanguageModelAction,
     TemplateManager,
@@ -51,10 +54,13 @@ __all__ = [
     "ContentPart",
     "MessageContent",
     # LLM implementations
+    "AnthropicLanguageModelAction",
     "OpenAILanguageModelAction",
+    "OllamaLanguageModelAction",
     "OpenRouterLanguageModelAction",
     # Embedding implementations
     "OpenAIEmbeddingModelAction",
+    "OllamaEmbeddingModelAction",
     "HuggingFaceEmbeddingModelAction",
     "OpenRouterEmbeddingModelAction",
     "GenericEmbeddingModelAction",

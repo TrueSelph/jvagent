@@ -49,9 +49,8 @@ class MicrosoftOutlookCalendarAction(MicrosoftAction):
                     "start": ev.get("start"),
                     "end": ev.get("end"),
                     "location": (ev.get("location") or {}).get("displayName"),
-                    "description": ev.get("bodyPreview") or ev.get("body", {}).get(
-                        "content"
-                    ),
+                    "description": ev.get("bodyPreview")
+                    or ev.get("body", {}).get("content"),
                     "webLink": ev.get("webLink"),
                 }
             )

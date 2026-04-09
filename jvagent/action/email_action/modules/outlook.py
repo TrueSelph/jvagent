@@ -54,9 +54,7 @@ def _build_graph_message(msg: CanonicalSendMessage) -> Dict[str, Any]:
         for k, v in msg.headers.items():
             lk = str(k).lower()
             if lk in ("in-reply-to", "references"):
-                internet_headers.append(
-                    {"name": str(k), "value": str(v).strip()}
-                )
+                internet_headers.append({"name": str(k), "value": str(v).strip()})
     if internet_headers:
         graph_msg["internetMessageHeaders"] = internet_headers
 

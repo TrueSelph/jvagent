@@ -127,12 +127,16 @@ class EmailAction(Action):
 
     @staticmethod
     def _env_sendgrid_key() -> str:
-        v = (env("SENDGRID_API_KEY") or os.environ.get("SENDGRID_API_KEY") or "").strip()
+        v = (
+            env("SENDGRID_API_KEY") or os.environ.get("SENDGRID_API_KEY") or ""
+        ).strip()
         return v
 
     @staticmethod
     def _env_default_sender() -> str:
-        fe = (env("EMAIL_DEFAULT_SENDER") or os.environ.get("EMAIL_DEFAULT_SENDER") or "").strip()
+        fe = (
+            env("EMAIL_DEFAULT_SENDER") or os.environ.get("EMAIL_DEFAULT_SENDER") or ""
+        ).strip()
         if fe:
             return fe
         return (
@@ -148,7 +152,9 @@ class EmailAction(Action):
         ).strip()
         if fn:
             return fn
-        return (env("SENDGRID_FROM_NAME") or os.environ.get("SENDGRID_FROM_NAME") or "").strip()
+        return (
+            env("SENDGRID_FROM_NAME") or os.environ.get("SENDGRID_FROM_NAME") or ""
+        ).strip()
 
     def _apply_env_defaults(self) -> None:
         if not self.base_url or not str(self.base_url).strip():
@@ -218,7 +224,9 @@ class EmailAction(Action):
                     if e:
                         return e, name
                 except Exception:
-                    logger.debug("Outlook profile fetch for sender failed", exc_info=True)
+                    logger.debug(
+                        "Outlook profile fetch for sender failed", exc_info=True
+                    )
             return "", name
         return self._effective_sender_email(self), name
 
@@ -311,8 +319,7 @@ class EmailAction(Action):
         """Return provider client for outbound/inbound API calls."""
         if not self.is_configured():
             raise ValidationError(
-                "Email action is not configured: "
-                + "; ".join(self._config_issues())
+                "Email action is not configured: " + "; ".join(self._config_issues())
             )
         prov = (self.provider or "gmail").strip().lower()
         timeout = float(self.request_timeout or 30.0)
@@ -445,7 +452,7 @@ class EmailAction(Action):
         if not self.enabled:
             return
         if not (self.provider or "").strip().lower():
-        # if (self.provider or "").strip().lower() != "sendgrid":
+            # if (self.provider or "").strip().lower() != "sendgrid":
             return
         action_id = getattr(self, "id", None)
         if not action_id:
@@ -495,7 +502,9 @@ class EmailAction(Action):
             if not agent:
                 raise ValidationError("Agent not found for EmailAction")
             agent_id = str(agent.id)
-            expected_url_base = f"{base.rstrip('/')}/api/email/interact/webhook/{agent_id}"
+            expected_url_base = (
+                f"{base.rstrip('/')}/api/email/interact/webhook/{agent_id}"
+            )
 
             prime_ctx = GraphContext(database=get_prime_database())
             api_key_service = APIKeyService(context=prime_ctx)
@@ -580,11 +589,9 @@ class EmailAction(Action):
                 "EmailAction: agent not found; skipping email channel registration"
             )
             return
-        
 
         if (self.base_url or "").strip() or get_public_base_url():
             await self._ensure_email_webhook_url()
-
 
     async def ensure_adapter_registered(self) -> bool:
         if not self.is_configured():

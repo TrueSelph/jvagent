@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from jvagent.action.email_action.inbound.text_utils import strip_html_to_text
 
@@ -88,7 +88,9 @@ def graph_message_resource_to_tuple(
     utterance = subject if subject else "(no subject)"
 
     inbound: Dict[str, Any] = {
-        "MessageId": _normalize_msg_id(mid_hdr) if mid_hdr else message_resource.get("id"),
+        "MessageId": (
+            _normalize_msg_id(mid_hdr) if mid_hdr else message_resource.get("id")
+        ),
         "Subject": subject,
         "InReplyTo": _normalize_msg_id(irt) if irt else None,
         "To": to_hdr or None,

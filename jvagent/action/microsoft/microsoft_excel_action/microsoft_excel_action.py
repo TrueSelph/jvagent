@@ -55,9 +55,7 @@ class MicrosoftExcelAction(MicrosoftAction):
             return str(worksheet_title).strip()
         return self.worksheet_title
 
-    def _resolve_workbook(
-        self, spreadsheet_url_or_id: Optional[str] = None
-    ) -> str:
+    def _resolve_workbook(self, spreadsheet_url_or_id: Optional[str] = None) -> str:
         if spreadsheet_url_or_id and str(spreadsheet_url_or_id).strip():
             return resolve_workbook_item_id(str(spreadsheet_url_or_id).strip())
         if self.spreadsheet_url and str(self.spreadsheet_url).strip():
@@ -83,9 +81,7 @@ class MicrosoftExcelAction(MicrosoftAction):
         return ""
 
     @asynccontextmanager
-    async def _workbook_session(
-        self, item_id: str
-    ) -> AsyncIterator[str]:
+    async def _workbook_session(self, item_id: str) -> AsyncIterator[str]:
         sess = await self.graph_json(
             "POST",
             f"/me/drive/items/{item_id}/workbook/createSession",
@@ -205,7 +201,9 @@ class MicrosoftExcelAction(MicrosoftAction):
                 if not r:
                     continue
                 addr = self._local_a1(r, worksheet_title)
-                path = f"/me/drive/items/{item_id}/workbook/{seg}/range(address='{addr}')"
+                path = (
+                    f"/me/drive/items/{item_id}/workbook/{seg}/range(address='{addr}')"
+                )
                 await self.graph_request(
                     "PATCH",
                     path,
@@ -245,7 +243,9 @@ class MicrosoftExcelAction(MicrosoftAction):
             },
         )
         if resp.status_code not in (200, 201):
-            raise RuntimeError(f"create workbook failed: {resp.status_code} {resp.text[:400]}")
+            raise RuntimeError(
+                f"create workbook failed: {resp.status_code} {resp.text[:400]}"
+            )
         meta = resp.json()
         iid = meta.get("id")
         return {

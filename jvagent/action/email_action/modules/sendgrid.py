@@ -5,7 +5,10 @@ from typing import Any, Dict, List, Optional, Union
 
 import httpx
 
-from jvagent.action.email_action.email_payload import CanonicalSendMessage, EmailAttachment
+from jvagent.action.email_action.email_payload import (
+    CanonicalSendMessage,
+    EmailAttachment,
+)
 
 from .base import default_inbound_webhook_unsupported
 
@@ -171,9 +174,7 @@ class SendGridEmailProvider:
         url = f"{self.api_base}/mail/send"
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.post(
-                    url, json=mail, headers=self._auth_headers()
-                )
+                resp = await client.post(url, json=mail, headers=self._auth_headers())
         except httpx.HTTPError as e:
             logger.error("SendGrid send HTTP error: %s", e)
             return {"ok": False, "error": str(e)}
@@ -214,9 +215,7 @@ class SendGridEmailProvider:
         merged = self._apply_default_from(merged)
         url = f"{self.api_base}/mail/send"
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(
-                url, json=merged, headers=self._auth_headers()
-            )
+            resp = await client.post(url, json=merged, headers=self._auth_headers())
         if resp.status_code >= 400:
             try:
                 body = resp.json()

@@ -73,9 +73,7 @@ class MicrosoftOneDriveAction(MicrosoftAction):
             headers={"Content-Type": ct},
         )
         if resp.status_code not in (200, 201):
-            raise RuntimeError(
-                f"Upload failed {resp.status_code}: {resp.text[:400]}"
-            )
+            raise RuntimeError(f"Upload failed {resp.status_code}: {resp.text[:400]}")
         meta = resp.json()
         return {"id": meta.get("id"), "name": meta.get("name"), "mimeType": ct}
 
@@ -108,8 +106,12 @@ class MicrosoftOneDriveAction(MicrosoftAction):
             entry: Dict[str, Any] = {
                 "id": it.get("id"),
                 "name": it.get("name"),
-                "mimeType": FOLDER_MIME if is_folder else (it.get("file") or {}).get(
-                    "mimeType", "application/octet-stream"
+                "mimeType": (
+                    FOLDER_MIME
+                    if is_folder
+                    else (it.get("file") or {}).get(
+                        "mimeType", "application/octet-stream"
+                    )
                 ),
             }
             if it.get("lastModifiedDateTime"):
@@ -185,28 +187,19 @@ class MicrosoftOneDriveAction(MicrosoftAction):
 
         added: List[Dict[str, Any]] = []
         for fid in new_ids - old_ids:
-            if (
-                new_map[fid].get("mimeType") == FOLDER_MIME
-                and ignore_folders
-            ):
+            if new_map[fid].get("mimeType") == FOLDER_MIME and ignore_folders:
                 continue
             added.append(new_map[fid])
 
         removed: List[Dict[str, Any]] = []
         for fid in old_ids - new_ids:
-            if (
-                old_map[fid].get("mimeType") == FOLDER_MIME
-                and ignore_folders
-            ):
+            if old_map[fid].get("mimeType") == FOLDER_MIME and ignore_folders:
                 continue
             removed.append(old_map[fid])
 
         modified: List[Dict[str, Any]] = []
         for fid in old_ids & new_ids:
-            if (
-                old_map[fid].get("mimeType") == FOLDER_MIME
-                and ignore_folders
-            ):
+            if old_map[fid].get("mimeType") == FOLDER_MIME and ignore_folders:
                 continue
             if old_map[fid] != new_map[fid]:
                 modified.append({"id": fid, "old": old_map[fid], "new": new_map[fid]})

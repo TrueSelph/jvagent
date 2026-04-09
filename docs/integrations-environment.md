@@ -11,9 +11,27 @@ For the complete consolidated key inventory, see [environment-keys-reference.md]
 | **`OPENAI_API_KEY`** | OpenAI-compatible APIs and PageIndex `tree_search`. |
 | **`PAGEINDEX_TREE_SEARCH_MODEL`** | Model id for tree search (default `gpt-4o-mini`). |
 
+## Anthropic (native Messages API)
+
+| Variable | Role |
+|----------|------|
+| **`ANTHROPIC_API_KEY`** | Native Anthropic Messages API authentication for `jvagent/anthropic_lm`. |
+
+If you are using Anthropic models through OpenRouter (`anthropic/...` model ids),
+configure `OPENAI_API_KEY` as required by the OpenRouter action in this codebase.
+
 Actions resolve secrets from environment only (env-first) and do not rely on
 persisted DB secret values. Secret-like keys provided in `agent.yaml` context are
 ignored with a warning when they do not exist on the action class.
+
+## Ollama (native local runtime)
+
+No API key is required for default local Ollama usage. Configure endpoint/model
+on the action context (for example `api_endpoint: http://localhost:11434`).
+
+| Variable | Role |
+|----------|------|
+| `OLLAMA_HOST` | Optional host override for the Ollama daemon process itself (used by Ollama runtime tooling, not read directly by jvagent actions). |
 
 ## Public app URL (jvagent)
 
