@@ -18,6 +18,23 @@ from .pageindex_google_drive_sync_action import PageIndexGoogleDriveSyncAction
 logger = logging.getLogger(__name__)
 
 
+def _payload_bool(payload: Dict[str, Any], key: str, *, default: bool) -> bool:
+    """Parse JSON/body bool; missing key -> default."""
+    if key not in payload:
+        return default
+    v = payload[key]
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return default
+    s = str(v).lower().strip()
+    if s in ("true", "1", "yes"):
+        return True
+    if s in ("false", "0", "no"):
+        return False
+    return default
+
+
 @endpoint(
     "/actions/{action_id}/ingest_google_documents",
     methods=["POST"],
@@ -49,6 +66,16 @@ async def ingest_google_documents_endpoint(
         default=False,
         examples=[False],
         description="Retry failed documents",
+    ),
+    convert_to_markdown: bool = Field(
+        default=False,
+        examples=[False],
+        description="Convert PDFs with Docling to Markdown before PageIndex (requires jvagent[docling])",
+    ),
+    ocr: bool = Field(
+        default=False,
+        examples=[False],
+        description="Enable Docling OCR when convert_to_markdown is True",
     ),
 ) -> Dict[str, Any]:
     """Recursively extract and ingest PDF documents from Google Drive folders.
@@ -90,6 +117,8 @@ async def ingest_google_documents_endpoint(
             google_drive_folders=google_drive_folders,
             remove_deleted_documents=remove_deleted_documents,
             retry_failed_documents=retry_failed_documents,
+            convert_to_markdown=convert_to_markdown,
+            ocr=ocr,
         )
 
         response = result.get("message") or "No pending documents to ingest"
@@ -278,6 +307,10 @@ async def pageindex_google_drive_sync_action_interact(
         folders = request_data.get("google_drive_folders")
         remove_deleted = request_data.get("remove_deleted_documents")
         retry_failed = request_data.get("retry_failed_documents")
+        convert_to_markdown = _payload_bool(
+            request_data, "convert_to_markdown", default=True
+        )
+        ocr_flag = _payload_bool(request_data, "ocr", default=True)
         drive_action = pageindex_google_drive_sync_action
 
         if is_serverless_mode():
@@ -288,6 +321,8 @@ async def pageindex_google_drive_sync_action_interact(
                 google_drive_folders=folders,
                 remove_deleted_documents=remove_deleted,
                 retry_failed_documents=retry_failed,
+                convert_to_markdown=convert_to_markdown,
+                ocr=ocr_flag,
             )
             response = result.get("message") or "No pending documents to ingest"
             t0 = getattr(request.state, "webhook_start", None)
@@ -308,6 +343,8 @@ async def pageindex_google_drive_sync_action_interact(
                 google_drive_folders=folders,
                 remove_deleted_documents=remove_deleted,
                 retry_failed_documents=retry_failed,
+                convert_to_markdown=convert_to_markdown,
+                ocr=ocr_flag,
             ),
             name=f"page_index_ingestion_{agent_id}",
         )

@@ -90,6 +90,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         node_summary: Optional[Any],
         old_file: Optional[Dict[str, Any]] = None,
         source: str = "ingesting_documents",
+        convert_to_markdown: bool = False,
+        ocr: bool = False,
     ) -> Dict[str, Any]:
         """Process one document (added or modified). Sets active_document, ingests, clears on completion.
 
@@ -123,6 +125,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     doc_url=doc_url,
                     metadata=metadata,
                     cancel_event=cancel_event,
+                    convert_to_markdown=convert_to_markdown,
+                    ocr=ocr,
                 )
                 # await asyncio.sleep(40)  # Sleep for testing purposes
                 return {"doc_name": doc_name}
@@ -236,6 +240,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         google_drive_folders: list = [],
         remove_deleted_documents: bool = False,
         retry_failed_documents: bool = False,
+        convert_to_markdown: bool = False,
+        ocr: bool = False,
     ) -> dict:
         """Recursively extract and ingest PDF documents from Google Drive folders.
 
@@ -285,6 +291,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 retry_failed_documents=retry_failed_documents,
                 google_drive_action=google_drive_action,
                 page_index_action=page_index_action,
+                convert_to_markdown=convert_to_markdown,
+                ocr=ocr,
             )
 
     async def _ingest_documents_from_google_drive_inner(
@@ -294,6 +302,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         retry_failed_documents: bool,
         google_drive_action: Any,
         page_index_action: Any,
+        convert_to_markdown: bool = False,
+        ocr: bool = False,
     ) -> dict:
         """Inner ingestion logic (called with ingestion lock held)."""
         logger.info(
@@ -419,6 +429,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         if google_drive_documents_node.status == "failed"
                         else "ingesting_documents"
                     ),
+                    convert_to_markdown=convert_to_markdown,
+                    ocr=ocr,
                 )
                 if result["success"]:
                     document_ingested["added"].append(result["doc_name"])
@@ -452,6 +464,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         if google_drive_documents_node.status == "failed"
                         else "ingesting_documents"
                     ),
+                    convert_to_markdown=convert_to_markdown,
+                    ocr=ocr,
                 )
                 if result["success"]:
                     document_ingested["updated"].append(result["doc_name"])

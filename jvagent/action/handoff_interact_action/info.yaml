@@ -1,0 +1,21 @@
+package:
+  name: jvagent/handoff_interact_action
+  author: Tharick Jairam
+  archetype: HandoffInteractAction
+  version: 1.0.0
+  meta:
+    title: Handoff Interact Action
+    description: >-
+      Routes human-support intent with a language model into three modes —
+      direct contact details for the user, immediate escalation with an internal
+      summary to operations (WhatsApp), or a scheduled callback — including
+      extraction of phone and email from the conversation when relevant.
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []
+    pip: []

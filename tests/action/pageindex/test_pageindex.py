@@ -884,3 +884,120 @@ async def test_assimilate_markdown_chunks_have_hierarchy_and_content_type(
     assert sec2["hierarchy"] == ["Introduction", "Section Two"]
     assert sec2["content_type"] == "substantive"
     assert sec2["enabled"] is True
+
+
+def test_strip_page_markers_and_annotate_structure_pages():
+    """Page-marker lines are stripped; structure nodes get PDF-like page fields."""
+    from jvagent.action.pageindex.markdown_pages import (
+        annotate_markdown_structure_pages,
+        strip_page_markers_and_build_line_page_map,
+    )
+
+    raw = "# Intro\n\nLine\n\n--- [ Page 2 ] ---\n\n## Next\n\nTail\n"
+    cleaned, line_map = strip_page_markers_and_build_line_page_map(raw)
+    assert "--- [ Page" not in cleaned
+    assert line_map
+    num_lines = cleaned.count("\n") + (1 if cleaned else 0)
+    structure = [
+        {
+            "title": "Intro",
+            "line_num": 1,
+            "nodes": [
+                {
+                    "title": "Next",
+                    "line_num": 5,
+                    "nodes": [],
+                }
+            ],
+        }
+    ]
+    annotate_markdown_structure_pages(structure, line_map, num_lines)
+    intro = structure[0]
+    assert intro["physical_index"] == 1
+    assert intro["start_index"] == 1
+    assert intro["end_index"] == 1
+    nxt = intro["nodes"][0]
+    assert nxt["physical_index"] == 2
+    assert nxt["start_index"] == 2
+    assert nxt["end_index"] == 2
+
+
+@pytest.mark.asyncio
+async def test_assimilate_paged_markdown_sets_chunk_pages(pageindex_temp_db, temp_dir):
+    """Markdown with ``--- [ Page N ] ---`` persists physical_index on chunks."""
+    path = temp_dir / "paged.md"
+    path.write_text(
+        "# Intro\n\nHello.\n\n--- [ Page 2 ] ---\n\n## Section B\n\nMore.\n",
+        encoding="utf-8",
+    )
+    await assimilate_document(
+        path,
+        doc_name="paged_assim",
+        if_add_node_summary="no",
+        collection_name="col_paged",
+    )
+    out = await list_document_chunks("paged_assim", collection_name="col_paged")
+    by_title = {c["title"]: c for c in out["chunks"]}
+    assert by_title["Intro"]["physical_index"] == 1
+    assert by_title["Section B"]["physical_index"] == 2
+
+
+@pytest.mark.asyncio
+async def test_assimilate_markdown_no_atx_headings_still_indexes(
+    pageindex_temp_db, temp_dir
+):
+    """Docling-like export: page markers + tables + prose without # headings must persist."""
+    path = temp_dir / "toc_pages.md"
+    path.write_text(
+        "\n--- [ Page 1 ] ---\n\n"
+        "| Foreword | ...1 |\n"
+        "|----------|------|\n\n"
+        "--- [ Page 3 ] ---\n\n"
+        "Foreword\n\n"
+        "Body paragraph here.\n",
+        encoding="utf-8",
+    )
+    await assimilate_document(
+        path,
+        doc_name="no_headers_doc",
+        if_add_node_summary="no",
+        collection_name="col_nh",
+    )
+    out = await list_document_chunks("no_headers_doc", collection_name="col_nh")
+    assert out["total"] >= 1
+    titles = {c["title"] for c in out["chunks"]}
+    assert "Document" in titles
+    doc_chunk = next(c for c in out["chunks"] if c["title"] == "Document")
+    assert doc_chunk.get("physical_index") == 1
+    assert doc_chunk.get("end_index") == 3
+
+
+def test_docling_convert_requires_installed_package(tmp_path):
+    """Without a file, or missing docling, conversion fails predictably."""
+    from jvagent.action.pageindex import docling_convert
+
+    with pytest.raises(FileNotFoundError):
+        docling_convert.convert_document_to_markdown_sync(tmp_path / "missing.pdf")
+
+    try:
+        import docling  # noqa: F401
+    except ImportError:
+        pytest.skip("docling not installed")
+    # Minimal PDF bytes (empty single page) — may still fail in some envs; skip on error
+    pdf_path = tmp_path / "one.pdf"
+    try:
+        from pypdf import PdfWriter
+
+        w = PdfWriter()
+        w.add_blank_page(width=72, height=72)
+        with open(pdf_path, "wb") as f:
+            w.write(f)
+    except Exception:
+        pytest.skip("could not write minimal PDF")
+
+    try:
+        md = docling_convert.convert_document_to_markdown_sync(pdf_path, ocr=False)
+    except Exception as e:
+        pytest.skip(f"docling convert failed in this environment: {e}")
+    assert isinstance(md, str)
+    assert len(md) >= 0

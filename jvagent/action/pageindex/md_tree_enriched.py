@@ -578,10 +578,22 @@ async def md_to_tree(
 ):
     with open(md_path, "r", encoding="utf-8") as f:
         markdown_content = f.read()
+    if markdown_content.startswith("\ufeff"):
+        markdown_content = markdown_content[1:]
+
+    heading_line_offset = 0
     line_count = markdown_content.count("\n") + 1
 
     print("Extracting nodes from markdown...")
     node_list, markdown_lines = extract_nodes_from_markdown(markdown_content)
+    # Docling / scanned PDFs often lack ATX headings (# …); without them the tree is empty
+    # and ingest skips persist while still returning 200. Prepend one section so tables and
+    # body text still become chunks (offset tracks extra lines for page-marker annotation).
+    if not node_list and markdown_content.strip():
+        markdown_content = "# Document\n\n" + markdown_content.lstrip("\n")
+        heading_line_offset = markdown_content.count("\n") + 1 - line_count
+        line_count = markdown_content.count("\n") + 1
+        node_list, markdown_lines = extract_nodes_from_markdown(markdown_content)
 
     print("Extracting text content from nodes...")
     nodes_with_content = extract_node_text_content(node_list, markdown_lines)
@@ -635,6 +647,7 @@ async def md_to_tree(
                 "doc_description": doc_description,
                 "line_count": line_count,
                 "structure": tree_structure,
+                "_heading_line_offset": heading_line_offset,
             }
     else:
         if if_add_node_text == "yes":
@@ -650,4 +663,5 @@ async def md_to_tree(
         "doc_name": os.path.splitext(os.path.basename(md_path))[0],
         "line_count": line_count,
         "structure": tree_structure,
+        "_heading_line_offset": heading_line_offset,
     }

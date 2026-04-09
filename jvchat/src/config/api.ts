@@ -859,7 +859,7 @@ class ApiClient {
     params?: { page?: number; per_page?: number; enabled_only?: boolean }
   ): Promise<any> {
     const page = params?.page ?? 1
-    const per_page = params?.per_page ?? 30
+    const per_page = params?.per_page ?? 100
     const enabled_only = params?.enabled_only ?? false
     const query = `page=${page}&per_page=${per_page}&enabled_only=${enabled_only}`
     const response = await this._withFallback(async (baseURL) => {
@@ -868,6 +868,27 @@ class ApiClient {
       } catch (err: any) {
         if (err.response?.status === 404) {
           return await this.client.get(`/agents/${agentId}/actions?${query}`, { baseURL })
+        }
+        throw err
+      }
+    })
+    return response.data
+  }
+
+  async getActionByEntity(agentId: string, entity: string): Promise<any> {
+    const encoded = encodeURIComponent(entity)
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.get(
+          `/api/agents/${agentId}/actions/by-entity/${encoded}`,
+          { baseURL }
+        )
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.get(
+            `/agents/${agentId}/actions/by-entity/${encoded}`,
+            { baseURL }
+          )
         }
         throw err
       }
@@ -971,6 +992,8 @@ class ApiClient {
       docUrl?: string
       metadata?: Record<string, unknown>
       ifAddNodeSummary?: boolean
+      convertToMarkdown?: boolean
+      ocr?: boolean
     }
   ): Promise<PageIndexUploadResponse> {
     const formData = new FormData()
@@ -981,6 +1004,12 @@ class ApiClient {
     if (options?.metadata) formData.append('metadata', JSON.stringify(options.metadata))
     if (options?.ifAddNodeSummary !== undefined) {
       formData.append('if_add_node_summary', options.ifAddNodeSummary ? 'yes' : 'no')
+    }
+    if (options?.convertToMarkdown !== undefined) {
+      formData.append('convert_to_markdown', options.convertToMarkdown ? 'yes' : 'no')
+    }
+    if (options?.ocr !== undefined) {
+      formData.append('ocr', options.ocr ? 'yes' : 'no')
     }
 
     const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents`
