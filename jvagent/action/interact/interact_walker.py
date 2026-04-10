@@ -276,6 +276,7 @@ class InteractWalker(Walker):
                 self.user_id = resolved_user_id
                 self.session_id = resolved_session_id
                 self.new_user = new_user
+                conversation.context["new_user"] = new_user
                 self.conversation = conversation
 
                 access_control = await here.get_access_control_action()
