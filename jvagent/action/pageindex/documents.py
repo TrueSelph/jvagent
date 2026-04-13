@@ -34,13 +34,13 @@ from .config import (
     resolve_pageindex_json_log_dir,
 )
 from .core import page_index
+from .docling_convert import convert_document_to_markdown_sync
 from .llm_bridge import (
     PageIndexCancelled,
     attach_pageindex_cancel_event,
     set_pageindex_model_action,
     signal_pageindex_cancel,
 )
-from .docling_convert import convert_document_to_markdown_sync
 from .markdown_pages import (
     annotate_markdown_structure_pages,
     strip_page_markers_and_build_line_page_map,

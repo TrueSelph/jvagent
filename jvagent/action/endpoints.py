@@ -283,7 +283,7 @@ async def get_agent_action_by_entity(agent_id: str, entity: str) -> Dict[str, An
 
     Uses the first matching node when multiple actions share the same entity type
     for this agent (same semantics as ``Agent.get_action_by_type``). e.g. AvatarAction
-    
+
 
     **Raises:**
 
@@ -298,9 +298,7 @@ async def get_agent_action_by_entity(agent_id: str, entity: str) -> Dict[str, An
     action = await agent.get_action_by_type(entity)
     if not action:
         raise ResourceNotFoundError(
-            message=(
-                f"No action with entity '{entity}' found for agent '{agent_id}'"
-            ),
+            message=(f"No action with entity '{entity}' found for agent '{agent_id}'"),
             details={"agent_id": agent_id, "entity": entity},
         )
     return {"action": await action.export()}

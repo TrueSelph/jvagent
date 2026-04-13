@@ -5,18 +5,21 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
+from jvspatial.core.annotations import attribute
+
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.action.persona.persona_action import PersonaAction
+from jvagent.action.whatsapp.whatsapp_action import WhatsAppAction
 from jvagent.memory import Interaction
-from jvspatial.core.annotations import attribute
 
 logger = logging.getLogger(__name__)
 
 DIRECT_CONTACT_PROMPT = """You can reach a human representative directly using the contact details below:
 
-Email: support@company.com  
-Phone / WhatsApp: +592 XXX XXXX  
-Office Hours: Mon-Fri, 9:00 AM - 5:00 PM  
+Email: support@company.com
+Phone / WhatsApp: +592 XXX XXXX
+Office Hours: Mon-Fri, 9:00 AM - 5:00 PM
 
 A team member will assist you as soon as possible."""
 
@@ -33,7 +36,7 @@ You can expect a response within the next 24 hours (or the next business day). I
 HANDOFF_SYSTEM_PROMPT = """
 You are responsible for selecting the correct human handoff mode and generating a structured handoff message for a human agent.
 
-Your output is NOT a message to the user.  
+Your output is NOT a message to the user.
 It is an internal message intended for a human representative to understand the situation and take action.
 
 ---
@@ -129,7 +132,7 @@ class HandoffInteractAction(InteractAction):
             "User requests a callback from a human.",
             "User asks for phone, email, or WhatsApp contact.",
             "User says they need further assistance from a human.",
-            "User indicates the issue is not resolved and wants escalation."
+            "User indicates the issue is not resolved and wants escalation.",
         ],
         description="Anchor statements for InteractRouter (handoff intent detection).",
     )
@@ -139,11 +142,15 @@ class HandoffInteractAction(InteractAction):
         description="Model action type",
     )
     model: str = attribute(default="gpt-4o-mini", description="Model name")
-    model_temperature: float = attribute(default=0.1, description="Sampling temperature")
+    model_temperature: float = attribute(
+        default=0.1, description="Sampling temperature"
+    )
     model_max_tokens: int = attribute(default=8192, description="Max tokens")
     use_history: bool = attribute(default=True, description="Use history")
     history_limit: int = attribute(default=6, description="History limit")
-    max_statement_length: int = attribute(default=400, description="Max statement length")
+    max_statement_length: int = attribute(
+        default=400, description="Max statement length"
+    )
 
     direct_contact_prompt: str = attribute(
         default=DIRECT_CONTACT_PROMPT,
@@ -213,14 +220,14 @@ class HandoffInteractAction(InteractAction):
             - If json_response=False: Raw string response
             - False if model action unavailable
             - None if exception occurs
-        
+
         Example:
             # Text response
             response = await self._call_model(
                 user_prompt="What is Python?",
                 system_prompt="You are a programming expert."
             )
-            
+
             # JSON response
             data = await self._call_model(
                 user_prompt="List 3 Python frameworks",
@@ -231,23 +238,31 @@ class HandoffInteractAction(InteractAction):
 
         conversation_history = None
         if use_history:
-            persona_action = await self.get_action("PersonaAction")
-            conversation_history = await persona_action._get_conversation_history(
-                interaction,
-                history_limit,
-                with_utterance=with_utterance,
-                with_response=with_response,
-                with_interpretation=with_interpretation,
-                with_event=with_event,
-                max_statement_length=max_statement_length,
-            )
+            persona_action = await self.get_action(PersonaAction)
+            if persona_action:
+                conversation_history = await persona_action._get_conversation_history(
+                    interaction,
+                    history_limit,
+                    with_utterance=with_utterance,
+                    with_response=with_response,
+                    with_interpretation=with_interpretation,
+                    with_event=with_event,
+                    max_statement_length=max_statement_length,
+                )
 
-            # for reply coherence
-            if with_interpretation and not with_response and interaction.response:
-                conversation_history.append({
-                    "role": "assistant",
-                    "content": interaction.response,
-                })
+                # for reply coherence
+                if (
+                    with_interpretation
+                    and not with_response
+                    and interaction.response
+                    and conversation_history is not None
+                ):
+                    conversation_history.append(
+                        {
+                            "role": "assistant",
+                            "content": interaction.response,
+                        }
+                    )
 
         try:
             model_action = await self.get_model_action()
@@ -266,14 +281,18 @@ class HandoffInteractAction(InteractAction):
                     calling_action_name=self.get_class_name(),
                 )
 
-                json_match = re.search(r'```(?:json)?\s*({.*?})\s*```', result_str, re.DOTALL)
+                json_match = re.search(
+                    r"```(?:json)?\s*({.*?})\s*```", result_str, re.DOTALL
+                )
                 if json_match:
                     result_str = json_match.group(1)
                 elif result_str.strip().startswith("{"):
                     result_str = result_str.strip()
                 else:
                     json_match = re.search(r"{.*}", result_str, re.DOTALL)
-                    result_str = json_match.group(0) if json_match else result_str.strip()
+                    result_str = (
+                        json_match.group(0) if json_match else result_str.strip()
+                    )
 
                 return json.loads(result_str)
             else:
@@ -285,7 +304,7 @@ class HandoffInteractAction(InteractAction):
                     temperature=self.model_temperature,
                     max_tokens=self.model_max_tokens,
                     history=conversation_history,
-                    calling_action_name=self.get_class_name()
+                    calling_action_name=self.get_class_name(),
                 )
         except Exception as e:
             logger.error(f"Error in LLM helper: {e}")
@@ -298,7 +317,7 @@ class HandoffInteractAction(InteractAction):
     async def execute(self, visitor: InteractWalker) -> None:
         """Execute the handoff action."""
 
-        # selecting the handoff mode and their message 
+        # selecting the handoff mode and their message
         user = await visitor.interaction.get_user()
         username = "Unknown"
         if user:
@@ -327,54 +346,61 @@ class HandoffInteractAction(InteractAction):
         emails = contact_info.get("emails", [])
         phone = self.handoff_number
 
-        whatsapp_action = await self.get_action("WhatsAppAction")
-        whatsapp_api = await whatsapp_action.api()
-
+        whatsapp_action = await self.get_action(WhatsAppAction)
+        whatsapp_api = (
+            await whatsapp_action.api() if whatsapp_action is not None else None
+        )
 
         # Handle the handoff mode
         if handoff_mode == "direct_contact":
-            visitor.interaction.directives = [{
-                "action_name": self.get_class_name(),
-                "content": self.direct_contact_prompt,
-                "executed": False
-            }]
+            visitor.interaction.directives = [
+                {
+                    "action_name": self.get_class_name(),
+                    "content": self.direct_contact_prompt,
+                    "executed": False,
+                }
+            ]
         elif handoff_mode == "agent_escalation":
-            
+
             if not phone_numbers and not emails:
-                # ask for contact info if missing 
-                visitor.interaction.directives = [{
-                    "action_name": self.get_class_name(),
-                    "content": f"Please provide your contact information if you would like a callback.",
-                    "executed": False
-                }]
+                # ask for contact info if missing
+                visitor.interaction.directives = [
+                    {
+                        "action_name": self.get_class_name(),
+                        "content": f"Please provide your contact information if you would like a callback.",
+                        "executed": False,
+                    }
+                ]
             else:
-                visitor.interaction.directives = [{
-                    "action_name": self.get_class_name(),
-                    "content": self.agent_escalation_prompt,
-                    "executed": False
-                }]
-                await whatsapp_api.send_message(
-                    phone=phone,
-                    message=message
-                )
+                visitor.interaction.directives = [
+                    {
+                        "action_name": self.get_class_name(),
+                        "content": self.agent_escalation_prompt,
+                        "executed": False,
+                    }
+                ]
+                if whatsapp_api:
+                    await whatsapp_api.send_message(phone=phone, message=message)
         elif handoff_mode == "scheduled_callback":
             if not phone_numbers and not emails:
-                # ask for contact info if missing 
-                visitor.interaction.directives = [{
-                    "action_name": self.get_class_name(),
-                    "content": f"Please provide your contact information if you would like a callback.",
-                    "executed": False
-                }]
+                # ask for contact info if missing
+                visitor.interaction.directives = [
+                    {
+                        "action_name": self.get_class_name(),
+                        "content": f"Please provide your contact information if you would like a callback.",
+                        "executed": False,
+                    }
+                ]
             else:
-                visitor.interaction.directives = [{
-                    "action_name": self.get_class_name(),
-                    "content": self.scheduled_callback_prompt,
-                    "executed": False
-                }]
+                visitor.interaction.directives = [
+                    {
+                        "action_name": self.get_class_name(),
+                        "content": self.scheduled_callback_prompt,
+                        "executed": False,
+                    }
+                ]
 
-                await whatsapp_api.send_message(
-                    phone=phone,
-                    message=message
-                )
+                if whatsapp_api:
+                    await whatsapp_api.send_message(phone=phone, message=message)
 
         return

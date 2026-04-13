@@ -48,7 +48,9 @@ def _docling_items_to_markdown(document: object) -> str:
             try:
                 parts.append(item.export_to_markdown(doc=document))
             except Exception:
-                logger.debug("Table export failed; falling back to grid export", exc_info=True)
+                logger.debug(
+                    "Table export failed; falling back to grid export", exc_info=True
+                )
                 parts.append(item.export_to_markdown(doc=None))
             parts.append("")
         elif isinstance(item, SectionHeaderItem):
@@ -109,8 +111,11 @@ def convert_document_to_markdown_sync(
     """
     try:
         from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import (
+            PdfPipelineOptions,
+            TableFormerMode,
+        )
         from docling.document_converter import DocumentConverter, PdfFormatOption
-        from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
     except ImportError as e:
         raise ImportError(_DOC_NOT_INSTALLED_MSG) from e
 
