@@ -4,4 +4,7 @@ include pyproject.toml
 include setup.py
 include .env.example
 recursive-include jvagent *.py
+recursive-include jvagent/scaffold/builtin_profiles *.yaml
+recursive-include jvagent/scaffold/static *.txt
+recursive-include docs *.md
 

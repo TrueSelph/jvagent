@@ -12,4 +12,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Example action implementation
 - Example agent configuration
 - Documentation
+- **MCPAction** (core action `jvagent/mcp`): Gateway action that pairs with a named MCP server and exposes `fulfill(natural_language_command)` for use by other actions (e.g. InteractActions). Requires a LanguageModelAction on the agent for NL→tool mapping. See [jvagent/action/mcp/README.md](../../jvagent/action/mcp/README.md).
 

@@ -6,16 +6,17 @@ canned responses, and glossary terms.
 """
 
 import logging
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
-from jvagent.action.base import Action
 from jvspatial.core.annotations import attribute
+
+from jvagent.action.base import Action
 
 logger = logging.getLogger(__name__)
 
 
-class VectorStore(Action):
+class VectorStore(Action, ABC):
     """Base action for vector database operations.
 
     VectorStore provides a standard interface for storing documents with embeddings
@@ -26,19 +27,111 @@ class VectorStore(Action):
     backend implementations (e.g., Typesense, Pinecone, Weaviate).
 
     Attributes:
-        embedder_type: Type of embedder to use for generating embeddings
+        embedding_model_action_type: Entity type of EmbeddingModelAction to use (e.g., "OpenAIEmbeddingModelAction")
         default_collection: Default collection name to use if not specified
     """
 
     # Configuration
-    embedder_type: str = attribute(
-        default="sentence-transformers",
-        description="Type of embedder to use (e.g., 'sentence-transformers', 'openai')",
+    embedding_model_action_type: str = attribute(
+        default="",
+        description="Entity type of EmbeddingModelAction to use (e.g., 'OpenAIEmbeddingModelAction'). If empty, uses first available.",
     )
     default_collection: str = attribute(
         default="default",
-        description="Default collection name to use if not specified",
+        description=(
+            "Default collection name to use if not specified. "
+            "If left as 'default', the agent ID will be used as the default "
+            "collection name to keep collections unique per agent when sharing "
+            "a vector store across agents."
+        ),
     )
+
+    async def _resolve_collection_name(self, collection: Optional[str] = None) -> str:
+        """Resolve the collection name, preferring explicit input, then agent-specific default.
+
+        Priority:
+        1) Explicit collection argument (if provided and non-empty)
+        2) Agent ID (guarantees uniqueness per agent when sharing a vector store)
+        3) self.default_collection when it is set and not 'default'
+        4) Fallback to literal 'default'
+        """
+        # 1) Explicit override
+        if collection:
+            return collection
+
+        # 2) Agent ID for uniqueness when sharing vector store (primary default)
+        try:
+            agent = await self.get_agent()
+            if agent and agent.id:
+                return agent.id
+        except Exception:
+            pass
+
+        # 3) Configured default if not the sentinel 'default'
+        if self.default_collection and self.default_collection != "default":
+            return self.default_collection
+
+        # 4) Final fallback
+        return "default"
+
+    @abstractmethod
+    async def _initialize_client(self) -> None:
+        """Initialize the vector store client connection.
+
+        This method should be implemented by subclasses to initialize their
+        specific client (e.g., Typesense, Pinecone, Weaviate). This method
+        can be called multiple times safely - it should only initialize the
+        client if it doesn't already exist. Called automatically during
+        on_register() and when client is needed for operations.
+
+        Subclasses should implement this to:
+        - Check if client is already initialized (idempotent)
+        - Validate required configuration (API keys, endpoints, etc.)
+        - Initialize the client connection
+        - Handle any initialization errors appropriately
+        """
+        pass
+
+    async def on_register(self) -> None:
+        """Called when action is registered during installation.
+
+        Validates configuration and initializes client. This method
+        should only be called once during action registration.
+        Client initialization is handled automatically via _initialize_client().
+        """
+        await super().on_register()
+
+        # Initialize client automatically
+        await self._initialize_client()
+
+    @abstractmethod
+    async def _cleanup_client(self) -> None:
+        """Clean up the vector store client connection.
+
+        This method should be implemented by subclasses to clean up their
+        specific client (e.g., Typesense, Pinecone, Weaviate). This method
+        is called automatically during on_disable() to ensure proper cleanup
+        of client connections and resources.
+
+        Subclasses should implement this to:
+        - Close any open connections
+        - Clear client references
+        - Release any allocated resources
+        - Handle cleanup errors gracefully (log but don't raise)
+        """
+        pass
+
+    async def on_disable(self) -> None:
+        """Called when action is disabled.
+
+        Cleans up client connection and resources. This method
+        is called when the action is disabled. Client cleanup is
+        handled automatically via _cleanup_client().
+        """
+        # Cleanup client automatically
+        await self._cleanup_client()
+
+        await super().on_disable()
 
     @abstractmethod
     async def store(
@@ -95,12 +188,12 @@ class VectorStore(Action):
         pass
 
     @abstractmethod
-    async def delete(
+    async def delete_document(
         self,
         collection: str,
         document_ids: List[str],
     ) -> bool:
-        """Delete documents from a collection.
+        """Delete documents from a collection (VectorStore-specific).
 
         Args:
             collection: Collection name to delete from
@@ -108,10 +201,6 @@ class VectorStore(Action):
 
         Returns:
             True if all deletions succeeded, False otherwise
-
-        Raises:
-            ValueError: If collection doesn't exist
-            RuntimeError: If deletion operation fails
         """
         pass
 
@@ -150,6 +239,130 @@ class VectorStore(Action):
         # Subclasses can override if deletion is supported
         return False
 
+    async def get_document(
+        self,
+        collection: str,
+        document_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Get a single document by ID.
+
+        Args:
+            collection: Collection name
+            document_id: Document ID
+
+        Returns:
+            Document data if found, None otherwise
+        """
+        # Default implementation: not supported
+        # Subclasses should override
+        return None
+
+    async def list_documents(
+        self,
+        collection: str,
+        page: int = 1,
+        page_size: int = 20,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """List documents in a collection with pagination.
+
+        Args:
+            collection: Collection name
+            page: Page number (1-based)
+            page_size: Number of items per page
+            filters: Optional metadata filters
+
+        Returns:
+            Dictionary with:
+            - items: List of documents
+            - pagination: Pagination info matching ObjectPager format
+        """
+        # Default implementation: not supported
+        # Subclasses should override
+        return {
+            "items": [],
+            "pagination": {
+                "total_items": 0,
+                "total_pages": 0,
+                "current_page": page,
+                "page_size": page_size,
+                "has_previous": False,
+                "has_next": False,
+                "previous_page": None,
+                "next_page": None,
+                "start_index": 0,
+                "end_index": None,
+            },
+        }
+
+    async def update_document(
+        self,
+        collection: str,
+        document_id: str,
+        content: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Update a document in the collection.
+
+        Args:
+            collection: Collection name
+            document_id: Document ID to update
+            content: Optional new content (will regenerate embedding if provided)
+            metadata: Optional new metadata
+
+        Returns:
+            True if update succeeded, False otherwise
+        """
+        # Default implementation: not supported
+        # Subclasses should override
+        return False
+
+    async def _get_embedding_model(self) -> Optional[Any]:
+        """Get the embedding model action for generating embeddings.
+
+        Returns:
+            EmbeddingModelAction instance or None if not found
+        """
+        from jvagent.action.model.embedding.base import EmbeddingModelAction
+
+        # Try to get by type if specified
+        if self.embedding_model_action_type:
+            embedding_model = await self.get_action(self.embedding_model_action_type)
+            if embedding_model:
+                return embedding_model
+
+        # Fallback: find first available EmbeddingModelAction
+        return await self.get_action(EmbeddingModelAction)
+
+    async def _embed_text(self, text: str) -> List[float]:
+        """Generate embedding vector for text using the configured embedding model.
+
+        Args:
+            text: Text to embed
+
+        Returns:
+            Embedding vector as list of floats
+
+        Raises:
+            RuntimeError: If embedding model is not available or embedding fails
+        """
+        embedding_model = await self._get_embedding_model()
+        if not embedding_model:
+            raise RuntimeError(
+                "Embedding model not found. Configure embedding_model_action_type or register an EmbeddingModelAction."
+            )
+
+        try:
+            vector = await embedding_model.embed(
+                text, calling_action_name=self.get_class_name()
+            )
+            return vector
+        except Exception as e:
+            logger.error(
+                f"VectorStore: Failed to generate embedding: {e}", exc_info=True
+            )
+            raise RuntimeError(f"Failed to generate embedding: {e}") from e
+
     async def healthcheck(self) -> Dict[str, Any]:
         """Perform health check for the vector store.
 
@@ -159,8 +372,12 @@ class VectorStore(Action):
             - collections: List of available collections
             - embedder: Information about the embedder
         """
+        embedder_info = {}
+        if self.embedding_model_action_type:
+            embedder_info["model_action_type"] = self.embedding_model_action_type
+
         return {
             "healthy": True,
             "collections": [],
-            "embedder": {"type": self.embedder_type},
+            "embedder": embedder_info,
         }

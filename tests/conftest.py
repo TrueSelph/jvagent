@@ -1,12 +1,17 @@
 """Shared pytest fixtures for jvagent tests."""
 
-import os
 import tempfile
 from pathlib import Path
 
 import pytest
 from jvspatial.core.context import GraphContext, set_default_context
 from jvspatial.db.jsondb import JsonDB
+
+
+@pytest.fixture(autouse=True)
+def _clear_jvspatial_load_env_cache():
+    """Shared test setup hook (kept for fixture compatibility)."""
+    yield
 
 
 @pytest.fixture
@@ -17,8 +22,12 @@ def temp_dir():
 
 
 @pytest.fixture(scope="function")
-async def test_db(temp_dir):
+async def test_db(temp_dir, monkeypatch):
     """Initialize test database and GraphContext."""
+    # Immediate persistence: deferred Interaction/Conversation saves break tests
+    # that reload entities with Interaction.get() or aggregate from the DB.
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "false")
+
     test_db_path = temp_dir / "test_jvdb"
     test_db_path.mkdir()
 

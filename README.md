@@ -5,17 +5,31 @@ A modular, pluggable agentive platform built on jvspatial that provides a produc
 ## Table of Contents
 
 - [Installation](#installation)
+- [Scaffolding](#scaffolding)
 - [Quick Start](#quick-start)
 - [Running jvagent in an App Directory](#running-jvagent-in-an-app-directory)
 - [Core Concepts](#core-concepts)
+  - [Actions](#actions)
+  - [InteractActions](#interactactions)
+  - [Agents](#agents)
+- [Memory System](#memory-system)
+- [Namespaces](#namespaces)
+- [Logging System](#logging-system)
+- [Architecture](#architecture)
 - [Directory Structure](#directory-structure)
 - [Configuration Files](#configuration-files)
 - [Creating Actions](#creating-actions)
+  - [InteractActions](#interactactions-1)
+  - [Using Core Actions](#using-core-actions)
+  - [Creating Custom Actions](#creating-custom-actions)
 - [Action Lifecycle](#action-lifecycle)
 - [Property Configuration](#property-configuration)
 - [Namespace System](#namespace-system)
 - [API Usage](#api-usage)
 - [Development](#development)
+- [Deployment](#deployment)
+  - [Dockerfile Generation](#dockerfile-generation)
+- [Documentation Index](#documentation-index)
 
 ## Installation
 
@@ -41,6 +55,8 @@ A modular, pluggable agentive platform built on jvspatial that provides a produc
    ```bash
    pip install -e ".[dev]"
    ```
+
+   PageIndex (document ingestion/retrieval) lists its Python packages under `package.dependencies.pip` in [`jvagent/action/pageindex/info.yaml`](jvagent/action/pageindex/info.yaml). They are installed automatically when that action loads unless `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL=true` (for air-gapped or pre-baked images, install those pip lines yourself).
 
 ### Install from Distribution
 
@@ -78,9 +94,17 @@ jvagent
 # Run with debug logging
 jvagent examples/jvagent_app --debug
 
-# Run with update mode
+# Run with merge update (non-destructive)
 jvagent examples/jvagent_app --update
+
+# Run with source update (destructive)
+jvagent examples/jvagent_app --update --source
+
+# Run with serverless simulation (SERVERLESS_MODE=true, single worker; optional fake Lambda name)
+jvagent examples/jvagent_app --serverless
 ```
+
+**Persisted `update_mode` (optional):** When you do not pass `--update`, the server reads the App node’s `update_mode` field (`run`, `merge`, or `source`) to decide whether to sync from YAML on that start. Admins can set it with `PUT /api/app/update_mode` (body: `{"update_mode": "merge"}`). After a successful `jvagent run` or `jvagent bootstrap`, it is reset to `run` so cold restarts do not repeat a one-shot merge/source. CLI `--update` / `--source` overrides the stored value for that process only.
 
 **Note:** Before running the example, ensure you have:
 1. Set up a `.env` file in `examples/jvagent_app/` with at least:
@@ -88,6 +112,41 @@ jvagent examples/jvagent_app --update
    - `OPENAI_API_KEY` - (Optional) For the model_openai action
 
 See [examples/jvagent_app/README.md](examples/jvagent_app/README.md) for detailed information about the example application structure.
+
+## Scaffolding
+
+**Full CLI reference:** [docs/scaffolding.md](docs/scaffolding.md) (flags, agent specs, profile YAML, deployment presets, workflow).
+
+Create a new application directory (with `app.yaml`, `agents/`, `profiles/`, `.env.example`, and optional deploy/Docker stubs):
+
+```bash
+jvagent app create --yes \
+  --dir ./my_app \
+  --app-id my_app \
+  --title "My App" \
+  --description "My jvagent deployment" \
+  --author "Your Name" \
+  --agent jvagent/main_bot@minimal \
+  --profile minimal
+```
+
+Omit `--yes` for interactive prompts. Use `--deployment aws-lambda` for DynamoDB-focused defaults and `deploy.example.yaml` / `Dockerfile` stubs.
+
+**Per-agent profiles:** pass `namespace/agent@profile_key`. Built-in keys include `minimal`, `conversational`, `whatsapp_voice`, and `research`. App-local YAML lives under `profiles/` (see `profiles/README.md` in the generated tree).
+
+**Add a custom profile file** (from an existing app root):
+
+```bash
+jvagent app profile new my_team --extends minimal
+```
+
+**Add another agent** to an existing app:
+
+```bash
+cd my_app
+jvagent agent create acme/support@conversational
+jvagent bootstrap --update
+```
 
 ## Quick Start
 
@@ -100,7 +159,7 @@ cp .env.example .env
 
 Edit `.env` and set at minimum:
 - `JVAGENT_ADMIN_PASSWORD` - Password for the initial admin user
-- `JVSPATIAL_JWT_SECRET` - Secret key for JWT authentication (change from default in production)
+- `JVSPATIAL_JWT_SECRET_KEY` - Secret key for JWT authentication (change from default in production)
 
 ### 2. Run jvagent
 
@@ -213,7 +272,7 @@ When jvagent starts in a directory with `app.yaml`, it automatically:
    - Reads `info.yaml` for each action
    - Loads and registers actions with their configuration
 
-### Default Behavior vs. Update Mode
+### Default Behavior vs. Update Modes
 
 **Default Behavior (No `--update` flag):**
 - Uses existing agents and actions from the database
@@ -222,11 +281,19 @@ When jvagent starts in a directory with `app.yaml`, it automatically:
 - Safe for repeated runs - won't overwrite manual changes
 - **Important**: Agents can only be installed via `app.yaml` - there is no direct agent installation
 
-**Update Mode (`--update` or `--migrate` flag):**
-- Updates existing agents and actions with values from YAML files
-- Overwrites agent/action context with values from `app.yaml` and `agent.yaml`
-- Useful when you've updated YAML files and want to apply changes
-- Use when migrating or syncing configuration
+**Merge Update Mode (`--update` or `--update --merge`):**
+- Non-destructive: preserves database state and runtime modifications
+- Only updates properties that are explicitly set in YAML files
+- Preserves child nodes, graph connections, and runtime-modified properties
+- Updates metadata to reflect the current source code state
+- **Action removal**: Actions removed from `agent.yaml` are deregistered and deleted from the graph, including those whose class modules are no longer imported (ghost nodes). jvspatial's standard `Node.get()` + `node.delete()` interface handles cleanup so edges and dependent nodes are properly removed.
+- Use when you've updated YAML files and want to apply changes without losing DB state
+
+**Source Update Mode (`--update --source`):**
+- Destructive: fully overwrites database state from YAML source
+- Overwrites all agent/action context with values from YAML files
+- Deletes and recreates action nodes (child nodes are lost)
+- Use for a complete reset to source configuration
 
 ### Examples
 
@@ -255,34 +322,43 @@ This will:
 - Skip existing actions (won't overwrite their context)
 - Start the server with existing configuration
 
-**Example 3: Update Existing Configuration**
+**Example 3: Merge Update (Non-Destructive)**
 ```bash
 jvagent /path/to/my_jvagent_app --update
 ```
 This will:
-- Update App node from `app.yaml`
-- Update all agents from their `agent.yaml` files
-- Update all actions from their `info.yaml` files
-- Apply any changes you made to YAML files
+- Update App/Agent/Action nodes with explicitly set YAML properties only
+- Preserve database state for properties not in YAML
+- Preserve child nodes and graph connections for actions
+- Apply source code changes while keeping runtime modifications
 
-**Example 4: Bootstrap Only (No Server)**
+**Example 4: Source Update (Destructive)**
+```bash
+jvagent /path/to/my_jvagent_app --update --source
+```
+This will:
+- Fully overwrite App/Agent nodes from YAML files
+- Delete and recreate action nodes from source
+- Reset all properties to YAML/source values (previous `--update` behavior)
+
+**Example 5: Bootstrap Only (No Server)**
 ```bash
 jvagent /path/to/my_jvagent_app bootstrap
 ```
 This will:
 - Bootstrap the application graph
-- Install/update agents and actions
+- Install agents and actions (skip existing)
 - Exit without starting the server
 
-**Example 5: Bootstrap with Updates**
+**Example 6: Bootstrap with Merge Update**
 ```bash
 jvagent /path/to/my_jvagent_app bootstrap --update
 ```
 This will:
-- Update all agents and actions from YAML files
+- Non-destructively merge source changes into existing DB state
 - Exit without starting the server
 
-**Example 6: Run with Debug Logging**
+**Example 7: Run with Debug Logging**
 ```bash
 jvagent /path/to/my_jvagent_app --debug
 ```
@@ -290,6 +366,17 @@ This will:
 - Start the server with verbose debug logging
 - Show detailed information about bootstrap process
 - Display individual agent and action registration
+
+**Example 8: Fresh Start with Purge (Development Only)**
+```bash
+jvagent /path/to/my_jvagent_app --purge
+```
+This will:
+- Delete the `jvagent_db` and `jvagent_logs` directories
+- Start with a completely fresh database
+- Bootstrap the application from scratch
+
+**Note:** The `--purge` flag is only available in development mode (`JVSPATIAL_ENVIRONMENT=development`, which is the default). It will be blocked in production mode to prevent accidental data loss.
 
 ### Running Without an App Directory
 
@@ -306,7 +393,7 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
    ```bash
    # Recommended: Always specify the app root path
    jvagent /path/to/my_jvagent_app
-   
+
    # This makes it clear which app you're running and works from any directory
    ```
 
@@ -315,10 +402,16 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
    - Safe to run repeatedly
    - Won't overwrite runtime modifications
 
-3. **Use `--update` when changing YAML files:**
+3. **Use `--update` (merge) when changing YAML files:**
    - After modifying `app.yaml` or `agent.yaml`
-   - When syncing configuration from version control
-   - During deployment or migration
+   - Applies only explicitly set YAML properties
+   - Preserves runtime modifications and child nodes
+   - Safe for incremental configuration updates
+
+4. **Use `--update --source` for a full reset:**
+   - When you need a clean slate from source configuration
+   - During major migrations or schema changes
+   - Be aware that child nodes and runtime state will be lost
 
 4. **Keep your app directory in version control:**
    - Track `app.yaml`, `agent.yaml`, and `info.yaml` files
@@ -329,7 +422,7 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
    ```bash
    # Clear and explicit
    jvagent /absolute/path/to/my_jvagent_app
-   
+
    # Relative paths also work
    jvagent ./my_jvagent_app
    jvagent ../other_app
@@ -345,6 +438,23 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
 - Have their own lifecycle hooks for initialization and cleanup
 - Can be enabled/disabled dynamically
 - Support type-safe property configuration
+
+### InteractActions
+
+**InteractActions** are specialized actions that participate in the interact subsystem. They:
+- Extend the `InteractAction` base class
+- Are automatically traversed by `InteractWalker` during agent interactions
+- Support a simplified API for adding directives and parameters
+- Can generate responses via PersonaAction using the `respond()` method
+- Support bulk operations for efficient interaction management
+
+**Key Features:**
+- **Simplified API**: Pass directives and parameters directly to `respond()` method
+- **Bulk Operations**: Use `add_directives()` and `add_parameters()` for efficient batch operations
+- **Automatic Persistence**: Interactions are automatically saved after adding directives/parameters
+- **Routing Support**: Can be routed via InteractRouter based on anchor statements
+
+See the [InteractAction API Guide](jvagent/action/interact/README.md) for complete documentation.
 
 ### Agents
 
@@ -379,6 +489,13 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
 - Automatic database indexes on frequently queried fields
 - Cached reference to last interaction for O(1) access
 
+**Task Tracking:**
+- Conversations maintain an `active_tasks` list for ongoing activities requiring user input
+- Tasks have unique IDs, descriptions, and optional `action_name` for management
+- Used by interviews (ACTIVE/REVIEW), PersonaAction (reminder when user strays), and InteractRouter (context signals)
+- See [Task Tracking](docs/task-tracking.md) for details
+- See [Memory System](jvagent/memory/README.md) for full API reference
+
 ### Namespaces
 
 **Namespaces** organize actions to prevent naming conflicts:
@@ -386,23 +503,155 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
 - Same action name can exist in different namespaces
 - Actions are referenced using `namespace/action_name` format
 
+### Logging System
+
+jvagent includes a comprehensive logging system that maintains complete interaction and error logs in a separate database. This enables audit trails, compliance, and debugging without impacting main database performance.
+
+**Key Features:**
+- Separate logging database connection
+- Complete interaction data capture
+- Automatic error logging via DBLogHandler
+- Custom INTERACTION log level for interaction tracking
+- Query logs by agent, user, conversation, or time range
+- Archive logs to external storage (JSON/CSV)
+- Configurable retention policies
+- Non-blocking async logging
+
+**Documentation:**
+- [Logging System](docs/logging.md) - Comprehensive logging system documentation
+- [Interaction Logging](docs/interaction-logging.md) - INTERACTION log level and interaction logging
+- [Error Logging](docs/error-logging.md) - Error logging and querying
+
+## Architecture
+
+jvagent is built on jvspatial's graph-based primitives. The system follows a server-based, plugin-first design with YAML-driven agent configuration.
+
+### Graph Hierarchy
+
+The application graph is rooted at `Root` and follows this structure:
+
+```
+Root -> App -> Agents -> Agent
+                Agent -> Memory -> User -> Conversation -> Interaction (chained)
+                Agent -> Actions -> Action (registered)
+```
+
+- **App**: Root application node; connects to Root. Manages file storage, logging config, and app-level datetime via `timezone` and `now()`.
+- **Agents**: Structural branchpoint; connects to App. Aggregates all Agent nodes.
+- **Agent**: Individual agent; connects to Agents. Has one Memory and one Actions child.
+- **Memory**: Connects to Agent. Manages User nodes (User -> Conversation -> Interaction chain).
+- **Actions**: Connects to Agent. Registers Action nodes (plugins) discovered from `info.yaml`.
+- **Interaction chain**: Conversation connects to first Interaction; Interactions are bidirectionally chained (Interaction1 <-> Interaction2 <-> Interaction3).
+
+### High-Level Architecture
+
+```mermaid
+graph TB
+    subgraph "Application Layer"
+        Client[Client Applications]
+        WebUI[Web Interface]
+    end
+
+    subgraph "API Layer"
+        API[REST API Server<br/>FastAPI]
+    end
+
+    subgraph "jvagent Core"
+        App[App Node]
+        Agents[Agents Manager]
+
+        subgraph "Agent Instance"
+            Agent[Agent Node]
+            Memory[Memory<br/>User, Conversation, Interaction]
+            Actions[Actions Registry]
+        end
+    end
+
+    subgraph "jvspatial Layer"
+        Nodes[Node System]
+        Edges[Edge System]
+        Walkers[Walker System]
+        DB[(Database<br/>JSON/MongoDB/DynamoDB)]
+    end
+
+    subgraph "Plugin System"
+        PluginDir[actions Directory]
+        LLM[Language Model Actions]
+        VS[Vector Store Actions]
+        TTS[TTS/STT Actions]
+        Custom[Custom Actions]
+    end
+
+    Client --> API
+    WebUI --> API
+    API --> App
+
+    App --> Agents
+    Agents --> Agent
+    Agent --> Memory
+    Agent --> Actions
+
+    Actions -.loads.-> PluginDir
+    PluginDir --> LLM
+    PluginDir --> VS
+    PluginDir --> TTS
+    PluginDir --> Custom
+
+    Agent --> Nodes
+    Memory --> Nodes
+    Actions --> Nodes
+    Nodes --> DB
+```
+
+### Component Relationships
+
+```mermaid
+graph LR
+    App -->|manages| Agents
+    Agents -->|contains| Agent
+    Agent -->|has| Memory
+    Agent -->|uses| Actions
+
+    Memory -->|models| User
+    User -->|has| Conversation1[Conversation]
+    User -->|has| Conversation2[Conversation]
+    Conversation1 -->|chains to| Interaction1[Interaction]
+    Interaction1 -->|chained| Interaction2[Interaction]
+
+    Actions -->|registers| Action
+
+    Action -.subtype.-> InteractAction
+    Action -.subtype.-> BaseModelAction
+    InteractAction -->|produces| Response
+```
+
+**Note:** "Collection" in the codebase is a logical namespace (string, e.g., `agent_id`) used by vectorstores and PageIndex for document scoping—not a graph Node. The Memory node manages Users and their Conversation/Interaction chains.
+
+### Technology Stack
+
+- **Core**: Python 3.12+, jvspatial (graph primitives), Pydantic v2, FastAPI
+- **Storage**: jvspatial database (JSON, MongoDB, or DynamoDB backends)
+- **AI/ML**: OpenAI SDK, Anthropic SDK, Sentence Transformers (embeddings)
+- **Observability**: structlog, separate logging database for audit trails
+
 ## Directory Structure
 
 ```
 jvagent_app/
 ├── app.yaml                    # Application configuration
 ├── agents/
-│   └── {agent_name}/
-│       ├── agent.yaml         # Agent configuration
-│       └── actions/
-│           └── {namespace}/   # Namespace directory
-│               └── {action_name}/
-│                   ├── __init__.py      # Package initialization (imports action & endpoints)
-│                   ├── {action_name}.py  # Action implementation (Action class)
-│                   ├── endpoints.py      # API endpoints (standard pattern)
-│                   ├── info.yaml         # Action metadata
-│                   ├── requirements.txt  # Action dependencies
-│                   └── README.md
+│   └── {namespace}/
+│       └── {agent_name}/
+│           ├── agent.yaml     # Agent configuration
+│           └── actions/
+│               └── {namespace}/   # Namespace directory
+│                   └── {action_name}/
+│                       ├── __init__.py      # Package initialization (imports action & endpoints)
+│                       ├── {action_name}.py  # Action implementation (Action class)
+│                       ├── endpoints.py      # API endpoints (standard pattern)
+│                       ├── info.yaml         # Action metadata
+│                       ├── requirements.txt  # Action dependencies
+│                       └── README.md
 └── .env
 ```
 
@@ -412,27 +661,32 @@ jvagent_app/
 jvagent_app/
 ├── app.yaml
 ├── agents/
-│   └── example_agent/
-│       ├── agent.yaml
-│       └── actions/
-│           ├── jvagent/              # Official namespace
-│           │   └── example_action/
-│           │       ├── __init__.py
-│           │       ├── example_action.py
-│           │       ├── endpoints.py
-│           │       ├── info.yaml
-│           │       └── requirements.txt
-│           ├── contrib/              # Community namespace
-│           │   └── slack_notifier/
-│           │       ├── info.yaml
-│           │       └── slack_notifier.py
-│           └── custom/              # Custom namespace
-│               └── custom_action/
-│                   ├── info.yaml
-│                   └── custom_action.py
+│   └── jvagent/
+│       └── example_agent/
+│           ├── agent.yaml
+│           └── actions/
+│               ├── jvagent/              # Official namespace
+│               │   └── example_action/
+│               │       ├── __init__.py
+│               │       ├── example_action.py
+│               │       ├── endpoints.py
+│               │       ├── info.yaml
+│               │       └── requirements.txt
+│               ├── contrib/              # Community namespace
+│               │   └── slack_notifier/
+│               │       ├── info.yaml
+│               │       └── slack_notifier.py
+│               └── custom/              # Custom namespace
+│                   └── custom_action/
+│                       ├── info.yaml
+│                       └── custom_action.py
 ```
 
 ## Configuration Files
+
+For a complete mapping of app.yaml paths to environment variables and secrets, see [docs/configuration.md](docs/configuration.md).
+
+To generate a new app tree from the CLI, see [docs/scaffolding.md](docs/scaffolding.md).
 
 ### app.yaml
 
@@ -447,7 +701,7 @@ version: 1.0.0
 author: Your Name/Organization
 
 # jvagent version requirement (optional)
-jvagent: ~2.1.0
+jvagent: ~0.0.1
 
 # Application context: Properties that configure the App node
 context:
@@ -456,6 +710,7 @@ context:
   file_storage_provider: local
   file_storage_root_dir: ./.files
   file_storage_enabled: true
+  timezone: America/New_York  # Optional IANA timezone for app-level datetime
 
 # Application metadata (not stored in App node)
 license: MIT
@@ -469,21 +724,75 @@ config:
   server:
     host: 0.0.0.0
     port: 8000
-  
+
   database:
     type: json
-    path: ./jvdb
-  
+    path: ./jvagent_db
+
   file_storage:
     provider: local
     root_dir: ./.files
     enabled: true
+
+  # Interact endpoint configuration
+  interact:
+    rate_limit_per_minute: 60  # per IP+agent_id combination
+    max_utterance_length: 2000  # maximum characters for utterance input (set to null to disable)
+
+  # Performance optimization
+  performance:
+    enable_profiling: false      # Enable request latency profiling
+    enable_agent_cache: true   # Cache agent nodes
+    agent_cache_ttl: 300         # Agent cache TTL (seconds)
+    enable_action_cache: true    # Cache action instances during discovery
+    action_cache_ttl: 60         # Action cache TTL (seconds)
+    enable_interact_router_cache: false  # Skip LLM for repeated context (requires enable_routing_cache in agent.yaml)
+    interact_router_cache_ttl: 45        # Interact router cache TTL (seconds)
 
 # Agents (list of namespace/agent_name strings)
 # Agents listed here are automatically installed when you run jvagent or bootstrap
 agents:
   - jvagent/example_agent
   - contrib/another_agent
+```
+
+#### App Node API
+
+The App node provides singleton access and app-level utilities:
+
+**`App.get()`** – Get the App node (cached):
+
+```python
+from jvagent.core.app import App
+
+app = await App.get()
+if app:
+    # Use app utilities
+    content = await app.get_file("path/to/file")
+```
+
+**`App.now()`** – Current datetime in app timezone (or server local if unset). Configure `timezone` in `app.yaml` context (e.g. `America/New_York`) for consistent timestamps across the application:
+
+```python
+from jvagent.core.app import App
+
+app = await App.get()
+if app:
+    # Get datetime object
+    now = await app.now()
+
+    # Get formatted string
+    timestamp = await app.now("%Y-%m-%d %H:%M:%S")
+    iso_str = (await app.now()).isoformat()
+```
+
+**Actions** can use `self.now()` and `self.get_app()` from the Action base class:
+
+```python
+# In any Action subclass
+now = await self.now()
+date_str = (await self.now()).strftime("%A, %d %B, %Y")
+app = await self.get_app()
 ```
 
 ### agent.yaml
@@ -499,7 +808,7 @@ version: 1.0.0
 author: Your Name
 
 # jvagent version requirement (optional)
-jvagent: ~2.1.0
+jvagent: ~0.0.1
 
 # Agent context: Properties that configure the agent
 context:
@@ -510,9 +819,18 @@ context:
   custom_field: value  # Any additional public properties
 
 # Action Assignments
-# Actions are discovered from namespace subdirectories: actions/{namespace}/{action_name}/
+# Actions are discovered from:
+# 1. Local actions: actions/{namespace}/{action_name}/ (takes precedence)
+# 2. Core actions: jvagent library (jvagent/action/*/) if not found locally
 # Actions are referenced using the format: namespace/action_name
 actions:
+  # Core action from jvagent library (no stub directory needed)
+  - action: jvagent/interact_router
+    context:
+      enabled: true
+      model_action_type: "OpenAILanguageModelAction"
+
+  # Local custom action
   - action: jvagent/example_action
     context:
       enabled: true
@@ -520,7 +838,8 @@ actions:
       timeout: 60
       retries: 5
       api_endpoint: "https://prod.api.example.com"
-  
+
+  # Another custom action from different namespace
   - action: contrib/slack_notifier
     context:
       enabled: true
@@ -533,6 +852,104 @@ actions:
 - `actions`: List of action assignments, each with `action: namespace/action_name` and `context:` for overridable properties
 - `interaction_limit`: Default interaction limit for all conversations created by this agent (0 = disabled, no pruning)
 
+### Interact Endpoint Configuration
+
+The interact endpoint (`/agents/{agent_id}/interact`) supports anonymous access and includes rate limiting and input validation to prevent abuse. Configure these settings in the `config.interact` section of `app.yaml`:
+
+```yaml
+config:
+  # Interact endpoint configuration
+  interact:
+    # Rate limiting: Maximum requests per minute per IP+agent_id combination
+    # Default: 60 requests per minute
+    # This prevents abuse by limiting how many requests a single IP can make to a specific agent
+    rate_limit_per_minute: 60
+
+    # Input validation: Maximum character length for the 'utterance' parameter
+    # Default: 2000 characters (typical chat message length)
+    # Set to null to disable length validation
+    max_utterance_length: 2000
+```
+
+**Configuration Options:**
+
+- **`rate_limit_per_minute`** (integer, default: 60)
+  - Maximum number of requests allowed per minute for each unique IP address + agent_id combination
+  - Rate limiting uses a sliding window algorithm
+  - Each IP address has its own limit per agent (different IPs don't share limits)
+  - When exceeded, returns `429 Too Many Requests` error
+  - **Example**: If set to 60, a single IP can make 60 requests per minute to agent A, and another 60 requests per minute to agent B
+
+- **`max_utterance_length`** (integer or null, default: 2000)
+  - Maximum number of characters allowed in the `utterance` input parameter
+  - Prevents abuse by limiting input size
+  - Default of 2000 characters aligns with typical chat message limits (Discord: 2000, Slack: 4000)
+  - Set to `null` to disable length validation (not recommended for production)
+  - When exceeded, returns `400 Bad Request` with validation error
+
+**Example Configurations:**
+
+```yaml
+# Conservative settings (strict rate limiting)
+config:
+  interact:
+    rate_limit_per_minute: 30
+    max_utterance_length: 1000
+
+# Default settings (balanced)
+config:
+  interact:
+    rate_limit_per_minute: 60
+    max_utterance_length: 2000
+
+# Permissive settings (higher limits)
+config:
+  interact:
+    rate_limit_per_minute: 120
+    max_utterance_length: 4000
+
+# Disable utterance length validation (not recommended)
+config:
+  interact:
+    rate_limit_per_minute: 60
+    max_utterance_length: null
+```
+
+**Security Considerations:**
+
+- The interact endpoint is **anonymous-only** (no authentication required)
+- Rate limiting is essential to prevent abuse and DoS attacks
+- Utterance length validation prevents resource exhaustion from extremely long inputs
+- Both validations are applied before processing the request
+- Rate limits are tracked per IP address, properly handling proxy headers (X-Forwarded-For, X-Real-IP, CF-Connecting-IP)
+
+**Error Responses:**
+
+- **429 Too Many Requests**: Returned when rate limit is exceeded
+  ```json
+  {
+    "error_code": "rate_limit_exceeded",
+    "message": "Rate limit exceeded: 60 requests per minute",
+    "details": {
+      "rate_limit": 60,
+      "ip": "192.168.1.1",
+      "agent_id": "agent_abc123"
+    }
+  }
+  ```
+
+- **400 Bad Request**: Returned when utterance exceeds maximum length
+  ```json
+  {
+    "error_code": "validation_error",
+    "message": "utterance exceeds maximum length of 2000 characters (current: 2500 characters)",
+    "details": {
+      "utterance_length": 2500,
+      "max_length": 2000
+    }
+  }
+  ```
+
 ### info.yaml
 
 Action package descriptor:
@@ -542,32 +959,32 @@ package:
   # Action name in namespace/action_name format
   # Note: The namespace is also determined by the folder structure
   name: jvagent/example_action
-  
+
   # Package author
   author: Your Name/Organization
-  
+
   # Archetype: The main Action class name (same as the Action Node class)
   archetype: ExampleAction
-  
+
   # Package version
   version: 1.0.0
-  
+
   # Package metadata
   meta:
     title: Example Action
     description: A boilerplate action demonstrating jvagent action structure
     group: jvagent
     type: action
-  
+
   # Package configuration
   config:
     order:
       weight: 0
-  
+
   # Package dependencies
   dependencies:
     # jvagent version requirement
-    jvagent: ~2.1.0
+    jvagent: ~0.0.1
     # Other action dependencies (by namespace/action_name)
     actions:
       # - jvagent/another_action: ~1.0.0
@@ -577,18 +994,125 @@ package:
 - `package.name`: Action reference in `namespace/action_name` format
 - `package.archetype`: The Action class name (must match the class in the Python file)
 - `package.meta`: Metadata object with title, description, group, and type
-- `package.config`: Configuration object (e.g., for ordering)
+- `package.config`: Configuration object (e.g., for ordering, singleton)
+  - `singleton`: When `true` (default), only one instance of this action type may be registered per agent. Set to `false` to allow multiple instances (e.g. MCP, one per server; Google Sheets, one per spreadsheet). Enforced at load and registration time.
 - `package.dependencies`: Dependencies object with `jvagent` version and `actions` list
+  - `actions`: List of action dependencies (by `namespace/action_name`) that will be automatically loaded if this action is loaded
+  - Dependencies are resolved transitively (if A depends on B, and B depends on C, all three are loaded when A is required)
 - All configuration should be defined as typed Pydantic fields in your Action class
 - Override these properties in agent.yaml using the `context` object
+- **Conditional Loading**: Actions are only loaded if explicitly listed in `agent.yaml` or required as dependencies. Unused actions remain unloaded and their endpoints are not accessible.
+
+**Singleton Actions:** Actions are singletons by default (one instance per agent). Set `config.singleton: false` to allow multiple instances (e.g. MCP, one per MCP server; Google actions, one per connection). Duplicate registrations are rejected at the registration gate, filtered at load time, and deduped on startup.
 
 
 ## Creating Actions
 
-### Step 1: Create Action Directory
+### InteractActions
+
+InteractActions are actions that participate in the interact subsystem. They serve as **modular points of execution** that may exist in a prescribed chain of interact actions. The InteractWalker traverses and executes this modular pipeline.
+
+**Architecture:**
+- InteractActions are modular execution points in a chain
+- The InteractWalker traverses and executes the modular pipeline
+- Core actions like InteractRouter can alter/curate the walker's path based on input
+- InteractActions may have branches of other InteractActions
+- **Top-level InteractActions** (directly connected to the Actions branch node) **must explicitly route the walker to their children** conditionally - the walker does not automatically traverse child actions from top-level actions
+
+**Basic Usage:**
+
+```python
+from jvagent.action.interact.base import InteractAction
+from jvagent.action.interact.interact_walker import InteractWalker
+
+class MyInteractAction(InteractAction):
+    async def execute(self, visitor: InteractWalker) -> None:
+        # Simplified API: Pass directives and parameters directly
+        await self.respond(
+            visitor,
+            directives=["Use the provided context to answer"],
+            parameters=[{
+                "condition": "No relevant context found",
+                "response": "Inform the user that no relevant information was found"
+            }]
+        )
+```
+
+**Top-Level Action with Children:**
+
+```python
+class MyTopLevelAction(InteractAction):
+    async def execute(self, visitor: InteractWalker) -> None:
+        # Perform action logic
+        # ...
+
+        # Explicitly route to child actions conditionally
+        if some_condition:
+            child_action = await self.node(node="ChildInteractAction")
+            if child_action:
+                await visitor.visit(child_action)
+```
+
+**Key Benefits:**
+- Single method call to add directives/parameters and generate response
+- Automatic persistence (interaction saved automatically)
+- Bulk operations for efficiency
+- Type-safe API with proper validation
+- Modular pipeline design with explicit routing control
+
+See the [InteractAction API Guide](jvagent/action/interact/README.md) for complete documentation and examples.
+
+### Using Core Actions
+
+jvagent provides many core actions that can be used directly. Simply reference them in your `agent.yaml`:
+
+```yaml
+actions:
+  - action: jvagent/interact_router
+    context:
+      enabled: true
+      model_action_type: "OpenAILanguageModelAction"
+
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      model: gpt-4o-mini
+```
+
+OpenAI actions read credentials from environment (`OPENAI_API_KEY`).
+
+**Available Core Actions:**
+- **Interact Actions**: `jvagent/interact_router`, `jvagent/retrieval_interact_action`, `jvagent/intro_interact_action`, `jvagent/interview_interact_action`, `jvagent/converse_interact_action`, `jvagent/pageindex_retrieval_interact_action` (pip deps in `jvagent/action/pageindex/info.yaml`, auto-installed at action load by default)
+- **Language Models**: `jvagent/openai_lm`, `jvagent/openrouter_lm`
+- **Embedding Models**: `jvagent/openai_embedding`, `jvagent/openrouter_embedding`, `jvagent/huggingface_embedding`, `jvagent/generic_embedding`
+- **Vector Stores**: `jvagent/typesense_vectorstore`
+- **Other**: `jvagent/persona` (can be overridden locally), `jvagent/mcp` (MCP gateway: fulfill NL commands via an MCP server; see [jvagent/action/mcp/README.md](jvagent/action/mcp/README.md))
+
+**Conditional Loading**: Core actions are only loaded if they are explicitly listed in `agent.yaml` or are required as dependencies of a loaded action. This ensures that unused actions remain unloaded and their endpoints are not accessible.
+
+**Action Dependencies**: Actions can declare dependencies in their `info.yaml` file. Dependencies are resolved transitively - if Action A depends on Action B, and Action B depends on Action C, all three are loaded when Action A is required. This allows actions to automatically load their required dependencies without explicitly listing them in `agent.yaml`.
+
+**Core Action Documentation:**
+- [InteractAction API Guide](jvagent/action/interact/README.md) - Complete guide to InteractAction API including `respond()` method
+- [InteractRouter](jvagent/action/router/README.md) - Intent-based routing for InteractActions
+- [RetrievalInteractAction](jvagent/action/retrieval/README.md) - Vector store retrieval with simplified API
+- [IntroInteractAction](jvagent/action/intro/README.md) - First-time user welcome messages
+- [InterviewInteractAction](jvagent/action/interview/README.md) - Reusable interview system for stepwise information collection with validation
+- [PageIndex](jvagent/action/pageindex/README.md) - Document ingestion and retrieval (pip deps in action `info.yaml`)
+- [MCPAction](jvagent/action/mcp/README.md) - Gateway for fulfilling natural language commands via an MCP server
+- [Model Actions](jvagent/action/model/README.md) - Language and embedding model integrations
+
+**System Documentation:**
+- [Logging System](docs/logging.md) - Comprehensive interaction logging with separate database, archiving, and retention policies
+
+The action loader automatically discovers core actions from the jvagent library if they're not found locally. However, actions are only loaded if they are explicitly listed in an `agent.yaml` file or are required as dependencies of a loaded action. This ensures that unused actions remain unloaded and their endpoints are not accessible.
+
+### Creating Custom Actions
+
+#### Step 1: Create Action Directory
 
 ```bash
-cd agents/my_agent/actions
+cd agents/jvagent/my_agent/actions
 mkdir -p jvagent/my_action
 cd jvagent/my_action
 ```
@@ -599,32 +1123,32 @@ cd jvagent/my_action
 package:
   # Action name in namespace/action_name format
   name: jvagent/my_action
-  
+
   # Package author
   author: Your Name/Organization
-  
+
   # Archetype: The main Action class name (same as the Action Node class)
   archetype: MyAction
-  
+
   # Package version
   version: 1.0.0
-  
+
   # Package metadata
   meta:
     title: My Action
     description: Does something useful
     group: jvagent
     type: action
-  
+
   # Package configuration
   config:
     order:
       weight: 0
-  
+
   # Package dependencies
   dependencies:
     # jvagent version requirement
-    jvagent: ~2.1.0
+    jvagent: ~0.0.1
     # Other action dependencies (by namespace/action_name)
     actions: []
 ```
@@ -641,39 +1165,39 @@ from jvspatial.core.annotations import attribute
 
 class MyAction(Action):
     """My custom action implementation."""
-    
+
     # Define type-safe configuration properties
     timeout: int = attribute(default=30, description="Operation timeout in seconds", ge=1)
     retries: int = attribute(default=3, description="Number of retry attempts", ge=0, le=10)
     api_endpoint: str = attribute(default="https://api.example.com", description="API endpoint URL")
-    
+
     async def on_register(self) -> None:
         """Called when action is registered."""
         print(f"MyAction registered:")
         print(f"  Timeout: {self.timeout}s")
         print(f"  Retries: {self.retries}")
         print(f"  API Endpoint: {self.api_endpoint}")
-    
+
     async def on_enable(self) -> None:
         """Called when action is enabled."""
         print(f"MyAction enabled (timeout={self.timeout}s)")
-    
+
     async def on_disable(self) -> None:
         """Called when action is disabled."""
         print("MyAction disabled")
-    
+
     async def execute(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the action with input data."""
         # Use configuration properties directly
         print(f"Executing with timeout: {self.timeout}s, retries: {self.retries}")
-        
+
         result = {
             "processed": True,
             "input": input_data,
             "output": "Action executed successfully",
             "timeout_used": self.timeout
         }
-        
+
         return result
 ```
 
@@ -717,11 +1241,11 @@ logger = logging.getLogger(__name__)
 )
 async def custom_endpoint(action_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """Custom endpoint for my action.
-    
+
     Args:
         action_id: ID of the action instance
         data: Request data
-        
+
     Returns:
         Result dictionary
     """
@@ -731,10 +1255,10 @@ async def custom_endpoint(action_id: str, data: Dict[str, Any]) -> Dict[str, Any
             message=f"Action with ID '{action_id}' not found",
             details={"action_id": action_id},
         )
-    
+
     # Use action instance to perform operations
     result = await action.execute(data)
-    
+
     return {"result": result}
 ```
 
@@ -753,7 +1277,7 @@ from . import endpoints  # noqa: F401
 __all__ = ["MyAction"]
 ```
 
-This is the standard pattern that ensures endpoints are discovered when the action package is loaded.
+This is the standard pattern that ensures endpoints are discovered when the action package is loaded. Note that endpoints are only registered for actions that are explicitly listed in `agent.yaml` or required as dependencies.
 
 ### Step 4: Register in agent.yaml
 
@@ -796,7 +1320,7 @@ Actions have well-defined lifecycle hooks:
    - Clean up active resources
    - Disconnect from external services
 
-6. **on_reload()** - Called when action is reloaded
+6. **on_reload()** - Called when action is reloaded (both merge and source update modes)
    - Refresh configuration
    - Reinitialize resources
    - Update connections
@@ -805,6 +1329,28 @@ Actions have well-defined lifecycle hooks:
    - Final cleanup
    - Release resources
    - Close connections
+
+   **Note**: The deregistration process automatically handles:
+   - Unregistering all API endpoints associated with the action
+   - Unloading action-specific modules from memory (when safe)
+   - The `on_deregister()` hook is called after cleanup, allowing for additional action-specific cleanup if needed
+
+### Contributing to Persona Capabilities
+
+Actions can contribute capabilities to PersonaAction's system prompt by overriding `get_capabilities()`:
+
+```python
+def get_capabilities(self) -> List[str]:
+    """Return capabilities for PersonaAction when enabled."""
+    if not self.enabled:
+        return []
+    return [
+        "Join WhatsApp groups and send messages to groups",
+        "Send and receive voice notes over WhatsApp",
+    ]
+```
+
+PersonaAction aggregates capabilities from all enabled actions at runtime. When an action is enabled, its capabilities are included; when disabled or deregistered, they are excluded. See [PersonaAction README](jvagent/action/persona/README.md#capabilities-base-config-and-action-contributed) for details.
 
 ## Property Configuration
 
@@ -864,10 +1410,10 @@ The namespace system organizes actions to prevent naming conflicts and clearly i
 
 ### Directory Structure
 
-Actions are organized under namespace directories:
+Actions are organized under namespace directories within each agent:
 
 ```
-agents/{agent_name}/actions/
+agents/{namespace}/{agent_name}/actions/
 ├── jvagent/          # Official jvagent actions
 ├── contrib/          # Community contributions
 ├── custom/           # Generic custom actions
@@ -919,11 +1465,14 @@ Actions follow a standard structure that separates business logic from API endpo
 - **Action Class** (`{action_name}.py`): Contains the `Action` subclass with business logic, lifecycle hooks, and configuration properties
 - **Endpoints Module** (`endpoints.py`): Contains all HTTP API endpoints decorated with `@endpoint`. This is the **standard pattern** for organizing action endpoints.
 
+Endpoints auto-register when their modules are imported; no `packages=` needed. Core endpoints are imported in the CLI; action-specific endpoints load via bootstrap.
+
 **Benefits of the `__init__.py` + `endpoints.py` pattern:**
 - ✅ **Separation of concerns**: Business logic separate from API layer
 - ✅ **Clean organization**: Action class focused on core functionality
 - ✅ **Package structure**: Standard Python package pattern with `__init__.py`
 - ✅ **Automatic discovery**: Endpoints discovered when action package is loaded
+- ✅ **Conditional loading**: Endpoints are only registered for actions listed in `agent.yaml`
 - ✅ **Scalable**: Actions can have multiple modules, all organized in `__init__.py`
 - ✅ **Easy to maintain**: All endpoints in one place, package initialization centralized
 - ✅ **Consistent structure**: Standard pattern across all actions
@@ -977,14 +1526,18 @@ Key environment variables (see `.env.example` for full list):
 - `JVAGENT_PORT` - Server port (default: `8000`)
 - `JVAGENT_TITLE` - API title
 - `JVAGENT_VERSION` - Application version
+- `JVSPATIAL_ENVIRONMENT` - Environment mode: `development` or `production` (default: `development`)
+  - In `production` mode: Shorter, secure interact payloads—API responses exclude observability metrics, walker reports, and debugging data (id, utterance, response only)
+  - In `development` mode: API responses include full debugging and observability information
+  - Case-insensitive. Environment-variable only.
 
 **Database Configuration:**
 - `JVSPATIAL_DB_TYPE` - Database type: `json` or `mongodb` (default: `json`)
-- `JVSPATIAL_DB_PATH` - Database path (default: `./jvdb`)
+- `JVSPATIAL_DB_PATH` - Database path (default: `./jvagent_db`)
 
 **Authentication:**
 - `JVAGENT_AUTH_ENABLED` - Enable authentication (default: `true`)
-- `JVSPATIAL_JWT_SECRET` - JWT secret key (change in production!)
+- `JVSPATIAL_JWT_SECRET_KEY` - JWT secret key (change in production!)
 - `JVSPATIAL_JWT_EXPIRE_MINUTES` - JWT expiration (default: `60`)
 
 **Admin User:**
@@ -992,23 +1545,65 @@ Key environment variables (see `.env.example` for full list):
 - `JVAGENT_ADMIN_PASSWORD` - Admin password (required)
 - `JVAGENT_ADMIN_EMAIL` - Admin email (default: `admin@jvagent.example`)
 
+**Performance Optimization:**
+- `JVAGENT_ENABLE_PROFILING` - Enable request latency profiling (default: `false`)
+- `JVAGENT_ENABLE_AGENT_CACHE` - Enable agent node caching (default: `true`)
+- `JVAGENT_AGENT_CACHE_TTL` - Agent cache TTL in seconds (default: `300`)
+- `JVAGENT_ENABLE_ACTION_CACHE` - Enable action caching during discovery (default: `true`)
+- `JVAGENT_ACTION_CACHE_TTL` - Action cache TTL in seconds (default: `60`)
+- `JVAGENT_ENABLE_DSPY_CACHE` - Enable DSPy response caching (default: `false`)
+- `JVAGENT_ENABLE_INTERACT_ROUTER_CACHE` - Enable interact router cache to skip LLM for repeated context (default: `false`)
+- `JVAGENT_INTERACT_ROUTER_CACHE_TTL` - Interact router cache TTL in seconds (default: `45`)
+- `JVSPATIAL_ENABLE_DEFERRED_SAVES` - Batch entity saves for rapid updates (default: `true`; **ignored in serverless** — jvspatial `deferred_saves_globally_allowed()` is false)
+
+These can also be configured in `app.yaml` under `config.performance`:
+```yaml
+config:
+  performance:
+    enable_profiling: false
+    enable_agent_cache: true
+    agent_cache_ttl: 300
+    enable_action_cache: true
+    action_cache_ttl: 60
+    enable_interact_router_cache: false
+    interact_router_cache_ttl: 45
+```
+
 ### Install Development Dependencies
 
 ```bash
 pip install -e ".[dev]"
 ```
 
+### Pre-commit Hooks
+
+Install pre-commit hooks to run checks before each commit:
+
+```bash
+pre-commit install
+```
+
+Run all checks manually on the entire codebase:
+
+```bash
+pre-commit run --all-files
+```
+
 ### Run Tests
 
 ```bash
-pytest
+pytest tests/
 ```
 
-### Code Formatting
+### Code Formatting and Linting
+
+Manual runs (pre-commit runs these automatically):
 
 ```bash
 black jvagent/
-ruff check jvagent/
+isort jvagent/ --profile black
+flake8 jvagent/ --config=.flake8
+mypy jvagent/
 ```
 
 ### Project Structure
@@ -1020,7 +1615,10 @@ jvagent/
 │   ├── action/           # Action system
 │   │   ├── base.py       # Action base class
 │   │   ├── actions.py    # Actions manager
-│   │   ├── action_loader.py  # Action loader
+│   │   ├── loader/       # Action discovery & loading
+│   │   │   ├── action_loader.py  # ActionLoader
+│   │   │   ├── metadata.py
+│   │   │   └── ...
 │   │   └── model/        # Model action implementations
 │   ├── core/             # Core entities
 │   │   ├── app.py        # App node
@@ -1058,13 +1656,17 @@ When jvagent starts from an app directory, it automatically:
    - Resolves environment variable placeholders (e.g., `${VAR_NAME}`)
    - Installs agents listed in `app.yaml` (agents can only be installed via app.yaml)
 
-3. **Discovers and loads actions**:
-   - Scans `agents/{namespace}/{agent_name}/actions/{namespace}/{action_name}/` for actions
+3. **Discovers and loads actions conditionally**:
+   - Scans `agent.yaml` files to identify required actions
+   - Resolves transitive dependencies from `info.yaml` files
+   - Only loads actions explicitly listed in `agent.yaml` (plus their dependencies)
+   - Scans `agents/{namespace}/{agent_name}/actions/{namespace}/{action_name}/` for local actions
    - Discovers actions from `info.yaml` files
    - Resolves environment variables in action configs
-   - Loads action classes dynamically
-   - Imports `endpoints.py` modules for endpoint discovery
+   - Loads action classes dynamically only for required actions
+   - Imports `endpoints.py` modules for endpoint discovery (only for loaded actions)
    - Applies configuration from `agent.yaml`
+   - **Important**: Actions not listed in any `agent.yaml` remain unloaded and their endpoints are not accessible
 
 4. **Creates admin user** (if it doesn't exist):
    - Uses credentials from `.env` file
@@ -1097,21 +1699,21 @@ await agent.save()
 # Create conversation (uses agent's default limit)
 conversation = await user.create_conversation(
     session_id="session456",
-    channel="web"
+    channel="default"
     # Will use agent.interaction_limit (100 in this example)
 )
 
 # Override agent default for specific conversation
 conversation = await user.create_conversation(
     session_id="session456",
-    channel="web",
+    channel="default",
     interaction_limit=50  # Override: use 50 instead of agent's default
 )
 
 # Disable pruning for specific conversation
 conversation = await user.create_conversation(
     session_id="session456",
-    channel="web",
+    channel="default",
     interaction_limit=0  # No pruning (keep all interactions)
 )
 ```
@@ -1122,7 +1724,7 @@ conversation = await user.create_conversation(
 # Create and add interaction (automatically chained)
 interaction = await conversation.create_interaction(
     utterance="Hello, how are you?",
-    channel="web"
+    channel="default"
 )
 
 # Interactions are automatically chained chronologically
@@ -1252,7 +1854,7 @@ from jvspatial.core.annotations import attribute
 class MyAction(Action):
     # Good: Always provide defaults
     timeout: int = attribute(default=30, description="Operation timeout")
-    
+
     # Not recommended: Forces user to always provide value
     # required_setting: str = attribute(...)  # No default
 ```
@@ -1302,6 +1904,146 @@ await conversation.save()
 # - Analytics: 0 (preserve all data)
 # - Mixed use: Set agent default, override per-conversation as needed
 ```
+
+## Deployment
+
+### Dockerfile Generation
+
+jvagent includes a Dockerfile generator that creates deployment-ready Dockerfiles for your applications. **Note:** The generated Dockerfile is currently optimized for AWS Lambda container-based deployments with EFS support.
+
+The generator automatically discovers all pip dependencies from your actions and includes them in the Dockerfile.
+
+#### Generate Dockerfile
+
+**Method 1: Change to app directory first (recommended)**
+```bash
+cd /path/to/jvagent_app
+jvagent bundle
+```
+
+**Method 2: Specify app path as argument**
+```bash
+jvagent bundle /path/to/jvagent_app
+```
+
+The command will:
+1. Validate that `app.yaml` exists
+2. Scan all actions in `agents/` directory
+3. Extract pip dependencies from each action's `info.yaml` file
+4. Generate a `Dockerfile` in the app directory
+
+#### Generated Dockerfile
+
+**AWS Lambda Optimized:** The generated Dockerfile is specifically tuned for AWS Lambda container-based deployments.
+
+The generated Dockerfile:
+- Uses AWS Lambda Python 3.12 base image (`public.ecr.aws/lambda/python:3.12`)
+- Includes Lambda Web Adapter for HTTP API Gateway integration
+- Clones and installs jvagent and jvspatial from GitHub (dev branch)
+- Installs action-specific pip dependencies (one RUN command per action for better caching)
+- Sets up EFS-compatible virtual environment (`/mnt/venv` for writable packages)
+- Configures Lambda-specific environment variables and paths
+- Includes runtime script optimized for Lambda execution
+
+**Note:** For non-Lambda deployments, you may need to modify the base image and configuration in the generated Dockerfile.
+
+#### Building and Deploying
+
+**AWS Lambda Deployment (Primary Use Case):**
+
+After generating the Dockerfile:
+
+```bash
+# Build Docker image
+docker build -t my-jvagent-app .
+
+# Tag and push to Amazon ECR
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
+docker tag my-jvagent-app:latest <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-jvagent-app:latest
+docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-jvagent-app:latest
+```
+
+Then deploy as a container-based Lambda function with:
+- Container image from ECR
+- EFS mount point configured (for `/mnt/venv`)
+- Environment variables configured (set `JVSPATIAL_ENVIRONMENT=production` for shorter, secure interact payloads)
+- API Gateway HTTP API trigger
+
+**Local Testing:**
+
+For local testing, you can run the container:
+
+```bash
+docker run -p 8080:8080 \
+  -e JVAGENT_ADMIN_PASSWORD=your-password \
+  -e JVSPATIAL_DB_TYPE=json \
+  -e JVSPATIAL_DB_PATH=/app/data/jvagent_db \
+  my-jvagent-app
+```
+
+**Note:** The Dockerfile is optimized for AWS Lambda. For other deployment targets, you may need to modify the base image and configuration.
+
+#### Action Dependencies
+
+The generator automatically discovers dependencies from action `info.yaml` files:
+
+```yaml
+package:
+  name: jvagent/my_action
+  dependencies:
+    pip:
+      - openai>=1.0.0
+      - httpx>=0.24.0
+```
+
+Each action's dependencies are installed in separate RUN commands for optimal Docker layer caching.
+
+For more details, see [jvagent/bundle/README.md](jvagent/bundle/README.md).
+
+## Documentation Index
+
+### Core Documentation
+
+- [Configuration reference](docs/configuration.md) — `app.yaml` ↔ env mapping, prefix rules, jvspatial alignment
+- [app.yaml migration playbook](docs/app-yaml-migration-playbook.md) - AI-agent-ready retrofit guide from legacy descriptors
+- [agent.yaml migration playbook](docs/agent-yaml-migration-playbook.md) - AI-agent-ready structural migration guide with custom-action-safe rules
+- [Integration environment variables](docs/integrations-environment.md) — Vendor and action env inventory
+- [App scaffolding CLI](docs/scaffolding.md) - `jvagent app create`, `agent create`, `app profile new`, action profiles
+- [Memory System](jvagent/memory/README.md) - Conversation, Interaction, User, and Memory APIs
+- [Logging System](docs/logging.md) - Interaction logging, archiving, retention
+- [Interaction Logging](docs/interaction-logging.md) - INTERACTION log level
+- [Error Logging](docs/error-logging.md) - Error logging and querying
+- [Task Tracking](docs/task-tracking.md) - Active tasks on Conversation, API, and integrations
+
+### Action Modules
+
+- [InteractAction API](jvagent/action/interact/README.md)
+- [InteractRouter](jvagent/action/router/README.md)
+- [RetrievalInteractAction](jvagent/action/retrieval/README.md)
+- [IntroInteractAction](jvagent/action/intro/README.md)
+- [InterviewInteractAction](jvagent/action/interview/README.md)
+- [PersonaAction](jvagent/action/persona/README.md)
+- [MCPAction](jvagent/action/mcp/README.md)
+- [Model Actions](jvagent/action/model/README.md)
+- [PageIndex](jvagent/action/pageindex/README.md)
+- [WhatsApp](jvagent/action/whatsapp/README.md)
+- [Converse](jvagent/action/converse/README.md)
+- [Response](jvagent/action/response/README.md)
+- [Access Control](jvagent/action/access_control/README.md)
+- [TTS](jvagent/action/tts_action/README.md)
+- [STT](jvagent/action/stt_action/README.md)
+- [Agent Utils](jvagent/action/agent_utils/README.md)
+
+### Deployment and Tooling
+
+- [Dockerfile Generator](jvagent/bundle/README.md)
+- [jvchat](jvchat/README.md) - React chat UI
+
+### Example Application
+
+- [jvagent_app](examples/jvagent_app/README.md)
+- [App Structure](examples/jvagent_app/STRUCTURE.md)
+- [Resolv Demo](examples/jvagent_app/agents/resolv/resolv_demo/README.md)
 
 ## License
 

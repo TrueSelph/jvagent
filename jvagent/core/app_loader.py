@@ -11,12 +11,15 @@ from typing import Any, Dict, Optional
 
 import yaml
 from jvspatial.core import Root
+from jvspatial.env import env
 
 from jvagent.core.agent import Agent  # noqa: F401
-from jvagent.core.agent_loader import AgentLoader
+from jvagent.core.agent_loader import AgentLoader, _apply_properties
 from jvagent.core.agents import Agents
 from jvagent.core.app import App
+from jvagent.core.app_yaml_validator import warn_app_yaml_descriptor
 from jvagent.core.bootstrap_logger import BootstrapLogger
+from jvagent.core.config import get_file_storage_config, load_app_config
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +31,8 @@ class AppDescriptor:
     - app: app_name (application identifier)
     - version: at top level
     - author: at top level
-    - context: object containing App node properties (name, description, file_storage_*, etc.)
+    - context: object containing App node properties (name, description, etc.).
+      File storage paths come from ``config.file_storage`` (or env overrides).
     - license: at top level (metadata, not stored in App node)
     - homepage: at top level (metadata, not stored in App node)
     - tags: at top level (metadata, not stored in App node)
@@ -54,16 +58,34 @@ class AppDescriptor:
         self.author = data.get("author", "")
         self.jvagent_version = data.get("jvagent", "")
 
-        # Extract properties from context object
         context = data.get("context", {})
         if not isinstance(context, dict):
             context = {}
+        self._explicit_context_keys = set(context.keys())
 
         self.name = context.get("name", "jvagent Application")
         self.description = context.get("description", "")
-        self.file_storage_provider = context.get("file_storage_provider", "local")
-        self.file_storage_root_dir = context.get("file_storage_root_dir", ".files")
+        # Same precedence as Server / get_file_storage_config: env > config.file_storage > defaults
+        # (context.file_storage_* are legacy; config.file_storage in app.yaml is canonical)
+        _app_config = load_app_config(str(path))
+        _fs = get_file_storage_config(str(path), _app_config)
+        self.file_storage_provider = _fs["provider"]
+        self.file_storage_root_dir = _fs["root_dir"]
         self.file_storage_enabled = context.get("file_storage_enabled", True)
+        self.logging_enabled = context.get("logging_enabled", True)
+        retention_raw = env("JVSPATIAL_LOG_RETENTION_DEFAULT_DAYS", default="")
+        try:
+            default_retention = int(retention_raw) if retention_raw else None
+            if default_retention is not None and default_retention < 0:
+                default_retention = None
+        except ValueError:
+            default_retention = None
+        self.log_retention_days = (
+            default_retention
+            if default_retention is not None
+            else context.get("log_retention_days", 60)
+        )
+        self.timezone = context.get("timezone")
 
         # Additional properties from context (excluding reserved fields)
         self.properties = {
@@ -76,6 +98,10 @@ class AppDescriptor:
                 "file_storage_provider",
                 "file_storage_root_dir",
                 "file_storage_enabled",
+                "logging_enabled",
+                "log_retention_days",
+                "timezone",
+                "update_mode",
             ]
         }
 
@@ -95,10 +121,14 @@ class AppDescriptor:
                 # Simple string format: namespace/agent_name
                 self.agents.append(agent_ref)
             else:
-                print(f"Warning: Invalid agent reference format (expected string): {agent_ref}")
+                logger.warning(
+                    "Invalid agent reference format (expected string): %s", agent_ref
+                )
 
     def __repr__(self) -> str:
-        return f"AppDescriptor(id={self.app_id}, name={self.name}, version={self.version})"
+        return (
+            f"AppDescriptor(id={self.app_id}, name={self.name}, version={self.version})"
+        )
 
 
 class AppLoader:
@@ -122,7 +152,7 @@ class AppLoader:
         app_file = self.base_path / "app.yaml"
 
         if not app_file.exists():
-            print(f"App descriptor not found: {app_file}")
+            logger.debug("App descriptor not found: %s", app_file)
             return None
 
         try:
@@ -130,21 +160,24 @@ class AppLoader:
                 data = yaml.safe_load(f)
 
             if not data:
-                print(f"Empty app descriptor: {app_file}")
+                logger.debug("Empty app descriptor: %s", app_file)
                 return None
 
             # Resolve environment variable placeholders
             from jvagent.core.env_resolver import resolve_env_placeholders
 
             data = resolve_env_placeholders(data)
+            warn_app_yaml_descriptor(data, source=str(app_file))
 
             return AppDescriptor(data, self.base_path)
 
         except Exception as e:
-            print(f"Error loading app descriptor from {app_file}: {e}")
+            logger.warning("Error loading app descriptor from %s: %s", app_file, e)
             return None
 
-    async def bootstrap_application(self, update_if_exists: bool = False) -> Optional[App]:
+    async def bootstrap_application(
+        self, update_mode: Optional[str] = None
+    ) -> Optional[App]:
         """Bootstrap the application from app.yaml.
 
         This method:
@@ -154,7 +187,8 @@ class AppLoader:
         4. Installs all agents specified in app.yaml
 
         Args:
-            update_if_exists: If True, update existing entities; if False, skip existing
+            update_mode: Update strategy - "merge" for non-destructive merge, "source" for
+                         destructive overwrite from YAML, or None to skip existing.
 
         Returns:
             App instance if successful, None otherwise
@@ -169,13 +203,20 @@ class AppLoader:
         bootstrap_log.start(f"v{descriptor.version}")
 
         try:
-            # Step 0: Pre-import all action __init__.py modules
+            # Step 0: Pre-import action modules CONDITIONALLY for agents listed in app.yaml
+            # This implements conditional loading:
+            # - Only actions explicitly listed in agent.yaml are loaded
+            # - Action dependencies (from info.yaml) are transitively resolved and loaded
+            # - Endpoints are only registered for loaded actions
+            # - Unused actions remain completely unloaded (no module import, no endpoints)
             # This ensures Action subclasses are available for _collect_class_names()
-            # before any queries are executed
-            from jvagent.action.action_loader import ActionLoader
+            # before any queries are executed, while preventing unused endpoints from being accessible
+            from jvagent.action.loader import ActionLoader
 
             action_loader = ActionLoader(base_path=str(self.base_path))
-            action_loader.pre_import_action_modules()
+            # Only pre-import modules for agents listed in app.yaml (with dependency resolution)
+            agent_refs = descriptor.agents if descriptor.agents else []
+            action_loader.pre_import_action_modules_for_agents(agent_refs)
 
             # Step 1: Ensure Root node exists
             root = await Root.get()
@@ -184,7 +225,7 @@ class AppLoader:
                 return None
 
             # Step 2: Create or update App node
-            app = await self._ensure_app_node(descriptor, update_if_exists)
+            app = await self._ensure_app_node(descriptor, update_mode, root)
             if not app:
                 logger.error("Failed to create/update App node")
                 return None
@@ -201,7 +242,8 @@ class AppLoader:
 
             # Step 5: Install agents from app.yaml
             if descriptor.agents:
-                await self._install_agents(descriptor, update_if_exists)
+                await self._install_agents(descriptor, update_mode)
+                await self._recount_agent_statistics(app)
 
             bootstrap_log.complete()
             return app
@@ -211,43 +253,73 @@ class AppLoader:
             return None
 
     async def _ensure_app_node(
-        self, descriptor: AppDescriptor, update_if_exists: bool
+        self, descriptor: AppDescriptor, update_mode: Optional[str], root
     ) -> Optional[App]:
         """Ensure App node exists and is configured.
 
+        Uses graph-based lookup (Root -> App) instead of name-based lookup so that
+        when context.name changes in app.yaml, the existing App is updated in place
+        rather than creating a duplicate.
+
         Args:
             descriptor: App descriptor
-            update_if_exists: If True, update existing app; if False, skip update
+            update_mode: "merge" for non-destructive, "source" for destructive, None to skip
+            root: Root node for graph traversal
 
         Returns:
             App instance if successful, None otherwise
         """
         try:
-            # Check for existing App node
-            app = await App.find_one({"context.name": descriptor.name})
+            App.clear_cache()
 
-            if app:
+            # Graph-based lookup: find App nodes connected to Root
+            root_nodes = await root.nodes(direction="out")
+            app_nodes = [n for n in root_nodes if isinstance(n, App)]
 
-                if update_if_exists:
-                    # Update existing app with context properties
-                    app.name = descriptor.name
-                    app.version = descriptor.version
-                    app.description = descriptor.description
-                    app.file_storage_provider = descriptor.file_storage_provider
-                    app.file_storage_root_dir = descriptor.file_storage_root_dir
-                    app.file_storage_enabled = descriptor.file_storage_enabled
+            # Deduplicate if multiple App nodes exist (corruption from prior buggy runs)
+            if len(app_nodes) > 1:
+                app_nodes = await self._deduplicate_app_nodes(
+                    root, app_nodes, descriptor
+                )
+                if not app_nodes:
+                    return None
 
-                    # Apply additional context properties
+            if app_nodes:
+                app = app_nodes[0]
+                if update_mode == "source":
+                    await app.update(
+                        {
+                            "name": descriptor.name,
+                            "version": descriptor.version,
+                            "description": descriptor.description,
+                            "file_storage_provider": descriptor.file_storage_provider,
+                            "file_storage_root_dir": descriptor.file_storage_root_dir,
+                            "file_storage_enabled": descriptor.file_storage_enabled,
+                            "logging_enabled": descriptor.logging_enabled,
+                            "log_retention_days": descriptor.log_retention_days,
+                            "timezone": descriptor.timezone,
+                            "app_id": descriptor.app_id,
+                        },
+                        skip_protected=True,
+                    )
                     self._apply_app_properties(app, descriptor.properties)
-
                     await app.save()
-                    logger.debug(f"Updated App node: {app.id}")
+                    logger.debug(f"Updated App node (source): {app.id}")
+                elif update_mode == "merge":
+                    await app.update(
+                        {
+                            "version": descriptor.version,
+                            "app_id": descriptor.app_id,
+                        },
+                        skip_protected=True,
+                    )
+                    await app.save()
+                    logger.debug(f"Updated App node (merge): {app.id}")
 
-                # Update cache
                 App._cached_app = app
                 return app
 
-            # Build initial app data
+            # No App found - create new
             app_data = {
                 "name": descriptor.name,
                 "version": descriptor.version,
@@ -255,44 +327,88 @@ class AppLoader:
                 "file_storage_provider": descriptor.file_storage_provider,
                 "file_storage_root_dir": descriptor.file_storage_root_dir,
                 "file_storage_enabled": descriptor.file_storage_enabled,
+                "logging_enabled": descriptor.logging_enabled,
+                "log_retention_days": descriptor.log_retention_days,
+                "timezone": descriptor.timezone,
             }
+            app_data["app_id"] = descriptor.app_id
 
-            # Apply additional context properties
             if descriptor.properties:
                 for key, value in descriptor.properties.items():
-                    # Only override if it's a valid field (don't override private fields)
-                    if not key.startswith("_") and key not in ["id", "name"]:
+                    if not key.startswith("_") and key not in [
+                        "id",
+                        "name",
+                        "update_mode",
+                    ]:
                         app_data[key] = value
 
-            # Create new App node
             app = await App.create(**app_data)
             logger.debug(f"Created App node: {app.id}")
 
-            # Update cache
             App._cached_app = app
             return app
         except Exception as e:
             logger.error(f"Error in _ensure_app_node: {e}", exc_info=True)
             return None
 
+    async def _deduplicate_app_nodes(
+        self, root, app_nodes: list, descriptor: AppDescriptor
+    ) -> list:
+        """Keep canonical App, remove duplicates. Returns list with single App or empty."""
+        if len(app_nodes) <= 1:
+            return app_nodes
+
+        async def _agents_count(app_node) -> tuple:
+            """Return (total_agents, child_count) for canonical selection."""
+            agents_count = 0
+            child_count = 0
+            for node in await app_node.nodes():
+                child_count += 1
+                if isinstance(node, Agents):
+                    agents_count = node.total_agents
+                    break
+            return (agents_count, child_count)
+
+        # Prefer App with Agents that has total_agents > 0; tie-break by child count
+        scores = []
+        for a in app_nodes:
+            ac, cc = await _agents_count(a)
+            scores.append((ac, cc, a))
+
+        scores.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        canonical = scores[0][2]
+        duplicates = [s[2] for s in scores[1:]]
+
+        logger.warning(
+            f"Found {len(app_nodes)} App nodes under Root; deduplicating, keeping canonical App {canonical.id}"
+        )
+
+        for dup in duplicates:
+            try:
+                agents_node = None
+                for node in await dup.nodes():
+                    if isinstance(node, Agents):
+                        agents_node = node
+                        break
+
+                if agents_node and agents_node.total_agents > 0:
+                    logger.error(
+                        f"Skipping deduplication of App {dup.id}: has Agents with "
+                        f"total_agents={agents_node.total_agents}. Manual intervention required."
+                    )
+                    continue
+
+                await root.disconnect(dup)
+                await dup.delete(cascade=True)
+                logger.debug(f"Removed duplicate App node: {dup.id}")
+            except Exception as e:
+                logger.warning(f"Failed to remove duplicate App {dup.id}: {e}")
+
+        return [canonical]
+
     def _apply_app_properties(self, app: App, properties: Dict[str, Any]) -> None:
-        """Apply property overrides from descriptor to app instance.
-
-        Args:
-            app: App instance to update
-            properties: Dictionary with property overrides
-        """
-        if not properties:
-            return
-
-        for key, value in properties.items():
-            # Only set public properties (not private, not id, not name - name is static)
-            if not key.startswith("_") and key not in ["id", "name"] and hasattr(app, key):
-                try:
-                    setattr(app, key, value)
-                    logger.debug(f"Set app.{key} = {value}")
-                except Exception as e:
-                    logger.warning(f"Could not set app.{key}: {e}")
+        """Apply property overrides from descriptor to app instance."""
+        _apply_properties(app, properties, reserved={"id", "name", "update_mode"})
 
     async def _ensure_agents_node(self, app: App) -> Optional[Agents]:
         """Ensure Agents manager node exists.
@@ -323,7 +439,29 @@ class AppLoader:
             logger.error(f"Error in _ensure_agents_node: {e}", exc_info=True)
             return None
 
-    async def _install_agents(self, descriptor: AppDescriptor, update_if_exists: bool) -> None:
+    async def _recount_agent_statistics(self, app: App) -> None:
+        """Recount total_agents and active_agents from the live graph.
+
+        Called after all agent installs/updates are complete so that
+        counts reflect actual DB state rather than accumulated increments.
+        """
+        try:
+            agents_manager = await app.node(node="Agents")
+            if not agents_manager:
+                return
+
+            from jvagent.core.agent import Agent
+
+            all_agents = await Agent.find({})
+            agents_manager.total_agents = len(all_agents)
+            agents_manager.active_agents = sum(1 for a in all_agents if a.enabled)
+            await agents_manager.save()
+        except Exception as e:
+            logger.warning(f"Could not recount agent statistics: {e}")
+
+    async def _install_agents(
+        self, descriptor: AppDescriptor, update_mode: Optional[str]
+    ) -> None:
         """Install agents specified in app.yaml.
 
         Agents are referenced using the format: namespace/agent_name
@@ -332,7 +470,7 @@ class AppLoader:
 
         Args:
             descriptor: App descriptor with agent list
-            update_if_exists: If True, update existing agents; if False, skip existing
+            update_mode: "merge" for non-destructive, "source" for destructive, None to skip
         """
         installed_count = 0
         updated_count = 0
@@ -349,20 +487,16 @@ class AppLoader:
 
             namespace, agent_name = agent_ref.split("/", 1)
 
-            # Check if agent already exists
-            existing_agent = await Agent.find_one(
-                {"context.name": agent_name, "context.namespace": namespace}
+            agent = await self.agent_loader.install_agent(
+                namespace, agent_name, update_mode=update_mode
             )
-            was_existing = existing_agent is not None
-
-            # Install the agent (this will also load actions from agent.yaml)
-            # Pass update_if_exists to ensure agent properties are updated
-            agent = await self.agent_loader.install_agent(namespace, agent_name, update_if_exists)
 
             if agent:
-                if was_existing and update_if_exists:
+                if update_mode is not None:
                     updated_count += 1
-                    logger.debug(f"  ✓ Agent: {namespace}/{agent_name} (updated)")
+                    logger.debug(
+                        f"  ✓ Agent: {namespace}/{agent_name} (updated - {update_mode})"
+                    )
                 else:
                     installed_count += 1
                     logger.debug(f"  ✓ Agent: {namespace}/{agent_name}")
@@ -405,12 +539,15 @@ class AppLoader:
                         "id": app.id,
                         "name": app.name,
                         "version": app.version,
+                        "update_mode": getattr(app, "update_mode", "run"),
                     },
                 }
 
             # Get agent statistics
             agents_list = (
-                await agents_manager.list_agents() if hasattr(agents_manager, "list_agents") else []
+                await agents_manager.list_agents()
+                if hasattr(agents_manager, "list_agents")
+                else []
             )
 
             return {
@@ -421,6 +558,7 @@ class AppLoader:
                     "version": app.version,
                     "description": app.description,
                     "file_storage_enabled": app.file_storage_enabled,
+                    "update_mode": getattr(app, "update_mode", "run"),
                 },
                 "agents": {
                     "total": agents_manager.total_agents,

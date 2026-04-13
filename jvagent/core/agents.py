@@ -37,8 +37,12 @@ class Agents(Node):
         active_agents: Number of currently enabled agents (enabled=True)
     """
 
-    total_agents: int = attribute(default=0, description="Total number of agents registered")
-    active_agents: int = attribute(default=0, description="Number of currently active agents")
+    total_agents: int = attribute(
+        default=0, description="Total number of agents registered"
+    )
+    active_agents: int = attribute(
+        default=0, description="Number of currently active agents"
+    )
 
     # ============================================================================
     # Helper Methods
@@ -131,7 +135,9 @@ class Agents(Node):
 
             # Try to get healthcheck if agent has the method
             try:
-                if hasattr(agent, "healthcheck") and callable(getattr(agent, "healthcheck")):
+                if hasattr(agent, "healthcheck") and callable(
+                    getattr(agent, "healthcheck")
+                ):
                     health_result = await agent.healthcheck()
                     if isinstance(health_result, dict):
                         health_data["health"] = health_result
@@ -139,7 +145,9 @@ class Agents(Node):
                         health_data["healthy"] = health_status == 200
                     else:
                         health_data["healthy"] = bool(health_result)
-                        health_data["health"] = {"status": 200 if health_result else 500}
+                        health_data["health"] = {
+                            "status": 200 if health_result else 500
+                        }
                 else:
                     # Basic health based on enabled status
                     health_data["healthy"] = agent.enabled
@@ -225,7 +233,10 @@ class Agents(Node):
             await self.sync_counters()
 
         # Get statistics
-        counters = {"total_agents": self.total_agents, "active_agents": self.active_agents}
+        counters = {
+            "total_agents": self.total_agents,
+            "active_agents": self.active_agents,
+        }
 
         enabled_breakdown = await self.get_enabled_breakdown()
 
@@ -248,7 +259,8 @@ class Agents(Node):
     "/status",
     methods=["GET"],
     auth=True,  # Requires authentication - statistics contain sensitive system information
-    tags=["Agent"],
+    roles=["admin"],
+    tags=["App"],
     response=success_response(
         data={
             "statistics": ResponseField(
@@ -277,34 +289,44 @@ async def get_status(
     Provides aggregate statistics including counters, enabled breakdown,
     and optional healthcheck data for all agents in the system.
 
+
     This endpoint requires authentication as it exposes sensitive system
     information including agent counts, status breakdowns, and health data.
 
-    Args:
-        sync: If True, recalculate counters from actual agent data before returning
-        include_health: If True, include healthcheck data for each agent
 
-    Returns:
-        Dictionary with comprehensive statistics:
-        {
-            "statistics": {
-                "counters": {
-                    "total_agents": int,
-                    "active_agents": int
-                },
-                "enabled_breakdown": {
-                    "enabled": int,
-                    "disabled": int,
-                    "total": int
-                },
-                "healthcheck": {
-                    "total_agents": int,
-                    "healthy_agents": int,
-                    "unhealthy_agents": int,
-                    "agent_health": List[Dict[str, Any]]
-                }  # Only included if include_health=True
+    **Args:**
+
+    - sync: If True, recalculate counters from actual agent data before returning
+    - include_health: If True, include healthcheck data for each agent
+
+
+    **Returns:**
+
+    Dictionary with comprehensive statistics:
+
+    ```json
+    {
+        "statistics": {
+            "counters": {
+                "total_agents": 10,
+                "active_agents": 8
+            },
+            "enabled_breakdown": {
+                "enabled": 8,
+                "disabled": 2,
+                "total": 10
+            },
+            "healthcheck": {
+                "total_agents": 10,
+                "healthy_agents": 9,
+                "unhealthy_agents": 1,
+                "agent_health": []
             }
         }
+    }
+    ```
+
+    Note: The `healthcheck` field is only included if `include_health=True`.
     """
     # Get Agents node
     agents_node = await Agents.get()

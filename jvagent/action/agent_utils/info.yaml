@@ -1,0 +1,16 @@
+# Agent Utils Action Package Descriptor
+package:
+  name: jvagent/agent_utils
+  author: V75 Inc.
+  archetype: AgentUtils
+  version: 1.0.0
+  meta:
+    title: Agent Utils
+    description: Action for agent utilities and power user controls
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1

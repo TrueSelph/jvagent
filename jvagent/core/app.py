@@ -1,12 +1,16 @@
 """App node - Root application node for jvagent."""
 
 import asyncio
+import logging
 import os
-from typing import Any, ClassVar, Dict, Optional, Type
+from datetime import datetime
+from typing import Any, ClassVar, Dict, Optional, Type, Union
 
+from jvspatial.api.constants import APIRoutes
 from jvspatial.api.context import get_current_server
 from jvspatial.core import Node, Root
 from jvspatial.core.annotations import attribute
+from jvspatial.env import env, resolve_file_storage_root
 from jvspatial.storage import create_storage, get_proxy_manager
 from jvspatial.storage.exceptions import StorageError
 
@@ -31,6 +35,10 @@ class App(Node):
     """
 
     # Application metadata
+    app_id: str = attribute(
+        default="jvagent_app",
+        description="Stable application identifier from app.yaml (app: key)",
+    )
     name: str = "jvAgent"
     version: str = "0.0.1"
     description: str = "jvagent Application"
@@ -41,10 +49,34 @@ class App(Node):
         default="local", description="Storage provider type (local, s3, etc.)"
     )
     file_storage_root_dir: str = attribute(
-        default=".files", description="Root directory for local storage"
+        default="./.files", description="Root directory for local storage"
     )
     file_storage_enabled: bool = attribute(
         default=True, description="Whether file storage is enabled"
+    )
+
+    # Logging configuration
+    logging_enabled: bool = attribute(
+        default=True, description="Whether logging is enabled for this app"
+    )
+    log_retention_days: int = attribute(
+        default=60, description="Log retention window in days (default: 60)"
+    )
+
+    timezone: Optional[str] = attribute(
+        default=None,
+        description="IANA timezone for app-level datetime (e.g. America/New_York)",
+    )
+
+    # Next-start YAML sync intent: run | merge | source (protected from bulk/YAML overwrites;
+    # mutate only via set_app_update_mode — see jvspatial AttributeMixin / Object.update).
+    update_mode: str = attribute(
+        default="run",
+        protected=True,
+        description=(
+            "Stored bootstrap intent for next start: run (default), merge, or source. "
+            "Maps to bootstrap YAML-sync when CLI omits --update."
+        ),
     )
 
     # Runtime instances (private, transient)
@@ -122,6 +154,92 @@ class App(Node):
         cls._cached_app = None
 
     # ============================================================================
+    # Datetime (App Timezone)
+    # ============================================================================
+
+    async def now(self, fmt: Optional[str] = None) -> Union[datetime, str]:
+        """Current datetime in app timezone (or server local if unset).
+
+        Args:
+            fmt: Optional strftime format; if provided, returns formatted string.
+
+        Returns:
+            datetime object if fmt is None, else formatted string.
+        """
+        logger = logging.getLogger(__name__)
+        tz = None
+        if self.timezone:
+            try:
+                from zoneinfo import ZoneInfo
+
+                tz = ZoneInfo(self.timezone)
+            except Exception as e:
+                logger.warning(
+                    f"Invalid timezone '{self.timezone}', using server time: {e}"
+                )
+        now_dt = datetime.now(tz) if tz else datetime.now()
+        if fmt:
+            return now_dt.strftime(fmt)
+        return now_dt
+
+    # ============================================================================
+    # Action Initialization
+    # ============================================================================
+
+    async def initialize_actions(self) -> Dict[str, bool]:
+        """Initialize all actions by calling their on_startup() hooks.
+
+        This method should be called when the app starts to ensure all actions
+        are properly initialized, including their runtime components like
+        channel adapters.
+
+        Returns:
+            Dict mapping action IDs to initialization status
+        """
+        import logging
+
+        from jvagent.action.base import Action
+        from jvagent.core.agent import Agent
+
+        logger = logging.getLogger(__name__)
+        results = {}
+
+        try:
+            # Get all agents via App -> Agents -> Agent path
+            # Agents are connected to the Agents node, which is connected to App
+            from jvagent.core.agents import Agents as AgentsNode
+
+            agents_node = await AgentsNode.get()
+            if not agents_node:
+                return results
+
+            agents = await agents_node.get_connected_agents()
+
+            # For each agent, get all actions and call on_startup
+            for agent in agents:
+                actions_manager = await agent.get_actions_manager()
+                if not actions_manager:
+                    continue
+
+                actions = await actions_manager.get_actions()
+
+                for action in actions:
+                    try:
+                        await action.on_startup()
+                        results[action.id] = True
+                    except Exception as e:
+                        logger.error(
+                            f"Error in on_startup for {action.label}: {e}",
+                            exc_info=True,
+                        )
+                        results[action.id] = False
+
+            return results
+        except Exception as e:
+            logger.error(f"Error initializing actions: {e}", exc_info=True)
+            return results
+
+    # ============================================================================
     # File Storage Operations
     # ============================================================================
 
@@ -144,25 +262,25 @@ class App(Node):
             self._file_interface = server._file_interface
             return self._file_interface
 
-        # Create storage based on node configuration
-        if self.file_storage_provider == "local":
-            self._file_interface = create_storage(
-                provider="local", root_dir=self.file_storage_root_dir
-            )
-        elif self.file_storage_provider == "s3":
-            # Get S3 configuration from environment or node attributes
+        # Align with get_file_storage_config / Server: env overrides, then node / defaults
+        provider = env("JVSPATIAL_FILE_STORAGE_PROVIDER", default="") or (
+            self.file_storage_provider or "local"
+        )
+        root_dir = resolve_file_storage_root(self.file_storage_root_dir or None)
+
+        # Create storage based on resolved configuration
+        if provider == "local":
+            self._file_interface = create_storage(provider="local", root_dir=root_dir)
+        elif provider == "s3":
             self._file_interface = create_storage(
                 provider="s3",
-                bucket_name=os.getenv("JVSPATIAL_S3_BUCKET_NAME", ""),
-                region_name=os.getenv("JVSPATIAL_S3_REGION_NAME", "us-east-1"),
-                access_key_id=os.getenv("JVSPATIAL_S3_ACCESS_KEY_ID"),
-                secret_access_key=os.getenv("JVSPATIAL_S3_SECRET_ACCESS_KEY"),
-                endpoint_url=os.getenv("JVSPATIAL_S3_ENDPOINT_URL"),
+                bucket_name=env("JVSPATIAL_S3_BUCKET_NAME", default=""),
+                region_name=env("JVSPATIAL_S3_REGION", default="us-east-1"),
+                access_key_id=env("JVSPATIAL_S3_ACCESS_KEY", default="") or None,
+                secret_access_key=env("JVSPATIAL_S3_SECRET_KEY", default="") or None,
+                endpoint_url=env("JVSPATIAL_S3_ENDPOINT_URL", default="") or None,
             )
         else:
-            # Use environment-based default
-            provider = os.getenv("JVSPATIAL_FILE_INTERFACE", "local")
-            root_dir = os.getenv("JVSPATIAL_FILES_ROOT_PATH", ".files")
             self._file_interface = create_storage(provider=provider, root_dir=root_dir)
 
         return self._file_interface
@@ -313,8 +431,8 @@ class App(Node):
             if metadata and "storage_url" in metadata:
                 return metadata["storage_url"]
 
-            # Use relative path
-            return f"/storage/{path}"
+            # Relative URL: matches FileStorageService GET {FILES_ROOT}/{file_path}
+            return f"{APIRoutes.FILES_ROOT}/{path}"
         except StorageError:
             return None
         except Exception:
@@ -352,13 +470,23 @@ class App(Node):
 
         try:
             proxy = await proxy_manager.create_proxy(
-                file_path=path, expires_in=expires_in, one_time=one_time, metadata=metadata
+                file_path=path,
+                expires_in=expires_in,
+                one_time=one_time,
+                metadata=metadata,
             )
 
             if proxy and hasattr(proxy, "code"):
-                return f"/p/{proxy.code}"
+                pp = str(APIRoutes.PROXY_PREFIX).rstrip("/")
+                return f"{pp}/{proxy.code}"
         except Exception:
             # Use regular file URL
             return await self.get_file_url(path)
 
         return None
+
+
+async def set_app_update_mode(app: App, value: str) -> None:
+    """Persist operational ``update_mode`` (protected field; bypasses normal setattr)."""
+    object.__setattr__(app, "update_mode", value)
+    await app.save()

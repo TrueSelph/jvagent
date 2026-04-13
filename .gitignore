@@ -45,13 +45,18 @@ venv.bak/
 
 # Database
 jvdb/
+jvagent_db/
 *.db
 *.sqlite
 *.sqlite3
+*_pageindex_db
 
 # Logs
 *.log
 logs/
+jvdb_logs/
+jvagent_logs/
+jvspatial_logs/
 
 # Testing
 .pytest_cache/
@@ -77,8 +82,13 @@ dmypy.json
 # jvspatial database files
 jvdb/
 
+# jvagent database files
+jvagent_db/
+jvagent_logs/
+
 # Package build artifacts
 *.egg-info/
 dist/
 build/
+Dockerfile
 

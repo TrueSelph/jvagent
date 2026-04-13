@@ -1,0 +1,22 @@
+# Ollama Embedding Model Action Package Descriptor
+
+package:
+  name: jvagent/ollama_embedding
+  author: jvagent
+  archetype: OllamaEmbeddingModelAction
+  version: 0.0.1
+
+  meta:
+    title: Ollama Embedding Model Action
+    description: Native Ollama embedding integration.
+    group: jvagent
+    type: embedding_model_action
+
+  config:
+    order:
+      weight: 0
+
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - httpx>=0.24.0

@@ -6,10 +6,10 @@ agent: jvagent/example_agent
 
 # Agent metadata
 version: 1.0.0
-author: Your Name
+author: V75 Inc.
 
 # jvagent version requirement (optional)
-jvagent: ~2.1.0
+jvagent: ~0.0.1
 
 # Agent context: Properties that configure the agent
 context:
@@ -18,49 +18,119 @@ context:
   enabled: true
 
 # Action Assignments
-# Actions are discovered from namespace subdirectories: actions/{namespace}/{action_name}/
+# Actions are discovered from:
+# 1. Local actions: actions/{namespace}/{action_name}/ (takes precedence)
+# 2. Core actions: jvagent library (jvagent/action/*/) if not found locally
 # Actions are referenced using the format: namespace/action_name
+#
+# Core actions (loaded from jvagent library if no local override exists):
+# - jvagent/interact_router
+# - jvagent/openai_embedding, jvagent/openai_lm
+# - jvagent/typesense_vectorstore
+# - jvagent/retrieval_interact_action
+# - jvagent/pageindex_retrieval_interact_action (requires jvagent[pageindex])
+#
+# Local overrides/custom actions:
+# - jvagent/persona (custom ExamplePersonaAction override)
+# - jvagent/example_action (custom action)
 actions:
-  # InteractRouter Action - Intent-based routing for InteractActions
-  # Located at: jvagent/action/router/
+  # InteractRouter Action - Unified posture + routing
+  # Core action from jvagent library (jvagent/action/router/)
   - action: jvagent/interact_router
     context:
       enabled: true
       description: "Intent-based routing action that analyzes utterances and routes to appropriate InteractActions"
       # Model Configuration (uses OpenAI model action by entity type)
-      model_action_type: "OpenAIModelAction"  # Entity type to find dynamically
-      history_limit: 10  # Number of previous interactions to include in context
-      # Optional: List of InteractAction entity names that must always execute
-      # exceptions:
-      #   - "PersonaAction"
-      #   - "AnotherAction"
-  
-  # OpenAI Model Action - LLM integration with multimodal support
-  # Located at: agents/jvagent/example_agent/actions/jvagent/model_openai/
-  - action: jvagent/model_openai
+      model_action_type: "OpenAILanguageModelAction" # Entity type to find dynamically
+      history_limit: 3 # Number of previous interactions to include in context
+      # Routing cache - skip LLM for repeated context (requires enable_interact_router_cache in app.yaml)
+      enable_routing_cache: true
+      # Optional: List of InteractAction entity names that must always execute.
+      # When using the InteractAction.always_execute flag, exceptions can be
+      # managed declaratively in code instead of being listed here.
+
+  # OpenAI Embedding Model Action - Vector embeddings for semantic search
+  # Core action from jvagent library (jvagent/action/model/embedding/openai/)
+  - action: jvagent/openai_embedding
+    context:
+      enabled: true
+      description: "OpenAI embeddings API for generating vector embeddings"
+      # API Configuration
+      api_key: ${OPENAI_API_KEY} # Set in .env or environment
+      api_endpoint: "https://api.openai.com/v1"
+      # Model Configuration
+      model: text-embedding-3-small # Default embedding model
+      embedding_dimensions: 1536 # Expected dimensions (0 = auto-detect)
+      timeout: 30
+
+  - action: jvagent/intro_interact_action
+    context:
+      enabled: true
+      description: "Introductory interact action for first-time users"
+
+  # PageIndexRetrievalInteractAction - Vectorless RAG from indexed documents
+  # Documents must be ingested first via POST /pageindex/documents
+  - action: jvagent/pageindex_retrieval_interact_action
+    context:
+      enabled: true
+      description: "Vectorless RAG - retrieves context from indexed documents via PageIndex graph"
+      weight: -75  # Runs after InteractRouter, before Persona
+      anchors:
+        - "User asks a question about indexed documents"
+        - "User requests information from document index"
+        - "User wants to search or find information in documents"
+    config:
+      limit: 10
+      strategy: "tree_search"
+      node_summary: true   # Required for tree_search; generates summaries during ingestion
+      node_text: true
+      doc_description: false
+      max_token_num_each_node: 20000
+      summary_token_threshold: 200
+      # model: gpt-4o-mini  # Optional: override LLM for tree search
+      # max_summary_chars: 300  # Optional: max chars per node summary in tree prompt
+      # max_tree_prompt_tokens: 16000  # Optional: max tokens; over budget triggers direct search
+
+  # TypesenseVectorStore Action - Vector store for semantic search
+  # Core action from jvagent library (jvagent/action/vectorstore/typesense/)
+  # - action: jvagent/typesense_vectorstore
+  #   context:
+  #     enabled: true
+  #     description: "Typesense vector store for semantic search and context retrieval"
+  #     # Typesense Configuration
+  #     host: localhost
+  #     port: 8108
+  #     protocol: http
+  #     api_key: ${TYPESENSE_API_KEY} # Set in .env or environment
+  #     connection_timeout_seconds: 2
+  #     embedding_dimensions: 1536 # Must match embedding model dimensions
+  #     # Embedding Model Configuration
+  #     embedding_model_action_type: "OpenAIEmbeddingModelAction" # Entity type to find dynamically
+
+  # OpenAI Language Model Action - LLM integration with multimodal support
+  # Core action from jvagent library (jvagent/action/model/language/openai/)
+  - action: jvagent/openai_lm
     context:
       enabled: true
       description: "OpenAI GPT-4o model action with vision support"
       # API Configuration
-      api_key: ${OPENAI_API_KEY}  # Set in .env or environment
+      api_key: ${OPENAI_API_KEY} # Set in .env or environment
       api_endpoint: "https://api.openai.com/v1"
       # Model Configuration
-      model: gpt-4o-mini  # Default model for queries
-      temperature: 0.7
-      max_tokens: 2000
-      top_p: 1.0
+      model: gpt-4o-mini # Default model for queries
+      temperature: 0.2
+      max_tokens: 4096
       timeout: 60
-  
+
   # Persona Action - Core interact action for agent behavioral modeling
-  # Located at: agents/jvagent/example_agent/actions/jvagent/persona/
+  # Core action from jvagent library (jvagent/action/persona/)
   - action: jvagent/persona
     context:
       enabled: true
-      description: "Example persona action with LLM-driven behavioral parameters"
+      description: "Persona action with LLM-driven behavioral parameters"
       # Persona Identity
       persona_name: "Example Assistant"
-      persona_role: "A helpful AI assistant for demonstrations"
-      persona_description: >
+      persona_description: |
         You are a friendly and knowledgeable assistant that helps users
         understand how the jvagent framework works. You provide clear,
         concise answers and demonstrate best practices.
@@ -69,35 +139,89 @@ actions:
         - "Demonstrate action delegation"
         - "Process user interactions with behavioral parameters"
         - "Provide streaming and non-streaming responses"
+        - "can sign the user up for jvagent training"
+        - "Answer questions from indexed documents (when documents are ingested)"
+      # Voice Channel Configuration (Optional)
+      # Phonetic substitutions for text-to-speech when channel="voice"
+      # Maps original terms to phonetic replacements for proper pronunciation
+      # phonetic_substitutions:
+      #   essequibo: "esseequibbo"
+      #   API: "A P I"
+      #   jvagent: "jay-vee agent"
       # Model Configuration (uses OpenAI model action by entity type)
-      model_action_type: "OpenAIModelAction"  # Entity type to find dynamically
-      model_name: "gpt-4o-mini"
-      model_temperature: 0.3
-      model_max_tokens: 4096
-      # Optional: Custom prompt template (uses default if not provided)
-      # prompt: "Your custom prompt template here"
-      # Optional: Custom parameters (can also be set in the action class)
-      # parameters:
-      #   - condition: "User asks about X"
-      #     response: "Provide information about X"
-  
-  # Example action from the 'jvagent' namespace
-  # Located at: agents/jvagent/example_agent/actions/jvagent/example_action/
-  - action: jvagent/example_action
+      model_action_type: "OpenAILanguageModelAction" # Entity type to find dynamically
+      model: "gpt-4o-mini"
+      model_temperature: 0.1
+      model_max_tokens: 8192
+
+  # Signup Interview Interact Action - Training signup interview flow
+  # Local action from: agents/jvagent/example_agent/actions/jvagent/signup_interview_interact_action/
+  - action: jvagent/signup_interview_interact_action
     context:
       enabled: true
-      description: "Customized example action for demonstration"
-      timeout: 60
-      retries: 5
-      api_endpoint: "https://prod.api.example.com"
-  
+      description: "Training signup interview flow for user registration and training scheduling"
+      weight: -50 # Runs after InteractRouter
+      anchors:
+        - "User wants to sign up or register for jvagent training"
+        - "User wants to enroll or join jvagent training"
+    config:
+      model_action_type: "OpenAILanguageModelAction"
+      model: "gpt-4o-mini"
+      model_temperature: 0.1
+      model_max_tokens: 8192
+      use_history: true
+      max_statement_length: 100
+      history_limit: 3
+      auto_confirm: false
+  - action: jvagent/converse_interact_action
+    context:
+      enabled: true
+      description: "Fallback action for smalltalk and casual conversation"
+      weight: 100 # Runs last as a safety net
+      # directive: |
+      #   Offer a simple, friendly response to smalltalk and casual conversation ONLY.
+      #   NEVER attempt to answer knowledge-based or capability based questions without having applicable directives or certainty
+      #   about the context. If the conversation does not warrant a reply or you
+      #   lack sufficient information, politely opt out rather than guessing.
+      # parameters:
+      #   - condition: "User asks a knowledge-based, capability based, or factual question"
+      #     response: "Politely decline to answer, explaining that you don't have sufficient information or certainty to provide an accurate answer. Suggest they check official sources or provide more specific context."
+      #   - condition: "User engages in smalltalk, greetings, or casual conversation"
+      #     response: "Respond naturally and conversationally, keeping it brief and friendly."
+      #   - condition: "The conversation does not warrant a substantive reply"
+      #     response: "Politely acknowledge the message but indicate that no specific response is needed, or ask how you can help."
+      #   - condition: "User asks about something outside your knowledge or role"
+      #     response: "Politely explain that this falls outside your area of knowledge or role, and suggest alternative ways they might find the information they need."
+
+  # - action: jvagent/whatsapp_action
+  #   context:
+  #     enabled: true
+  #     description: "WhatsApp provider (wppconnect, ultramsg, wwebjs)"
+  #     # whatsapp configuration
+  #     provider: "wwebjs"
+  #     api_url: ${WHATSAPP_API_URL}
+  #     api_key: ${WHATSAPP_API_KEY}
+  #     session: ${WHATSAPP_SESSION}
+  #     base_url: ${JVAGENT_PUBLIC_BASE_URL}
+
+  # Access Control Action - Per-user, per-action, per-channel permissions
+  # See resolv/resolv_demo agent for full example (Report restricted to WhatsApp only)
+  # - action: jvagent/access_control_action
+  #   context:
+  #     enabled: true
+  #     permissions:
+  #       default:
+  #         any: { deny: [], allow: [{ group: all }] }
+  #       whatsapp:
+  #         any: { deny: [], allow: [{ group: all }] }
+
   # Add more action assignments here
   # Actions can be from different namespaces:
   # - action: custom/custom_action
   #   context:
   #     enabled: true
   #     custom_property: value
-  # 
+  #
   # - action: contrib/another_action
   #   context:
   #     enabled: true

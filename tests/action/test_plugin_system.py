@@ -9,8 +9,8 @@ This module tests the complete plugin-based subsystem including:
 
 import pytest
 
-from jvagent.action.action_loader import ActionLoader, ActionMetadata
 from jvagent.action.actions import Actions
+from jvagent.action.loader import ActionLoader, ActionMetadata
 from jvagent.core.agent import Agent
 from jvagent.core.agent_loader import AgentDescriptor, AgentLoader
 from jvagent.core.agents import Agents
@@ -143,7 +143,10 @@ class TestAction(Action):
         assert action_class is not None, "Failed to load class"
 
         action_instance = loader.create_action_instance(
-            metadata, agent_id="test_agent_id", agent_name="test_agent", action_class=action_class
+            metadata,
+            agent_id="test_agent_id",
+            agent_name="test_agent",
+            action_class=action_class,
         )
 
         assert action_instance is not None, "Failed to create instance"
@@ -277,7 +280,7 @@ context:
 
         # Bootstrap application
         loader = AppLoader(str(temp_dir))
-        app = await loader.bootstrap_application(update_if_exists=True)
+        app = await loader.bootstrap_application(update_mode="source")
 
         assert app is not None, "Bootstrap failed"
         assert app.name == "Test App", "App name not set correctly"

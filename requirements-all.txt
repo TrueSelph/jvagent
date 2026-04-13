@@ -1,0 +1,22 @@
+# Comprehensive requirements file for jvagent with all dependencies
+# This includes all core dependencies plus all optional dependencies from action info.yaml files
+# Install with: pip install -r requirements-all.txt
+
+# Core jvagent dependencies
+jvspatial>=0.0.5
+python-dotenv>=1.0.0
+pyyaml>=6.0.0
+httpx>=0.27.0
+jinja2>=3.1.0
+
+# Dependencies from action info.yaml files
+# From jvagent/typesense_vectorstore
+typesense>=0.21.0
+
+# From jvagent/openai_lm and jvagent/openai_embedding
+openai>=1.0.0
+
+# Additional dependencies for email validation support
+# pydantic[email] provides email-validator for EmailStr type support
+pydantic[email]>=2.0
+

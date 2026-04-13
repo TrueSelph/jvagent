@@ -6,8 +6,8 @@ can be overridden through YAML descriptors using the context mechanism.
 
 import pytest
 
-from jvagent.action.base import Action
 from jvagent.action.actions import Actions
+from jvagent.action.base import Action
 from jvagent.core.agent import Agent
 from jvagent.core.agent_loader import AgentLoader
 from jvagent.core.agents import Agents
@@ -48,7 +48,9 @@ config:
         assert agent.name == "test_agent", "Name not set correctly"
         assert agent.namespace == "test_namespace", "Namespace not set correctly"
         assert agent.enabled is False, "Enabled not set correctly"
-        assert agent.description == "Test agent with overrides", "Description not set correctly"
+        assert (
+            agent.description == "Test agent with overrides"
+        ), "Description not set correctly"
 
     @pytest.mark.asyncio
     async def test_agent_default_values(self, temp_dir, test_db):
@@ -151,36 +153,39 @@ actions:
 
         assert actions_manager is not None, "Actions manager not found"
 
-        # Get the action
-        action = await actions_manager.get_action_by_label("test_action")
+        # Get the action (use get_actions + filter by label for graph-based lookup)
+        all_actions = await actions_manager.get_actions()
+        action = next((a for a in all_actions if a.label == "test_action"), None)
 
-        assert action is not None, "Action not found"
+        assert (
+            action is not None
+        ), f"Action not found. Available: {[a.label for a in all_actions]}"
         assert action.enabled is False, "enabled not overridden"
-        assert action.description == "Custom action description", "description not overridden"
+        assert (
+            action.description == "Custom action description"
+        ), "description not overridden"
         # Note: Custom attributes may not persist after database round-trip
         # They are set during creation but may be lost when deserialized as base Action class
-        # Check if attribute exists before asserting (it may be in _metadata or context)
+        # Check if attribute exists before asserting (it may be in metadata or context)
         if hasattr(action, "custom_timeout"):
             assert action.custom_timeout == 60, "custom_timeout not overridden"
         if hasattr(action, "custom_retries"):
             assert action.custom_retries == 5, "custom_retries not overridden"
-        # Config is stored in _metadata which may not persist after database round-trip
-        # Check if config is available (either through property or _metadata)
+        # Config is stored in metadata which may not persist after database round-trip
+        # Check if config is available (either through property or metadata)
         config_value = None
         if action.config:
             config_value = action.config.get("api_key")
-        if not config_value and action._metadata:
+        if not config_value and action.metadata:
             merged_config = {
-                **action._metadata.get("config", {}),
-                **action._metadata.get("config_overrides", {}),
+                **action.metadata.get("config", {}),
+                **action.metadata.get("config_overrides", {}),
             }
             config_value = merged_config.get("api_key")
-        # Note: Config may not persist after database round-trip due to _metadata being private
-        # This test verifies the override mechanism works, even if persistence has limitations
         if config_value:
             assert (
                 config_value == "override_key"
-            ), f"config not overridden. config={action.config}, _metadata={action._metadata}"
+            ), f"config not overridden. config={action.config}, metadata={action.metadata}"
 
     @pytest.mark.asyncio
     async def test_property_vs_config_distinction(self, temp_dir, test_db):
@@ -199,7 +204,7 @@ from jvspatial.core.annotations import attribute
 class TestAction(Action):
     # Property - schema field
     max_retries: int = attribute(default=3, description="Maximum retries")
-    
+
     async def on_register(self):
         # Config - flexible dictionary
         api_key = self.config.get("api_key", "default")
@@ -256,23 +261,25 @@ actions:
 
         assert actions_manager is not None, "Actions manager not found"
 
-        action = await actions_manager.get_action_by_label("test_action")
+        # Get the action (use get_actions + filter by label for graph-based lookup)
+        all_actions = await actions_manager.get_actions()
+        action = next((a for a in all_actions if a.label == "test_action"), None)
 
-        assert action is not None, "Action not found"
+        assert (
+            action is not None
+        ), f"Action not found. Available: {[a.label for a in all_actions]}"
         # Note: Custom attributes may not persist after database round-trip
         # They are set during creation but may be lost when deserialized as base Action class
         if hasattr(action, "max_retries"):
             assert action.max_retries == 10, "Property not overridden"
-        # Config is stored in _metadata which may not persist after database round-trip
-        # Check if config is available (either through property or _metadata)
+        # Config is stored in metadata which may not persist after database round-trip
+        # Check if config is available (either through property or metadata)
         merged_config = {}
         if action.config:
             merged_config.update(action.config)
-        if action._metadata:
-            merged_config.update(action._metadata.get("config", {}))
-            merged_config.update(action._metadata.get("config_overrides", {}))
-        # Note: Config may not persist after database round-trip due to _metadata being private
-        # This test verifies the override mechanism works, even if persistence has limitations
+        if action.metadata:
+            merged_config.update(action.metadata.get("config", {}))
+            merged_config.update(action.metadata.get("config_overrides", {}))
         if merged_config:
             assert (
                 merged_config.get("api_key") == "agent_key"

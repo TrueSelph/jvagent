@@ -1,0 +1,17 @@
+# Access Control Action Package Descriptor
+package:
+  name: jvagent/access_control_action
+  author: V75 Inc.
+  archetype: AccessControlAction
+  version: 1.0.0
+  meta:
+    title: Access Control Action
+    description: Role-based access control with user-based permission validation for secure agent operations
+    group: jvagent
+    type: action
+  config:
+    singleton: true
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1

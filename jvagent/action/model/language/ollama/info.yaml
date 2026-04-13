@@ -1,0 +1,22 @@
+# Ollama Language Model Action Package Descriptor
+
+package:
+  name: jvagent/ollama_lm
+  author: jvagent
+  archetype: OllamaLanguageModelAction
+  version: 0.0.1
+
+  meta:
+    title: Ollama Language Model Action
+    description: Native Ollama chat integration with sync and streaming support.
+    group: jvagent
+    type: language_model_action
+
+  config:
+    order:
+      weight: 0
+
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - httpx>=0.24.0

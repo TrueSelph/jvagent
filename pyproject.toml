@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
-    {name = "jvagent Team"},
+    {name = "TrueSelph Inc.", email = "adminh@trueselph.com"},
 ]
 keywords = ["agent", "ai", "llm", "agentive", "jvspatial", "graph"]
 classifiers = [
@@ -28,11 +28,14 @@ classifiers = [
 ]
 
 dependencies = [
-    "jvspatial>=0.0.1",
+    "aiohttp>=3.9.0",
+    # CI records the resolved jvspatial version after install (see .github/workflows/test-jvagent.yaml).
+    "jvspatial>=0.0.6",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.0",
     "httpx>=0.27.0",
     "jinja2>=3.1.0",
+    "pymupdf>=1.24.0",
 ]
 
 [project.optional-dependencies]
@@ -42,48 +45,165 @@ dev = [
     "httpx>=0.24.0",
     "pre-commit>=3.0.0",
     "black>=23.9.0",
-    "ruff>=0.1.0",
+    "isort>=6.0.0",
+    "flake8>=6.0.0",
+    "pep8-naming",
+    "flake8-docstrings",
+    "flake8-comprehensions",
+    "flake8-bugbear",
+    "flake8-annotations",
+    "flake8-simplify",
     "mypy>=1.6.0",
+    "pytest-cov>=4.0.0",
+    "coverage>=7.0.0",
+    "detect-secrets>=1.5.0",
 ]
 test = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21.0",
     "httpx>=0.24.0",
+    "pytest-cov>=4.0.0",
+    "openai>=1.0.0",
+    "filetype>=1.2.0",
+    "tiktoken>=0.5.0",
+    "litellm>=1.82.0",
+    "PyPDF2>=3.0.1",
+    "pypdf>=4.0.0",
+]
+
+# Optional: cluster-wide conversation locks (Redis SET NX or DynamoDB).
+distributed-lock = [
+    "redis>=5.0.0",
+    "boto3>=1.28.0",
+]
+
+# Optional: Docling PDF/Office → Markdown for PageIndex convert_to_markdown ingest.
+docling = [
+    "docling>=2.0.0",
+    "tabulate>=0.9.0",
 ]
 
 [project.scripts]
 jvagent = "jvagent.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/your-org/jvagent"
-Repository = "https://github.com/your-org/jvagent"
-Issues = "https://github.com/your-org/jvagent/issues"
-Documentation = "https://github.com/your-org/jvagent/blob/main/README.md"
+Homepage = "https://github.com/trueselph/jvagent"
+Repository = "https://github.com/trueselph/jvagent"
+Issues = "https://github.com/trueselph/jvagent/issues"
+Documentation = "https://github.com/trueselph/jvagent/blob/main/README.md"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["jvagent*"]
+
+[tool.setuptools.package-data]
+"jvagent.scaffold.builtin_profiles" = ["*.yaml"]
+"jvagent.scaffold.static" = ["*.txt"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "-ra -q --strict-markers"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "asyncio: mark test as an asyncio test",
 ]
+filterwarnings = [
+    "ignore::DeprecationWarning:pydantic.*",
+    "ignore::PendingDeprecationWarning",
+    "ignore::DeprecationWarning:starlette.*",
+    "ignore:builtin type.*has no __module__:DeprecationWarning",
+    "ignore:enable_cleanup_closed ignored:DeprecationWarning:aiohttp.*",
+]
 
 [tool.black]
-line-length = 100
+line-length = 88
 target-version = ["py38", "py39", "py310", "py311", "py312"]
 
-[tool.ruff]
-line-length = 100
-target-version = "py38"
+[tool.isort]
+profile = "black"
+line_length = 88
 
 [tool.mypy]
-python_version = "3.8"
-warn_return_any = true
+python_version = "3.9"
+warn_return_any = false
 warn_unused_configs = true
 disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_any_generics = false
+disallow_subclassing_any = false
+disallow_untyped_calls = false
+disallow_untyped_decorators = false
+check_untyped_defs = false
+no_implicit_optional = false
+warn_redundant_casts = false
+warn_unused_ignores = false
+warn_no_return = false
+show_error_codes = true
+exclude = ["examples/", "tests/"]
+
+[[tool.mypy.overrides]]
+module = [
+    "jvagent.core.app_context",
+    "jvagent.env",
+]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "httpx.*",
+    "jinja2.*",
+    "jvspatial.*",
+    "tiktoken",
+    "aiohttp.*",
+    "filetype.*",
+    "elevenlabs.*",
+    "openai.*",
+    "pymupdf.*",
+    "pypdf.*",
+    "yaml",
+    "mcp.*",
+    "typesense.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "jvagent.action.model.*",
+    "jvagent.action.persona.*",
+    "jvagent.action.whatsapp.*",
+    "jvagent.action.stt_action.*",
+    "jvagent.action.tts_action.*",
+    "jvagent.action.pageindex.*",
+    "jvagent.action.interview.*",
+    "jvagent.action.response.*",
+    "jvagent.action.router.*",
+    "jvagent.action.vectorstore.*",
+    "jvagent.action.base",
+    "jvagent.action.actions",
+    "jvagent.action.loader.action_loader",
+    "jvagent.action.endpoints",
+    "jvagent.action.interact.*",
+    "jvagent.action.retrieval.*",
+    "jvagent.action.intro.*",
+    "jvagent.action.mcp.*",
+    "jvagent.core.*",
+    "jvagent.memory.*",
+    "jvagent.cli",
+]
+ignore_errors = true
+
+[tool.coverage.run]
+source = ["jvagent"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
 

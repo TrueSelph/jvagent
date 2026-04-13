@@ -1,0 +1,38 @@
+# Minimal runnable agent: router + OpenAI LM + persona + converse fallback
+actions:
+  - action: jvagent/interact_router
+    context:
+      enabled: true
+      description: Intent-based routing to InteractActions
+      model_action_type: OpenAILanguageModelAction
+      history_limit: 3
+      enable_routing_cache: true
+
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      description: OpenAI language model (OPENAI_API_KEY in .env)
+      api_endpoint: https://api.openai.com/v1
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 4096
+      timeout: 60
+
+  - action: jvagent/persona
+    context:
+      enabled: true
+      description: Agent persona and prompts
+      persona_name: __JVAGENT_SCAFFOLD_AGENT_TITLE__
+      persona_description: __JVAGENT_SCAFFOLD_AGENT_DESCRIPTION__
+      persona_capabilities:
+        - Answer user questions helpfully and concisely
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      model_temperature: 0.1
+      model_max_tokens: 8192
+
+  - action: jvagent/converse_interact_action
+    context:
+      enabled: true
+      description: Fallback for smalltalk and casual conversation
+      weight: 100

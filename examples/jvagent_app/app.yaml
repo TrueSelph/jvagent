@@ -1,27 +1,26 @@
 # jvagent Application Descriptor
-# This file defines the application metadata, configuration defaults, and lists agents.
+# This file defines app metadata, safe defaults, and the agent install list.
 # Agents listed in the 'agents' section are automatically installed when you run jvagent or bootstrap.
-# 
-# In production, this package will be used to bootstrap a running jvagent instance.
-# Runtime-specific settings (paths, secrets) should be configured via .env or environment variables.
+#
+# Recommended split:
+# - app.yaml: app structure + non-secret convenience defaults
+# - env vars (.env/deploy): secrets, system-level config, deploy/runtime overrides
 
 # Application reference
 app: jvagent_demo_app
 
-# Application metadata
+# Descriptor metadata
 version: 1.0.0
 author: Your Name/Organization
 
 # jvagent version requirement (optional)
-jvagent: ~2.1.0
+jvagent: ~0.0.1
 
 # Application context: Properties that configure the App node
 context:
   name: jvagent Demo App
   description: A demo application showcasing jvagent capabilities
-  file_storage_provider: local
-  file_storage_root_dir: ./.files
-  file_storage_enabled: true
+  timezone: America/New_York
 
 # Application metadata (not stored in App node)
 license: MIT
@@ -31,48 +30,49 @@ tags:
   - example
   - boilerplate
 
-# Application configuration defaults
-# These are application-level defaults that can be overridden by .env or environment variables
-# In production, the running jvagent instance will use its own paths and settings
+# Application-level convenience defaults.
+# Env vars still override: env > app.yaml > code default.
+# Keep secrets/system-level config in environment variables.
 config:
-  # Server configuration
+  # Server metadata (host/port should be env-driven)
   server:
     title: jvagent Demo App API
     description: API for jvagent Demo App
-    host: 0.0.0.0
-    port: 8000
-  
-  # Database configuration (defaults - production will override)
-  database:
-    type: json
-    path: ./jvdb
-  
-  # File storage configuration (defaults - production will override)
-  file_storage:
-    provider: local
-    root_dir: ./.files
-    enabled: true
-  
-  # Authentication configuration (defaults - production MUST override secrets)
+    version: 0.0.1
+
+  # Authentication policy defaults (secret stays in env: JVSPATIAL_JWT_SECRET_KEY)
   auth:
     enabled: true
     jwt_expire_minutes: 60
-  
-  # Admin user configuration (defaults - production MUST override password)
-  admin:
-    username: admin
-    email: admin@jvagent.example
-    # Password should be set via JVAGENT_ADMIN_PASSWORD environment variable
+    exempt_paths:
+      - /health
+      - /docs
+      - /openapi.json
+
+  # Interact endpoint defaults
+  interact:
+    rate_limit_per_minute: 60
+    max_utterance_length: 2000
+
+  # CORS defaults (deploy-specific values may override via env)
+  cors:
+    enabled: true
+    origins: http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:5173,http://localhost:5173
+
+  # Performance defaults (all env-overridable)
+  performance:
+    enable_profiling: false
+    enable_agent_cache: true
+    agent_cache_ttl: 300
+    enable_action_cache: true
+    action_cache_ttl: 60
+    enable_deferred_saves: true
+    cache_cleanup_probability: 0.1
+    enable_interact_router_cache: true
+    interact_router_cache_ttl: 45
 
 # Agents
-# List of agents (automatically installed when you run jvagent or bootstrap)
-# Agents are referenced using the format: namespace/agent_name
-# Agents are discovered from the agents/ folder structure: agents/{namespace}/{agent_name}/
-# Note: Agents can only be installed via this list in app.yaml - there is no direct agent installation
+# Agents are discovered from agents/{namespace}/{agent_name}/ and installed from this list.
 agents:
-  # Example agent - will be loaded from agents/jvagent/example_agent/
   - jvagent/example_agent
-  
-  # Add more agents here - they will be installed automatically when you run jvagent
-  # - contrib/another_agent
-  # - custom/custom_agent
+  - resolv/resolv_demo

@@ -63,11 +63,26 @@ jvagent examples/jvagent_app --debug
 
 # Both
 jvagent examples/jvagent_app --update --debug
+
+# Run with serverless runtime simulation
+jvagent examples/jvagent_app --serverless
 ```
 
-## Using the Model Action
+## Using Core Actions
 
-### From API
+This example app uses core actions from the jvagent library. All configuration is done via `agent.yaml`
+
+### Available Core Actions
+
+- **`jvagent/interact_router`** - Unified posture classification + intent-based routing for InteractActions
+- **`jvagent/openai_lm`** - OpenAI language model (multimodal support)
+- **`jvagent/openai_embedding`** - OpenAI embedding model
+- **`jvagent/typesense_vectorstore`** - Typesense vector store
+- **`jvagent/retrieval_interact_action`** - Context retrieval from vector stores
+
+### Using the Model Action
+
+#### From API
 
 Query the model action:
 
@@ -91,20 +106,20 @@ curl -X POST http://localhost:8000/actions/{action_id}/query \
   }'
 ```
 
-### From Another Action
+#### From Another Action
 
 ```python
-from jvagent.action.model import OpenAIModelAction
+from jvagent.action.model.language.openai import OpenAILanguageModelAction
 
 class MyAction(Action):
     async def my_method(self):
         # Get the model action (use actual ID or find by label)
-        model = await OpenAIModelAction.find_one({"context.label": "model_openai"})
-        
+        model = await OpenAILanguageModelAction.find_one({"context.label": "openai_lm"})
+
         # Text query
         result = await model.query_sync("Hello, how are you?")
         response = await result.get_response()
-        
+
         # Vision query
         content = model.create_image_content(
             text="What's in this image?",
@@ -116,16 +131,24 @@ class MyAction(Action):
 
 ## Configuration
 
-The model action is configured in `agents/jvagent/example_agent/agent.yaml`:
+All actions are configured in `agents/jvagent/example_agent/agent.yaml`. Core actions are referenced directly without needing stub directories:
 
 ```yaml
 actions:
-  - action: jvagent/model_openai
+  # Core action from jvagent library
+  - action: jvagent/openai_lm
     context:
+      enabled: true
       model: gpt-4o  # Change model here
       temperature: 0.7  # Adjust temperature
       max_tokens: 2000  # Adjust max tokens
+      api_key: ${OPENAI_API_KEY}  # From .env file
 ```
+
+The action loader will automatically:
+1. Check for a local action at `actions/jvagent/openai_lm/`
+2. If not found, load from core library at `jvagent/action/model/language/openai/`
+3. Apply configuration from `agent.yaml` context
 
 ### Available Models
 
@@ -192,9 +215,12 @@ Tips for cost reduction:
 
 ## Documentation
 
-- Main README: `agents/jvagent/example_agent/actions/jvagent/model_openai/README.md`
-- Multimodal guide: `agents/jvagent/example_agent/actions/jvagent/model_openai/MULTIMODAL.md`
-- Core docs: `jvagent/action/model/README.md`
+- Core action docs: `jvagent/action/model/language/openai/README.md`
+- Core action docs: `jvagent/action/model/embedding/openai/README.md`
+- Core action docs: `jvagent/action/router/README.md`
+- Core action docs: `jvagent/action/retrieval/README.md`
+- Core action docs: `jvagent/action/vectorstore/typesense/README.md`
+- Main jvagent README: `../../README.md`
 
 ## Support
 

@@ -2,6 +2,8 @@
 
 This is a boilerplate project for creating a jvagent application. It provides a structured foundation for developing agentive applications with custom agents and actions.
 
+To **generate a new app** from the command line (with optional `profiles/`, deploy stubs, and built-in action profiles), use **`jvagent app create`** — see the jvagent repo’s [docs/scaffolding.md](../../docs/scaffolding.md).
+
 ## Project Structure
 
 ```
@@ -26,6 +28,8 @@ jvagent_app/
 
 After installing jvagent, you can run this example application:
 
+> **PageIndex document retrieval**: The example agent includes `jvagent/pageindex_retrieval_interact_action`. Install jvagent with the pageindex extra: `pip install jvagent[pageindex]` or `pip install -e ".[pageindex]"` from the jvagent repo. Documents must be ingested via `POST /pageindex/documents` before retrieval works. Ingestion options (`node_summary`, `node_text`, etc.) are configured under the action's `config` block in `agent.yaml`—see [PageIndex README](../jvagent/action/pageindex/README.md).
+
 1. **Navigate to the jvagent repository root** (where you installed jvagent)
 
 2. **Set up environment variables** (if not already done):
@@ -34,7 +38,7 @@ After installing jvagent, you can run this example application:
    cp .env.example .env
    # Edit .env and set at minimum:
    # - JVAGENT_ADMIN_PASSWORD (required)
-   # - OPENAI_API_KEY (optional, for model_openai action)
+   # - OPENAI_API_KEY (optional, for openai_lm action)
    cd ../..
    ```
 
@@ -75,7 +79,9 @@ After installing jvagent, you can run this example application:
 
 4. **Add your custom agents** to the `agents/` directory (see [Agents](#agents) below)
 
-5. **Add actions to each agent** by placing them in `agents/{namespace}/{agent_name}/actions/` (see [Actions](#actions) below)
+5. **Configure actions** in each agent's `agent.yaml`:
+   - Use core actions directly (e.g., `jvagent/interact_router`)
+   - Add custom actions in `agents/{namespace}/{agent_name}/actions/` (see [Actions](#actions) below)
 
 6. **Update app.yaml** to include your agents in the agents list
 
@@ -83,7 +89,7 @@ After installing jvagent, you can run this example application:
    ```bash
    # Recommended: Specify app root path
    jvagent /path/to/my_agent_app
-   
+
    # Or change to the directory first
    cd /path/to/my_agent_app
    jvagent
@@ -93,7 +99,7 @@ After installing jvagent, you can run this example application:
 
 The `app.yaml` file is the main application descriptor that defines:
 - Application metadata (name, version, description, etc.)
-- Application configuration defaults
+- Safe application configuration defaults
 - List of agents (agents listed here are automatically installed when you run jvagent)
 - Location of each agent package (discovered from the `agents/` directory structure)
 
@@ -104,16 +110,26 @@ The `app.yaml` file is the main application descriptor that defines:
 app: jvagent_demo_app
 
 # Application metadata
-  version: 1.0.0
+version: 1.0.0
 author: Your Name/Organization
 
 # Application context: Properties that configure the App node
 context:
   name: jvagent Demo App
   description: Demo application
-  file_storage_provider: local
-  file_storage_root_dir: ./.files
-  file_storage_enabled: true
+
+config:
+  server:
+    title: Demo API
+    description: API for demo app
+    version: 0.0.1
+
+  auth:
+    enabled: true
+    exempt_paths:
+      - /health
+      - /docs
+      - /openapi.json
 
 # Agents (list of namespace/agent_name strings)
 # Agents listed here are automatically installed when you run jvagent or bootstrap
@@ -132,18 +148,47 @@ When jvagent starts from an app directory, it:
    - Reads `agent.yaml` to get agent configuration
    - Resolves environment variables in agent config
    - Creates/updates the Agent node
-   - Discovers actions from `actions/{namespace}/{action_name}/` directories
-   - Reads `info.yaml` for each action and resolves environment variables
-   - Loads and registers actions with their configuration
-   - Imports `endpoints.py` modules for endpoint discovery
+   - Scans `agent.yaml` to identify required actions
+   - Resolves transitive dependencies from `info.yaml` files
+   - Discovers actions from `actions/{namespace}/{action_name}/` directories (only for required actions)
+   - Reads `info.yaml` for each required action and resolves environment variables
+   - Loads action classes conditionally (only for required actions and their dependencies)
+   - Imports `endpoints.py` modules for endpoint discovery (only for loaded actions)
+   - Registers actions with their configuration from `agent.yaml`
+   - **Important**: Actions not listed in any `agent.yaml` remain unloaded and their endpoints are not accessible
 
 ## Actions
 
-Actions are pluggable components that extend agent functionality. **Actions are now packaged within each agent folder**, allowing agents to be self-contained packages with their own actions.
+Actions are pluggable components that extend agent functionality. Actions can be:
+1. **Core actions** from the jvagent library (loaded conditionally based on `agent.yaml`)
+2. **Local actions** packaged within each agent folder
+3. **Local overrides** of core actions (takes precedence over core)
+
+**Conditional Loading**: Actions are only loaded if they are explicitly listed in `agent.yaml` or are required as dependencies of a loaded action. This ensures that unused actions remain unloaded and their endpoints are not accessible.
+
+### Action Discovery and Conditional Loading
+
+Actions are discovered and loaded conditionally based on `agent.yaml` configuration:
+
+1. **Required Actions**: Actions explicitly listed in `agent.yaml` are marked as required
+2. **Dependency Resolution**: For each required action, dependencies are resolved transitively from `info.yaml` files
+3. **Action Loading**: Only required actions (and their dependencies) are loaded:
+   - **Local actions** from `actions/{namespace}/{action_name}/` (takes precedence)
+   - **Core actions** from jvagent library (`jvagent/action/*/`) if not found locally
+4. **Endpoint Registration**: Endpoints are only registered for loaded actions
+5. **Unused Actions**: Actions not listed in any `agent.yaml` remain completely unloaded (no module import, no endpoints)
+
+**Important**: Only actions explicitly listed in `agent.yaml` (or required as dependencies) are loaded. Unused actions remain unloaded and their endpoints are not accessible.
+
+### Using Core Actions
+
+This example app demonstrates using core actions directly from the jvagent library. Core actions like `interact_router`, `openai_lm`, `openai_embedding`, `typesense_vectorstore`, and `retrieval_interact_action` are referenced in `agent.yaml` without requiring stub directories.
 
 ### Action Structure
 
-Each action package should be placed within its agent's `actions/` subdirectory:
+#### Local Actions
+
+Each local action package should be placed within its agent's `actions/` subdirectory:
 
 ```
 agents/
@@ -153,6 +198,7 @@ agents/
         │   └── {namespace}/   # Namespace directory
         │       └── {action_name}/
         │           ├── {action_name}.py  # Main action implementation (Action class)
+        │           ├── __init__.py        # Package initialization
         │           ├── endpoints.py      # API endpoints (standard pattern)
         │           ├── info.yaml        # Action metadata and configuration
         │           ├── requirements.txt  # Python dependencies (optional)
@@ -161,24 +207,56 @@ agents/
         └── README.md         # Agent documentation (optional)
 ```
 
+#### Example App Actions
+
+This example app includes:
+- **Core actions** (loaded from jvagent library):
+  - `jvagent/interact_router` - Unified posture classification + intent-based routing
+  - `jvagent/openai_lm` - OpenAI language model
+  - `jvagent/openai_embedding` - OpenAI embeddings
+  - `jvagent/typesense_vectorstore` - Typesense vector store
+  - `jvagent/retrieval_interact_action` - Context retrieval
+
+- **Local actions**:
+  - `jvagent/example_action` - Custom example action
+  - `jvagent/persona` - Local override of core persona action
+
+### Using Core Actions
+
+To use a core action, simply reference it in `agent.yaml`:
+
+```yaml
+actions:
+  - action: jvagent/interact_router
+    context:
+      enabled: true
+      model_action_type: "OpenAILanguageModelAction"
+      history_limit: 3
+      enable_routing_cache: true  # Optional: skip LLM for repeated context (requires enable_interact_router_cache in app.yaml)
+```
+
+No stub directory needed - the action is automatically loaded from the core library when listed in `agent.yaml`.
+
+**Conditional Loading**: Core actions are only loaded if they are explicitly listed in `agent.yaml` or are required as dependencies of a loaded action. This ensures that unused actions remain unloaded and their endpoints are not accessible.
+
 ### Action Implementation
 
-Your action class should extend `jvagent.action.base.Action`:
+For custom actions, your action class should extend `jvagent.action.base.Action`:
 
 ```python
 from jvagent.action.base import Action
 
 class MyAction(Action):
     """My custom action implementation."""
-    
+
     async def on_register(self):
         """Called when action is registered."""
         pass
-    
+
     async def on_enable(self):
         """Called when action is enabled."""
         pass
-    
+
     # Implement other lifecycle hooks as needed
 ```
 
@@ -190,27 +268,27 @@ Each action must include an `info.yaml` file:
 package:
   # Action name in namespace/action_name format
   name: jvagent/my_action
-  
+
   # Package author
   author: Your Name/Organization
-  
+
   # Archetype: The main Action class name (same as the Action Node class)
   archetype: MyAction
-  
+
   # Package version
 version: 1.0.0
-  
+
   # Package metadata
   meta:
     title: My Custom Action
 description: A description of what this action does
     group: jvagent
     type: action
-  
+
   # Package dependencies
 dependencies:
     # jvagent version requirement
-    jvagent: ~2.1.0
+    jvagent: ~0.0.1
     # Other action dependencies (by namespace/action_name)
   actions: []
 ```
@@ -264,32 +342,63 @@ actions:
       api_endpoint: "https://prod.api.example.com"
 ```
 
+`agent.yaml` uses warn-only structural validation:
+- expected top-level structure is validated (`agent`, metadata, `context`, `actions`)
+- each `actions[]` entry is validated for shape (`action`, optional `context`, optional `config`)
+- custom keys inside `actions[].context` and `actions[].config` are allowed for custom actions
+
 ## Configuration
+
+### Configuration Priority
+
+Configuration is loaded with the following priority (highest to lowest):
+1. **Environment variables** (from `.env` file or system environment) - Highest priority
+2. **app.yaml config section** - Default values
+3. **Hardcoded defaults** in code - Lowest priority
 
 ### Application Configuration (app.yaml)
 
-The `app.yaml` file includes a `config` section with application-level defaults:
-- Server configuration (host, port, title)
-- Database configuration defaults
-- File storage defaults
-- Authentication defaults
-- Admin user defaults
+Use `app.yaml` for app structure and high-convenience defaults that are safe in git:
 
-**Note**: Configuration in `app.yaml` can use environment variable placeholders (e.g., `${VAR_NAME}`) which are automatically resolved when the app is loaded.
+- `app`, `context` metadata, `agents`
+- `config.server` metadata (`title`, `description`, `version`, docs routes)
+- `config.auth.enabled` and `config.auth.exempt_paths`
+- `config.interact` limits
+- `config.cors` defaults
+- `config.performance` defaults
+
+Keep these env-first (even when YAML fallbacks exist):
+
+- Secrets (`JVSPATIAL_JWT_SECRET_KEY`, `JVAGENT_ADMIN_PASSWORD`, vendor API keys)
+- System/runtime and deploy-specific values (`JVAGENT_HOST`, `JVAGENT_PORT`, DB/storage/log backend keys)
+- Credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, S3 keys)
+
+The descriptor follows an expected-key model:
+
+- use only documented top-level keys and documented `config` sections
+- any key outside the expected model is flagged as unexpected at startup
 
 ### Environment Configuration (.env)
 
-The `.env` file contains runtime-specific configuration that overrides `app.yaml` defaults. See `.env.example` for available options.
+The `.env` file should contain secrets and environment-specific overrides:
 
-**Key configuration variables:**
-- `JVAGENT_HOST`, `JVAGENT_PORT`: Server host and port
-- `JVSPATIAL_DB_PATH`: Database path (production will use its own path)
-- `JVSPATIAL_FILE_INTERFACE`: File storage provider (local, s3)
-- `JVSPATIAL_FILES_ROOT_PATH`: Root path for file storage (production will use its own path)
-- `JVSPATIAL_JWT_SECRET`: JWT secret key (MUST be set in production)
-- `JVAGENT_ADMIN_PASSWORD`: Admin password (MUST be set in production)
+**Required Secrets:**
+- `OPENAI_API_KEY` - OpenAI API key (for language model actions)
+- `TYPESENSE_API_KEY` - Typesense API key (for vector store actions)
+- `JVSPATIAL_JWT_SECRET_KEY` - JWT secret key (MUST be set in production)
+- `JVAGENT_ADMIN_PASSWORD` - Admin password (MUST be set in production)
 
-**Note**: Actions are packaged within each agent folder (`agents/{namespace}/{agent_name}/actions/{namespace}/{action_name}/`). Environment variable placeholders like `${VAR_NAME}` in YAML files are automatically resolved from the environment.
+**Optional Overrides:**
+You can override any `app.yaml` configuration using environment variables if needed for local development:
+- `JVAGENT_HOST`, `JVAGENT_PORT` - Override server host/port
+- `JVSPATIAL_MONGODB_URI` - Override MongoDB URI
+- `JVSPATIAL_MONGODB_DB_NAME` - Override database name
+- `JVSPATIAL_LOG_LEVEL` - Override log level (`debug`, `info`, `warning`, `error`; same as jvspatial)
+
+**Important**:
+- Add `.env` to `.gitignore` to prevent committing secrets
+- In production, use secure secret management (environment variables, secret managers, etc.)
+- Put deploy-specific values in env even when YAML fallbacks exist
 
 ## Running the Application
 
@@ -302,6 +411,9 @@ jvagent /path/to/jvagent_app
 
 # With flags
 jvagent /path/to/jvagent_app --update --debug
+
+# Fresh start (development mode only) - deletes database and logs
+jvagent /path/to/jvagent_app --purge
 
 # Or using Python module
 python -m jvagent /path/to/jvagent_app
@@ -331,11 +443,14 @@ When jvagent starts with an app directory (either specified as a path or from wi
 4. **For each agent** listed in `app.yaml`:
    - Read `agent.yaml` and resolve environment variables
    - Create/update the Agent node
-   - Discover actions from `actions/{namespace}/{action_name}/` directories
-   - Read `info.yaml` for each action and resolve environment variables
-   - Load action classes and import `endpoints.py` modules via `__init__.py`
+   - Scan `agent.yaml` to identify required actions
+   - Resolve transitive dependencies from `info.yaml` files
+   - Discover actions from `actions/{namespace}/{action_name}/` directories (only for required actions)
+   - Read `info.yaml` for each required action and resolve environment variables
+   - Load action classes conditionally (only for required actions and their dependencies)
+   - Import `endpoints.py` modules via `__init__.py` (only for loaded actions)
    - Register actions with their configuration from `agent.yaml`
-5. **Start the API server** with all discovered endpoints
+5. **Start the API server** with endpoints from loaded actions only
 
 ## Development
 
@@ -358,7 +473,7 @@ When jvagent starts with an app directory (either specified as a path or from wi
    touch agents/my_agent/actions/jvagent/my_new_action/__init__.py
    touch agents/my_agent/actions/jvagent/my_new_action/endpoints.py
    ```
-   
+
    In `__init__.py`, import the action class and endpoints:
    ```python
    from .my_new_action import MyNewAction
@@ -415,9 +530,8 @@ my_new_action/
 Additional documentation can be placed in the `docs/` directory:
 
 - `docs/architecture.md`: Application architecture overview
-- `docs/actions.md`: Detailed action development guide
-- `docs/agents.md`: Detailed agent configuration guide
-- `docs/deployment.md`: Deployment instructions
+
+For action development, agent configuration, and deployment, see the main [jvagent README](../../README.md) and [Documentation Index](../../README.md#documentation-index).
 
 ## License
 
@@ -428,4 +542,3 @@ Additional documentation can be placed in the `docs/` directory:
 For issues and questions:
 - Check the [jvagent documentation](https://github.com/your-org/jvagent)
 - Open an issue on the project repository
-

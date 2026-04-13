@@ -1,0 +1,52 @@
+FROM public.ecr.aws/lambda/python:3.12
+
+# Add Lambda Web Adapter
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1 /lambda-adapter /opt/extensions/lambda-adapter
+
+ENV START_COMMAND="jvagent ."
+
+ENV JVAGENT_PORT=8080
+ENV JVAGENT_HOST=0.0.0.0
+# Add venv to PATH so CLI commands work
+ENV PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /var/task
+
+# Stage 1: OS packages and source (isolates dnf/git/clone failures)
+RUN set -eux && \
+    dnf -y update && \
+    dnf install -y git && \
+    git clone --depth 1 --single-branch --branch dev https://github.com/TrueSelph/jvagent && \
+    git clone --depth 1 --single-branch --branch dev https://github.com/TrueSelph/jvspatial
+
+# Stage 2: venv and Python deps (Lambda image provides python3.12 under /var/lang/bin)
+RUN set -eux && \
+    /var/lang/bin/python3.12 -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'numpy>=1.26.0,<2.0' && \
+    /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'tiktoken<0.8.0' && \
+    /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'pydantic[email]' && \
+    (/opt/venv/bin/pip install --no-cache-dir --only-binary=:all: -e './jvspatial[lambda]' || \
+        /opt/venv/bin/pip install --no-cache-dir -e './jvspatial[lambda]') && \
+    (/opt/venv/bin/pip install --no-cache-dir --only-binary=:all: -e ./jvagent || \
+        /opt/venv/bin/pip install --no-cache-dir -e ./jvagent) && \
+    (/opt/venv/bin/pip install --no-cache-dir --only-binary=:all: -r ./jvagent/requirements-all.txt || \
+        /opt/venv/bin/pip install --no-cache-dir -r ./jvagent/requirements-all.txt)
+
+# Stage 3: verify CLI and drop build-only packages
+RUN set -eux && \
+    echo "Checking jvagent CLI availability..." && \
+    ls -l /opt/venv/bin/jvagent && \
+    /opt/venv/bin/jvagent --help && \
+    dnf -y remove git perl-Git && \
+    dnf clean all
+
+# Verify venv persisted
+RUN test -f /opt/venv/bin/python || (echo "ERROR: venv not found!" && exit 1)
+
+# Create wrapper script that uses the CLI entry point directly
+RUN printf '#!/bin/sh\nexec $START_COMMAND\n' > /var/task/run.sh && \
+    chmod +x /var/task/run.sh
+
+ENTRYPOINT []
+CMD ["/var/task/run.sh"]

@@ -2,7 +2,8 @@
 
 import pytest
 
-from jvagent.action.model.base import ModelAction, ModelActionResult
+from jvagent.action.model import ModelActionResult
+from jvagent.action.model.language.base import LanguageModelAction
 
 
 class TestMultimodalContent:
@@ -11,7 +12,7 @@ class TestMultimodalContent:
     def test_create_image_content_with_url(self):
         """Test creating multimodal content with image URL."""
 
-        class MockModelAction(ModelAction):
+        class MockModelAction(LanguageModelAction):
             async def _query(self, messages, tools=None, **kwargs):
                 return ModelActionResult(response="", usage={}, model="", provider="")
 
@@ -33,7 +34,7 @@ class TestMultimodalContent:
     def test_create_image_content_with_base64(self):
         """Test creating multimodal content with base64 image."""
 
-        class MockModelAction(ModelAction):
+        class MockModelAction(LanguageModelAction):
             async def _query(self, messages, tools=None, **kwargs):
                 return ModelActionResult(response="", usage={}, model="", provider="")
 
@@ -41,7 +42,9 @@ class TestMultimodalContent:
                 return ModelActionResult(response="", usage={}, model="", provider="")
 
         action = MockModelAction()
-        content = action.create_image_content("Analyze this", image_base64="iVBORw0KGgo=")
+        content = action.create_image_content(
+            "Analyze this", image_base64="iVBORw0KGgo="
+        )
 
         assert len(content) == 2
         assert content[0]["type"] == "text"
@@ -52,7 +55,7 @@ class TestMultimodalContent:
     def test_create_image_content_with_detail(self):
         """Test creating content with custom detail level."""
 
-        class MockModelAction(ModelAction):
+        class MockModelAction(LanguageModelAction):
             async def _query(self, messages, tools=None, **kwargs):
                 return ModelActionResult(response="", usage={}, model="", provider="")
 
@@ -71,7 +74,7 @@ class TestMultimodalContent:
     def test_create_multimodal_content_multiple_images(self):
         """Test creating content with multiple images."""
 
-        class MockModelAction(ModelAction):
+        class MockModelAction(LanguageModelAction):
             async def _query(self, messages, tools=None, **kwargs):
                 return ModelActionResult(response="", usage={}, model="", provider="")
 
@@ -96,7 +99,7 @@ class TestMultimodalContent:
     def test_create_multimodal_content_with_base64_images(self):
         """Test creating content with base64 images."""
 
-        class MockModelAction(ModelAction):
+        class MockModelAction(LanguageModelAction):
             async def _query(self, messages, tools=None, **kwargs):
                 return ModelActionResult(response="", usage={}, model="", provider="")
 
@@ -123,7 +126,7 @@ class TestMultimodalFormatting:
     def test_format_messages_with_text_prompt(self):
         """Test formatting with simple text prompt."""
 
-        class MockModelAction(ModelAction):
+        class MockModelAction(LanguageModelAction):
             async def _query(self, messages, tools=None, **kwargs):
                 return ModelActionResult(response="", usage={}, model="", provider="")
 
@@ -140,7 +143,7 @@ class TestMultimodalFormatting:
     def test_format_messages_with_multimodal_prompt(self):
         """Test formatting with multimodal prompt."""
 
-        class MockModelAction(ModelAction):
+        class MockModelAction(LanguageModelAction):
             async def _query(self, messages, tools=None, **kwargs):
                 return ModelActionResult(response="", usage={}, model="", provider="")
 
@@ -163,7 +166,7 @@ class TestMultimodalFormatting:
     def test_format_messages_with_multimodal_history(self):
         """Test formatting with multimodal conversation history."""
 
-        class MockModelAction(ModelAction):
+        class MockModelAction(LanguageModelAction):
             async def _query(self, messages, tools=None, **kwargs):
                 return ModelActionResult(response="", usage={}, model="", provider="")
 
@@ -176,7 +179,10 @@ class TestMultimodalFormatting:
                 "role": "user",
                 "content": [
                     {"type": "text", "text": "What's this?"},
-                    {"type": "image_url", "image_url": {"url": "https://example.com/img.jpg"}},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "https://example.com/img.jpg"},
+                    },
                 ],
             },
             {"role": "assistant", "content": "It's a cat."},

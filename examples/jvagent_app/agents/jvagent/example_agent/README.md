@@ -23,11 +23,16 @@ example_agent/
 │       │   ├── info.yaml
 │       │   ├── requirements.txt
 │       │   └── README.md
-│       ├── model_openai/    # OpenAI model action
+│       ├── openai_lm/    # OpenAI language model action
 │       │   ├── __init__.py
-│       │   ├── model_openai.py
+│       │   ├── openai_lm.py
 │       │   ├── info.yaml
 │       │   ├── requirements.txt
+│       │   └── README.md
+│       ├── openai_embedding/  # OpenAI embedding model action
+│       │   ├── __init__.py
+│       │   ├── openai_embedding.py
+│       │   ├── info.yaml
 │       │   └── README.md
 │       └── persona/         # Persona interact action
 │           ├── __init__.py
@@ -62,23 +67,22 @@ context:
 # Action Assignments
 actions:
   # Model action for LLM queries
-  - action: jvagent/model_openai
+  - action: jvagent/openai_lm
     context:
       enabled: true
       api_key: ${OPENAI_API_KEY}
       model: gpt-4o-mini
-  
+
   # Persona action for interactive conversations
   - action: jvagent/persona
     context:
       enabled: true
       persona_name: "Example Assistant"
-      persona_role: "A helpful AI assistant"
-      model_action_type: "OpenAIModelAction"
-      model_name: gpt-4o-mini
+      model_action_type: "OpenAILanguageModelAction"
+      model: gpt-4o-mini
       model_temperature: 0.3
-      model_max_tokens: 4096
-  
+      model_max_tokens: 8192
+
   # Example action for demonstrations
   - action: jvagent/example_action
     context:
@@ -95,12 +99,32 @@ Provides LLM integration with OpenAI models:
 - Multimodal support (vision)
 - Token usage tracking
 
+**API Endpoints:**
+- `POST /actions/{action_id}/query` - Query the language model
+- `GET /actions/{action_id}/metrics` - Get usage metrics
+- `GET /actions/{action_id}/templates` - List available templates
+- `POST /actions/{action_id}/templates/{template_name}/render` - Render a template
+
+### Embedding OpenAI Action
+
+Provides embedding model integration with OpenAI's Embeddings API:
+- Vector embedding generation
+- Multiple model support (text-embedding-3-small, text-embedding-3-large, text-embedding-ada-002)
+- Auto-dimension detection
+- Metrics tracking
+
+**API Endpoints:**
+- `POST /actions/{action_id}/embed` - Generate embedding for text
+- `POST /actions/{action_id}/embed/batch` - Generate embeddings for multiple texts
+- `GET /actions/{action_id}/embedding/metrics` - Get usage metrics
+
 ### Persona Action
 
 Simplified tool-based action for applying agent prompts:
 - Prompt composition with persona attributes
 - Configurable parameters for behavioral instructions
 - Model integration via ModelAction
+- Automatic ResponseBus publishing for streaming and non-streaming responses
 - Simple `respond()` method interface
 
 **Interact Endpoint (via InteractWalker):**
@@ -129,14 +153,24 @@ POST /api/agents/{agent_id}/interact
     "id": "int_123",
     "utterance": "Hello!",
     "response": "Hello! How can I help you?",
-    "actions": ["PersonaAction", "OpenAIModelAction"],
+    "actions": ["PersonaAction", "OpenAILanguageModelAction"],
     "directives": [],
     "parameters": [],
-    "model_log": [...]
+    "observability_metrics": [...]
   },
   "report": [...]
 }
 ```
+
+### PageIndex Retrieval Action
+
+Vectorless RAG from indexed documents (no embeddings). Configure ingestion options under the `config` block in `agent.yaml`:
+
+- `node_summary`: Generate node summaries (required for tree_search)
+- `node_text`, `doc_description`: Control what content is stored per node
+- `max_token_num_each_node`, `summary_token_threshold`: Token limits for PDF/Markdown
+
+See [PageIndex README](../../../../../jvagent/action/pageindex/README.md) for full configuration.
 
 ### Example Action
 
@@ -171,6 +205,7 @@ To create your own agent:
 ## Environment Variables
 
 This agent uses environment variables for configuration:
-- `${OPENAI_API_KEY}`: OpenAI API key for the model action (set in `.env` file)
+- `${OPENAI_API_KEY}`: OpenAI API key for the model and embedding actions (set in `.env` file)
+- `${TYPESENSE_API_KEY}`: Typesense API key for the vector store (set in `.env` file)
 
 See the main [jvagent README](../../../../../../README.md) for more information about environment variable resolution.

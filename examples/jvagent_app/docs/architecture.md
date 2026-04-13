@@ -14,6 +14,9 @@ The root application node that manages:
 - Application-wide configuration
 - File storage operations
 - Global settings
+- App-level datetime via `timezone` (app.yaml context) and `now()` method
+
+**App.now()** returns the current datetime in the configured timezone (or server local if unset). Use for consistent timestamps across actions, memory, and logging. Access via `await App.get()` then `await app.now()`, or from actions via `await self.now()`.
 
 ### Agents Node
 
@@ -36,6 +39,8 @@ Pluggable components that:
 - Can be enabled/disabled per agent
 - Have lifecycle hooks
 - Maintain their own state
+
+Core actions include InteractRouter, PersonaAction, model actions (e.g. OpenAI), and **MCPAction** (`jvagent/mcp`) for fulfilling natural language commands via an MCP server. See the main [README](../../README.md) for available actions; MCP usage is documented in the jvagent package under `jvagent/action/mcp/README.md`.
 
 ### Memory System
 
@@ -102,10 +107,17 @@ Files are stored via the App node:
 
 The architecture includes several performance optimizations:
 
+**Caching:**
+- Agent node caching to reduce database lookups (configurable TTL)
+- Action instance caching during discovery phase
+- Automatic cache invalidation on agent/action updates
+- Configure via `app.yaml` or environment variables
+
 **Query Optimizations:**
 - Uses `count()` for efficient record counting without loading data
 - Uses `find_one()` for optimized single-record retrieval
 - Uses `node()` for direct single-node graph traversal
+- Batch queries to eliminate N+1 patterns in node traversal
 - Database-level operations instead of client-side filtering
 
 **Indexing:**
@@ -119,6 +131,11 @@ The architecture includes several performance optimizations:
 - Cached reference to last interaction for O(1) access
 - Efficient chain traversal for interaction history
 - Automatic cleanup of old interactions
+
+**Profiling:**
+- Optional request latency profiling for debugging
+- Enable via `JVAGENT_ENABLE_PROFILING=true` or `config.performance.enable_profiling`
+- Profiles logged at DEBUG level with latency breakdowns
 
 ## Security
 

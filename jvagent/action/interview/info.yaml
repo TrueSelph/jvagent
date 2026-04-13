@@ -1,0 +1,28 @@
+# This file defines the action's package metadata, dependencies, and configuration
+
+package:
+  name: jvagent/interview_interact_action
+
+  # Package author
+  author: jvagent
+
+  # Archetype: The main Action class name (same as the Action Node class)
+  archetype: InterviewInteractAction
+
+  # Package version
+  version: 1.0.0
+
+  # Package metadata
+  meta:
+    title: Interview Interact Action
+    description: A interact action for interviewing the user
+    group: jvagent
+    type: interact_action
+
+  # Package dependencies
+  dependencies:
+    # jvagent version requirement
+    jvagent: ~0.0.1
+    # Other action dependencies (by namespace/action_name)
+    actions:
+      # - jvagent/another_action: ~1.0.0

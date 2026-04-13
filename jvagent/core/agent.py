@@ -1,18 +1,16 @@
 """Agent node and CRUD operations."""
 
+import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from jvspatial.api import endpoint
-from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
-from jvspatial.core.pager import ObjectPager
-
-from jvagent.core.agents import Agents
 
 if TYPE_CHECKING:
     from jvagent.action.actions import Actions
+    from jvagent.action.response.response_bus import ResponseBus
+
+logger = logging.getLogger(__name__)
 
 
 class Agent(Node):
@@ -27,14 +25,23 @@ class Agent(Node):
     """
 
     namespace: str = attribute(indexed=True, description="Namespace for the agent")
-    name: str = attribute(indexed=True, index_unique=True, description="Unique machine name for the agent")
+    name: str = attribute(
+        indexed=True, index_unique=True, description="Unique machine name for the agent"
+    )
     alias: str = attribute(description="Human-readable display name")
     enabled: bool = attribute(default=True, description="Whether the agent is enabled")
     description: str = attribute(description="Optional description of the agent")
     interaction_limit: int = attribute(
         default=0,
-        description="Default interaction limit for conversations (0 = disabled, no pruning). Can be overridden per conversation."
+        description="Default interaction limit for conversations (0 = disabled, no pruning). Can be overridden per conversation.",
     )
+    max_statement_length: Optional[int] = attribute(
+        default=None,
+        description="Default maximum length for truncating utterances and responses in conversation history. Can be overridden when calling methods that accept max_statement_length parameter. None = no truncation.",
+    )
+
+    # Runtime instances (private, transient)
+    _response_bus: Any = attribute(private=True, default=None)
 
     # =========================================================================
     # Graph Navigation Helpers
@@ -65,11 +72,11 @@ class Agent(Node):
     async def get_action_by_type(self, entity_type: str) -> Optional[Any]:
         """Get the first action matching the given entity type.
 
-        This is useful for finding actions like "OpenAIModelAction" without
+        This is useful for finding actions like "OpenAILanguageModelAction" without
         needing to know the specific ID or label.
 
         Args:
-            entity_type: Entity type name (e.g., "OpenAIModelAction", "PersonaAction")
+            entity_type: Entity type name (e.g., "OpenAILanguageModelAction", "PersonaAction")
 
         Returns:
             Action instance if found, None otherwise
@@ -78,10 +85,37 @@ class Agent(Node):
 
         # Use entity-centric find_one with explicit entity filter
         # This queries for the specific entity type belonging to this agent
-        return await Action.find_one({
-            "entity": entity_type,
-            "context.agent_id": self.id,
-        })
+        return await Action.find_one(
+            {
+                "entity": entity_type,
+                "context.agent_id": self.id,
+            }
+        )
+
+    async def get_access_control_action(self) -> Optional[Any]:
+        """Return the agent's AccessControlAction, if any.
+
+        Logs an error when more than one is present (undefined); the first match is returned.
+        """
+        from jvagent.action.base import Action
+
+        found = await Action.find(
+            {
+                "entity": "AccessControlAction",
+                "context.agent_id": self.id,
+            }
+        )
+        if not found:
+            return None
+        if len(found) > 1:
+            logger.error(
+                "Multiple AccessControlAction nodes for agent %s (count=%s ids=%s); "
+                "using the first instance",
+                self.id,
+                len(found),
+                [getattr(a, "id", None) for a in found],
+            )
+        return found[0]
 
     async def get_actions(self, enabled_only: bool = False) -> List[Any]:
         """Get all actions for this agent.
@@ -105,375 +139,50 @@ class Agent(Node):
         """
         return await self.node(node="Memory")
 
+    # =========================================================================
+    # Response Bus (Agent-Scoped)
+    # =========================================================================
 
-# =============================================================================
-# ENDPOINTS: Get, Update, Delete, List Agents
-# =============================================================================
+    async def get_response_bus(self) -> "ResponseBus":
+        """Get or initialize the agent-scoped ResponseBus instance.
 
+        Each agent owns exactly one ResponseBus instance. Channel adapters and
+        filters from this agent's actions register with this bus.
 
-@endpoint(
-    "/agents/{agent_id}",
-    methods=["GET"],
-    auth=True,
-    tags=["Agent"],
-    response=success_response(
-        data={
-            "agent": ResponseField(
-                field_type=Dict[str, Any],
-                description="Agent information",
-                example={
-                    "id": "agent_123",
-                    "namespace": "jvagent",
-                    "name": "my_agent",
-                    "alias": "My Agent",
-                    "enabled": True,
-                    "description": "Agent description",
-                    "interaction_limit": 100,
-                },
-            )
-        }
-    ),
-)
-async def get_agent(agent_id: str) -> Dict[str, Any]:
-    """Get a specific agent by ID.
+        Returns:
+            ResponseBus instance for this agent
+        """
+        if self._response_bus is None:
+            from jvagent.action.response.response_bus import ResponseBus
 
-    Retrieves full agent information including:
+            self._response_bus = ResponseBus()
+        return self._response_bus
 
-    - Identity: namespace, name, alias
-    - Status: enabled/disabled
-    - Description and metadata
+    async def save(self, *args, **kwargs):
+        """Save the agent and invalidate cache.
 
-    The agent ID follows the format: n.Agent.{unique_id}
+        Overrides Node.save() to invalidate the agent cache after saving,
+        ensuring cached agents reflect the latest state.
 
-    Args:
-        agent_id: ID of the agent to retrieve
+        Args:
+            *args: Positional arguments passed to parent save()
+            **kwargs: Keyword arguments passed to parent save()
 
-    Returns:
-        Dictionary with complete agent information
+        Returns:
+            Result from parent save()
 
-    Raises:
-        ResourceNotFoundError: If agent not found
-    """
-    # Get the agent
-    agent = await Agent.get(agent_id)
-    if not agent:
-        raise ResourceNotFoundError(
-            message=f"Agent with ID '{agent_id}' not found", details={"agent_id": agent_id}
-        )
+        Note:
+            Cache invalidation errors are logged but do not prevent the save
+            from succeeding. This ensures data is persisted even if cache
+            operations fail.
+        """
+        result = await super().save(*args, **kwargs)
+        # Invalidate cache after save to ensure consistency
+        try:
+            from jvagent.core.cache import invalidate_agent_cache
 
-    return {"agent": await agent.export()}
-
-
-@endpoint(
-    "/agents/{agent_id}",
-    methods=["PUT"],
-    auth=True,
-    tags=["Agent"],
-    response=success_response(
-        data={
-            "agent": ResponseField(
-                field_type=Dict[str, Any],
-                description="Updated agent information",
-                example={
-                    "id": "agent_123",
-                    "namespace": "jvagent",
-                    "name": "my_agent",
-                    "alias": "Updated Agent Display Name",
-                    "enabled": True,
-                    "description": "Updated description",
-                    "interaction_limit": 100,
-                },
-            ),
-            "message": ResponseField(
-                field_type=str,
-                description="Success message",
-                example="Agent updated successfully",
-            ),
-        }
-    ),
-)
-async def update_agent(
-    agent_id: str,
-    alias: Optional[str] = None,
-    enabled: Optional[bool] = None,
-    description: Optional[str] = None,
-    interaction_limit: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Update an existing Agent node.
-
-    Updatable Fields:
-
-    - alias: Display name shown in UI (name is static)
-    - enabled: Enable/disable the agent
-    - description: Agent description text
-    - interaction_limit: Default interaction limit for conversations (0 = disabled)
-
-    Important Notes:
-
-    - The 'name' field is static and cannot be changed after creation
-    - Use 'alias' to update the display name
-    - Enabling/disabling updates the Agents manager counters
-
-    Args:
-        agent_id: ID of the agent to update
-        alias: New display name (alias) for the agent
-        enabled: Whether the agent should be enabled
-        description: New description for the agent
-        interaction_limit: Default interaction limit for conversations (0 = disabled)
-
-    Returns:
-        Dictionary with:
-
-            - agent: Updated agent information
-            - message: Success confirmation
-
-    Raises:
-        ResourceNotFoundError: If agent not found
-    """
-    # Get the agent
-    agent = await Agent.get(agent_id)
-    if not agent:
-        raise ResourceNotFoundError(
-            message=f"Agent with ID '{agent_id}' not found", details={"agent_id": agent_id}
-        )
-
-    # Note: 'name' is static and cannot be changed after creation
-    # Use 'alias' to update the display name instead
-
-    # Update alias if provided
-    if alias is not None:
-        agent.alias = alias.strip()
-
-    # Update enabled if provided
-    if enabled is not None:
-        previous_enabled = agent.enabled
-        agent.enabled = enabled
-
-        # Update Agents node counters if enabled status changed
-        if previous_enabled != enabled:
-            # Find the Agents node connected to this agent
-            connected_nodes = await agent.nodes()
-            agents_nodes = [n for n in connected_nodes if isinstance(n, Agents)]
-            if agents_nodes:
-                agents_node = agents_nodes[0]
-                if previous_enabled and not enabled:
-                    agents_node.active_agents = max(0, agents_node.active_agents - 1)
-                elif not previous_enabled and enabled:
-                    agents_node.active_agents += 1
-                await agents_node.save()
-
-    # Update description if provided
-    if description is not None:
-        agent.description = description
-
-    # Update interaction_limit if provided
-    if interaction_limit is not None:
-        agent.interaction_limit = interaction_limit
-
-    # Save the updated agent
-    await agent.save()
-
-    return {"agent": await agent.export(), "message": "Agent updated successfully"}
-
-
-@endpoint(
-    "/agents/{agent_id}",
-    methods=["DELETE"],
-    auth=True,
-    tags=["Agent"],
-    response=success_response(
-        data={
-            "message": ResponseField(
-                field_type=str,
-                description="Success message",
-                example="Agent deleted successfully",
-            ),
-        }
-    ),
-)
-async def delete_agent(agent_id: str) -> Dict[str, Any]:
-    """Delete an Agent node.
-
-    This operation cascades to delete:
-
-    - All connected Actions
-    - Memory node and all User/Conversation/Interaction data
-    - Any file storage associated with the agent
-
-    Warning:
-        This operation is irreversible. All agent data will be permanently deleted.
-
-    Args:
-        agent_id: ID of the agent to delete
-
-    Returns:
-        Dictionary with success message
-
-    Raises:
-        ResourceNotFoundError: If agent not found
-    """
-    # Get the agent
-    agent = await Agent.get(agent_id)
-    if not agent:
-        raise ResourceNotFoundError(
-            message=f"Agent with ID '{agent_id}' not found", details={"agent_id": agent_id}
-        )
-
-    # Get agent enabled status before deletion for counter update
-    was_enabled = agent.enabled
-
-    # Find the Agents node connected to this agent
-    connected_nodes = await agent.nodes()
-    agents_nodes = [n for n in connected_nodes if isinstance(n, Agents)]
-
-    # Delete the agent (this will also remove edges and cascade to dependent nodes)
-    await agent.delete(cascade=True)
-
-    # Update Agents node counters
-    if agents_nodes:
-        agents_node = agents_nodes[0]
-        agents_node.total_agents = max(0, agents_node.total_agents - 1)
-        if was_enabled:
-            agents_node.active_agents = max(0, agents_node.active_agents - 1)
-        await agents_node.save()
-
-    return {"message": "Agent deleted successfully"}
-
-
-@endpoint(
-    "/agents",
-    methods=["GET"],
-    auth=True,
-    tags=["Agent"],
-    response=success_response(
-        data={
-            "agents": ResponseField(
-                field_type=List[Dict[str, Any]],
-                description="List of agents",
-                example=[
-                    {
-                        "id": "agent_123",
-                        "name": "my_agent",
-                        "enabled": True,
-                        "description": "Agent description",
-                    }
-                ],
-            ),
-            "total": ResponseField(
-                field_type=int,
-                description="Total number of agents",
-                example=100,
-            ),
-            "page": ResponseField(
-                field_type=int,
-                description="Current page number",
-                example=1,
-            ),
-            "per_page": ResponseField(
-                field_type=int,
-                description="Number of agents per page",
-                example=10,
-            ),
-            "total_pages": ResponseField(
-                field_type=int,
-                description="Total number of pages",
-                example=10,
-            ),
-            "has_previous": ResponseField(
-                field_type=bool,
-                description="Whether there's a previous page",
-                example=False,
-            ),
-            "has_next": ResponseField(
-                field_type=bool,
-                description="Whether there's a next page",
-                example=True,
-            ),
-            "previous_page": ResponseField(
-                field_type=Optional[int],  # type: ignore[arg-type]
-                description="Previous page number",
-                example=None,
-            ),
-            "next_page": ResponseField(
-                field_type=Optional[int],  # type: ignore[arg-type]
-                description="Next page number",
-                example=2,
-            ),
-        }
-    ),
-)
-async def list_agents(
-    page: int = 1,
-    per_page: int = 10,
-    enabled: Optional[bool] = None,
-    search: Optional[str] = None,
-) -> Dict[str, Any]:
-    """List all agents with pagination and optional filtering.
-
-    Supports flexible querying:
-
-    - Pagination: Control page size and navigate through results
-    - Status filtering: Show only enabled or disabled agents
-    - Text search: Find agents by name, alias, or description
-
-    The response includes full pagination metadata for building
-    navigation controls in client applications.
-
-    Args:
-        page: Page number (default: 1)
-        per_page: Number of agents per page (default: 10)
-        enabled: Filter by enabled status (optional)
-        search: Search by name, alias, or description (optional)
-
-    Returns:
-        Dictionary containing:
-
-            - agents: List of agent objects
-            - total: Total number of matching agents
-            - page: Current page number
-            - per_page: Items per page
-            - total_pages: Total page count
-            - has_previous/has_next: Navigation indicators
-            - previous_page/next_page: Adjacent page numbers
-    """
-    # Build filters for pagination
-    filters = {}
-    if enabled is not None:
-        filters["context.enabled"] = enabled
-
-    # Create pager with filters
-    pager = ObjectPager(Agent, page_size=per_page, filters=filters)
-
-    # Get the requested page
-    agents: List[Agent] = await pager.get_page(page=page)
-
-    # Apply text search if provided (post-filter on results)
-    if search:
-        search_lower = search.lower()
-        agents = [
-            a
-            for a in agents
-            if search_lower in a.name.lower()
-            or search_lower in (a.alias.lower() if a.alias else "")
-            or search_lower in a.description.lower()
-        ]
-
-    # Convert to dictionaries using export
-    import asyncio
-
-    agents_list = await asyncio.gather(*[agent.export() for agent in agents])
-
-    # Get pagination info from pager
-    pagination_info = pager.to_dict()
-
-    return {
-        "agents": agents_list,
-        "total": pagination_info["total_items"],
-        "page": pagination_info["current_page"],
-        "per_page": pagination_info["page_size"],
-        "total_pages": pagination_info["total_pages"],
-        "has_previous": pagination_info["has_previous"],
-        "has_next": pagination_info["has_next"],
-        "previous_page": pagination_info["previous_page"],
-        "next_page": pagination_info["next_page"],
-    }
+            await invalidate_agent_cache(self.id)
+        except Exception as e:
+            # Log but don't fail - save already succeeded
+            logger.warning(f"Failed to invalidate agent cache for {self.id}: {e}")
+        return result
