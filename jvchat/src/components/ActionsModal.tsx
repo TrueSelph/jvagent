@@ -40,6 +40,9 @@ export function ActionsModal({
   const [editedContextJson, setEditedContextJson] = useState("");
   const [updating, setUpdating] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  const [idCopied, setIdCopied] = useState(false);
+
+  console.log("editedEnabled", editedContextJson);
 
   const fetchActions = useCallback(async (): Promise<ActionItem[]> => {
     setLoading(true);
@@ -89,12 +92,40 @@ export function ActionsModal({
       return;
     }
     const ctx = selectedAction.context ?? {};
+    console.log("ctx", ctx);
     setEditedEnabled(ctx.enabled ?? true);
     setEditedContextJson(
       Object.keys(ctx).length > 0 ? JSON.stringify(ctx, null, 2) : "{}"
     );
     setUpdateError(null);
   }, [selectedAction]);
+
+  useEffect(() => {
+    setIdCopied(false);
+  }, [selectedAction?.id]);
+
+  const copyActionId = async () => {
+    if (!selectedAction) return;
+    const id = selectedAction.id;
+    try {
+      await navigator.clipboard.writeText(id);
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = id;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch {
+        return;
+      }
+    }
+    setIdCopied(true);
+    window.setTimeout(() => setIdCopied(false), 2000);
+  };
 
   useEffect(() => {
     if (!isEmbedded || !onClose) return;
@@ -276,19 +307,58 @@ export function ActionsModal({
                 >
                   {getActionLabel(selectedAction)} ({selectedAction.entity ?? "—"})
                 </h3>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editedEnabled}
-                    onChange={(e) => setEditedEnabled(e.target.checked)}
-                    className={`rounded ${dark ? "border-slate-600 text-indigo-500" : "border-gray-300 text-indigo-600"}`}
-                  />
-                  <span
-                    className={`text-sm ${dark ? "text-slate-200" : "text-gray-800"}`}
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editedEnabled}
+                      onChange={(e) => setEditedEnabled(e.target.checked)}
+                      className={`rounded ${dark ? "border-slate-600 text-indigo-500" : "border-gray-300 text-indigo-600"}`}
+                    />
+                    <span
+                      className={`text-sm ${dark ? "text-slate-200" : "text-gray-800"}`}
+                    >
+                      Enabled
+                    </span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={copyActionId}
+                    title={idCopied ? "Copied" : "Copy action ID"}
+                    aria-label={idCopied ? "Action ID copied" : "Copy action ID"}
+                    className={`p-1.5 rounded-md transition-colors ${dark ? "text-slate-400 hover:text-indigo-300 hover:bg-slate-700" : "text-gray-500 hover:text-indigo-600 hover:bg-gray-100"}`}
                   >
-                    Enabled
-                  </span>
-                </label>
+                    {idCopied ? (
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                    ) : (
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div className="flex-1 min-h-0 flex flex-col">

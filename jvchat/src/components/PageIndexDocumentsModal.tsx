@@ -1501,7 +1501,7 @@ export function PageIndexDocumentsModal({
                   <span className="sr-only">Choose file</span>
                   <input
                     type="file"
-                    accept=".pdf,.md,.markdown"
+                    accept=".pdf,.md,.markdown,.txt,.docx,.doc,.xls,.xlsx,.ppt,.pptx"
                     className={`block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium ${
                       dark
                         ? 'text-slate-400 file:bg-indigo-900/40 file:text-indigo-300 hover:file:bg-indigo-800/40'

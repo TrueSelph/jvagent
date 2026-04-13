@@ -29,6 +29,15 @@ def resolve_pageindex_json_log_dir(merged_root: Optional[str] = None) -> str:
     return os.path.join(resolve_file_storage_root(merged_root), "pageindex")
 
 
+def resolve_pageindex_work_dir(merged_root: Optional[str] = None) -> str:
+    """Scratch directory for PageIndex ingest temps (under ``.../pageindex/tmp``).
+
+    Aligns with WhatsApp-style storage under the resolved file_storage root
+    (e.g. ``.files/pageindex/tmp`` next to ``.files/pageindex/logs``).
+    """
+    return os.path.join(resolve_pageindex_json_log_dir(merged_root), "tmp")
+
+
 PAGEINDEX_DB_NAME = "pageindex_db"
 
 _pageindex_node_summary: contextvars.ContextVar[Optional[bool]] = (

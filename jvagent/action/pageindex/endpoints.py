@@ -1,6 +1,6 @@
 """PageIndex document ingestion and management endpoints.
 
-Vectorless RAG: ingest PDF/Markdown documents, list, search, and delete.
+Vectorless RAG: ingest PDF, Markdown/text, and office documents; list, search, and delete.
 All routes are agent-scoped (collection = agent_id from path).
 """
 
@@ -22,6 +22,9 @@ from python_multipart.multipart import FormParser, parse_options_header
 from .config import initialize_pageindex_database
 from .documents import (
     CHUNK_LIST_MAX,
+    PAGEINDEX_OFFICE_LIKE_EXTENSIONS,
+    PAGEINDEX_TEXT_LIKE_EXTENSIONS,
+    _ensure_pageindex_work_dir,
     assimilate_document,
     delete_document,
     delete_document_chunk,
@@ -40,7 +43,9 @@ from .retrieval import search_documents
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_EXTENSIONS = {".pdf", ".md", ".markdown"}
+ALLOWED_EXTENSIONS = (
+    {".pdf"} | PAGEINDEX_TEXT_LIKE_EXTENSIONS | PAGEINDEX_OFFICE_LIKE_EXTENSIONS
+)
 
 
 async def _get_app_id_from_node() -> Optional[str]:
@@ -221,7 +226,7 @@ async def _do_assimilate(
     convert_to_markdown: bool = False,
     ocr: bool = False,
 ) -> Dict[str, Any]:
-    """Run assimilate_document on content. Handles PDF vs Markdown and temp files."""
+    """Run assimilate_document on content. Temps live under ``pageindex/tmp`` (file_storage root)."""
     assimilate_kw = {
         "doc_name": doc_name,
         "model": model,
@@ -234,6 +239,8 @@ async def _do_assimilate(
         "ocr": ocr,
     }
 
+    work_dir = await _ensure_pageindex_work_dir()
+
     if ext == ".pdf":
         doc = BytesIO(content)
         try:
@@ -245,22 +252,41 @@ async def _do_assimilate(
                 "unsupported encoding."
             )
 
-    try:
-        text = content.decode("utf-8")
-    except UnicodeDecodeError:
-        text = content.decode("utf-8", errors="replace")
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        suffix=ext,
-        delete=False,
-    ) as tmp:
-        tmp.write(text)
-        tmp_path = tmp.name
-    try:
-        return await assimilate_document(tmp_path, **assimilate_kw)
-    finally:
-        Path(tmp_path).unlink(missing_ok=True)
+    if ext in PAGEINDEX_TEXT_LIKE_EXTENSIONS:
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError:
+            text = content.decode("utf-8", errors="replace")
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            suffix=ext,
+            delete=False,
+            dir=work_dir,
+        ) as tmp:
+            tmp.write(text)
+            tmp_path = tmp.name
+        try:
+            return await assimilate_document(tmp_path, **assimilate_kw)
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
+    if ext in PAGEINDEX_OFFICE_LIKE_EXTENSIONS:
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=ext,
+            dir=work_dir,
+        ) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        try:
+            return await assimilate_document(tmp_path, **assimilate_kw)
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
+    raise ValidationError(
+        f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
+    )
 
 
 # PageIndex API: agent-scoped routes only (collection = agent_id from path)
@@ -294,13 +320,13 @@ async def ingest_document_endpoint(
     request: Request,
     agent_id: str,
 ) -> Dict[str, Any]:
-    """Ingest a PDF or Markdown document into the agent's PageIndex collection.
+    """Ingest a document into the agent's PageIndex collection.
 
     **Request:** `multipart/form-data`
 
     | Field | Type | Required | Description |
     |-------|------|----------|-------------|
-    | file | File | Yes | PDF or Markdown file (`.pdf`, `.md`, `.markdown`) |
+    | file | File | Yes | `.pdf`, `.md`, `.markdown`, `.txt`, or office (`.docx`, `.doc`, `.xls`, `.xlsx`, `.ppt`, `.pptx`) |
     | doc_name | string | No | Override document identifier (default: derived from filename) |
     | doc_description | string | No | Human-readable document description |
     | doc_url | string | No | Source URL of the document resource (used for reference citations) |
@@ -351,7 +377,7 @@ async def ingest_document_endpoint(
     ext = Path(filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise ValidationError(
-            f"Invalid file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
+            f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
         )
 
     if not content:

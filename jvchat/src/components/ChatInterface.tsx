@@ -58,6 +58,33 @@ export function ChatInterface() {
   const [isActionsModalOpen, setIsActionsModalOpen] = useState(false);
   const [isMemoryModalOpen, setIsMemoryModalOpen] = useState(false);
   const [hasPageIndexAction, setHasPageIndexAction] = useState(false);
+  const [agentIdCopied, setAgentIdCopied] = useState(false);
+
+  const copyAgentId = useCallback(async () => {
+    if (!agentId) return;
+    try {
+      await navigator.clipboard.writeText(agentId);
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = agentId;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch {
+        return;
+      }
+    }
+    setAgentIdCopied(true);
+    window.setTimeout(() => setAgentIdCopied(false), 2000);
+  }, [agentId]);
+
+  useEffect(() => {
+    setAgentIdCopied(false);
+  }, [agentId]);
 
   const handleMobileMenuClose = useCallback(() => {
     setIsMobileMenuOpen(false);
@@ -461,9 +488,63 @@ export function ChatInterface() {
               </button>
 
               <div className="flex-1 min-w-0">
-                <h1 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-100 truncate">
-                  {agent.alias || agent.name || "Agent"}
-                </h1>
+                <button
+                  type="button"
+                  onClick={copyAgentId}
+                  disabled={!agentId}
+                  title={
+                    agentIdCopied
+                      ? "Agent ID copied"
+                      : agentId
+                        ? "Click to copy agent ID"
+                        : undefined
+                  }
+                  aria-label={
+                    agentIdCopied
+                      ? "Agent ID copied to clipboard"
+                      : "Copy agent ID"
+                  }
+                  className={`flex items-center gap-2 min-w-0 max-w-full text-left rounded-lg -mx-1 px-1 py-0.5 transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                    agentId
+                      ? "cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-800"
+                      : ""
+                  }`}
+                >
+                  <span className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-100 truncate">
+                    {agent.alias || agent.name || "Agent"}
+                  </span>
+                  {agentIdCopied ? (
+                    <svg
+                      className="w-4 h-4 flex-shrink-0 text-green-600 dark:text-green-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      aria-hidden
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                  ) : (
+                    <svg
+                      className="w-4 h-4 flex-shrink-0 text-gray-400 dark:text-gray-500 opacity-80"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      aria-hidden
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                      />
+                    </svg>
+                  )}
+                </button>
                 {sessionId && (
                   <button
                     onClick={() => navigator.clipboard.writeText(sessionId)}

@@ -32,6 +32,7 @@ from .config import (
     get_pageindex_summary_token_threshold,
     initialize_pageindex_database,
     resolve_pageindex_json_log_dir,
+    resolve_pageindex_work_dir,
 )
 from .core import page_index
 from .docling_convert import convert_document_to_markdown_sync
@@ -56,6 +57,29 @@ logger = logging.getLogger(__name__)
 
 # Max chunks returned in one list response (when per_page is 0 = "all", or cap page size).
 CHUNK_LIST_MAX = 5000
+
+# Extensions routed through Docling (binary office formats).
+PAGEINDEX_OFFICE_LIKE_EXTENSIONS = frozenset(
+    {".docx", ".doc", ".xls", ".xlsx", ".ppt", ".pptx"}
+)
+# UTF-8 text sources ingested as markdown-enriched (no Docling).
+PAGEINDEX_TEXT_LIKE_EXTENSIONS = frozenset({".md", ".markdown", ".txt"})
+
+
+async def _ensure_pageindex_work_dir() -> str:
+    """Resolved ``.../pageindex/tmp`` under App file_storage; created if missing."""
+    from jvagent.core.app import App
+
+    merged: Optional[str] = None
+    try:
+        app = await App.get()
+        merged = app.file_storage_root_dir if app else None
+    except RuntimeError:
+        # No default GraphContext (e.g. unit tests without Server / App node).
+        merged = None
+    work_dir = resolve_pageindex_work_dir(merged)
+    os.makedirs(work_dir, exist_ok=True)
+    return work_dir
 
 
 async def _get_app_id_from_node() -> Optional[str]:
@@ -199,7 +223,7 @@ def _discard_pageindex_future(fut: asyncio.Future) -> None:
 
 
 async def assimilate_document(
-    doc: Union[str, Path, bytes],
+    doc: Union[str, Path, bytes, BytesIO],
     *,
     doc_name: Optional[str] = None,
     model: Optional[str] = "gpt-4o-mini",
@@ -221,11 +245,12 @@ async def assimilate_document(
     convert_to_markdown: bool = False,
     ocr: bool = False,
 ) -> Dict[str, Any]:
-    """Assimilate a PDF or Markdown document via PageIndex and optionally persist to graph.
+    """Assimilate a PDF, Markdown/text, or office document via PageIndex and optionally persist.
 
     Args:
-        doc: File path (str/Path), or bytes (PDF), or BytesIO
-        doc_name: Override document name (default: derived from file)
+        doc: File path (str/Path), bytes, or BytesIO. For bytes/BytesIO, extension comes
+            from ``doc_name`` (defaulting to ``.pdf`` when missing).
+        doc_name: Override document name (default: derived from file; informs extension for bytes)
         model: LLM model for tree generation
         model_action: Optional LanguageModelAction for observability (when in agent context)
         cancel_event: Optional threading.Event; when set, PDF worker thread stops issuing LLM calls (cooperative cancel)
@@ -243,8 +268,8 @@ async def assimilate_document(
         doc_description: Optional user-provided document description (overrides LLM-generated if set)
         doc_url: Source URL of the document resource (stored on DocumentRootNode for reference citations)
         convert_to_markdown: If True, convert PDF inputs with Docling to Markdown first (requires
-            ``jvagent[docling]``). Non-PDF paths ignore this flag.
-        ocr: When using Docling on PDF, enable OCR for scanned pages.
+            ``jvagent[docling]``). Office formats (``.docx``, etc.) always use Docling regardless.
+        ocr: When using Docling on PDF, enable OCR for scanned pages (ignored for non-PDF).
 
     Returns:
         Dict with doc_name, structure, doc_description (if requested), _root_id (if persist)
@@ -268,39 +293,44 @@ async def assimilate_document(
     if model_action:
         set_pageindex_model_action(model_action)
     try:
-        is_pdf = False
+        work_dir = await _ensure_pageindex_work_dir()
+
         if isinstance(doc, bytes):
             doc = BytesIO(doc)
-            is_pdf = True
-        elif isinstance(doc, BytesIO):
-            is_pdf = True
+
+        if isinstance(doc, BytesIO):
+            ext = Path(doc_name or "document.pdf").suffix.lower()
+            if not ext:
+                ext = ".pdf"
         elif isinstance(doc, (str, Path)):
-            path = Path(doc)
-            ext = path.suffix.lower()
-            is_pdf = ext == ".pdf"
+            ext = Path(doc).suffix.lower()
+        else:
+            raise ValueError("doc must be str, Path, bytes, or BytesIO")
 
-        use_pdf_page_index = is_pdf and not convert_to_markdown
-        ingest_kind = "pdf_pageindex" if use_pdf_page_index else "markdown_enriched"
+        is_pdf = ext == ".pdf"
+        force_docling = ext in PAGEINDEX_OFFICE_LIKE_EXTENSIONS
 
-        if is_pdf and convert_to_markdown:
+        if (is_pdf and convert_to_markdown) or force_docling:
             if isinstance(doc, BytesIO):
                 doc.seek(0)
-                pdf_bytes = doc.read()
-                t_pdf = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-                t_pdf.write(pdf_bytes)
-                t_pdf.close()
-                tmp_paths.append(t_pdf.name)
-                pdf_path = t_pdf.name
+                body = doc.read()
+                t_in = tempfile.NamedTemporaryFile(
+                    suffix=ext, delete=False, dir=work_dir
+                )
+                t_in.write(body)
+                t_in.close()
+                tmp_paths.append(t_in.name)
+                src_path = t_in.name
             else:
-                pdf_path = str(doc)
+                src_path = str(doc)
 
             loop = asyncio.get_running_loop()
             md_text = await loop.run_in_executor(
                 None,
                 functools.partial(
                     convert_document_to_markdown_sync,
-                    pdf_path,
-                    ocr=ocr,
+                    src_path,
+                    ocr=ocr if is_pdf else False,
                 ),
             )
             t_md = tempfile.NamedTemporaryFile(
@@ -308,12 +338,31 @@ async def assimilate_document(
                 encoding="utf-8",
                 suffix=".md",
                 delete=False,
+                dir=work_dir,
             )
             t_md.write(md_text)
             t_md.close()
             tmp_paths.append(t_md.name)
             doc = t_md.name
             is_pdf = False
+
+        use_pdf_page_index = is_pdf and not convert_to_markdown
+        ingest_kind = "pdf_pageindex" if use_pdf_page_index else "markdown_enriched"
+
+        if not use_pdf_page_index and isinstance(doc, BytesIO):
+            doc.seek(0)
+            text = doc.read().decode("utf-8", errors="replace")
+            t_txt = tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                suffix=ext or ".md",
+                delete=False,
+                dir=work_dir,
+            )
+            t_txt.write(text)
+            t_txt.close()
+            tmp_paths.append(t_txt.name)
+            doc = t_txt.name
 
         if use_pdf_page_index:
             # page_index() uses asyncio.run() internally; run in executor to avoid
@@ -358,6 +407,7 @@ async def assimilate_document(
                     encoding="utf-8",
                     suffix=".md",
                     delete=False,
+                    dir=work_dir,
                 )
                 t_clean.write(cleaned)
                 t_clean.close()
