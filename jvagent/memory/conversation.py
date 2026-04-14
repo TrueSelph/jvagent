@@ -1,5 +1,6 @@
 """Conversation node for managing conversation sessions."""
 
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
@@ -12,6 +13,7 @@ if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
 
 
+@compound_index([("context.session_id", 1)], name="conversation_session_id")
 @compound_index([("context.user_id", 1), ("context.status", 1)], name="user_status")
 class Conversation(DeferredSaveMixin, Node):
     """Session-based conversation. session_id can be set or auto-generated.
@@ -278,11 +280,22 @@ class Conversation(DeferredSaveMixin, Node):
         if to_remove <= 0:
             return 0
 
+        # Cap work per call so append latency stays bounded when far over limit
+        # (e.g. after lowering interaction_limit). Further pruning happens on later appends
+        # or via Memory.apply_interaction_limit_pruning_for_connected_users.
+        try:
+            max_prune = max(
+                1,
+                int(os.environ.get("JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL", "100")),
+            )
+        except ValueError:
+            max_prune = 100
+
         # Start from the first interaction and remove the oldest ones
         current = await self.get_first_interaction()
         removed = 0
 
-        while current and removed < to_remove:
+        while current and removed < to_remove and removed < max_prune:
             next_interaction = await current.get_next_interaction()
 
             # If there's no next interaction, stop pruning -- removing the last

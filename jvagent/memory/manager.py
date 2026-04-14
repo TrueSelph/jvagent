@@ -191,6 +191,9 @@ class Memory(Node):
     ) -> Optional["Conversation"]:
         """Find Conversation by session_id scoped to this Memory's users.
 
+        Uses ``Conversation.find_one({"context.session_id": ...})``; the Conversation
+        model declares a compound index on ``context.session_id`` for scale.
+
         Args:
             session_id: Session identifier to search for
 
@@ -289,6 +292,12 @@ class Memory(Node):
     ) -> Tuple["User", "Conversation", str, str, bool]:
         """Resolve or create User and Conversation based on provided IDs.
 
+        Interaction-limit pruning is **not** run on session resume paths inside
+        ``get_session`` (cases 2 and 4) so latency stays predictable as history
+        grows. Limits are enforced when appending interactions and via
+        :meth:`apply_interaction_limit_pruning_for_connected_users` for bulk
+        maintenance.
+
         Handles four scenarios for user/session resolution:
         1. No user_id, no session_id → Create new User + Conversation (new_user=True)
         2. session_id only → Lookup existing Conversation, get associated User (new_user=False)
@@ -341,7 +350,9 @@ class Memory(Node):
             if user_name and (not user.name or user.name == "user"):
                 await user.set_name(user_name)
 
-            await self._ensure_conversation_interaction_limit(conversation)
+            # Rolling interaction-limit pruning is not done here (keeps session resume
+            # latency bounded). Prune on new interaction append and via
+            # :meth:`apply_interaction_limit_pruning_for_connected_users` for maintenance.
             return user, conversation, conversation.user_id, session_id, False
 
         # Case 3: user_id only - get/create user, create conversation
@@ -388,7 +399,6 @@ class Memory(Node):
             if user_name and (not user.name or user.name == "user"):
                 await user.set_name(user_name)
 
-            await self._ensure_conversation_interaction_limit(conversation)
             return user, conversation, user_id, session_id, False
 
         raise ValueError("Invalid user_id/session_id combination")

@@ -57,6 +57,12 @@ Memory (Node)
 - **Sessions**: `get_session()`, `get_conversation_by_session()`
 - **Admin**: `purge_user_memory()`, `purge_conversations()`, `repair_memory()`, `export_memory()`, `memory_healthcheck()`
 
+### Interaction rolling limit (pruning)
+
+- **On append**: When a new interaction is added and `interaction_count` exceeds `interaction_limit`, pruning runs inside `Conversation.add_interaction` / `_prune_old_interactions`. Per-call work is capped by env `JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL` (default `100`) so latency stays bounded if the graph is far over limit.
+- **On session resume**: `get_session()` does **not** prune when re-opening an existing conversation (cases: session_id only, or user_id + session_id). That keeps interact startup fast as history grows.
+- **Bulk maintenance**: Call `Memory.apply_interaction_limit_pruning_for_connected_users()` from a scheduled job or admin repair path to sync limits and prune across users when needed.
+
 ## See Also
 
 - [Task Tracking](../../docs/task-tracking.md) - Conversation task API
