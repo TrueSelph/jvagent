@@ -123,6 +123,26 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         sender = data.sender
         sender_name = data.sender_name
 
+        # ------------------------------------------------------------------
+        # Human Approval short-circuit
+        # If the sender is the configured approval reviewer, delegate the reply
+        # to HumanApprovalAction before running the normal interaction pipeline.
+        # ------------------------------------------------------------------
+        if utterance:
+            try:
+                revision_action = await agent.get_action_by_type("HumanRevisionAction")
+                if revision_action and revision_action.is_configured():
+                    handled = await revision_action.handle_reply(sender, utterance)
+                    if handled:
+                        logger.debug(
+                            f"WhatsApp webhook: message from {sender} handled by HumanRevisionAction"
+                        )
+                        return {"status": "received", "response": "Approval reply processed"}
+            except Exception as _approval_err:
+                logger.debug(
+                    f"WhatsApp webhook: HumanApprovalAction check failed (non-fatal): {_approval_err}"
+                )
+
         access_control_action = await agent.get_access_control_action()
 
         # Run access check and directed-message check in parallel
@@ -652,6 +672,7 @@ async def get_session_status(
 )
 async def register_session(
     action_id: str,
+    regenerate_webhook: bool = False,
 ) -> Dict[str, Any]:
     """Register WhatsApp session with the API provider.
 
@@ -673,6 +694,11 @@ async def register_session(
         Dict[str, Any]: Registration result with status, ok flag, and message
     """
     whatsapp_action = await get_whatsapp_action(action_id)
+    if regenerate_webhook:
+        # Force webhook URL (and API key) regeneration, then register provider with it
+        whatsapp_action.webhook_url = None
+        whatsapp_action.webhook_api_key_id = None
+        await whatsapp_action.get_webhook_url(regenerate=True)
     result = await whatsapp_action.register_session()
 
     # If registration succeeded, mark as registered to avoid redundant lazy calls

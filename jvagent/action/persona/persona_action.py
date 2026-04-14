@@ -25,6 +25,7 @@ from jvagent.action.persona.prompts import (
     DIRECTIVE_COMPLIANCE_CHECK_PROMPT,
     DIRECTIVES_SECTION_PROMPT,
     EXAMPLES_SECTION_PROMPT,
+    INNER_MONOLOGUE_SECTION_PROMPT,
     INTERPRETATION_INSIGHTS_PROMPT,
     NO_DIRECTIVES_SUB_PROMPT,
     PARAMETERS_SUB_PROMPT,
@@ -73,6 +74,7 @@ class PersonaAction(Action):
     persona_capabilities: List[str] = attribute(
         default_factory=list, description="List of agent capabilities"
     )
+
     phonetic_substitutions: Dict[str, str] = attribute(
         default_factory=dict,
         description="Map of original -> phonetic replacement for voice channel (e.g. essequibo: esseequibbo)",
@@ -161,6 +163,13 @@ class PersonaAction(Action):
         """Initialize when action is registered."""
         await super().on_register()
         logger.info(f"PersonaAction '{self.label}' registered")
+
+    def get_capabilities(self) -> List[str]:
+        """Return communication capabilities for BrainAction.
+
+        This collects both the static persona_capabilities and the dynamic ones.
+        """
+        return self.persona_capabilities
 
     async def respond(
         self,
@@ -395,6 +404,10 @@ class PersonaAction(Action):
             )
         visitor_data = getattr(visitor, "data", None) or {} if visitor else {}
         metadata = dict(visitor_data)
+
+        # Log task interactions clearly in the terminal
+        if visitor_data.get("is_proactive"):
+            logger.info(f"PersonaAction: Publishing task response to session {visitor.session_id}")
         await response_bus.publish(
             session_id=visitor.session_id,
             content=response,
@@ -575,6 +588,16 @@ class PersonaAction(Action):
             else ""
         )
 
+        # Build inner monologue section
+        inner_monologue_section = ""
+        if hasattr(interaction, "inner_monologue") and interaction.inner_monologue:
+            inner_monologue_section = INNER_MONOLOGUE_SECTION_PROMPT.format(
+                inner_monologue=interaction.inner_monologue
+            )
+        inner_monologue_section = format_conditional_section(
+            inner_monologue_section, bool(inner_monologue_section)
+        )
+
         # Vision instruction when images are attached (overrides history/training bias)
         vision_instruction_section = ""
         if visitor:
@@ -733,6 +756,7 @@ class PersonaAction(Action):
             examples_section=examples_section,
             vision_instruction_section=vision_instruction_section,
             interpretation_section=interpretation_section,
+            inner_monologue_section=inner_monologue_section,
             recent_image_context_section=recent_image_context_section,
             canned_lead_in_section=canned_lead_in_section,
             response_protocol=RESPONSE_PROTOCOL_PROMPT,

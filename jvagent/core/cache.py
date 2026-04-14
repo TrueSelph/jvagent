@@ -363,6 +363,7 @@ def interact_router_cache_key(
     last_interaction_ids: Tuple[str, ...],
     buffer_fingerprint: str,
     active_task_fingerprint: str,
+    proactive_tasks_fingerprint: str = "",
 ) -> str:
     """Build cache key for interact router result."""
     payload = json.dumps(
@@ -372,6 +373,7 @@ def interact_router_cache_key(
             "last_ids": last_interaction_ids,
             "buffer": buffer_fingerprint,
             "active_tasks": active_task_fingerprint,
+            "proactive_tasks": proactive_tasks_fingerprint,
         },
         sort_keys=True,
     )

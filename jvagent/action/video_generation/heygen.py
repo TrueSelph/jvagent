@@ -1,7 +1,7 @@
 """HeyGen video generation action implementation."""
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import requests
 from httpx import AsyncClient, Timeout
@@ -51,10 +51,194 @@ class HeygenVideoAction(Action):
     dimension: Dict[str, Any] = attribute(default={}, description="Dimension")
     folder_id: str = attribute(default="", description="Folder ID")
     callback_url: str = attribute(default="", description="Callback URL")
+    webhook_events: List[str] = attribute(
+        default=[
+            "avatar_video.success",
+            "avatar_video.fail",
+            "video_agent.success",
+            "video_agent.fail",
+        ],
+        description="HeyGen webhook events to subscribe to when auto-registering a webhook endpoint.",
+    )
+
+    @staticmethod
+    def _api_base() -> str:
+        return "https://api.heygen.com"
 
     @staticmethod
     def _api_key() -> str:
         return env("HEYGEN_API_KEY")
+
+    def _headers(self) -> Dict[str, str]:
+        api_key = self._api_key()
+        return {
+            "accept": "application/json",
+            "content-type": "application/json",
+            "x-api-key": api_key,
+        }
+
+    def _normalize_url(self, url: str) -> str:
+        return (url or "").strip().rstrip("/")
+
+    def _webhook_list(self) -> List[Dict[str, Any]]:
+        """List registered HeyGen webhook endpoints for the API key."""
+        api_key = self._api_key()
+        if not api_key:
+            raise ValueError("HeygenVideoAction: API key is not configured")
+
+        url = f"{self._api_base().rstrip('/')}/v1/webhook/endpoint.list"
+        resp = requests.get(url, headers={"accept": "application/json", "x-api-key": api_key})
+        resp.raise_for_status()
+        body = resp.json()
+        if not isinstance(body, dict) or body.get("code") != 100:
+            raise ValueError(f"HeygenVideoAction: webhook list failed: {body}")
+        data = body.get("data") or []
+        return data if isinstance(data, list) else []
+
+    def _webhook_add(
+        self,
+        callback_url: str,
+        events: Optional[Sequence[str]] = None,
+    ) -> Dict[str, Any]:
+        """Register a webhook endpoint with HeyGen."""
+        api_key = self._api_key()
+        if not api_key:
+            raise ValueError("HeygenVideoAction: API key is not configured")
+
+        callback_url = self._normalize_url(callback_url)
+        # HeyGen rejects non-public/non-HTTPS URLs (docs: SSL security level 2+).
+        # In practice this often means `http://localhost...` or `http://...` will 400.
+        if not callback_url.startswith("https://"):
+            raise ValueError(
+                "HeygenVideoAction: webhook callback_url must be a public HTTPS URL. "
+                f"Got: {callback_url!r}"
+            )
+
+        url = f"{self._api_base().rstrip('/')}/v1/webhook/endpoint.add"
+        payload: Dict[str, Any] = {"url": callback_url}
+        if events is not None:
+            payload["events"] = list(events) if len(events) > 0 else None
+
+        resp = requests.post(url, json=payload, headers=self._headers())
+        # Don't raise until we've captured HeyGen's error payload for debugging.
+        try:
+            body: Any = resp.json()
+        except ValueError:
+            body = resp.text
+        if not resp.ok:
+            raise ValueError(
+                "HeygenVideoAction: webhook add failed "
+                f"(http={resp.status_code}, response={body!r}, payload_url={callback_url!r})"
+            )
+        if not isinstance(body, dict) or body.get("code") != 100:
+            raise ValueError(f"HeygenVideoAction: webhook add failed: {body}")
+        data = body.get("data") or {}
+        return data if isinstance(data, dict) else {}
+
+    def _webhook_delete(self, endpoint_id: str) -> None:
+        api_key = self._api_key()
+        if not api_key:
+            raise ValueError("HeygenVideoAction: API key is not configured")
+        url = f"{self._api_base().rstrip('/')}/v1/webhook/endpoint.delete"
+        resp = requests.delete(
+            url,
+            params={"endpoint_id": endpoint_id},
+            headers={"accept": "application/json", "x-api-key": api_key},
+        )
+        try:
+            body: Any = resp.json()
+        except ValueError:
+            body = resp.text
+        if not resp.ok:
+            raise ValueError(
+                "HeygenVideoAction: webhook delete failed "
+                f"(http={resp.status_code}, response={body!r}, endpoint_id={endpoint_id!r})"
+            )
+        if not isinstance(body, dict) or body.get("code") != 100:
+            raise ValueError(f"HeygenVideoAction: webhook delete failed: {body}")
+
+    async def reconcile_webhook_endpoint(
+        self,
+        desired_url: str,
+        *,
+        manage_prefix: Optional[str] = None,
+        manage_suffix: Optional[str] = None,
+        events: Optional[Sequence[str]] = None,
+    ) -> Dict[str, Any]:
+        """Ensure HeyGen has exactly one endpoint for `desired_url`.
+
+        - Prevents duplicates for the exact URL
+        - Deletes stale endpoints (scoped by `manage_prefix` or `manage_suffix`)
+        """
+        desired_norm = self._normalize_url(desired_url)
+        if not desired_norm:
+            raise ValueError("HeygenVideoAction: desired_url is empty")
+
+        prefix_norm = self._normalize_url(manage_prefix) if manage_prefix else None
+        suffix_norm = self._normalize_url(manage_suffix) if manage_suffix else None
+        effective_events = events if events is not None else getattr(self, "webhook_events", None)
+
+        endpoints = self._webhook_list()
+
+        exact_matches: List[Dict[str, Any]] = []
+        stale_matches: List[Dict[str, Any]] = []
+
+        for ep in endpoints:
+            ep_url = self._normalize_url(str(ep.get("url") or ""))
+            if not ep_url:
+                continue
+            if ep_url == desired_norm:
+                exact_matches.append(ep)
+            elif prefix_norm and ep_url.startswith(prefix_norm):
+                stale_matches.append(ep)
+            elif isinstance(suffix_norm, str):
+                if ep_url.endswith(suffix_norm):
+                    stale_matches.append(ep)
+
+        deleted: List[str] = []
+        for ep in stale_matches:
+            endpoint_id = str(ep.get("endpoint_id") or "")
+            if endpoint_id:
+                try:
+                    self._webhook_delete(endpoint_id)
+                    deleted.append(endpoint_id)
+                except Exception as exc:
+                    logger.warning("HeygenVideoAction: failed deleting stale webhook %s: %s", endpoint_id, exc)
+
+        # If duplicates exist for exact URL, keep one and delete the rest.
+        kept: Optional[Dict[str, Any]] = None
+        if exact_matches:
+            kept = exact_matches[0]
+            for ep in exact_matches[1:]:
+                endpoint_id = str(ep.get("endpoint_id") or "")
+                if endpoint_id:
+                    try:
+                        self._webhook_delete(endpoint_id)
+                        deleted.append(endpoint_id)
+                    except Exception as exc:
+                        logger.warning("HeygenVideoAction: failed deleting duplicate webhook %s: %s", endpoint_id, exc)
+
+        created: Optional[Dict[str, Any]] = None
+        if not kept:
+            created = self._webhook_add(desired_norm, events=effective_events)
+            kept = created
+
+        # Surface relevant info to callers (and logs)
+        endpoint_id = str((kept or {}).get("endpoint_id") or "")
+        secret = str((kept or {}).get("secret") or "")
+        if secret:
+            logger.info(
+                "HeygenVideoAction: webhook endpoint ready (endpoint_id=%s). "
+                "If you verify signatures, ensure HEYGEN_WEBHOOK_SECRET matches this endpoint secret.",
+                endpoint_id,
+            )
+
+        return {
+            "desired_url": desired_norm,
+            "endpoint": kept or {},
+            "created": created is not None,
+            "deleted_endpoint_ids": deleted,
+        }
 
     async def create_video(
         self, script: str, title: str = "Video", **kwargs: Any
@@ -280,6 +464,8 @@ class HeygenVideoAction(Action):
             "config": {"orientation": "portrait", "avatar_id": self.avatar_id},
             "prompt": prompt,
         }
+        if kwargs.get("payload"):
+            payload.update(kwargs["payload"])
         headers = {
             "accept": "application/json",
             "content-type": "application/json",
