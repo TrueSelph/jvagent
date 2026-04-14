@@ -268,7 +268,7 @@ async def assimilate_document(
         doc_description: Optional user-provided document description (overrides LLM-generated if set)
         doc_url: Source URL of the document resource (stored on DocumentRootNode for reference citations)
         convert_to_markdown: If True, convert PDF inputs with Docling to Markdown first (requires
-            ``jvagent[docling]``). Office formats (``.docx``, etc.) always use Docling regardless.
+            ``jvagent[pageindex]``). Office formats (``.docx``, etc.) always use Docling regardless.
         ocr: When using Docling on PDF, enable OCR for scanned pages (ignored for non-PDF).
 
     Returns:

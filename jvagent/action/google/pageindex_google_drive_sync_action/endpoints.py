@@ -70,7 +70,7 @@ async def ingest_google_documents_endpoint(
     convert_to_markdown: bool = Field(
         default=False,
         examples=[False],
-        description="Convert PDFs with Docling to Markdown before PageIndex (requires jvagent[docling])",
+        description="Convert PDFs with Docling to Markdown before PageIndex (requires jvagent[pageindex])",
     ),
     ocr: bool = Field(
         default=False,

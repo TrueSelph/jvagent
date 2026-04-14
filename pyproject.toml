@@ -69,6 +69,9 @@ test = [
     "litellm>=1.82.0",
     "PyPDF2>=3.0.1",
     "pypdf>=4.0.0",
+    # PageIndex Docling tests (same stack as jvagent/action/pageindex/info.yaml)
+    "docling>=2.0.0",
+    "tabulate>=0.9.0",
 ]
 
 # Optional: cluster-wide conversation locks (Redis SET NX or DynamoDB).
@@ -77,8 +80,8 @@ distributed-lock = [
     "boto3>=1.28.0",
 ]
 
-# Optional: Docling PDF/Office → Markdown for PageIndex convert_to_markdown ingest.
-docling = [
+# Optional: same Docling stack as jvagent/action/pageindex/info.yaml (manual / pre-baked images).
+pageindex = [
     "docling>=2.0.0",
     "tabulate>=0.9.0",
 ]

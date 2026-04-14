@@ -36,7 +36,7 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
-        "jvspatial>=0.0.3",
+        "jvspatial>=0.0.6",
         "python-dotenv>=1.0.0",
         "pyyaml>=6.0.0",
         "httpx>=0.27.0",

@@ -1,6 +1,7 @@
 """Docling-based conversion of documents (primarily PDF) to Markdown with page markers.
 
-Optional dependency: install with ``pip install 'jvagent[docling]'`` or ``pip install docling tabulate``.
+Optional dependency: declared in ``jvagent/action/pageindex/info.yaml`` (pip install on action load), or
+``pip install 'jvagent[pageindex]'`` / ``pip install docling tabulate`` for manual installs.
 """
 
 from __future__ import annotations
@@ -12,8 +13,9 @@ from typing import List, Optional, Union
 logger = logging.getLogger(__name__)
 
 _DOC_NOT_INSTALLED_MSG = (
-    "Docling is required for convert_to_markdown=True. Install with: "
-    "pip install 'jvagent[docling]' or pip install docling tabulate"
+    "Docling is required for convert_to_markdown=True. "
+    "Use an agent with jvagent/pageindex_retrieval_interact_action (see jvagent/action/pageindex/info.yaml), "
+    "or: pip install 'jvagent[pageindex]' or pip install docling tabulate"
 )
 
 
@@ -109,6 +111,10 @@ def convert_document_to_markdown_sync(
     Returns:
         Markdown string with ``--- [ Page N ] ---`` markers at page transitions.
     """
+    path = Path(source_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Docling source not found: {path}")
+
     try:
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import (
@@ -118,10 +124,6 @@ def convert_document_to_markdown_sync(
         from docling.document_converter import DocumentConverter, PdfFormatOption
     except ImportError as e:
         raise ImportError(_DOC_NOT_INSTALLED_MSG) from e
-
-    path = Path(source_path)
-    if not path.is_file():
-        raise FileNotFoundError(f"Docling source not found: {path}")
 
     suffix = path.suffix.lower()
     if suffix == ".pdf":

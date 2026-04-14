@@ -611,7 +611,8 @@ class LanguageModelAction(BaseModelAction, ABC):
                             chunks.append(chunk)
                             yield chunk
                     finally:
-                        # After stream completes, estimate tokens
+                        # After stream completes, estimate tokens if the provider
+                        # did not already attach usage (e.g. Anthropic message_stop).
                         if chunks:
                             full_response = "".join(chunks)
                             # Store response for later use
@@ -620,59 +621,78 @@ class LanguageModelAction(BaseModelAction, ABC):
                             # Calculate actual duration (from query start to stream completion)
                             stream_end_time = time.time()
                             actual_duration = stream_end_time - start_time
+                            result.metrics["duration"] = actual_duration
 
-                            # Estimate tokens
+                            usage_dict = {
+                                "prompt_tokens": result.metrics.get("prompt_tokens", 0),
+                                "completion_tokens": result.metrics.get(
+                                    "completion_tokens", 0
+                                ),
+                                "total_tokens": result.metrics.get("total_tokens", 0),
+                            }
+
                             try:
-                                from jvagent.action.model.utils.token_estimation import (
-                                    estimate_completion_tokens,
-                                    estimate_prompt_tokens,
-                                )
-
-                                messages = getattr(
-                                    result, "_messages_for_estimation", []
-                                )
-                                model = getattr(
-                                    result, "_model_for_estimation", result.model
-                                )
-                                provider = getattr(
-                                    result, "_provider_for_estimation", result.provider
-                                )
-
-                                prompt_tokens = estimate_prompt_tokens(
-                                    messages, model, provider
-                                )
-                                completion_tokens = estimate_completion_tokens(
-                                    full_response, model, provider
-                                )
-                                total_tokens = prompt_tokens + completion_tokens
-
-                                # Update result metrics with actual duration
-                                result.metrics["duration"] = actual_duration
-
-                                # Update result metrics
-                                estimated_usage = {
-                                    "prompt_tokens": prompt_tokens,
-                                    "completion_tokens": completion_tokens,
-                                    "total_tokens": total_tokens,
-                                }
-                                result.update_usage(estimated_usage, estimated=True)
-
-                                # Emit observability with updated metrics and actual duration
-                                try:
-                                    from jvagent.action.model.context import (
-                                        get_interaction_id,
-                                    )
-
-                                    interaction_id = get_interaction_id()
-                                    if interaction_id:
-                                        # Track usage with estimated metrics and actual duration
-                                        await self.track_usage(
-                                            estimated_usage, actual_duration
+                                if result.metrics.get("total_tokens", 0) > 0:
+                                    try:
+                                        from jvagent.action.model.context import (
+                                            get_interaction_id,
                                         )
-                                except Exception as e:
-                                    logger.debug(
-                                        f"Failed to emit observability after stream: {e}"
+
+                                        if get_interaction_id():
+                                            await self.track_usage(
+                                                usage_dict, actual_duration
+                                            )
+                                    except Exception as e:
+                                        logger.debug(
+                                            f"Failed to emit observability after stream: {e}"
+                                        )
+                                else:
+                                    from jvagent.action.model.utils.token_estimation import (
+                                        estimate_completion_tokens,
+                                        estimate_prompt_tokens,
                                     )
+
+                                    messages = getattr(
+                                        result, "_messages_for_estimation", []
+                                    )
+                                    model = getattr(
+                                        result, "_model_for_estimation", result.model
+                                    )
+                                    provider = getattr(
+                                        result,
+                                        "_provider_for_estimation",
+                                        result.provider,
+                                    )
+
+                                    prompt_tokens = estimate_prompt_tokens(
+                                        messages, model, provider
+                                    )
+                                    completion_tokens = estimate_completion_tokens(
+                                        full_response, model, provider
+                                    )
+                                    total_tokens = prompt_tokens + completion_tokens
+
+                                    estimated_usage = {
+                                        "prompt_tokens": prompt_tokens,
+                                        "completion_tokens": completion_tokens,
+                                        "total_tokens": total_tokens,
+                                    }
+                                    result.update_usage(estimated_usage, estimated=True)
+
+                                    try:
+                                        from jvagent.action.model.context import (
+                                            get_interaction_id,
+                                        )
+
+                                        interaction_id = get_interaction_id()
+                                        if interaction_id:
+                                            await self.track_usage(
+                                                estimated_usage, actual_duration
+                                            )
+                                    except Exception as e:
+                                        logger.debug(
+                                            f"Failed to emit observability after stream: {e}"
+                                        )
 
                             except Exception as e:
                                 logger.debug(

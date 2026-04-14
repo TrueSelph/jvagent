@@ -359,12 +359,11 @@ def list_to_tree(data):
 
     for item in data:
         structure = item.get("structure")
-        node = {
-            "title": item.get("title"),
-            "start_index": item.get("start_index"),
-            "end_index": item.get("end_index"),
-            "nodes": [],
-        }
+        node = {"nodes": []}
+        for key, value in item.items():
+            if key == "nodes":
+                continue
+            node[key] = value
 
         nodes[structure] = node
 

@@ -1580,7 +1580,7 @@ export function PageIndexDocumentsModal({
                   className="rounded border-gray-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500"
                 />
                 <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
-                  Convert PDF with Docling to Markdown first (requires server docling extra)
+                  Convert PDF with Docling to Markdown first (requires server jvagent[pageindex])
                 </span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">

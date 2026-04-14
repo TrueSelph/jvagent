@@ -1,5 +1,8 @@
 # Development dependencies
 -r requirements.txt
+# PageIndex Docling tests (also in pyproject.toml [project.optional-dependencies] test)
+docling>=2.0.0
+tabulate>=0.9.0
 pytest>=7.0
 pytest-asyncio>=0.21.0
 httpx>=0.24.0
