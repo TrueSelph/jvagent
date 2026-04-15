@@ -7,6 +7,7 @@ defines the interface for actions that participate in the interact subsystem.
 import logging
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from time import monotonic
 
 from jvspatial.api.exceptions import ValidationError
 from jvspatial.core import on_visit
@@ -395,3 +396,38 @@ class InteractAction(Action, ABC):
                 exc_info=True,
             )
             return None
+
+    @classmethod
+    async def get_agent_capabilities_brief(cls, agent: Any, *, ttl_seconds: int = 300) -> str:
+        """Return a bullet list of capabilities, or a default placeholder."""
+        if not agent:
+            return "No specific capabilities registered."
+
+        agent_id = str(getattr(agent, "id", "") or "")
+        if agent_id and ttl_seconds > 0:
+            cached = getattr(cls, "_capabilities_cache", {}).get(agent_id)
+            if cached:
+                cached_at, caps = cached
+                if (monotonic() - cached_at) <= float(ttl_seconds):
+                    return caps
+
+        actions_manager = await agent.get_actions_manager()
+        if not actions_manager:
+            return "No specific capabilities registered."
+
+        enabled_actions = await actions_manager.get_all_actions(enabled_only=True)
+        all_caps: List[str] = []
+        for action in enabled_actions:
+            if hasattr(action, "get_capabilities"):
+                all_caps.extend(action.get_capabilities())
+
+        caps_str = (
+            "\n".join(f"- {c}" for c in all_caps)
+            if all_caps
+            else "No specific capabilities registered."
+        )
+        if agent_id and ttl_seconds > 0:
+            if not hasattr(cls, "_capabilities_cache"):
+                cls._capabilities_cache = {}
+            cls._capabilities_cache[agent_id] = (monotonic(), caps_str)
+        return caps_str

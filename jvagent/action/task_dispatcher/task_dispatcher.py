@@ -7,10 +7,163 @@ from jvagent.memory.conversation import Conversation
 from jvagent.action.base import Action
 from jvagent.action.interact.endpoints import interact_endpoint
 
+# try:
+from jvspatial.api.integrations.scheduler.decorators import on_schedule
+# except ImportError:
+#     on_schedule = None
+
 logger = logging.getLogger(__name__)
+SCHEDULE_TASK_ID = "system_task_dispatcher"
+
+# Module-level cache: survives across threads unlike ContextVars.
+# Set once on successful scheduler startup; used to skip re-init in background threads.
+_scheduler_service_ref = None
 
 class TaskDispatcher(Action):
     """Dispatches proactive tasks that have reached their trigger time."""
+
+    async def on_reload(self) -> None:
+        await super().on_reload()
+        await self._register_scheduler_task(warn_on_missing=True)
+
+    async def on_deregister(self) -> None:
+        await super().on_deregister()
+        await self._unregister_scheduler_task()
+
+    async def on_startup(self) -> None:
+        await super().on_startup()
+        # Server must be available by startup — warn if scheduler still can't start
+        await self._register_scheduler_task(warn_on_missing=True)
+
+    def _initialize_scheduler_service(self):
+        global _scheduler_service_ref
+        try:
+            from jvspatial.api.context import get_current_server
+            from jvspatial.api.integrations.scheduler.scheduler import (
+                SchedulerConfig,
+                SchedulerService,
+            )
+
+            server = get_current_server()
+            if not server:
+                # Expected when running inside the scheduler's background thread —
+                # ContextVars don't propagate across threads.
+                logger.debug("TaskDispatcher: no current server in context (background thread)")
+                return _scheduler_service_ref  # Return cached ref if available
+
+            existing_scheduler = getattr(server, "scheduler_service", None)
+            if existing_scheduler:
+                _scheduler_service_ref = existing_scheduler
+                return existing_scheduler
+
+            scheduler_interval = getattr(server.config, "scheduler_interval", 1)
+            scheduler_config = SchedulerConfig(enabled=True, interval=scheduler_interval)
+            scheduler_service = SchedulerService(
+                config=scheduler_config,
+                graph_context=getattr(server, "_graph_context", None),
+            )
+            server.scheduler_service = scheduler_service
+            _scheduler_service_ref = scheduler_service
+
+            try:
+                if hasattr(server, "lifecycle_manager"):
+                    def _stop_scheduler() -> None:
+                        global _scheduler_service_ref
+                        try:
+                            if server.scheduler_service.is_running:
+                                server.scheduler_service.stop()
+                        except Exception as e:
+                            logger.error(f"TaskDispatcher: failed to stop scheduler on shutdown: {e}")
+                        finally:
+                            _scheduler_service_ref = None
+
+                    server.lifecycle_manager.add_shutdown_hook(_stop_scheduler)
+            except Exception:
+                pass
+
+            return scheduler_service
+        except Exception as e:
+            logger.debug(f"TaskDispatcher: failed to initialize scheduler service: {e}")
+            return None
+
+    def _get_scheduler_service(self):
+        global _scheduler_service_ref
+        # Fast path: return cached module-level ref (works across threads)
+        if _scheduler_service_ref is not None:
+            return _scheduler_service_ref
+        try:
+            from jvspatial.api.context import get_current_server
+
+            server = get_current_server()
+            if server and hasattr(server, "scheduler_service") and getattr(server, "scheduler_service"):
+                svc = getattr(server, "scheduler_service")
+                _scheduler_service_ref = svc
+                return svc
+
+            return self._initialize_scheduler_service()
+        except Exception as e:
+            logger.debug(f"TaskDispatcher: failed to get current server scheduler_service: {e}")
+        return None
+
+    async def _register_scheduler_task(self, warn_on_missing: bool = False) -> None:
+        scheduler_service = self._get_scheduler_service()
+        if not scheduler_service:
+            if warn_on_missing:
+                logger.warning(
+                    "TaskDispatcher: scheduler service unavailable after startup. "
+                    "Ensure JVSPATIAL_SCHEDULER_ENABLED=true is set and the server config "
+                    "has scheduler_enabled=True."
+                )
+            else:
+                logger.debug(
+                    "TaskDispatcher: scheduler service unavailable; "
+                    "will retry from on_startup."
+                )
+            return
+
+        try:
+            if hasattr(scheduler_service, "unregister_task"):
+                scheduler_service.unregister_task(SCHEDULE_TASK_ID)
+        except Exception as e:
+            logger.debug(f"TaskDispatcher: failed to unregister existing scheduler task before register: {e}")
+
+        try:
+            from jvspatial.api.integrations.scheduler.decorators import (
+                get_scheduled_tasks,
+                register_scheduled_tasks,
+            )
+
+            scheduled_tasks = get_scheduled_tasks()
+            logger.debug(
+                "TaskDispatcher: scheduled task registry contains %d tasks",
+                len(scheduled_tasks),
+            )
+
+            await register_scheduled_tasks(scheduler_service)
+            logger.info("TaskDispatcher: registered scheduler task '%s'", SCHEDULE_TASK_ID)
+
+            if not scheduler_service.is_running:
+                scheduler_service.start()
+                logger.info("TaskDispatcher: started scheduler service")
+        except Exception as e:
+            logger.error(f"TaskDispatcher: failed to register scheduler task: {e}", exc_info=True)
+
+    async def _unregister_scheduler_task(self) -> None:
+        scheduler_service = self._get_scheduler_service()
+        if not scheduler_service:
+            return
+
+        try:
+            if hasattr(scheduler_service, "unregister_task"):
+                scheduler_service.unregister_task(SCHEDULE_TASK_ID)
+                logger.info("TaskDispatcher: unregistered scheduler task '%s'", SCHEDULE_TASK_ID)
+
+                if not scheduler_service.list_tasks():
+                    if scheduler_service.is_running:
+                        scheduler_service.stop()
+                        logger.info("TaskDispatcher: stopped scheduler service because no scheduled tasks remain")
+        except Exception as e:
+            logger.error(f"TaskDispatcher: failed to unregister scheduler task: {e}", exc_info=True)
 
     async def tick(self, dry_run: bool = False, conversation_id: Optional[str] = None) -> Dict[str, Any]:
         """Check for triggered tasks and dispatch them.
@@ -128,8 +281,6 @@ class TaskDispatcher(Action):
                             triggered_tasks.append({"session_id": conv.session_id, "task_id": task_id, "status": "dry_run"})
                             return
 
-                        # 2. Dispatch Task
-                        # Debug print in cyan
                         # Task fired
                         logger.info(f"TaskDispatcher: Dispatching task '{description}' for session {conv.session_id}")
 
@@ -193,3 +344,30 @@ class TaskDispatcher(Action):
         except Exception as e:
             logger.error(f"TaskDispatcher: Tick error: {e}", exc_info=True)
             return {"error": str(e)}
+
+# Global Native Scheduler Loop
+if on_schedule:
+    @on_schedule("every 5 minutes", task_id="system_task_dispatcher")
+    async def _native_task_dispatcher_tick():
+        """Background poller that invokes the task dispatcher loop natively without webhooks."""
+        logger.debug("TaskDispatcher (Native): Running scheduled tick.")
+        try:
+            # Find all active dispatchers across the system
+            dispatchers = await TaskDispatcher.find({
+                "context.enabled": True,
+            })
+            if not dispatchers:
+                return
+
+            tick_tasks = []
+            for dispatcher in dispatchers:
+                # Fire them off concurrently for performance
+                logger.debug(f"TaskDispatcher (Native): Ticking for agent {dispatcher.agent_id}")
+                tick_tasks.append(dispatcher.tick(dry_run=False))
+
+            results = await asyncio.gather(*tick_tasks, return_exceptions=True)
+            for res in results:
+                if isinstance(res, Exception):
+                    logger.error(f"TaskDispatcher (Native) failed: {res}")
+        except Exception as e:
+            logger.error(f"TaskDispatcher (Native) encountered a global error: {e}", exc_info=True)

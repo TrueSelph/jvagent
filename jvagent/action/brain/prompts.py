@@ -31,8 +31,7 @@ INSTRUCTIONS:
 - Only if there is absolutely nothing worth scheduling or completing, output exactly: NO_TASKS
 
 To MARK A PENDING TASK AS COMPLETED, output:
-COMPLETE_TASK: [ID from the pending tasks list above]
-If there are no pending tasks then do not output any completed tasks.
+COMPLETE_TASK: [ID from the pending tasks list]
 
 To SCHEDULE A NEW TASK, output in this exact format:
 TASK: [clear, specific action the agent should take]

@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
-from jvagent.action.agent_capabilities import get_agent_capabilities_brief
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.task_creation_interact_action.prompts import TASK_SCHEDULER_PROMPT
 from jvagent.core.app import App
@@ -140,11 +139,6 @@ class TaskCreationInteractAction(InteractAction):
         if not interaction:
             return
 
-        # # Skip if intent is too low-value to warrant an LLM call
-        # if interaction.intent_type in self.skip_intents:
-        #     logger.debug(f"BrainSchedulerAction: Skipping for intent_type={interaction.intent_type}")
-        #     return
-
         conversation = getattr(visitor, "conversation", None) or await interaction.get_conversation()
         if not conversation:
             return
@@ -182,8 +176,8 @@ class TaskCreationInteractAction(InteractAction):
                 pending_tasks_section=pending_tasks_section
             )
 
-            # Additional context about the agent's actual reply
-            prompt_content += f"\n\nWHAT THE AGENT JUST REPLIED:\n{interaction.response}"
+            # # Additional context about the agent's actual reply
+            # prompt_content += f"\n\nWHAT THE AGENT JUST REPLIED:\n{interaction.response}"
 
             response = await model_action.generate(
                 prompt=prompt_content,
@@ -220,7 +214,7 @@ class TaskCreationInteractAction(InteractAction):
         agent = await self.get_agent()
         if not agent:
             return "No capabilities."
-        return await get_agent_capabilities_brief(
+        return await self.get_agent_capabilities_brief(
             agent, ttl_seconds=self.capabilities_cache_ttl_seconds
         )
 
