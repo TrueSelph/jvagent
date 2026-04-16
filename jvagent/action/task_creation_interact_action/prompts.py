@@ -26,8 +26,9 @@ INSTRUCTIONS:
 - "Check-in" requests: If a user says "remind me later", "check back with me", "I'm busy now", or implies they want a follow up, you MUST schedule a PROACTIVE task. Silence is a failure.
 - READ THE PENDING TASKS LIST. If a pending task's objective has already been satisfied by the conversation history or the user's latest input, you MUST mark it as completed.
 - ONLY schedule new tasks that fall within the agent's listed capabilities above.
-- You can schedule tasks even if they involve tool usage (e.g., continuing a booking/scheduling process). Your focus is identifying when the follow-up should happen.
+- You can schedule tasks even if they involve tool usage (e.g., continuing a booking/scheduling process) as long as it involves engaging the user to get the information needed to complete the task. Your focus is identifying when the follow-up should happen.
 - Do NOT respond to the user — only output tasks or completions.
+- Only include tasks that involve sending a message to the user. Avoid scheduling tasks that involve direct tool usage without user engagement.
 - Only if there is absolutely nothing worth scheduling or completing, output exactly: NO_TASKS
 
 To MARK A PENDING TASK AS COMPLETED, output:

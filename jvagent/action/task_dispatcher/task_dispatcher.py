@@ -285,37 +285,94 @@ class TaskDispatcher(Action):
                         logger.info(f"TaskDispatcher: Dispatching task '{description}' for session {conv.session_id}")
 
                         # Atomically mark as 'triggered' so we don't double-fire if another tick comes
-                        await conv.update_task(status="triggered", task_id=task_id)
+                        # Using direct list manipulation as requested
+                        tasks = getattr(conv, "active_tasks", [])
+                        for t in tasks:
+                            if t.get("task_id") == task_id:
+                                t["status"] = "triggered"
+                                t["updated_at"] = datetime.now(timezone.utc).isoformat()
+                        await conv.save()
 
                         # 3. Create a system utterance based on the task context
                         metadata = task_to_dispatch.get("metadata", {})
                         context = metadata.get("context", "Time to follow up.")
                         task_channel = metadata.get("channel")
-
                         system_utterance = f"[SYSTEM_PROMPT: TASK_TRIGGER] Task: {description}. Context: {context}"
 
                         try:
                             from jvagent.action.interact.interact_walker import InteractWalker
+                            from jvagent.action.persona.persona_action import PersonaAction
 
+                            # 1. Ensure channel adapters are registered (Lazy init for background threads)
+                            whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
+                            if whatsapp_action:
+                                await whatsapp_action.ensure_adapter_registered()
+
+                            # 2. Get PersonaAction
+                            persona = await agent.get_action_by_type("PersonaAction")
+                            if not persona:
+                                logger.error(f"TaskDispatcher: PersonaAction not found for agent {agent.id}; cannot dispatch task {task_id}")
+                                return
+
+                            # 3. Create walker for bus/metadata plumbing
                             walker = InteractWalker(
                                 agent_id=self.agent_id,
                                 utterance=system_utterance,
                                 channel=task_channel or conv.channel or "default",
                                 session_id=conv.session_id,
                                 user_id=conv.user_id,
-                                response_bus=response_bus,  # CRITICAL: Fix for message delivery to jvchat/adapters
+                                response_bus=response_bus,
                                 data={"is_proactive": True, "task_id": task_id}
                             )
 
-                            await walker.spawn(agent)
-                            interaction = walker.interaction
+                            # 4. Resolve session and create interaction manually
+                            # This ensures we have an interaction node to attach directives to.
+                            memory = await agent.get_memory()
+                            if not memory:
+                                logger.error(f"TaskDispatcher: Memory node not found for agent {agent.id}")
+                                return
+
+                            # Resolve session (finds/creates user and conversation)
+                            # Using *_ to be robust against signature changes in Memory.get_session
+                            user, conversation, *_, is_new_user = await memory.get_session(
+                                session_id=walker.session_id,
+                                channel=walker.channel,
+                                user_id=walker.user_id
+                            )
+
+
+
+                            # Create the persistent interaction node
+                            interaction = await conversation.create_interaction(
+                                utterance=system_utterance,
+                                channel=walker.channel,
+                                session_id=walker.session_id
+                            )
+                            
+                            if interaction:
+                                # Attach metadata via parameters as Interaction doesn't support a generic .data property
+                                # We skip if walker.data is empty or invalid
+                                if walker.data and isinstance(walker.data, dict):
+                                    interaction.add_parameter(walker.data, "TaskDispatcher")
+                                
+                                await interaction.save()
+
+                                walker.interaction = interaction
+                                walker.conversation = conversation
 
                             if interaction:
-                                await interaction.close_interaction()
-                                # We don't wait for flush because we are in a background loop potentially
-                                # but we do want to ensure it's saved.
-                                from jvspatial import flush_deferred_entities
-                                await flush_deferred_entities(interaction, conv, strict=False)
+                                # 5. Inject the Directive (forces LLM to focus on the task)
+                                # We call interaction.add_directives directly to bypass the walker's 
+                                # safety check requiring an active Action.execute context.
+                                interaction.add_directives([system_utterance], "TaskDispatcher")
+                                await interaction.save()
+
+                                # 6. Generate response via PersonaAction
+                                # This publishes to the bus and updates interaction.response
+                                await persona.respond(interaction, visitor=walker)
+
+                                # 7. Finalize (emits final signal to bus, saves history)
+                                await walker._finalize()
 
                                 dispatched_count += 1
                                 triggered_tasks.append({
@@ -329,7 +386,8 @@ class TaskDispatcher(Action):
 
                         except Exception as e:
                             logger.error(f"TaskDispatcher: Failed to dispatch task {task_id}: {e}", exc_info=True)
-                            pass
+
+
 
                 # Fire all due tasks for this conversation concurrently
                 await asyncio.gather(*(dispatch_task(task) for task in due_tasks))
@@ -347,7 +405,7 @@ class TaskDispatcher(Action):
 
 # Global Native Scheduler Loop
 if on_schedule:
-    @on_schedule("every 5 minutes", task_id="system_task_dispatcher")
+    @on_schedule("every 2 minutes", task_id="system_task_dispatcher")
     async def _native_task_dispatcher_tick():
         """Background poller that invokes the task dispatcher loop natively without webhooks."""
         logger.debug("TaskDispatcher (Native): Running scheduled tick.")

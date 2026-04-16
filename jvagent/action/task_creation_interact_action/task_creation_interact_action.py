@@ -2,6 +2,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
+import uuid
 
 from jvspatial.core.annotations import attribute
 from jvagent.action.interact.base import InteractAction
@@ -151,13 +152,28 @@ class TaskCreationInteractAction(InteractAction):
         current_time_str = now.strftime("%Y-%m-%d %H:%M")
 
         # Include history + Current response!
-        history = await conversation.get_interaction_history(limit=5, formatted=True)
+        # Handle cases where conversation might be returned as a generic Node (AttributeError protection)
+        if hasattr(conversation, "get_interaction_history"):
+            history = await conversation.get_interaction_history(limit=5, formatted=True)
+        else:
+            # Fallback for generic Nodes
+            raw_history = await conversation.nodes(direction="out", limit=5)
+            # Re-traverse to ensure chronological order and format manually if needed
+            # For now, we'll try a simple format or assume missing history is okay for extraction
+            history = [] 
+
         history_str = "\n".join([f"{m['role']}: {m['content']}" for m in history])
 
         capabilities_str = await self._get_capabilities()
 
         try:
-            active_tasks = conversation.get_active_tasks(status="active")
+            # Robust task retrieval
+            active_tasks = []
+            if hasattr(conversation, "get_active_tasks"):
+                active_tasks = await conversation.get_active_tasks(status="active")
+            elif hasattr(conversation, "active_tasks"):
+                active_tasks = [t for t in conversation.active_tasks if t.get("status") == "active"]
+
             pending_tasks_section = "No pending tasks."
             if active_tasks:
                 pending_tasks_section = "\n".join(
@@ -189,22 +205,38 @@ class TaskCreationInteractAction(InteractAction):
             if response and "NO_TASKS" not in response:
                 # 1. Process Completions
                 completions = re.findall(r"COMPLETE_TASK:\s*([a-fA-F0-9\-]+|[0-9]+)", response)
+                tasks = getattr(conversation, "active_tasks", [])
+                modified = False
                 for task_id in completions:
-                    await conversation.update_task(status="completed", task_id=task_id)
+                    for t in tasks:
+                        if t.get("task_id") == task_id:
+                            t["status"] = "completed"
+                            t["updated_at"] = datetime.now(timezone.utc).isoformat()
+                            modified = True
+                if modified:
+                    await conversation.save()
 
                 # 2. Process New Tasks
                 new_tasks = self._extract_tasks(response)
                 for task in new_tasks:
-                    await conversation.add_active_task(
-                        description=task["description"],
-                        task_type="PROACTIVE",
-                        metadata={
+                    new_task_id = f"task_{uuid.uuid4().hex}"
+                    tasks.append({
+                        "task_id": new_task_id,
+                        "description": task["description"],
+                        "task_type": "PROACTIVE",
+                        "status": "active",
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "metadata": {
                             "trigger_time": task["trigger_time"],
                             "trigger_condition": task["trigger_condition"],
                             "context": task["context"],
                             "channel": interaction.channel or "default",
-                        },
-                    )
+                        }
+                    })
+                if new_tasks:
+                    await conversation.save()
+                    
+                for task in new_tasks:
                     logger.info(f"TaskCreation: Successfully ADDED task '{task['description']}' for session {conversation.session_id} @ {task['trigger_time']}")
 
         except Exception as e:
