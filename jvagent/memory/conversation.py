@@ -1,6 +1,7 @@
 """Conversation node for managing conversation sessions."""
 
 import os
+
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
@@ -15,6 +16,11 @@ if TYPE_CHECKING:
 
 @compound_index([("context.session_id", 1)], name="conversation_session_id")
 @compound_index([("context.user_id", 1), ("context.status", 1)], name="user_status")
+@compound_index(
+    [("active_tasks.status", 1), ("active_tasks.next_trigger_at", 1)],
+    name="active_task_trigger",
+)
+
 class Conversation(DeferredSaveMixin, Node):
     """Session-based conversation. session_id can be set or auto-generated.
 
@@ -291,11 +297,13 @@ class Conversation(DeferredSaveMixin, Node):
         except ValueError:
             max_prune = 100
 
+
         # Start from the first interaction and remove the oldest ones
         current = await self.get_first_interaction()
         removed = 0
 
         while current and removed < to_remove and removed < max_prune:
+
             next_interaction = await current.get_next_interaction()
 
             # If there's no next interaction, stop pruning -- removing the last
@@ -860,13 +868,19 @@ class Conversation(DeferredSaveMixin, Node):
         default_tid = (
             f"{action_name}:{short_uuid}" if action_name else f"task_{uuid.uuid4().hex}"
         )
+        metadata = metadata or {}
+
         entry: Dict[str, Any] = {
             "task_id": task_id or default_tid,
             "task_type": task_type,
             "description": description,
             "action_name": action_name,
             "status": "active",
-            "metadata": metadata or {},
+            # Promote trigger fields to top level for indexing
+            "next_trigger_at": metadata.get("trigger_time"),
+            "trigger_condition": metadata.get("trigger_condition"),
+            "metadata": metadata,
+
             "created_at": now,
             "updated_at": now,
         }
@@ -884,6 +898,14 @@ class Conversation(DeferredSaveMixin, Node):
                 return
         self.active_tasks.append(entry)
         await self.save()
+
+        # Fire task created callback (push-based notification)
+        try:
+            from jvagent.core.callback import trigger_task_created_callback
+            await trigger_task_created_callback(self, entry)
+        except Exception:
+            # Callbacks are non-blocking and shouldn't fail the primary task creation
+            pass
 
     async def update_task(
         self,
@@ -963,7 +985,11 @@ class Conversation(DeferredSaveMixin, Node):
         """
         tasks = list(self.active_tasks)
         if status is not None:
-            tasks = [t for t in tasks if t.get("status") == status]
+            if isinstance(status, list):
+                tasks = [t for t in tasks if t.get("status") in status]
+            else:
+                tasks = [t for t in tasks if t.get("status") == status]
+
         if action_name is not None:
             tasks = [t for t in tasks if t.get("action_name") == action_name]
         return tasks

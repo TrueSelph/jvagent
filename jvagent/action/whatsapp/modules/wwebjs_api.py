@@ -3,7 +3,7 @@
 import asyncio
 import base64
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import aiohttp
 
@@ -371,7 +371,26 @@ class WWebJSAPI(BaseWhatsAppAPI):
         )
 
     async def send_image(self, phone: str, file_url: str = "", **kwargs) -> dict:
-        """POST /client/sendMessage/{sessionId} with MessageMedia"""
+        """POST /client/sendMessage/{sessionId} with MessageMedia (Base64) or MessageMediaFromURL."""
+        chat_id = self._format_chat_id(phone, kwargs.get("is_group", False))
+
+        # Check if we can use MessageMediaFromURL to avoid 413 Payload Too Large
+        # We only use it for external public URLs. Local URLs (/api/files/...) or no-prefixed paths use Base64.
+        if file_url and file_url.startswith(("http://", "https://")):
+            # Some providers prefer URL-based uploads for large files
+            data: Dict[str, Any] = {
+                "chatId": chat_id,
+                "contentType": "MessageMediaFromURL",
+                "content": file_url,
+            }
+            if kwargs.get("caption"):
+                data["options"] = {"caption": kwargs["caption"]}
+
+            return await self.send_rest_request(
+                f"client/sendMessage/{self.session}", data=data
+            )
+
+        # Fallback to Base64 (original behavior)
         base64_data = await self.file_url_to_base64(file_url, force_prefix=False)
         if not base64_data:
             return {"ok": False, "error": "Failed to encode file"}
@@ -388,7 +407,24 @@ class WWebJSAPI(BaseWhatsAppAPI):
         )
 
     async def send_file(self, phone: str, file_url: str = "", **kwargs) -> dict:
-        """POST /client/sendMessage/{sessionId} with MessageMedia"""
+        """POST /client/sendMessage/{sessionId} with MessageMedia (Base64) or MessageMediaFromURL."""
+        chat_id = self._format_chat_id(phone, kwargs.get("is_group", False))
+
+        # Check if we can use MessageMediaFromURL (bypass 413 error)
+        if file_url and file_url.startswith(("http://", "https://")):
+            data: Dict[str, Any] = {
+                "chatId": chat_id,
+                "contentType": "MessageMediaFromURL",
+                "content": file_url,
+            }
+            if kwargs.get("caption"):
+                data["options"] = {"caption": kwargs["caption"]}
+
+            return await self.send_rest_request(
+                f"client/sendMessage/{self.session}", data=data
+            )
+
+        # Fallback to Base64
         base64_data = await self.file_url_to_base64(file_url, force_prefix=False)
         if not base64_data:
             return {"ok": False, "error": "Failed to encode file"}
@@ -411,7 +447,25 @@ class WWebJSAPI(BaseWhatsAppAPI):
         is_group: bool = False,
         quoted_message_id: str = "",
     ) -> dict:
-        """POST /client/sendMessage/{sessionId} with voice/audio MessageMedia"""
+        """POST /client/sendMessage/{sessionId} with voice/audio MessageMedia (Base64) or MessageMediaFromURL."""
+        chat_id = self._format_chat_id(phone, is_group)
+
+        # Check if we can use MessageMediaFromURL
+        if file_url and file_url.startswith(("http://", "https://")):
+            data: Dict[str, Any] = {
+                "chatId": chat_id,
+                "contentType": "MessageMediaFromURL",
+                "content": file_url,
+                "options": {"sendAudioAsVoice": True},
+            }
+            if quoted_message_id:
+                data["options"]["quotedMessageId"] = quoted_message_id
+
+            return await self.send_rest_request(
+                f"client/sendMessage/{self.session}", data=data
+            )
+
+        # Fallback to Base64
         base64_data = await self.file_url_to_base64(file_url, force_prefix=False)
         if not base64_data:
             return {"ok": False, "error": "Failed to encode audio file"}
@@ -423,7 +477,6 @@ class WWebJSAPI(BaseWhatsAppAPI):
             "filename": "voice.ogg",
         }
 
-        chat_id = self._format_chat_id(phone, is_group)
         data = {
             "chatId": chat_id,
             "contentType": "MessageMedia",

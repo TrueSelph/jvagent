@@ -19,10 +19,7 @@ from jvspatial.api.exceptions import (
     ValidationError,
 )
 
-from jvagent.action.interact.interact_walker import (
-    InteractionInitResult,
-    InteractWalker,
-)
+from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.interact.rate_limiter import (
     extract_client_ip,
     get_rate_limiter,
@@ -125,53 +122,14 @@ _STREAM_CLIENT_ERROR = (
 
 
 def _sse_error_event(
-    request_id: str,
-    *,
-    message: Optional[str] = None,
-    code: Optional[str] = None,
+    request_id: str, *, message: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Build a client-safe SSE error payload (no raw exception text)."""
-    payload: Dict[str, Any] = {
+    """Build a client-safe SSE error payload (no exception text)."""
+    return {
         "type": "error",
         "message": message or _STREAM_CLIENT_ERROR,
         "request_id": request_id,
     }
-    if code:
-        payload["code"] = code
-    return payload
-
-
-def _raise_validation_for_init_failure(
-    init: InteractionInitResult,
-    *,
-    request_id: str,
-    channel: str,
-) -> None:
-    """Map failed interaction bootstrap to ValidationError with machine-readable details."""
-    base_details: Dict[str, Any] = {
-        "code": init.code,
-        "request_id": request_id,
-        "channel": channel,
-    }
-    if init.code == "access_denied":
-        raise ValidationError(
-            message="Access denied.",
-            details={**base_details},
-        )
-    if init.code == "session_resolution_error":
-        raise ValidationError(
-            message="Session or user could not be resolved.",
-            details={**base_details},
-        )
-    if init.code == "no_memory":
-        raise ValidationError(
-            message="Agent has no Memory node configured.",
-            details={**base_details},
-        )
-    raise ValidationError(
-        message="Interaction could not be initialized.",
-        details={**base_details},
-    )
 
 
 def _sanitize_visitor_data_for_log(visitor_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -621,18 +579,8 @@ async def interact_endpoint(
                 stream=stream,
             )
 
-            # Phase 1 (shared): memory, session, access, create Interaction — no traversal yet.
-            async with profile.measure("interaction_init"):
-                init = await walker.initialize_interaction(agent)
-            if not init.ok:
-                _raise_validation_for_init_failure(
-                    init,
-                    request_id=profile.request_id,
-                    channel=channel,
-                )
-
             if stream:
-                # Streaming mode: return SSE response (traversal runs inside generator).
+                # Streaming mode: return SSE response
                 # Note: Profiling for streaming is handled in _stream_interaction
                 return create_sse_response(
                     _stream_interaction(walker, agent),
@@ -659,17 +607,9 @@ async def interact_endpoint(
                                 details={
                                     "channel": channel,
                                     "request_id": profile.request_id,
-                                    "code": "access_denied",
                                 },
                             )
-                    raise ValidationError(
-                        message="Interaction was not available after traversal.",
-                        details={
-                            "channel": channel,
-                            "request_id": profile.request_id,
-                            "code": "traversal_no_interaction",
-                        },
-                    )
+                    raise RuntimeError("Interaction was not created during traversal")
 
                 # Mark interaction as not streamed
                 interaction.streamed = False
@@ -782,21 +722,7 @@ async def _stream_interaction(
     set_current_profile(profile)
 
     try:
-        # Interaction must already exist (endpoint runs initialize_interaction before SSE).
-        if not walker.interaction:
-            logger.error(
-                "Stream interaction missing after init: request_id=%s",
-                profile.request_id,
-            )
-            yield format_sse_chunk(
-                _sse_error_event(
-                    profile.request_id,
-                    message="Interaction could not be started.",
-                    code="interaction_not_initialized",
-                )
-            )
-            return
-
+        # Start walker in background (concurrent with early interaction polling).
         walker_start = time.time()
         walk_task = cast(
             asyncio.Task,
@@ -807,7 +733,43 @@ async def _stream_interaction(
             ),
         )
 
-        # Record time from stream start to first byte (init completed in endpoint)
+        # Wait for interaction to be created
+        max_wait = 5.0  # Maximum seconds to wait for interaction
+        waited = 0.0
+        while not walker.interaction and waited < max_wait:
+            await asyncio.sleep(0.1)
+            waited += 0.1
+
+        if not walker.interaction:
+            try:
+                await walk_task
+            except Exception as e:
+                logger.error(
+                    "Stream walker failed before interaction: request_id=%s",
+                    profile.request_id,
+                    exc_info=True,
+                )
+                yield format_sse_chunk(_sse_error_event(profile.request_id))
+                return
+            stream_report = await walker.get_report()
+            for item in stream_report or []:
+                if isinstance(item, dict) and item.get("access_denied"):
+                    yield format_sse_chunk(
+                        _sse_error_event(
+                            profile.request_id,
+                            message="Access denied.",
+                        )
+                    )
+                    return
+            yield format_sse_chunk(
+                _sse_error_event(
+                    profile.request_id,
+                    message="Interaction was not created during traversal.",
+                )
+            )
+            return
+
+        # Record time to interaction creation
         profile.record("interaction_created", time.time() - walker_start)
 
         interaction = walker.interaction

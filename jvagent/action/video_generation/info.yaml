@@ -1,5 +1,5 @@
 package:
-  name: jvagent/heygen_video
+  name: jvagent/heygen_video_action
   author: V75 Inc.
   archetype: HeygenVideoAction
   version: 1.0.0

@@ -1,0 +1,17 @@
+# Task Trigger Action Package Descriptor
+package:
+  name: jvagent/task_trigger_interact_action
+  author: jvagent
+  archetype: TaskTriggerInteractAction
+  version: 0.0.1
+  meta:
+    title: Task Trigger
+    description: Monitors pending tasks and triggers them when conditions are met.
+    group: jvagent
+    type: interact_action
+  config:
+    order:
+      weight: -180
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []

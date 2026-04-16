@@ -313,6 +313,16 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         file_storage_max_size=fs_cfg["max_size"],
     )
 
+    # Scheduler configuration — off by default; auto-enabled when TaskDispatcher is present
+    scheduler_enabled = get_config_value(
+        app_config, "server.scheduler_enabled", "JVSPATIAL_SCHEDULER_ENABLED", False
+    )
+    scheduler_interval = int(
+        get_config_value(
+            app_config, "server.scheduler_interval", "JVSPATIAL_SCHEDULER_INTERVAL", 1
+        )
+    )
+
     # Create server with grouped configuration
     server_kwargs = {
         "title": title,
@@ -327,7 +337,10 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         "graph_endpoint_enabled": graph_endpoint_enabled,
         "log_level": log_level,
         "debug": debug_mode,
+        "scheduler_enabled": scheduler_enabled,
+        "scheduler_interval": scheduler_interval,
     }
+
 
     server = Server(**server_kwargs)
 
