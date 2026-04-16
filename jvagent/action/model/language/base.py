@@ -79,6 +79,8 @@ class ModelActionResult:
         system: Optional[str] = None,
         history: Optional[List[Dict[str, Any]]] = None,
         calling_action_name: Optional[str] = None,
+        thinking_content: Optional[str] = None,
+        thinking_tokens: Optional[int] = None,
     ):
         """Initialize a model action result.
 
@@ -95,6 +97,8 @@ class ModelActionResult:
             system: System message used (if any)
             history: Conversation history used (if any)
             calling_action_name: Name of the action that initiated this model call
+            thinking_content: Extended thinking text (Anthropic extended thinking)
+            thinking_tokens: Number of tokens used for extended thinking
         """
         self.response = response
         self.stream = stream
@@ -107,6 +111,8 @@ class ModelActionResult:
         self.system = system
         self.history = history
         self.calling_action_name = calling_action_name
+        self.thinking_content = thinking_content
+        self.thinking_tokens = thinking_tokens
 
         # Build metrics dict with usage and duration
         self.metrics: Dict[str, Any] = {}

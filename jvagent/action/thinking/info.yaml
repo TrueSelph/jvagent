@@ -1,0 +1,17 @@
+package:
+  name: jvagent/thinking_interact_action
+  author: jvagent
+  archetype: ThinkingInteractAction
+  version: 0.0.1
+  meta:
+    title: Thinking Agent Action
+    description: >-
+      Long-running agentic loop action implementing think-act-observe with
+      tool execution, skill loading, and extended thinking support.
+    group: jvagent
+    type: action
+  config:
+    singleton: false
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []

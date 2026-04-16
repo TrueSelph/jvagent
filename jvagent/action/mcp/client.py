@@ -23,8 +23,13 @@ def _import_mcp() -> Any:
 class MCPClientWrapper:
     """Wrapper around MCP SDK: connect (stdio or streamable_http), list_tools, call_tool.
 
-    Session lifecycle: one long-lived session per wrapper for stdio; for streamable_http
-    the same session is reused. Use connect() to establish, disconnect() to tear down.
+    Session lifecycle: one long-lived session per wrapper. Use connect() to
+    establish, disconnect() to tear down.
+
+    For stdio transport, the subprocess and task group lifecycle are managed by
+    running the stdio_client context manager as a background task. This avoids
+    the ExceptionGroup/BrokenResourceError that occurs when using AsyncExitStack
+    to manage the stdio_client's task group.
     """
 
     def __init__(
@@ -60,6 +65,10 @@ class MCPClientWrapper:
         self._session: Any = None
         self._read_stream: Any = None
         self._write_stream: Any = None
+        # For stdio: background task managing the subprocess lifecycle
+        self._stdio_task: Optional[asyncio.Task] = None
+        self._stdio_ready: Optional[asyncio.Event] = None
+        self._stdio_error: Optional[Exception] = None
 
     def _ensure_imports(self) -> Any:
         return _import_mcp()
@@ -68,23 +77,77 @@ class MCPClientWrapper:
         """Establish MCP session (transport + ClientSession + initialize)."""
         if self._session is not None:
             return
-        ClientSession, StdioServerParameters, stdio_client, streamable_http_client = (
-            self._ensure_imports()
-        )
+
+        if self._transport == "stdio":
+            await self._connect_stdio()
+        elif self._transport == "streamable_http":
+            await self._connect_streamable_http()
+        else:
+            raise ValueError(f"Unsupported transport: {self._transport}")
+
+    async def _connect_stdio(self) -> None:
+        """Connect via stdio transport using a background task.
+
+        The stdio_client context manager manages a subprocess and a task group
+        with reader/writer coroutines. Using AsyncExitStack with this context
+        manager causes ExceptionGroup/BrokenResourceError because the task group
+        cleanup races with the exit stack. Instead, we run the entire
+        stdio_client + ClientSession lifecycle in a background task, passing
+        the session back via an event.
+        """
+        ClientSession, StdioServerParameters, stdio_client, _ = self._ensure_imports()
+
+        self._stdio_ready = asyncio.Event()
+        self._stdio_error = None
+
+        async def _run_stdio_session():
+            """Run the stdio_client + ClientSession lifecycle as a long-lived task."""
+            server_params = StdioServerParameters(
+                command=self._command,
+                args=self._args,
+                env=self._env,
+            )
+            try:
+                async with stdio_client(server_params) as (read_stream, write_stream):
+                    self._read_stream = read_stream
+                    self._write_stream = write_stream
+                    async with ClientSession(read_stream, write_stream) as session:
+                        await session.initialize()
+                        self._session = session
+                        self._stdio_ready.set()
+                        # Keep the context alive until disconnect() is called
+                        # Wait on a signal that disconnect was requested
+                        if self._disconnect_event:
+                            await self._disconnect_event.wait()
+            except Exception as e:
+                self._stdio_error = e
+                self._stdio_ready.set()
+
+        self._disconnect_event = asyncio.Event()
+        self._stdio_task = asyncio.create_task(_run_stdio_session())
+
+        # Wait for the session to be ready (or error)
+        try:
+            await asyncio.wait_for(
+                self._stdio_ready.wait(), timeout=self._connect_timeout
+            )
+        except asyncio.TimeoutError:
+            self._stdio_task.cancel()
+            raise TimeoutError(
+                f"MCP stdio connection timed out after {self._connect_timeout}s"
+            )
+
+        if self._stdio_error is not None:
+            raise self._stdio_error
+
+    async def _connect_streamable_http(self) -> None:
+        """Connect via streamable_http transport using AsyncExitStack."""
+        _, _, _, streamable_http_client = self._ensure_imports()
+        ClientSession = self._ensure_imports()[0]
+
         stack = AsyncExitStack()
         try:
-            if self._transport == "stdio":
-                server_params = StdioServerParameters(
-                    command=self._command,
-                    args=self._args,
-                    env=self._env,
-                )
-                transport_ctx = stdio_client(server_params)
-            elif self._transport == "streamable_http":
-                transport_ctx = streamable_http_client(self._url)
-            else:
-                raise ValueError(f"Unsupported transport: {self._transport}")
-
+            transport_ctx = streamable_http_client(self._url)
             read_stream, write_stream = await stack.enter_async_context(transport_ctx)
             self._read_stream = read_stream
             self._write_stream = write_stream
@@ -98,7 +161,17 @@ class MCPClientWrapper:
 
     async def disconnect(self) -> None:
         """Close session and transport."""
-        if self._stack is not None:
+        if self._transport == "stdio" and self._stdio_task is not None:
+            # Signal the background task to exit
+            if self._disconnect_event:
+                self._disconnect_event.set()
+            self._stdio_task.cancel()
+            try:
+                await self._stdio_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._stdio_task = None
+        elif self._stack is not None:
             await self._stack.aclose()
             self._stack = None
         self._session = None

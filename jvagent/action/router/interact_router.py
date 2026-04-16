@@ -306,11 +306,14 @@ class InteractRouter(InteractAction):
                 interaction_history = []
 
             if not anchors_dict:
-                logger.warning("InteractRouter: No anchors available for routing")
+                logger.warning(
+                    "InteractRouter: No anchors available for routing "
+                    "(session_id=%s)",
+                    getattr(visitor, "session_id", None),
+                )
                 result = RoutingResult.error_result(
                     "No actions available for routing",
-                    utterance=interaction.utterance or "",
-                    session_id=visitor.session_id,
+                    interaction.utterance or "",
                 )
 
                 await self._finalize_routing(

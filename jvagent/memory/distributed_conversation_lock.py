@@ -22,8 +22,6 @@ from typing import AsyncIterator, Optional
 
 logger = logging.getLogger(__name__)
 
-_INPROCESS_LOCK_WARNED = False
-
 _REDIS_URL_ENV = "JVAGENT_CONVERSATION_LOCK_REDIS_URL"
 _REDIS_TTL_ENV = "JVAGENT_CONVERSATION_LOCK_TTL_SECONDS"
 _DYNAMO_TABLE_ENV = "JVAGENT_CONVERSATION_LOCK_DYNAMODB_TABLE"
@@ -69,16 +67,6 @@ async def conversation_mutation_lock(conversation_id: str) -> AsyncIterator[None
         async with _dynamo_conversation_lock(conversation_id, dynamo_table):
             yield
         return
-
-    global _INPROCESS_LOCK_WARNED
-    if not _INPROCESS_LOCK_WARNED:
-        _INPROCESS_LOCK_WARNED = True
-        logger.warning(
-            "conversation_mutation_lock: using in-process lock only (no %s or %s). "
-            "Configure Redis or DynamoDB for cross-process serialization in multi-worker deployments.",
-            _REDIS_URL_ENV,
-            _DYNAMO_TABLE_ENV,
-        )
 
     from jvagent.memory.lock_manager import get_conversation_lock_manager
 

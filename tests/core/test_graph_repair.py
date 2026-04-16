@@ -1,10 +1,12 @@
 """Tests for agent graph repair utility."""
 
+from typing import Optional
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from jvspatial.core import Edge, Root, get_default_context
 
+from jvagent.core import graph_repair_job
 from jvagent.core.agent_loader import AgentLoader
 from jvagent.core.app import App
 from jvagent.core.app_loader import AppLoader
@@ -47,6 +49,8 @@ class TestGraphRepair:
         assert "duplicate_edges_removed" in result
         assert "interactions_pruned" in result
         assert "message" in result
+        assert result.get("status") == "completed"
+        assert "next_repair_cursor" not in result
 
     @pytest.mark.asyncio
     async def test_repair_on_clean_installed_agent(self, temp_dir, test_db):
@@ -117,19 +121,23 @@ author: Test
 
     @pytest.mark.asyncio
     async def test_repair_dry_run_skips_memory_repair(self, temp_dir, test_db):
-        """Dry run does not invoke memory repair."""
+        """Dry run does not invoke memory repair or pruning ticks."""
         await Root.get()
 
         with patch(
-            "jvagent.core.graph_repair._run_memory_repair_all_agents",
+            "jvagent.core.graph_repair_job._tick_memory_counters",
             new_callable=AsyncMock,
-        ) as mock_memory_repair, patch(
-            "jvagent.core.graph_repair._run_interaction_pruning_all_agents",
+        ) as mock_memory_counters, patch(
+            "jvagent.core.graph_repair_job._tick_memory_agents",
+            new_callable=AsyncMock,
+        ) as mock_memory_agents, patch(
+            "jvagent.core.graph_repair_job._tick_prune_agents",
             new_callable=AsyncMock,
         ) as mock_prune:
             result = await repair_agent_graph(dry_run=True)
 
-        mock_memory_repair.assert_not_called()
+        mock_memory_counters.assert_not_called()
+        mock_memory_agents.assert_not_called()
         mock_prune.assert_not_called()
         assert result["dry_run"] is True
         assert result["memory_repair_agents"] == 0
@@ -175,38 +183,31 @@ agents: []
 
         call_order = []
 
-        async def fake_memory_repair(recent_minutes):
+        real_tick_mc = graph_repair_job._tick_memory_counters
+        real_tick_dead = graph_repair_job._tick_dead_edges
+        real_tick_prune = graph_repair_job._tick_prune_agents
+
+        async def patched_tick_memory_counters(state, limits):
             call_order.append("memory")
-            return {
-                "memory_repair_agents": 0,
-                "orphaned_interactions_deleted": 0,
-                "orphaned_users_reconnected": 0,
-                "dual_edges_removed": 0,
-                "conversation_first_edges_restored": 0,
-                "counters_fixed": 0,
-            }
+            return await real_tick_mc(state, limits)
 
-        async def fake_interaction_pruning():
-            call_order.append("prune")
-            return {"interactions_pruned": 0}
-
-        original_remove_dead_edges = __import__(
-            "jvagent.core.graph_repair", fromlist=["_remove_dead_edges"]
-        )._remove_dead_edges
-
-        async def patched_remove_dead_edges(context, dry_run):
+        async def patched_tick_dead_edges(context, state, limits):
             call_order.append("graph")
-            return await original_remove_dead_edges(context, dry_run)
+            return await real_tick_dead(context, state, limits)
+
+        async def patched_tick_prune(state, limits):
+            call_order.append("prune")
+            return await real_tick_prune(state, limits)
 
         with patch(
-            "jvagent.core.graph_repair._run_memory_repair_all_agents",
-            side_effect=fake_memory_repair,
+            "jvagent.core.graph_repair_job._tick_memory_counters",
+            side_effect=patched_tick_memory_counters,
         ), patch(
-            "jvagent.core.graph_repair._remove_dead_edges",
-            side_effect=patched_remove_dead_edges,
+            "jvagent.core.graph_repair_job._tick_dead_edges",
+            side_effect=patched_tick_dead_edges,
         ), patch(
-            "jvagent.core.graph_repair._run_interaction_pruning_all_agents",
-            side_effect=fake_interaction_pruning,
+            "jvagent.core.graph_repair_job._tick_prune_agents",
+            side_effect=patched_tick_prune,
         ):
             await repair_agent_graph(dry_run=False)
 
@@ -216,3 +217,47 @@ agents: []
         assert call_order.index("graph") < call_order.index(
             "prune"
         ), "Interaction pruning must run after structural graph repair"
+
+    @pytest.mark.asyncio
+    async def test_repair_batched_resumes_until_completed(self, temp_dir, test_db):
+        """Small batch_size requires multiple calls with client cursor; graph ends clean."""
+        await Root.get()
+
+        limits = graph_repair_job.RepairLimits(batch_size=2, max_seconds=30.0)
+        cursor: Optional[str] = None
+        out: dict = {}
+        guard = 0
+        while guard < 200:
+            out = await graph_repair_job.run_repair_session(
+                dry_run=False,
+                recent_minutes=None,
+                limits=limits,
+                repair_cursor=cursor,
+            )
+            if out["status"] == "completed":
+                break
+            assert "next_repair_cursor" in out
+            cursor = out["next_repair_cursor"]
+            guard += 1
+
+        assert out["status"] == "completed"
+        assert out["phase"] == graph_repair_job.PH_DONE
+
+        once = await repair_agent_graph(dry_run=False)
+        assert once.get("status") == "completed"
+        assert once["dead_edges_removed"] == 0
+        assert once["message"] == "No repairs needed"
+
+    @pytest.mark.asyncio
+    async def test_repair_cursor_roundtrip(self, temp_dir, test_db):
+        """encode/decode preserves phase and cumulative result keys."""
+        await Root.get()
+        state = graph_repair_job._initial_session_state(False, None)
+        state["phase"] = graph_repair_job.PH_DEAD_EDGES
+        state["cursor"] = {"last_edge_id": "e.test"}
+        state["result"]["dead_edges_removed"] = 3
+        token = graph_repair_job.encode_repair_cursor(state)
+        restored = graph_repair_job.decode_repair_cursor(token, False, None)
+        assert restored["phase"] == graph_repair_job.PH_DEAD_EDGES
+        assert restored["cursor"]["last_edge_id"] == "e.test"
+        assert restored["result"]["dead_edges_removed"] == 3

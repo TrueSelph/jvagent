@@ -1,0 +1,18 @@
+package:
+  name: jvagent/skill
+  author: jvagent
+  archetype: SkillAction
+  version: 0.0.1
+  meta:
+    title: Skill Action
+    description: >-
+      Defines a skill (prompt template + tool bindings) for ThinkingInteractAction.
+      Skills compose system prompts, filter available tools, and override model
+      parameters for specialized agent behavior.
+    group: jvagent
+    type: action
+  config:
+    singleton: false
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []

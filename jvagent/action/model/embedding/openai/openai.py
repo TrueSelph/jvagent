@@ -8,7 +8,6 @@ from typing import Dict, List, Optional
 
 import httpx
 from jvspatial.core.annotations import attribute
-from jvspatial.env import env
 
 from jvagent.action.model.embedding.base import EmbeddingModelAction
 
@@ -23,7 +22,7 @@ class OpenAIEmbeddingModelAction(EmbeddingModelAction):
     text-embedding-3-large, and text-embedding-ada-002.
 
     Configuration:
-        OpenAI API key is read from OPENAI_API_KEY
+        api_key: Optional override; otherwise OPENAI_API_KEY from the environment
         api_endpoint: API endpoint (defaults to https://api.openai.com/v1)
         model: Model identifier (e.g., 'text-embedding-3-small', 'text-embedding-ada-002')
         embedding_dimensions: Expected dimensions (0 = auto-detect from model)
@@ -62,7 +61,7 @@ class OpenAIEmbeddingModelAction(EmbeddingModelAction):
         await super().on_register()
 
         # Validate API key
-        if not env("OPENAI_API_KEY"):
+        if not self.api_key_from_context("OPENAI_API_KEY"):
             logger.warning(
                 f"OpenAI embedding action {self.label} has no API key configured"
             )
@@ -93,7 +92,7 @@ class OpenAIEmbeddingModelAction(EmbeddingModelAction):
             payload["dimensions"] = self.embedding_dimensions
 
         try:
-            api_key = env("OPENAI_API_KEY")
+            api_key = self.api_key_from_context("OPENAI_API_KEY")
             response = await self._http_client.post(  # type: ignore[union-attr]
                 f"{self.api_endpoint}/embeddings",
                 json=payload,

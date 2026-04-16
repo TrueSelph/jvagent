@@ -70,6 +70,9 @@ class OpenRouterLanguageModelAction(OpenAILanguageModelAction):
     # Lifecycle Hooks
     # ============================================================================
 
+    def _http_bearer_token(self) -> str:
+        return self.api_key_from_context("OPENROUTER_API_KEY", "OPENAI_API_KEY")
+
     async def on_register(self) -> None:
         """Initialize HTTP client and validate configuration."""
         # Call parent initialization (OpenAI)

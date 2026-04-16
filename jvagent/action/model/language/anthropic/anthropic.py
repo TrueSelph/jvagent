@@ -213,10 +213,20 @@ class AnthropicLanguageModelAction(LanguageModelAction):
             "model": model_override,
             "messages": anthropic_messages,
             "max_tokens": kwargs.get("max_tokens", self.max_tokens),
-            "temperature": kwargs.get("temperature", self.temperature),
             "top_p": kwargs.get("top_p", self.top_p),
             "stream": stream,
         }
+
+        # Extended thinking: when enabled, temperature must be omitted
+        thinking_config = kwargs.get("thinking")
+        if thinking_config and isinstance(thinking_config, dict):
+            payload["thinking"] = thinking_config
+            # Anthropic requires max_tokens >= budget_tokens + 1
+            budget = thinking_config.get("budget_tokens", 0)
+            if payload["max_tokens"] < budget + 1:
+                payload["max_tokens"] = budget + 1
+        else:
+            payload["temperature"] = kwargs.get("temperature", self.temperature)
 
         if system_text:
             payload["system"] = system_text
@@ -242,13 +252,18 @@ class AnthropicLanguageModelAction(LanguageModelAction):
     ) -> Tuple[str, List[Dict[str, Any]], Optional[str]]:
         content_items = data.get("content", [])
         text_parts: List[str] = []
+        thinking_parts: List[str] = []
         tool_calls: List[Dict[str, Any]] = []
 
         for block in content_items:
             if not isinstance(block, dict):
                 continue
             block_type = block.get("type")
-            if block_type == "text":
+            if block_type == "thinking":
+                thinking_text = block.get("thinking", "")
+                if thinking_text:
+                    thinking_parts.append(thinking_text)
+            elif block_type == "text":
                 text = block.get("text", "")
                 if text:
                     text_parts.append(text)
@@ -298,6 +313,20 @@ class AnthropicLanguageModelAction(LanguageModelAction):
             response_text, tool_calls, finish_reason = self._extract_result_fields(data)
             usage = self._extract_usage(data)
 
+            # Extract thinking content if present
+            thinking_content = None
+            thinking_tokens = None
+            thinking_config = kwargs.get("thinking")
+            if thinking_config:
+                content_items = data.get("content", [])
+                thinking_parts = [
+                    block.get("thinking", "")
+                    for block in content_items
+                    if isinstance(block, dict) and block.get("type") == "thinking"
+                ]
+                thinking_content = "".join(thinking_parts) or None
+                thinking_tokens = usage.get("output_tokens", 0)
+
             return ModelActionResult(
                 response=response_text,
                 usage=usage,
@@ -305,6 +334,8 @@ class AnthropicLanguageModelAction(LanguageModelAction):
                 provider="anthropic",
                 finish_reason=finish_reason,
                 tool_calls=tool_calls,
+                thinking_content=thinking_content,
+                thinking_tokens=thinking_tokens,
             )
         except httpx.HTTPStatusError:
             raise
@@ -335,10 +366,13 @@ class AnthropicLanguageModelAction(LanguageModelAction):
             provider="anthropic",
             finish_reason=None,
             tool_calls=[],
+            thinking_content=None,
+            thinking_tokens=None,
         )
 
         async def stream_generator() -> AsyncGenerator[str, None]:
             text_chunks: List[str] = []
+            thinking_chunks: List[str] = []
 
             try:
                 async with self._http_client.stream(  # type: ignore[union-attr]
@@ -371,16 +405,26 @@ class AnthropicLanguageModelAction(LanguageModelAction):
                         event_type = event.get("type")
                         if event_type == "content_block_delta":
                             delta = event.get("delta", {})
-                            if delta.get("type") == "text_delta":
+                            delta_type = delta.get("type")
+                            if delta_type == "text_delta":
                                 chunk = delta.get("text", "")
                                 if chunk:
                                     text_chunks.append(chunk)
                                     yield chunk
+                            elif delta_type == "thinking_delta":
+                                chunk = delta.get("thinking", "")
+                                if chunk:
+                                    thinking_chunks.append(chunk)
                         elif event_type == "message_delta":
                             delta = event.get("delta", {})
                             stop_reason = delta.get("stop_reason")
                             if stop_reason:
                                 result.finish_reason = stop_reason
+                            usage_delta = delta.get("usage", {})
+                            if usage_delta:
+                                output_tokens = usage_delta.get("output_tokens", 0)
+                                if output_tokens:
+                                    result.thinking_tokens = output_tokens
                         elif event_type == "message_stop":
                             message = event.get("message", {})
                             if isinstance(message, dict):
@@ -394,6 +438,9 @@ class AnthropicLanguageModelAction(LanguageModelAction):
                                     result.tool_calls = tool_calls
                                 if finish_reason:
                                     result.finish_reason = finish_reason
+                            # Store accumulated thinking content
+                            if thinking_chunks:
+                                result.thinking_content = "".join(thinking_chunks)
                         elif event_type == "error":
                             error_data = event.get("error", {})
                             message_text = error_data.get(

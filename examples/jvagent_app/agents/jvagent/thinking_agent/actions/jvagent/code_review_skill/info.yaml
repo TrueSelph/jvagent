@@ -1,0 +1,18 @@
+package:
+  name: jvagent/code_review_skill
+  author: V75 Inc.
+  archetype: SkillAction
+  version: 1.0.0
+  meta:
+    title: Code Review Skill
+    description: >-
+      Skill definition for code review tasks. Provides system prompt template,
+      required/optional tool bindings, and model parameter overrides for
+      the ThinkingInteractAction agentic loop.
+    group: jvagent
+    type: action
+  config:
+    singleton: false
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []

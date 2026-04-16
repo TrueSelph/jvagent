@@ -274,3 +274,24 @@ class MCPAction(Action):
                 logger.debug("MCP healthcheck failed for %s: %s", self.server_name, e)
                 await self._clear_session()
                 return False
+
+    def get_client(self) -> MCPClientWrapper:
+        """Get or create the MCP client wrapper (public accessor).
+
+        Used by ToolExecutor to call tools directly without going through
+        fulfill()'s NL-to-tool mapping.
+
+        Returns:
+            The MCPClientWrapper instance for this server.
+        """
+        return self._get_client()
+
+    async def get_tools_cached(self) -> List[Any]:
+        """List tools from the MCP server with caching (public accessor).
+
+        Used by ToolExecutor to discover available tools for registration.
+
+        Returns:
+            List of MCP Tool objects (name, description, inputSchema).
+        """
+        return await self._list_tools_cached()

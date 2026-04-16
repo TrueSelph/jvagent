@@ -199,7 +199,7 @@ async def get_microsoft_auth_url(action_id: str) -> HTMLResponse:
             "OAuth is not configured correctly for this action. "
             "Set MICROSOFT_CLIENT_ID (and MICROSOFT_CLIENT_SECRET for a confidential client), "
             "MICROSOFT_TENANT if not using `common`, register redirect "
-            f"{html.escape((action.redirect_uri or '') )} in Entra ID, "
+            f"{html.escape((action.redirect_uri or ''))} in Entra ID, "
             "and align JVAGENT_PUBLIC_BASE_URL with that redirect.",
             status_code=400,
         )

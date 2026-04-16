@@ -819,11 +819,20 @@ class ApiClient {
     }
   }
 
-  async repairGraph(options?: { dry_run?: boolean; recent_minutes?: number }): Promise<any> {
+  async repairGraph(options?: {
+    dry_run?: boolean
+    recent_minutes?: number
+    repair_cursor?: string
+    batch_size?: number
+    max_seconds?: number
+  }): Promise<any> {
     try {
       const params: Record<string, string | number | boolean> = {}
       if (options?.dry_run !== undefined) params.dry_run = options.dry_run
       if (options?.recent_minutes !== undefined) params.recent_minutes = options.recent_minutes
+      if (options?.repair_cursor !== undefined) params.repair_cursor = options.repair_cursor
+      if (options?.batch_size !== undefined) params.batch_size = options.batch_size
+      if (options?.max_seconds !== undefined) params.max_seconds = options.max_seconds
 
       const response = await this._withFallback(async (baseURL) => {
         try {

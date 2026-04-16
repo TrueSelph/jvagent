@@ -635,6 +635,21 @@ async def put_app_update_mode(update_mode: str) -> Dict[str, Any]:
                 description="Success message",
                 example="Repair completed: memory repaired for 2 agent(s), 2 dead edge(s) removed",
             ),
+            "status": ResponseField(
+                field_type=str,
+                description="completed or in_progress when batch_size/max_seconds is used",
+                example="completed",
+            ),
+            "phase": ResponseField(
+                field_type=str,
+                description="Current repair phase when status is in_progress",
+                example="dead_edges",
+            ),
+            "next_repair_cursor": ResponseField(
+                field_type=str,
+                description="Opaque cursor to pass as repair_cursor on the next call when status is in_progress",
+                example="eyJ2IjoxLCJwaGFzZSI6...",
+            ),
         }
     ),
 )
@@ -646,6 +661,22 @@ async def repair_graph(
     recent_minutes: Optional[int] = Query(
         None,
         description="Only clean orphan interactions from last N minutes (None = all)",
+    ),
+    repair_cursor: Optional[str] = Query(
+        None,
+        description="Cursor from prior next_repair_cursor to continue batched repair (no server storage)",
+    ),
+    batch_size: Optional[int] = Query(
+        None,
+        ge=1,
+        le=50000,
+        description="When set, run repair in bounded batches (stateless; use repair_cursor to continue)",
+    ),
+    max_seconds: Optional[float] = Query(
+        None,
+        ge=0.5,
+        le=86400.0,
+        description="Wall-clock budget per request when batching (optional)",
     ),
 ) -> Dict[str, Any]:
     """Run memory repair (all agents) then agent graph repair (admin only, manually triggered).
@@ -666,5 +697,8 @@ async def repair_graph(
     result = await repair_agent_graph(
         dry_run=dry_run,
         recent_minutes=recent_minutes,
+        repair_cursor=repair_cursor,
+        batch_size=batch_size,
+        max_seconds=max_seconds,
     )
     return result

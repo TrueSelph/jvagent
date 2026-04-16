@@ -11,7 +11,6 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import httpx
 from jvspatial.core.annotations import attribute
-from jvspatial.env import env
 
 from jvagent.action.model.language.base import LanguageModelAction, ModelActionResult
 
@@ -26,7 +25,7 @@ class OpenAILanguageModelAction(LanguageModelAction):
     Supports multimodal queries (text + images) for visual understanding.
 
     Configuration:
-        OpenAI API key is read from OPENAI_API_KEY
+        api_key: Optional override; otherwise OPENAI_API_KEY from the environment
         api_endpoint: API endpoint (defaults to https://api.openai.com/v1)
         model: Model identifier (e.g., 'gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo')
         temperature: Sampling temperature
@@ -76,8 +75,12 @@ class OpenAILanguageModelAction(LanguageModelAction):
         await super().on_register()
 
         # Validate API key
-        if not env("OPENAI_API_KEY"):
+        if not self._http_bearer_token():
             logger.warning(f"OpenAI action {self.label} has no API key configured")
+
+    def _http_bearer_token(self) -> str:
+        """Bearer token for Authorization header (subclasses may change env fallbacks)."""
+        return self.api_key_from_context("OPENAI_API_KEY")
 
     # ============================================================================
     # Query Implementation
@@ -109,7 +112,7 @@ class OpenAILanguageModelAction(LanguageModelAction):
 
         # Make API request
         try:
-            api_key = env("OPENAI_API_KEY")
+            api_key = self._http_bearer_token()
             response = await self._http_client.post(  # type: ignore[union-attr]
                 f"{self.api_endpoint}/chat/completions",
                 json=payload,
@@ -199,7 +202,7 @@ class OpenAILanguageModelAction(LanguageModelAction):
             accumulated_chunks = []
 
             try:
-                api_key = env("OPENAI_API_KEY")
+                api_key = self._http_bearer_token()
                 async with self._http_client.stream(  # type: ignore[union-attr]
                     "POST",
                     f"{self.api_endpoint}/chat/completions",

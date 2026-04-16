@@ -39,7 +39,29 @@ class BaseModelAction(Action, ABC):
     # Common configuration attributes
     api_endpoint: str = attribute(default="", description="API endpoint URL")
     model: str = attribute(default="", description="Model identifier")
+    api_key: str = attribute(
+        default="",
+        description=(
+            "Optional API credential override from agent.yaml. When empty, "
+            "implementations use provider-specific environment variables."
+        ),
+    )
     timeout: int = attribute(default=30, description="Request timeout in seconds", ge=1)
+
+    def api_key_from_context(self, *environment_variable_names: str) -> str:
+        """Resolve API key: explicit ``api_key`` attribute, then env vars in order."""
+        configured = (self.api_key or "").strip()
+        if configured:
+            return configured
+        if not environment_variable_names:
+            return ""
+        from jvspatial.env import env
+
+        for name in environment_variable_names:
+            v = env(name)
+            if v:
+                return str(v).strip()
+        return ""
 
     # Common metrics attributes
     total_requests: int = attribute(default=0, description="Total number of requests")

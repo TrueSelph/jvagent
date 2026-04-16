@@ -1,0 +1,156 @@
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  margin: 0;
+  background: #f7f5f2;
+  color: #333;
+}
+.hero {
+  background: linear-gradient(120deg, #4a90e2 0%, #e3f0fc 100%);
+  text-align: center;
+  padding: 3rem 1rem 2rem 1rem;
+}
+.hero h1 {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+.hero p {
+  font-size: 1.2rem;
+  margin-bottom: 1.5rem;
+}
+.hero-img {
+  width: 220px;
+  border-radius: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+}
+.cta-btn {
+  display: inline-block;
+  background: #357ab8;
+  color: #fff;
+  padding: 0.9em 2em;
+  border-radius: 2em;
+  text-decoration: none;
+  font-weight: bold;
+  font-size: 1.1rem;
+  transition: background 0.2s;
+}
+.cta-btn:hover {
+  background: #4a90e2;
+}
+section {
+  max-width: 800px;
+  margin: 2.5rem auto;
+  padding: 0 1rem;
+}
+.about ul.features {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0 0;
+}
+.about ul.features li {
+  margin-bottom: 0.5rem;
+  font-size: 1.1rem;
+}
+.gallery .rock-gallery {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.rock-card {
+  background: #fff;
+  border-radius: 1rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  padding: 1rem;
+  text-align: center;
+  width: 180px;
+}
+.rock-card img {
+  width: 100px;
+  border-radius: 50%;
+  margin-bottom: 0.5rem;
+}
+.how-it-works ol {
+  padding-left: 1.2rem;
+}
+.testimonials blockquote {
+  background: #e3f0fc;
+  border-left: 4px solid #4a90e2;
+  margin: 1rem 0;
+  padding: 0.7rem 1rem;
+  border-radius: 0.5rem;
+  font-style: italic;
+}
+.adopt-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  max-width: 350px;
+  margin: 0 auto;
+  background: #fff;
+  padding: 1.5rem;
+  border-radius: 1rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+}
+.adopt-form label {
+  font-weight: 500;
+}
+.adopt-form input,
+.adopt-form select {
+  padding: 0.5em;
+  border-radius: 0.5em;
+  border: 1px solid #b3d1f7;
+  font-size: 1rem;
+}
+.adopt-form button {
+  background: #4a90e2;
+  color: #fff;
+  border: none;
+  padding: 0.7em;
+  border-radius: 2em;
+  font-size: 1.1rem;
+  cursor: pointer;
+  margin-top: 0.5rem;
+  transition: background 0.2s;
+}
+.adopt-form button:hover {
+  background: #357ab8;
+}
+.note {
+  text-align: center;
+  color: #888;
+  font-size: 0.95rem;
+  margin-top: 0.7rem;
+}
+.faq details {
+  margin-bottom: 1rem;
+}
+.faq summary {
+  font-weight: 500;
+  cursor: pointer;
+}
+footer {
+  background: #357ab8;
+  color: #fff;
+  text-align: center;
+  padding: 1.2rem 0 0.7rem 0;
+  margin-top: 2rem;
+  border-radius: 1.2rem 1.2rem 0 0;
+}
+footer .socials a {
+  color: #fff;
+  margin: 0 0.3em;
+  text-decoration: underline;
+}
+@media (max-width: 700px) {
+  .gallery .rock-gallery {
+    flex-direction: column;
+    align-items: center;
+  }
+  .rock-card {
+    width: 90%;
+  }
+  section {
+    padding: 0 0.5rem;
+  }
+}

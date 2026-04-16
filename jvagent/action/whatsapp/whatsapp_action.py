@@ -30,15 +30,17 @@ class WhatsAppAction(Action):
     """Action for WhatsApp integration using multiple providers.
 
     This action is optional and will gracefully skip initialization if the
-    required environment variables (WHATSAPP_API_URL,
-    JVAGENT_PUBLIC_BASE_URL, WHATSAPP_API_KEY, etc.)
-    are not configured. When unconfigured, the action will remain inactive
-    but will not cause errors during agent startup.
+    required bridge URL, credentials, and public base URL are not configured
+    (via ``agent.yaml`` or environment variables). When unconfigured, the action
+    remains inactive but does not cause errors during agent startup.
 
-    ``WHATSAPP_API_URL`` and ``JVAGENT_PUBLIC_BASE_URL`` are read only from the
-    environment at runtime (not persisted on the action). The WhatsApp session
-    name is resolved in order: ``WHATSAPP_SESSION`` env, then optional persisted
-    ``session`` on this action, then the current agent's name.
+    Bridge URL and credentials may be set in ``agent.yaml`` (``api_url``, ``api_key``,
+    ``token``) or via environment variables ``WHATSAPP_API_URL``, ``WHATSAPP_API_KEY``,
+    and ``WHATSAPP_TOKEN``. YAML values take precedence when non-empty.
+    Public base URL always comes from ``JVAGENT_PUBLIC_BASE_URL``.
+
+    The WhatsApp session name is resolved in order: ``WHATSAPP_SESSION`` env, then
+    optional ``session`` on this action, then the current agent's name.
     """
 
     provider: str = attribute(
@@ -47,6 +49,18 @@ class WhatsAppAction(Action):
         pattern=r"^(wppconnect|ultramsg|ts-whatsapp|wwebjs)$",
     )
 
+    api_url: str = attribute(
+        default="",
+        description="WhatsApp bridge API base URL; when empty, WHATSAPP_API_URL is used",
+    )
+    api_key: str = attribute(
+        default="",
+        description="Provider secret / API key; when empty, WHATSAPP_API_KEY is used",
+    )
+    token: str = attribute(
+        default="",
+        description="Provider token when distinct from api_key; when empty, WHATSAPP_TOKEN then WHATSAPP_API_KEY",
+    )
     session: Optional[str] = attribute(
         default=None,
         description="WhatsApp session identifier",
@@ -103,16 +117,22 @@ class WhatsAppAction(Action):
 
     # action configuration
 
-    @staticmethod
-    def _env_api_key() -> str:
-        return env("WHATSAPP_API_KEY")
+    def _env_api_key(self) -> str:
+        k = (self.api_key or "").strip()
+        if k:
+            return k
+        return env("WHATSAPP_API_KEY") or ""
 
-    @staticmethod
-    def _env_token() -> str:
+    def _env_token(self) -> str:
+        t = (self.token or "").strip()
+        if t:
+            return t
         return env("WHATSAPP_API_KEY") or env("WHATSAPP_TOKEN") or ""
 
-    @staticmethod
-    def _whatsapp_api_url() -> str:
+    def _whatsapp_api_url(self) -> str:
+        u = (self.api_url or "").strip()
+        if u:
+            return u
         return (
             env("WHATSAPP_API_URL") or os.environ.get("WHATSAPP_API_URL") or ""
         ).strip()
@@ -137,9 +157,9 @@ class WhatsAppAction(Action):
         """Check if the WhatsApp action has required configuration.
 
         Required configuration:
-        - ``WHATSAPP_API_URL`` in the environment
-        - WHATSAPP_API_KEY (or ``WHATSAPP_TOKEN``) in the environment
-        - ``JVAGENT_PUBLIC_BASE_URL`` (via ``get_public_base_url()``)
+        - ``api_url`` / ``WHATSAPP_API_URL``
+        - ``api_key`` / ``WHATSAPP_API_KEY`` (or ``token`` / ``WHATSAPP_TOKEN``)
+        - ``JVAGENT_PUBLIC_BASE_URL``
 
         Returns:
             True if required configuration is present and valid, False otherwise.
@@ -147,7 +167,7 @@ class WhatsAppAction(Action):
         api_url = self._whatsapp_api_url()
         if not api_url:
             return False
-        if not self._env_api_key():
+        if not (self._env_api_key() or self._env_token()):
             return False
         base_url = get_public_base_url()
         if not base_url:
@@ -175,11 +195,16 @@ class WhatsAppAction(Action):
         issues = []
         api_url = self._whatsapp_api_url()
         if not api_url:
-            issues.append("api_url (WHATSAPP_API_URL) is not configured")
+            issues.append(
+                "api_url (action.api_url or WHATSAPP_API_URL) is not configured"
+            )
         elif not api_url.startswith(("http://", "https://")):
             issues.append("api_url must be a valid HTTP/HTTPS URL")
-        if not self._env_api_key():
-            issues.append("api_key (WHATSAPP_API_KEY) is not configured")
+        if not (self._env_api_key() or self._env_token()):
+            issues.append(
+                "api_key / token (action fields or WHATSAPP_API_KEY / WHATSAPP_TOKEN) "
+                "is not configured"
+            )
         base_url = get_public_base_url()
         if not base_url:
             issues.append("base_url (JVAGENT_PUBLIC_BASE_URL) is not configured")

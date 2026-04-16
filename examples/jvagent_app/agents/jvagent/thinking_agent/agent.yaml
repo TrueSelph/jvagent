@@ -1,0 +1,240 @@
+# Thinking Agent Configuration
+# A long-running, thinking agent with agentic loop, tool execution, and MCP integration.
+# Demonstrates jvagent's ThinkingInteractAction and SkillAction archetypes.
+#
+# Requirements:
+#   - OPENAI_API_KEY set in .env
+#   - MCP servers running (filesystem, web search) or adjust tool_servers
+#
+# The agent uses an agentic think-act-observe loop:
+#   1. InteractRouter classifies the user's intent
+#   2. ThinkingInteractAction activates for multi-step/tool-use tasks
+#   3. The LLM reasons, calls tools via MCP, observes results, and iterates
+#   4. SkillAction (code_review) provides a specialized prompt + tool bindings
+#   5. PersonaAction handles simple conversational responses
+#   6. ConverseInteractAction handles smalltalk fallback
+
+agent: jvagent/thinking_agent
+
+version: 1.0.0
+author: V75 Inc.
+
+jvagent: ~0.0.1
+
+context:
+  alias: Thinking Agent
+  description: >-
+    A long-running thinking agent with agentic loop capabilities, tool execution
+    via MCP, skill loading, and extended thinking support. Excels at multi-step
+    tasks like code review, research, and analysis.
+  enabled: true
+
+actions:
+  # ──────────────────────────────────────────────
+  # Routing
+  # ──────────────────────────────────────────────
+
+  - action: jvagent/interact_router
+    context:
+      enabled: true
+      description: "Intent-based routing: dispatches multi-step tasks to ThinkingInteractAction"
+      model_action_type: "OpenAILanguageModelAction"
+      model: "gpt-4.1-mini"
+      history_limit: 3
+      enable_routing_cache: true
+
+  # ──────────────────────────────────────────────
+  # Model Providers
+  # ──────────────────────────────────────────────
+
+  # OpenAI LLM — primary model for agentic loop, routing, and conversational responses
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      description: "OpenAI GPT-4.1 model for agentic reasoning, routing, and responses"
+      api_key: ${OPENAI_API_KEY}
+      api_endpoint: "https://api.openai.com/v1"
+      model: "gpt-4.1"
+      temperature: 0.2
+      max_tokens: 16384
+      timeout: 120
+
+  # ──────────────────────────────────────────────
+  # MCP Servers (Tool Providers)
+  # ──────────────────────────────────────────────
+
+  # Filesystem MCP — read, write, search files
+  # Requires: npx (Node.js) installed
+  - action: jvagent/mcp
+    context:
+      enabled: true
+      description: "Filesystem MCP server for file operations"
+      server_name: "filesystem"
+      transport: "stdio"
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+      mcp_connect_timeout: 15
+      mcp_call_timeout: 60
+
+  # Web Search MCP — search the web for information
+  # Uncomment and configure URL when a web search MCP server is available
+  # - action: jvagent/mcp
+  #   context:
+  #     enabled: true
+  #     description: "Web search MCP server for information retrieval"
+  #     server_name: "websearch"
+  #     transport: "streamable_http"
+  #     url: "http://localhost:3001/mcp"
+  #     mcp_connect_timeout: 10
+  #     mcp_call_timeout: 30
+
+  # ──────────────────────────────────────────────
+  # Skills
+  # ──────────────────────────────────────────────
+
+  # Code Review Skill — specialized prompt + tool bindings for code review tasks
+  # Uses the core jvagent/skill action (SkillAction archetype)
+  - action: jvagent/skill
+    context:
+      enabled: true
+      description: "Code review skill: systematic review with filesystem tools"
+      skill_name: "code_review"
+      system_prompt_template: |
+        You are a code review assistant with access to filesystem tools.
+        When reviewing code, follow this systematic approach:
+
+        1. Read the relevant source files to understand the implementation
+        2. Analyze for:
+           - Bugs and logic errors
+           - Code quality and readability
+           - Performance concerns
+           - Security vulnerabilities
+        3. Check for consistency with surrounding code patterns
+        4. Provide structured, actionable feedback
+
+        {additional_context}
+      prompt_variables:
+        additional_context: "Prioritize security and correctness issues over style preferences."
+      required_tools:
+        - "read_file"
+        - "list_directory"
+      optional_tools:
+        - "search_files"
+        - "write_file"
+        - "get_file_info"
+      denied_tool_patterns:
+        - "delete_*"
+        - "move_*"
+      max_iterations: 15
+      thinking_budget_tokens: 8000
+
+  # Research Skill — for open-ended research tasks
+  # Uncomment when web search MCP is configured
+  # - action: jvagent/research_skill
+  #   context:
+  #     enabled: true
+  #     description: "Research skill: multi-step information gathering and synthesis"
+  #     skill_name: "research"
+  #     system_prompt_template: |
+  #       You are a research assistant with access to web search and file tools.
+  #       When researching a topic:
+  #
+  #       1. Start with a broad search to understand the landscape
+  #       2. Drill down into specific subtopics
+  #       3. Cross-reference findings from multiple sources
+  #       4. Synthesize findings into a clear, structured summary
+  #
+  #       {additional_context}
+  #     prompt_variables:
+  #       additional_context: "Always cite sources when making factual claims."
+  #     required_tools:
+  #       - "web_search"
+  #     optional_tools:
+  #       - "read_file"
+  #       - "search_files"
+  #     max_iterations: 20
+  #     thinking_budget_tokens: 10000
+
+  # ──────────────────────────────────────────────
+  # Thinking Agent (Core Agentic Loop)
+  # ──────────────────────────────────────────────
+
+  - action: jvagent/thinking_interact_action
+    context:
+      enabled: true
+      description: >-
+        Agentic loop for multi-step tasks: thinks, calls tools, observes results,
+        and iterates until the task is complete. Uses OpenAI GPT-4.1 with
+        native function calling for tool dispatch.
+      weight: -60  # After InteractRouter (-100), before Persona (0)
+
+      # Routing anchors — InteractRouter uses these to decide when to activate
+      anchors:
+        - "User asks to review, analyze, audit, or fix code"
+        - "User requests a multi-step task that requires tool use"
+        - "User wants the agent to search files and synthesize information"
+        - "User asks the agent to read files and provide feedback"
+        - "User requests debugging or troubleshooting with file inspection"
+
+      # Model configuration (OpenAI for agentic loop)
+      model_action_type: "OpenAILanguageModelAction"
+      model: "gpt-4.1"
+      model_temperature: 0.2
+      model_max_tokens: 16384
+
+      # Agentic loop limits
+      max_iterations: 25
+      max_duration_seconds: 300
+
+      # Extended thinking (Anthropic only; 0 = disabled for OpenAI)
+      thinking_budget_tokens: 0
+
+      # Skill binding — activates the code_review skill for this agent
+      # Set to null/omit for free-form agentic behavior without a skill
+      skill: "code_review"
+
+      # MCP servers to expose as tools in the agentic loop
+      tool_servers:
+        - "filesystem"
+        # - "websearch"
+
+      # Streaming behavior
+      stream_tool_progress: true
+
+      # Context management
+      max_full_tool_results: 10
+
+  # ──────────────────────────────────────────────
+  # Persona (Conversational Responses)
+  # ──────────────────────────────────────────────
+
+  - action: jvagent/persona
+    context:
+      enabled: true
+      description: "Persona for simple conversational responses (non-tool-use queries)"
+      persona_name: "Thinking Assistant"
+      persona_description: |
+        You are a helpful, thoughtful assistant. For simple questions, respond
+        directly. For complex tasks that require file operations, web searches,
+        or multi-step reasoning, inform the user that you can perform those
+        tasks and describe what you would do.
+      persona_capabilities:
+        - "Answer general knowledge questions"
+        - "Explain concepts clearly and concisely"
+        - "Perform multi-step code reviews with tool use"
+        - "Search and analyze files in the workspace"
+        - "Research topics with web search (when configured)"
+      model_action_type: "OpenAILanguageModelAction"
+      model: "gpt-4.1-mini"
+      model_temperature: 0.2
+      model_max_tokens: 4096
+
+  # ──────────────────────────────────────────────
+  # Fallback
+  # ──────────────────────────────────────────────
+
+  - action: jvagent/converse_interact_action
+    context:
+      enabled: true
+      description: "Smalltalk fallback for casual conversation"
+      weight: 100

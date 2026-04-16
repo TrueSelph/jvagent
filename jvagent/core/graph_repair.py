@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 async def repair_agent_graph(
     dry_run: bool = False,
     recent_minutes: Optional[int] = None,
+    *,
+    repair_cursor: Optional[str] = None,
+    batch_size: Optional[int] = None,
+    max_seconds: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Run memory repair (all agents) then agent graph repair procedures.
 
@@ -30,124 +34,51 @@ async def repair_agent_graph(
     interaction pruning runs per user (each Memory's users and their
     conversations) when the agent has a positive interaction_limit.
 
+    When ``batch_size`` and/or ``max_seconds`` is set, or a non-empty
+    ``repair_cursor`` is passed, work runs via
+    :mod:`jvagent.core.graph_repair_job` in bounded chunks with **no server-side
+    persistence**. Pass ``next_repair_cursor`` from the previous response as
+    ``repair_cursor`` to continue mid-pipeline. Omit ``repair_cursor`` to restart
+    from the beginning (already-fixed entities are skipped via the graph).
+
     Args:
         dry_run: If True, report issues without making changes.
         recent_minutes: Passed to memory repair to limit orphan interaction
             cleanup to last N minutes (None = all).
+        repair_cursor: Opaque cursor from a prior ``next_repair_cursor`` when
+            continuing a batched repair (must match ``dry_run`` semantics).
+        batch_size: Max entities processed per internal batch when using the
+            session engine. If both this and ``max_seconds`` are None, the legacy
+            single-pass repair runs in-process until completion.
+        max_seconds: Wall-clock budget per call for the session engine (batched
+            mode only).
 
     Returns:
-        Dict with memory_repair_agents, orphaned_interactions_deleted,
-        orphaned_users_reconnected,         dual_edges_removed,
-        conversation_first_edges_restored,
-        conversation_branch_edges_removed,
-        dead_edges_removed,
-        orphaned_nodes_reattached, orphaned_nodes_deleted,
-        node_edge_ids_synced, duplicate_edges_removed,
-        interactions_pruned, message.
+        Dict with repair counters, ``message``, and when batched: ``status``,
+        ``phase``, and ``next_repair_cursor`` if ``status`` is ``in_progress``.
     """
-    context = get_default_context()
-    result = {
-        "memory_repair_agents": 0,
-        "orphaned_interactions_deleted": 0,
-        "orphaned_users_reconnected": 0,
-        "dual_edges_removed": 0,
-        "conversation_first_edges_restored": 0,
-        "conversation_branch_edges_removed": 0,
-        "dead_edges_removed": 0,
-        "orphaned_nodes_reattached": 0,
-        "orphaned_nodes_deleted": 0,
-        "node_edge_ids_synced": 0,
-        "duplicate_edges_removed": 0,
-        "interactions_pruned": 0,
-    }
+    from jvagent.core.graph_repair_job import (
+        RepairLimits,
+        run_repair_session,
+        run_repair_until_done,
+    )
 
-    if dry_run:
-        result["dry_run"] = True
-
-    # 0. Memory repair for all agents (before graph repair)
-    memory_result = None
-    if not dry_run:
-        memory_result = await _run_memory_repair_all_agents(recent_minutes)
-        if memory_result:
-            result.update(memory_result)
-
-    # 1. Remove dead edges
-    dead_removed = await _remove_dead_edges(context, dry_run)
-    result["dead_edges_removed"] = dead_removed
-
-    # 2. Sync node edge_ids
-    synced = await _sync_node_edge_ids(context, dry_run)
-    result["node_edge_ids_synced"] = synced
-
-    # 3. Identify orphaned nodes and reattach or remove
-    root = await Root.get()
-    reachable = await _compute_reachable_nodes(context, root)
-    all_node_ids = await _get_all_node_ids(context)
-    orphan_ids = all_node_ids - reachable
-
-    # Exclude Root from orphans
-    root_id = getattr(Root, "id", "n.Root.root") if Root else "n.Root.root"
-    orphan_ids.discard(root_id)
-
-    reattached = await _reattach_orphans(context, orphan_ids, dry_run)
-    reattached += await _reattach_interaction_orphans(context, orphan_ids, dry_run)
-    result["orphaned_nodes_reattached"] = reattached
-
-    deleted = await _remove_orphaned_nodes(context, orphan_ids, dry_run)
-    result["orphaned_nodes_deleted"] = deleted
-
-    # 4. Remove duplicate edges
-    dup_removed = await _remove_duplicate_edges(context, dry_run)
-    result["duplicate_edges_removed"] = dup_removed
-
-    # 5. Interaction limit pruning (per user, last; skipped in dry_run)
-    if not dry_run:
-        prune_result = await _run_interaction_pruning_all_agents()
-        result["interactions_pruned"] = prune_result.get("interactions_pruned", 0)
-
-    parts = []
-    if memory_result:
-        agents_repaired = memory_result.get("memory_repair_agents", 0)
-        if agents_repaired:
-            parts.append(f"memory repaired for {agents_repaired} agent(s)")
-        if result.get("orphaned_interactions_deleted"):
-            parts.append(
-                f"{result['orphaned_interactions_deleted']} interaction(s) deleted"
-            )
-        if result.get("orphaned_users_reconnected"):
-            parts.append(f"{result['orphaned_users_reconnected']} user(s) reconnected")
-        if result.get("dual_edges_removed"):
-            parts.append(f"{result['dual_edges_removed']} dual edge(s) removed")
-        if result.get("conversation_first_edges_restored"):
-            parts.append(
-                f"{result['conversation_first_edges_restored']} conv-first edge(s) restored"
-            )
-        if result.get("conversation_branch_edges_removed"):
-            parts.append(
-                f"{result['conversation_branch_edges_removed']} conv-branch edge(s) removed"
-            )
-    if dead_removed:
-        parts.append(f"{dead_removed} dead edge(s) removed")
-    if reattached:
-        parts.append(f"{reattached} orphan(s) reattached")
-    if deleted:
-        parts.append(f"{deleted} orphan(s) deleted")
-    if synced:
-        parts.append(f"{synced} node(s) edge_ids synced")
-    if dup_removed:
-        parts.append(f"{dup_removed} duplicate edge(s) removed")
-    if result.get("interactions_pruned"):
-        parts.append(
-            f"{result['interactions_pruned']} interaction(s) pruned (rolling limit)"
+    batched = (
+        batch_size is not None
+        or max_seconds is not None
+        or (repair_cursor is not None and bool(repair_cursor.strip()))
+    )
+    if batched:
+        limits = RepairLimits(
+            batch_size=batch_size if batch_size is not None else 500,
+            max_seconds=max_seconds,
+        )
+        return await run_repair_session(
+            dry_run, recent_minutes, limits, repair_cursor=repair_cursor
         )
 
-    result["message"] = (
-        "Repair completed: " + ", ".join(parts) if parts else "No repairs needed"
-    )
-    if dry_run:
-        result["message"] = "[DRY RUN] " + result["message"]
-
-    return result
+    limits = RepairLimits(batch_size=10**9, max_seconds=None)
+    return await run_repair_until_done(dry_run, recent_minutes, limits)
 
 
 async def _reconcile_all_memory_counters() -> int:
@@ -350,12 +281,22 @@ async def _reattach_orphans(
     dry_run: bool,
 ) -> int:
     """Try to reattach orphaned nodes to their expected parents."""
+    return await _reattach_orphans_chunk(context, list(orphan_ids), orphan_ids, dry_run)
+
+
+async def _reattach_orphans_chunk(
+    context: Any,
+    node_ids: List[str],
+    orphan_ids: Set[str],
+    dry_run: bool,
+) -> int:
+    """Reattach handlers for a subset of orphan node ids (batched repair)."""
     from jvagent.action.base import Action
     from jvagent.core.graph_repair_handlers import get_reattach_handler
 
     reattached = 0
 
-    for node_id in list(orphan_ids):
+    for node_id in node_ids:
         try:
             node = await context.get(Node, node_id)
             if not node:
