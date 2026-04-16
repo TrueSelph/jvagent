@@ -80,7 +80,7 @@ Here's what I have so far:
 
 {prompt}"""
 
-REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS = """Prompt: Just let me know if everything looks good, or tell me what you'd like to change. You can also let me know if you'd like to cancel altogether."""
+REVIEW_CONFIRMATION_DEFAULT_INSTRUCTIONS = """Just let me know if everything looks good, or tell me what you'd like to change. You can also let me know if you'd like to cancel altogether."""
 
 REVIEW_CONFIRMATION_DEFAULT_PROMPT = """Ask: "Does everything look correct?" or similar phrasing to prompt their response."""
 
