@@ -9,9 +9,9 @@ from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, List
 
-from jvagent.action.email_action.email_payload import CanonicalSendMessage
+from jvagent.action.email_action.email_payload import CanonicalSendMessage, EmailRecipient
 
 from .base import default_inbound_webhook_unsupported
 
@@ -72,11 +72,22 @@ def _build_rfc822_root(msg: CanonicalSendMessage) -> Any:
     final["From"] = formataddr((msg.sender_name or "", msg.sender_email))
     final["To"] = formataddr((msg.to_name or "", msg.to_email))
     final["Subject"] = msg.subject
+    cc_list: List[EmailRecipient] = list(msg.cc or [])
+    if cc_list:
+        cc_parts: List[str] = []
+        to_lower = (msg.to_email or "").strip().lower()
+        for r in cc_list:
+            addr = (r.email or "").strip()
+            if not addr or "@" not in addr or addr.lower() == to_lower:
+                continue
+            cc_parts.append(formataddr((r.name or "", addr)))
+        if cc_parts:
+            final["Cc"] = ", ".join(cc_parts)
     if msg.reply_to and str(msg.reply_to).strip():
         final["Reply-To"] = str(msg.reply_to).strip()
     if msg.headers:
         for k, v in msg.headers.items():
-            if str(k).lower() in ("from", "to", "subject", "reply-to"):
+            if str(k).lower() in ("from", "to", "subject", "reply-to", "cc"):
                 continue
             final[str(k)] = str(v)
     return final
@@ -99,6 +110,12 @@ class GmailEmailProvider:
             return {"ok": False, "error": str(e)}
 
         try:
+            logger.info(
+                "Gmail send_canonical: from=%r to=%r subject=%r",
+                msg.sender_email,
+                msg.to_email,
+                msg.subject,
+            )
             service = await self._gmail.get_service()
             result = (
                 service.users()
@@ -107,7 +124,13 @@ class GmailEmailProvider:
                 .execute()
             )
         except Exception as e:
-            logger.error("Gmail send failed: %s", e, exc_info=True)
+            logger.error(
+                "Gmail send failed from=%r to=%r: %s",
+                msg.sender_email,
+                msg.to_email,
+                e,
+                exc_info=True,
+            )
             return {"ok": False, "error": str(e)}
         out: Dict[str, Any] = {"ok": True}
         if isinstance(result, dict):

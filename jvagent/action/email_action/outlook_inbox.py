@@ -9,6 +9,7 @@ from jvspatial import create_task
 
 from jvagent.action.access_control.access_control_action import log_access_denied
 from jvagent.action.email_action.email_webhook_helpers import (
+    inbound_email_access_denied_action,
     process_email_interaction_async,
 )
 from jvagent.action.email_action.inbound.outlook import graph_message_resource_to_tuple
@@ -54,6 +55,9 @@ async def fetch_next_outlook_inbox_message(
     flt = (
         getattr(email_action, "outlook_mail_filter", None) or "isRead eq false"
     ).strip()
+    since_inst = email_action.email_inbound_since_outlook_odata_instant()
+    if since_inst:
+        flt = f"({flt}) and receivedDateTime ge {since_inst}"
     max_results = int(email_action.gmail_list_max_results or 25)
     max_results = max(1, min(max_results, 100))
 
@@ -95,19 +99,15 @@ async def fetch_next_outlook_inbox_message(
 
         user_id, _utterance, data_dict = parsed
 
-        has_access = True
-        if access_control_action:
-            has_access = await access_control_action.has_action_access(
-                user_id=user_id,
-                action_label="EmailAction",
-                channel="email",
-            )
-        if not has_access:
+        denied = await inbound_email_access_denied_action(
+            access_control_action, user_id
+        )
+        if denied:
             log_access_denied(
                 agent_id=agent_id,
                 user_id=user_id,
                 channel="email",
-                action_label="EmailAction",
+                action_label=denied,
                 stage="email_outlook_inbound",
             )
             out["skipped_no_access"] += 1

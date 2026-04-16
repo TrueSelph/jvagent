@@ -80,6 +80,13 @@ class GoogleDriveAction(GoogleAction):
         service.files().delete(fileId=file_id).execute()
         return True
 
+    async def get_file_metadata(
+        self, file_id: str, fields: str = "id, name, mimeType"
+    ) -> Dict[str, Any]:
+        """Fetch Google Drive file or folder metadata by id."""
+        service = await self.get_service()
+        return service.files().get(fileId=file_id, fields=fields).execute()
+
     async def list_files(
         self, folder_id: Optional[str] = None, with_link: bool = False, depth: int = 5
     ) -> List[Dict[str, Any]]:

@@ -23,6 +23,7 @@ import type {
   UserMemoryResponse,
   GraphExpandResponse,
   GraphSubgraphResponse,
+  GoogleDriveListResponse,
 } from '../types/api'
 
 class ApiClient {
@@ -969,6 +970,131 @@ class ApiClient {
   }
 
   /**
+   * PageIndex Google Drive Sync: list folder sync state.
+   * Path: GET /api/actions/{actionId}/list_google_documents
+   */
+  async listGoogleDriveDocuments(actionId: string): Promise<GoogleDriveListResponse> {
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.get(
+          `/api/actions/${encodeURIComponent(actionId)}/list_google_documents`,
+          { baseURL }
+        )
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.get(
+            `/actions/${encodeURIComponent(actionId)}/list_google_documents`,
+            { baseURL }
+          )
+        }
+        throw err
+      }
+    })
+    const data = response.data
+    const inner = data?.success && data?.data ? data.data : data
+    const result = inner?.result ?? inner
+    return { documents: (result?.documents ?? []) as GoogleDriveListResponse['documents'] }
+  }
+
+  /**
+   * PageIndex Google Drive Sync: ingest / retry.
+   * Path: POST /api/actions/{actionId}/ingest_google_documents
+   */
+  async ingestGoogleDocuments(
+    actionId: string,
+    body: {
+      google_drive_folders?: { folder_id: string; metadata?: Record<string, unknown> }[]
+      remove_deleted_documents?: boolean
+      retry_failed_documents?: boolean
+      convert_to_markdown?: boolean
+      ocr?: boolean
+    }
+  ): Promise<{ message?: string; result?: unknown }> {
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.post(
+          `/api/actions/${encodeURIComponent(actionId)}/ingest_google_documents`,
+          body,
+          { baseURL }
+        )
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.post(
+            `/actions/${encodeURIComponent(actionId)}/ingest_google_documents`,
+            body,
+            { baseURL }
+          )
+        }
+        throw err
+      }
+    })
+    const data = response.data
+    if (data?.success && data?.data) return data.data
+    return data
+  }
+
+  /**
+   * PageIndex Google Drive Sync: remove folder sync node(s).
+   * ``document_id`` is the Google Drive folder id when deleting one folder.
+   * Path: DELETE /api/actions/{actionId}/delete_google_documents
+   */
+  async deleteGoogleDriveDocuments(
+    actionId: string,
+    body?: { document_id?: string }
+  ): Promise<{ message?: string; result?: unknown }> {
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.delete(
+          `/api/actions/${encodeURIComponent(actionId)}/delete_google_documents`,
+          { baseURL, data: body ?? {} }
+        )
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.delete(
+            `/actions/${encodeURIComponent(actionId)}/delete_google_documents`,
+            { baseURL, data: body ?? {} }
+          )
+        }
+        throw err
+      }
+    })
+    const data = response.data
+    if (data?.success && data?.data) return data.data
+    return data
+  }
+
+  /**
+   * PageIndex Google Drive Sync: per-file disable_ingestion toggle.
+   * Path: POST /api/actions/{actionId}/set_google_drive_file_ingestion
+   */
+  async setGoogleDriveFileIngestion(
+    actionId: string,
+    body: { folder_id: string; file_id: string; disable_ingestion: boolean }
+  ): Promise<{ message?: string; result?: unknown }> {
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.post(
+          `/api/actions/${encodeURIComponent(actionId)}/set_google_drive_file_ingestion`,
+          body,
+          { baseURL }
+        )
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.post(
+            `/actions/${encodeURIComponent(actionId)}/set_google_drive_file_ingestion`,
+            body,
+            { baseURL }
+          )
+        }
+        throw err
+      }
+    })
+    const data = response.data
+    if (data?.success && data?.data) return data.data
+    return data
+  }
+
+  /**
    * List documents in the agent's PageIndex collection.
    * Path: GET /api/agents/{agentId}/pageindex/documents
    */
@@ -991,11 +1117,13 @@ class ApiClient {
   /**
    * Upload a document to the agent's PageIndex collection.
    * Path: POST /api/agents/{agentId}/pageindex/documents
+   * Provide either `file` or `options.fileUrl` (server downloads and ingests).
    */
   async uploadPageIndexDocument(
     agentId: string,
-    file: File,
+    file: File | null,
     options?: {
+      fileUrl?: string
       docName?: string
       docDescription?: string
       docUrl?: string
@@ -1006,7 +1134,14 @@ class ApiClient {
     }
   ): Promise<PageIndexUploadResponse> {
     const formData = new FormData()
-    formData.append('file', file)
+    const remote = options?.fileUrl?.trim()
+    if (remote) {
+      formData.append('file_url', remote)
+    } else if (file) {
+      formData.append('file', file)
+    } else {
+      throw new Error('uploadPageIndexDocument: provide file or options.fileUrl')
+    }
     if (options?.docName) formData.append('doc_name', options.docName)
     if (options?.docDescription) formData.append('doc_description', options.docDescription)
     if (options?.docUrl) formData.append('doc_url', options.docUrl)
@@ -1214,11 +1349,25 @@ class ApiClient {
   /**
    * Import PageIndex data.
    * Path: POST /api/agents/{agentId}/pageindex/import
+   * Provide either `data` or `importUrl` (not both).
    */
-  async importPageIndex(agentId: string, data: any, purge: boolean = false): Promise<any> {
+  async importPageIndex(
+    agentId: string,
+    params: { data?: any; importUrl?: string; purge?: boolean }
+  ): Promise<any> {
     const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/import`
+    const purge = params.purge ?? false
+    const url = params.importUrl?.trim()
+    const body: Record<string, unknown> = { purge }
+    if (url) {
+      body.import_url = url
+    } else if (params.data !== undefined) {
+      body.data = params.data
+    } else {
+      throw new Error('importPageIndex: provide data or importUrl')
+    }
     const response = await this._withFallback((baseURL) =>
-      this.client.post(path, { purge, data }, { baseURL })
+      this.client.post(path, body, { baseURL })
     )
     const responseData = response.data
     if (responseData?.success && responseData?.data) return responseData.data

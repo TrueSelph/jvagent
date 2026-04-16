@@ -1,6 +1,6 @@
 # Email action (Gmail or SendGrid)
 
-Send transactional email and receive inbound mail on channel `email`. The action wires `EmailAdapter` / `EmailFilter` on the agent `ResponseBus` so persona replies are delivered by the configured provider.
+Send transactional email and receive inbound mail on channel `email`. The action wires `EmailAdapter` / `EmailFilter` on the agent `ResponseBus`. By default **`deliver_response_bus_adhoc`** is **false**, so **adhoc** bus messages do not trigger outbound mail (avoids one email per chunk). Use **`POST .../email/send`** or **`provider.send_canonical`** for outbound mail, or set **`deliver_response_bus_adhoc`** to **true** on **EmailAction** if you want persona publishes delivered as email.
 
 ## Providers
 
@@ -19,10 +19,17 @@ Send transactional email and receive inbound mail on channel `email`. The action
 
 ## Send flow
 
-**API**: `POST /api/actions/{action_id}/email/send` with `to`, `subject`, and `htmlContent` / `html_content` and/or `textContent` / `text_content`.
+**API**: `POST /api/actions/{action_id}/email/send` with `to`, `subject`, and `htmlContent` / `html_content` and/or `textContent` / `text_content`. Optional **`cc`** / **`ccRecipients`**: list of email strings or `{ "email", "name" }` objects (same shape across Gmail, Outlook, SendGrid).
 
-**Agent reply**: `EmailAdapter` uses `email_inbound` metadata for `Re:` subject and threading headers when present.
+**Agent reply (when you send via adapter yourself)**: `EmailAdapter` uses `email_inbound` for `Re:` subject, **`In-Reply-To` / `References`** when **`MessageId`** (or optional inbound **`InReplyTo`**) is present, and **`Cc`** on the outbound message when the inbound message included CC. You can also set **`parent_message_id`** or **`email_parent_message_id`** on message metadata to thread to a specific message id (overrides **`email_inbound.MessageId`** for those headers).
 
 ## Webhook URL
 
 Admin: `GET /api/actions/{action_id}/email/webhook-url` — returns the callback URL with `api_key` for `webhook:email`. Use it for **SendGrid Inbound Parse**, or to **trigger one Gmail inbox fetch** when `provider` is `gmail` (e.g. from an external scheduler).
+
+```
+curl -X 'POST' \
+  'webhook_url' \
+  -H 'accept: application/json' \
+  -d ''
+```

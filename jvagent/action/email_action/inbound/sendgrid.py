@@ -94,6 +94,7 @@ async def parse_sendgrid_inbound(form: FormData) -> List[InboundTuple]:
         parsed_headers, "Message-ID", "Message-Id", "MessageId"
     )
     in_reply_to = _header_casefold_lookup(parsed_headers, "In-Reply-To", "InReplyTo")
+    cc_hdr = _header_casefold_lookup(parsed_headers, "Cc", "CC")
 
     envelope_raw = _get_str("envelope")
     to_val: Any = None
@@ -155,12 +156,15 @@ async def parse_sendgrid_inbound(form: FormData) -> List[InboundTuple]:
             return []
 
     email_inbound: Dict[str, Any] = {
+        "From": user_id,
         "Subject": subject,
         "MessageId": message_id or None,
         "InReplyTo": in_reply_to or None,
         "To": to_val or _get_str("to") or None,
         "FromName": from_name,
     }
+    if cc_hdr:
+        email_inbound["Cc"] = cc_hdr
     if text:
         email_inbound["BodyPlain"] = text
     if html:

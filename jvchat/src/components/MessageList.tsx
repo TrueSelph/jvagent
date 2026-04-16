@@ -11,6 +11,20 @@ function metaString(v: unknown): string {
   return "";
 }
 
+/** Avoid duplicate <img> when markdown already embeds the same URL as metadata.media_url. */
+function contentAlreadyEmbedsMediaUrl(
+  content: string,
+  rawUrl: string,
+  resolvedSrc: string,
+): boolean {
+  const c = content || "";
+  if (!c.trim()) return false;
+  if (rawUrl && c.includes(rawUrl)) return true;
+  if (resolvedSrc && resolvedSrc !== rawUrl && c.includes(resolvedSrc))
+    return true;
+  return false;
+}
+
 function MetadataImage({
   src,
   role,
@@ -85,6 +99,9 @@ function MessageMediaBlock({ message }: { message: Message }) {
         {label}
       </a>
     );
+  }
+  if (contentAlreadyEmbedsMediaUrl(message.content || "", rawUrl, src)) {
+    return null;
   }
   return <MetadataImage src={src} role={message.role} />;
 }

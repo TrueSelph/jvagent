@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from jvspatial.exceptions import DatabaseError
 
+from jvagent.action.access_control.access_control_action import AccessControlAction
 from jvagent.action.email_action.email_utterance import (
     build_email_interaction_utterance,
 )
@@ -17,6 +18,8 @@ __all__ = [
     "create_email_walker",
     "finalize_email_interaction",
     "process_email_interaction_async",
+    "inbound_email_access_allowed",
+    "inbound_email_access_denied_action",
     "DEFAULT_EMAIL_UTTERANCE_MAX",
     "EMAIL_UTTERANCE_MAX",
 ]
@@ -25,6 +28,40 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_EMAIL_UTTERANCE_MAX = 500_000
 EMAIL_UTTERANCE_MAX = DEFAULT_EMAIL_UTTERANCE_MAX
+
+
+async def inbound_email_access_denied_action(
+    access_control_action: Optional[AccessControlAction],
+    user_id: str,
+) -> Optional[str]:
+    """Return the first failing gate label, or None if inbound email is allowed.
+
+    Requires both **EmailAction** and **interact** on channel **email** when access
+    control applies, matching :meth:`InteractWalker.interact_init_bootstrap`.
+    """
+    if not access_control_action:
+        return None
+    if not await access_control_action.has_action_access(
+        user_id=user_id,
+        action_label="EmailAction",
+        channel="email",
+    ):
+        return "EmailAction"
+    if not await access_control_action.has_action_access(
+        user_id=user_id,
+        action_label="interact",
+        channel="email",
+    ):
+        return "interact"
+    return None
+
+
+async def inbound_email_access_allowed(
+    access_control_action: Optional[AccessControlAction],
+    user_id: str,
+) -> bool:
+    """True if the sender may receive inbound email processing (both gates pass)."""
+    return (await inbound_email_access_denied_action(access_control_action, user_id)) is None
 
 
 def parse_inbound_payload(
@@ -53,6 +90,7 @@ async def create_email_walker(
                 channel="email",
                 data=data_dict,
                 session_id=convo_obj.session_id,
+                user_id=sender_email,
                 user_name=sender_name,
                 stream=False,
             )
@@ -134,7 +172,14 @@ async def process_email_interaction_async(
     try:
         email_action = await agent.get_action_by_type("EmailAction")
         if email_action:
-            await email_action.ensure_adapter_registered()
+            reg_ok = await email_action.ensure_adapter_registered()
+            logger.info(
+                "process_email_interaction_async: agent_id=%s sender=%r "
+                "email_adapter_registered=%s",
+                agent_id,
+                sender,
+                reg_ok,
+            )
     except Exception as e:
         logger.warning("Email adapter ensure failed for agent %s: %s", agent_id, e)
 

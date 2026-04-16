@@ -44,6 +44,19 @@ def _build_graph_message(msg: CanonicalSendMessage) -> Dict[str, Any]:
         "toRecipients": [{"emailAddress": to_addr}],
     }
 
+    cc_rows: List[Dict[str, Any]] = []
+    to_lower = (msg.to_email or "").strip().lower()
+    for r in msg.cc or []:
+        addr = (r.email or "").strip()
+        if not addr or "@" not in addr or addr.lower() == to_lower:
+            continue
+        cc_ea: Dict[str, Any] = {"address": addr}
+        if r.name and str(r.name).strip():
+            cc_ea["name"] = str(r.name).strip()
+        cc_rows.append({"emailAddress": cc_ea})
+    if cc_rows:
+        graph_msg["ccRecipients"] = cc_rows
+
     if msg.reply_to and str(msg.reply_to).strip():
         graph_msg["replyTo"] = [
             {"emailAddress": {"address": str(msg.reply_to).strip()}}
@@ -93,11 +106,21 @@ class OutlookEmailProvider:
 
         payload = {"message": graph_msg, "saveToSentItems": True}
         try:
+            logger.info(
+                "Outlook send_canonical: to=%r subject=%r",
+                msg.to_email,
+                msg.subject,
+            )
             await self._outlook.graph_json(
                 "POST", "/me/sendMail", json_body=payload, ok=(202,)
             )
         except Exception as e:
-            logger.error("Outlook send failed: %s", e, exc_info=True)
+            logger.error(
+                "Outlook send failed to=%r: %s",
+                msg.to_email,
+                e,
+                exc_info=True,
+            )
             return {"ok": False, "error": str(e)}
         return {"ok": True}
 

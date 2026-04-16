@@ -19,7 +19,10 @@ from jvagent.core.agent import Agent
 
 from .canonical_send_builder import build_canonical_send_message
 from .email_action import EmailAction
-from .email_webhook_helpers import process_email_interaction_async
+from .email_webhook_helpers import (
+    inbound_email_access_denied_action,
+    process_email_interaction_async,
+)
 from .gmail_inbox import fetch_next_gmail_inbox_message
 from .inbound.sendgrid import parse_sendgrid_inbound
 from .modules.sendgrid import SendGridEmailProvider
@@ -164,19 +167,15 @@ async def email_interact_webhook(request: Request, agent_id: str) -> Any:
     async def handle_one(
         user_id: str, _utterance: str, data_dict: Dict[str, Any]
     ) -> None:
-        has_access = True
-        if access_control_action:
-            has_access = await access_control_action.has_action_access(
-                user_id=user_id,
-                action_label="EmailAction",
-                channel="email",
-            )
-        if not has_access:
+        denied = await inbound_email_access_denied_action(
+            access_control_action, user_id
+        )
+        if denied:
             log_access_denied(
                 agent_id=agent_id,
                 user_id=user_id,
                 channel="email",
-                action_label="EmailAction",
+                action_label=denied,
                 stage="email_inbound",
             )
             return
@@ -289,7 +288,8 @@ async def email_health(action_id: str) -> Dict[str, Any]:
         "**SENDGRID_API_KEY** and **EMAIL_DEFAULT_SENDER**.\n\n"
         "**Body:** **to** (email), **subject** (optional), **html_content** / "
         "**htmlContent** and/or **text_content** / **textContent**, optional "
-        "**to_name**, **sender_email**, **sender_name**, **reply_to**, **headers**, "
+        "**cc** / **ccRecipients** (list of emails or `{email,name}`), **to_name**, "
+        "**sender_email**, **sender_name**, **reply_to**, **headers**, "
         "**attachments** (list of **filename**, **content_base64**, optional **type**). "
         "**SendGrid only:** optional raw **mail** (v3) plus **mail_overrides** — "
         "if **mail** is set, other fields are ignored unless merged via overrides."
@@ -308,6 +308,20 @@ async def email_send(
         )
 
     prov = (action.provider or "gmail").strip().lower()
+    to_preview = (
+        data.get("to")
+        or data.get("to_email")
+        or (data.get("personalizations") or [{}])[0].get("to")
+        if isinstance(data.get("personalizations"), list)
+        else None
+    )
+    logger.info(
+        "email_send: action_id=%s provider=%s to_field=%r keys=%s",
+        action_id,
+        prov,
+        to_preview,
+        sorted(data.keys()),
+    )
 
     if prov == "sendgrid" and isinstance(data.get("mail"), dict):
         client = await action.api()
@@ -338,6 +352,17 @@ async def email_send(
         action_id=action_id,
         resolve_sender=action.resolve_outbound_sender,
         effective_sender_name=lambda: EmailAction._effective_sender_name(action),
+    )
+
+    logger.info(
+        "email_send: canonical action_id=%s provider=%s from=%r to=%r subject=%r "
+        "cc=%s",
+        action_id,
+        prov,
+        canonical.sender_email,
+        canonical.to_email,
+        canonical.subject,
+        [r.email for r in (canonical.cc or [])],
     )
 
     provider = await action.api()

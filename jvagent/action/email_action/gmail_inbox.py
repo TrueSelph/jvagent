@@ -9,6 +9,7 @@ from jvspatial import create_task
 
 from jvagent.action.access_control.access_control_action import log_access_denied
 from jvagent.action.email_action.email_webhook_helpers import (
+    inbound_email_access_denied_action,
     process_email_interaction_async,
 )
 from jvagent.action.email_action.inbound.gmail import gmail_raw_message_to_tuple
@@ -37,6 +38,7 @@ async def fetch_next_gmail_inbox_message(
         "processed": False,
         "skipped_no_access": 0,
         "skipped_parse": 0,
+        "skipped_before_cutoff": 0,
         "error": None,
     }
     prov = (email_action.provider or "gmail").strip().lower()
@@ -71,6 +73,7 @@ async def fetch_next_gmail_inbox_message(
         return out
 
     access_control_action = await ag.get_access_control_action()
+    cutoff_ms = email_action.email_inbound_cutoff_ms()
 
     for stub in stubs:
         if not isinstance(stub, dict):
@@ -86,6 +89,16 @@ async def fetch_next_gmail_inbox_message(
             out["skipped_parse"] += 1
             continue
 
+        if cutoff_ms is not None:
+            raw_idate = resource.get("internalDate")
+            try:
+                idate_ms = int(raw_idate) if raw_idate is not None else 0
+            except (TypeError, ValueError):
+                idate_ms = 0
+            if idate_ms > 0 and idate_ms < cutoff_ms:
+                out["skipped_before_cutoff"] += 1
+                continue
+
         parsed = gmail_raw_message_to_tuple(resource)
         if not parsed:
             out["skipped_parse"] += 1
@@ -93,19 +106,15 @@ async def fetch_next_gmail_inbox_message(
 
         user_id, _utterance, data_dict = parsed
 
-        has_access = True
-        if access_control_action:
-            has_access = await access_control_action.has_action_access(
-                user_id=user_id,
-                action_label="EmailAction",
-                channel="email",
-            )
-        if not has_access:
+        denied = await inbound_email_access_denied_action(
+            access_control_action, user_id
+        )
+        if denied:
             log_access_denied(
                 agent_id=agent_id,
                 user_id=user_id,
                 channel="email",
-                action_label="EmailAction",
+                action_label=denied,
                 stage="email_gmail_inbound",
             )
             out["skipped_no_access"] += 1

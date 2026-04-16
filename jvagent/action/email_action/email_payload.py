@@ -16,6 +16,14 @@ class EmailAttachment:
 
 
 @dataclass
+class EmailRecipient:
+    """Secondary recipient (e.g. CC)."""
+
+    email: str
+    name: Optional[str] = None
+
+
+@dataclass
 class CanonicalSendMessage:
     """One logical message jvagent sends; each provider maps this to its API."""
 
@@ -29,6 +37,7 @@ class CanonicalSendMessage:
     reply_to: Optional[str] = None
     headers: Optional[Dict[str, str]] = None
     attachments: List[EmailAttachment] = field(default_factory=list)
+    cc: List[EmailRecipient] = field(default_factory=list)
 
 
 def normalize_attachments_from_body(items: Any) -> List[EmailAttachment]:

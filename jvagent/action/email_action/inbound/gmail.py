@@ -136,9 +136,11 @@ def gmail_raw_message_to_tuple(
     mid_hdr = (parsed.get("Message-ID") or parsed.get("Message-Id") or "").strip()
     irt = (parsed.get("In-Reply-To") or "").strip()
     to_hdr = (parsed.get("To") or "").strip()
+    cc_hdr = (parsed.get("Cc") or "").strip()
 
     fn_strip = (from_name or "").strip() or None
     inbound: Dict[str, Any] = {
+        "From": user_id,
         "MessageId": (
             _normalize_msg_id(mid_hdr) if mid_hdr else message_resource.get("id")
         ),
@@ -149,6 +151,8 @@ def gmail_raw_message_to_tuple(
         "GmailMessageId": message_resource.get("id"),
         "GmailThreadId": message_resource.get("threadId"),
     }
+    if cc_hdr:
+        inbound["Cc"] = cc_hdr
     if raw_plain:
         inbound["BodyPlain"] = raw_plain
     elif body_plain_for_inbound:

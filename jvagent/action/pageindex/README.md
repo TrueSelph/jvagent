@@ -131,7 +131,8 @@ All routes are agent-scoped (collection = agent_id from path).
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/agents/{agent_id}/pageindex/documents` | Ingest PDF/MD (multipart: file, doc_name, doc_url, metadata) |
+| POST | `/api/agents/{agent_id}/pageindex/documents` | Ingest PDF/MD (multipart: **file** or **file_url** — mutually exclusive; optional doc_name, doc_url, metadata). Server downloads `file_url`, stages under `.files`, ingests, then deletes the staged file. |
+| POST | `/api/agents/{agent_id}/pageindex/import` | Import graph JSON/YAML (**data** or **import_url** — mutually exclusive). URL flow downloads, stages, imports, then deletes the staged file. |
 | GET | `/api/agents/{agent_id}/pageindex/documents` | List documents (query: metadata) |
 | GET | `/api/agents/{agent_id}/pageindex/documents/{doc_name}` | Get document metadata |
 | DELETE | `/api/agents/{agent_id}/pageindex/documents/{doc_name}` | Delete document |

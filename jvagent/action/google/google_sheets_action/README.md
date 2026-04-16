@@ -22,7 +22,8 @@ On register, reload, and startup, `GoogleSheetsAction` (via `GoogleAction`) sets
 ```yaml
 - action: jvagent/google_sheets_action
   context:
-    client_secrets_json: ${GOOGLE_CLIENT_SECRETS_JSON}
+    worksheet_title: Sheet1
+    spreadsheet_url: ""
 ```
 
 Set `GOOGLE_CLIENT_SECRETS_JSON` in `.env` as a JSON string containing the downloaded credentials.

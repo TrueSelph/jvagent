@@ -141,6 +141,19 @@ class SendGridEmailProvider:
         if msg.to_name:
             pers["to"][0]["name"] = msg.to_name
 
+        to_lower = (msg.to_email or "").strip().lower()
+        cc_sg: List[Dict[str, str]] = []
+        for r in msg.cc or []:
+            addr = (r.email or "").strip()
+            if not addr or "@" not in addr or addr.lower() == to_lower:
+                continue
+            row: Dict[str, str] = {"email": addr}
+            if r.name and str(r.name).strip():
+                row["name"] = str(r.name).strip()
+            cc_sg.append(row)
+        if cc_sg:
+            pers["cc"] = cc_sg
+
         content: List[Dict[str, str]] = []
         if text_content:
             content.append({"type": "text/plain", "value": str(text_content)})
@@ -173,6 +186,12 @@ class SendGridEmailProvider:
 
         url = f"{self.api_base}/mail/send"
         try:
+            logger.info(
+                "SendGrid send_canonical: from=%r to=%r subject=%r",
+                msg.sender_email,
+                msg.to_email,
+                msg.subject,
+            )
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.post(url, json=mail, headers=self._auth_headers())
         except httpx.HTTPError as e:

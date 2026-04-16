@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from jvspatial.api.auth.api_key_service import APIKeyService
@@ -89,9 +90,28 @@ class EmailAction(Action):
         description="Gmail search query for inbox fetch (users.messages.list)",
     )
 
+    email_mode: str = attribute(
+        default="new_email",
+        description=(
+            "new_email: Gmail/Outlook inbox pull only processes messages received after "
+            "email_inbound_since_iso (set once on register). all_email: no registration "
+            "time filter. SendGrid inbound is push-only (mode does not apply)."
+        ),
+        pattern=r"^(new_email|all_email)$",
+    )
+
+    email_inbound_since_iso: Optional[str] = attribute(
+        default=None,
+        description=(
+            "UTC ISO8601 timestamp when new_email cutoff was established (set on first "
+            "on_register when email_mode is new_email); used for Gmail internalDate and "
+            "Outlook receivedDateTime filtering"
+        ),
+    )
+
     gmail_list_max_results: int = attribute(
         default=25,
-        description="Max message stubs to scan per inbound fetch (1–100)",
+        description="Max message stubs to scan per inbound fetch (1-100)",
         ge=1,
         le=100,
     )
@@ -263,13 +283,15 @@ class EmailAction(Action):
         if prov == "gmail":
             base_caps.append(
                 "Receive inbound email via the email webhook (POST triggers one Gmail inbox fetch: first message "
-                "matching gmail_list_query that passes access control); requires GoogleGmailAction on the same agent "
-                "with OAuth."
+                "matching gmail_list_query that passes access control). email_mode new_email limits to messages "
+                "after email_inbound_since_iso (set on register); all_email has no registration-time cutoff. "
+                "Requires GoogleGmailAction on the same agent with OAuth."
             )
         elif prov == "outlook":
             base_caps.append(
                 "Receive inbound email via the email webhook (POST triggers one Outlook inbox fetch: first message "
-                "in Inbox matching outlook_mail_filter OData expression that passes access control); requires "
+                "in Inbox matching outlook_mail_filter OData expression that passes access control). email_mode "
+                "new_email adds receivedDateTime ge email_inbound_since_iso; all_email does not. Requires "
                 "MicrosoftOutlookMailAction on the same agent with OAuth (MICROSOFT_CLIENT_ID and Graph consent)."
             )
         else:
@@ -572,7 +594,49 @@ class EmailAction(Action):
             logger.debug("Email action not configured")
             return
         await self._ensure_email_webhook_url()
+        if (
+            (self.email_mode or "").strip().lower() == "new_email"
+            and not (self.email_inbound_since_iso or "").strip()
+        ):
+            self.email_inbound_since_iso = datetime.now(timezone.utc).isoformat()
+            await self.save()
         logger.debug("Email action registered")
+
+    def email_inbound_cutoff_ms(self) -> Optional[int]:
+        """Unix ms for new_email filtering, or None if all_email or unset."""
+        if (self.email_mode or "").strip().lower() != "new_email":
+            return None
+        raw = (self.email_inbound_since_iso or "").strip()
+        if not raw:
+            return None
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return int(dt.timestamp() * 1000)
+        except ValueError:
+            logger.debug("Invalid email_inbound_since_iso: %r", raw)
+            return None
+
+    def email_inbound_since_outlook_odata_instant(self) -> Optional[str]:
+        """UTC instant for Graph ``receivedDateTime ge ...`` (``...Z``), or None."""
+        if (self.email_mode or "").strip().lower() != "new_email":
+            return None
+        raw = (self.email_inbound_since_iso or "").strip()
+        if not raw:
+            return None
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            u = dt.astimezone(timezone.utc)
+            inst = u.isoformat(timespec="milliseconds")
+            if inst.endswith("+00:00"):
+                inst = inst[:-6] + "Z"
+            return inst
+        except ValueError:
+            logger.debug("Invalid email_inbound_since_iso for OData: %r", raw)
+            return None
 
     async def on_reload(self) -> None:
         self._apply_env_defaults()

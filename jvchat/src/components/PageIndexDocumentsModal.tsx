@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { apiClient } from '../config/api'
 import type {
+  GoogleDriveFileEntry,
+  GoogleDriveFolderState,
   PageIndexChunk,
   PageIndexChunkMergeStrategy,
   PageIndexChunkUpdatePayload,
@@ -20,6 +22,59 @@ const MERGE_QUEUE_MAX = 20
 
 /** Matches server `documents._TEXT_JOIN` for merge preview. */
 const MERGE_TEXT_JOIN = '\n\n---\n\n'
+
+const GOOGLE_DRIVE_FOLDER_MIME = 'application/vnd.google-apps.folder'
+
+function isPageIndexGoogleDriveSyncAction(a: Record<string, unknown>): boolean {
+  const entity = String(a.entity ?? '')
+  const archetype = String(a.archetype ?? '')
+  const action = String(a.action ?? '')
+  const label = String(
+    (a.context as { label?: string } | undefined)?.label ?? a.label ?? ''
+  )
+  return (
+    entity.includes('PageIndexGoogleDriveSyncAction') ||
+    archetype.includes('PageIndexGoogleDriveSyncAction') ||
+    action === 'jvagent/pageindex_google_drive_sync_action' ||
+    label.includes('pageindex_google_drive_sync')
+  )
+}
+
+function flattenGoogleDriveFiles(files: GoogleDriveFileEntry[]): GoogleDriveFileEntry[] {
+  const out: GoogleDriveFileEntry[] = []
+  const walk = (items: GoogleDriveFileEntry[]) => {
+    for (const it of items) {
+      if (it.mimeType === GOOGLE_DRIVE_FOLDER_MIME && it.files?.length) {
+        walk(it.files)
+      } else if (it.mimeType !== GOOGLE_DRIVE_FOLDER_MIME) {
+        out.push(it)
+      }
+    }
+  }
+  walk(files)
+  return out
+}
+
+function describeDriveQueueItem(item: unknown): { title: string; subtitle: string; url?: string } {
+  if (!item || typeof item !== 'object') {
+    return { title: String(item), subtitle: '' }
+  }
+  const o = item as Record<string, unknown>
+  if ('new' in o && o.new && typeof o.new === 'object') {
+    const nw = o.new as Record<string, unknown>
+    const old = o.old as Record<string, unknown> | undefined
+    return {
+      title: String(nw.name ?? nw.id ?? 'modified'),
+      subtitle: old ? `was: ${String(old.name ?? '')}` : String(o.id ?? ''),
+      url: typeof nw.url === 'string' ? nw.url : undefined,
+    }
+  }
+  return {
+    title: String(o.name ?? o.id ?? '?'),
+    subtitle: String(o.mimeType ?? o.id ?? ''),
+    url: typeof o.url === 'string' ? o.url : undefined,
+  }
+}
 
 type ChunkEnabledFilter = 'all' | 'rag_enabled' | 'rag_disabled'
 
@@ -172,6 +227,7 @@ export function PageIndexDocumentsModal({
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [ingestFileUrl, setIngestFileUrl] = useState('')
   const [docName, setDocName] = useState('')
   const [docDescription, setDocDescription] = useState('')
   const [docUrl, setDocUrl] = useState('')
@@ -182,14 +238,27 @@ export function PageIndexDocumentsModal({
   const [purgeOnImport, setPurgeOnImport] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importText, setImportText] = useState('')
+  const [importUrl, setImportUrl] = useState('')
   const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportCollectionName, setExportCollectionName] = useState(agentId)
   const [exportRootId, setExportRootId] = useState('')
   const [importExportError, setImportExportError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'import-export' | 'documents' | 'chunks'>(
-    'documents'
-  )
+  const [activeTab, setActiveTab] = useState<
+    'import-export' | 'documents' | 'chunks' | 'google-sync'
+  >('documents')
+
+  const [driveSyncActionId, setDriveSyncActionId] = useState<string | null>(null)
+  const [driveFolders, setDriveFolders] = useState<GoogleDriveFolderState[]>([])
+  const [driveSelectedFolderId, setDriveSelectedFolderId] = useState('')
+  const [driveLoading, setDriveLoading] = useState(false)
+  const [driveError, setDriveError] = useState<string | null>(null)
+  const [driveRetrying, setDriveRetrying] = useState(false)
+  const [driveDeleting, setDriveDeleting] = useState(false)
+  const [driveTogglingFileId, setDriveTogglingFileId] = useState<string | null>(null)
+  const [driveIngestConvertMd, setDriveIngestConvertMd] = useState(false)
+  const [driveIngestOcr, setDriveIngestOcr] = useState(false)
+  const [driveRemoveDeleted, setDriveRemoveDeleted] = useState(false)
 
   const [chunksDocName, setChunksDocName] = useState('')
   const [chunkEnabledFilter, setChunkEnabledFilter] = useState<ChunkEnabledFilter>('all')
@@ -361,6 +430,60 @@ export function PageIndexDocumentsModal({
     setExportRootId('')
   }, [agentId])
 
+  const refreshGoogleDriveList = useCallback(async () => {
+    if (!driveSyncActionId) return
+    try {
+      const docRes = await apiClient.listGoogleDriveDocuments(driveSyncActionId)
+      setDriveFolders(docRes.documents)
+    } catch (e: unknown) {
+      setDriveError(e instanceof Error ? e.message : 'Failed to refresh Google Sync')
+    }
+  }, [driveSyncActionId])
+
+  useEffect(() => {
+    if (activeTab !== 'google-sync') return
+    let cancelled = false
+    ;(async () => {
+      setDriveLoading(true)
+      setDriveError(null)
+      try {
+        const res = await apiClient.getActions(agentId, { page: 1, per_page: 100 })
+        const list = res?.actions ?? res?.data?.actions ?? res ?? []
+        const arr = Array.isArray(list) ? list : []
+        const found = arr.find((x: Record<string, unknown>) =>
+          isPageIndexGoogleDriveSyncAction(x)
+        ) as { id?: string } | undefined
+        const aid = found?.id ? String(found.id) : null
+        if (cancelled) return
+        setDriveSyncActionId(aid)
+        if (!aid) {
+          setDriveFolders([])
+          setDriveSelectedFolderId('')
+          setDriveLoading(false)
+          return
+        }
+        const docRes = await apiClient.listGoogleDriveDocuments(aid)
+        if (cancelled) return
+        setDriveFolders(docRes.documents)
+        setDriveSelectedFolderId((prev) => {
+          if (prev && docRes.documents.some((d) => d.folder_id === prev)) return prev
+          return docRes.documents[0]?.folder_id ?? ''
+        })
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setDriveError(
+            e instanceof Error ? e.message : 'Failed to load Google Sync'
+          )
+        }
+      } finally {
+        if (!cancelled) setDriveLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab, agentId])
+
   const normalizeMarkdownForUpload = async (file: File): Promise<File> => {
     const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
     if (ext !== '.md' && ext !== '.markdown') return file
@@ -373,9 +496,14 @@ export function PageIndexDocumentsModal({
   }
 
   const handleUpload = async () => {
-    if (!selectedFile) return
+    const remoteUrl = ingestFileUrl.trim()
+    if (!selectedFile && !remoteUrl) return
+    if (selectedFile && remoteUrl) {
+      setUploadError('Choose a file or a document URL, not both')
+      return
+    }
 
-    if (selectedFile.size > MAX_FILE_SIZE) {
+    if (selectedFile && selectedFile.size > MAX_FILE_SIZE) {
       setUploadError(`File size exceeds ${MAX_FILE_SIZE / (1024 * 1024)}MB limit`)
       return
     }
@@ -383,8 +511,7 @@ export function PageIndexDocumentsModal({
     setUploading(true)
     setUploadError(null)
     try {
-      const fileToUpload = await normalizeMarkdownForUpload(selectedFile)
-      await apiClient.uploadPageIndexDocument(agentId, fileToUpload, {
+      const opts = {
         docName: docName || undefined,
         docDescription: docDescription || undefined,
         docUrl: docUrl || undefined,
@@ -392,8 +519,18 @@ export function PageIndexDocumentsModal({
         ifAddNodeSummary: addNodeSummary,
         convertToMarkdown,
         ocr: doclingOcr,
-      })
-      setSelectedFile(null)
+      }
+      if (remoteUrl) {
+        await apiClient.uploadPageIndexDocument(agentId, null, {
+          ...opts,
+          fileUrl: remoteUrl,
+        })
+        setIngestFileUrl('')
+      } else {
+        const fileToUpload = await normalizeMarkdownForUpload(selectedFile!)
+        await apiClient.uploadPageIndexDocument(agentId, fileToUpload, opts)
+        setSelectedFile(null)
+      }
       setDocName('')
       setDocDescription('')
       setDocUrl('')
@@ -469,13 +606,33 @@ export function PageIndexDocumentsModal({
   }
 
   const handleImport = async () => {
-    const source = importText.trim() || (importFile ? await importFile.text() : '')
-    if (!source) return
+    const url = importUrl.trim()
+    let data: unknown
+    if (!url) {
+      const source = importText.trim() || (importFile ? await importFile.text() : '')
+      if (!source) return
+      try {
+        data = JSON.parse(source)
+      } catch {
+        setImportExportError('Invalid JSON')
+        return
+      }
+    }
     setImporting(true)
     setImportExportError(null)
     try {
-      const data = JSON.parse(source)
-      await apiClient.importPageIndex(agentId, data, purgeOnImport)
+      if (url) {
+        await apiClient.importPageIndex(agentId, {
+          importUrl: url,
+          purge: purgeOnImport,
+        })
+        setImportUrl('')
+      } else {
+        await apiClient.importPageIndex(agentId, {
+          data,
+          purge: purgeOnImport,
+        })
+      }
       setImportFile(null)
       setImportText('')
       setPurgeOnImport(false)
@@ -725,6 +882,106 @@ export function PageIndexDocumentsModal({
     }
   }
 
+  const selectedDriveFolder = useMemo(
+    () => driveFolders.find((f) => f.folder_id === driveSelectedFolderId) ?? null,
+    [driveFolders, driveSelectedFolderId]
+  )
+
+  const handleDriveRetryFailed = async () => {
+    if (!driveSyncActionId || !selectedDriveFolder) return
+    setDriveRetrying(true)
+    setDriveError(null)
+    try {
+      await apiClient.ingestGoogleDocuments(driveSyncActionId, {
+        google_drive_folders: [
+          {
+            folder_id: selectedDriveFolder.folder_id,
+            metadata: selectedDriveFolder.metadata ?? {},
+          },
+        ],
+        retry_failed_documents: true,
+        remove_deleted_documents: driveRemoveDeleted,
+        convert_to_markdown: driveIngestConvertMd,
+        ocr: driveIngestOcr,
+      })
+      await refreshGoogleDriveList()
+    } catch (e: unknown) {
+      setDriveError(e instanceof Error ? e.message : 'Retry failed')
+    } finally {
+      setDriveRetrying(false)
+    }
+  }
+
+  const handleDriveIngestOnce = async () => {
+    if (!driveSyncActionId || !selectedDriveFolder) return
+    setDriveRetrying(true)
+    setDriveError(null)
+    try {
+      await apiClient.ingestGoogleDocuments(driveSyncActionId, {
+        google_drive_folders: [
+          {
+            folder_id: selectedDriveFolder.folder_id,
+            metadata: selectedDriveFolder.metadata ?? {},
+          },
+        ],
+        retry_failed_documents: false,
+        remove_deleted_documents: driveRemoveDeleted,
+        convert_to_markdown: driveIngestConvertMd,
+        ocr: driveIngestOcr,
+      })
+      await refreshGoogleDriveList()
+    } catch (e: unknown) {
+      setDriveError(e instanceof Error ? e.message : 'Ingest failed')
+    } finally {
+      setDriveRetrying(false)
+    }
+  }
+
+  const handleDriveDeleteFolder = async () => {
+    if (!driveSyncActionId || !selectedDriveFolder) return
+    const fn = selectedDriveFolder.folder_name?.trim()
+    const folderLabel =
+      fn && fn !== selectedDriveFolder.folder_id
+        ? `${fn} (${selectedDriveFolder.folder_id})`
+        : selectedDriveFolder.folder_id
+    if (
+      !window.confirm(
+        `Remove Google Drive sync tracking for "${folderLabel}"? Indexed PageIndex documents are not removed.`
+      )
+    )
+      return
+    setDriveDeleting(true)
+    setDriveError(null)
+    try {
+      await apiClient.deleteGoogleDriveDocuments(driveSyncActionId, {
+        document_id: selectedDriveFolder.document_id ?? selectedDriveFolder.folder_id,
+      })
+      await refreshGoogleDriveList()
+    } catch (e: unknown) {
+      setDriveError(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setDriveDeleting(false)
+    }
+  }
+
+  const handleDriveToggleDisable = async (file: GoogleDriveFileEntry, next: boolean) => {
+    if (!driveSyncActionId || !selectedDriveFolder) return
+    setDriveTogglingFileId(file.id)
+    setDriveError(null)
+    try {
+      await apiClient.setGoogleDriveFileIngestion(driveSyncActionId, {
+        folder_id: selectedDriveFolder.folder_id,
+        file_id: file.id,
+        disable_ingestion: next,
+      })
+      await refreshGoogleDriveList()
+    } catch (e: unknown) {
+      setDriveError(e instanceof Error ? e.message : 'Update failed')
+    } finally {
+      setDriveTogglingFileId(null)
+    }
+  }
+
   const inputClass = dark
     ? 'w-full px-3 py-2 border border-slate-600 rounded-lg text-sm bg-slate-800 text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
     : 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
@@ -818,10 +1075,389 @@ export function PageIndexDocumentsModal({
           >
             Import / Export
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('google-sync')}
+            className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors -mb-px ${
+              activeTab === 'google-sync'
+                ? 'border-indigo-600 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400'
+                : `border-transparent ${
+                    dark
+                      ? 'text-slate-400 hover:text-slate-300 hover:border-slate-600'
+                      : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`
+            }`}
+          >
+            Google Sync
+          </button>
         </nav>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-4">
+        {activeTab === 'google-sync' && (
+          <div className="space-y-6">
+            {driveLoading && driveFolders.length === 0 && !driveError && (
+              <p className={`text-sm ${dark ? 'text-slate-400' : 'text-gray-600'}`}>
+                Loading Google Drive sync…
+              </p>
+            )}
+            {driveError && (
+              <p className="text-sm text-red-600 dark:text-red-400">{driveError}</p>
+            )}
+            {!driveLoading && !driveSyncActionId && (
+              <p className={`text-sm ${dark ? 'text-slate-400' : 'text-gray-600'}`}>
+                No PageIndex Google Drive Sync action is attached to this agent.
+              </p>
+            )}
+            {driveSyncActionId && (
+              <>
+                <div className="flex flex-col sm:flex-row gap-3 sm:items-end flex-wrap">
+                  <div className="flex-1 min-w-[220px]">
+                    <label className={`block ${labelClass} mb-1`}>Synced folder</label>
+                    <select
+                      value={driveSelectedFolderId}
+                      onChange={(e) => setDriveSelectedFolderId(e.target.value)}
+                      className={inputClass}
+                      disabled={driveFolders.length === 0}
+                    >
+                      {driveFolders.length === 0 ? (
+                        <option value="">No folders tracked yet</option>
+                      ) : (
+                        driveFolders.map((f) => {
+                          const label = f.folder_name?.trim()
+                          const text =
+                            label && label !== f.folder_id
+                              ? `${label} (${f.folder_id})`
+                              : f.folder_id
+                          return (
+                            <option key={f.folder_id} value={f.folder_id}>
+                              {text}
+                            </option>
+                          )
+                        })
+                      )}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void refreshGoogleDriveList()}
+                    disabled={driveLoading}
+                    className={`px-3 py-2 text-sm rounded-lg border ${
+                      dark
+                        ? 'border-slate-600 text-slate-200 hover:bg-slate-800'
+                        : 'border-gray-300 text-gray-800 hover:bg-gray-50'
+                    } disabled:opacity-50`}
+                  >
+                    Refresh
+                  </button>
+                </div>
+
+                {selectedDriveFolder && (
+                  <>
+                    <div
+                      className={`grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm rounded-lg border p-3 ${
+                        dark ? 'border-slate-600 bg-slate-800/50' : 'border-gray-200 bg-gray-50'
+                      }`}
+                    >
+                      <div className="sm:col-span-2">
+                        <span className={labelClass}>Folder</span>
+                        <p className="font-medium break-all">
+                          {(selectedDriveFolder.folder_name &&
+                            selectedDriveFolder.folder_name.trim()) ||
+                            '—'}
+                          {selectedDriveFolder.folder_id ? (
+                            <span
+                              className={`block text-xs font-normal mt-0.5 ${dark ? 'text-slate-400' : 'text-gray-600'}`}
+                            >
+                              {selectedDriveFolder.folder_id}
+                            </span>
+                          ) : null}
+                        </p>
+                      </div>
+                      <div>
+                        <span className={labelClass}>Status</span>
+                        <p className="font-medium">{selectedDriveFolder.status}</p>
+                      </div>
+                      <div>
+                        <span className={labelClass}>Active document</span>
+                        <p className="font-medium break-all">
+                          {selectedDriveFolder.active_document || '—'}
+                        </p>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <span className={labelClass}>Metadata</span>
+                        <pre
+                          className={`mt-1 text-xs overflow-x-auto p-2 rounded ${
+                            dark ? 'bg-slate-900 text-slate-300' : 'bg-white text-gray-800'
+                          }`}
+                        >
+                          {JSON.stringify(selectedDriveFolder.metadata ?? {}, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <h3
+                          className={`text-sm font-semibold ${dark ? 'text-slate-200' : 'text-gray-800'}`}
+                        >
+                          Ingesting
+                        </h3>
+                        {(['added', 'modified', 'removed'] as const).map((key) => (
+                          <div key={key} className="space-y-2">
+                            <h4 className={`text-xs font-semibold uppercase ${labelClass}`}>
+                              {key}
+                            </h4>
+                            {(selectedDriveFolder.ingesting_documents[key] ?? []).length ===
+                            0 ? (
+                              <p
+                                className={`text-sm ${dark ? 'text-slate-500' : 'text-gray-500'}`}
+                              >
+                                —
+                              </p>
+                            ) : (
+                              <ul className="space-y-2">
+                                {(
+                                  selectedDriveFolder.ingesting_documents[key] as unknown[]
+                                ).map((item, i) => {
+                                  const { title, subtitle, url } =
+                                    describeDriveQueueItem(item)
+                                  return (
+                                    <li
+                                      key={`ing-${key}-${i}-${title}`}
+                                      className={`text-sm rounded border px-2 py-1.5 ${
+                                        dark ? 'border-slate-600' : 'border-gray-200'
+                                      }`}
+                                    >
+                                      <div className="font-medium break-all">{title}</div>
+                                      <div
+                                        className={`text-xs break-all ${dark ? 'text-slate-400' : 'text-gray-600'}`}
+                                      >
+                                        {subtitle}
+                                      </div>
+                                      {url && (
+                                        <a
+                                          href={url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="text-xs text-indigo-500 hover:underline"
+                                        >
+                                          Open in Drive
+                                        </a>
+                                      )}
+                                    </li>
+                                  )
+                                })}
+                              </ul>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="space-y-4">
+                        <h3
+                          className={`text-sm font-semibold ${dark ? 'text-slate-200' : 'text-gray-800'}`}
+                        >
+                          Failed
+                        </h3>
+                        {(['added', 'modified', 'removed'] as const).map((key) => (
+                          <div key={`fail-${key}`} className="space-y-2">
+                            <h4 className={`text-xs font-semibold uppercase ${labelClass}`}>
+                              {key}
+                            </h4>
+                            {(selectedDriveFolder.failed_documents[key] ?? []).length ===
+                            0 ? (
+                              <p
+                                className={`text-sm ${dark ? 'text-slate-500' : 'text-gray-500'}`}
+                              >
+                                —
+                              </p>
+                            ) : (
+                              <ul className="space-y-2">
+                                {(selectedDriveFolder.failed_documents[key] as unknown[]).map(
+                                  (item, i) => {
+                                    const { title, subtitle, url } =
+                                      describeDriveQueueItem(item)
+                                    return (
+                                      <li
+                                        key={`fd-${key}-${i}-${title}`}
+                                        className={`text-sm rounded border px-2 py-1.5 ${
+                                          dark ? 'border-slate-600' : 'border-gray-200'
+                                        }`}
+                                      >
+                                        <div className="font-medium break-all">{title}</div>
+                                        <div
+                                          className={`text-xs break-all ${dark ? 'text-slate-400' : 'text-gray-600'}`}
+                                        >
+                                          {subtitle}
+                                        </div>
+                                        {url && (
+                                          <a
+                                            href={url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-xs text-indigo-500 hover:underline"
+                                          >
+                                            Open in Drive
+                                          </a>
+                                        )}
+                                      </li>
+                                    )
+                                  }
+                                )}
+                              </ul>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-4 items-center">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={driveIngestConvertMd}
+                          onChange={(e) => setDriveIngestConvertMd(e.target.checked)}
+                          className="rounded border-gray-300 dark:border-slate-600 text-indigo-600"
+                        />
+                        <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                          Convert to Markdown
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={driveIngestOcr}
+                          onChange={(e) => setDriveIngestOcr(e.target.checked)}
+                          className="rounded border-gray-300 dark:border-slate-600 text-indigo-600"
+                        />
+                        <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                          OCR (Docling)
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={driveRemoveDeleted}
+                          onChange={(e) => setDriveRemoveDeleted(e.target.checked)}
+                          className="rounded border-gray-300 dark:border-slate-600 text-indigo-600"
+                        />
+                        <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                          Remove deleted from index
+                        </span>
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleDriveIngestOnce()}
+                        disabled={driveRetrying || driveDeleting}
+                        className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        {driveRetrying ? 'Running…' : 'Run ingest (once)'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDriveRetryFailed()}
+                        disabled={driveRetrying || driveDeleting}
+                        className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50"
+                      >
+                        {driveRetrying ? 'Running…' : 'Retry failed'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDriveDeleteFolder()}
+                        disabled={driveRetrying || driveDeleting}
+                        className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-50"
+                      >
+                        {driveDeleting ? 'Removing…' : 'Remove folder sync'}
+                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      <h3
+                        className={`text-sm font-semibold ${dark ? 'text-slate-200' : 'text-gray-800'}`}
+                      >
+                        Files in folder
+                      </h3>
+                      <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-600">
+                        <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-600">
+                          <thead className={dark ? 'bg-slate-800' : 'bg-gray-50'}>
+                            <tr>
+                              <th className="px-3 py-2 text-left text-xs font-medium uppercase">
+                                Name
+                              </th>
+                              <th className="px-3 py-2 text-left text-xs font-medium uppercase hidden sm:table-cell">
+                                Type
+                              </th>
+                              <th className="px-3 py-2 text-left text-xs font-medium uppercase">
+                                Link
+                              </th>
+                              <th className="px-3 py-2 text-left text-xs font-medium uppercase">
+                                Skip ingest
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody
+                            className={`divide-y ${dark ? 'divide-slate-600' : 'divide-gray-200'}`}
+                          >
+                            {flattenGoogleDriveFiles(selectedDriveFolder.files ?? []).map(
+                              (f) => (
+                                <tr key={f.id}>
+                                  <td className="px-3 py-2 text-sm max-w-[200px] truncate">
+                                    {f.name ?? f.id}
+                                  </td>
+                                  <td className="px-3 py-2 text-sm hidden sm:table-cell">
+                                    {f.mimeType ?? '—'}
+                                  </td>
+                                  <td className="px-3 py-2 text-sm">
+                                    {f.url ? (
+                                      <a
+                                        href={f.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-indigo-500 hover:underline text-xs"
+                                      >
+                                        Drive
+                                      </a>
+                                    ) : (
+                                      '—'
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2 text-sm">
+                                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={!!f.disable_ingestion}
+                                        disabled={driveTogglingFileId === f.id}
+                                        onChange={(e) =>
+                                          void handleDriveToggleDisable(f, e.target.checked)
+                                        }
+                                        className="rounded border-gray-300 dark:border-slate-600 text-indigo-600"
+                                      />
+                                      {driveTogglingFileId === f.id ? '…' : ''}
+                                    </label>
+                                  </td>
+                                </tr>
+                              )
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      {flattenGoogleDriveFiles(selectedDriveFolder.files ?? []).length ===
+                        0 && (
+                        <p className={`text-sm ${dark ? 'text-slate-500' : 'text-gray-500'}`}>
+                          No files in this folder snapshot.
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         {activeTab === 'import-export' && (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row gap-3 items-end flex-wrap">
@@ -860,7 +1496,7 @@ export function PageIndexDocumentsModal({
             </div>
 
             <div className="space-y-2">
-              <label className={`block ${labelClass}`}>Import from file or paste JSON</label>
+              <label className={`block ${labelClass}`}>Import from file, paste JSON, or graph export URL</label>
               <input
                 type="file"
                 accept=".json"
@@ -871,14 +1507,37 @@ export function PageIndexDocumentsModal({
                 }`}
                 onChange={(e) => {
                   setImportFile(e.target.files?.[0] || null)
-                  if (e.target.files?.[0]) setImportText('')
+                  if (e.target.files?.[0]) {
+                    setImportText('')
+                    setImportUrl('')
+                  }
                 }}
+              />
+              <input
+                type="url"
+                placeholder="Or URL to JSON/YAML export (https://…)"
+                value={importUrl}
+                onChange={(e) => {
+                  setImportUrl(e.target.value)
+                  if (e.target.value.trim()) {
+                    setImportFile(null)
+                    setImportText('')
+                  }
+                }}
+                className={`block w-full px-3 py-2 border rounded-lg text-sm ${
+                  dark
+                    ? 'border-slate-600 bg-slate-800 text-slate-100 placeholder-slate-400 focus:ring-green-500'
+                    : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-green-500'
+                }`}
               />
               <textarea
                 value={importText}
                 onChange={(e) => {
                   setImportText(e.target.value)
-                  if (e.target.value.trim()) setImportFile(null)
+                  if (e.target.value.trim()) {
+                    setImportFile(null)
+                    setImportUrl('')
+                  }
                 }}
                 placeholder='{\n  "roots": [ ... ],\n  "nodes": [ ... ],\n  "edges": [ ... ]\n}'
                 rows={4}
@@ -902,7 +1561,9 @@ export function PageIndexDocumentsModal({
                 </label>
                 <button
                   onClick={handleImport}
-                  disabled={(!importFile && !importText.trim()) || importing}
+                  disabled={
+                    (!importFile && !importText.trim() && !importUrl.trim()) || importing
+                  }
                   className="ml-auto px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {importing ? 'Importing...' : 'Import'}
@@ -1510,6 +2171,7 @@ export function PageIndexDocumentsModal({
                     onChange={(e) => {
                       const file = e.target.files?.[0] || null
                       setSelectedFile(file)
+                      if (file) setIngestFileUrl('')
                       if (file && file.size > MAX_FILE_SIZE) {
                         setUploadError(`File exceeds ${MAX_FILE_SIZE / (1024 * 1024)}MB limit`)
                       } else {
@@ -1529,6 +2191,28 @@ export function PageIndexDocumentsModal({
                   value={docName}
                   onChange={(e) => setDocName(e.target.value)}
                   className={`flex-1 min-w-0 px-3 py-2 border rounded-lg text-sm ${
+                    dark
+                      ? 'border-slate-600 bg-slate-800 text-slate-100 placeholder-slate-400 focus:ring-indigo-500'
+                      : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-indigo-500'
+                  }`}
+                />
+              </div>
+              <div className="w-full">
+                <label className={`block text-xs mb-1 ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                  Or paste a document URL (server downloads and ingests)
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://…"
+                  value={ingestFileUrl}
+                  onChange={(e) => {
+                    setIngestFileUrl(e.target.value)
+                    if (e.target.value.trim()) {
+                      setSelectedFile(null)
+                      setUploadError(null)
+                    }
+                  }}
+                  className={`block w-full px-3 py-2 border rounded-lg text-sm ${
                     dark
                       ? 'border-slate-600 bg-slate-800 text-slate-100 placeholder-slate-400 focus:ring-indigo-500'
                       : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-indigo-500'
@@ -1616,7 +2300,7 @@ export function PageIndexDocumentsModal({
               <div className="flex justify-end">
                 <button
                   onClick={handleUpload}
-                  disabled={!selectedFile || uploading}
+                  disabled={(!selectedFile && !ingestFileUrl.trim()) || uploading}
                   className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
                 >
                   {uploading ? 'Uploading...' : 'Upload'}

@@ -7,7 +7,7 @@ from jvspatial import create_task, is_serverless_mode
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
-from jvspatial.exceptions import DatabaseError
+from jvspatial.exceptions import DatabaseError, ValidationError as SpatialValidationError
 from pydantic import Field
 
 from jvagent.action.utils.endpoint_helpers import require_typed_action
@@ -206,7 +206,11 @@ async def delete_google_documents_endpoint(
     action_id: str,
     document_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Delete Google Drive documents."""
+    """Delete Google Drive folder sync state.
+
+    ``document_id`` is the **Google Drive folder id** (not the graph node id).
+    Omit to delete all folder nodes for this action.
+    """
     action = await require_typed_action(
         action_id,
         PageIndexGoogleDriveSyncAction,
@@ -227,6 +231,68 @@ async def delete_google_documents_endpoint(
         logger.error("Error deleting Google Drive documents: %s", e, exc_info=True)
         raise ValidationError(
             message=f"Deletion failed: {str(e)}",
+            details={"error": str(e)},
+        )
+
+
+@endpoint(
+    "/actions/{action_id}/set_google_drive_file_ingestion",
+    methods=["POST"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex Google Drive Sync"],
+    response=success_response(
+        data={
+            "message": ResponseField(
+                field_type=str,
+                description="Update result message",
+            ),
+            "result": ResponseField(
+                field_type=dict,
+                description="folder_id, file_id, disable_ingestion",
+            ),
+        }
+    ),
+)
+async def set_google_drive_file_ingestion_endpoint(
+    action_id: str,
+    folder_id: str = Field(..., description="Google Drive folder id"),
+    file_id: str = Field(..., description="Google Drive file id"),
+    disable_ingestion: bool = Field(
+        default=False,
+        description="When true, skip ingestion for this file",
+    ),
+) -> Dict[str, Any]:
+    """Set per-file ``disable_ingestion`` and remove the file from pending queues when disabling."""
+    action = await require_typed_action(
+        action_id,
+        PageIndexGoogleDriveSyncAction,
+        not_found_message=(
+            f"PageIndexGoogleDriveSyncAction with ID '{action_id}' not found"
+        ),
+        wrong_type_message=(
+            f"Action '{action_id}' is not a PageIndexGoogleDriveSyncAction"
+        ),
+    )
+    try:
+        result = await action.set_google_drive_file_ingestion(
+            folder_id=folder_id,
+            file_id=file_id,
+            disable_ingestion=disable_ingestion,
+        )
+        return {
+            "message": "Google Drive file ingestion settings updated",
+            "result": result,
+        }
+    except SpatialValidationError as e:
+        raise ValidationError(
+            message=str(e),
+            details=e.details or {},
+        )
+    except Exception as e:
+        logger.error("Error updating Google Drive file ingestion: %s", e, exc_info=True)
+        raise ValidationError(
+            message=f"Update failed: {str(e)}",
             details={"error": str(e)},
         )
 

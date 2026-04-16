@@ -81,6 +81,17 @@ def graph_message_resource_to_tuple(
                 to_lines.append(a)
     to_hdr = ", ".join(to_lines) if to_lines else ""
 
+    cc_lines: List[str] = []
+    for rec in message_resource.get("ccRecipients") or []:
+        if not isinstance(rec, dict):
+            continue
+        nea = rec.get("emailAddress") or {}
+        if isinstance(nea, dict):
+            a = (nea.get("address") or "").strip()
+            if a:
+                cc_lines.append(a)
+    cc_hdr = ", ".join(cc_lines) if cc_lines else ""
+
     has_any = bool(subject) or bool(raw_plain) or bool(raw_html)
     if not has_any:
         return None
@@ -88,6 +99,7 @@ def graph_message_resource_to_tuple(
     utterance = subject if subject else "(no subject)"
 
     inbound: Dict[str, Any] = {
+        "From": user_id,
         "MessageId": (
             _normalize_msg_id(mid_hdr) if mid_hdr else message_resource.get("id")
         ),
@@ -98,6 +110,8 @@ def graph_message_resource_to_tuple(
         "OutlookMessageId": message_resource.get("id"),
         "OutlookConversationId": message_resource.get("conversationId"),
     }
+    if cc_hdr:
+        inbound["Cc"] = cc_hdr
     if raw_plain:
         inbound["BodyPlain"] = raw_plain
     if raw_html:

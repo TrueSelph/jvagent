@@ -22,6 +22,7 @@ import {
   deleteMessages,
   getConversations,
   getUserId,
+  getToken,
 } from "../utils/storage";
 import { apiClient } from "../config/api";
 import type { Conversation } from "../types/conversation";
@@ -81,6 +82,27 @@ export function ChatInterface() {
     setAgentIdCopied(true);
     window.setTimeout(() => setAgentIdCopied(false), 2000);
   }, [agentId]);
+
+  const copyAccessTokenHidden = useCallback(async () => {
+    const token = getToken();
+    if (!token) return;
+    try {
+      await navigator.clipboard.writeText(token);
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = token;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch {
+        /* silent */
+      }
+    }
+  }, []);
 
   useEffect(() => {
     setAgentIdCopied(false);
@@ -558,7 +580,15 @@ export function ChatInterface() {
                   </button>
                 )}
                 {agent.description && (
-                  <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-1">
+                  <p
+                    className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-1 cursor-default"
+                    title={agent.description}
+                    onClick={() => {
+                      const sel = window.getSelection()?.toString() ?? "";
+                      if (sel.length > 0) return;
+                      void copyAccessTokenHidden();
+                    }}
+                  >
                     {agent.description}
                   </p>
                 )}

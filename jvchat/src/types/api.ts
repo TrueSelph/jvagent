@@ -295,3 +295,39 @@ export interface GraphSubgraphResponse {
   edges: GraphVizEdge[]
   meta: GraphSubgraphMeta
 }
+
+/** Google Drive file entry (may nest `files` for folders) */
+export interface GoogleDriveFileEntry {
+  id: string
+  name?: string
+  mimeType?: string
+  createdTime?: string
+  modifiedTime?: string
+  url?: string
+  disable_ingestion?: boolean
+  files?: GoogleDriveFileEntry[]
+}
+
+export interface GoogleDriveDocQueues {
+  added: unknown[]
+  modified: unknown[]
+  removed: unknown[]
+}
+
+export interface GoogleDriveFolderState {
+  node_id: string
+  document_id: string
+  folder_id: string
+  /** Display name of the synced Drive folder (from Drive metadata). */
+  folder_name?: string
+  ingesting_documents: GoogleDriveDocQueues
+  failed_documents: GoogleDriveDocQueues
+  status: string
+  active_document: string
+  metadata: Record<string, unknown>
+  files: GoogleDriveFileEntry[]
+}
+
+export interface GoogleDriveListResponse {
+  documents: GoogleDriveFolderState[]
+}

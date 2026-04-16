@@ -1,23 +1,46 @@
 """PageIndex document ingestion and management endpoints.
 
-Vectorless RAG: ingest PDF, Markdown/text, and office documents; list, search, and delete.
-All routes are agent-scoped (collection = agent_id from path).
+Vectorless RAG: ingest PDF, Markdown/text, and office documents; list, search, delete,
+export/import, and manage retrieval access via ``user_groups`` on
+``PageIndexRetrievalInteractAction``.
+All routes are agent-scoped (collection = agent_id from path unless noted).
+
+``user_groups`` routes:
+
+- GET ``/agents/{agent_id}/pageindex/user_groups`` — read map group → user ids.
+- POST ``/agents/{agent_id}/pageindex/user_groups/members`` — body: ``group``, optional ``user_session``.
+  With a non-empty ``user_session``, appends that id (deduped). With ``user_session`` omitted or blank, sets the
+  group to an empty list (blank group).
+- DELETE ``/agents/{agent_id}/pageindex/user_groups/members`` — remove a member from a group
+  (query: ``group``, ``user_session``, optional ``can_delete_group``, default false). If the last
+  member is removed, the group stays as ``[]`` unless ``can_delete_group`` is true, then the group
+  key is removed.
+- DELETE ``/agents/{agent_id}/pageindex/user_groups/groups`` — remove a group key
+  (query: ``group``).
 """
 
 import json
 import logging
+import mimetypes
 import tempfile
+import uuid
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import unquote, urlparse
 
+import httpx
 from fastapi import Query, Request
 from jvspatial.api import endpoint
 from jvspatial.api.decorators import EndpointField
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
+from jvspatial.storage.exceptions import InvalidPathError, PathTraversalError
+from jvspatial.storage.security import PathSanitizer
 from pydantic import Field
 from python_multipart.multipart import FormParser, parse_options_header
+
+from jvagent.core.agent import Agent
 
 from .config import initialize_pageindex_database
 from .documents import (
@@ -38,7 +61,10 @@ from .documents import (
     update_document_chunk,
     update_document_metadata,
 )
-from .pageindex_retrieval_interact_action import ensure_ingestion_config_for_agent
+from .pageindex_retrieval_interact_action import (
+    PageIndexRetrievalInteractAction,
+    ensure_ingestion_config_for_agent,
+)
 from .retrieval import search_documents
 
 logger = logging.getLogger(__name__)
@@ -46,6 +72,46 @@ logger = logging.getLogger(__name__)
 ALLOWED_EXTENSIONS = (
     {".pdf"} | PAGEINDEX_TEXT_LIKE_EXTENSIONS | PAGEINDEX_OFFICE_LIKE_EXTENSIONS
 )
+
+
+def _strip_nonempty(label: str, value: Optional[str]) -> str:
+    """Return stripped string or raise ValidationError if empty."""
+    s = (value or "").strip()
+    if not s:
+        raise ValidationError(
+            f"{label} is required",
+            details={label: value},
+        )
+    return s
+
+
+def _copy_user_groups_map(
+    action: PageIndexRetrievalInteractAction,
+) -> Dict[str, List[str]]:
+    """Shallow copy of user_groups with list copies per group."""
+    raw = getattr(action, "user_groups", {})
+    return {str(k): list(v) for k, v in raw.items()}
+
+
+async def _get_pageindex_retrieval_action(
+    agent_id: str,
+) -> PageIndexRetrievalInteractAction:
+    """Load the agent's PageIndexRetrievalInteractAction or raise."""
+    agent = await Agent.get(agent_id)
+    if not agent:
+        raise ResourceNotFoundError(
+            message=f"Agent with ID '{agent_id}' not found",
+            details={"agent_id": agent_id},
+        )
+    action = await agent.get_action_by_type("PageIndexRetrievalInteractAction")
+    if not action or not isinstance(action, PageIndexRetrievalInteractAction):
+        raise ResourceNotFoundError(
+            message=(
+                f"No PageIndexRetrievalInteractAction found for agent '{agent_id}'"
+            ),
+            details={"agent_id": agent_id},
+        )
+    return action
 
 
 async def _get_app_id_from_node() -> Optional[str]:
@@ -103,9 +169,192 @@ def _parse_chunk_enabled_filter(raw: Optional[str]) -> Optional[bool]:
     return None
 
 
+def _filename_from_content_disposition(cd: Optional[str]) -> Optional[str]:
+    if not cd:
+        return None
+    for part in cd.split(";"):
+        part = part.strip()
+        low = part.lower()
+        if low.startswith("filename*="):
+            try:
+                _, _, value = part.partition("=")
+                value = value.strip()
+                if value.lower().startswith("utf-8''"):
+                    return unquote(value[7:].strip().strip('"'))
+            except Exception:
+                continue
+        if low.startswith("filename="):
+            _, _, value = part.partition("=")
+            v = value.strip().strip('"')
+            if v:
+                return v
+    return None
+
+
+def _filename_from_url(url: str) -> str:
+    path = urlparse(url).path
+    name = unquote(Path(path).name)
+    return name if name else "download"
+
+
+def _safe_pageindex_relative_path(*segments: str) -> str:
+    rel = "/".join(segments)
+    try:
+        return PathSanitizer.sanitize_path(rel.replace("\\", "/"))
+    except (InvalidPathError, PathTraversalError) as e:
+        raise ValidationError(f"Invalid storage path: {e}")
+
+
+async def _fetch_url_bytes_capped(url: str) -> Tuple[bytes, str, Optional[str]]:
+    raw = url.strip()
+    if not raw.startswith(("http://", "https://")):
+        raise ValidationError("URL must be http or https")
+    timeout = httpx.Timeout(120.0, connect=30.0)
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        async with client.stream("GET", raw) as resp:
+            if resp.status_code != 200:
+                raise ValidationError(f"Download failed: HTTP {resp.status_code}")
+            ct_header = resp.headers.get("content-type")
+            content_type: Optional[str] = None
+            if ct_header:
+                content_type = ct_header.split(";")[0].strip()
+            cd = resp.headers.get("content-disposition")
+            fname = _filename_from_content_disposition(cd) or _filename_from_url(raw)
+            total = 0
+            chunks: List[bytes] = []
+            async for chunk in resp.aiter_bytes():
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > MAX_UPLOAD_BYTES:
+                    raise ValidationError(
+                        f"Remote file exceeds maximum size "
+                        f"({MAX_UPLOAD_BYTES // (1024 * 1024)} MB)"
+                    )
+                chunks.append(chunk)
+            content = b"".join(chunks)
+    if not content:
+        raise ValidationError("Downloaded file is empty")
+    return content, fname, content_type
+
+
+def _resolve_ingest_filename(filename_hint: str, content_type: Optional[str]) -> str:
+    name = filename_hint or "download"
+    ext = Path(name).suffix.lower()
+    if ext in ALLOWED_EXTENSIONS:
+        return name
+    guessed: Optional[str] = None
+    if content_type:
+        main = content_type.strip()
+        if main in ("text/markdown", "text/x-markdown"):
+            guessed = ".md"
+        else:
+            guessed = mimetypes.guess_extension(main)
+            if guessed == ".jpe":
+                guessed = ".jpeg"
+    if guessed and guessed.lower() in ALLOWED_EXTENSIONS:
+        stem = Path(name).stem or "download"
+        return f"{stem}{guessed.lower()}"
+    raise ValidationError(
+        f"Could not determine an allowed file type from URL or Content-Type. "
+        f"Allowed extensions: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
+    )
+
+
+async def _save_pageindex_staging(
+    subdir: str,
+    agent_id: str,
+    content: bytes,
+    original_filename: str,
+    extra_metadata: Dict[str, Any],
+) -> str:
+    from jvagent.core.app import App
+
+    app = await App.get()
+    if not app:
+        raise ValidationError("File storage unavailable")
+    now_dt = await app.now()
+    timestamp = now_dt.strftime("%Y%m%d_%H%M%S")
+    uid = uuid.uuid4().hex[:8]
+    ext = Path(original_filename).suffix.lower() or ".bin"
+    file_part = f"{timestamp}_{uid}{ext}"
+    storage_path = _safe_pageindex_relative_path(subdir, agent_id, file_part)
+    meta = {
+        **extra_metadata,
+        "original_filename": original_filename,
+        "size": len(content),
+        "created_at": now_dt.isoformat(),
+    }
+    ok = await app.save_file(storage_path, content, metadata=meta)
+    if not ok:
+        raise ValidationError("Failed to save downloaded file to storage")
+    return storage_path
+
+
+async def _delete_staged_file(storage_path: Optional[str]) -> None:
+    if not storage_path:
+        return
+    from jvagent.core.app import App
+
+    app = await App.get()
+    if app:
+        await app.delete_file(storage_path)
+
+
+def _import_staging_filename(url: str, content_type: Optional[str]) -> str:
+    path = urlparse(url).path
+    ext = Path(path).suffix.lower()
+    if ext in (".json", ".yaml", ".yml"):
+        return f"import{ext}"
+    if content_type:
+        low = content_type.lower()
+        if "yaml" in low:
+            return "import.yaml"
+        if "json" in low:
+            return "import.json"
+    return "import.json"
+
+
+def _coerce_import_payload_to_dict(data: Any) -> Dict[str, Any]:
+    if isinstance(data, str):
+        try:
+            import yaml
+
+            parsed = yaml.safe_load(data)
+        except (ImportError, yaml.YAMLError):
+            try:
+                parsed = json.loads(data)
+            except json.JSONDecodeError as e:
+                raise ValidationError(f"Invalid JSON/YAML format: {e}")
+    elif isinstance(data, dict):
+        parsed = data
+    else:
+        raise ValidationError("Data must be a JSON object or YAML string")
+    if not isinstance(parsed, dict):
+        raise ValidationError("Data must be a dictionary")
+    return parsed
+
+
+async def _run_import_parsed(
+    agent_id: str, parsed: Dict[str, Any], purge: bool
+) -> None:
+    for root in parsed.get("roots", []):
+        root["collection_name"] = agent_id
+        ctx = root.get("context")
+        if isinstance(ctx, dict):
+            ctx["collection_name"] = agent_id
+    for node in parsed.get("nodes", []):
+        node["collection_name"] = agent_id
+        ctx = node.get("context")
+        if isinstance(ctx, dict):
+            ctx["collection_name"] = agent_id
+    await import_documents(parsed, purge=purge, collection_name=agent_id)
+
+
 def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
     bytes,
     str,
+    Optional[str],
     Optional[str],
     Optional[str],
     Optional[str],
@@ -120,7 +369,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
 
     Returns (file_content, filename, doc_name, model, if_add_node_summary,
              collection_name, metadata, doc_description, doc_url,
-             convert_to_markdown, ocr).
+             convert_to_markdown, ocr, file_url).
     Uses latin-1 for headers to avoid UTF-8 decode errors on non-ASCII filenames or field values.
     """
     content_type_bytes = (
@@ -146,6 +395,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
     doc_url: Optional[str] = None
     convert_to_markdown: Optional[str] = None
     ocr: Optional[str] = None
+    file_url: Optional[str] = None
 
     def _safe_str(b: bytes) -> str:
         try:
@@ -154,7 +404,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
             return b.decode("latin-1")
 
     def on_field(field) -> None:
-        nonlocal doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description, doc_url, convert_to_markdown, ocr
+        nonlocal doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description, doc_url, convert_to_markdown, ocr, file_url
         name = _safe_str(field.field_name) if field.field_name else ""
         val = field.value
         value = _safe_str(val) if val is not None else ""
@@ -176,6 +426,8 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
             convert_to_markdown = value or None
         elif name == "ocr":
             ocr = value or None
+        elif name == "file_url":
+            file_url = value or None
 
     def on_file(f) -> None:
         nonlocal file_content, filename
@@ -209,6 +461,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
         doc_url,
         convert_to_markdown,
         ocr,
+        file_url,
     )
 
 
@@ -326,10 +579,11 @@ async def ingest_document_endpoint(
 
     | Field | Type | Required | Description |
     |-------|------|----------|-------------|
-    | file | File | Yes | `.pdf`, `.md`, `.markdown`, `.txt`, or office (`.docx`, `.doc`, `.xls`, `.xlsx`, `.ppt`, `.pptx`) |
+    | file | File | One of file / file_url | `.pdf`, `.md`, `.markdown`, `.txt`, or office (`.docx`, `.doc`, `.xls`, `.xlsx`, `.ppt`, `.pptx`) |
+    | file_url | string | One of file / file_url | HTTPS/HTTP URL; server downloads, stages under `.files`, ingests, then deletes the staged file |
     | doc_name | string | No | Override document identifier (default: derived from filename) |
     | doc_description | string | No | Human-readable document description |
-    | doc_url | string | No | Source URL of the document resource (used for reference citations) |
+    | doc_url | string | No | Source URL for reference citations (default when using file_url: the same download URL) |
     | if_add_node_summary | string | No | "yes" or "no" – generate LLM summaries per node (default: from agent's PageIndex config) |
     | convert_to_markdown | string | No | "yes" or "no" – use Docling to convert PDF to Markdown first (default: no) |
     | ocr | string | No | "yes" or "no" – enable OCR when using Docling on PDF (default: no) |
@@ -362,6 +616,7 @@ async def ingest_document_endpoint(
         doc_url,
         convert_to_markdown_raw,
         ocr_raw,
+        file_url_raw,
     ) = _parse_multipart_safe(body, content_type)
     collection_name = collection_name or agent_id
     metadata = _parse_metadata(metadata_raw)
@@ -374,39 +629,67 @@ async def ingest_document_endpoint(
     ocr_opt = _form_yes_no_optional(ocr_raw)
     ocr_flag = False if ocr_opt is None else ocr_opt
 
-    ext = Path(filename).suffix.lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        raise ValidationError(
-            f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
-        )
+    file_url = (file_url_raw or "").strip()
+    has_upload = len(content) > 0
+    if file_url and has_upload:
+        raise ValidationError("Provide either file or file_url, not both")
+    if not file_url and not has_upload:
+        raise ValidationError("Provide a file upload or file_url")
 
-    if not content:
-        raise ValidationError("Empty file")
-
+    staged_path: Optional[str] = None
     try:
-        result = await _do_assimilate(
-            content,
-            ext,
-            doc_name=doc_name or filename,
-            model=model,
-            if_add_node_summary=if_add_node_summary,
-            collection_name=collection_name,
-            metadata=metadata,
-            doc_description=doc_description,
-            doc_url=doc_url,
-            convert_to_markdown=convert_to_markdown,
-            ocr=ocr_flag,
-        )
-    except ImportError as e:
-        raise ValidationError(str(e))
-    except ValueError as e:
-        raise ValidationError(str(e))
+        if file_url:
+            dl_content, fname_hint, ct = await _fetch_url_bytes_capped(file_url)
+            resolved_name = _resolve_ingest_filename(fname_hint, ct)
+            ext = Path(resolved_name).suffix.lower()
+            staged_path = await _save_pageindex_staging(
+                "pageindex_ingest",
+                agent_id,
+                dl_content,
+                resolved_name,
+                {"source_url": file_url, "agent_id": agent_id},
+            )
+            content = dl_content
+            filename = resolved_name
+            doc_url_effective = (doc_url or "").strip() or file_url
+        else:
+            ext = Path(filename).suffix.lower()
+            doc_url_effective = (doc_url or "").strip()
 
-    return {
-        "doc_name": result.get("doc_name", ""),
-        "root_id": result.get("_root_id", ""),
-        "doc_description": result.get("doc_description"),
-    }
+        if ext not in ALLOWED_EXTENSIONS:
+            raise ValidationError(
+                f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
+            )
+
+        if not content:
+            raise ValidationError("Empty file")
+
+        try:
+            result = await _do_assimilate(
+                content,
+                ext,
+                doc_name=doc_name or filename,
+                model=model,
+                if_add_node_summary=if_add_node_summary,
+                collection_name=collection_name,
+                metadata=metadata,
+                doc_description=doc_description,
+                doc_url=doc_url_effective or None,
+                convert_to_markdown=convert_to_markdown,
+                ocr=ocr_flag,
+            )
+        except ImportError as e:
+            raise ValidationError(str(e))
+        except ValueError as e:
+            raise ValidationError(str(e))
+
+        return {
+            "doc_name": result.get("doc_name", ""),
+            "root_id": result.get("_root_id", ""),
+            "doc_description": result.get("doc_description"),
+        }
+    finally:
+        await _delete_staged_file(staged_path)
 
 
 @endpoint(
@@ -980,47 +1263,267 @@ async def export_documents_endpoint(
 )
 async def import_documents_endpoint(
     agent_id: str,
-    data: Any = EndpointField(description="Graph data (JSON object or YAML string)"),
+    data: Any = EndpointField(
+        default=None,
+        description="Graph data (JSON object or YAML string). Omit when using import_url.",
+    ),
+    import_url: Optional[str] = EndpointField(
+        default=None,
+        description="URL of a JSON or YAML PageIndex export; server downloads, imports, then deletes the staged file.",
+    ),
     purge: bool = EndpointField(
         default=False, description="Purge existing documents before import"
     ),
 ) -> Dict[str, str]:
-    """Import PageIndex graph data."""
+    """Import PageIndex graph data from inline body or remote URL."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
+    url = (import_url or "").strip()
+    staged_path: Optional[str] = None
     try:
-        if isinstance(data, str):
-            try:
-                import yaml
-
-                parsed = yaml.safe_load(data)
-            except (ImportError, yaml.YAMLError):
-                try:
-                    parsed = json.loads(data)
-                except json.JSONDecodeError as e:
-                    raise ValidationError(f"Invalid JSON/YAML format: {e}")
-        elif isinstance(data, dict):
-            parsed = data
+        if url:
+            if data is not None:
+                raise ValidationError("Provide either import_url or data, not both")
+            raw, _fname_hint, ct = await _fetch_url_bytes_capped(url)
+            staging_fn = _import_staging_filename(url, ct)
+            staged_path = await _save_pageindex_staging(
+                "pageindex_import",
+                agent_id,
+                raw,
+                staging_fn,
+                {"source_url": url, "agent_id": agent_id},
+            )
+            text = raw.decode("utf-8", errors="replace")
+            parsed = _coerce_import_payload_to_dict(text)
+            await _run_import_parsed(agent_id, parsed, purge)
         else:
-            raise ValidationError("Data must be a JSON object or YAML string")
-
-        if not isinstance(parsed, dict):
-            raise ValidationError("Data must be a dictionary")
-
-        for root in parsed.get("roots", []):
-            root["collection_name"] = agent_id
-            ctx = root.get("context")
-            if isinstance(ctx, dict):
-                ctx["collection_name"] = agent_id
-        for node in parsed.get("nodes", []):
-            node["collection_name"] = agent_id
-            ctx = node.get("context")
-            if isinstance(ctx, dict):
-                ctx["collection_name"] = agent_id
-
-        await import_documents(parsed, purge=purge, collection_name=agent_id)
+            if data is None:
+                raise ValidationError("Provide data or import_url")
+            parsed = _coerce_import_payload_to_dict(data)
+            await _run_import_parsed(agent_id, parsed, purge)
 
         return {"message": "Documents imported successfully"}
 
+    except ValidationError:
+        raise
     except Exception as e:
         logger.error(f"Error importing documents: {e}")
         raise ValidationError(f"Import failed: {str(e)}")
+    finally:
+        await _delete_staged_file(staged_path)
+
+
+_USER_GROUPS_FIELD = ResponseField(
+    field_type=Dict[str, Any],
+    description="Map of access group name to list of user ids",
+    example={"finance": ["usr_1", "usr_2"]},
+)
+
+
+@endpoint(
+    "/agents/{agent_id}/pageindex/user_groups",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex"],
+    response=success_response(
+        data={
+            "user_groups": _USER_GROUPS_FIELD,
+        }
+    ),
+)
+async def get_user_groups_endpoint(agent_id: str) -> Dict[str, Any]:
+    """Return ``user_groups`` for the agent's PageIndex retrieval action.
+
+    Args:
+        agent_id: Agent id (must have a PageIndexRetrievalInteractAction).
+
+    Returns:
+        Dict with key ``user_groups`` (empty dict if unset).
+
+    Raises:
+        ResourceNotFoundError: If the agent or PageIndex retrieval action is missing.
+    """
+    action = await _get_pageindex_retrieval_action(agent_id)
+    return {"user_groups": _copy_user_groups_map(action)}
+
+
+@endpoint(
+    "/agents/{agent_id}/pageindex/user_groups/members",
+    methods=["POST"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex"],
+    response=success_response(
+        data={
+            "user_groups": _USER_GROUPS_FIELD,
+            "message": ResponseField(
+                field_type=str,
+                description="Outcome message",
+                example="User added to group",
+            ),
+        }
+    ),
+)
+async def add_user_group_member_endpoint(
+    agent_id: str,
+    group: str = EndpointField(description="Access group name"),
+    user_session: Optional[str] = EndpointField(
+        default=None,
+        description=(
+            "User session id to add to the group (deduped). Omit or leave blank to set the group "
+            "to an empty member list (blank group). Use ``user_session``, not "
+            "``user_id`` (reserved for auth injection on authenticated routes)."
+        ),
+    ),
+) -> Dict[str, Any]:
+    """Add a member to ``group``, or clear the group to an empty list when ``user_session`` is absent.
+
+    If ``user_session`` is non-empty after stripping, appends that id to the group (deduplicated).
+    If ``user_session`` is omitted or blank, sets ``group`` to ``[]`` (other groups unchanged).
+
+    Args:
+        agent_id: Agent id.
+        group: Group key in ``user_groups``.
+        user_session: Member id to add, or empty/omitted for a blank group.
+
+    Returns:
+        Updated ``user_groups`` and a short message.
+
+    Raises:
+        ResourceNotFoundError: If the agent or PageIndex retrieval action is missing.
+        ValidationError: If ``group`` is empty.
+    """
+    group_key = _strip_nonempty("group", group)
+    action = await _get_pageindex_retrieval_action(agent_id)
+    ug = _copy_user_groups_map(action)
+    if user_session is not None and str(user_session).strip():
+        uid = _strip_nonempty("user_session", user_session)
+        members = list(ug.get(group_key, []))
+        if uid in members:
+            return {"user_groups": ug, "message": "User already in group"}
+        members.append(uid)
+        ug[group_key] = members
+        action.user_groups = ug
+        await action.save()
+        return {"user_groups": ug, "message": "User added to group"}
+    prior = list(ug.get(group_key, []))
+    ug[group_key] = []
+    if prior == []:
+        return {"user_groups": ug, "message": "Group already blank"}
+    action.user_groups = ug
+    await action.save()
+    return {"user_groups": ug, "message": "Group cleared to empty list"}
+
+
+@endpoint(
+    "/agents/{agent_id}/pageindex/user_groups/members",
+    methods=["DELETE"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex"],
+    response=success_response(
+        data={
+            "user_groups": _USER_GROUPS_FIELD,
+            "message": ResponseField(
+                field_type=str,
+                description="Outcome message",
+                example="User removed from group",
+            ),
+        }
+    ),
+)
+async def remove_user_group_member_endpoint(
+    agent_id: str,
+    group: str = Query(..., description="Access group name"),
+    user_session: str = Query(..., description="User session id to remove from the group"),
+    can_delete_group: bool = Query(
+        default=False,
+        description="If true, remove the group key when the last member is removed; "
+        "if false (default), keep the group as an empty list",
+    ),
+) -> Dict[str, Any]:
+    """Remove ``user_session`` from ``group``.
+
+    If that was the last member: by default the group is kept as ``[]``. When
+    ``can_delete_group`` is true, the group key is deleted instead.
+
+    Args:
+        agent_id: Agent id.
+        group: Group key in ``user_groups``.
+        user_session: User session id to remove.
+        can_delete_group: When true, drop the group key if it becomes empty after removal.
+
+    Returns:
+        Updated ``user_groups`` and a short message.
+
+    Raises:
+        ResourceNotFoundError: If the agent or PageIndex retrieval action is missing.
+        ValidationError: If ``group`` or ``user_session`` is empty.
+    """
+    group_key = _strip_nonempty("group", group)
+    uid = _strip_nonempty("user_session", user_session)
+    action = await _get_pageindex_retrieval_action(agent_id)
+    ug = _copy_user_groups_map(action)
+    if group_key not in ug:
+        return {"user_groups": ug, "message": "Group not present; nothing removed"}
+    old_members = ug[group_key]
+    filtered = [u for u in old_members if u != uid]
+    if len(filtered) == len(old_members):
+        return {"user_groups": ug, "message": "User not in group; nothing removed"}
+    if filtered:
+        ug[group_key] = filtered
+        msg = "User removed from group"
+    elif can_delete_group:
+        del ug[group_key]
+        msg = "User removed; empty group deleted"
+    else:
+        ug[group_key] = []
+        msg = "User removed from group"
+    action.user_groups = ug
+    await action.save()
+    return {"user_groups": ug, "message": msg}
+
+
+@endpoint(
+    "/agents/{agent_id}/pageindex/user_groups/groups",
+    methods=["DELETE"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex"],
+    response=success_response(
+        data={
+            "user_groups": _USER_GROUPS_FIELD,
+            "message": ResponseField(
+                field_type=str,
+                description="Outcome message",
+                example="Group removed",
+            ),
+        }
+    ),
+)
+async def delete_user_group_endpoint(
+    agent_id: str,
+    group: str = Query(..., description="Access group name to remove entirely"),
+) -> Dict[str, Any]:
+    """Remove a group key and its member list from ``user_groups``.
+
+    Args:
+        agent_id: Agent id.
+        group: Group key to delete.
+
+    Returns:
+        Updated ``user_groups`` and a short message.
+
+    Raises:
+        ResourceNotFoundError: If the agent or PageIndex retrieval action is missing.
+        ValidationError: If ``group`` is empty.
+    """
+    group_key = _strip_nonempty("group", group)
+    action = await _get_pageindex_retrieval_action(agent_id)
+    ug = _copy_user_groups_map(action)
+    if group_key in ug:
+        del ug[group_key]
+        action.user_groups = ug
+        await action.save()
+        return {"user_groups": ug, "message": "Group removed"}
+    return {"user_groups": ug, "message": "Group not present; nothing removed"}

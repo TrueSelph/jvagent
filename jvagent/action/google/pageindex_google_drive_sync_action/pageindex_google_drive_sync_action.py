@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.core.annotations import attribute
@@ -18,6 +18,89 @@ from .google_drive_documents import GoogleDriveDocuments
 from .webhook_auth import get_or_create_system_user
 
 logger = logging.getLogger(__name__)
+
+_FOLDER_MIME = "application/vnd.google-apps.folder"
+
+
+def _merge_disable_ingestion_from_old(old_files: List[Dict], new_files: List[Dict]) -> None:
+    """Copy ``disable_ingestion`` from the previous tree onto the fresh Drive listing (same file ids)."""
+    old_by_id: Dict[str, Dict[str, Any]] = {}
+
+    def collect_old(items: List[Dict[str, Any]]) -> None:
+        for it in items:
+            old_by_id[it["id"]] = it
+            nested = it.get("files")
+            if nested:
+                collect_old(nested)
+
+    def apply_new(items: List[Dict[str, Any]]) -> None:
+        for it in items:
+            prev = old_by_id.get(it["id"])
+            if prev and prev.get("disable_ingestion"):
+                it["disable_ingestion"] = True
+            else:
+                it.setdefault("disable_ingestion", False)
+            nested = it.get("files")
+            if nested:
+                apply_new(nested)
+
+    collect_old(old_files)
+    apply_new(new_files)
+
+
+def _disabled_file_ids(files: List[Dict[str, Any]]) -> Set[str]:
+    """Drive file ids marked ``disable_ingestion`` (folders excluded)."""
+    out: Set[str] = set()
+
+    def walk(items: List[Dict[str, Any]]) -> None:
+        for it in items:
+            if it.get("mimeType") != _FOLDER_MIME and it.get("disable_ingestion"):
+                fid = it.get("id")
+                if fid:
+                    out.add(str(fid))
+            nested = it.get("files")
+            if nested:
+                walk(nested)
+
+    walk(files)
+    return out
+
+
+def _queue_item_file_id(item: Any, queue_key: str) -> str:
+    if not isinstance(item, dict):
+        return ""
+    if queue_key == "added" or queue_key == "removed":
+        return str(item.get("id", ""))
+    # modified: compare_files uses {"id", "old", "new"}; failures may store a plain file dict
+    if "new" in item and isinstance(item.get("new"), dict):
+        return str(item.get("new", {}).get("id", item.get("id", "")))
+    return str(item.get("id", ""))
+
+
+def _filter_queue_for_disabled(
+    items: List[Any], disabled: Set[str], queue_key: str
+) -> List[Any]:
+    return [x for x in items if _queue_item_file_id(x, queue_key) not in disabled]
+
+
+def _filter_doc_queues_for_disabled(
+    docs: Dict[str, Any], disabled: Set[str]
+) -> None:
+    for key in ("added", "modified", "removed"):
+        docs[key] = _filter_queue_for_disabled(
+            list(docs.get(key) or []), disabled, key
+        )
+
+
+def _recompute_google_drive_node_idle_status(node: Any) -> None:
+    """If no work remains in ingesting or failed queues, mark folder sync completed."""
+    ing = node.ingesting_documents
+    fd = node.failed_documents
+    pending_ingest = bool(ing["added"] or ing["modified"] or ing["removed"])
+    pending_fail = bool(fd["added"] or fd["modified"] or fd["removed"])
+    if not pending_ingest and not pending_fail:
+        node.status = "completed"
+
 
 # Per-folder locks to prevent duplicate GoogleDriveDocuments on concurrent requests
 _sync_locks: Dict[str, asyncio.Lock] = {}
@@ -43,6 +126,25 @@ async def _get_folder_lock(action_id: str, folder_id: str) -> asyncio.Lock:
         if key not in _sync_locks:
             _sync_locks[key] = asyncio.Lock()
         return _sync_locks[key]
+
+
+async def _pop_disabled_head_queues(node: Any, queues: Dict[str, Any]) -> bool:
+    """Drop disabled file ids from the front of added/modified queues; save if mutated."""
+    disabled = _disabled_file_ids(node.files)
+    changed = False
+    for key in ("added", "modified"):
+        lst = queues[key]
+        while lst:
+            fid = _queue_item_file_id(lst[0], key)
+            if fid and fid in disabled:
+                lst.pop(0)
+                changed = True
+            else:
+                break
+    if changed:
+        _recompute_google_drive_node_idle_status(node)
+        await node.save()
+    return changed
 
 
 class PageIndexGoogleDriveSyncAction(GoogleAction):
@@ -325,6 +427,19 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         for google_drive_folder in google_drive_folders:
             google_drive_folder_id = google_drive_folder.get("folder_id")
 
+            try:
+                root_meta = await google_drive_action.get_file_metadata(
+                    google_drive_folder_id, fields="id, name"
+                )
+                folder_name = str(root_meta.get("name") or "")
+            except Exception:
+                logger.warning(
+                    "Could not fetch Drive folder name for folder_id=%s",
+                    google_drive_folder_id,
+                    exc_info=True,
+                )
+                folder_name = ""
+
             files = await google_drive_action.list_files(
                 with_link=True, folder_id=google_drive_folder_id
             )
@@ -337,10 +452,13 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 )
 
                 if google_drive_documents_node:
+                    old_files = google_drive_documents_node.files
+                    _merge_disable_ingestion_from_old(old_files, files)
                     ingesting_documents = google_drive_action.compare_files(
-                        old_files=google_drive_documents_node.files, new_files=files
+                        old_files=old_files, new_files=files
                     )
                     google_drive_documents_node.files = files
+                    google_drive_documents_node.folder_name = folder_name
                     google_drive_documents_node.metadata = metadata
 
                     for key in google_drive_documents_node.ingesting_documents:
@@ -361,13 +479,25 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                                         key
                                     ].append(item)
 
+                    disabled = _disabled_file_ids(google_drive_documents_node.files)
+                    _filter_doc_queues_for_disabled(
+                        google_drive_documents_node.ingesting_documents, disabled
+                    )
+                    _filter_doc_queues_for_disabled(
+                        google_drive_documents_node.failed_documents, disabled
+                    )
+                    _recompute_google_drive_node_idle_status(google_drive_documents_node)
                     await google_drive_documents_node.save()
                 else:
+                    _merge_disable_ingestion_from_old([], files)
                     ingesting_documents = google_drive_action.compare_files(
                         old_files=[], new_files=files
                     )
+                    disabled = _disabled_file_ids(files)
+                    _filter_doc_queues_for_disabled(ingesting_documents, disabled)
                     google_drive_documents_node = await GoogleDriveDocuments.create(
                         folder_id=google_drive_folder_id,
+                        folder_name=folder_name,
                         files=files,
                         metadata=metadata,
                         ingesting_documents=ingesting_documents,
@@ -409,6 +539,10 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     continue
             else:
                 ingesting_documents = google_drive_documents_node.ingesting_documents
+
+            await _pop_disabled_head_queues(
+                google_drive_documents_node, ingesting_documents
+            )
 
             metadata = google_drive_folder.get("metadata", {})
 
@@ -559,12 +693,17 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
     async def delete_google_drive_documents(
         self, document_id: Optional[str] = None
     ) -> List[str]:
-        """Delete Google Drive document nodes; returns deleted node ids."""
+        """Delete Google Drive folder sync nodes.
+
+        When ``document_id`` is set, it is the **Google Drive folder id**
+        (``GoogleDriveDocuments.folder_id``), not the graph node id.
+        When omitted, all folder nodes for this action are deleted.
+        """
         deleted: List[str] = []
         google_drive_documents_nodes = await self.nodes(node=GoogleDriveDocuments)
         for node in google_drive_documents_nodes:
             if document_id:
-                if node.id == document_id:
+                if str(node.folder_id) == str(document_id):
                     await node.delete()
                     deleted.append(str(node.id))
             else:
@@ -572,19 +711,79 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 deleted.append(str(node.id))
         return deleted
 
+    async def set_google_drive_file_ingestion(
+        self,
+        folder_id: str,
+        file_id: str,
+        disable_ingestion: bool,
+    ) -> Dict[str, Any]:
+        """Set ``disable_ingestion`` on a file in ``files`` and drop it from queues when disabling."""
+        google_drive_documents_node = await self.node(
+            node="GoogleDriveDocuments", folder_id=folder_id
+        )
+        if not google_drive_documents_node:
+            raise ValidationError(
+                message=f"No GoogleDriveDocuments node for folder_id={folder_id}",
+                details={"folder_id": folder_id},
+            )
+
+        found = False
+
+        def walk(items: List[Dict[str, Any]]) -> None:
+            nonlocal found
+            for it in items:
+                if str(it.get("id")) == str(file_id):
+                    it["disable_ingestion"] = bool(disable_ingestion)
+                    found = True
+                nested = it.get("files")
+                if nested:
+                    walk(nested)
+
+        walk(google_drive_documents_node.files)
+        if not found:
+            raise ValidationError(
+                message=f"File id not found under folder: {file_id}",
+                details={"folder_id": folder_id, "file_id": file_id},
+            )
+
+        if disable_ingestion:
+            for q in (
+                google_drive_documents_node.ingesting_documents,
+                google_drive_documents_node.failed_documents,
+            ):
+                for key in ("added", "modified", "removed"):
+                    q[key] = [
+                        x
+                        for x in (q.get(key) or [])
+                        if _queue_item_file_id(x, key) != str(file_id)
+                    ]
+
+        _recompute_google_drive_node_idle_status(google_drive_documents_node)
+        await google_drive_documents_node.save()
+        return {
+            "folder_id": folder_id,
+            "file_id": file_id,
+            "disable_ingestion": bool(disable_ingestion),
+        }
+
     async def get_google_drive_documents(self) -> List[Dict[str, Any]]:
         """get google drive documents"""
         google_drive_documents_nodes = await self.nodes(node=GoogleDriveDocuments)
         google_drive_documents = []
         for google_drive_documents_node in google_drive_documents_nodes:
+            fid = google_drive_documents_node.folder_id
             google_drive_documents.append(
                 {
-                    "folder_id": google_drive_documents_node.folder_id,
+                    "node_id": str(google_drive_documents_node.id),
+                    "document_id": fid,
+                    "folder_id": fid,
+                    "folder_name": google_drive_documents_node.folder_name or "",
                     "ingesting_documents": google_drive_documents_node.ingesting_documents,
                     "status": google_drive_documents_node.status,
                     "active_document": google_drive_documents_node.active_document,
                     "metadata": google_drive_documents_node.metadata,
                     "files": google_drive_documents_node.files,
+                    "failed_documents": google_drive_documents_node.failed_documents,
                 }
             )
         return google_drive_documents

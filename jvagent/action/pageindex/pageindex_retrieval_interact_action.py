@@ -270,7 +270,10 @@ class PageIndexRetrievalInteractAction(InteractAction):
         for group, users in self.user_groups.items():
             if visitor.user_id in users:
                 if isinstance(mf, dict) and "access" in mf:
-                    mf["access"].append(group)
+                    if isinstance(mf["access"], list):
+                        mf["access"].append(group)
+                    else:
+                        mf["access"] = [mf["access"], group]
                 else:
                     mf = {"access": [group]}
         return mf if mf else base

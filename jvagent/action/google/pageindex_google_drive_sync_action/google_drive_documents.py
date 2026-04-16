@@ -12,6 +12,11 @@ class GoogleDriveDocuments(Node):
         description="ID of the Google Drive folder to index",
     )
 
+    folder_name: str = attribute(
+        default="",
+        description="Name of the Google Drive folder to index",
+    )
+
     files: List[Dict[str, Any]] = attribute(
         default_factory=list,
         description="The list of files and subfolder found in the folder",

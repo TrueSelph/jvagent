@@ -373,14 +373,16 @@ def get_channel_directive(
         ),
         "email": (
             "Format for Email (rendered as HTML for recipients):\n"
+            "- MUST return a complete email (not a chat response)\n"
+            "- Start with a greeting (e.g., Hi [Name], Dear [Name],)\n"
+            "- End with a closing and name (e.g., Best regards, [Your Name])\n"
             "- Bold: *text*\n"
             "- Italic: _text_\n"
             "- Bullet lists: * or - at line start (one item per line)\n"
             "- Quotes: > at line start\n"
-            "- URLs: Use raw https URLs; they are turned into clickable links\n"
-            "- Subject line is chosen by the system for replies (Re: …); focus on body\n"
-            "- Tone: Include formal greetings and closings when appropriate\n"
-            "- Style: Use formatting sparingly; keep most text plain"
+            "- URLs: Use raw https URLs; they are clickable\n"
+            "- Tone: Clear, polite, professional\n"
+            "- Style: Keep it concise; use formatting sparingly"
         ),
         "sms": (
             "Format for SMS:\n"

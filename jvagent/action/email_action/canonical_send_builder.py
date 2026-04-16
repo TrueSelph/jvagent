@@ -2,13 +2,83 @@
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
+from email.utils import getaddresses
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from jvspatial.api.exceptions import ValidationError
 
 from jvagent.action.email_action.email_action import EmailAction
 
-from .email_payload import CanonicalSendMessage, normalize_attachments_from_body
+from .email_payload import (
+    CanonicalSendMessage,
+    EmailRecipient,
+    normalize_attachments_from_body,
+)
+
+
+def _recipients_from_rfc822_address_list(hdr: str) -> List[EmailRecipient]:
+    """Parse a comma-separated RFC822 address list into ``EmailRecipient`` rows."""
+    s = (hdr or "").strip()
+    if not s:
+        return []
+    out: List[EmailRecipient] = []
+    seen: set[str] = set()
+    for name, addr in getaddresses([s]):
+        e = (addr or "").strip()
+        if not e or "@" not in e:
+            continue
+        low = e.lower()
+        if low in seen:
+            continue
+        seen.add(low)
+        nm = (name or "").strip() or None
+        out.append(EmailRecipient(email=e, name=nm))
+    return out
+
+
+def _parse_cc_recipients(data: Dict[str, Any]) -> List[EmailRecipient]:
+    """Normalize ``cc`` / ``ccRecipients`` from JSON (list, string, or single object)."""
+    raw: Any = data.get("cc")
+    if raw is None or raw == "":
+        raw = data.get("ccRecipients")
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, str):
+        return _recipients_from_rfc822_address_list(raw)
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, list):
+        # Unknown shape (e.g. number): do not fail the whole send
+        return []
+    out: List[EmailRecipient] = []
+    seen: set[str] = set()
+    for item in raw:
+        if isinstance(item, str):
+            for r in _recipients_from_rfc822_address_list(item):
+                low = r.email.lower()
+                if low not in seen:
+                    seen.add(low)
+                    out.append(r)
+            continue
+        if isinstance(item, dict):
+            email = (
+                item.get("email")
+                or item.get("Email")
+                or item.get("address")
+                or item.get("Address")
+                or ""
+            )
+            email = str(email).strip()
+            name = item.get("name") or item.get("Name")
+            name_s = str(name).strip() if name is not None else ""
+            if email and "@" in email:
+                low = email.lower()
+                if low not in seen:
+                    seen.add(low)
+                    out.append(
+                        EmailRecipient(email=email, name=name_s or None),
+                    )
+    return out
 
 
 async def resolve_outbound_sender_for_standalone_mailbox(
@@ -99,6 +169,7 @@ async def build_canonical_send_message(
         headers = None
 
     attachments = normalize_attachments_from_body(data.get("attachments"))
+    cc = _parse_cc_recipients(data)
 
     return CanonicalSendMessage(
         to_email=to,
@@ -111,6 +182,7 @@ async def build_canonical_send_message(
         reply_to=reply_to,
         headers=headers,
         attachments=attachments,
+        cc=cc,
     )
 
 
