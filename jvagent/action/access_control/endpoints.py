@@ -1,8 +1,13 @@
-"""Access Control endpoints."""
+"""REST endpoints for per-agent access control (permissions, groups, checks).
 
-import logging
-from typing import Any, Dict, List
+This module exposes admin routes scoped under ``/agents/{agent_id}/access_control``.
+Handlers resolve the agent's ``AccessControlAction`` and mutate or read its
+permissions, user groups, and allow/deny rules.
+"""
 
+from typing import Any, Dict, List, Union
+
+from fastapi import Query
 from jvspatial.api import endpoint
 from jvspatial.api.decorators import EndpointField
 from jvspatial.api.endpoints.response import ResponseField, success_response
@@ -12,23 +17,32 @@ from jvagent.core.agent import Agent
 
 from .access_control_action import AccessControlAction
 
-logger = logging.getLogger(__name__)
-
 
 async def _get_access_control(agent_id: str) -> AccessControlAction:
-    """Resolve AccessControlAction for agent. Raises if not configured."""
+    """Load the agent and return its configured ``AccessControlAction``.
+
+    Args:
+        agent_id: Agent node id.
+
+    Returns:
+        The access control action for that agent.
+
+    Raises:
+        ResourceNotFoundError: If the agent or its access control action is missing.
+    """
     agent = await Agent.get(agent_id)
     if not agent:
-        raise ResourceNotFoundError(f"Agent not found: {agent_id}")
+        raise ResourceNotFoundError(
+            message=f"Agent '{agent_id}' not found",
+            details={"agent_id": agent_id},
+        )
     action = await agent.get_access_control_action()
     if not action:
         raise ResourceNotFoundError(
-            f"AccessControlAction not configured for agent: {agent_id}"
+            message=f"Access control is not configured for agent '{agent_id}'",
+            details={"agent_id": agent_id},
         )
     return action
-
-
-# All endpoints are agent-scoped (AccessControlAction is singleton per agent)
 
 
 @endpoint(
@@ -40,27 +54,62 @@ async def _get_access_control(agent_id: str) -> AccessControlAction:
     response=success_response(
         data={
             "config": ResponseField(
-                field_type=dict,
-                description="Access control configuration",
+                field_type=Union[str, Dict[str, Any]],
+                description="Configuration as a JSON object, or YAML text when format is yaml",
+                example={
+                    "permissions": {
+                        "default": {
+                            "any": {
+                                "allow": [{"group": "all", "enabled": True}],
+                                "deny": [],
+                            }
+                        }
+                    },
+                    "user_groups": {"staff": ["user_1", "user_2"]},
+                    "enforce": True,
+                },
+            ),
+            "format": ResponseField(
+                field_type=str,
+                description="Serialization of config: json (object) or yaml (string)",
+                example="json",
             ),
         }
     ),
 )
 async def agent_export_config_endpoint(
     agent_id: str,
-    format: str = "json",
+    format: str = Query(
+        "json",
+        description="Export as structured JSON (object) or YAML (string)",
+    ),
 ) -> Dict[str, Any]:
-    """Export access control configuration for agent."""
+    """Export access control configuration for an agent.
+
+    Args:
+        agent_id: Agent id from the path.
+        format: Query parameter ``json`` (default) or ``yaml``.
+
+    Returns:
+        ``config`` plus ``format`` indicating how ``config`` is encoded.
+
+    Raises:
+        ResourceNotFoundError: If the agent or access control action is missing.
+        ValidationError: If ``format`` is ``yaml`` but PyYAML is not installed.
+    """
     action = await _get_access_control(agent_id)
     config = action.export_config()
-    if format.lower() == "yaml":
+    fmt = format.lower()
+    if fmt == "yaml":
         try:
             import yaml
-
-            config_str = yaml.dump(config, default_flow_style=False)
-            return {"config": config_str, "format": "yaml"}
-        except ImportError:
-            logger.warning("PyYAML not available, falling back to JSON")
+        except ImportError as e:
+            raise ValidationError(
+                message="YAML export requires the PyYAML package",
+                details={"format": "yaml"},
+            ) from e
+        config_str = yaml.dump(config, default_flow_style=False)
+        return {"config": config_str, "format": "yaml"}
     return {"config": config, "format": "json"}
 
 
@@ -74,7 +123,8 @@ async def agent_export_config_endpoint(
         data={
             "message": ResponseField(
                 field_type=str,
-                description="Result message",
+                description="Confirmation that permissions were replaced",
+                example="Permissions replaced successfully",
             ),
         }
     ),
@@ -84,15 +134,26 @@ async def agent_replace_config_endpoint(
     permissions: Dict[str, Any] = EndpointField(
         description="Permissions structure: channel -> action_label -> allow/deny rules"
     ),
-) -> Dict[str, str]:
-    """Replace access control permissions for agent.
+) -> Dict[str, Any]:
+    """Replace the permissions tree for the agent (user_groups and exceptions unchanged).
 
-    Resolves AccessControlAction from agent_id (no start_node). Replaces the
-    permissions dictionary entirely. user_groups and exceptions are preserved.
+    Args:
+        agent_id: Agent id from the path.
+        permissions: Full permissions object from the JSON body.
+
+    Returns:
+        A short confirmation message.
+
+    Raises:
+        ResourceNotFoundError: If the agent or access control action is missing.
+        ValidationError: If ``permissions`` is not a JSON object.
     """
     action = await _get_access_control(agent_id)
     if not isinstance(permissions, dict):
-        raise ValidationError("permissions must be a JSON object")
+        raise ValidationError(
+            message="permissions must be a JSON object",
+            details={"field": "permissions"},
+        )
     action.permissions = permissions
     await action.save()
     return {"message": "Permissions replaced successfully"}
@@ -108,7 +169,8 @@ async def agent_replace_config_endpoint(
         data={
             "message": ResponseField(
                 field_type=str,
-                description="Result message",
+                description="Confirmation that permissions were merged",
+                example="Permissions merged successfully",
             ),
         }
     ),
@@ -118,15 +180,26 @@ async def agent_merge_config_endpoint(
     permissions: Dict[str, Any] = EndpointField(
         description="Permissions structure to merge: channel -> action_label -> allow/deny rules"
     ),
-) -> Dict[str, str]:
-    """Merge access control permissions for agent.
+) -> Dict[str, Any]:
+    """Merge permissions into the existing configuration (channel-level merge).
 
-    Resolves AccessControlAction from agent_id (no start_node). Merges the
-    provided permissions into existing (channel-level merge).
+    Args:
+        agent_id: Agent id from the path.
+        permissions: Partial permissions object from the JSON body.
+
+    Returns:
+        A short confirmation message.
+
+    Raises:
+        ResourceNotFoundError: If the agent or access control action is missing.
+        ValidationError: If ``permissions`` is not a JSON object.
     """
     action = await _get_access_control(agent_id)
     if not isinstance(permissions, dict):
-        raise ValidationError("permissions must be a JSON object")
+        raise ValidationError(
+            message="permissions must be a JSON object",
+            details={"field": "permissions"},
+        )
     await action.import_config({"permissions": permissions}, purge=False)
     return {"message": "Permissions merged successfully"}
 
@@ -141,7 +214,7 @@ async def agent_merge_config_endpoint(
         data={
             "has_access": ResponseField(
                 field_type=bool,
-                description="Whether the user has access",
+                description="Whether the user is allowed the action on the channel",
                 example=True,
             ),
         }
@@ -152,8 +225,21 @@ async def agent_check_access_endpoint(
     user_id: str,
     action_label: str = "all",
     channel: str = "default",
-) -> Dict[str, bool]:
-    """Check if user has access to action for agent."""
+) -> Dict[str, Any]:
+    """Evaluate whether a user may run an action on a channel.
+
+    Args:
+        agent_id: Agent id from the path.
+        user_id: Subject user id (JSON body).
+        action_label: Action label to check (body; default ``all``).
+        channel: Channel name (body; default ``default``).
+
+    Returns:
+        ``has_access`` boolean from the access control rules.
+
+    Raises:
+        ResourceNotFoundError: If the agent or access control action is missing.
+    """
     action = await _get_access_control(agent_id)
     has_access = await action.has_action_access(user_id, action_label, channel)
     return {"has_access": has_access}
@@ -169,7 +255,8 @@ async def agent_check_access_endpoint(
         data={
             "message": ResponseField(
                 field_type=str,
-                description="Result message",
+                description="Confirmation that the group was created",
+                example="Group 'staff' created",
             ),
         }
     ),
@@ -178,8 +265,20 @@ async def agent_create_user_group_endpoint(
     agent_id: str,
     name: str,
     user_ids: List[str] = EndpointField(default_factory=list),
-) -> Dict[str, str]:
-    """Create user group for agent."""
+) -> Dict[str, Any]:
+    """Create a named user group (optional initial member ids).
+
+    Args:
+        agent_id: Agent id from the path.
+        name: Group name (JSON body).
+        user_ids: Initial member ids (body; may be empty).
+
+    Returns:
+        A short confirmation message.
+
+    Raises:
+        ResourceNotFoundError: If the agent or access control action is missing.
+    """
     action = await _get_access_control(agent_id)
     await action.add_user_group(name, user_ids or None)
     return {"message": f"Group '{name}' created"}
@@ -195,7 +294,8 @@ async def agent_create_user_group_endpoint(
         data={
             "message": ResponseField(
                 field_type=str,
-                description="Result message",
+                description="Confirmation including how many users were added",
+                example="Added 2 user(s) to group 'staff'",
             ),
         }
     ),
@@ -204,8 +304,20 @@ async def agent_add_users_to_group_endpoint(
     agent_id: str,
     group: str,
     user_ids: List[str] = EndpointField(),
-) -> Dict[str, str]:
-    """Add user(s) to group."""
+) -> Dict[str, Any]:
+    """Add users to an existing group.
+
+    Args:
+        agent_id: Agent id from the path.
+        group: Group name from the path.
+        user_ids: User ids to add (JSON body).
+
+    Returns:
+        A short confirmation message.
+
+    Raises:
+        ResourceNotFoundError: If the agent or access control action is missing.
+    """
     action = await _get_access_control(agent_id)
     await action.add_users_to_group(group, user_ids)
     return {"message": f"Added {len(user_ids)} user(s) to group '{group}'"}
@@ -221,7 +333,8 @@ async def agent_add_users_to_group_endpoint(
         data={
             "message": ResponseField(
                 field_type=str,
-                description="Result message",
+                description="Confirmation that users were removed from the group",
+                example="Removed user(s) from group 'staff'",
             ),
         }
     ),
@@ -230,8 +343,20 @@ async def agent_remove_users_from_group_endpoint(
     agent_id: str,
     group: str,
     user_ids: List[str] = EndpointField(),
-) -> Dict[str, str]:
-    """Remove user(s) from group."""
+) -> Dict[str, Any]:
+    """Remove users from a group (one removal per id in ``user_ids``).
+
+    Args:
+        agent_id: Agent id from the path.
+        group: Group name from the path.
+        user_ids: User ids to remove (JSON body).
+
+    Returns:
+        A short confirmation message.
+
+    Raises:
+        ResourceNotFoundError: If the agent or access control action is missing.
+    """
     action = await _get_access_control(agent_id)
     for uid in user_ids:
         await action.remove_user_from_group(group, uid)
@@ -248,7 +373,8 @@ async def agent_remove_users_from_group_endpoint(
         data={
             "message": ResponseField(
                 field_type=str,
-                description="Result message",
+                description="Confirmation that the group was deleted",
+                example="Group 'staff' removed",
             ),
         }
     ),
@@ -256,8 +382,19 @@ async def agent_remove_users_from_group_endpoint(
 async def agent_remove_user_group_endpoint(
     agent_id: str,
     group: str,
-) -> Dict[str, str]:
-    """Remove user group."""
+) -> Dict[str, Any]:
+    """Delete a user group.
+
+    Args:
+        agent_id: Agent id from the path.
+        group: Group name from the path.
+
+    Returns:
+        A short confirmation message.
+
+    Raises:
+        ResourceNotFoundError: If the agent or access control action is missing.
+    """
     action = await _get_access_control(agent_id)
     await action.remove_user_group(group)
     return {"message": f"Group '{group}' removed"}
@@ -272,14 +409,25 @@ async def agent_remove_user_group_endpoint(
     response=success_response(
         data={
             "user_groups": ResponseField(
-                field_type=dict,
-                description="Group name to user IDs mapping",
+                field_type=Dict[str, List[str]],
+                description="Map of group name to member user ids",
+                example={"staff": ["user_7b2", "user_9aa"], "beta": ["user_1"]},
             ),
         }
     ),
 )
 async def agent_list_user_groups_endpoint(agent_id: str) -> Dict[str, Any]:
-    """List user groups and members."""
+    """List all user groups and their members.
+
+    Args:
+        agent_id: Agent id from the path.
+
+    Returns:
+        ``user_groups`` mapping.
+
+    Raises:
+        ResourceNotFoundError: If the agent or access control action is missing.
+    """
     action = await _get_access_control(agent_id)
     return {"user_groups": action.get_user_groups()}
 
@@ -294,7 +442,8 @@ async def agent_list_user_groups_endpoint(agent_id: str) -> Dict[str, Any]:
         data={
             "message": ResponseField(
                 field_type=str,
-                description="Result message",
+                description="Confirmation that an allow/deny rule was added",
+                example="Permission added",
             ),
         }
     ),
@@ -306,10 +455,29 @@ async def agent_add_permission_endpoint(
     user_id: str = EndpointField(default=""),
     group: str = EndpointField(default=""),
     allow: bool = True,
-) -> Dict[str, str]:
-    """Add user or group to allow/deny for channel+action."""
+) -> Dict[str, Any]:
+    """Add a user or group to allow or deny for a channel and action label.
+
+    Args:
+        agent_id: Agent id from the path.
+        channel: Channel (body; default ``default``).
+        action_label: Action label (body; default ``all``).
+        user_id: User id when targeting a user (body).
+        group: Group name when targeting a group (body).
+        allow: If True, add to allow list; otherwise to deny (body).
+
+    Returns:
+        A short confirmation message.
+
+    Raises:
+        ResourceNotFoundError: If the agent or access control action is missing.
+        ValidationError: If neither ``user_id`` nor ``group`` is set.
+    """
     if not user_id and not group:
-        raise ValidationError("Either user_id or group must be provided")
+        raise ValidationError(
+            message="Either user_id or group must be provided",
+            details={"user_id": user_id, "group": group},
+        )
     action = await _get_access_control(agent_id)
     if user_id:
         if allow:
@@ -334,7 +502,8 @@ async def agent_add_permission_endpoint(
         data={
             "message": ResponseField(
                 field_type=str,
-                description="Result message",
+                description="Confirmation that a rule was removed from allow or deny",
+                example="Permission removed",
             ),
         }
     ),
@@ -346,10 +515,29 @@ async def agent_remove_permission_endpoint(
     user_id: str = EndpointField(default=""),
     group: str = EndpointField(default=""),
     from_allow: bool = True,
-) -> Dict[str, str]:
-    """Remove user or group from allow/deny for channel+action."""
+) -> Dict[str, Any]:
+    """Remove a user or group from allow or deny for a channel and action label.
+
+    Args:
+        agent_id: Agent id from the path.
+        channel: Channel (body; default ``default``).
+        action_label: Action label (body; default ``all``).
+        user_id: User id when targeting a user (body).
+        group: Group name when targeting a group (body).
+        from_allow: If True, remove from allow list; otherwise from deny (body).
+
+    Returns:
+        A short confirmation message.
+
+    Raises:
+        ResourceNotFoundError: If the agent or access control action is missing.
+        ValidationError: If neither ``user_id`` nor ``group`` is set.
+    """
     if not user_id and not group:
-        raise ValidationError("Either user_id or group must be provided")
+        raise ValidationError(
+            message="Either user_id or group must be provided",
+            details={"user_id": user_id, "group": group},
+        )
     action = await _get_access_control(agent_id)
     if user_id:
         await action.remove_user_from_permission(

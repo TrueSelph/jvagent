@@ -470,16 +470,19 @@ async def interact_endpoint(
     **Request Scenarios:**
 
     1. **First message** (no user_id, no session_id):
-       Creates User + Conversation, returns both IDs
+       Creates User + Conversation with a generated session_id; returns both IDs
 
-    2. **Continue conversation** (session_id only):
-       Uses existing Conversation, returns user_id from session
+    2. **session_id only** (custom or existing):
+       If a Conversation exists for that id: resume it and return its user_id.
+       Otherwise: create an anonymous User and a new Conversation using that ``session_id``
 
     3. **New conversation for existing user** (user_id only):
-       Gets/Creates User, creates new Conversation, returns new session_id
+       Gets/Creates User, creates new Conversation with a generated session_id
 
-    4. **Both provided** (user_id + session_id):
-       Validates they match, uses existing Conversation
+    4. **Both** (user_id + session_id):
+       Gets/Creates User. If no Conversation exists for ``session_id``: create one for
+       that user with your ``session_id``. If it exists: validate it belongs to
+       ``user_id``, then resume
 
 
     **Args:**
@@ -488,7 +491,7 @@ async def interact_endpoint(
     - utterance: User's input text
     - channel: Communication channel (default, whatsapp, etc.). default = web.
     - data: Optional dictionary payload
-    - session_id: Optional session identifier to continue conversation
+    - session_id: Optional session id (continue an existing session or pin a new one)
     - user_id: Optional user identifier
     - stream: If True, return SSE stream; if False, return consolidated response
 
