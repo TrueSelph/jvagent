@@ -7,7 +7,10 @@ MCPClientWrapper.call_tool() directly for deterministic LLM-driven dispatch.
 
 import asyncio
 import fnmatch
+import importlib.util
 import logging
+import os
+import sys
 import time
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
@@ -57,22 +60,25 @@ class ToolExecutor:
         skill: Any = None,
         allowed_tool_patterns: Optional[List[str]] = None,
         denied_tool_patterns: Optional[List[str]] = None,
+        local_tools_paths: Optional[List[str]] = None,
     ) -> None:
         """Discover and register all available tools.
 
         1. Find MCPAction instances by server_name from the agent graph
         2. Call list_tools() on each MCP client -> register as ToolDefinition
         3. Register any local Python tool handlers
-        4. If skill provided, filter via skill.get_tool_filter()
-        5. Apply allowed/denied tool pattern filters
-        6. Build ToolManager with all registered tools
+        4. If local_tools_path provided, scan directory for tools
+        5. If skill provided, filter via skill.get_tool_filter()
+        6. Apply allowed/denied tool pattern filters
+        7. Build ToolManager with all registered tools
 
         Args:
             visitor: The InteractWalker (provides agent access).
             tool_servers: Names of MCPAction instances to use.
             skill: Optional SkillAction for tool filtering.
-            allowed_tool_patterns: Glob patterns for tool names to allow.
-            denied_tool_patterns: Glob patterns for tool names to deny.
+            allowed_tool_patterns: Glob patterns for tool name to allow.
+            denied_tool_patterns: Glob patterns for tool name to deny.
+            local_tools_paths: Optional list of folders to scan for .py tools.
         """
         tool_servers = tool_servers or []
 
@@ -87,6 +93,19 @@ class ToolExecutor:
                     e,
                     exc_info=True,
                 )
+
+        # Register tools from local directories
+        if local_tools_paths:
+            for path in local_tools_paths:
+                try:
+                    self._discover_local_tools(path)
+                except Exception as e:
+                    logger.error(
+                        "ToolExecutor: failed to discover tools in '%s': %s",
+                        path,
+                        e,
+                        exc_info=True,
+                    )
 
         # Apply skill tool filter
         if skill is not None:
@@ -181,6 +200,92 @@ class ToolExecutor:
             except ValueError as e:
                 logger.warning("ToolExecutor: skipping MCP tool '%s': %s", name, e)
 
+    def _discover_local_tools(self, path: str) -> None:
+        """Scan a directory for .py files and register them as tools.
+
+        Expected format in each .py file:
+        - get_tool_definition() -> dict: Returns OpenAI-format tool definition.
+        - execute(arguments: dict) -> Any: Async function implementing the tool.
+
+        Args:
+            path: Absolute path to the tools directory.
+        """
+        if not os.path.isdir(path):
+            logger.warning("ToolExecutor: local_tools_path '%s' is not a directory", path)
+            return
+
+        logger.info("ToolExecutor: scanning for local tools in '%s'", path)
+
+        for filename in os.listdir(path):
+            if filename.startswith("_") or not filename.endswith(".py"):
+                continue
+
+            name = filename[:-3]  # Remove .py
+            file_path = os.path.join(path, filename)
+
+            try:
+                # Dynamic import
+                spec = importlib.util.spec_from_file_location(name, file_path)
+                if not spec or not spec.loader:
+                    continue
+
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[name] = module
+                spec.loader.exec_module(module)
+
+                # Check for required functions
+                get_def = getattr(module, "get_tool_definition", None)
+                handler = getattr(module, "execute", None)
+
+                if not get_def or not handler:
+                    logger.debug(
+                        "ToolExecutor: file '%s' missing get_tool_definition or execute",
+                        filename,
+                    )
+                    continue
+
+                tool_def_dict = get_def()
+                if not isinstance(tool_def_dict, dict):
+                    logger.warning(
+                        "ToolExecutor: %s.get_tool_definition() did not return dict",
+                        name,
+                    )
+                    continue
+                tool_name = tool_def_dict.get("function", {}).get("name")
+                if not tool_name:
+                    tool_name = tool_def_dict.get("name")
+
+                if not tool_name:
+                    logger.warning("ToolExecutor: tool in %s missing name", filename)
+                    continue
+
+                self.register_dynamic_tool(tool_name, tool_def_dict, handler)
+
+            except Exception as e:
+                logger.error(
+                    "ToolExecutor: failed to load tool from '%s': %s",
+                    filename,
+                    e,
+                    exc_info=True,
+                )
+
+    def register_dynamic_tool(self, name: str, tool_def_dict: Dict[str, Any], handler: Callable) -> None:
+        """Register a dynamic functional tool (like a locally discovered or runtime-generated tool)."""
+        description = tool_def_dict.get("function", {}).get("description") or tool_def_dict.get("description", "")
+        parameters = tool_def_dict.get("function", {}).get("parameters") or tool_def_dict.get("parameters", {"type": "object", "properties": {}})
+
+        try:
+            self._tool_manager.register_tool(
+                name=name,
+                description=description,
+                parameters=parameters,
+            )
+            self._handlers[name] = ("local", handler)
+            logger.debug("ToolExecutor: registered dynamic tool '%s'", name)
+        except ValueError as e:
+            logger.warning("ToolExecutor: skipping dynamic tool '%s': %s", name, e)
+
+
     def _apply_pattern_filters(
         self,
         allowed_patterns: Optional[List[str]] = None,
@@ -253,7 +358,7 @@ class ToolExecutor:
 
         async def _dispatch_one(call: ToolCall) -> Dict[str, Any]:
             async with semaphore:
-                return await self._dispatch_single(call)
+                return await self._dispatch_single(call, visitor=visitor)
 
         results = await asyncio.gather(
             *[_dispatch_one(call) for call in parsed_calls],
@@ -261,11 +366,12 @@ class ToolExecutor:
         )
         return list(results)
 
-    async def _dispatch_single(self, call: ToolCall) -> Dict[str, Any]:
+    async def _dispatch_single(self, call: ToolCall, visitor: Any = None) -> Dict[str, Any]:
         """Dispatch a single tool call with validation and timeout.
 
         Args:
             call: The ToolCall to dispatch.
+            visitor: Optional InteractWalker for context.
 
         Returns:
             Tool result message dict.
@@ -296,7 +402,7 @@ class ToolExecutor:
                 )
             elif kind == "local":
                 result_text = await asyncio.wait_for(
-                    self._dispatch_local_tool(call, handler),
+                    self._dispatch_local_tool(call, handler, visitor=visitor),
                     timeout=self.call_timeout,
                 )
             else:
@@ -358,17 +464,28 @@ class ToolExecutor:
             raise ToolDispatchError(text)
         return text
 
-    async def _dispatch_local_tool(self, call: ToolCall, handler: Callable) -> str:
+    async def _dispatch_local_tool(
+        self, call: ToolCall, handler: Callable, visitor: Any = None
+    ) -> str:
         """Execute a local Python tool call.
 
         Args:
             call: The ToolCall.
             handler: The async callable.
+            visitor: Optional InteractWalker for context.
 
         Returns:
             Tool result as string.
         """
-        result = await handler(call.arguments)
+        import inspect
+
+        # Check if handler accepts visitor
+        sig = inspect.signature(handler)
+        if "visitor" in sig.parameters:
+            result = await handler(call.arguments, visitor=visitor)
+        else:
+            result = await handler(call.arguments)
+
         if isinstance(result, str):
             return result
         import json

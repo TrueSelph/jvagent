@@ -170,7 +170,7 @@ class TaskCreationInteractAction(InteractAction):
             # Robust task retrieval
             active_tasks = []
             if hasattr(conversation, "get_active_tasks"):
-                active_tasks = await conversation.get_active_tasks(status="active")
+                active_tasks = conversation.get_active_tasks(status="active")
             elif hasattr(conversation, "active_tasks"):
                 active_tasks = [t for t in conversation.active_tasks if t.get("status") == "active"]
 

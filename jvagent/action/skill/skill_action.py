@@ -7,6 +7,7 @@ Skills are defined in agent.yaml like any other action and persisted in the grap
 
 import fnmatch
 import logging
+import os
 from typing import Any, Dict, List, Optional, Set
 
 from jvspatial.core.annotations import attribute
@@ -51,6 +52,10 @@ class SkillAction(Action):
     system_prompt_template: str = attribute(
         default="",
         description="System prompt template with {variables}",
+    )
+    system_prompt_path: str = attribute(
+        default="",
+        description="Optional absolute path to a .md or .txt file containing the system prompt template",
     )
     prompt_variables: Dict[str, str] = attribute(
         default_factory=dict,
@@ -118,6 +123,9 @@ class SkillAction(Action):
     def compose_system_prompt(self, variables: Optional[Dict[str, str]] = None) -> str:
         """Render system_prompt_template with merged variables.
 
+        If system_prompt_path is provided, it reads the template from the file
+        first. Otherwise it uses system_prompt_template.
+
         Args:
             variables: Optional override variables. Merged with
                 self.prompt_variables (caller takes precedence).
@@ -125,16 +133,36 @@ class SkillAction(Action):
         Returns:
             Rendered system prompt string.
         """
+        template = self.system_prompt_template
+
+        # Load from path if provided
+        if self.system_prompt_path:
+            if os.path.exists(self.system_prompt_path):
+                try:
+                    with open(self.system_prompt_path, "r", encoding="utf-8") as f:
+                        template = f.read()
+                except Exception as e:
+                    logger.error(
+                        "SkillAction: failed to read system_prompt_path '%s': %s",
+                        self.system_prompt_path,
+                        e,
+                    )
+            else:
+                logger.warning(
+                    "SkillAction: system_prompt_path '%s' does not exist",
+                    self.system_prompt_path,
+                )
+
         merged = {**self.prompt_variables, **(variables or {})}
         try:
-            return self.system_prompt_template.format(**merged)
+            return template.format(**merged)
         except KeyError as e:
             logger.warning(
                 "SkillAction: missing variable %s in template for skill '%s'",
                 e,
                 self.skill_name,
             )
-            return self.system_prompt_template
+            return template
 
     def compose_utterance(self, raw_utterance: str) -> str:
         """Wrap user utterance with prepend/append and skill context.

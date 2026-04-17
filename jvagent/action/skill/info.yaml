@@ -1,5 +1,5 @@
 package:
-  name: jvagent/skill
+  name: jvagent/skill_action
   author: jvagent
   archetype: SkillAction
   version: 0.0.1
