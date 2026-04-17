@@ -70,7 +70,7 @@ async def test_get_session_scoped_to_memory(test_db):
     u2 = await m2.get_user("dave", create_if_missing=True)
     c2 = await u2.create_conversation(channel="default")
 
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(ValueError, match="not accessible from this agent"):
         await m1.get_session(user_id=None, session_id=c2.session_id, channel="default")
 
 

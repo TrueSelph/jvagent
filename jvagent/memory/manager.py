@@ -1,6 +1,5 @@
 """Memory manager node for agent memory, user, and conversation management."""
 
-import asyncio
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
@@ -209,6 +208,25 @@ class Memory(Node):
             return conversation
         return None
 
+    async def _resolve_conversation_for_session_or_raise_foreign(
+        self, session_id: str
+    ) -> Optional["Conversation"]:
+        """Return Conversation under this Memory, or None if no row exists.
+
+        If a Conversation with this session_id exists but is not owned by this
+        Memory, raises ValueError (session_id is globally unique).
+        """
+        from jvagent.memory.conversation import Conversation
+
+        conversation = await Conversation.find_one({"context.session_id": session_id})
+        if not conversation:
+            return None
+        if not await self._conversation_belongs_to_memory(conversation):
+            raise ValueError(
+                f"Session '{session_id}' is not accessible from this agent"
+            )
+        return conversation
+
     async def get_agent(self) -> Optional[Any]:
         """Get the Agent node this Memory belongs to.
 
@@ -300,9 +318,13 @@ class Memory(Node):
 
         Handles four scenarios for user/session resolution:
         1. No user_id, no session_id → Create new User + Conversation (new_user=True)
-        2. session_id only → Lookup existing Conversation, get associated User (new_user=False)
+        2. session_id only → Resume if Conversation exists under this Memory; otherwise create anonymous User + Conversation with that session_id (new_user=True).
+           If the session_id exists only under another Memory, raises ValueError.
         3. user_id only → Get/Create User, create new Conversation (new_user=True if User was created)
-        4. Both provided → Validate session belongs to user, return both (new_user=False)
+        4. Both provided → Get/Create User; resume or create Conversation with that
+           session_id under this Memory. new_user reflects whether User was created.
+           Validates ownership when the Conversation already exists. Foreign session_id
+           raises ValueError (same as case 2).
 
         First-time users are determined by whether a User node is newly created,
         regardless of whether a user_id is provided.
@@ -318,9 +340,8 @@ class Memory(Node):
 
         Raises:
             RuntimeError: If user creation/lookup fails
-            ValueError: If session not found or validation fails
+            ValueError: If session is foreign to this Memory, or validation fails
         """
-        from jvagent.memory.conversation import Conversation
         from jvagent.memory.user import User
 
         # Case 1: No IDs - create new user and conversation
@@ -337,11 +358,23 @@ class Memory(Node):
             conversation = await user.create_conversation(channel=channel)
             return user, conversation, new_user_id, conversation.session_id, True
 
-        # Case 2: session_id only - lookup conversation
+        # Case 2: session_id only - resume or create under this Memory
         if session_id and not user_id:
-            conversation = await self.get_conversation_by_session(session_id)
+            conversation = await self._resolve_conversation_for_session_or_raise_foreign(
+                session_id
+            )
             if not conversation:
-                raise ValueError(f"Session '{session_id}' not found")
+                new_user_id = f"user_{uuid.uuid4().hex[:16]}"
+                user = await self.get_user(new_user_id, create_if_missing=True)
+                if not user:
+                    raise RuntimeError("Failed to create user")
+                if user_name:
+                    await user.set_name(user_name)
+                conversation = await user.create_conversation(
+                    session_id=session_id, channel=channel
+                )
+                return user, conversation, new_user_id, session_id, True
+
             user = await self.get_user(conversation.user_id, create_if_missing=False)
             if not user:
                 raise RuntimeError(f"User for session '{session_id}' not found")
@@ -379,23 +412,37 @@ class Memory(Node):
             conversation = await user.create_conversation(channel=channel)
             return user, conversation, user_id, conversation.session_id, is_new_user
 
-        # Case 4: Both provided - validate and use
-        # Parallelize conversation and user lookups since they're independent
+        # Case 4: Both provided - get/create user; resume or create conversation
         if user_id and session_id:
-            conversation_task = self.get_conversation_by_session(session_id)
-            user_task = self.get_user(user_id, create_if_missing=False)
-            conversation, user = await asyncio.gather(conversation_task, user_task)
+            existing_user = await self.node(node=User, user_id=user_id)
+            if (
+                existing_user
+                and existing_user.memory_id
+                and existing_user.memory_id != self.id
+            ):
+                existing_user = None
+            is_new_user = existing_user is None
 
-            if not conversation:
-                raise ValueError(f"Session '{session_id}' not found")
+            user = await self.get_user(user_id, create_if_missing=True)
             if not user:
-                raise RuntimeError(f"User '{user_id}' not found")
+                raise RuntimeError(f"Failed to get/create user '{user_id}'")
+
+            conversation = await self._resolve_conversation_for_session_or_raise_foreign(
+                session_id
+            )
+            if not conversation:
+                if user_name and (is_new_user or not user.name or user.name == "user"):
+                    await user.set_name(user_name)
+                conversation = await user.create_conversation(
+                    session_id=session_id, channel=channel
+                )
+                return user, conversation, user_id, session_id, is_new_user
+
             if conversation.user_id != user_id:
                 raise ValueError(
                     f"Session '{session_id}' does not belong to user '{user_id}'"
                 )
 
-            # Update name if provided and not set
             if user_name and (not user.name or user.name == "user"):
                 await user.set_name(user_name)
 
