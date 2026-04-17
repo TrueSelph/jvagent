@@ -268,7 +268,7 @@ class PageIndexRetrievalInteractAction(InteractAction):
             return base
         mf = copy.deepcopy(base) if base is not None else {}
         for group, users in self.user_groups.items():
-            if visitor.user_id in users:
+            if visitor.user_id in users or visitor.session_id in users:
                 if isinstance(mf, dict) and "access" in mf:
                     if isinstance(mf["access"], list):
                         mf["access"].append(group)
