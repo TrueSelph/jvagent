@@ -85,6 +85,108 @@ export function upsertSavedCredential(cred: Omit<SavedCredential, 'id' | 'create
   return addSavedCredential(cred)
 }
 
+/** Portable account row for JSON export/import (no id / createdAt). */
+export type SavedCredentialPortable = Pick<
+  SavedCredential,
+  'serverUrl' | 'email' | 'password'
+> & { name?: string }
+
+const SAVED_ACCOUNTS_EXPORT_VERSION = 1 as const
+
+export interface SavedAccountsExportFile {
+  jvchatSavedAccounts: typeof SAVED_ACCOUNTS_EXPORT_VERSION
+  exportedAt: string
+  accounts: SavedCredentialPortable[]
+}
+
+function newSavedCredentialId(): string {
+  return `cred_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
+}
+
+export function buildSavedAccountsExportJson(): string {
+  const accounts: SavedCredentialPortable[] = getSavedCredentials().map((c) => ({
+    serverUrl: c.serverUrl,
+    email: c.email,
+    password: c.password,
+    ...(c.name ? { name: c.name } : {}),
+  }))
+  const payload: SavedAccountsExportFile = {
+    jvchatSavedAccounts: SAVED_ACCOUNTS_EXPORT_VERSION,
+    exportedAt: new Date().toISOString(),
+    accounts,
+  }
+  return JSON.stringify(payload, null, 2)
+}
+
+function normalizePortableEntry(
+  raw: unknown,
+): { ok: true; item: SavedCredentialPortable } | { ok: false } {
+  if (!raw || typeof raw !== 'object') return { ok: false }
+  const o = raw as Record<string, unknown>
+  const serverUrl = typeof o.serverUrl === 'string' ? o.serverUrl.trim() : ''
+  const email = typeof o.email === 'string' ? o.email.trim() : ''
+  const password = typeof o.password === 'string' ? o.password : ''
+  const nameRaw = typeof o.name === 'string' ? o.name.trim() : ''
+  const name = nameRaw || undefined
+  if (!serverUrl || !email || !password) return { ok: false }
+  return { ok: true, item: { serverUrl, email, password, name } }
+}
+
+export function parseSavedAccountsImport(
+  text: string,
+):
+  | { ok: true; accounts: SavedCredentialPortable[] }
+  | { ok: false; error: string } {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return { ok: false, error: 'Invalid JSON file.' }
+  }
+
+  let rows: unknown[] = []
+  if (Array.isArray(parsed)) {
+    rows = parsed
+  } else if (parsed && typeof parsed === 'object') {
+    const o = parsed as Record<string, unknown>
+    if (Array.isArray(o.accounts)) rows = o.accounts
+    else if (Array.isArray(o.savedAccounts)) rows = o.savedAccounts
+  }
+
+  const accounts: SavedCredentialPortable[] = []
+  for (const row of rows) {
+    const n = normalizePortableEntry(row)
+    if (n.ok) accounts.push(n.item)
+  }
+  if (accounts.length === 0) {
+    return { ok: false, error: 'No valid accounts found in file.' }
+  }
+  return { ok: true, accounts }
+}
+
+export function importSavedAccountsPortable(
+  accounts: SavedCredentialPortable[],
+  mode: 'merge' | 'replace',
+): void {
+  if (typeof window === 'undefined') return
+  if (mode === 'replace') {
+    const base = Date.now()
+    const next: SavedCredential[] = accounts.map((a, i) => ({
+      serverUrl: a.serverUrl,
+      email: a.email,
+      password: a.password,
+      name: a.name,
+      id: newSavedCredentialId(),
+      createdAt: base + i,
+    }))
+    localStorage.setItem(SAVED_CREDENTIALS_KEY, JSON.stringify(next))
+    return
+  }
+  for (const a of accounts) {
+    upsertSavedCredential(a)
+  }
+}
+
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null
   return localStorage.getItem(TOKEN_KEY)
