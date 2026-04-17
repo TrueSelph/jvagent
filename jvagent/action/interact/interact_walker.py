@@ -7,6 +7,8 @@ for agent interactions, replacing the PersonaAction interact endpoint.
 from __future__ import annotations
 
 import logging
+import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core import Walker, on_visit
@@ -30,6 +32,18 @@ else:
     from jvagent.memory.conversation import Conversation
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class InteractionInitResult:
+    """Outcome of :meth:`InteractWalker.initialize_interaction` (HTTP / programmatic startup).
+
+    ``code`` is machine-readable; ``detail`` is for logs only (may contain internal errors).
+    """
+
+    ok: bool
+    code: str
+    detail: Optional[str] = None
 
 
 class InteractWalker(Walker):
@@ -244,6 +258,205 @@ class InteractWalker(Walker):
         await self._apply_access_denied_to_interaction(here, action_label)
         return False
 
+    async def _bootstrap_interaction(self, here: "Agent") -> str:
+        """Resolve session, enforce entry access control, create Interaction.
+
+        Preconditions: ``self._agent`` is set to ``here`` by caller.
+
+        Returns:
+            Machine-readable outcome: ``ok``, ``no_memory``, ``access_denied``,
+            or ``init_error``.
+        """
+        t_start = time.perf_counter()
+        memory = await here.get_memory()
+        if not memory:
+            await self.report({"error": "Agent has no Memory node"})
+            logger.info(
+                "interact_init_bootstrap",
+                extra={
+                    "outcome": "no_memory",
+                    "agent_id": self.agent_id,
+                    "elapsed_ms": round((time.perf_counter() - t_start) * 1000, 3),
+                },
+            )
+            return "no_memory"
+
+        self.response_bus = await here.get_response_bus()
+
+        t_session = time.perf_counter()
+        try:
+            user, conversation, resolved_user_id, resolved_session_id, new_user = (
+                await memory.get_session(
+                    user_id=self.user_id,
+                    session_id=self.session_id,
+                    user_name=self.user_name,
+                    channel=self.channel,
+                )
+            )
+        except ValueError as e:
+            await self.report({"error": str(e), "code": "session_resolution_error"})
+            logger.info(
+                "interact_init_bootstrap",
+                extra={
+                    "outcome": "session_resolution_error",
+                    "agent_id": self.agent_id,
+                    "elapsed_ms": round((time.perf_counter() - t_start) * 1000, 3),
+                    "get_session_ms": round(
+                        (time.perf_counter() - t_session) * 1000, 3
+                    ),
+                    "detail": str(e),
+                },
+            )
+            return "session_resolution_error"
+        except Exception as e:
+            await self.report({"error": f"Failed to initialize interaction: {e}"})
+            logger.error(
+                "interact_init_bootstrap session/get_session failed",
+                exc_info=True,
+                extra={
+                    "outcome": "init_error",
+                    "agent_id": self.agent_id,
+                    "elapsed_ms": round((time.perf_counter() - t_start) * 1000, 3),
+                    "get_session_ms": round(
+                        (time.perf_counter() - t_session) * 1000, 3
+                    ),
+                },
+            )
+            return "init_error"
+
+        self.user_id = resolved_user_id
+        self.session_id = resolved_session_id
+        self.new_user = new_user
+        conversation.context["new_user"] = new_user
+        self.conversation = conversation
+        get_session_ms = (time.perf_counter() - t_session) * 1000
+
+        access_control = await here.get_access_control_action()
+        if (
+            access_control
+            and isinstance(access_control, AccessControlAction)
+            and access_control.policy_applies()
+        ):
+            uid = (self.user_id or "").strip()
+            if not uid and not access_control.allow_anonymous:
+                log_access_denied(
+                    agent_id=self.agent_id or here.id,
+                    user_id=None,
+                    channel=self.channel,
+                    action_label="interact",
+                    stage="entry",
+                    reason="missing_user_id",
+                )
+                await self.report(
+                    {
+                        "access_denied": True,
+                        "error": (
+                            "Access denied: user identity required for this agent"
+                        ),
+                    }
+                )
+                logger.info(
+                    "interact_init_bootstrap",
+                    extra={
+                        "outcome": "access_denied",
+                        "agent_id": self.agent_id,
+                        "elapsed_ms": round((time.perf_counter() - t_start) * 1000, 3),
+                        "get_session_ms": round(get_session_ms, 3),
+                    },
+                )
+                return "access_denied"
+            if not await access_control.has_action_access(
+                user_id=uid,
+                action_label="interact",
+                channel=self.channel,
+            ):
+                log_access_denied(
+                    agent_id=self.agent_id or here.id,
+                    user_id=uid or None,
+                    channel=self.channel,
+                    action_label="interact",
+                    stage="entry",
+                )
+                await self.report({"access_denied": True, "error": "Access denied"})
+                logger.info(
+                    "interact_init_bootstrap",
+                    extra={
+                        "outcome": "access_denied",
+                        "agent_id": self.agent_id,
+                        "elapsed_ms": round((time.perf_counter() - t_start) * 1000, 3),
+                        "get_session_ms": round(get_session_ms, 3),
+                    },
+                )
+                return "access_denied"
+
+        t_create = time.perf_counter()
+        try:
+            from jvagent.action.model.context import set_interaction
+
+            self.interaction = await conversation.create_interaction(
+                utterance=self.utterance,
+                channel=self.channel,
+                session_id=self.session_id or "",
+            )
+            set_interaction(self.interaction)
+            create_ms = (time.perf_counter() - t_create) * 1000
+            await self.report(
+                {
+                    "interaction_created": {
+                        "interaction_id": self.interaction.id,
+                        "user_id": self.user_id,
+                        "session_id": self.session_id,
+                    }
+                }
+            )
+            logger.info(
+                "interact_init_bootstrap",
+                extra={
+                    "outcome": "ok",
+                    "agent_id": self.agent_id,
+                    "interaction_id": self.interaction.id,
+                    "elapsed_ms": round((time.perf_counter() - t_start) * 1000, 3),
+                    "get_session_ms": round(get_session_ms, 3),
+                    "create_interaction_ms": round(create_ms, 3),
+                },
+            )
+            return "ok"
+        except Exception as e:
+            await self.report({"error": f"Failed to initialize interaction: {e}"})
+            logger.error(
+                "interact_init_bootstrap create_interaction failed",
+                exc_info=True,
+                extra={
+                    "outcome": "init_error",
+                    "agent_id": self.agent_id,
+                    "elapsed_ms": round((time.perf_counter() - t_start) * 1000, 3),
+                    "get_session_ms": round(get_session_ms, 3),
+                },
+            )
+            return "init_error"
+
+    async def initialize_interaction(self, agent: "Agent") -> InteractionInitResult:
+        """Deterministic phase 1: memory, session, access, create Interaction (no Actions traversal).
+
+        Call this before :meth:`~jvspatial.core.entities.walker.Walker.spawn` for HTTP
+        endpoints so streaming and non-streaming share the same startup semantics.
+        Programmatic callers may still use ``spawn(agent)`` alone; :meth:`on_agent` runs
+        the same bootstrap when ``interaction`` is not yet set.
+        """
+        self._agent = agent
+        if self.interaction:
+            return InteractionInitResult(True, "ok", detail="already_initialized")
+        code = await self._bootstrap_interaction(agent)
+        if code == "ok" and self.interaction:
+            return InteractionInitResult(True, "ok")
+        if code == "no_memory":
+            return InteractionInitResult(False, "no_memory")
+        if code == "access_denied":
+            return InteractionInitResult(False, "access_denied")
+        if code == "session_resolution_error":
+            return InteractionInitResult(False, "session_resolution_error")
+        return InteractionInitResult(False, "init_error")
+
     @on_visit("Agent")
     async def on_agent(self, here: "Agent") -> None:
         """Visit Agent node and walk to Actions node.
@@ -252,100 +465,9 @@ class InteractWalker(Walker):
             here: The Agent node being visited
         """
         self._agent = here
-        # Initialize interaction if not already done
         if not self.interaction:
-            # Get memory from agent
-            memory = await here.get_memory()
-            if not memory:
-                await self.report({"error": "Agent has no Memory node"})
-                return
-
-            # Get ResponseBus instance from agent (agent-scoped)
-            self.response_bus = await here.get_response_bus()
-
-            # Resolve user and conversation via memory.get_session()
-            try:
-                user, conversation, resolved_user_id, resolved_session_id, new_user = (
-                    await memory.get_session(
-                        user_id=self.user_id,
-                        session_id=self.session_id,
-                        user_name=self.user_name,
-                        channel=self.channel,
-                    )
-                )
-                self.user_id = resolved_user_id
-                self.session_id = resolved_session_id
-                self.new_user = new_user
-                conversation.context["new_user"] = new_user
-                self.conversation = conversation
-
-                access_control = await here.get_access_control_action()
-                if (
-                    access_control
-                    and isinstance(access_control, AccessControlAction)
-                    and access_control.policy_applies()
-                ):
-                    uid = (self.user_id or "").strip()
-                    if not uid and not access_control.allow_anonymous:
-                        log_access_denied(
-                            agent_id=self.agent_id or here.id,
-                            user_id=None,
-                            channel=self.channel,
-                            action_label="interact",
-                            stage="entry",
-                            reason="missing_user_id",
-                        )
-                        await self.report(
-                            {
-                                "access_denied": True,
-                                "error": (
-                                    "Access denied: user identity required for this agent"
-                                ),
-                            }
-                        )
-                        return
-                    if not await access_control.has_action_access(
-                        user_id=uid,
-                        action_label="interact",
-                        channel=self.channel,
-                    ):
-                        log_access_denied(
-                            agent_id=self.agent_id or here.id,
-                            user_id=uid or None,
-                            channel=self.channel,
-                            action_label="interact",
-                            stage="entry",
-                        )
-                        await self.report(
-                            {"access_denied": True, "error": "Access denied"}
-                        )
-                        return
-
-                # Create interaction
-                from jvagent.action.model.context import set_interaction
-                from jvagent.memory.interaction import Interaction
-
-                self.interaction = await conversation.create_interaction(
-                    utterance=self.utterance,
-                    channel=self.channel,
-                    session_id=self.session_id,
-                )
-
-                # Set interaction object in context for automatic observability
-                set_interaction(self.interaction)
-
-                await self.report(
-                    {
-                        "interaction_created": {
-                            "interaction_id": self.interaction.id,
-                            "user_id": self.user_id,
-                            "session_id": self.session_id,
-                        }
-                    }
-                )
-            except Exception as e:
-                await self.report({"error": f"Failed to initialize interaction: {e}"})
-                logger.error(f"Error initializing interaction: {e}", exc_info=True)
+            await self._bootstrap_interaction(here)
+            if not self.interaction:
                 return
 
         # Get Actions node
