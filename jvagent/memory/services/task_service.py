@@ -85,7 +85,6 @@ class _TaskTrackingContext(AbstractAsyncContextManager):
         trigger_condition: Optional[str],
         singleton_action: bool,
         completion_status: str,
-        legacy_upsert: bool,
     ) -> None:
         self._service = service
         self._kwargs = {
@@ -97,7 +96,6 @@ class _TaskTrackingContext(AbstractAsyncContextManager):
             "trigger_at": trigger_at,
             "trigger_condition": trigger_condition,
             "singleton_action": singleton_action,
-            "legacy_upsert": legacy_upsert,
         }
         self._completion_status = completion_status
         self._handle: Optional[TaskHandle] = None
@@ -187,7 +185,6 @@ class TaskService:
         trigger_at: Optional[str] = None,
         trigger_condition: Optional[str] = None,
         singleton_action: bool = False,
-        legacy_upsert: bool = False,
     ) -> TaskHandle:
         now = _now_iso()
         meta = dict(metadata or {})
@@ -224,11 +221,7 @@ class TaskService:
             "terminal_at": None,
         }
 
-        existing_idx = self._find_task_index(
-            task_id=task_id,
-            description=description if legacy_upsert else None,
-            action_name=action_name if legacy_upsert else None,
-        )
+        existing_idx = self._find_task_index(task_id=task_id) if task_id else None
         if existing_idx is None and singleton_action and action_name:
             active_existing_idx = self._find_task_index(
                 action_name=action_name,
@@ -269,7 +262,6 @@ class TaskService:
         trigger_condition: Optional[str] = None,
         singleton_action: bool = False,
         completion_status: str = "completed",
-        legacy_upsert: bool = False,
     ) -> _TaskTrackingContext:
         return _TaskTrackingContext(
             self,
@@ -282,7 +274,6 @@ class TaskService:
             trigger_condition=trigger_condition,
             singleton_action=singleton_action,
             completion_status=completion_status,
-            legacy_upsert=legacy_upsert,
         )
 
     async def record_step(

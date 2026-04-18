@@ -322,141 +322,6 @@ class TestActionLoaderDependencyResolution:
         assert len(resolved) == 1
 
 
-class TestActionLoaderConditionalImport:
-    """Tests for ActionLoader conditional core action module imports."""
-
-    @patch.object(ActionLoader, "_get_core_action_path")
-    @patch.object(ActionLoader, "_build_core_action_cache")
-    @patch("importlib.import_module")
-    def test_pre_import_core_action_packages_conditional(
-        self,
-        mock_import_module,
-        mock_build_cache,
-        mock_get_path,
-        action_loader,
-        mock_core_action_cache,
-    ):
-        """Test that _pre_import_core_action_packages only imports required actions."""
-        mock_get_path.return_value = Path("/mock/core/path")
-        mock_build_cache.return_value = mock_core_action_cache
-        mock_import_module.return_value = MagicMock()
-
-        # Request only whatsapp
-        required_actions = {"jvagent/whatsapp"}
-        imported_count = action_loader._pre_import_core_action_packages(
-            required_actions=required_actions
-        )
-
-        # Should import whatsapp package
-        assert imported_count > 0
-
-        # Verify import_module was called with whatsapp-related paths
-        import_calls = [call[0][0] for call in mock_import_module.call_args_list]
-        whatsapp_imported = any("whatsapp" in call for call in import_calls)
-        assert whatsapp_imported, "WhatsApp package should be imported"
-
-        # Verify interact_router was NOT imported (not in required_actions)
-        router_imported = any(
-            "router" in call or "interact_router" in call for call in import_calls
-        )
-        assert not router_imported, "Router should not be imported when not required"
-
-    @patch.object(ActionLoader, "_get_core_action_path")
-    @patch.object(ActionLoader, "_build_core_action_cache")
-    @patch("importlib.import_module")
-    def test_pre_import_core_action_packages_multiple(
-        self,
-        mock_import_module,
-        mock_build_cache,
-        mock_get_path,
-        action_loader,
-        mock_core_action_cache,
-    ):
-        """Test that multiple required actions are imported."""
-        mock_get_path.return_value = Path("/mock/core/path")
-        mock_build_cache.return_value = mock_core_action_cache
-        mock_import_module.return_value = MagicMock()
-
-        # Request both whatsapp and persona
-        required_actions = {"jvagent/whatsapp", "jvagent/persona"}
-        imported_count = action_loader._pre_import_core_action_packages(
-            required_actions=required_actions
-        )
-
-        # Should import both packages
-        assert imported_count > 0
-
-        # Verify both were imported
-        import_calls = [call[0][0] for call in mock_import_module.call_args_list]
-        whatsapp_imported = any("whatsapp" in call for call in import_calls)
-        persona_imported = any("persona" in call for call in import_calls)
-        assert whatsapp_imported, "WhatsApp package should be imported"
-        assert persona_imported, "Persona package should be imported"
-
-    @patch.object(ActionLoader, "_get_core_action_path")
-    @patch.object(ActionLoader, "_build_core_action_cache")
-    @patch("importlib.import_module")
-    def test_pre_import_core_action_packages_empty_set(
-        self,
-        mock_import_module,
-        mock_build_cache,
-        mock_get_path,
-        action_loader,
-        mock_core_action_cache,
-    ):
-        """Test that empty required_actions set results in no imports."""
-        mock_get_path.return_value = Path("/mock/core/path")
-        mock_build_cache.return_value = mock_core_action_cache
-
-        # Request empty set
-        required_actions = set()
-        imported_count = action_loader._pre_import_core_action_packages(
-            required_actions=required_actions
-        )
-
-        # Should not import anything
-        assert imported_count == 0
-        mock_import_module.assert_not_called()
-
-    @patch.object(ActionLoader, "_get_core_action_path")
-    @patch.object(ActionLoader, "_build_core_action_cache")
-    @patch("importlib.import_module")
-    def test_pre_import_core_action_packages_nonexistent(
-        self,
-        mock_import_module,
-        mock_build_cache,
-        mock_get_path,
-        action_loader,
-        mock_core_action_cache,
-    ):
-        """Test that non-existent actions in required_actions are skipped."""
-        mock_get_path.return_value = Path("/mock/core/path")
-        mock_build_cache.return_value = mock_core_action_cache
-
-        # Request non-existent action
-        required_actions = {"jvagent/nonexistent_action"}
-        imported_count = action_loader._pre_import_core_action_packages(
-            required_actions=required_actions
-        )
-
-        # Should not import anything (action not in cache)
-        assert imported_count == 0
-
-    @patch.object(ActionLoader, "_get_core_action_path")
-    def test_pre_import_core_action_packages_no_core_path(
-        self, mock_get_path, action_loader
-    ):
-        """Test that missing core action path returns 0 imports."""
-        mock_get_path.return_value = None
-
-        required_actions = {"jvagent/whatsapp"}
-        imported_count = action_loader._pre_import_core_action_packages(
-            required_actions=required_actions
-        )
-
-        assert imported_count == 0
-
-
 class TestWhatsAppWebhookURL:
     """Tests for WhatsAppAction.get_webhook_url functionality.
 
@@ -554,3 +419,17 @@ class TestJvagentActionsImporter:
         assert not (temp_dir / "agents").exists()
         spec = importer.find_spec("jvagent.actions.jvagent.foo", None)
         assert spec is None
+
+
+class TestActionLoaderInvalidateCoreCache:
+    """Tests for ActionLoader.invalidate_core_cache."""
+
+    def test_invalidate_core_cache_clears_state(self, action_loader):
+        """invalidate_core_cache resets the core path and discovery cache."""
+        action_loader._core_action_path = Path("/mock/path")
+        action_loader._core_action_cache = {"x": {}}
+
+        action_loader.invalidate_core_cache()
+
+        assert action_loader._core_action_path is None
+        assert action_loader._core_action_cache is None

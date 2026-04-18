@@ -70,13 +70,18 @@ task = await visitor.tasks.start(
 await visitor.tasks.complete(task_id=task.task_id, status="completed")
 ```
 
-## Backward compatibility
+## Read accessors
 
-`Conversation.add_active_task`, `Conversation.update_task`, `Conversation.remove_active_task`,
-and `InteractWalker` task helper methods still work; they delegate to `TaskService`.
+`Conversation` exposes read-only helpers for inspecting the task list:
 
-- Legacy description/action-name upsert behavior is preserved on `add_active_task` for compatibility.
-- New code should prefer explicit `task_id` and `visitor.tasks`.
+- `conversation.get_active_tasks(status=..., action_name=...)`
+- `conversation.get_active_task(task_id=..., task_type=..., description=..., action_name=..., status=...)`
+- `conversation.get_active_tasks_for_context()`
+
+All writes go through `TaskService` (`visitor.tasks` or `TaskService(conversation)`).
+Use `singleton_action=True` when an action should keep at most one active task — the
+prior active entry is automatically transitioned to `superseded` and a new entry is
+created so lineage is preserved.
 
 ## Lifecycle callbacks
 

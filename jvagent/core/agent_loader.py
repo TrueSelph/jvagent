@@ -262,8 +262,7 @@ class AgentLoader:
             # Run _install_actions when: (a) agent has actions to install, or
             # (b) update_mode is set (to sync: remove actions no longer in descriptor)
             if descriptor.actions or update_mode is not None:
-                self.action_loader._core_action_path = None
-                self.action_loader._core_action_cache = None
+                self.action_loader.invalidate_core_cache()
 
                 await self._install_actions(
                     agent,

@@ -288,18 +288,21 @@ When `image_urls` is populated, PersonaAction uses `build_prompt_for_vision()` (
 
 ## Task Tracking
 
-The InteractWalker provides task tracker helpers for actions that manage multi-turn flows requiring user input (e.g., interviews):
+Actions that manage multi-turn flows requiring user input (e.g., interviews) use
+the conversation-scoped `TaskService` exposed as `visitor.tasks`:
 
 ```python
-await visitor.add_active_task(
+handle = await visitor.tasks.start(
     description="Guide user to complete SignupInterviewInteractAction",
+    task_type="INTERVIEW",
     action_name="SignupInterviewInteractAction",
     metadata={"state": "ACTIVE"},
+    singleton_action=True,
 )
 
-await visitor.remove_active_task(action_name="SignupInterviewInteractAction")
+await handle.complete()
 
-tasks = await visitor.get_active_tasks(status="active")
+tasks = visitor.tasks.list(status="active")
 ```
 
 Tasks are stored on the **Conversation** (not per-interaction). In development mode, `interaction.active_tasks` in the response payload shows the conversation's active tasks for debugging.

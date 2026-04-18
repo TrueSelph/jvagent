@@ -35,7 +35,7 @@ Memory (Node)
 - **Context**: Use `conversation.context` for reads and `conversation.update_context(updates)` for persisted writes.
 - **Interactions**: `add_interaction()`, `create_interaction()`, `get_interactions()`, `get_first_interaction()`, `get_last_interaction()`
 - **History**: `get_interaction_history()`, `get_conversation_history()`, `get_event_history()`, `get_interpretation_history()`, `get_context_history()`
-- **Tasks**: `add_active_task()`, `update_task()`, `remove_active_task()`, `get_active_tasks()`, `get_active_task()`, `get_active_tasks_for_context()`
+- **Tasks (read)**: `get_active_tasks()`, `get_active_task()`, `get_active_tasks_for_context()`. All task writes go through `TaskService` (see `docs/task-tracking.md`).
 
 ### Interaction
 

@@ -77,7 +77,7 @@ class QuestionBranchEvaluator:
                 condition, session, question_name, visitor, interview_action
             )
 
-        # Legacy operator-based condition evaluation
+        # Operator-based (declarative) condition evaluation
         return QuestionBranchEvaluator._evaluate_operator_condition(
             condition, session, question_name
         )
@@ -175,7 +175,7 @@ class QuestionBranchEvaluator:
     def _evaluate_operator_condition(
         condition: Dict[str, Any], session: InterviewSession, question_name: str
     ) -> bool:
-        """Evaluate a legacy operator-based branch condition.
+        """Evaluate an operator-based (declarative) branch condition.
 
         Args:
             condition: Condition dict with 'op' and optional 'value' keys

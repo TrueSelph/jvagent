@@ -35,28 +35,6 @@ def set_interaction(interaction: Optional[Any]) -> None:
     current_interaction.set(interaction)
 
 
-def get_interaction_id() -> Optional[str]:
-    """Get the current interaction ID from context (legacy compat).
-
-    Returns:
-        Interaction ID if set in context, None otherwise
-    """
-    interaction = current_interaction.get()
-    return interaction.id if interaction else None
-
-
-def set_interaction_id(interaction_id: Optional[str]) -> None:
-    """Set the current interaction ID in context (legacy compat - no-op).
-
-    This is kept for backward compatibility but does nothing.
-    Use set_interaction() instead.
-
-    Args:
-        interaction_id: Interaction ID (ignored)
-    """
-    pass
-
-
 def get_calling_action_name() -> Optional[str]:
     """Get the current calling action name from context.
 

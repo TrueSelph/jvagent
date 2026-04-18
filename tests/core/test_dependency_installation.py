@@ -170,46 +170,6 @@ class TestDependencyInstallation:
 class TestActionLoaderDependencyInstallation:
     """Test that ActionLoader installs dependencies during pre-import."""
 
-    def test_pre_import_core_action_packages_installs_dependencies(self, tmp_path):
-        """Test that pre_import_core_action_packages installs dependencies for core actions."""
-        # Create a mock action loader
-        action_loader = ActionLoader(base_path=str(tmp_path))
-
-        # Mock the core action cache to return a fake action with dependencies
-        mock_cache = {
-            "test_action": {
-                "dir": tmp_path / "test_action",
-                "module_file": "test_action",
-                "class_name": "TestAction",
-                "relative_path": "test_action",
-                "data": {
-                    "package": {
-                        "name": "jvagent/test_action",
-                        "dependencies": {"pip": ["httpx>=0.27.0"]},
-                    }
-                },
-            }
-        }
-
-        with patch.object(
-            action_loader, "_build_core_action_cache", return_value=mock_cache
-        ):
-            with patch.object(
-                action_loader, "_get_core_action_path", return_value=tmp_path
-            ):
-                with patch.object(
-                    action_loader, "_ensure_dependencies_installed"
-                ) as mock_ensure_deps:
-                    with patch("importlib.import_module"):
-                        # Call the method
-                        action_loader._pre_import_core_action_packages()
-
-                        # Verify that _ensure_dependencies_installed was called
-                        mock_ensure_deps.assert_called_once()
-                        call_args = mock_ensure_deps.call_args[0]
-                        assert call_args[0] == mock_cache["test_action"]["data"]
-                        assert call_args[1] == "test_action"
-
     def test_ensure_dependencies_installed_calls_install_action_dependencies(
         self, tmp_path
     ):

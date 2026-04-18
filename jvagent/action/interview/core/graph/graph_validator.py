@@ -270,7 +270,7 @@ class QuestionGraphValidator:
             # Function-based condition validated
             return
 
-        # Legacy operator-based condition validation
+        # Operator-based (declarative) condition validation
         operator = condition.get("op")
         if not operator:
             self.report.errors.append(

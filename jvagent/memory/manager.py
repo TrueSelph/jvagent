@@ -146,10 +146,6 @@ class Memory(Node):
         self.total_users = n_users
         self.total_conversations = n_convs
 
-    async def refresh_total_users_from_graph(self) -> None:
-        """Persist user and conversation counters from the graph (see :meth:`refresh_memory_counters_from_graph`)."""
-        await self.refresh_memory_counters_from_graph()
-
     async def users_scoped_to_this_memory(self) -> List["User"]:
         """Connected users that belong to this Memory root.
 

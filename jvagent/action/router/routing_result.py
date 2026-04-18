@@ -72,7 +72,7 @@ class RoutingResult:
         intent_type: Classified intent (CONVERSATIONAL, INFORMATIONAL, INTERACTIVE, DIRECTIVE, UNCLEAR)
         actions: List of matched action names to route to
         confidence: Confidence score (0.0-1.0)
-        verification: Optional verification trace for debugging (deprecated, may be removed)
+        verification: Optional self-verification trace (issues_found / passed / reasoning) used by InteractRouter to decide whether to escalate to clarification
         extracted_entities: Generic dict with extracted entity data (no predefined schema)
         canned_response: Optional brief acknowledgment for immediate response
         needs_clarification: True if confidence below threshold
@@ -108,10 +108,15 @@ class RoutingResult:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any], raw_response: str = "") -> "RoutingResult":
-        """Create from dictionary (parsed LLM response).
+        """Create from a dictionary.
+
+        Accepts both freshly parsed LLM responses (where ``needs_clarification``
+        is absent and InteractRouter will set it later based on confidence /
+        verification) and round-tripped ``to_dict`` payloads from the routing
+        cache (where ``needs_clarification`` was previously decided).
 
         Args:
-            data: Parsed JSON from LLM response
+            data: Parsed JSON from LLM response or cached ``to_dict`` output
             raw_response: Original LLM response string for debugging
 
         Returns:
@@ -133,7 +138,7 @@ class RoutingResult:
             ),
             extracted_entities=entities_data if isinstance(entities_data, dict) else {},
             canned_response=data.get("canned_response", ""),
-            needs_clarification=False,
+            needs_clarification=bool(data.get("needs_clarification", False)),
             raw_response=raw_response,
         )
 

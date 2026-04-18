@@ -677,10 +677,10 @@ class LanguageModelAction(BaseModelAction, ABC):
                                 if result.metrics.get("total_tokens", 0) > 0:
                                     try:
                                         from jvagent.action.model.context import (
-                                            get_interaction_id,
+                                            get_interaction,
                                         )
 
-                                        if get_interaction_id():
+                                        if get_interaction() is not None:
                                             await self.track_usage(
                                                 usage_dict, actual_duration
                                             )
@@ -723,11 +723,10 @@ class LanguageModelAction(BaseModelAction, ABC):
 
                                     try:
                                         from jvagent.action.model.context import (
-                                            get_interaction_id,
+                                            get_interaction,
                                         )
 
-                                        interaction_id = get_interaction_id()
-                                        if interaction_id:
+                                        if get_interaction() is not None:
                                             await self.track_usage(
                                                 estimated_usage, actual_duration
                                             )

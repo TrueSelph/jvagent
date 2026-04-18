@@ -143,7 +143,7 @@ The `DBLogHandler` automatically extracts jvagent-specific context:
 
 ### From Context Variables
 
-- **interaction_id**: From `get_interaction_id()` context variable
+- **interaction_id**: From `get_interaction()` context variable
 - **action_class**: From `get_calling_action_name()` context variable
 
 ### From Log Record Extra

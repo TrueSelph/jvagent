@@ -499,26 +499,6 @@ Answered fields: user_name: Jane Doe, user_email: jane.doe@old.com
   "extracted": [{"user_email": "jane@example.com"}]
 }"""
 
-# Composed classification rules (built dynamically via build_classification_rules())
-# Legacy constant kept for backward compatibility - use build_classification_rules() instead
-CLASSIFICATION_RULES_CORE_LEGACY = """CLASSIFICATION AND EXTRACTION INSTRUCTIONS
-
-{reasoning_instructions}
-
-{intent_rules}
-
-{extraction_rules}
-
-{reference_resolution}
-
-{composition_rules}
-
-{verification}
-
-{output_format}
-
-{examples}"""
-
 # =============================================================================
 # Classification Prompts - Template Variants
 # =============================================================================

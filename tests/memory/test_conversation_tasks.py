@@ -1,10 +1,11 @@
-"""Tests for Conversation task tracker (active_tasks)."""
+"""Tests for Conversation task accessors backed by TaskService."""
 
 import uuid
 
 import pytest
 
 from jvagent.memory.conversation import Conversation
+from jvagent.memory.services.task_service import TaskService
 
 
 def _unique_session_id():
@@ -12,16 +13,18 @@ def _unique_session_id():
 
 
 @pytest.mark.asyncio
-async def test_add_active_task_adds_new_task(test_db):
-    """add_active_task adds a new task when none exists."""
+async def test_task_service_start_persists_task(test_db):
+    """TaskService.start persists a new active task on the conversation."""
     conv = await Conversation.create(
         session_id=_unique_session_id(),
         user_id="user1",
         channel="default",
     )
     try:
-        await conv.add_active_task(
-            "SignupInterviewInteractAction",
+        svc = TaskService(conv)
+        await svc.start(
+            description="SignupInterviewInteractAction",
+            task_type="INTERVIEW",
             action_name="SignupInterviewInteractAction",
         )
         assert len(conv.active_tasks) == 1
@@ -40,153 +43,134 @@ async def test_add_active_task_adds_new_task(test_db):
 
 
 @pytest.mark.asyncio
-async def test_add_active_task_upserts_existing(test_db):
-    """add_active_task updates existing task when description or action_name matches."""
+async def test_singleton_action_supersedes_previous_task(test_db):
+    """singleton_action transitions the prior active task to 'superseded'."""
     conv = await Conversation.create(
         session_id=_unique_session_id(),
         user_id="user1",
         channel="default",
     )
     try:
-        await conv.add_active_task(
-            "SignupInterviewInteractAction",
+        svc = TaskService(conv)
+        first = await svc.start(
+            description="SignupInterviewInteractAction",
+            task_type="INTERVIEW",
             action_name="SignupInterviewInteractAction",
+            singleton_action=True,
         )
-        await conv.add_active_task(
-            "SignupInterviewInteractAction",
+        second = await svc.start(
+            description="SignupInterviewInteractAction",
+            task_type="INTERVIEW",
+            action_name="SignupInterviewInteractAction",
             metadata={"state": "REVIEW"},
-            action_name="SignupInterviewInteractAction",
+            singleton_action=True,
         )
-        assert len(conv.active_tasks) == 1
-        t = conv.active_tasks[0]
-        assert t["metadata"] == {"state": "REVIEW"}
+
+        assert len(conv.active_tasks) == 2
+        by_id = {t["task_id"]: t for t in conv.active_tasks}
+        assert by_id[first.task_id]["status"] == "superseded"
+        assert by_id[second.task_id]["status"] == "active"
+        assert by_id[second.task_id]["metadata"]["state"] == "REVIEW"
     finally:
         await conv.delete(cascade=True)
 
 
 @pytest.mark.asyncio
-async def test_update_task_updates_status_preserves_task(test_db):
-    """update_task updates status and preserves task for audit log."""
+async def test_update_status_transitions_task_and_preserves_history(test_db):
+    """update_status transitions a task and keeps it in active_tasks for audit."""
     conv = await Conversation.create(
         session_id=_unique_session_id(),
         user_id="user1",
         channel="default",
     )
     try:
-        await conv.add_active_task(
-            "Signup interview",
+        svc = TaskService(conv)
+        await svc.start(
+            description="Signup interview",
+            task_type="INTERVIEW",
             action_name="SignupInterviewInteractAction",
         )
-        assert len(conv.active_tasks) == 1
         assert conv.active_tasks[0]["status"] == "active"
 
-        updated = await conv.update_task(
+        updated = await svc.update_status(
             status="cancelled",
             action_name="SignupInterviewInteractAction",
         )
         assert updated is True
         assert len(conv.active_tasks) == 1
         assert conv.active_tasks[0]["status"] == "cancelled"
-        assert conv.active_tasks[0]["action_name"] == "SignupInterviewInteractAction"
         assert "updated_at" in conv.active_tasks[0]
     finally:
         await conv.delete(cascade=True)
 
 
 @pytest.mark.asyncio
-async def test_remove_active_task_transitions_to_completed(test_db):
-    """remove_active_task transitions task to completed (preserves for audit log)."""
+async def test_complete_marks_task_completed(test_db):
+    """complete transitions a task to the completed terminal status."""
     conv = await Conversation.create(
         session_id=_unique_session_id(),
         user_id="user1",
         channel="default",
     )
     try:
-        await conv.add_active_task(
-            "Signup interview",
+        svc = TaskService(conv)
+        handle = await svc.start(
+            description="Signup interview",
+            task_type="INTERVIEW",
             action_name="SignupInterviewInteractAction",
         )
-        assert len(conv.active_tasks) == 1
-        updated = await conv.remove_active_task(
-            action_name="SignupInterviewInteractAction",
-        )
-        assert updated is True
-        assert len(conv.active_tasks) == 1
+        assert await handle.complete() is True
         assert conv.active_tasks[0]["status"] == "completed"
     finally:
         await conv.delete(cascade=True)
 
 
 @pytest.mark.asyncio
-async def test_remove_active_task_by_description_transitions(test_db):
-    """remove_active_task by description transitions to completed."""
+async def test_update_status_distinguishes_tasks_by_id_or_description(test_db):
+    """update_status with task_id or description targets a single task."""
     conv = await Conversation.create(
         session_id=_unique_session_id(),
         user_id="user1",
         channel="default",
     )
     try:
-        await conv.add_active_task("SignupInterviewInteractAction")
-        assert len(conv.active_tasks) == 1
-        updated = await conv.remove_active_task(
-            description="SignupInterviewInteractAction",
-        )
-        assert updated is True
-        assert len(conv.active_tasks) == 1
-        assert conv.active_tasks[0]["status"] == "completed"
-    finally:
-        await conv.delete(cascade=True)
-
-
-@pytest.mark.asyncio
-async def test_update_task_by_task_id_and_description_distinguishes_tasks(test_db):
-    """update_task with task_id or description updates only the matching task."""
-    conv = await Conversation.create(
-        session_id=_unique_session_id(),
-        user_id="user1",
-        channel="default",
-    )
-    try:
-        await conv.add_active_task(
-            "Task A",
+        svc = TaskService(conv)
+        first = await svc.start(
+            description="Task A",
+            task_type="TASK",
             action_name="Action1",
         )
-        await conv.add_active_task(
-            "Task B",
+        await svc.start(
+            description="Task B",
+            task_type="TASK",
             action_name="Action2",
         )
         assert len(conv.active_tasks) == 2
-        task_a_id = conv.active_tasks[0]["task_id"]
 
-        updated = await conv.update_task(
-            status="cancelled",
-            task_id=task_a_id,
-        )
-        assert updated is True
+        assert await svc.update_status(status="cancelled", task_id=first.task_id)
         assert conv.active_tasks[0]["status"] == "cancelled"
         assert conv.active_tasks[1]["status"] == "active"
 
-        updated = await conv.update_task(
-            status="completed",
-            description="Task B",
-        )
-        assert updated is True
+        assert await svc.update_status(status="completed", description="Task B")
         assert conv.active_tasks[1]["status"] == "completed"
     finally:
         await conv.delete(cascade=True)
 
 
 @pytest.mark.asyncio
-async def test_remove_active_task_returns_false_when_not_found(test_db):
-    """remove_active_task returns False when no matching task."""
+async def test_update_status_returns_false_when_not_found(test_db):
+    """update_status returns False when no matching task exists."""
     conv = await Conversation.create(
         session_id=_unique_session_id(),
         user_id="user1",
         channel="default",
     )
     try:
-        removed = await conv.remove_active_task(action_name="NonExistentTask")
-        assert removed is False
+        svc = TaskService(conv)
+        assert (
+            await svc.update_status(status="completed", action_name="NoSuchAction")
+            is False
+        )
     finally:
         await conv.delete(cascade=True)
 
@@ -391,18 +375,19 @@ def test_get_active_task_supports_custom_task_type():
 
 
 @pytest.mark.asyncio
-async def test_add_active_task_with_task_type_stores_top_level(test_db):
-    """add_active_task with task_type stores it as top-level property."""
+async def test_task_service_start_with_task_type_stores_top_level(test_db):
+    """task_type provided at start time is stored as a top-level property."""
     conv = await Conversation.create(
         session_id=_unique_session_id(),
         user_id="user1",
         channel="default",
     )
     try:
-        await conv.add_active_task(
-            "Guide user to complete SignupInterviewInteractAction",
-            action_name="SignupInterviewInteractAction",
+        svc = TaskService(conv)
+        await svc.start(
+            description="Guide user to complete SignupInterviewInteractAction",
             task_type="INTERVIEW",
+            action_name="SignupInterviewInteractAction",
         )
         assert len(conv.active_tasks) == 1
         t = conv.active_tasks[0]

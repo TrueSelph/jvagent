@@ -15,7 +15,6 @@ from jvagent.core.env_resolver import resolve_env_placeholders
 from . import core_discovery, factory
 from . import importer as _importer_module
 from . import info_yaml, module_loading
-from .importer import JvagentActionsImporter
 from .metadata import ActionMetadata, ActionRegistry
 
 _ACTIONS_PREFIX = _importer_module._ACTIONS_PREFIX
@@ -88,6 +87,16 @@ class ActionLoader:
 
     def _build_core_action_cache(self) -> Dict[str, Dict[str, Any]]:
         return core_discovery.build_core_action_cache(self)
+
+    def invalidate_core_cache(self) -> None:
+        """Forget the resolved core-action path and discovery cache.
+
+        Call before re-running discovery when the core action layout may have
+        changed (e.g. a new agent installation that brings new packages on
+        sys.path).
+        """
+        self._core_action_path = None
+        self._core_action_cache = None
 
     def _load_action_metadata_for_deps(
         self, action_ref: str, core_cache: Dict[str, Dict[str, Any]]
@@ -321,139 +330,6 @@ class ActionLoader:
             f"Discovered core action: {namespace}/{action_name} from {action_dir}"
         )
         return metadata
-
-    def pre_import_action_modules(self) -> None:
-        """Pre-import all action class files from action directories.
-
-        This ensures that all Action subclasses are imported before any queries
-        that use _collect_class_names() (which relies on __subclasses__()).
-
-        Also pre-imports core action packages to ensure their __init__.py files
-        (which import endpoints) are executed. This is critical for endpoint discovery.
-
-        Scans all agents in the app directory and imports action class files directly,
-        using the same approach as load_action_class().
-        Also scans core actions from the jvagent library.
-
-        Note: This method imports ALL core actions. For conditional loading based on
-        agent.yaml configuration, use pre_import_action_modules_for_agents() instead.
-        """
-        imported_count = 0
-
-        # First, scan all agent.yaml files to find required core actions
-        agents_path = self.base_path / "agents"
-        agent_paths = []
-        if agents_path.exists() and agents_path.is_dir():
-            for namespace_dir in agents_path.iterdir():
-                if not namespace_dir.is_dir():
-                    continue
-                namespace = namespace_dir.name
-                for agent_dir in namespace_dir.iterdir():
-                    if not agent_dir.is_dir():
-                        continue
-                    agent_name = agent_dir.name
-                    agent_paths.append((namespace, agent_name))
-
-        # Scan agent.yaml files to find required core actions
-        required_core_actions = (
-            self._scan_required_core_actions(agent_paths) if agent_paths else None
-        )
-
-        # Pre-import core action packages (only required ones if agent_paths found)
-        core_imported = self._pre_import_core_action_packages(
-            required_actions=required_core_actions
-        )
-        imported_count += core_imported
-
-        # Then, pre-import local actions from filesystem
-        agents_path = self.base_path / "agents"
-
-        if not agents_path.exists() or not agents_path.is_dir():
-            logger.debug(f"Agents directory not found: {agents_path}")
-            if imported_count > 0:
-                logger.debug(
-                    f"Pre-imported {imported_count} action class(es) for class discovery"
-                )
-            return
-
-        # Iterate through all agent directories
-        for agent_namespace_dir in agents_path.iterdir():
-            if not agent_namespace_dir.is_dir():
-                continue
-
-            agent_namespace = agent_namespace_dir.name
-
-            # Iterate through agent directories within each namespace
-            for agent_dir in agent_namespace_dir.iterdir():
-                if not agent_dir.is_dir():
-                    continue
-
-                agent_name = agent_dir.name
-
-                # Look for actions directory
-                agent_actions_path = agent_dir / "actions"
-                if not agent_actions_path.exists() or not agent_actions_path.is_dir():
-                    continue
-
-                # Iterate through namespace directories in actions folder
-                for action_namespace_dir in agent_actions_path.iterdir():
-                    if not action_namespace_dir.is_dir():
-                        continue
-
-                    # Iterate through action directories
-                    for action_dir in action_namespace_dir.iterdir():
-                        if not action_dir.is_dir():
-                            continue
-
-                        # Look for info.yaml to get action metadata
-                        info_file = action_dir / "info.yaml"
-                        if not info_file.exists():
-                            continue
-
-                        # Load metadata to get action name and archetype
-                        try:
-                            data = self._load_info_yaml(info_file)
-                            if not data:
-                                continue
-
-                            package = data.get("package", {})
-                            if not isinstance(package, dict):
-                                continue
-
-                            # Extract action name and archetype using helpers
-                            action_name = self._extract_action_name(package, action_dir)
-                            archetype = package.get("archetype", "Action")
-
-                            # Install pip dependencies before importing
-                            self._ensure_dependencies_installed(
-                                data, action_name, action_dir
-                            )
-
-                            # Use agent-specific module naming: jvagent.actions.{agent_namespace}.{agent_name}.{action_namespace}.{action_name}
-                            module_name = (
-                                f"jvagent.actions.{agent_namespace}.{agent_name}."
-                                f"{action_namespace_dir.name}.{action_name}"
-                            )
-
-                            # Load action module using shared helper
-                            action_class = self._load_action_module(
-                                module_name, action_dir, action_name, archetype
-                            )
-
-                            if action_class is not None:
-                                imported_count += 1
-                                # Individual action pre-import logs removed - summary is logged
-
-                        except Exception as e:
-                            logger.warning(
-                                f"Error pre-importing action from {action_dir}: {e}"
-                            )
-                            continue
-
-        if imported_count > 0:
-            logger.debug(
-                f"Pre-imported {imported_count} action class(es) for class discovery"
-            )
 
     def pre_import_action_modules_for_agents(self, agent_refs: List[str]) -> None:
         """Pre-import action modules only for specified agents from app.yaml.
@@ -695,126 +571,6 @@ class ActionLoader:
 
         return required_actions
 
-    def _scan_required_core_actions(
-        self, agent_paths: List[Tuple[str, str]]
-    ) -> Set[str]:
-        """Scan agent.yaml files to find core actions that are actually configured.
-
-        This method is kept for backward compatibility. New code should use
-        _scan_required_actions() which returns all actions.
-
-        Args:
-            agent_paths: List of (namespace, agent_name) tuples to scan
-
-        Returns:
-            Set of core action references in "namespace/action_name" format (e.g., "jvagent/interact_router")
-        """
-        all_actions = self._scan_required_actions(agent_paths)
-        # Filter to only core actions for backward compatibility
-        return {
-            action_ref
-            for action_ref in all_actions
-            if action_ref.startswith("jvagent/")
-        }
-
-    def _pre_import_core_action_packages(
-        self, required_actions: Optional[Set[str]] = None
-    ) -> int:
-        """Pre-import core action packages to ensure their __init__.py files execute.
-
-        This is critical for endpoint discovery - parent package __init__.py files
-        import endpoints.py modules which register endpoints via @endpoint decorators.
-        jvspatial's sync_endpoint_modules ensures these are registered at app build
-        (including uvicorn reload).
-
-        Also installs pip dependencies for core actions before importing.
-
-        Args:
-            required_actions: Optional set of core action references in "namespace/action_name" format.
-                           If provided, only actions in this set will be imported.
-                           If None, imports all core actions (backward compatibility).
-
-        Returns:
-            Number of core action packages imported
-        """
-        core_path = self._get_core_action_path()
-        if not core_path:
-            return 0
-
-        imported_count = 0
-
-        # Build core action cache to get all core actions
-        action_cache = self._build_core_action_cache()
-
-        # Filter actions if required_actions is provided
-        actions_to_import = {}
-        if required_actions is not None:
-            # Only import actions that are in the required set
-            for action_name, action_info in action_cache.items():
-                action_ref = f"jvagent/{action_name}"
-                if action_ref in required_actions:
-                    actions_to_import[action_name] = action_info
-        else:
-            # Import all core actions (backward compatibility)
-            actions_to_import = action_cache
-
-        if not actions_to_import:
-            logger.debug("No core actions to import (filtered or none available)")
-            return 0
-
-        # First, install dependencies for actions we'll import
-        for action_name, action_info in actions_to_import.items():
-            action_dir = action_info["dir"]
-            data = action_info.get("data")
-
-            if data:
-                # Install pip dependencies before importing
-                self._ensure_dependencies_installed(data, action_name, action_dir)
-
-        # Then import each core action's parent packages
-        # We need to import parent packages, not just the action modules themselves
-        # This ensures __init__.py files execute and import endpoints
-        imported_packages = set()
-
-        for action_name, action_info in actions_to_import.items():
-            relative_path = action_info["relative_path"]
-
-            # Build the full module path for the parent package
-            # e.g., "model/language/openai" -> "jvagent.action.model.language"
-            # We import the parent package, not the module itself
-            path_parts = relative_path.split("/")
-
-            # Import parent packages (skip the last part which is the module name)
-            for i in range(len(path_parts)):
-                parent_path = "/".join(path_parts[: i + 1])
-                package_path = f"jvagent.action.{parent_path.replace('/', '.')}"
-
-                # Only import each package once
-                if package_path not in imported_packages:
-                    try:
-                        importlib.import_module(package_path)
-                        imported_packages.add(package_path)
-                        imported_count += 1
-                        logger.debug(
-                            f"Pre-imported core action package: {package_path}"
-                        )
-                    except ImportError as e:
-                        # Some packages might not have __init__.py, that's okay
-                        logger.debug(
-                            f"Could not import core package {package_path}: {e}"
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            f"Error importing core package {package_path}: {e}"
-                        )
-
-        if imported_count > 0:
-            logger.debug(
-                f"Pre-imported {imported_count} core action package(s) for endpoint discovery"
-            )
-
-        return imported_count
-
     def discover_actions(self, namespace: str, agent_name: str) -> List[ActionMetadata]:
         """Discover all actions for a given agent.
 
@@ -1034,171 +790,20 @@ class ActionLoader:
         if not metadata.module:
             return None
 
-        # Use agent-specific module path if agent info is available
-        # Format: jvagent.actions.{agent_namespace}.{agent_name}.{action_namespace}.{action_name}
-        if metadata.agent_namespace and metadata.agent_name:
-            module_name = (
-                f"jvagent.actions.{metadata.agent_namespace}.{metadata.agent_name}."
-                f"{metadata.namespace}.{metadata.name}"
+        if not metadata.agent_namespace or not metadata.agent_name:
+            logger.error(
+                "Cannot load action %s: metadata missing agent_namespace/agent_name",
+                metadata.name,
             )
-        else:
-            # Fallback to old format for backward compatibility (should not happen in normal flow)
-            module_name = f"jvagent.actions.{metadata.namespace}.{metadata.name}"
+            return None
+
+        module_name = (
+            f"jvagent.actions.{metadata.agent_namespace}.{metadata.agent_name}."
+            f"{metadata.namespace}.{metadata.name}"
+        )
         return self._load_action_module(
             module_name, metadata.path, metadata.name, metadata.class_name
         )
-
-    def reload_action_class(
-        self, metadata: ActionMetadata, existing_action: Optional[Action] = None
-    ) -> Optional[Type[Action]]:
-        """Reload an action class from its module, ensuring fresh code is loaded.
-
-        This method unloads old modules and reloads them fresh, ensuring code changes
-        take effect. Used during --update operations to reload action code.
-
-        Note: Module unloading from existing_action should be done by the caller
-        before calling this method, as it requires async execution.
-
-        Args:
-            metadata: Action metadata containing module and class information
-            existing_action: Optional existing action instance (for reference, unloading should be done by caller)
-
-        Returns:
-            Reloaded action class if successful, None otherwise
-        """
-        # Handle core actions differently
-        if getattr(metadata, "is_core_action", False) and metadata.core_module_path:
-            return self._reload_core_action_class(metadata)
-
-        if not metadata.module:
-            return None
-
-        # Use agent-specific module path if agent info is available
-        # Format: jvagent.actions.{agent_namespace}.{agent_name}.{action_namespace}.{action_name}
-        if metadata.agent_namespace and metadata.agent_name:
-            module_name = (
-                f"jvagent.actions.{metadata.agent_namespace}.{metadata.agent_name}."
-                f"{metadata.namespace}.{metadata.name}"
-            )
-        else:
-            # Fallback to old format for backward compatibility (should not happen in normal flow)
-            module_name = f"jvagent.actions.{metadata.namespace}.{metadata.name}"
-        return self._unload_and_reload_action_module(
-            module_name, metadata.path, metadata.name, metadata.class_name
-        )
-
-    def _reload_core_action_class(
-        self, metadata: ActionMetadata
-    ) -> Optional[Type[Action]]:
-        """Reload a core action class using importlib.reload().
-
-        Args:
-            metadata: Action metadata with core_module_path and core_class_name set
-
-        Returns:
-            Reloaded action class if successful, None otherwise
-        """
-        if not metadata.core_module_path or not metadata.core_class_name:
-            logger.warning("Core action metadata missing module path or class name")
-            return None
-
-        try:
-            # Check if module is already loaded
-            if metadata.core_module_path in sys.modules:
-                # Reload the module
-                module = sys.modules[metadata.core_module_path]
-                importlib.reload(module)
-                logger.debug(
-                    f"Reloaded core action module: {metadata.core_module_path}"
-                )
-            else:
-                # Module not loaded, load it fresh
-                module = importlib.import_module(metadata.core_module_path)
-                logger.debug(f"Loaded core action module: {metadata.core_module_path}")
-
-            # Get the action class from the reloaded module
-            action_class = getattr(module, metadata.core_class_name, None)
-
-            if action_class is None:
-                logger.warning(
-                    f"Class {metadata.core_class_name} not found in module {metadata.core_module_path}"
-                )
-                return None
-
-            # Verify it's a subclass of Action
-            if not issubclass(action_class, Action):
-                logger.warning(
-                    f"Class {metadata.core_class_name} is not a subclass of Action"
-                )
-                return None
-
-            logger.debug(
-                f"Reloaded core action class {metadata.core_class_name} from {metadata.core_module_path}"
-            )
-            return action_class
-
-        except ImportError as e:
-            logger.error(
-                f"Error reloading core action module {metadata.core_module_path}: {e}",
-                exc_info=True,
-            )
-            return None
-        except Exception as e:
-            logger.error(
-                f"Error reloading core action class {metadata.core_class_name}: {e}",
-                exc_info=True,
-            )
-            return None
-
-    def _unload_and_reload_action_module(
-        self,
-        module_name: str,
-        action_dir: Path,
-        action_name: str,
-        archetype: str,
-    ) -> Optional[Type[Action]]:
-        """Unload and reload an action module to ensure fresh code is loaded.
-
-        This method:
-        1. Unloads the module from sys.modules if it exists
-        2. Reloads the module fresh using _load_action_module()
-
-        Args:
-            module_name: Full module name (e.g., "jvagent.actions.namespace.action_name")
-            action_dir: Directory containing the action
-            action_name: Name of the action (for constructing file paths)
-            archetype: Class name to load
-
-        Returns:
-            Reloaded action class if successfully loaded, None otherwise
-        """
-        # Unload module if it exists
-        if module_name in sys.modules:
-            try:
-                del sys.modules[module_name]
-                logger.debug(f"Unloaded module: {module_name}")
-            except Exception as e:
-                logger.warning(f"Error unloading module {module_name}: {e}")
-
-        # Also unload parent packages if they're action-specific
-        module_parts = module_name.split(".")
-        if (
-            len(module_parts) > 3
-            and module_parts[0] == "jvagent"
-            and module_parts[1] == "actions"
-        ):
-            # Unload parent packages (e.g., jvagent.actions.namespace)
-            for i in range(3, len(module_parts) + 1):
-                parent_module = ".".join(module_parts[:i])
-                if parent_module in sys.modules:
-                    try:
-                        del sys.modules[parent_module]
-                        logger.debug(f"Unloaded parent module: {parent_module}")
-                    except Exception:
-                        pass  # Ignore errors unloading parent packages
-
-        # Reload the module fresh
-        return self._load_action_module(module_name, action_dir, action_name, archetype)
 
     def _load_core_action_class(
         self, metadata: ActionMetadata
@@ -1372,19 +977,11 @@ class ActionLoader:
                     parent_module = ".".join(module_path_parts[:i])
                     if parent_module in sys.modules:
                         loaded_modules.append(parent_module)
-            else:
-                # Local action: track the action module and parent packages
-                # Use agent-specific module path if agent info is available
-                if metadata.agent_namespace and metadata.agent_name:
-                    module_name = (
-                        f"jvagent.actions.{metadata.agent_namespace}.{metadata.agent_name}."
-                        f"{metadata.namespace}.{metadata.name}"
-                    )
-                else:
-                    # Fallback to old format for backward compatibility
-                    module_name = (
-                        f"jvagent.actions.{metadata.namespace}.{metadata.name}"
-                    )
+            elif metadata.agent_namespace and metadata.agent_name:
+                module_name = (
+                    f"jvagent.actions.{metadata.agent_namespace}.{metadata.agent_name}."
+                    f"{metadata.namespace}.{metadata.name}"
+                )
                 if module_name in sys.modules:
                     loaded_modules.append(module_name)
                 # Also track parent packages

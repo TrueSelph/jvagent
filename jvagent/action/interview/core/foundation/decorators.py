@@ -644,23 +644,6 @@ def get_input_review_override(interview_type: str) -> Optional[Callable]:
     return RegistryManager.get_input_review_override(interview_type)
 
 
-def get_pending_input_handlers(interview_type: str) -> Dict[str, Callable]:
-    """Get pending input handlers for an interview type (thread-safe)."""
-    return RegistryManager.get_pending("pending_input_handlers", interview_type)
-
-
-def get_pending_input_validators(interview_type: str) -> Dict[str, Callable]:
-    """Get pending input validators for an interview type (thread-safe)."""
-    return RegistryManager.get_pending("pending_input_validators", interview_type)
-
-
-def get_pending_input_directive_overrides(interview_type: str) -> Dict[str, Callable]:
-    """Get pending input directive overrides for an interview type (thread-safe)."""
-    return RegistryManager.get_pending(
-        "pending_input_directive_overrides", interview_type
-    )
-
-
 def flush_module_registrations_for_class(interview_type: str, module: Any) -> None:
     """Register module-level input_context_provider and branch_function from module.
 
@@ -948,45 +931,6 @@ def get_branch_function(interview_type: str, function_name: str) -> Optional[Cal
         return _branch_function_registry.get((interview_type, function_name))
 
 
-def register_branch_function(
-    interview_type: str, function_name: str, func: Callable
-) -> None:
-    """Register a branch function programmatically (thread-safe).
-
-    This can be used by classes that define branch functions as methods
-    (so the decorator ran at class body execution time) to ensure the
-    module-level registry contains the function under the given
-    interview_type.
-    """
-    RegistryManager.register_branch_function(interview_type, function_name, func)
-    logger.debug(
-        f"Registered branch_function '{function_name}' for interview type '{interview_type}' (programmatic)"
-    )
-
-
-def register_input_context_provider(
-    interview_type: str, function_name: str, func: Callable
-) -> None:
-    """Register an input context provider programmatically (thread-safe)."""
-    RegistryManager.register_input_context_provider(interview_type, function_name, func)
-    logger.debug(
-        f"Registered input_context_provider '{function_name}' for interview type '{interview_type}' (programmatic)"
-    )
-
-
-def get_pending_branch_functions(interview_type: str) -> Dict[str, Callable]:
-    """Get pending branch functions for an interview type (thread-safe).
-
-    Args:
-        interview_type: Interview type (class name)
-
-    Returns:
-        Dictionary of function_name -> function for pending registrations
-    """
-    with _registry_lock:
-        return _pending_branch_functions.get(interview_type, {}).copy()
-
-
 def input_context_provider(
     function_name: Optional[str] = None, interview_type: Optional[str] = None
 ):
@@ -1056,16 +1000,3 @@ def get_input_context_provider(
     """
     with _registry_lock:
         return _input_context_provider_registry.get((interview_type, function_name))
-
-
-def get_pending_input_context_providers(interview_type: str) -> Dict[str, Callable]:
-    """Get pending input context providers for an interview type (thread-safe).
-
-    Args:
-        interview_type: Interview type (class name)
-
-    Returns:
-        Dictionary of function_name -> function for pending registrations
-    """
-    with _registry_lock:
-        return _pending_input_context_providers.get(interview_type, {}).copy()

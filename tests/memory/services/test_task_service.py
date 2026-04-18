@@ -37,21 +37,58 @@ async def test_start_creates_task_with_promoted_trigger_fields():
 
 
 @pytest.mark.asyncio
-async def test_legacy_upsert_matches_existing_by_description():
+async def test_singleton_action_supersedes_previous_active_task():
     conversation = _conversation_stub()
     svc = TaskService(conversation)
 
-    first = await svc.start(description="Task A", task_type="AGENTIC_LOOP")
+    first = await svc.start(
+        description="Task A",
+        task_type="AGENTIC_LOOP",
+        action_name="MyAction",
+        singleton_action=True,
+    )
+    second = await svc.start(
+        description="Task A",
+        task_type="AGENTIC_LOOP",
+        action_name="MyAction",
+        metadata={"state": "updated"},
+        singleton_action=True,
+    )
+
+    assert len(conversation.active_tasks) == 2
+    statuses = {t["task_id"]: t["status"] for t in conversation.active_tasks}
+    assert statuses[first.task_id] == "superseded"
+    assert statuses[second.task_id] == "active"
+    assert (
+        next(t for t in conversation.active_tasks if t["task_id"] == second.task_id)[
+            "metadata"
+        ]["state"]
+        == "updated"
+    )
+
+
+@pytest.mark.asyncio
+async def test_explicit_task_id_updates_existing_entry_in_place():
+    conversation = _conversation_stub()
+    svc = TaskService(conversation)
+
     await svc.start(
         description="Task A",
         task_type="AGENTIC_LOOP",
+        task_id="explicit-id",
+    )
+    await svc.start(
+        description="Task A (revised)",
+        task_type="AGENTIC_LOOP",
+        task_id="explicit-id",
         metadata={"state": "updated"},
-        legacy_upsert=True,
     )
 
     assert len(conversation.active_tasks) == 1
-    assert conversation.active_tasks[0]["task_id"] == first.task_id
-    assert conversation.active_tasks[0]["metadata"]["state"] == "updated"
+    entry = conversation.active_tasks[0]
+    assert entry["task_id"] == "explicit-id"
+    assert entry["description"] == "Task A (revised)"
+    assert entry["metadata"]["state"] == "updated"
 
 
 @pytest.mark.asyncio

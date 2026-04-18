@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
 
 logger = logging.getLogger(__name__)
-_LEGACY_TASK_UPSERT_WARNED = False
 
 
 @compound_index([("context.session_id", 1)], name="conversation_session_id")
@@ -846,108 +845,6 @@ class Conversation(DeferredSaveMixin, Node):
         """
         self.context.update(updates)
         await self.save()
-
-    async def add_active_task(
-        self,
-        description: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        task_id: Optional[str] = None,
-        action_name: Optional[str] = None,
-        task_type: Optional[str] = None,
-    ) -> None:
-        """Add or update an active task (upsert by task_id, action_name, or description).
-
-        Args:
-            description: Human/AI-readable task description (action name can be included)
-            metadata: Optional metadata (interview_type, current_question, etc.)
-            task_id: Optional unique ID; auto-generated UUID when not provided
-            action_name: Optional action class name for actions that manage their tasks
-            task_type: Optional task type (e.g. 'INTERVIEW') for router routing
-        """
-        from jvagent.memory.services.task_service import TaskService
-
-        global _LEGACY_TASK_UPSERT_WARNED
-        if not task_id and not _LEGACY_TASK_UPSERT_WARNED:
-            logger.warning(
-                "Conversation.add_active_task legacy description/action upsert is deprecated; "
-                "prefer explicit task_id or TaskService singleton_action."
-            )
-            _LEGACY_TASK_UPSERT_WARNED = True
-
-        service = TaskService(self)
-        await service.start(
-            description=description,
-            task_type=task_type or "TASK",
-            metadata=metadata,
-            task_id=task_id,
-            action_name=action_name,
-            trigger_at=(metadata or {}).get("trigger_time"),
-            trigger_condition=(metadata or {}).get("trigger_condition"),
-            legacy_upsert=True,
-        )
-
-    async def update_task(
-        self,
-        status: str,
-        task_id: Optional[str] = None,
-        description: Optional[str] = None,
-        action_name: Optional[str] = None,
-    ) -> bool:
-        """Update task status. Preserves task for audit log.
-
-        Args:
-            status: New status (e.g. "cancelled", "completed")
-            task_id: Task ID for exact match (optional). Use when multiple tasks per action.
-            description: Description of task to update (optional)
-            action_name: Action class name of task to update (optional)
-
-        Returns:
-            True if task was updated, False if not found
-
-        Note:
-            Provide at least one of task_id, description, or action_name. When multiple
-            tasks exist per action, use task_id or description to distinguish.
-        """
-        if not task_id and not description and not action_name:
-            return False
-        from jvagent.memory.services.task_service import TaskService
-
-        service = TaskService(self)
-        return await service.update_status(
-            status=status,
-            task_id=task_id,
-            description=description,
-            action_name=action_name,
-        )
-
-    async def remove_active_task(
-        self,
-        task_id: Optional[str] = None,
-        description: Optional[str] = None,
-        action_name: Optional[str] = None,
-    ) -> bool:
-        """Transition task to completed status (preserves task for audit log).
-
-        Delegates to update_task with status="completed".
-        Kept for backward compatibility with custom actions.
-
-        Args:
-            task_id: Task ID for exact match (optional)
-            description: Description of task (optional)
-            action_name: Action class name of task (optional)
-
-        Returns:
-            True if task was updated, False if not found
-        """
-        from jvagent.memory.services.task_service import TaskService
-
-        service = TaskService(self)
-        return await service.update_status(
-            status="completed",
-            task_id=task_id,
-            description=description,
-            action_name=action_name,
-        )
 
     def get_active_tasks(
         self,
