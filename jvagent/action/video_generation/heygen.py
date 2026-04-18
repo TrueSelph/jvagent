@@ -87,7 +87,9 @@ class HeygenVideoAction(Action):
             raise ValueError("HeygenVideoAction: API key is not configured")
 
         url = f"{self._api_base().rstrip('/')}/v1/webhook/endpoint.list"
-        resp = requests.get(url, headers={"accept": "application/json", "x-api-key": api_key})
+        resp = requests.get(
+            url, headers={"accept": "application/json", "x-api-key": api_key}
+        )
         resp.raise_for_status()
         body = resp.json()
         if not isinstance(body, dict) or body.get("code") != 100:
@@ -176,7 +178,9 @@ class HeygenVideoAction(Action):
 
         prefix_norm = self._normalize_url(manage_prefix) if manage_prefix else None
         suffix_norm = self._normalize_url(manage_suffix) if manage_suffix else None
-        effective_events = events if events is not None else getattr(self, "webhook_events", None)
+        effective_events = (
+            events if events is not None else getattr(self, "webhook_events", None)
+        )
 
         endpoints = self._webhook_list()
 
@@ -203,7 +207,11 @@ class HeygenVideoAction(Action):
                     self._webhook_delete(endpoint_id)
                     deleted.append(endpoint_id)
                 except Exception as exc:
-                    logger.warning("HeygenVideoAction: failed deleting stale webhook %s: %s", endpoint_id, exc)
+                    logger.warning(
+                        "HeygenVideoAction: failed deleting stale webhook %s: %s",
+                        endpoint_id,
+                        exc,
+                    )
 
         # If duplicates exist for exact URL, keep one and delete the rest.
         kept: Optional[Dict[str, Any]] = None
@@ -216,7 +224,11 @@ class HeygenVideoAction(Action):
                         self._webhook_delete(endpoint_id)
                         deleted.append(endpoint_id)
                     except Exception as exc:
-                        logger.warning("HeygenVideoAction: failed deleting duplicate webhook %s: %s", endpoint_id, exc)
+                        logger.warning(
+                            "HeygenVideoAction: failed deleting duplicate webhook %s: %s",
+                            endpoint_id,
+                            exc,
+                        )
 
         created: Optional[Dict[str, Any]] = None
         if not kept:

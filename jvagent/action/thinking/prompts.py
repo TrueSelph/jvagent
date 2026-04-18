@@ -21,6 +21,18 @@ When you have completed the task or have enough information to answer, \
 provide a clear, comprehensive response without using any more tools.
 """
 
+SKILL_INDEX_INTRO = """You have access to the following Claude-style skill bundles.
+If the user's request aligns with one of them, call `read_skill` with the exact `skill_name`
+before attempting the specialized workflow. Skill tools are only exposed after `read_skill`."""
+
+READ_SKILL_RESULT_TEMPLATE = """Skill loaded: {skill_name}
+Newly available tools: {tools}
+
+Follow this SOP:
+
+{content}
+"""
+
 FORCED_TERMINATION_PROMPT = """\
 You have reached the maximum number of steps allowed for this task. \
 Based on everything you have learned so far, provide your best final answer now. \

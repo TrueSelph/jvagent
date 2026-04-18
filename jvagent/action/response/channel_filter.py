@@ -45,6 +45,7 @@ class ChannelFilter(ABC):
         self.channels = channels
         self.priority = priority
         self.fail_fast = fail_fast
+        self.applies_to_thoughts: bool = False
         self.response_bus: Optional[ResponseBus] = None
         self._initialized: bool = False
 

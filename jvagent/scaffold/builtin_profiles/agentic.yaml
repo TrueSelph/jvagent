@@ -1,0 +1,40 @@
+extends: minimal
+actions:
+  - action: jvagent/interact_router
+    context:
+      enabled: true
+      description: Route intent to long-running agentic workflows
+      model_action_type: OpenAILanguageModelAction
+      history_limit: 5
+      enable_routing_cache: true
+
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      description: OpenAI model for thinking loop execution
+      api_endpoint: https://api.openai.com/v1
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 8192
+      timeout: 60
+
+  - action: jvagent/thinking_interact_action
+    context:
+      enabled: true
+      description: Think-act-observe loop with progressive skill loading
+      weight: -60
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      model_temperature: 0.2
+      model_max_tokens: 8192
+      max_iterations: 25
+      max_duration_seconds: 300
+      stream_tool_progress: true
+      skills: -all
+      skills_source: both
+
+  - action: jvagent/converse_interact_action
+    context:
+      enabled: true
+      description: Conversational fallback when no tool workflow is needed
+      weight: 100

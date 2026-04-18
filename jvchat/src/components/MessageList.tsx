@@ -108,33 +108,72 @@ function MessageMediaBlock({ message }: { message: Message }) {
 
 interface MessageListProps {
   messages: Message[];
+  thoughtMessages?: Message[];
   showThinking?: boolean;
   thinkingText?: string;
 }
 
 export function MessageList({
   messages,
+  thoughtMessages = [],
   showThinking = false,
   thinkingText = "Thinking...",
 }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const prevLenRef = useRef<number>(0);
   const [debugMessage, setDebugMessage] = useState<Message | null>(null);
+  const totalVisibleMessages = messages.length + thoughtMessages.length;
 
   useEffect(() => {
     // Avoid smooth-scroll on every token append (prevents visible flicker).
-    const behavior = messages.length > prevLenRef.current ? "smooth" : "auto";
+    const behavior = totalVisibleMessages > prevLenRef.current ? "smooth" : "auto";
     messagesEndRef.current?.scrollIntoView({ behavior });
-    prevLenRef.current = messages.length;
-  }, [messages]);
+    prevLenRef.current = totalVisibleMessages;
+  }, [messages, thoughtMessages, totalVisibleMessages]);
 
-  if (messages.length === 0) {
+  if (messages.length === 0 && thoughtMessages.length === 0) {
     return null;
   }
 
   return (
     <>
       <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4">
+        {thoughtMessages.length > 0 && (
+          <div className="rounded-xl border border-amber-300/40 dark:border-amber-500/30 bg-amber-50/70 dark:bg-amber-900/10 p-3 sm:p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs sm:text-sm font-semibold text-amber-800 dark:text-amber-300">
+                Thinking & Tooling Stream
+              </h3>
+              <span className="text-[11px] sm:text-xs text-amber-700/80 dark:text-amber-400/80">
+                separate from chat transcript
+              </span>
+            </div>
+            <div className="space-y-2">
+              {thoughtMessages.map((message) => (
+                <div
+                  key={message.id}
+                  className="rounded-lg bg-white/70 dark:bg-slate-800/70 border border-amber-200/60 dark:border-slate-700 px-3 py-2"
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-[11px] sm:text-xs font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                      {message.thoughtType || "thought"}
+                    </span>
+                    <span className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
+                      {new Date(message.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <div className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-words">
+                    {message.content}
+                    {message.streaming && (
+                      <span className="inline-block w-0.5 sm:w-1 h-3 sm:h-4 ml-0.5 sm:ml-1 bg-current animate-pulse align-middle" />
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {messages.map((message) => (
           <div
             key={message.id}

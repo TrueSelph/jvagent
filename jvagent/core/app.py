@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, ClassVar, Dict, Optional, Type, Union
 
 from jvspatial.api.constants import APIRoutes
@@ -484,6 +484,25 @@ class App(Node):
             return await self.get_file_url(path)
 
         return None
+
+
+async def app_now_aware_utc(app: Optional[App]) -> datetime:
+    """Return a timezone-aware UTC datetime for scheduling comparisons.
+
+    Normalizes :meth:`App.now` (typed as ``Union[datetime, str]``) and naïve
+    datetimes from the app clock.
+    """
+    if app is None:
+        now = datetime.now(timezone.utc)
+    else:
+        raw = await app.now()
+        if isinstance(raw, str):
+            now = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        else:
+            now = raw
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return now
 
 
 async def set_app_update_mode(app: App, value: str) -> None:

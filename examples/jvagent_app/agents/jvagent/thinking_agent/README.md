@@ -19,9 +19,6 @@ InteractRouter (classifies intent)
     └── Multi-step task ──► ThinkingInteractAction
                               │
                               ▼
-                        Load SkillAction (code_review)
-                              │
-                              ▼
                         Initialize ToolExecutor
                         (registers MCP tools as LLM-callable functions)
                               │
@@ -41,10 +38,9 @@ InteractRouter (classifies intent)
 | Component | Archetype | Role |
 |-----------|-----------|------|
 | InteractRouter | `InteractRouter` | Intent classification and routing |
-| Anthropic LM | `AnthropicLanguageModelAction` | LLM for agentic reasoning + extended thinking |
 | OpenAI LM | `OpenAILanguageModelAction` | LLM for routing and conversational responses |
 | Filesystem MCP | `MCPAction` | Exposes filesystem tools (read, write, search) |
-| Code Review Skill | `SkillAction` | Prompt template + tool bindings for code review |
+| Skills Catalog | `jvagent/skills/*` + `agents/<ns>/<id>/skills/*` | Reusable SKILL.md bundles and optional tool modules |
 | Thinking Agent | `ThinkingInteractAction` | Agentic loop: think → act → observe → repeat |
 | Persona | `PersonaAction` | Simple conversational responses |
 | Converse | `ConverseInteractAction` | Smalltalk fallback |
@@ -56,9 +52,6 @@ InteractRouter (classifies intent)
 Create a `.env` file in your app root:
 
 ```bash
-# Required for Anthropic (agentic loop with extended thinking)
-ANTHROPIC_API_KEY=sk-ant-...
-
 # Required for OpenAI (routing + conversational responses)
 OPENAI_API_KEY=sk-...
 
@@ -138,38 +131,32 @@ Add new MCP actions and include them in `tool_servers`:
       - "websearch"
 ```
 
-### Creating New Skills
+### Creating and Selecting Skills
 
-Skills are SkillAction entries in agent.yaml:
+Skills are SKILL.md bundles, not action entries:
 
-```yaml
-- action: jvagent/my_skill
-  context:
-    enabled: true
-    skill_name: "data_analysis"
-    system_prompt_template: |
-      You are a data analysis assistant. {context}
-    prompt_variables:
-      context: "Focus on statistical accuracy."
-    required_tools: ["read_file"]
-    optional_tools: ["web_search"]
-    max_iterations: 20
+```text
+agents/<namespace>/<agent_id>/skills/<skill_name>/SKILL.md
 ```
 
-Then bind it to the thinking action:
+This example agent includes an app-local bundle at:
+
+```text
+agents/jvagent/thinking_agent/skills/local_research/SKILL.md
+```
+
+Select which bundles are exposed in the thinking action:
 
 ```yaml
 - action: jvagent/thinking_interact_action
   context:
-    skill: "data_analysis"
+    skills: ["code_review", "local_research"]
+    denied_skills: ["triage"]
+    skills_source: both   # builtin | app | both | none
 ```
 
-### Free-form Mode (No Skill)
-
-Set `skill: null` or omit it for unrestricted tool use:
+For unrestricted skill exposure, use:
 
 ```yaml
-- action: jvagent/thinking_interact_action
-  context:
-    skill: null  # Free-form: any tool, default system prompt
+skills: -all
 ```

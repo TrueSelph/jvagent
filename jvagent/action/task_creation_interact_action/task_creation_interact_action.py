@@ -1,13 +1,14 @@
 import logging
 import re
+import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
-import uuid
 
 from jvspatial.core.annotations import attribute
+
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.task_creation_interact_action.prompts import TASK_SCHEDULER_PROMPT
-from jvagent.core.app import App
+from jvagent.core.app import App, app_now_aware_utc
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -66,12 +67,15 @@ class TaskCreationInteractAction(InteractAction):
 
     async def get_webhook_url(self, regenerate: bool = False) -> str:
         """Generate or retrieve secure task-dispatch webhook URL with API key authentication."""
-        from jvagent.core.public_url import get_public_base_url
         from jvspatial.api.auth.api_key_service import APIKeyService
-        from jvspatial.db import get_prime_database
         from jvspatial.core.context import GraphContext
-        from jvagent.action.utils.webhook_system_user import get_or_create_system_user_for_webhook
+        from jvspatial.db import get_prime_database
         from jvspatial.exceptions import ValidationError
+
+        from jvagent.action.utils.webhook_system_user import (
+            get_or_create_system_user_for_webhook,
+        )
+        from jvagent.core.public_url import get_public_base_url
 
         base_url = get_public_base_url()
         if not base_url or not base_url.strip():
@@ -104,6 +108,7 @@ class TaskCreationInteractAction(InteractAction):
             if regenerate and self.webhook_api_key_id:
                 try:
                     from jvspatial.api.auth.models import APIKey
+
                     old_key = await context.get(APIKey, self.webhook_api_key_id)
                     if old_key:
                         old_key.is_active = False
@@ -131,7 +136,9 @@ class TaskCreationInteractAction(InteractAction):
             return self.webhook_url
 
         except Exception as e:
-            logger.error(f"Failed to generate proactive webhook URL: {e}", exc_info=True)
+            logger.error(
+                f"Failed to generate proactive webhook URL: {e}", exc_info=True
+            )
             raise ValidationError(f"Webhook URL generation failed: {e}")
 
     async def execute(self, visitor: "InteractWalker") -> None:
@@ -140,27 +147,30 @@ class TaskCreationInteractAction(InteractAction):
         if not interaction:
             return
 
-        conversation = getattr(visitor, "conversation", None) or await interaction.get_conversation()
+        conversation = (
+            getattr(visitor, "conversation", None)
+            or await interaction.get_conversation()
+        )
         if not conversation:
             return
 
         app = await App.get()
-        now = await app.now() if app else datetime.now(timezone.utc)
-        if now.tzinfo is None:
-            now = now.replace(tzinfo=timezone.utc)
+        now = await app_now_aware_utc(app)
 
         current_time_str = now.strftime("%Y-%m-%d %H:%M")
 
         # Include history + Current response!
         # Handle cases where conversation might be returned as a generic Node (AttributeError protection)
         if hasattr(conversation, "get_interaction_history"):
-            history = await conversation.get_interaction_history(limit=5, formatted=True)
+            history = await conversation.get_interaction_history(
+                limit=5, formatted=True
+            )
         else:
             # Fallback for generic Nodes
             raw_history = await conversation.nodes(direction="out", limit=5)
             # Re-traverse to ensure chronological order and format manually if needed
             # For now, we'll try a simple format or assume missing history is okay for extraction
-            history = [] 
+            history = []
 
         history_str = "\n".join([f"{m['role']}: {m['content']}" for m in history])
 
@@ -168,17 +178,22 @@ class TaskCreationInteractAction(InteractAction):
 
         try:
             # Robust task retrieval
-            active_tasks = []
+            active_tasks: List[Dict[str, Any]] = []
             if hasattr(conversation, "get_active_tasks"):
                 active_tasks = conversation.get_active_tasks(status="active")
             elif hasattr(conversation, "active_tasks"):
-                active_tasks = [t for t in conversation.active_tasks if t.get("status") == "active"]
+                active_tasks = [
+                    t for t in conversation.active_tasks if t.get("status") == "active"
+                ]
 
             pending_tasks_section = "No pending tasks."
             if active_tasks:
                 pending_tasks_section = "\n".join(
-                    [f"ID: {t.get('task_id')} | TASK: {t.get('description')}"
-                     for t in active_tasks if t.get("task_type") == "PROACTIVE"]
+                    [
+                        f"ID: {t.get('task_id')} | TASK: {t.get('description')}"
+                        for t in active_tasks
+                        if t.get("task_type") == "PROACTIVE"
+                    ]
                 )
 
             model_action = await self.get_model_action(required=True)
@@ -189,7 +204,7 @@ class TaskCreationInteractAction(InteractAction):
                 capabilities=capabilities_str,
                 recent_history=history_str,
                 user_input=f"INTENT: {interaction.interpretation}\nUTTERANCE: {interaction.utterance}",
-                pending_tasks_section=pending_tasks_section
+                pending_tasks_section=pending_tasks_section,
             )
 
             # # Additional context about the agent's actual reply
@@ -204,7 +219,9 @@ class TaskCreationInteractAction(InteractAction):
 
             if response and "NO_TASKS" not in response:
                 # 1. Process Completions
-                completions = re.findall(r"COMPLETE_TASK:\s*([a-fA-F0-9\-]+|[0-9]+)", response)
+                completions = re.findall(
+                    r"COMPLETE_TASK:\s*([a-fA-F0-9\-]+|[0-9]+)", response
+                )
                 tasks = getattr(conversation, "active_tasks", [])
                 modified = False
                 for task_id in completions:
@@ -220,24 +237,28 @@ class TaskCreationInteractAction(InteractAction):
                 new_tasks = self._extract_tasks(response)
                 for task in new_tasks:
                     new_task_id = f"task_{uuid.uuid4().hex}"
-                    tasks.append({
-                        "task_id": new_task_id,
-                        "description": task["description"],
-                        "task_type": "PROACTIVE",
-                        "status": "active",
-                        "created_at": datetime.now(timezone.utc).isoformat(),
-                        "metadata": {
-                            "trigger_time": task["trigger_time"],
-                            "trigger_condition": task["trigger_condition"],
-                            "context": task["context"],
-                            "channel": interaction.channel or "default",
+                    tasks.append(
+                        {
+                            "task_id": new_task_id,
+                            "description": task["description"],
+                            "task_type": "PROACTIVE",
+                            "status": "active",
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                            "metadata": {
+                                "trigger_time": task["trigger_time"],
+                                "trigger_condition": task["trigger_condition"],
+                                "context": task["context"],
+                                "channel": interaction.channel or "default",
+                            },
                         }
-                    })
+                    )
                 if new_tasks:
                     await conversation.save()
-                    
+
                 for task in new_tasks:
-                    logger.info(f"TaskCreation: Successfully ADDED task '{task['description']}' for session {conversation.session_id} @ {task['trigger_time']}")
+                    logger.info(
+                        f"TaskCreation: Successfully ADDED task '{task['description']}' for session {conversation.session_id} @ {task['trigger_time']}"
+                    )
 
         except Exception as e:
             logger.error(f"BrainSchedulerAction: Error: {e}", exc_info=True)
@@ -264,10 +285,12 @@ class TaskCreationInteractAction(InteractAction):
         for match in re.finditer(pattern, content, re.DOTALL | re.MULTILINE):
             raw_time_str = match.group("time").strip()
             normalized_time_str = raw_time_str.replace(" ", "T")
-            tasks.append({
-                "description": match.group("desc").strip(),
-                "trigger_time": normalized_time_str,
-                "trigger_condition": match.group("cond").strip(),
-                "context": match.group("ctx").strip(),
-            })
+            tasks.append(
+                {
+                    "description": match.group("desc").strip(),
+                    "trigger_time": normalized_time_str,
+                    "trigger_condition": match.group("cond").strip(),
+                    "context": match.group("ctx").strip(),
+                }
+            )
         return tasks

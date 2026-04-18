@@ -5,6 +5,8 @@ include setup.py
 include .env.example
 recursive-include jvagent *.py
 recursive-include jvagent/scaffold/builtin_profiles *.yaml
+recursive-include jvagent/skills *.md
+recursive-include jvagent/skills *.py
 recursive-include jvagent/scaffold/static *.txt
 recursive-include docs *.md
 

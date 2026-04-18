@@ -9,28 +9,31 @@ them, and results feed back into the conversation for the next iteration.
 import logging
 import os
 import time
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
-
-import yaml
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
-from jvagent.action.model.language.tools import ToolCall, ToolManager
 from jvagent.action.thinking.prompts import (
     ERROR_ANNOUNCE_TEMPLATE,
     FORCED_TERMINATION_PROMPT,
+    READ_SKILL_RESULT_TEMPLATE,
+    SKILL_INDEX_INTRO,
     THINKING_AGENT_SYSTEM_PROMPT,
     TOOL_CALL_ANNOUNCE_TEMPLATE,
     TOOL_RESULT_ANNOUNCE_TEMPLATE,
 )
 from jvagent.action.thinking.task_tracker import TaskTracker
 from jvagent.action.thinking.tool_executor import ToolExecutor
+from jvagent.scaffold.skill_resolve import (
+    apply_skill_selector,
+    resolve_agent_skills,
+    resolve_builtin_skills,
+    resolve_merged_skill_bundles,
+)
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
-    from jvagent.action.skill.skill_action import SkillAction
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +45,7 @@ class ThinkingInteractAction(InteractAction):
     """InteractAction implementing a think-act-observe agentic loop.
 
     When activated by the InteractRouter, this action:
-    1. Loads an optional SkillAction for prompt composition and tool filtering
+    1. Resolves skill bundles from built-in/app-local catalogs
     2. Initializes a ToolExecutor with tools from configured MCP servers
     3. Runs the agentic loop: LLM thinks → calls tools → observes results → repeats
     4. Tracks multi-step progress via TaskTracker on Conversation.active_tasks
@@ -57,7 +60,6 @@ class ThinkingInteractAction(InteractAction):
         model: Model identifier.
         model_temperature: Temperature for LLM generation.
         model_max_tokens: Max tokens for LLM generation.
-        skill: Optional name of SkillAction to load.
         tool_servers: Names of MCPAction instances providing tools.
         allow_local_tools: Whether ToolExecutor can register local Python tools.
         stream_thinking: Stream extended thinking content as adhoc.
@@ -102,9 +104,17 @@ class ThinkingInteractAction(InteractAction):
         default=8192,
         description="Max tokens for LLM generation",
     )
-    skill: Optional[str] = attribute(
+    skills: Any = attribute(
         default=None,
-        description="Name of SkillAction to load (None for free-form)",
+        description="Skill selector: '-all' | list of names/globs | None (no skill bundles exposed)",
+    )
+    denied_skills: List[str] = attribute(
+        default_factory=list,
+        description="Names/globs to exclude from the resolved skill bundle set",
+    )
+    skills_source: str = attribute(
+        default="both",
+        description="Skill bundle source: 'builtin' | 'app' | 'both' | 'none'",
     )
     tool_servers: List[str] = attribute(
         default_factory=list,
@@ -121,6 +131,10 @@ class ThinkingInteractAction(InteractAction):
     stream_tool_progress: bool = attribute(
         default=True,
         description="Stream tool call status as adhoc",
+    )
+    relay_thoughts_to_channels: bool = attribute(
+        default=False,
+        description="If True, thought messages may be relayed to channel adapters that opt in.",
     )
     max_full_tool_results: int = attribute(
         default=_DEFAULT_MAX_FULL_TOOL_RESULTS,
@@ -149,19 +163,16 @@ class ThinkingInteractAction(InteractAction):
             await visitor.unrecord_action_execution()
             return
 
+        task_tracker: Optional[TaskTracker] = None
         try:
-            # 1. Discover resources from loaded actions
-            discovered_tool_paths, discovered_skills = await self._discover_agentic_resources(visitor)
-            
-            # Combine dynamically discovered with explicitly configured
-            local_paths = discovered_tool_paths.copy()
-            if self.local_tools_path and self.local_tools_path not in local_paths:
+            # 1. Discover Claude-style skill bundles under agents/<ns>/<id>/skills
+            discovered_skills = await self._discover_skill_bundles(visitor)
+
+            local_paths: List[str] = []
+            if self.local_tools_path:
                 local_paths.append(self.local_tools_path)
 
-            # 2. Load explicitly configured skill (fallback/legacy)
-            skill_action = await self._load_skill(visitor)
-
-            # 3. Initialize ToolExecutor
+            # 2. Initialize ToolExecutor
             tool_executor = ToolExecutor(
                 call_timeout=60.0,
                 sanitize_errors=True,
@@ -169,16 +180,34 @@ class ThinkingInteractAction(InteractAction):
             await tool_executor.initialize(
                 visitor=visitor,
                 tool_servers=self.tool_servers,
-                skill=skill_action,
                 local_tools_paths=local_paths,
             )
 
-            # 4. Inject Dynamic RAG Skill Tool if skills were discovered
+            # 4. Register skill bundles and inject read_skill tool
             if discovered_skills:
-                def read_skill_handler(args):
+                for skill_name, skill_data in discovered_skills.items():
+                    tool_executor.register_skill_bundle(
+                        skill_name=skill_name,
+                        dir_path=skill_data["dir"],
+                        tool_files=skill_data.get("tool_files", []),
+                        allowed_tools=skill_data.get("allowed_tools", []),
+                    )
+
+                async def read_skill_handler(args):
                     skill_name = args.get("skill_name")
                     if skill_name in discovered_skills:
-                        return discovered_skills[skill_name]["content"]
+                        registered_tools = await tool_executor.activate_skill(
+                            skill_name
+                        )
+                        return READ_SKILL_RESULT_TEMPLATE.format(
+                            skill_name=skill_name,
+                            tools=(
+                                ", ".join(registered_tools)
+                                if registered_tools
+                                else "(none)"
+                            ),
+                            content=discovered_skills[skill_name]["content"],
+                        )
                     return f"Error: Skill '{skill_name}' not found."
 
                 tool_executor.register_dynamic_tool(
@@ -189,12 +218,15 @@ class ThinkingInteractAction(InteractAction):
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "skill_name": {"type": "string", "description": "The name of the skill to read."}
+                                "skill_name": {
+                                    "type": "string",
+                                    "description": "The name of the skill to read.",
+                                }
                             },
-                            "required": ["skill_name"]
-                        }
+                            "required": ["skill_name"],
+                        },
                     },
-                    handler=read_skill_handler
+                    handler=read_skill_handler,
                 )
 
             if not tool_executor.get_tool_names():
@@ -216,7 +248,10 @@ class ThinkingInteractAction(InteractAction):
             await task_tracker.create_task(
                 description=task_description,
                 task_type="AGENTIC_LOOP",
-                metadata={"skill": self.skill} if self.skill else None,
+                metadata={
+                    "skills": self.skills,
+                    "skills_source": self.skills_source,
+                },
             )
 
             # 5. Run the agentic loop
@@ -224,7 +259,6 @@ class ThinkingInteractAction(InteractAction):
                 visitor=visitor,
                 tool_executor=tool_executor,
                 task_tracker=task_tracker,
-                skill_action=skill_action,
                 discovered_skills=discovered_skills,
             )
 
@@ -255,155 +289,85 @@ class ThinkingInteractAction(InteractAction):
             )
             # Try to fail the task gracefully
             try:
-                task_tracker_local = TaskTracker(
-                    conversation=conversation,
-                    action_name=self.get_class_name(),
-                )
-                await task_tracker_local.fail_task(str(e))
+                if task_tracker:
+                    await task_tracker.fail_task(str(e))
             except Exception:
                 pass
             await visitor.unrecord_action_execution()
 
-    async def _discover_agentic_resources(self, visitor: "InteractWalker") -> Tuple[List[str], Dict[str, Dict[str, str]]]:
-        """Automatically discover tools and skills from the agent's loaded actions.
-        
-        This mimics ActionLoader behavior by parsing the agent.yaml and checking
-        if any loaded action directories contain `tools/` folders or `skills.md` files.
-        """
-        discovered_tool_paths = []
-        discovered_skills = {}
+    async def _discover_skill_bundles(
+        self, visitor: "InteractWalker"
+    ) -> Dict[str, Dict[str, Any]]:
+        """Resolve skill bundles from configured sources and apply selector filters."""
 
         agent = getattr(visitor, "_agent", None)
         if not agent:
-            return discovered_tool_paths, discovered_skills
+            return {}
+
+        selector = getattr(self, "skills", None)
+        source = str(getattr(self, "skills_source", "both") or "both").strip().lower()
+
+        if source == "none":
+            return {}
+        if selector is None or selector == [] or selector == "":
+            return {}
 
         try:
-            app_base_path = Path(os.getcwd())
-            
-            # Formulate the agent's absolute path
-            agent_dir = app_base_path / "agents" / agent.namespace / agent.name
-            agent_yaml_path = agent_dir / "agent.yaml"
-            
-            if not agent_yaml_path.exists():
-                return discovered_tool_paths, discovered_skills
-                
-            with open(agent_yaml_path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
+            if source == "both":
+                discovered_skills = resolve_merged_skill_bundles(
+                    app_root=os.getcwd(),
+                    namespace=agent.namespace,
+                    agent_name=agent.name,
+                    include_builtin=True,
+                )
+            elif source == "builtin":
+                discovered_skills = resolve_builtin_skills()
+            elif source == "app":
+                discovered_skills = resolve_agent_skills(
+                    app_root=os.getcwd(),
+                    namespace=agent.namespace,
+                    agent_name=agent.name,
+                )
+            else:
+                logger.warning(
+                    "ThinkingInteractAction: invalid skills_source '%s' (expected builtin|app|both|none)",
+                    source,
+                )
+                return {}
 
-            if not data:
-                return discovered_tool_paths, discovered_skills
-
-            # Scan the configured actions directly
-            actions = data.get("actions", [])
-            for action_config in actions:
-                if not isinstance(action_config, dict):
-                    continue
-                
-                action_ref = action_config.get("action", "")
-                if not action_ref or "/" not in action_ref:
-                    continue
-                
-                ns, name = action_ref.split("/", 1)
-                
-                # We attempt to locate the action directory locally
-                action_dir = agent_dir / "actions" / ns / name
-                if not action_dir.exists():
-                    continue
-
-                # Discover tools folder
-                tools_dir = action_dir / "tools"
-                if tools_dir.exists() and tools_dir.is_dir():
-                    discovered_tool_paths.append(str(tools_dir))
-
-                # Discover skills.md
-                skills_file = action_dir / "skills.md"
-                if skills_file.exists():
-                    try:
-                        content = skills_file.read_text(encoding="utf-8")
-                        # Try parsing YAML frontmatter to get description
-                        description = "Standard operational guidelines."
-                        if content.startswith("---"):
-                            parts = content.split("---", 2)
-                            if len(parts) >= 3:
-                                frontmatter = yaml.safe_load(parts[1])
-                                if isinstance(frontmatter, dict):
-                                    description = frontmatter.get("description", description)
-                                    content = parts[2].strip()
-
-                        skill_name = name.replace("_action", "").replace("_", " ")
-                        discovered_skills[skill_name] = {
-                            "description": description,
-                            "content": content
-                        }
-                    except Exception as e:
-                        logger.warning(f"Error reading skills.md for action {action_ref}: {e}")
-
+            discovered_skills = apply_skill_selector(
+                discovered_skills,
+                selector=selector,
+                denied=getattr(self, "denied_skills", None),
+            )
             logger.info(
-                "ThinkingInteractAction discovered %d tool paths and %d skills natively", 
-                len(discovered_tool_paths), len(discovered_skills)
+                "ThinkingInteractAction resolved %d skill bundles for %s/%s (source=%s)",
+                len(discovered_skills),
+                agent.namespace,
+                agent.name,
+                source,
             )
-
+            return discovered_skills
         except Exception as e:
-            logger.warning(f"ThinkingInteractAction: error discovering resources: {e}", exc_info=True)
-
-        return discovered_tool_paths, discovered_skills
-
-    async def _load_skill(self, visitor: "InteractWalker") -> Optional["SkillAction"]:
-        """Load the configured SkillAction if set.
-
-        Args:
-            visitor: The InteractWalker.
-
-        Returns:
-            SkillAction instance or None.
-        """
-        if not self.skill:
-            return None
-
-        from jvagent.action.skill.skill_action import SkillAction
-
-        skill = await self.get_action(SkillAction)
-        if not skill:
             logger.warning(
-                "ThinkingInteractAction: SkillAction not found, "
-                "proceeding without skill"
+                "ThinkingInteractAction: error resolving skill bundles: %s",
+                e,
+                exc_info=True,
             )
-            return None
-
-        # Verify the skill_name matches
-        if getattr(skill, "skill_name", None) != self.skill:
-            logger.warning(
-                "ThinkingInteractAction: Found SkillAction but skill_name "
-                "'%s' doesn't match expected '%s'",
-                getattr(skill, "skill_name", None),
-                self.skill,
-            )
-            return None
-
-        logger.info(
-            "ThinkingInteractAction: Loaded skill '%s' (system_prompt_path=%s)",
-            self.skill,
-            getattr(skill, "system_prompt_path", None),
-        )
-        return skill
+            return {}
 
     async def _run_agentic_loop(
         self,
         visitor: "InteractWalker",
         tool_executor: ToolExecutor,
         task_tracker: TaskTracker,
-        skill_action: Optional["SkillAction"],
-        discovered_skills: Optional[Dict[str, Dict[str, str]]] = None,
+        discovered_skills: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> Optional[str]:
         """Core agentic loop: think → act → observe → repeat."""
-        # Resolve model overrides from skill
-        model_kwargs = self._build_model_kwargs(skill_action)
+        model_kwargs = self._build_model_kwargs()
 
         # Build initial messages
-        messages = await self._build_initial_messages(visitor, skill_action, discovered_skills)
-
-        # Get tool definitions for LLM
-        tools = tool_executor.get_tools_list()
+        messages = await self._build_initial_messages(visitor, discovered_skills)
 
         loop_start = time.monotonic()
         iteration = 0
@@ -413,21 +377,50 @@ class ThinkingInteractAction(InteractAction):
             # Check duration limit
             elapsed = time.monotonic() - loop_start
             if elapsed >= self.max_duration_seconds:
-                final_response = await self._force_termination(messages, tools, visitor, model_kwargs)
+                final_response = await self._force_termination(
+                    messages,
+                    tool_executor.get_tools_list(),
+                    visitor,
+                    model_kwargs,
+                )
                 break
 
             if iteration == self.max_iterations - 1:
-                final_response = await self._force_termination(messages, tools, visitor, model_kwargs)
+                final_response = await self._force_termination(
+                    messages,
+                    tool_executor.get_tools_list(),
+                    visitor,
+                    model_kwargs,
+                )
                 break
 
             iteration += 1
             await task_tracker.add_step("thinking", iteration=iteration)
 
-            model_result = await self._call_model(messages, tools, visitor, model_kwargs)
+            # Re-fetch tools each iteration to include newly activated skill tools.
+            tools = tool_executor.get_tools_list()
+            model_result = await self._call_model(
+                messages, tools, visitor, model_kwargs
+            )
 
             if model_result.thinking_content and self.stream_thinking:
-                await self.publish(visitor, content=model_result.thinking_content, metadata={"thinking": True}, transient=True)
-                await task_tracker.add_step("thinking", iteration=iteration, details={"tokens": model_result.thinking_tokens or 0})
+                await self.publish_thought(
+                    visitor=visitor,
+                    content=model_result.thinking_content,
+                    thought_type="reasoning",
+                    segment_id=f"iter-{iteration}-reasoning",
+                    streaming_complete=True,
+                    relay_to_adapters=self.relay_thoughts_to_channels,
+                    metadata={
+                        "action_name": self.get_class_name(),
+                        "tokens": model_result.thinking_tokens or 0,
+                    },
+                )
+                await task_tracker.add_step(
+                    "thinking",
+                    iteration=iteration,
+                    details={"tokens": model_result.thinking_tokens or 0},
+                )
 
             if not model_result.tool_calls:
                 final_response = await model_result.get_response()
@@ -436,12 +429,25 @@ class ThinkingInteractAction(InteractAction):
                 break
 
             tool_calls = model_result.tool_calls
-            await task_tracker.add_step("tool_call", iteration=iteration, details={"count": len(tool_calls)})
+            await task_tracker.add_step(
+                "tool_call", iteration=iteration, details={"count": len(tool_calls)}
+            )
 
             if self.stream_tool_progress:
-                for tc in tool_calls:
+                for idx, tc in enumerate(tool_calls):
                     tool_name = tc.get("function", {}).get("name", "unknown")
-                    await self.publish(visitor, content=TOOL_CALL_ANNOUNCE_TEMPLATE.format(tool_name=tool_name), metadata={"tool_call": True, "tool_name": tool_name}, transient=True)
+                    await self.publish_thought(
+                        visitor=visitor,
+                        content=TOOL_CALL_ANNOUNCE_TEMPLATE.format(tool_name=tool_name),
+                        thought_type="tool_call",
+                        segment_id=f"iter-{iteration}-call-{tool_name}-{idx}",
+                        streaming_complete=True,
+                        relay_to_adapters=self.relay_thoughts_to_channels,
+                        metadata={
+                            "action_name": self.get_class_name(),
+                            "tool_name": tool_name,
+                        },
+                    )
 
             assistant_msg = self._build_assistant_content(model_result)
             messages.append(assistant_msg)
@@ -454,28 +460,48 @@ class ThinkingInteractAction(InteractAction):
                 for tr_msg in tool_result_messages:
                     content = tr_msg.get("content", "")
                     tool_call_id = tr_msg.get("tool_call_id", "")
-                    await self.publish(visitor, content=content[:500], metadata={"tool_result": True, "tool_call_id": tool_call_id}, transient=True)
+                    await self.publish_thought(
+                        visitor=visitor,
+                        content=content[:500],
+                        thought_type="tool_result",
+                        segment_id=f"iter-{iteration}-result-{tool_call_id or 'unknown'}",
+                        streaming_complete=True,
+                        relay_to_adapters=self.relay_thoughts_to_channels,
+                        metadata={
+                            "action_name": self.get_class_name(),
+                            "tool_call_id": tool_call_id,
+                        },
+                    )
 
             messages.extend(tool_result_messages)
-            await task_tracker.add_step("tool_result", iteration=iteration, details={"duration_ms": tool_duration_ms})
+            await task_tracker.add_step(
+                "tool_result",
+                iteration=iteration,
+                details={"duration_ms": tool_duration_ms},
+            )
             messages = self._maybe_truncate_messages(messages)
 
         if not final_response:
-            final_response = "I was unable to complete the task within the allowed steps."
+            final_response = (
+                "I was unable to complete the task within the allowed steps."
+            )
 
-        await task_tracker.add_step("response", iteration=iteration, details={"length": len(final_response)})
+        await task_tracker.add_step(
+            "response", iteration=iteration, details={"length": len(final_response)}
+        )
         return final_response
 
-    def _build_model_kwargs(self, skill_action: Optional["SkillAction"] = None) -> Dict[str, Any]:
+    def _build_model_kwargs(self) -> Dict[str, Any]:
         kwargs: Dict[str, Any] = {
             "model": self.model,
             "temperature": self.model_temperature,
             "max_tokens": self.model_max_tokens,
         }
-        if skill_action:
-            kwargs.update(skill_action.get_model_overrides())
         if self.thinking_budget_tokens > 0:
-            kwargs["thinking"] = {"type": "enabled", "budget_tokens": self.thinking_budget_tokens}
+            kwargs["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": self.thinking_budget_tokens,
+            }
             if kwargs.get("max_tokens", 0) < self.thinking_budget_tokens + 1:
                 kwargs["max_tokens"] = self.thinking_budget_tokens + 1
         return kwargs
@@ -483,44 +509,17 @@ class ThinkingInteractAction(InteractAction):
     async def _build_initial_messages(
         self,
         visitor: "InteractWalker",
-        skill_action: Optional["SkillAction"] = None,
-        discovered_skills: Optional[Dict[str, Dict[str, str]]] = None,
+        discovered_skills: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> List[Dict[str, Any]]:
-        if skill_action:
-            from datetime import datetime, timezone
-            now = datetime.now(timezone.utc)
-            user_details = ""
-            try:
-                interaction = visitor.interaction
-                if interaction:
-                    user = await interaction.get_user()
-                    if user:
-                        user_details = user.get_display_name() or ""
-            except Exception:
-                pass
-
-            runtime_vars = {
-                "current_date": now.strftime("%A, %d %B %Y %H:%M %Z"),
-                "user_details": user_details,
-            }
-            system_prompt = skill_action.compose_system_prompt(runtime_vars)
-        else:
-            system_prompt = THINKING_AGENT_SYSTEM_PROMPT
+        system_prompt = THINKING_AGENT_SYSTEM_PROMPT
 
         if discovered_skills:
-            skill_index = [
-                "You have access to the following specialized skills. If a user's request relates to these, you MUST use the `read_skill` tool to learn the workflow before acting:\n"
-            ]
+            skill_index = [SKILL_INDEX_INTRO]
             for s_name, s_data in discovered_skills.items():
                 skill_index.append(f"- {s_name}: {s_data['description']}")
             system_prompt += "\n\n" + "\n".join(skill_index)
 
-        system_prompt += "\n" + THINKING_AGENT_SYSTEM_PROMPT.format()
-
-        if skill_action:
-            utterance = skill_action.compose_utterance(visitor.utterance)
-        else:
-            utterance = visitor.utterance
+        utterance = visitor.utterance
 
         messages = [
             {"role": "system", "content": system_prompt},

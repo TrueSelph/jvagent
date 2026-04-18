@@ -325,6 +325,74 @@ CMD ["jvagent", "run", "--host", "0.0.0.0", "--port", "8000"]
     )
 
 
+def _has_thinking_interact_action(actions: List[Dict[str, Any]]) -> bool:
+    for item in actions:
+        if not isinstance(item, dict):
+            continue
+        if item.get("action") == "jvagent/thinking_interact_action":
+            return True
+    return False
+
+
+def _inject_thinking_skill_defaults(
+    actions: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Ensure scaffolded thinking actions opt into full skill exposure."""
+    for item in actions:
+        if not isinstance(item, dict):
+            continue
+        if item.get("action") != "jvagent/thinking_interact_action":
+            continue
+
+        context = item.get("context")
+        if not isinstance(context, dict):
+            context = {}
+            item["context"] = context
+
+        context.setdefault("skills", "-all")
+        context.setdefault("skills_source", "both")
+
+    return actions
+
+
+def _write_starter_skills_bundle(agent_dir: Path) -> None:
+    skills_dir = agent_dir / "skills"
+    example_dir = skills_dir / "example_skill"
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    example_dir.mkdir(parents=True, exist_ok=True)
+
+    (skills_dir / "README.md").write_text(
+        """# Skills
+
+Create one subfolder per Claude-style skill bundle:
+
+```
+skills/<skill_name>/SKILL.md
+```
+
+Optional Python tools can live beside `SKILL.md` and are activated when the
+agent calls `read_skill` for that bundle.
+""",
+        encoding="utf-8",
+    )
+
+    (example_dir / "SKILL.md").write_text(
+        """---
+name: example_skill
+description: A starter skill bundle for the thinking interact action.
+allowed-tools: []
+---
+
+## Workflow
+
+1. Understand the user request.
+2. Call relevant tools to gather evidence.
+3. Return a concise, actionable response.
+""",
+        encoding="utf-8",
+    )
+
+
 @dataclass
 class CreateAppContext:
     output_dir: Path
@@ -398,6 +466,7 @@ def create_app(ctx: CreateAppContext) -> None:
             _default_agent_alias(agent_ref),
             f"{ctx.title} — {_default_agent_alias(agent_ref)}",
         )
+        actions = _inject_thinking_skill_defaults(actions)
         agent_dir = agents_root / ns / aid
         agent_dir.mkdir(parents=True, exist_ok=True)
         write_agent_yaml(
@@ -415,6 +484,8 @@ def create_app(ctx: CreateAppContext) -> None:
             f"Defined as `{agent_ref}`. Edit `agent.yaml` to change actions.\n",
             encoding="utf-8",
         )
+        if _has_thinking_interact_action(actions):
+            _write_starter_skills_bundle(agent_dir)
 
     _write_readme_app(root, ctx)
     if ctx.deployment == "aws-lambda":
@@ -490,6 +561,7 @@ def create_agent_in_app(ctx: CreateAgentContext) -> None:
         _default_agent_alias(agent_ref),
         f"{app_title} — {_default_agent_alias(agent_ref)}",
     )
+    actions = _inject_thinking_skill_defaults(actions)
 
     agent_dir.mkdir(parents=True, exist_ok=True)
     write_agent_yaml(
@@ -507,6 +579,8 @@ def create_agent_in_app(ctx: CreateAgentContext) -> None:
         f"Defined as `{agent_ref}`. Edit `agent.yaml` to change actions.\n",
         encoding="utf-8",
     )
+    if _has_thinking_interact_action(actions):
+        _write_starter_skills_bundle(agent_dir)
 
     if agent_ref not in agents_list:
         append_agent_to_app_yaml(app_yaml, agent_ref, force=ctx.force)

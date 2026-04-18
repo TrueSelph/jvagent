@@ -44,6 +44,18 @@ class ResponseMessage(Object):
     channel: str = attribute(
         default="default", description="Target communication channel"
     )
+    category: str = attribute(
+        default="user",
+        description='Logical category: "user" or "thought"',
+    )
+    thought_type: Optional[str] = attribute(
+        default=None,
+        description='Thought subtype when category="thought": "reasoning" | "tool_call" | "tool_result" | "status"',
+    )
+    segment_id: Optional[str] = attribute(
+        default=None,
+        description="Identifier used to group stream chunks into one client-side segment",
+    )
     metadata: Dict[str, Any] = attribute(
         default_factory=dict, description="Additional metadata"
     )
@@ -100,6 +112,9 @@ class ResponseMessage(Object):
             "message_type": self.message_type,
             "content": self.content,
             "channel": self.channel,
+            "category": self.category,
+            "thought_type": self.thought_type,
+            "segment_id": self.segment_id,
             "metadata": self.metadata,
         }
 

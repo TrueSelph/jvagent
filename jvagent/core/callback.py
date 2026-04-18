@@ -1,13 +1,17 @@
 import logging
-import httpx
 from typing import Any, Dict
+
+import httpx
 from jvspatial import create_task
 
 logger = logging.getLogger(__name__)
 
-async def trigger_task_created_callback(conversation: Any, task_entry: Dict[str, Any]) -> None:
+
+async def trigger_task_created_callback(
+    conversation: Any, task_entry: Dict[str, Any]
+) -> None:
     """Fire a webhook callback whenever a proactive task is created or updated as active.
-    
+
     This follows the pattern of push-based task triggers to avoid global database polling.
     """
     try:
@@ -20,20 +24,27 @@ async def trigger_task_created_callback(conversation: Any, task_entry: Dict[str,
         # We look for 'task_created_webhook_url' in TaskCreationInteractAction
         # or in agent metadata/env.
         webhook_url = None
-        
+
         # Check environment variable first for global default
         import os
+
         webhook_url = os.environ.get("JVAGENT_TASK_CREATED_WEBHOOK_URL")
 
         # Check action config (more specific)
         dispatch_url = None
         try:
-            from jvagent.action.task_creation_interact_action.task_creation_interact_action import TaskCreationInteractAction
+            from jvagent.action.task_creation_interact_action.task_creation_interact_action import (
+                TaskCreationInteractAction,
+            )
+
             scheduler = await agent.get_action_by_type("TaskCreationInteractAction")
             if scheduler:
-                if hasattr(scheduler, "task_created_webhook_url") and scheduler.task_created_webhook_url:
+                if (
+                    hasattr(scheduler, "task_created_webhook_url")
+                    and scheduler.task_created_webhook_url
+                ):
                     webhook_url = scheduler.task_created_webhook_url
-                
+
                 # Retrieve the secure dynamic URL for dispatching
                 try:
                     # Resolve base dispatch URL (agent-wide)
@@ -64,9 +75,9 @@ async def trigger_task_created_callback(conversation: Any, task_entry: Dict[str,
                     "dispatch_url": dispatch_url,  # SESSION-TARGETED URL to call back
                     "metadata": task_entry.get("metadata", {}),
                     "timestamp": task_entry.get("created_at"),
-                    "event": "task_created"
+                    "event": "task_created",
                 }
-                
+
                 logger.info(
                     f"Callback: Firing task-created webhook for task {task_entry.get('task_id')} "
                     f"(Session: {conversation.session_id}) to {webhook_url}. "

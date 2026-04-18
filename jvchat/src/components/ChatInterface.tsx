@@ -46,6 +46,7 @@ export function ChatInterface() {
     useConversations(agentId);
   const {
     messages,
+    thoughtMessages,
     sendMessage,
     clearMessages,
     loadMessages,
@@ -692,6 +693,7 @@ export function ChatInterface() {
             ) : (
               <MessageList
                 messages={messages}
+                thoughtMessages={thoughtMessages}
                 showThinking={
                   isStreaming &&
                   !messages.some((m) => m.role === "assistant" && m.streaming)

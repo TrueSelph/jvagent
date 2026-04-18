@@ -341,7 +341,6 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         "scheduler_interval": scheduler_interval,
     }
 
-
     server = Server(**server_kwargs)
 
     # Initialize logging database (automatically installs DBLogHandler)

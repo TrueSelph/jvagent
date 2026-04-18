@@ -87,6 +87,43 @@ class TestToolExecutorRegistration:
         executor._apply_pattern_filters(denied_patterns=["delete_*"])
         assert executor.get_tool_names() == {"read_file"}
 
+    @pytest.mark.asyncio
+    async def test_register_and_activate_skill_bundle(self, tmp_path):
+        executor = ToolExecutor(validate_calls=False)
+        skill_dir = tmp_path / "skills" / "example_skill"
+        skill_dir.mkdir(parents=True)
+        tool_file = skill_dir / "echo_tool.py"
+        tool_file.write_text(
+            """
+def get_tool_definition():
+    return {
+        "name": "echo_tool",
+        "description": "Echo back a value",
+        "parameters": {
+            "type": "object",
+            "properties": {"value": {"type": "string"}},
+            "required": ["value"]
+        }
+    }
+
+async def execute(arguments):
+    return arguments.get("value", "")
+""",
+            encoding="utf-8",
+        )
+
+        executor.register_skill_bundle(
+            skill_name="example_skill",
+            dir_path=str(skill_dir),
+            tool_files=[str(tool_file)],
+            allowed_tools=["echo_tool"],
+        )
+        assert "echo_tool" not in executor.get_tool_names()
+
+        activated = await executor.activate_skill("example_skill")
+        assert activated == ["echo_tool"]
+        assert "echo_tool" in executor.get_tool_names()
+
 
 class TestToolExecutorDispatch:
     """Test tool call dispatching."""
@@ -299,3 +336,24 @@ class TestToolExecutorMCP:
         # Should not raise, just warn
         await executor._register_mcp_server(visitor, "nonexistent")
         assert len(executor.get_tool_names()) == 0
+
+    @pytest.mark.asyncio
+    async def test_dispatch_mcp_tool_success(self):
+        executor = ToolExecutor(validate_calls=False)
+        call = MagicMock()
+        call.name = "fs_read"
+        call.arguments = {"path": "/tmp/test"}
+        text_item = MagicMock()
+        text_item.type = "text"
+        text_item.text = "ok"
+        call_result = MagicMock()
+        call_result.is_error = False
+        call_result.content = [text_item]
+
+        client = MagicMock()
+        client.call_tool = AsyncMock(return_value=call_result)
+        mcp_action = MagicMock()
+        mcp_action.get_client = MagicMock(return_value=client)
+
+        result = await executor._dispatch_mcp_tool(call, mcp_action)
+        assert result == "ok"

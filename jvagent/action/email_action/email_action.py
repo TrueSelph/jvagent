@@ -594,10 +594,9 @@ class EmailAction(Action):
             logger.debug("Email action not configured")
             return
         await self._ensure_email_webhook_url()
-        if (
-            (self.email_mode or "").strip().lower() == "new_email"
-            and not (self.email_inbound_since_iso or "").strip()
-        ):
+        if (self.email_mode or "").strip().lower() == "new_email" and not (
+            self.email_inbound_since_iso or ""
+        ).strip():
             self.email_inbound_since_iso = datetime.now(timezone.utc).isoformat()
             await self.save()
         logger.debug("Email action registered")

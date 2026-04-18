@@ -48,6 +48,8 @@ class ToolExecutor:
     ) -> None:
         self._tool_manager = ToolManager()
         self._handlers: Dict[str, Tuple[str, Any]] = {}  # name -> (kind, handler)
+        self._skill_bundles: Dict[str, Dict[str, Any]] = {}
+        self._active_skill_bundles: Set[str] = set()
         self.call_timeout = call_timeout
         self.validate_calls = validate_calls
         self.max_concurrent_calls = max_concurrent_calls
@@ -57,7 +59,6 @@ class ToolExecutor:
         self,
         visitor: Any,
         tool_servers: Optional[List[str]] = None,
-        skill: Any = None,
         allowed_tool_patterns: Optional[List[str]] = None,
         denied_tool_patterns: Optional[List[str]] = None,
         local_tools_paths: Optional[List[str]] = None,
@@ -68,14 +69,12 @@ class ToolExecutor:
         2. Call list_tools() on each MCP client -> register as ToolDefinition
         3. Register any local Python tool handlers
         4. If local_tools_path provided, scan directory for tools
-        5. If skill provided, filter via skill.get_tool_filter()
-        6. Apply allowed/denied tool pattern filters
-        7. Build ToolManager with all registered tools
+        5. Apply allowed/denied tool pattern filters
+        6. Build ToolManager with all registered tools
 
         Args:
             visitor: The InteractWalker (provides agent access).
             tool_servers: Names of MCPAction instances to use.
-            skill: Optional SkillAction for tool filtering.
             allowed_tool_patterns: Glob patterns for tool name to allow.
             denied_tool_patterns: Glob patterns for tool name to deny.
             local_tools_paths: Optional list of folders to scan for .py tools.
@@ -106,18 +105,6 @@ class ToolExecutor:
                         e,
                         exc_info=True,
                     )
-
-        # Apply skill tool filter
-        if skill is not None:
-            available_tools = list(self._tool_manager.tools.values())
-            filtered = skill.get_tool_filter(available_tools)
-            # Rebuild tool manager with only filtered tools
-            self._tool_manager.tools = {t.name: t for t in filtered}
-            # Also filter handlers
-            filtered_names = {t.name for t in filtered}
-            self._handlers = {
-                k: v for k, v in self._handlers.items() if k in filtered_names
-            }
 
         # Apply pattern filters
         if allowed_tool_patterns or denied_tool_patterns:
@@ -211,7 +198,9 @@ class ToolExecutor:
             path: Absolute path to the tools directory.
         """
         if not os.path.isdir(path):
-            logger.warning("ToolExecutor: local_tools_path '%s' is not a directory", path)
+            logger.warning(
+                "ToolExecutor: local_tools_path '%s' is not a directory", path
+            )
             return
 
         logger.info("ToolExecutor: scanning for local tools in '%s'", path)
@@ -269,10 +258,16 @@ class ToolExecutor:
                     exc_info=True,
                 )
 
-    def register_dynamic_tool(self, name: str, tool_def_dict: Dict[str, Any], handler: Callable) -> None:
+    def register_dynamic_tool(
+        self, name: str, tool_def_dict: Dict[str, Any], handler: Callable
+    ) -> None:
         """Register a dynamic functional tool (like a locally discovered or runtime-generated tool)."""
-        description = tool_def_dict.get("function", {}).get("description") or tool_def_dict.get("description", "")
-        parameters = tool_def_dict.get("function", {}).get("parameters") or tool_def_dict.get("parameters", {"type": "object", "properties": {}})
+        description = tool_def_dict.get("function", {}).get(
+            "description"
+        ) or tool_def_dict.get("description", "")
+        parameters = tool_def_dict.get("function", {}).get(
+            "parameters"
+        ) or tool_def_dict.get("parameters", {"type": "object", "properties": {}})
 
         try:
             self._tool_manager.register_tool(
@@ -285,6 +280,42 @@ class ToolExecutor:
         except ValueError as e:
             logger.warning("ToolExecutor: skipping dynamic tool '%s': %s", name, e)
 
+    def register_skill_bundle(
+        self,
+        skill_name: str,
+        dir_path: str,
+        tool_files: Optional[List[str]] = None,
+        allowed_tools: Optional[List[str]] = None,
+    ) -> None:
+        """Register metadata for a skill bundle without exposing its tools yet."""
+        self._skill_bundles[skill_name] = {
+            "dir_path": dir_path,
+            "tool_files": list(tool_files or []),
+            "allowed_tools": set(allowed_tools or []),
+        }
+
+    async def activate_skill(self, skill_name: str) -> List[str]:
+        """Load and register tool modules for a skill bundle on demand."""
+        bundle = self._skill_bundles.get(skill_name)
+        if not bundle:
+            raise ToolDispatchError(f"Skill bundle '{skill_name}' is not registered")
+
+        if skill_name in self._active_skill_bundles:
+            return []
+
+        registered: List[str] = []
+        allowed_tools: Set[str] = bundle.get("allowed_tools", set())
+        for file_path in bundle.get("tool_files", []):
+            loaded_tool = self._load_dynamic_tool_from_file(
+                file_path=file_path,
+                module_prefix=f"jvagent_skill_{skill_name}",
+                allowed_tools=allowed_tools if allowed_tools else None,
+            )
+            if loaded_tool:
+                registered.append(loaded_tool)
+
+        self._active_skill_bundles.add(skill_name)
+        return registered
 
     def _apply_pattern_filters(
         self,
@@ -366,7 +397,9 @@ class ToolExecutor:
         )
         return list(results)
 
-    async def _dispatch_single(self, call: ToolCall, visitor: Any = None) -> Dict[str, Any]:
+    async def _dispatch_single(
+        self, call: ToolCall, visitor: Any = None
+    ) -> Dict[str, Any]:
         """Dispatch a single tool call with validation and timeout.
 
         Args:
@@ -481,10 +514,15 @@ class ToolExecutor:
 
         # Check if handler accepts visitor
         sig = inspect.signature(handler)
+        maybe_result: Any
         if "visitor" in sig.parameters:
-            result = await handler(call.arguments, visitor=visitor)
+            maybe_result = handler(call.arguments, visitor=visitor)
         else:
-            result = await handler(call.arguments)
+            maybe_result = handler(call.arguments)
+
+        result = (
+            await maybe_result if inspect.isawaitable(maybe_result) else maybe_result
+        )
 
         if isinstance(result, str):
             return result
@@ -526,3 +564,49 @@ class ToolExecutor:
         Currently a no-op since MCP sessions are owned by MCPAction.
         """
         pass
+
+    def _load_dynamic_tool_from_file(
+        self,
+        file_path: str,
+        module_prefix: str,
+        allowed_tools: Optional[Set[str]] = None,
+    ) -> Optional[str]:
+        """Import one local tool module and register it if valid."""
+        from pathlib import Path
+
+        source = Path(file_path)
+        if not source.is_file():
+            return None
+        if source.name.startswith("_") or source.suffix != ".py":
+            return None
+
+        module_name = (
+            f"{module_prefix}_{source.stem}_{abs(hash(str(source.resolve())))}"
+        )
+        spec = importlib.util.spec_from_file_location(module_name, str(source))
+        if not spec or not spec.loader:
+            return None
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+
+        get_def = getattr(module, "get_tool_definition", None)
+        handler = getattr(module, "execute", None)
+        if not get_def or not handler:
+            return None
+
+        tool_def_dict = get_def()
+        if not isinstance(tool_def_dict, dict):
+            return None
+
+        tool_name = tool_def_dict.get("function", {}).get("name") or tool_def_dict.get(
+            "name"
+        )
+        if not tool_name:
+            return None
+        if allowed_tools is not None and tool_name not in allowed_tools:
+            return None
+
+        self.register_dynamic_tool(tool_name, tool_def_dict, handler)
+        return tool_name

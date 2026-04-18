@@ -584,6 +584,29 @@ ResponseBus uses these message types internally. Channel filters and adapters on
 - **`stream_chunk`**: Streaming chunk sent to subscribers only; not filtered or routed to adapters
 - **`final`**: End-of-stream signal sent to subscribers only; not filtered or routed to adapters
 
+## Thought vs User Messages
+
+Response messages now carry structural routing fields so clients and adapters can handle model thoughts separately from user-facing content:
+
+- `category`: `"user"` (default) or `"thought"`
+- `thought_type`: optional subtype for thought messages (`reasoning`, `tool_call`, `tool_result`, `status`)
+- `segment_id`: optional grouping key so streamed chunks can be assembled into one thought segment in the client
+
+### Delivery Rules
+
+- User messages keep existing behavior: filters/adapters apply and content can be appended to `interaction.response`.
+- Thought messages are never appended to `interaction.response`; they are appended to `interaction.agent_trace`.
+- Thought messages relay to channel adapters only when **both** are true:
+  - `publish(..., category="thought", relay_to_adapters=True)`
+  - adapter sets `deliver_thoughts = True`
+- Thought messages pass through channel filters only when filter sets `applies_to_thoughts = True`.
+
+### Streaming and Accumulation
+
+- User streams continue to accumulate by `interaction_id`.
+- Thought streams accumulate independently by `(interaction_id, segment_id)` to prevent cross-contamination with user response chunks.
+- `commit_pending_thoughts()` flushes pending thought segments (for action boundaries/finalization), applies opt-in filters/adapters, and persists thought entries to `interaction.agent_trace`.
+
 ## Best Practices
 
 ### Filters

@@ -22,7 +22,9 @@ logger = logging.getLogger(__name__)
 _FOLDER_MIME = "application/vnd.google-apps.folder"
 
 
-def _merge_disable_ingestion_from_old(old_files: List[Dict], new_files: List[Dict]) -> None:
+def _merge_disable_ingestion_from_old(
+    old_files: List[Dict], new_files: List[Dict]
+) -> None:
     """Copy ``disable_ingestion`` from the previous tree onto the fresh Drive listing (same file ids)."""
     old_by_id: Dict[str, Dict[str, Any]] = {}
 
@@ -83,13 +85,9 @@ def _filter_queue_for_disabled(
     return [x for x in items if _queue_item_file_id(x, queue_key) not in disabled]
 
 
-def _filter_doc_queues_for_disabled(
-    docs: Dict[str, Any], disabled: Set[str]
-) -> None:
+def _filter_doc_queues_for_disabled(docs: Dict[str, Any], disabled: Set[str]) -> None:
     for key in ("added", "modified", "removed"):
-        docs[key] = _filter_queue_for_disabled(
-            list(docs.get(key) or []), disabled, key
-        )
+        docs[key] = _filter_queue_for_disabled(list(docs.get(key) or []), disabled, key)
 
 
 def _recompute_google_drive_node_idle_status(node: Any) -> None:
@@ -486,7 +484,9 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     _filter_doc_queues_for_disabled(
                         google_drive_documents_node.failed_documents, disabled
                     )
-                    _recompute_google_drive_node_idle_status(google_drive_documents_node)
+                    _recompute_google_drive_node_idle_status(
+                        google_drive_documents_node
+                    )
                     await google_drive_documents_node.save()
                 else:
                     _merge_disable_ingestion_from_old([], files)

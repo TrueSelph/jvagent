@@ -11,7 +11,10 @@ from email.mime.text import MIMEText
 from email.utils import formataddr
 from typing import TYPE_CHECKING, Any, Dict, List
 
-from jvagent.action.email_action.email_payload import CanonicalSendMessage, EmailRecipient
+from jvagent.action.email_action.email_payload import (
+    CanonicalSendMessage,
+    EmailRecipient,
+)
 
 from .base import default_inbound_webhook_unsupported
 

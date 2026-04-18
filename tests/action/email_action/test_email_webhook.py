@@ -273,9 +273,7 @@ async def test_inbound_email_access_denied_action_email_action_first():
 async def test_gmail_inbox_skips_interact_denied_processes_second_message():
     from jvagent.action.email_action.gmail_inbox import fetch_next_gmail_inbox_message
 
-    recent_ms = str(
-        int(datetime(2025, 6, 1, tzinfo=timezone.utc).timestamp() * 1000)
-    )
+    recent_ms = str(int(datetime(2025, 6, 1, tzinfo=timezone.utc).timestamp() * 1000))
     raw_blocked = _gmail_raw_resource(
         from_addr="blocked@example.com", subject="A", body="one"
     )
@@ -284,9 +282,7 @@ async def test_gmail_inbox_skips_interact_denied_processes_second_message():
     raw_ok = {**raw_ok, "id": "m-ok"}
 
     gmail = MagicMock()
-    gmail.list_messages = AsyncMock(
-        return_value=[{"id": "m-blocked"}, {"id": "m-ok"}]
-    )
+    gmail.list_messages = AsyncMock(return_value=[{"id": "m-blocked"}, {"id": "m-ok"}])
 
     async def _get(mid, **kwargs):
         if mid == "m-blocked":

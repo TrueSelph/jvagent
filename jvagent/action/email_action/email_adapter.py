@@ -69,9 +69,8 @@ def _subject_and_thread_headers(
 
     headers: Optional[Dict[str, str]] = None
     parent = (
-        (meta.get("email_parent_message_id") or meta.get("parent_message_id") or "")
-        .strip()
-    )
+        meta.get("email_parent_message_id") or meta.get("parent_message_id") or ""
+    ).strip()
     mid = parent or (inbound.get("MessageId") or "").strip()
     if mid:
         irt = (inbound.get("InReplyTo") or "").strip()

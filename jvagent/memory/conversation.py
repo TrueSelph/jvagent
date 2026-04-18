@@ -1,7 +1,6 @@
 """Conversation node for managing conversation sessions."""
 
 import os
-
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
@@ -20,7 +19,6 @@ if TYPE_CHECKING:
     [("active_tasks.status", 1), ("active_tasks.next_trigger_at", 1)],
     name="active_task_trigger",
 )
-
 class Conversation(DeferredSaveMixin, Node):
     """Session-based conversation. session_id can be set or auto-generated.
 
@@ -296,7 +294,6 @@ class Conversation(DeferredSaveMixin, Node):
             )
         except ValueError:
             max_prune = 100
-
 
         # Start from the first interaction and remove the oldest ones
         current = await self.get_first_interaction()
@@ -880,7 +877,6 @@ class Conversation(DeferredSaveMixin, Node):
             "next_trigger_at": metadata.get("trigger_time"),
             "trigger_condition": metadata.get("trigger_condition"),
             "metadata": metadata,
-
             "created_at": now,
             "updated_at": now,
         }
@@ -902,6 +898,7 @@ class Conversation(DeferredSaveMixin, Node):
         # Fire task created callback (push-based notification)
         try:
             from jvagent.core.callback import trigger_task_created_callback
+
             await trigger_task_created_callback(self, entry)
         except Exception:
             # Callbacks are non-blocking and shouldn't fail the primary task creation
@@ -971,13 +968,13 @@ class Conversation(DeferredSaveMixin, Node):
 
     def get_active_tasks(
         self,
-        status: Optional[str] = None,
+        status: Optional[Union[str, List[str]]] = None,
         action_name: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get tasks, optionally filtered by status and/or action_name.
 
         Args:
-            status: Optional filter ("active", "inactive", "upcoming")
+            status: Optional filter by a single status or a list of statuses (e.g. ``"active"`` or ``["active", "triggered"]``)
             action_name: Optional filter by action class name for actions managing tasks
 
         Returns:

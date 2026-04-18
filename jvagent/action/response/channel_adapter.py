@@ -38,6 +38,7 @@ class ChannelAdapter(ABC):
             channel: Channel name this adapter handles (e.g., "whatsapp", "default")
         """
         self.channel = channel
+        self.deliver_thoughts: bool = False
         self.response_bus: Optional[ResponseBus] = None
         self._initialized: bool = False
 

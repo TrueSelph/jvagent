@@ -13,8 +13,26 @@ function mergeResponseMetadata(
   return { ...(existing ?? {}), ...incoming }
 }
 
+function normalizeThoughtType(msg: ResponseMessageData): Message['thoughtType'] {
+  if (msg.thought_type) return msg.thought_type
+  const metadata = msg.metadata || {}
+  if (metadata.thinking) return 'reasoning'
+  if (metadata.tool_call) return 'tool_call'
+  if (metadata.tool_result) return 'tool_result'
+  return undefined
+}
+
+function isThoughtMessage(msg: ResponseMessageData): boolean {
+  if (msg.category === 'thought') return true
+  if (msg.thought_type) return true
+  if (msg.segment_id) return true
+  const metadata = msg.metadata || {}
+  return Boolean(metadata.thinking || metadata.tool_call || metadata.tool_result)
+}
+
 export function useStreaming(agentId: string, sessionId?: string) {
   const [messages, setMessages] = useState<Message[]>([])
+  const [thoughtMessages, setThoughtMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(sessionId)
@@ -54,6 +72,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
       // Always clear when session changes (including when setting to undefined for new conversation)
       // This ensures messages from different sessions don't mix
       setMessages([])
+      setThoughtMessages([])
       prevMessagesRef.current = []
 
       // Update state after clearing messages
@@ -153,6 +172,70 @@ export function useStreaming(agentId: string, sessionId?: string) {
             } else if (chunk.type === 'message' && chunk.message && typeof chunk.message === 'object') {
               // Type guard: chunk.message is ResponseMessageData (not string)
               const msg = chunk.message
+              if (isThoughtMessage(msg)) {
+                const thoughtType = normalizeThoughtType(msg)
+                if (msg.message_type === 'stream_chunk') {
+                  const thoughtMessageId = msg.id || `thought-${Date.now()}`
+                  setThoughtMessages((prev) => {
+                    const existingIndex = prev.findIndex((m) => m.id === thoughtMessageId)
+                    if (existingIndex >= 0) {
+                      const existing = prev[existingIndex]
+                      return prev.map((m, idx) =>
+                        idx === existingIndex
+                          ? {
+                              ...m,
+                              content: (existing.content || '') + (msg.content || ''),
+                              streaming: true,
+                              interactionId: m.interactionId || msg.interaction_id,
+                              metadata: mergeResponseMetadata(m.metadata, msg.metadata),
+                              thoughtType: thoughtType,
+                              segmentId: msg.segment_id,
+                              category: 'thought',
+                            }
+                          : m
+                      )
+                    }
+                    const newThoughtMessage: Message = {
+                      id: thoughtMessageId,
+                      role: 'assistant',
+                      content: msg.content || '',
+                      interactionId: msg.interaction_id,
+                      timestamp: msg.timestamp || new Date().toISOString(),
+                      streaming: true,
+                      metadata: mergeResponseMetadata(undefined, msg.metadata),
+                      category: 'thought',
+                      thoughtType: thoughtType,
+                      segmentId: msg.segment_id,
+                    }
+                    return [...prev, newThoughtMessage]
+                  })
+                  return
+                } else if (msg.message_type === 'final') {
+                  const thoughtMessageId = msg.id || ''
+                  if (!thoughtMessageId) return
+                  setThoughtMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === thoughtMessageId && m.streaming ? { ...m, streaming: false } : m
+                    )
+                  )
+                  return
+                } else if (msg.message_type === 'adhoc') {
+                  const thoughtMessage: Message = {
+                    id: msg.id || `thought-adhoc-${Date.now()}-${Math.random()}`,
+                    role: 'assistant',
+                    interactionId: msg.interaction_id,
+                    content: msg.content || '',
+                    timestamp: msg.timestamp || new Date().toISOString(),
+                    streaming: false,
+                    metadata: mergeResponseMetadata(undefined, msg.metadata),
+                    category: 'thought',
+                    thoughtType: thoughtType,
+                    segmentId: msg.segment_id,
+                  }
+                  setThoughtMessages((prev) => [...prev, thoughtMessage])
+                  return
+                }
+              }
               // Handle stream_chunk messages during streaming
               // Group by message.id (sequence identifier) - all chunks in same sequence share same id
               if (msg.message_type === 'stream_chunk') {
@@ -592,6 +675,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
   const clearMessages = useCallback(() => {
     isLoadingRef.current = true // Prevent auto-save during clear
     setMessages([])
+    setThoughtMessages([])
     streamingMessageRef.current = ''
     interactionIdRef.current = null
     // Clear previous messages ref to prevent stale saves
@@ -621,6 +705,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
     const messagesToLoad = loadedMessages.map(msg => ({ ...msg }))
 
     setMessages(messagesToLoad)
+    setThoughtMessages([])
     // Update prevMessagesRef to match loaded messages
     prevMessagesRef.current = [...messagesToLoad]
     // Update prevSessionIdRef to match current session (use ref, not state)
@@ -707,6 +792,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
 
   return {
     messages,
+    thoughtMessages,
     sendMessage,
     clearMessages,
     loadMessages,

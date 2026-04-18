@@ -1,6 +1,7 @@
 import logging
-from typing import Dict, Any, Optional
-from fastapi import Query, Body, Request
+from typing import Any, Dict, Optional
+
+from fastapi import Body, Query, Request
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError
@@ -8,6 +9,7 @@ from jvspatial.api.exceptions import ResourceNotFoundError
 from jvagent.action.task_dispatcher.task_dispatcher import TaskDispatcher
 
 logger = logging.getLogger(__name__)
+
 
 @endpoint(
     "/proactive/tick/{agent_id}",
@@ -21,12 +23,12 @@ logger = logging.getLogger(__name__)
             "triggered_count": ResponseField(
                 field_type=int,
                 description="Total number of tasks that were triggered this tick",
-                example=1
+                example=1,
             ),
             "dispatched_count": ResponseField(
                 field_type=int,
                 description="Number of tasks successfully dispatched",
-                example=1
+                example=1,
             ),
             "tasks": ResponseField(
                 field_type=list,
@@ -35,15 +37,19 @@ logger = logging.getLogger(__name__)
             "timestamp": ResponseField(
                 field_type=str,
                 description="Timestamp of the tick",
-            )
+            ),
         }
     ),
 )
 async def task_tick_endpoint(
     request: Request,
     agent_id: str,
-    conversation_id: Optional[str] = Query(None, description="Optional conversation (session) ID to target"),
-    dry_run: bool = Query(False, description="If True, only log what would be dispatched")
+    conversation_id: Optional[str] = Query(
+        None, description="Optional conversation (session) ID to target"
+    ),
+    dry_run: bool = Query(
+        False, description="If True, only log what would be dispatched"
+    ),
 ) -> Dict[str, Any]:
     """Trigger a proactive task dispatch check for an agent.
 
@@ -55,12 +61,16 @@ async def task_tick_endpoint(
 
     Supports authentication via admin token or API key.
     """
-    dispatcher = await TaskDispatcher.find_one({
-        "context.agent_id": agent_id,
-        "context.enabled": True,
-    })
+    dispatcher = await TaskDispatcher.find_one(
+        {
+            "context.agent_id": agent_id,
+            "context.enabled": True,
+        }
+    )
     if not dispatcher:
-         return {"error": f"TaskDispatcher action not found or enabled for agent {agent_id}"}
+        return {
+            "error": f"TaskDispatcher action not found or enabled for agent {agent_id}"
+        }
 
     result = await dispatcher.tick(dry_run=dry_run, conversation_id=conversation_id)
 
@@ -87,14 +97,14 @@ async def task_tick_endpoint(
                         "type": "incoming",
                         "url": "https://...",
                     }
-                ]
+                ],
             )
         }
-    )
+    ),
 )
 async def list_scheduler_webhooks(
     agent_id: str,
-    regenerate: bool = Query(False, description="Force-rotate the webhook API key")
+    regenerate: bool = Query(False, description="Force-rotate the webhook API key"),
 ) -> Dict[str, Any]:
     """List all proactive task-related webhooks for an agent.
 
@@ -118,23 +128,29 @@ async def list_scheduler_webhooks(
     # 1. Incoming: Targeted Tick URL (Dynamic) — always regenerate to clear stale paths
     try:
         dispatch_url = await scheduler.get_webhook_url(regenerate=regenerate)
-        webhooks.append({
-            "label": "Targeted Proactive Dispatch",
-            "type": "incoming",
-            "description": "POST to this URL to trigger an immediate check for a specific conversation.",
-            "url": dispatch_url
-        })
-        logger.info(f"Proactive dispatch webhook URL for agent {agent_id}: {dispatch_url}")
+        webhooks.append(
+            {
+                "label": "Targeted Proactive Dispatch",
+                "type": "incoming",
+                "description": "POST to this URL to trigger an immediate check for a specific conversation.",
+                "url": dispatch_url,
+            }
+        )
+        logger.info(
+            f"Proactive dispatch webhook URL for agent {agent_id}: {dispatch_url}"
+        )
     except Exception as e:
         logger.error(f"Failed to generate proactive dispatch webhook URL: {e}")
 
     # 2. Outgoing: Task-Creation Callback URL (Static Config)
     if scheduler.task_created_webhook_url:
-        webhooks.append({
-            "label": "Task-Creation Callback",
-            "type": "outgoing",
-            "description": "jvagent calls this URL whenever a new proactive task is scheduled.",
-            "url": scheduler.task_created_webhook_url
-        })
+        webhooks.append(
+            {
+                "label": "Task-Creation Callback",
+                "type": "outgoing",
+                "description": "jvagent calls this URL whenever a new proactive task is scheduled.",
+                "url": scheduler.task_created_webhook_url,
+            }
+        )
 
     return {"webhooks": webhooks}

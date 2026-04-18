@@ -360,8 +360,10 @@ class Memory(Node):
 
         # Case 2: session_id only - resume or create under this Memory
         if session_id and not user_id:
-            conversation = await self._resolve_conversation_for_session_or_raise_foreign(
-                session_id
+            conversation = (
+                await self._resolve_conversation_for_session_or_raise_foreign(
+                    session_id
+                )
             )
             if not conversation:
                 new_user_id = f"user_{uuid.uuid4().hex[:16]}"
@@ -427,8 +429,10 @@ class Memory(Node):
             if not user:
                 raise RuntimeError(f"Failed to get/create user '{user_id}'")
 
-            conversation = await self._resolve_conversation_for_session_or_raise_foreign(
-                session_id
+            conversation = (
+                await self._resolve_conversation_for_session_or_raise_foreign(
+                    session_id
+                )
             )
             if not conversation:
                 if user_name and (is_new_user or not user.name or user.name == "user"):

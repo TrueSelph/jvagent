@@ -7,7 +7,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from dotenv import load_dotenv
 from jvspatial import is_serverless_mode
@@ -256,6 +256,12 @@ jvagent - Agentive Platform
     jvagent [<app_root>] agent create [SPEC] [--profile NAME] [--action ID]... [--force]
                                   Scaffold agents/<ns>/<id>/ and register in app.yaml
                                   SPEC: namespace/agent or namespace/agent@profile
+    jvagent [<app_root>] skill add <agent_ref> <skill_name> [--description TEXT] [--force]
+                                  Create agents/<ns>/<id>/skills/<skill_name>/SKILL.md starter
+    jvagent [<app_root>] skill list [--agent <agent_ref>] [--builtin]
+                                  List reusable and/or app-local skill bundles
+    jvagent [<app_root>] skill show <skill_name> [--agent <agent_ref>] [--builtin]
+                                  Show one skill bundle's metadata and SOP
     jvagent [<app_root>] agent list         List all installed agents
     jvagent [<app_root>] agent uninstall <name>    Uninstall an agent
     jvagent app create [--dir PATH] [--app-id ID] ...   Scaffold a new application tree
@@ -632,6 +638,243 @@ def _handle_agent_create_command(args: List[str], app_root: str = None) -> None:
     )
 
 
+def _build_skill_stub(skill_name: str, description: str) -> str:
+    return f"""---
+name: {skill_name}
+description: {description}
+allowed-tools: []
+---
+
+## Workflow
+
+1. Clarify the objective and constraints.
+2. Use available tools to gather evidence.
+3. Return a concise, actionable result.
+"""
+
+
+def _handle_skill_add_command(args: List[str], app_root: str = None) -> None:
+    """Create a Claude-style SKILL.md bundle for an agent."""
+    if app_root is None:
+        app_root = os.getcwd()
+
+    parser = argparse.ArgumentParser(prog="jvagent skill add")
+    parser.add_argument("agent_ref", help="namespace/agent_id")
+    parser.add_argument("skill_name", help="Skill bundle folder/name")
+    parser.add_argument(
+        "--description",
+        default="A skill bundle for the thinking interact action.",
+        help="Frontmatter description for SKILL.md",
+    )
+    parser.add_argument("--force", action="store_true")
+    ns = parser.parse_args(args)
+
+    if "/" not in ns.agent_ref:
+        parser.error("agent_ref must be in format namespace/agent_id")
+
+    namespace, agent_name = ns.agent_ref.split("/", 1)
+    agent_dir = Path(app_root).resolve() / "agents" / namespace / agent_name
+    if not agent_dir.is_dir():
+        parser.error(f"agent directory not found: {agent_dir}")
+
+    skills_dir = agent_dir / "skills"
+    skill_dir = skills_dir / ns.skill_name
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    skill_path = skill_dir / "SKILL.md"
+
+    if skill_path.exists() and not ns.force:
+        parser.error(f"{skill_path} already exists (use --force to overwrite)")
+
+    skill_path.write_text(
+        _build_skill_stub(ns.skill_name, ns.description), encoding="utf-8"
+    )
+    print(f"Wrote {skill_path}")
+
+
+def _resolve_skills_for_cli(
+    *,
+    app_root: str,
+    agent_ref: Optional[str],
+    include_builtin: bool,
+) -> Dict[str, Dict[str, Any]]:
+    from jvagent.scaffold.skill_resolve import (
+        resolve_agent_skills,
+        resolve_builtin_skills,
+        resolve_merged_skill_bundles,
+    )
+
+    if agent_ref:
+        if "/" not in agent_ref:
+            raise ValueError("agent_ref must be in format namespace/agent_id")
+        namespace, agent_name = agent_ref.split("/", 1)
+        if include_builtin:
+            return resolve_merged_skill_bundles(
+                app_root=app_root,
+                namespace=namespace,
+                agent_name=agent_name,
+                include_builtin=True,
+            )
+        return resolve_agent_skills(app_root, namespace, agent_name)
+
+    # No agent specified: default to builtin catalog for discoverability.
+    return resolve_builtin_skills()
+
+
+def _load_agent_thinking_skill_config(
+    app_root: str,
+    agent_ref: str,
+) -> Dict[str, Any]:
+    """Load thinking skill selector settings from an agent's agent.yaml."""
+    import yaml
+
+    if "/" not in agent_ref:
+        raise ValueError("agent_ref must be in format namespace/agent_id")
+
+    namespace, agent_name = agent_ref.split("/", 1)
+    agent_yaml = (
+        Path(app_root).resolve() / "agents" / namespace / agent_name / "agent.yaml"
+    )
+    if not agent_yaml.is_file():
+        return {"skills": None, "denied_skills": [], "skills_source": "both"}
+
+    try:
+        data = yaml.safe_load(agent_yaml.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {"skills": None, "denied_skills": [], "skills_source": "both"}
+
+    actions = data.get("actions", []) if isinstance(data, dict) else []
+    if not isinstance(actions, list):
+        return {"skills": None, "denied_skills": [], "skills_source": "both"}
+
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        if action.get("action") != "jvagent/thinking_interact_action":
+            continue
+        context = action.get("context", {})
+        if not isinstance(context, dict):
+            context = {}
+        return {
+            "skills": context.get("skills"),
+            "denied_skills": context.get("denied_skills", []),
+            "skills_source": context.get("skills_source", "both"),
+        }
+
+    return {"skills": None, "denied_skills": [], "skills_source": "both"}
+
+
+def _handle_skill_list_command(args: List[str], app_root: str = None) -> None:
+    """List available skill bundles."""
+    if app_root is None:
+        app_root = os.getcwd()
+
+    parser = argparse.ArgumentParser(prog="jvagent skill list")
+    parser.add_argument("--agent", default=None, help="namespace/agent_id")
+    parser.add_argument(
+        "--builtin",
+        action="store_true",
+        help="Include built-in skills when --agent is used",
+    )
+    ns = parser.parse_args(args)
+
+    try:
+        bundles = _resolve_skills_for_cli(
+            app_root=app_root,
+            agent_ref=ns.agent,
+            include_builtin=ns.builtin,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    if not bundles:
+        print("No skills found.")
+        return
+
+    active_skill_names: Set[str] = set()
+    if ns.agent:
+        from jvagent.scaffold.skill_resolve import apply_skill_selector
+
+        config = _load_agent_thinking_skill_config(
+            app_root=app_root, agent_ref=ns.agent
+        )
+        selected = apply_skill_selector(
+            bundles=bundles,
+            selector=config.get("skills"),
+            denied=config.get("denied_skills"),
+        )
+        active_skill_names = set(selected.keys())
+
+        selector = config.get("skills")
+        source = config.get("skills_source", "both")
+        denied = config.get("denied_skills", [])
+        print("\n=== Skill selector ===\n")
+        print(f"agent: {ns.agent}")
+        print(f"skills_source: {source}")
+        print(f"skills: {selector!r}")
+        print(f"denied_skills: {denied!r}")
+
+    print("\n=== Skills ===\n")
+    for skill_name in sorted(bundles.keys()):
+        bundle = bundles[skill_name]
+        source = bundle.get("source", "unknown")
+        description = bundle.get("description", "")
+        if ns.agent:
+            status = "active" if skill_name in active_skill_names else "excluded"
+            print(f"- {skill_name} [{source}] [{status}]")
+        else:
+            print(f"- {skill_name} [{source}]")
+        if description:
+            print(f"  {description}")
+    print()
+
+
+def _handle_skill_show_command(args: List[str], app_root: str = None) -> None:
+    """Show one skill bundle in detail."""
+    if app_root is None:
+        app_root = os.getcwd()
+
+    parser = argparse.ArgumentParser(prog="jvagent skill show")
+    parser.add_argument("skill_name")
+    parser.add_argument("--agent", default=None, help="namespace/agent_id")
+    parser.add_argument(
+        "--builtin",
+        action="store_true",
+        help="Include built-in skills when --agent is used",
+    )
+    ns = parser.parse_args(args)
+
+    try:
+        bundles = _resolve_skills_for_cli(
+            app_root=app_root,
+            agent_ref=ns.agent,
+            include_builtin=ns.builtin,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    bundle = bundles.get(ns.skill_name)
+    if not bundle:
+        print(f"Skill not found: {ns.skill_name}")
+        return
+
+    print(f"\n=== Skill: {ns.skill_name} ===")
+    print(f"Source: {bundle.get('source', 'unknown')}")
+    print(f"Directory: {bundle.get('dir', '')}")
+    print(f"Description: {bundle.get('description', '')}")
+    allowed_tools = bundle.get("allowed_tools", [])
+    print(f"Allowed tools: {', '.join(allowed_tools) if allowed_tools else '(all)'}")
+    tool_files = bundle.get("tool_files", [])
+    print(f"Tool files: {len(tool_files)}")
+    if tool_files:
+        for path in tool_files:
+            print(f"  - {path}")
+    content = bundle.get("content", "")
+    if content:
+        print("\n--- SKILL.md content ---\n")
+        print(content)
+    print()
+
+
 def handle_bundle_command(args: List[str], app_root: str = None) -> None:
     """Handle bundle command - generates Dockerfile in app directory.
 
@@ -727,6 +970,30 @@ def handle_agent_command(args: List[str], app_root: str = None) -> None:
         print(
             "      To install agents, add them to app.yaml and run 'jvagent' or 'jvagent bootstrap'."
         )
+
+
+def handle_skill_command(args: List[str], app_root: str = None) -> None:
+    """Handle skill bundle commands."""
+    if app_root is None:
+        app_root = os.getcwd()
+
+    if not args:
+        print("Usage: jvagent skill <add|list|show> ...")
+        return
+
+    command = args[0]
+    if command == "add":
+        _handle_skill_add_command(args[1:], app_root=app_root)
+        return
+    if command == "list":
+        _handle_skill_list_command(args[1:], app_root=app_root)
+        return
+    if command == "show":
+        _handle_skill_show_command(args[1:], app_root=app_root)
+        return
+
+    print(f"Unknown skill command: {command}")
+    print("Available commands: add, list, show")
 
 
 def handle_action_command(args: List[str], app_root: str = None) -> None:

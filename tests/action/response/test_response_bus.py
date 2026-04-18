@@ -369,3 +369,117 @@ class TestSimulatedStreaming:
             len(chunk_messages) > 1
         ), "Should auto-detect and simulate multiple chunks"
         assert "".join(m.content for m in chunk_messages) == content
+
+
+class TestThoughtMessageRouting:
+    @pytest.mark.asyncio
+    async def test_publish_thought_appends_agent_trace_not_response(self):
+        bus = ResponseBus()
+        interaction = MagicMock()
+        interaction.response = None
+        interaction.set_response = MagicMock(return_value=True)
+        interaction.append_agent_trace = MagicMock(return_value=True)
+        interaction._graph_context = MagicMock()
+        interaction.save = AsyncMock()
+
+        await bus.publish(
+            session_id="s1",
+            content="model is thinking",
+            channel="default",
+            stream=False,
+            interaction_id="i1",
+            interaction=interaction,
+            user_id="u1",
+            category="thought",
+            thought_type="reasoning",
+            segment_id="iter-1-reasoning",
+        )
+
+        interaction.set_response.assert_not_called()
+        interaction.append_agent_trace.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_thought_adapter_relay_requires_opt_in(self):
+        bus = ResponseBus()
+        adapter = MagicMock()
+        adapter.channel = "default"
+        adapter.send = AsyncMock(return_value=True)
+        adapter.deliver_thoughts = False
+        bus._channel_adapters["default"] = adapter
+
+        await bus.publish(
+            session_id="s1",
+            content="thinking",
+            channel="default",
+            stream=False,
+            interaction_id="i1",
+            interaction=None,
+            user_id="u1",
+            category="thought",
+            thought_type="reasoning",
+            segment_id="seg-1",
+            relay_to_adapters=True,
+        )
+        adapter.send.assert_not_called()
+
+        adapter.deliver_thoughts = True
+        await bus.publish(
+            session_id="s1",
+            content="thinking again",
+            channel="default",
+            stream=False,
+            interaction_id="i1",
+            interaction=None,
+            user_id="u1",
+            category="thought",
+            thought_type="reasoning",
+            segment_id="seg-2",
+            relay_to_adapters=True,
+        )
+        adapter.send.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_user_and_thought_accumulators_are_isolated(self):
+        bus = ResponseBus()
+        interaction = MagicMock()
+        interaction.response = None
+        interaction.set_response = MagicMock(return_value=True)
+        interaction.append_agent_trace = MagicMock(return_value=True)
+        interaction._graph_context = MagicMock()
+        interaction.save = AsyncMock()
+
+        await bus.publish(
+            session_id="s1",
+            content="Hello ",
+            channel="default",
+            stream=True,
+            interaction_id="i1",
+            interaction=interaction,
+            user_id="u1",
+            streaming_complete=False,
+            category="user",
+        )
+        await bus.publish(
+            session_id="s1",
+            content="inspect tool call",
+            channel="default",
+            stream=True,
+            interaction_id="i1",
+            interaction=interaction,
+            user_id="u1",
+            streaming_complete=False,
+            category="thought",
+            thought_type="tool_call",
+            segment_id="iter-1-call-read_file-0",
+        )
+
+        assert "i1" in bus._adhoc_accumulation
+        assert ("i1", "iter-1-call-read_file-0") in bus._thought_accumulation
+
+        await bus.commit_pending_adhoc("i1", interaction)
+        await bus.commit_pending_thoughts("i1", interaction)
+
+        assert "i1" not in bus._adhoc_accumulation
+        assert ("i1", "iter-1-call-read_file-0") not in bus._thought_accumulation
+        interaction.set_response.assert_called()
+        interaction.append_agent_trace.assert_called()

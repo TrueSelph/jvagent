@@ -1,12 +1,12 @@
-import logging
 import asyncio
-from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
+import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
-from jvagent.memory.conversation import Conversation
 from jvagent.action.base import Action
 from jvagent.action.interact.endpoints import interact_endpoint
+from jvagent.memory.conversation import Conversation
 
 try:
     from jvspatial.api.integrations.scheduler.decorators import on_schedule
@@ -18,6 +18,7 @@ SCHEDULE_TASK_ID = "system_task_dispatcher"
 
 # Module-level cache: survives across threads unlike ContextVars.
 _scheduler_service_ref = None
+
 
 class TaskDispatcher(Action):
     """Dispatches proactive tasks that have reached their trigger time."""
@@ -46,7 +47,9 @@ class TaskDispatcher(Action):
 
             server = get_current_server()
             if not server:
-                logger.debug("TaskDispatcher: no current server in context (background thread)")
+                logger.debug(
+                    "TaskDispatcher: no current server in context (background thread)"
+                )
                 return _scheduler_service_ref
 
             existing_scheduler = getattr(server, "scheduler_service", None)
@@ -55,7 +58,9 @@ class TaskDispatcher(Action):
                 return existing_scheduler
 
             scheduler_interval = getattr(server.config, "scheduler_interval", 1)
-            scheduler_config = SchedulerConfig(enabled=True, interval=scheduler_interval)
+            scheduler_config = SchedulerConfig(
+                enabled=True, interval=scheduler_interval
+            )
             scheduler_service = SchedulerService(
                 config=scheduler_config,
                 graph_context=getattr(server, "_graph_context", None),
@@ -65,13 +70,16 @@ class TaskDispatcher(Action):
 
             try:
                 if hasattr(server, "lifecycle_manager"):
+
                     def _stop_scheduler() -> None:
                         global _scheduler_service_ref
                         try:
                             if server.scheduler_service.is_running:
                                 server.scheduler_service.stop()
                         except Exception as e:
-                            logger.error(f"TaskDispatcher: failed to stop scheduler on shutdown: {e}")
+                            logger.error(
+                                f"TaskDispatcher: failed to stop scheduler on shutdown: {e}"
+                            )
                         finally:
                             _scheduler_service_ref = None
 
@@ -90,21 +98,30 @@ class TaskDispatcher(Action):
             return _scheduler_service_ref
         try:
             from jvspatial.api.context import get_current_server
+
             server = get_current_server()
-            if server and hasattr(server, "scheduler_service") and getattr(server, "scheduler_service"):
+            if (
+                server
+                and hasattr(server, "scheduler_service")
+                and getattr(server, "scheduler_service")
+            ):
                 svc = getattr(server, "scheduler_service")
                 _scheduler_service_ref = svc
                 return svc
             return self._initialize_scheduler_service()
         except Exception as e:
-            logger.debug(f"TaskDispatcher: failed to get current server scheduler_service: {e}")
+            logger.debug(
+                f"TaskDispatcher: failed to get current server scheduler_service: {e}"
+            )
         return None
 
     async def _register_scheduler_task(self, warn_on_missing: bool = False) -> None:
         scheduler_service = self._get_scheduler_service()
         if not scheduler_service:
             if warn_on_missing:
-                logger.warning("TaskDispatcher: scheduler service unavailable after startup.")
+                logger.warning(
+                    "TaskDispatcher: scheduler service unavailable after startup."
+                )
             return
 
         try:
@@ -118,11 +135,14 @@ class TaskDispatcher(Action):
                 get_scheduled_tasks,
                 register_scheduled_tasks,
             )
+
             await register_scheduled_tasks(scheduler_service)
             if not scheduler_service.is_running:
                 scheduler_service.start()
         except Exception as e:
-            logger.error(f"TaskDispatcher: failed to register scheduler task: {e}", exc_info=True)
+            logger.error(
+                f"TaskDispatcher: failed to register scheduler task: {e}", exc_info=True
+            )
 
     async def _unregister_scheduler_task(self) -> None:
         scheduler_service = self._get_scheduler_service()
@@ -134,43 +154,46 @@ class TaskDispatcher(Action):
         except Exception as e:
             logger.error(f"TaskDispatcher: failed to unregister scheduler task: {e}")
 
-    async def tick(self, dry_run: bool = False, conversation_id: Optional[str] = None) -> Dict[str, Any]:
+    async def tick(
+        self, dry_run: bool = False, conversation_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Check for triggered tasks and dispatch them."""
-        from jvagent.core.app import App
+        from jvagent.core.app import App, app_now_aware_utc
+
         app = await App.get()
-        now_dt = await app.now() if app else datetime.now(timezone.utc)
-        if now_dt.tzinfo is None:
-            now_dt = now_dt.replace(tzinfo=timezone.utc)
+        now_dt = await app_now_aware_utc(app)
         now = now_dt.strftime("%Y-%m-%dT%H:%M")
 
-        query = {
+        query: Dict[str, Any] = {
             "active_tasks": {
-                "$elemMatch": {
-                    "status": "active",
-                    "next_trigger_at": {"$lte": now}
-                }
+                "$elemMatch": {"status": "active", "next_trigger_at": {"$lte": now}}
             }
         }
         if conversation_id:
             query["session_id"] = conversation_id
 
         from jvagent.core.cache import get_cached_agent
+
         try:
             agent = await get_cached_agent(self.agent_id)
-            if not agent: return {"error": "Agent not found"}
+            if not agent:
+                return {"error": "Agent not found"}
             memory = await agent.get_memory()
-            if not memory: return {"error": "Memory not found"}
+            if not memory:
+                return {"error": "Memory not found"}
 
             from jvagent.memory.user import User
+
             due_convs = await Conversation.find(query)
-            
+
             all_convs = []
             for conv in due_convs:
                 user = await conv.node(direction="in", node=User)
-                if user and (user.memory_id == memory.id or await memory.is_connected_to(user)):
+                if user and (
+                    user.memory_id == memory.id or await memory.is_connected_to(user)
+                ):
                     all_convs.append(conv)
 
-            triggered_tasks = []
             dispatched_count = 0
             semaphore = asyncio.Semaphore(5)
 
@@ -185,75 +208,105 @@ class TaskDispatcher(Action):
                     system_utterance = f"[SYSTEM_PROMPT: TASK_TRIGGER] Task: {description}. Context: {context}"
 
                     try:
-                        from jvagent.memory.distributed_conversation_lock import conversation_mutation_lock
+                        from jvagent.memory.distributed_conversation_lock import (
+                            conversation_mutation_lock,
+                        )
                     except ImportError:
-                        @asynccontextmanager
-                        async def conversation_mutation_lock(id): yield
 
-                    logger.debug(f"TaskDispatcher: Requesting lock for conversation {conv_id}...")
+                        @asynccontextmanager
+                        async def conversation_mutation_lock(id):
+                            yield
+
+                    logger.debug(
+                        f"TaskDispatcher: Requesting lock for conversation {conv_id}..."
+                    )
                     try:
                         async with conversation_mutation_lock(conv_id):
-                            logger.debug(f"TaskDispatcher: Lock ACQUIRED for {conv_id}. Reloading state...")
-                            
+                            logger.debug(
+                                f"TaskDispatcher: Lock ACQUIRED for {conv_id}. Reloading state..."
+                            )
+
                             # 1. Reload the real conversation node
                             conversation = await Conversation.get(conv_id)
                             if not conversation:
-                                logger.warning(f"TaskDispatcher: Conversation {conv_id} not found after reload.")
+                                logger.warning(
+                                    f"TaskDispatcher: Conversation {conv_id} not found after reload."
+                                )
                                 return
 
                             # 2. Atomic Status Check & Completion
                             tasks = getattr(conversation, "active_tasks", [])
-                            t_obj = next((t for t in tasks if t.get("task_id") == task_id), None)
-                            
+                            t_obj = next(
+                                (t for t in tasks if t.get("task_id") == task_id), None
+                            )
+
                             if not t_obj:
-                                logger.warning(f"TaskDispatcher: Task {task_id} not found in conversation {conv_id} tasks.")
+                                logger.warning(
+                                    f"TaskDispatcher: Task {task_id} not found in conversation {conv_id} tasks."
+                                )
                                 return
 
                             current_status = t_obj.get("status")
-                            logger.info(f"TaskDispatcher: Processing task {task_id} (Status: {current_status})")
+                            logger.info(
+                                f"TaskDispatcher: Processing task {task_id} (Status: {current_status})"
+                            )
 
                             if current_status != "active":
-                                logger.info(f"TaskDispatcher: SKIPPING task {task_id} because its status is '{current_status}' (not 'active').")
+                                logger.info(
+                                    f"TaskDispatcher: SKIPPING task {task_id} because its status is '{current_status}' (not 'active')."
+                                )
                                 return
 
                             # MARK AS COMPLETED IMMEDIATELY to reserve it
-                            logger.info(f"TaskDispatcher: RESERVING task {task_id} by setting status to 'completed'.")
+                            logger.info(
+                                f"TaskDispatcher: RESERVING task {task_id} by setting status to 'completed'."
+                            )
                             t_obj["status"] = "completed"
                             t_obj["updated_at"] = datetime.now(timezone.utc).isoformat()
                             await conversation.save()
-                            logger.debug(f"TaskDispatcher: Task {task_id} status saved as 'completed'.")
+                            logger.debug(
+                                f"TaskDispatcher: Task {task_id} status saved as 'completed'."
+                            )
 
                             if dry_run:
                                 logger.info(f"Dry Run: Would dispatch {description}")
                                 return
 
                             # 3. Setup Walker & Persona
-                            from jvagent.action.interact.interact_walker import InteractWalker
-                            from jvagent.action.persona.persona_action import PersonaAction
-                            
+                            from jvagent.action.interact.interact_walker import (
+                                InteractWalker,
+                            )
+                            from jvagent.action.persona.persona_action import (
+                                PersonaAction,
+                            )
+
                             persona = await agent.get_action_by_type("PersonaAction")
                             response_bus = await agent.get_response_bus()
-                            
+
                             walker = InteractWalker(
                                 agent_id=agent.id,
                                 utterance=system_utterance,
-                                channel=task_channel or conversation.channel or "default",
+                                channel=task_channel
+                                or conversation.channel
+                                or "default",
                                 session_id=conversation.session_id,
                                 user_id=conversation.user_id,
                                 response_bus=response_bus,
-                                data={"is_proactive": True, "task_id": task_id}
+                                data={"is_proactive": True, "task_id": task_id},
                             )
                             walker.conversation = conversation
 
                             interaction = await conversation.create_interaction(
                                 utterance=system_utterance,
                                 channel=walker.channel,
-                                session_id=walker.session_id
+                                session_id=walker.session_id,
                             )
-                            
+
                             if interaction:
                                 interaction.add_parameter(walker.data, "TaskDispatcher")
-                                interaction.add_directives([system_utterance], "TaskDispatcher")
+                                interaction.add_directives(
+                                    [system_utterance], "TaskDispatcher"
+                                )
                                 await interaction.save()
                                 walker.interaction = interaction
                                 await persona.respond(interaction, visitor=walker)
@@ -269,7 +322,7 @@ class TaskDispatcher(Action):
                         trig = str(t.get("next_trigger_at", "")).replace(" ", "T")
                         if trig <= now:
                             dispatch_jobs.append(dispatch_task(t, conv.id))
-            
+
             if dispatch_jobs:
                 await app.initialize_actions()
                 await asyncio.gather(*dispatch_jobs)
@@ -279,14 +332,19 @@ class TaskDispatcher(Action):
             logger.error(f"Tick error: {e}", exc_info=True)
             return {"error": str(e)}
 
+
 if on_schedule:
+
     @on_schedule("every 2 minutes", task_id="system_task_dispatcher")
     async def _native_task_dispatcher_tick():
         logger.debug("Ticking TaskDispatcher...")
         try:
             from jvagent.action.task_dispatcher.task_dispatcher import TaskDispatcher
+
             dispatchers = await TaskDispatcher.find({"context.enabled": True})
             if dispatchers:
-                await asyncio.gather(*(d.tick() for d in dispatchers), return_exceptions=True)
+                await asyncio.gather(
+                    *(d.tick() for d in dispatchers), return_exceptions=True
+                )
         except Exception as e:
             logger.error(f"Global Tick error: {e}")

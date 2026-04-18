@@ -690,8 +690,12 @@ class InteractWalker(Walker):
                         self.interaction.id,
                         self.interaction,
                     )
+                    await self.response_bus.commit_pending_thoughts(
+                        self.interaction.id,
+                        self.interaction,
+                    )
                 except Exception as e:
-                    logger.error(f"Failed to commit pending adhoc: {e}")
+                    logger.error(f"Failed to commit pending response streams: {e}")
 
             # Always clear current action and skip flag after execution
             self._current_action = None

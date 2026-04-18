@@ -4,13 +4,14 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
+
 from jvagent.action.interact.base import InteractAction
-from jvagent.core.app import App
+from jvagent.core.app import App, app_now_aware_utc
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
-    from jvagent.memory.interaction import Interaction
     from jvagent.memory.conversation import Conversation
+    from jvagent.memory.interaction import Interaction
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,10 @@ class TaskTriggerInteractAction(InteractAction):
             return
 
         # Prefer visitor.conversation for consistency
-        conversation = getattr(visitor, "conversation", None) or await interaction.get_conversation()
+        conversation = (
+            getattr(visitor, "conversation", None)
+            or await interaction.get_conversation()
+        )
         if not conversation:
             return
 
@@ -57,9 +61,7 @@ class TaskTriggerInteractAction(InteractAction):
         """
         try:
             app = await App.get()
-            now = await app.now() if app else datetime.now(timezone.utc)
-            if now.tzinfo is None:
-                now = now.replace(tzinfo=timezone.utc)
+            now = await app_now_aware_utc(app)
         except Exception:
             now = datetime.now(timezone.utc)
 
@@ -83,10 +85,14 @@ class TaskTriggerInteractAction(InteractAction):
             if trigger_time_str:
                 trigger_at_str = str(trigger_time_str).replace(" ", "T")
                 if trigger_at_str > now_str:
-                    logger.debug(f"TaskTrigger: Task '{task.get('description')}' is for the future ({trigger_at_str}). Skipping.")
+                    logger.debug(
+                        f"TaskTrigger: Task '{task.get('description')}' is for the future ({trigger_at_str}). Skipping."
+                    )
                     continue
-                
-                logger.info(f"TaskTrigger: Time trigger '{trigger_time_str}' matched (due at {trigger_at_str}, now is {now_str})")
+
+                logger.info(
+                    f"TaskTrigger: Time trigger '{trigger_time_str}' matched (due at {trigger_at_str}, now is {now_str})"
+                )
                 should_trigger = True
 
             # B) Keyword condition trigger (Only if no time or time passed)
@@ -94,7 +100,9 @@ class TaskTriggerInteractAction(InteractAction):
                 utterance_lower = (interaction.utterance or "").lower()
                 if trigger_condition in utterance_lower:
                     should_trigger = True
-                    logger.info(f"TaskTrigger: Keyword trigger '{trigger_condition}' matched in utterance")
+                    logger.info(
+                        f"TaskTrigger: Keyword trigger '{trigger_condition}' matched in utterance"
+                    )
 
             # C) Mood-based trigger (from inner monologue set by Router)
             if not should_trigger and trigger_condition not in ("none", ""):
@@ -104,7 +112,9 @@ class TaskTriggerInteractAction(InteractAction):
                     detected_mood = mood_match.group(1).lower()
                     if trigger_condition == detected_mood:
                         should_trigger = True
-                        logger.debug(f"BrainTriggerAction: Mood trigger '{trigger_condition}' matched mood '{detected_mood}'")
+                        logger.debug(
+                            f"BrainTriggerAction: Mood trigger '{trigger_condition}' matched mood '{detected_mood}'"
+                        )
 
             if should_trigger:
                 directive = (
@@ -112,19 +122,29 @@ class TaskTriggerInteractAction(InteractAction):
                     f"CONTEXT: {metadata.get('context', '')}"
                 )
                 await visitor.add_directive(directive)
-                
+
                 # Mark as completed
-                task_id = task.get('task_id')
-                success = await conversation.update_task(status="completed", task_id=task_id)
+                task_id = task.get("task_id")
+                success = await conversation.update_task(
+                    status="completed", task_id=task_id
+                )
                 if success:
                     await conversation.save()
-                    logger.info(f"TaskTrigger: Marked task {task_id} as completed and saved conversation.")
+                    logger.info(
+                        f"TaskTrigger: Marked task {task_id} as completed and saved conversation."
+                    )
                 else:
-                    logger.warning(f"TaskTrigger: Failed to find task {task_id} to mark as completed!")
-                
+                    logger.warning(
+                        f"TaskTrigger: Failed to find task {task_id} to mark as completed!"
+                    )
+
                 triggered_count += 1
-                logger.info(f"TaskTrigger: Triggered proactive task: {task.get('description')}")
+                logger.info(
+                    f"TaskTrigger: Triggered proactive task: {task.get('description')}"
+                )
 
         if triggered_count > 0:
             await interaction.save()
-            logger.info(f"TaskTrigger: Fired {triggered_count} proactive task(s) and saved interaction.")
+            logger.info(
+                f"TaskTrigger: Fired {triggered_count} proactive task(s) and saved interaction."
+            )

@@ -151,6 +151,10 @@ class Interaction(DeferredSaveMixin, Node):
         default_factory=list,
         description="Aggregated observability events (model calls, embeddings, etc.)",
     )
+    agent_trace: List[Dict[str, Any]] = attribute(
+        default_factory=list,
+        description="Chronological thought trace for agentic interactions",
+    )
     usage: Dict[str, Any] = attribute(
         default_factory=dict,
         description="Aggregated usage (tokens, model calls) for this interaction",
@@ -220,6 +224,20 @@ class Interaction(DeferredSaveMixin, Node):
             self.events.append(entry)  # Events can have duplicates (logs)
             return True  # Added
         return False  # Invalid input
+
+    def append_agent_trace(self, entry: Dict[str, Any]) -> bool:
+        """Append a structured thought trace event to this interaction.
+
+        Args:
+            entry: Thought trace event payload.
+
+        Returns:
+            True when appended, False when entry is invalid.
+        """
+        if not entry or not isinstance(entry, dict):
+            return False
+        self.agent_trace.append(entry)
+        return True
 
     def record_action_execution(self, action_name: str) -> None:
         """Record an action execution in the processing log.
@@ -597,6 +615,7 @@ class Interaction(DeferredSaveMixin, Node):
             "parameters": self.parameters,  # Includes executed status
             "events": self.events,  # Logs - no execution status
             "observability_metrics": self.observability_metrics,
+            "agent_trace": getattr(self, "agent_trace", None),
             "usage": self.usage,
             "interpretation": self.interpretation,
             "anchors": self.anchors,
@@ -607,6 +626,12 @@ class Interaction(DeferredSaveMixin, Node):
             "closed": self.closed,
             "streamed": self.streamed,
         }
+
+    def to_dict(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        """Serialize interaction including agent trace data."""
+        result = super().to_dict(*args, **kwargs)
+        result["agent_trace"] = self.agent_trace
+        return result
 
     def to_transcript_entry(self) -> Dict[str, Any]:
         """Convert interaction to transcript entry format.

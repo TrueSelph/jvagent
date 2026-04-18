@@ -297,6 +297,7 @@ async def finalize_whatsapp_interaction(
 
         # Trigger background-deferred actions (like the Proactive Scheduler)
         from jvagent.action.interact.endpoints import _run_background_actions
+
         await _run_background_actions(walker)
 
         # Compute usage after flush so all model_call events are present

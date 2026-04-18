@@ -6,9 +6,8 @@ defines the interface for actions that participate in the interact subsystem.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from time import monotonic
-
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.api.exceptions import ValidationError
 from jvspatial.core import on_visit
@@ -200,6 +199,10 @@ class InteractAction(Action, ABC):
         streaming_complete: bool = True,
         stream: Optional[bool] = None,
         transient: bool = False,
+        category: str = "user",
+        thought_type: Optional[str] = None,
+        segment_id: Optional[str] = None,
+        relay_to_adapters: bool = False,
     ) -> Optional[Any]:
         """Publish a response directly to the response bus via publish.
 
@@ -216,6 +219,11 @@ class InteractAction(Action, ABC):
             stream: If None, use visitor.stream; if False, publish as non-streaming (single adhoc).
             transient: If True, skip appending content to interaction.response.
                 Use for transient messages (e.g., canned responses, typing indicators).
+            category: Logical message category ("user" or "thought").
+            thought_type: Thought subtype when category="thought".
+            segment_id: Optional segment identifier for grouping streamed chunks.
+            relay_to_adapters: Whether thought messages should be relayed to channel adapters
+                that opt in. Ignored for user messages.
 
         Returns:
             ResponseMessage from ResponseBus.publish, or None if not published.
@@ -257,6 +265,39 @@ class InteractAction(Action, ABC):
             metadata=pub_metadata,
             streaming_complete=streaming_complete,
             transient=transient,
+            category=category,
+            thought_type=thought_type,
+            segment_id=segment_id,
+            relay_to_adapters=relay_to_adapters,
+        )
+
+    async def publish_thought(
+        self,
+        visitor: "InteractWalker",
+        content: str,
+        *,
+        thought_type: str = "reasoning",
+        segment_id: Optional[str] = None,
+        streaming_complete: bool = True,
+        relay_to_adapters: Optional[bool] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        stream: Optional[bool] = None,
+    ) -> Optional[Any]:
+        """Publish a thought-category message with action-level relay defaults."""
+        relay_default = bool(getattr(self, "relay_thoughts_to_channels", False))
+        return await self.publish(
+            visitor=visitor,
+            content=content,
+            metadata=metadata,
+            streaming_complete=streaming_complete,
+            stream=stream,
+            transient=True,
+            category="thought",
+            thought_type=thought_type,
+            segment_id=segment_id,
+            relay_to_adapters=(
+                relay_default if relay_to_adapters is None else relay_to_adapters
+            ),
         )
 
     async def respond(
@@ -397,8 +438,11 @@ class InteractAction(Action, ABC):
                 exc_info=True,
             )
             return None
+
     @classmethod
-    async def get_agent_capabilities_brief(cls, agent: Any, *, ttl_seconds: int = 300) -> str:
+    async def get_agent_capabilities_brief(
+        cls, agent: Any, *, ttl_seconds: int = 300
+    ) -> str:
         """Return a bullet list of capabilities, or a default placeholder."""
         if not agent:
             return "No specific capabilities registered."
@@ -431,4 +475,3 @@ class InteractAction(Action, ABC):
                 cls._capabilities_cache = {}
             cls._capabilities_cache[agent_id] = (monotonic(), caps_str)
         return caps_str
-

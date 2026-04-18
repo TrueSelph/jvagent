@@ -1,5 +1,6 @@
-"""Tests for ThinkingInteractAction: agentic loop, model kwargs, and message truncation."""
+"""Tests for ThinkingInteractAction: prompts, loop helpers, and skill discovery."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -24,21 +25,9 @@ class TestThinkingInteractActionModelKwargs:
         # max_tokens should be >= budget_tokens + 1
         assert kwargs["max_tokens"] >= 5001
 
-    def test_build_model_kwargs_skill_overrides(self):
-        skill = MagicMock()
-        skill.get_model_overrides.return_value = {
-            "model": "claude-opus-4-20250514",
-            "max_iterations": 50,
-        }
-        action = _make_thinking_action()
-        kwargs = action._build_model_kwargs(skill_action=skill)
-        assert kwargs["model"] == "claude-opus-4-20250514"
-
-    def test_build_model_kwargs_thinking_and_skill(self):
-        skill = MagicMock()
-        skill.get_model_overrides.return_value = {"max_tokens": 16000}
+    def test_build_model_kwargs_thinking(self):
         action = _make_thinking_action(thinking_budget_tokens=5000)
-        kwargs = action._build_model_kwargs(skill_action=skill)
+        kwargs = action._build_model_kwargs()
         assert "thinking" in kwargs
         assert kwargs["max_tokens"] >= 5001
 
@@ -47,29 +36,16 @@ class TestThinkingInteractActionMessages:
     """Test message building and truncation."""
 
     @pytest.mark.asyncio
-    async def test_build_initial_messages_no_skill(self):
+    async def test_build_initial_messages(self):
         action = _make_thinking_action()
         visitor = MagicMock()
         visitor.utterance = "Review this code"
 
-        messages = await action._build_initial_messages(visitor, skill_action=None)
+        messages = await action._build_initial_messages(visitor)
         assert len(messages) == 2
         assert messages[0]["role"] == "system"
         assert messages[1]["role"] == "user"
         assert "Review this code" in messages[1]["content"]
-
-    @pytest.mark.asyncio
-    async def test_build_initial_messages_with_skill(self):
-        skill = MagicMock()
-        skill.compose_system_prompt.return_value = "You are a code reviewer."
-        skill.compose_utterance.return_value = "[Review mode] Review this code"
-        action = _make_thinking_action()
-        visitor = MagicMock()
-        visitor.utterance = "Review this code"
-
-        messages = await action._build_initial_messages(visitor, skill_action=skill)
-        assert messages[0]["content"] == "You are a code reviewer."
-        assert "[Review mode]" in messages[1]["content"]
 
     def test_maybe_truncate_messages_short_list(self):
         action = _make_thinking_action(max_full_tool_results=5)
@@ -175,6 +151,128 @@ class TestThinkingInteractActionAssistantContent:
         assert action._parse_tool_arguments("not json") == {}
 
 
+class TestThinkingInteractActionProviderConversion:
+    def test_convert_messages_for_anthropic(self):
+        action = _make_thinking_action()
+        messages = [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "user"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "function": {
+                            "name": "read_skill",
+                            "arguments": '{"skill_name":"example_skill"}',
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "content": "result content",
+            },
+        ]
+        converted = action._convert_messages_for_provider(messages, "anthropic")
+        assert converted[2]["role"] == "assistant"
+        assert any(block.get("type") == "tool_use" for block in converted[2]["content"])
+        assert converted[3]["role"] == "user"
+        assert converted[3]["content"][0]["type"] == "tool_result"
+
+    def test_convert_messages_passthrough_non_anthropic(self):
+        action = _make_thinking_action()
+        messages = [{"role": "user", "content": "hello"}]
+        assert action._convert_messages_for_provider(messages, "openai") == messages
+
+
+class TestThinkingInteractActionTermination:
+    @pytest.mark.asyncio
+    async def test_force_termination_makes_final_call_without_thinking(self):
+        action = _make_thinking_action()
+        model_result = MagicMock()
+        model_result.get_response = AsyncMock(return_value="Final answer")
+        model_result.response = "Final answer"
+        action._call_model = AsyncMock(return_value=model_result)
+
+        messages = [{"role": "user", "content": "Do work"}]
+        model_kwargs = {
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 4096,
+            "thinking": {"type": "enabled", "budget_tokens": 2000},
+        }
+        result = await action._force_termination(
+            messages=messages,
+            tools=[],
+            visitor=MagicMock(),
+            model_kwargs=model_kwargs,
+        )
+        assert result == "Final answer"
+        call_args = action._call_model.await_args
+        assert call_args.args[1] is None
+        assert "thinking" not in call_args.args[3]
+
+
+class TestThinkingInteractActionSkillDiscovery:
+    @pytest.mark.asyncio
+    async def test_discover_skill_bundles_uses_resolver(self):
+        action = _make_thinking_action(skills="-all", skills_source="both")
+        visitor = MagicMock()
+        visitor._agent = SimpleNamespace(namespace="demo", name="assistant")
+        with patch(
+            "jvagent.action.thinking.thinking_interact_action.resolve_merged_skill_bundles",
+            return_value={"resolved_skill": {"description": "Resolved by resolver"}},
+        ) as mocked_resolver:
+            discovered = await action._discover_skill_bundles(visitor)
+        assert "resolved_skill" in discovered
+        mocked_resolver.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_discover_skill_bundles_from_agent_dir(self, tmp_path, monkeypatch):
+        app_root = tmp_path
+        monkeypatch.chdir(app_root)
+        skill_dir = app_root / "agents" / "demo" / "assistant" / "skills" / "audit"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            """---
+name: audit_skill
+description: Perform audits.
+allowed-tools:
+  - summarize_findings
+---
+
+Use this workflow.
+""",
+            encoding="utf-8",
+        )
+        (skill_dir / "summarize_findings.py").write_text(
+            """
+def get_tool_definition():
+    return {
+        "name": "summarize_findings",
+        "description": "Summarize findings",
+        "parameters": {"type": "object", "properties": {}}
+    }
+
+async def execute(arguments):
+    return "ok"
+""",
+            encoding="utf-8",
+        )
+
+        action = _make_thinking_action(skills="-all", skills_source="app")
+        visitor = MagicMock()
+        visitor._agent = SimpleNamespace(namespace="demo", name="assistant")
+
+        discovered = await action._discover_skill_bundles(visitor)
+        assert "audit_skill" in discovered
+        assert discovered["audit_skill"]["description"] == "Perform audits."
+        assert discovered["audit_skill"]["allowed_tools"] == ["summarize_findings"]
+        assert discovered["audit_skill"]["tool_files"]
+
+
 class TestThinkingInteractActionHealthcheck:
     """Test healthcheck validation."""
 
@@ -199,6 +297,81 @@ class TestThinkingInteractActionHealthcheck:
         assert result is False
 
 
+class TestThinkingInteractActionThoughtPublishing:
+    @pytest.mark.asyncio
+    async def test_run_agentic_loop_publishes_structured_thoughts(self):
+        action = _make_thinking_action()
+        action.publish_thought = AsyncMock()
+        action.relay_thoughts_to_channels = False
+
+        first_result = MagicMock()
+        first_result.thinking_content = "Need to inspect files"
+        first_result.thinking_tokens = 12
+        first_result.tool_calls = [
+            {
+                "id": "tc_1",
+                "function": {"name": "read_file", "arguments": "{}"},
+            }
+        ]
+        first_result.response = ""
+        first_result.provider = "openai"
+        first_result.get_response = AsyncMock(return_value="")
+
+        second_result = MagicMock()
+        second_result.thinking_content = None
+        second_result.thinking_tokens = 0
+        second_result.tool_calls = []
+        second_result.response = "Final answer"
+        second_result.provider = "openai"
+        second_result.get_response = AsyncMock(return_value="Final answer")
+
+        action._call_model = AsyncMock(side_effect=[first_result, second_result])
+
+        visitor = MagicMock()
+        visitor.utterance = "Please investigate and summarize"
+        visitor.conversation = None
+        visitor.interaction = None
+
+        tool_executor = MagicMock()
+        tool_executor.get_tools_list = MagicMock(return_value=[])
+        tool_executor.dispatch = AsyncMock(
+            return_value=[
+                {
+                    "role": "tool",
+                    "tool_call_id": "tc_1",
+                    "content": "file read complete",
+                }
+            ]
+        )
+
+        task_tracker = MagicMock()
+        task_tracker.add_step = AsyncMock()
+
+        response = await action._run_agentic_loop(
+            visitor=visitor,
+            tool_executor=tool_executor,
+            task_tracker=task_tracker,
+            discovered_skills=None,
+        )
+
+        assert response == "Final answer"
+
+        thought_types = [
+            call.kwargs.get("thought_type")
+            for call in action.publish_thought.await_args_list
+        ]
+        segment_ids = [
+            call.kwargs.get("segment_id")
+            for call in action.publish_thought.await_args_list
+        ]
+        assert "reasoning" in thought_types
+        assert "tool_call" in thought_types
+        assert "tool_result" in thought_types
+        assert "iter-1-reasoning" in segment_ids
+        assert "iter-1-call-read_file-0" in segment_ids
+        assert "iter-1-result-tc_1" in segment_ids
+
+
 # --- Helpers ---
 
 
@@ -217,7 +390,9 @@ def _make_thinking_action(**kwargs):
     action.model = kwargs.get("model", "claude-sonnet-4-20250514")
     action.model_temperature = kwargs.get("model_temperature", 0.3)
     action.model_max_tokens = kwargs.get("model_max_tokens", 8192)
-    action.skill = kwargs.get("skill", None)
+    action.skills = kwargs.get("skills", None)
+    action.denied_skills = kwargs.get("denied_skills", [])
+    action.skills_source = kwargs.get("skills_source", "both")
     action.tool_servers = kwargs.get("tool_servers", [])
     action.allow_local_tools = kwargs.get("allow_local_tools", False)
     action.stream_thinking = kwargs.get("stream_thinking", True)
@@ -225,21 +400,29 @@ def _make_thinking_action(**kwargs):
     action.max_full_tool_results = kwargs.get("max_full_tool_results", 10)
 
     # Wire up real methods
-    action._build_model_kwargs = (
-        lambda skill_action=None: ThinkingInteractAction._build_model_kwargs(
-            action, skill_action
-        )
+    action._build_model_kwargs = lambda: ThinkingInteractAction._build_model_kwargs(
+        action
     )
-    action._build_initial_messages = (
-        lambda v, skill_action=None: ThinkingInteractAction._build_initial_messages(
-            action, v, skill_action
-        )
+    action._build_initial_messages = lambda v, discovered_skills=None: ThinkingInteractAction._build_initial_messages(
+        action, v, discovered_skills
     )
     action._maybe_truncate_messages = (
         lambda msgs: ThinkingInteractAction._maybe_truncate_messages(action, msgs)
     )
     action._build_assistant_content = (
         lambda mr: ThinkingInteractAction._build_assistant_content(action, mr)
+    )
+    action._convert_messages_for_provider = lambda messages, provider: ThinkingInteractAction._convert_messages_for_provider(
+        action, messages, provider
+    )
+    action._force_termination = lambda messages, tools, visitor, model_kwargs: ThinkingInteractAction._force_termination(
+        action, messages, tools, visitor, model_kwargs
+    )
+    action._discover_skill_bundles = (
+        lambda visitor: ThinkingInteractAction._discover_skill_bundles(action, visitor)
+    )
+    action._run_agentic_loop = lambda visitor, tool_executor, task_tracker, discovered_skills=None: ThinkingInteractAction._run_agentic_loop(
+        action, visitor, tool_executor, task_tracker, discovered_skills
     )
     action._parse_tool_arguments = (
         lambda args: ThinkingInteractAction._parse_tool_arguments(action, args)

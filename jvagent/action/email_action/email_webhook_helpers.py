@@ -61,7 +61,9 @@ async def inbound_email_access_allowed(
     user_id: str,
 ) -> bool:
     """True if the sender may receive inbound email processing (both gates pass)."""
-    return (await inbound_email_access_denied_action(access_control_action, user_id)) is None
+    return (
+        await inbound_email_access_denied_action(access_control_action, user_id)
+    ) is None
 
 
 def parse_inbound_payload(

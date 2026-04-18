@@ -11,6 +11,9 @@ jvagent ships commands to generate a **git-ready application directory** (`app.y
 | `jvagent app create` | Create a new app directory from scratch |
 | `jvagent app profile new` | Add `profiles/<name>.yaml` under the **current app root** |
 | `jvagent agent create` | Add `agents/<ns>/<id>/` and register the agent in `app.yaml` |
+| `jvagent skill add` | Create app-local `SKILL.md` bundle skeleton for an agent |
+| `jvagent skill list` | List reusable built-in and/or app-local skill bundles |
+| `jvagent skill show` | Inspect one skill bundle's metadata and SOP content |
 
 Run `jvagent` with no args (or invalid args) for general usage, or `jvagent app` with no subcommand for app-specific help text.
 
@@ -165,6 +168,40 @@ After adding an agent, reload the graph:
 jvagent bootstrap --update
 # or
 jvagent --update
+```
+
+---
+
+## Skill catalogs and custom skills
+
+Thinking agents support two skill sources:
+
+1. Built-in reusable skill catalog shipped with jvagent (`jvagent/skills/*`)
+2. App-local custom skills in `agents/<ns>/<id>/skills/<skill_name>/SKILL.md`
+
+When a skill name exists in both, app-local overrides built-in.
+
+Runtime exposure is controlled per agent in `agents/<ns>/<id>/agent.yaml` on
+`jvagent/thinking_interact_action` via:
+
+- `skills`: `-all` or a list of names/globs (default unset = expose none)
+- `denied_skills`: optional subtractive names/globs
+- `skills_source`: `builtin`, `app`, `both`, or `none`
+
+### Skill commands
+
+```bash
+# create a custom app-local skill
+jvagent /path/to/app skill add acme/bot bug_triage --description "App-specific triage SOP"
+
+# list built-in reusable skills
+jvagent /path/to/app skill list
+
+# list merged view for an agent (builtin + app-local overrides)
+jvagent /path/to/app skill list --agent acme/bot --builtin
+
+# inspect one skill
+jvagent /path/to/app skill show code_review --agent acme/bot --builtin
 ```
 
 ---

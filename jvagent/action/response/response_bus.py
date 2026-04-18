@@ -6,7 +6,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from jvagent.action.response.message import ResponseMessage
 from jvagent.core.app import App
@@ -25,6 +25,10 @@ class AdhocAccumulator:
     message_id: str = ""
     session_id: str = ""
     interaction_id: str = ""
+    category: str = "user"
+    thought_type: Optional[str] = None
+    segment_id: Optional[str] = None
+    relay_to_adapters: bool = False
     started_at: float = field(default_factory=time.time)
 
 
@@ -86,8 +90,10 @@ class ResponseBus:
         # Channel filter registry: list of filters sorted by priority (lower priority executes first)
         self._channel_filters: List["ChannelFilter"] = []
 
-        # Streaming adhoc accumulation: interaction_id -> AdhocAccumulator (chunks until streaming_complete)
+        # Streaming user accumulation: interaction_id -> AdhocAccumulator (chunks until streaming_complete)
         self._adhoc_accumulation: Dict[str, AdhocAccumulator] = {}
+        # Streaming thought accumulation: (interaction_id, segment_id) -> AdhocAccumulator
+        self._thought_accumulation: Dict[Tuple[str, str], AdhocAccumulator] = {}
 
         # Configuration
         self._max_session_queue_size = 1000  # Bounded storage per session
@@ -125,6 +131,14 @@ class ResponseBus:
         for k in expired_acc:
             logger.debug(f"Evicting expired accumulator for interaction {k}")
             self._adhoc_accumulation.pop(k, None)
+        expired_thought_acc = [
+            k
+            for k, v in self._thought_accumulation.items()
+            if now - v.started_at > self.ACCUMULATOR_TIMEOUT_SECONDS
+        ]
+        for k in expired_thought_acc:
+            logger.debug("Evicting expired thought accumulator for interaction %s", k)
+            self._thought_accumulation.pop(k, None)
 
         # Evict expired buffers (interactions never finalized within TTL)
         expired_buf = [
@@ -144,8 +158,33 @@ class ResponseBus:
         channel: str,
         user_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        *,
+        category: str = "user",
+        thought_type: Optional[str] = None,
+        segment_id: Optional[str] = None,
+        relay_to_adapters: bool = False,
     ) -> AdhocAccumulator:
-        """Get or create AdhocAccumulator for this interaction (new sequence after commit)."""
+        """Get or create AdhocAccumulator for user/thought streaming sequences."""
+        if category == "thought":
+            seg_id = segment_id or "default"
+            key = (interaction_id, seg_id)
+            if key not in self._thought_accumulation:
+                message_id = f"o.ResponseMessage.{uuid.uuid4().hex[:24]}"
+                self._thought_accumulation[key] = AdhocAccumulator(
+                    chunks=[],
+                    channel=channel,
+                    user_id=user_id,
+                    metadata=metadata or {},
+                    message_id=message_id,
+                    session_id=session_id,
+                    interaction_id=interaction_id,
+                    category=category,
+                    thought_type=thought_type,
+                    segment_id=seg_id,
+                    relay_to_adapters=relay_to_adapters,
+                )
+            return self._thought_accumulation[key]
+
         if interaction_id not in self._adhoc_accumulation:
             message_id = f"o.ResponseMessage.{uuid.uuid4().hex[:24]}"
             self._adhoc_accumulation[interaction_id] = AdhocAccumulator(
@@ -156,6 +195,10 @@ class ResponseBus:
                 message_id=message_id,
                 session_id=session_id,
                 interaction_id=interaction_id,
+                category=category,
+                thought_type=thought_type,
+                segment_id=segment_id,
+                relay_to_adapters=relay_to_adapters,
             )
         return self._adhoc_accumulation[interaction_id]
 
@@ -197,6 +240,29 @@ class ResponseBus:
         self._message_buffers[interaction_id].append(message)
         self._buffer_timestamps[interaction_id] = time.time()
 
+    def _is_thought_message(self, message: ResponseMessage) -> bool:
+        """Return True when message belongs to the thought category."""
+        return (message.category or "user") == "thought"
+
+    def _can_apply_filter(
+        self, filter_instance: "ChannelFilter", message: ResponseMessage
+    ) -> bool:
+        """Check if a channel filter should run for this message category."""
+        if not self._is_thought_message(message):
+            return True
+        return bool(getattr(filter_instance, "applies_to_thoughts", False))
+
+    def _can_send_to_adapter(
+        self,
+        adapter: "ChannelAdapter",
+        message: ResponseMessage,
+        relay_to_adapters: bool,
+    ) -> bool:
+        """Check if a message can be delivered to the adapter."""
+        if not self._is_thought_message(message):
+            return True
+        return relay_to_adapters and bool(getattr(adapter, "deliver_thoughts", False))
+
     async def publish(
         self,
         session_id: str,
@@ -209,38 +275,63 @@ class ResponseBus:
         metadata: Optional[Dict[str, Any]] = None,
         streaming_complete: bool = True,
         transient: bool = False,
+        category: str = "user",
+        thought_type: Optional[str] = None,
+        segment_id: Optional[str] = None,
+        relay_to_adapters: bool = False,
     ) -> ResponseMessage:
-        """Publish adhoc content. Stream mode and streaming_complete control accumulation and delivery.
-
-        Non-streaming (stream=False): Apply filters, send to adapter, append to interaction.response, notify.
-        Streaming (stream=True), streaming_complete=False: Accumulate chunk, emit stream_chunk to subscribers.
-        Streaming (stream=True), streaming_complete=True: Flush accumulator: filters/adapters on full content,
-        set interaction.response, emit final signal, clear accumulator.
-        Simulated streaming: When stream=True with streaming_complete=True and non-empty content (whole content
-        in one shot), content is split using language-model tokenization (see chunking.chunk_text_by_lm_tokens)
-        and emitted as stream_chunks so the client sees token-by-token delivery.
-
-        Args:
-            session_id: Session identifier
-            content: Message content (or chunk when streaming)
-            channel: Target channel
-            stream: From visitor.stream; if True, content may be streamed in chunks
-            interaction_id: Parent interaction ID
-            interaction: Optional interaction instance (avoids DB lookup for append)
-            user_id: User identifier (recipient)
-            metadata: Additional metadata
-            streaming_complete: True when this is the last chunk (or single message). Only relevant when stream=True.
-            transient: If True, skip appending content to interaction.response.
-                Use for transient messages (e.g., canned responses, typing indicators) that
-                shouldn't be recorded as the interaction's final response. Default: False.
-
-        Returns:
-            Created ResponseMessage (stream_chunk, adhoc, or final depending on path).
-        """
+        """Publish user/thought content with optional streaming and adapter relay."""
         # Throttled TTL-based cleanup
         self._maybe_cleanup()
 
         now = await self._get_now()
+        message_category = category or "user"
+        message_segment_id = segment_id
+        if message_category == "thought" and not message_segment_id:
+            message_segment_id = f"thought-{uuid.uuid4().hex[:10]}"
+
+        async def _deliver_flush(
+            flush_message: ResponseMessage,
+            full_content: str,
+            deliver_transient: bool,
+            relay_override: Optional[bool] = None,
+        ) -> None:
+            filter_ok = await self._apply_channel_filters(
+                flush_message, flush_message.channel
+            )
+            if not filter_ok:
+                return
+            if flush_message.channel in self._channel_adapters:
+                adapter = self._channel_adapters[flush_message.channel]
+                effective_relay = (
+                    relay_to_adapters if relay_override is None else relay_override
+                )
+                if self._can_send_to_adapter(adapter, flush_message, effective_relay):
+                    await self._send_to_adapter(adapter, flush_message)
+
+            if (
+                flush_message.category == "user"
+                and interaction is not None
+                and full_content
+                and not deliver_transient
+            ):
+                await self._append_to_interaction_response_impl(
+                    interaction=interaction,
+                    message_type="adhoc",
+                    content=full_content,
+                )
+            elif (
+                flush_message.category == "thought"
+                and interaction is not None
+                and full_content
+            ):
+                await self._append_to_interaction_agent_trace_impl(
+                    interaction=interaction,
+                    thought_type=flush_message.thought_type or "reasoning",
+                    segment_id=flush_message.segment_id or "",
+                    content=full_content,
+                    action_name=(flush_message.metadata or {}).get("action_name"),
+                )
 
         if not stream:
             # Non-streaming: immediate filters, adapter, accumulation, one adhoc message
@@ -253,24 +344,11 @@ class ResponseBus:
                 message_type="adhoc",
                 metadata=metadata or {},
                 timestamp=now,
+                category=message_category,
+                thought_type=thought_type,
+                segment_id=message_segment_id,
             )
-            filter_ok = await self._apply_channel_filters(message, channel)
-            if filter_ok:
-                if channel in self._channel_adapters:
-                    await self._send_to_adapter(
-                        self._channel_adapters[channel], message
-                    )
-                if (
-                    (interaction_id or interaction)
-                    and content
-                    and interaction is not None
-                    and not transient
-                ):
-                    await self._append_to_interaction_response_impl(
-                        interaction=interaction,
-                        message_type="adhoc",
-                        content=content,
-                    )
+            await _deliver_flush(message, content, transient)
             await self._enqueue_and_notify(message, session_id)
             if interaction_id:
                 self._append_to_message_buffers(interaction_id, message)
@@ -288,19 +366,11 @@ class ResponseBus:
                 message_type="adhoc",
                 metadata=metadata or {},
                 timestamp=now,
+                category=message_category,
+                thought_type=thought_type,
+                segment_id=message_segment_id,
             )
-            filter_ok = await self._apply_channel_filters(message, channel)
-            if filter_ok:
-                if channel in self._channel_adapters:
-                    await self._send_to_adapter(
-                        self._channel_adapters[channel], message
-                    )
-                if interaction and content and not transient:
-                    await self._append_to_interaction_response_impl(
-                        interaction=interaction,
-                        message_type="adhoc",
-                        content=content,
-                    )
+            await _deliver_flush(message, content, transient)
             await self._enqueue_and_notify(message, session_id)
             return message
 
@@ -314,6 +384,10 @@ class ResponseBus:
                 channel=channel,
                 user_id=user_id,
                 metadata=metadata,
+                category=message_category,
+                thought_type=thought_type,
+                segment_id=message_segment_id,
+                relay_to_adapters=relay_to_adapters,
             )
             for chunk in chunk_text_by_lm_tokens(content):
                 acc.chunks.append(chunk)
@@ -327,6 +401,9 @@ class ResponseBus:
                     message_type="stream_chunk",
                     metadata=metadata or {},
                     timestamp=now,
+                    category=message_category,
+                    thought_type=thought_type,
+                    segment_id=message_segment_id,
                 )
                 await self._enqueue_and_notify(chunk_message, session_id)
                 self._append_to_message_buffers(interaction_id, chunk_message)
@@ -341,19 +418,16 @@ class ResponseBus:
                 message_type="adhoc",
                 metadata=acc.metadata or {},
                 timestamp=now,
+                category=message_category,
+                thought_type=acc.thought_type,
+                segment_id=acc.segment_id,
             )
-            filter_ok = await self._apply_channel_filters(flush_message, acc.channel)
-            if filter_ok:
-                if acc.channel in self._channel_adapters:
-                    await self._send_to_adapter(
-                        self._channel_adapters[acc.channel], flush_message
-                    )
-                if interaction is not None and full_content and not transient:
-                    await self._append_to_interaction_response_impl(
-                        interaction=interaction,
-                        message_type="adhoc",
-                        content=full_content,
-                    )
+            await _deliver_flush(
+                flush_message,
+                full_content,
+                transient,
+                relay_override=acc.relay_to_adapters,
+            )
             self._append_to_message_buffers(interaction_id, flush_message)
             final_message = ResponseMessage(
                 id=acc.message_id,
@@ -365,19 +439,31 @@ class ResponseBus:
                 message_type="final",
                 metadata=acc.metadata or {},
                 timestamp=now,
+                category=message_category,
+                thought_type=acc.thought_type,
+                segment_id=acc.segment_id,
             )
             await self._enqueue_and_notify(final_message, session_id)
             self._append_to_message_buffers(interaction_id, final_message)
-            self._adhoc_accumulation.pop(interaction_id, None)
+            if message_category == "thought":
+                self._thought_accumulation.pop(
+                    (interaction_id, acc.segment_id or "default"), None
+                )
+            else:
+                self._adhoc_accumulation.pop(interaction_id, None)
             return final_message
 
-        try:
+        try:  # incremental streaming path
             acc = self._get_or_create_accumulator(
                 interaction_id=interaction_id,
                 session_id=session_id,
                 channel=channel,
                 user_id=user_id,
                 metadata=metadata,
+                category=message_category,
+                thought_type=thought_type,
+                segment_id=message_segment_id,
+                relay_to_adapters=relay_to_adapters,
             )
             acc.chunks.append(content)
 
@@ -394,6 +480,9 @@ class ResponseBus:
                     message_type="stream_chunk",
                     metadata=metadata or {},
                     timestamp=now,
+                    category=message_category,
+                    thought_type=thought_type,
+                    segment_id=message_segment_id,
                 )
                 await self._enqueue_and_notify(chunk_message, session_id)
                 self._append_to_message_buffers(interaction_id, chunk_message)
@@ -410,20 +499,16 @@ class ResponseBus:
                 message_type="adhoc",
                 metadata=acc.metadata or {},
                 timestamp=now,
+                category=message_category,
+                thought_type=acc.thought_type,
+                segment_id=acc.segment_id,
             )
-            filter_ok = await self._apply_channel_filters(flush_message, acc.channel)
-            if filter_ok:
-                if acc.channel in self._channel_adapters:
-                    await self._send_to_adapter(
-                        self._channel_adapters[acc.channel], flush_message
-                    )
-                if full_content and (interaction or interaction_id):
-                    if interaction is not None and not transient:
-                        await self._append_to_interaction_response_impl(
-                            interaction=interaction,
-                            message_type="adhoc",
-                            content=full_content,
-                        )
+            await _deliver_flush(
+                flush_message,
+                full_content,
+                transient,
+                relay_override=acc.relay_to_adapters,
+            )
             # Final signal (empty content) for end-of-stream
             final_message = ResponseMessage(
                 id=acc.message_id,
@@ -435,15 +520,28 @@ class ResponseBus:
                 message_type="final",
                 metadata=acc.metadata or {},
                 timestamp=now,
+                category=message_category,
+                thought_type=acc.thought_type,
+                segment_id=acc.segment_id,
             )
             await self._enqueue_and_notify(final_message, session_id)
             self._append_to_message_buffers(interaction_id, final_message)
-            self._adhoc_accumulation.pop(interaction_id, None)
+            if message_category == "thought":
+                self._thought_accumulation.pop(
+                    (interaction_id, acc.segment_id or "default"), None
+                )
+            else:
+                self._adhoc_accumulation.pop(interaction_id, None)
             return final_message
-        except Exception as e:
+        except Exception:
             # Clean up orphaned accumulator on error
             if interaction_id:
-                self._adhoc_accumulation.pop(interaction_id, None)
+                if message_category == "thought":
+                    self._thought_accumulation.pop(
+                        (interaction_id, message_segment_id or "default"), None
+                    )
+                else:
+                    self._adhoc_accumulation.pop(interaction_id, None)
             raise
 
     async def commit_pending_adhoc(
@@ -473,13 +571,14 @@ class ResponseBus:
             message_type="adhoc",
             metadata=acc.metadata or {},
             timestamp=now,
+            category="user",
         )
         filter_ok = await self._apply_channel_filters(message, acc.channel)
         if filter_ok:
             if acc.channel in self._channel_adapters:
-                await self._send_to_adapter(
-                    self._channel_adapters[acc.channel], message
-                )
+                adapter = self._channel_adapters[acc.channel]
+                if self._can_send_to_adapter(adapter, message, relay_to_adapters=False):
+                    await self._send_to_adapter(adapter, message)
             if full_content and interaction:
                 await self._append_to_interaction_response_impl(
                     interaction=interaction,
@@ -487,6 +586,57 @@ class ResponseBus:
                     content=full_content,
                 )
         self._adhoc_accumulation.pop(interaction_id, None)
+
+    async def commit_pending_thoughts(
+        self,
+        interaction_id: str,
+        interaction: Any,
+    ) -> None:
+        """Commit any pending thought streams for an interaction."""
+        keys = [k for k in self._thought_accumulation if k[0] == interaction_id]
+        if not keys:
+            return
+
+        now = await self._get_now()
+        for key in keys:
+            acc = self._thought_accumulation.get(key)
+            if not acc:
+                continue
+            if not acc.chunks:
+                self._thought_accumulation.pop(key, None)
+                continue
+
+            full_content = "".join(acc.chunks)
+            message = ResponseMessage(
+                session_id=acc.session_id,
+                user_id=acc.user_id or "",
+                interaction_id=interaction_id,
+                content=full_content,
+                channel=acc.channel,
+                message_type="adhoc",
+                metadata=acc.metadata or {},
+                timestamp=now,
+                category="thought",
+                thought_type=acc.thought_type,
+                segment_id=acc.segment_id,
+            )
+            filter_ok = await self._apply_channel_filters(message, acc.channel)
+            if filter_ok:
+                if acc.channel in self._channel_adapters:
+                    adapter = self._channel_adapters[acc.channel]
+                    if self._can_send_to_adapter(
+                        adapter, message, relay_to_adapters=acc.relay_to_adapters
+                    ):
+                        await self._send_to_adapter(adapter, message)
+                if interaction and full_content:
+                    await self._append_to_interaction_agent_trace_impl(
+                        interaction=interaction,
+                        thought_type=acc.thought_type or "reasoning",
+                        segment_id=acc.segment_id or "",
+                        content=full_content,
+                        action_name=(acc.metadata or {}).get("action_name"),
+                    )
+            self._thought_accumulation.pop(key, None)
 
     async def _emit_final_signal(
         self,
@@ -547,6 +697,47 @@ class ResponseBus:
             return
 
         if interaction.set_response(new_response):
+            if (
+                not hasattr(interaction, "_graph_context")
+                or interaction._graph_context is None
+            ):
+                try:
+                    from jvspatial.core.context import get_default_context
+
+                    interaction._graph_context = get_default_context()
+                except Exception:
+                    pass
+            await interaction.save()
+
+    async def _append_to_interaction_agent_trace_impl(
+        self,
+        interaction: Any,
+        thought_type: str,
+        segment_id: str,
+        content: str,
+        action_name: Optional[str] = None,
+    ) -> None:
+        """Append a thought trace entry to interaction.agent_trace and persist."""
+        entry = {
+            "action_name": action_name or "",
+            "thought_type": thought_type,
+            "segment_id": segment_id,
+            "content": content,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        append_fn = getattr(interaction, "append_agent_trace", None)
+        changed = False
+        if callable(append_fn):
+            changed = bool(append_fn(entry))
+        else:
+            trace = list(getattr(interaction, "agent_trace", []) or [])
+            trace.append(entry)
+            interaction.agent_trace = trace
+            changed = True
+
+        if changed:
             if (
                 not hasattr(interaction, "_graph_context")
                 or interaction._graph_context is None
@@ -648,6 +839,7 @@ class ResponseBus:
         """
         # Commit any pending streaming content
         await self.commit_pending_adhoc(interaction_id, interaction)
+        await self.commit_pending_thoughts(interaction_id, interaction)
 
         # Token spend is computed in the endpoint after flush, when all model_call
         # events are present in observability_metrics.
@@ -664,6 +856,9 @@ class ResponseBus:
 
         # Clean up request-scoped resources (adhoc, message buffers)
         self._adhoc_accumulation.pop(interaction_id, None)
+        thought_keys = [k for k in self._thought_accumulation if k[0] == interaction_id]
+        for key in thought_keys:
+            self._thought_accumulation.pop(key, None)
         self._message_buffers.pop(interaction_id, None)
 
         # Clean old session messages
@@ -751,6 +946,11 @@ class ResponseBus:
             )
             self._message_buffers.pop(interaction_id, None)
             self._adhoc_accumulation.pop(interaction_id, None)
+            thought_keys = [
+                k for k in self._thought_accumulation if k[0] == interaction_id
+            ]
+            for key in thought_keys:
+                self._thought_accumulation.pop(key, None)
             self._buffer_timestamps.pop(interaction_id, None)
 
     async def register_channel_adapter(self, adapter: "ChannelAdapter") -> None:
@@ -831,6 +1031,8 @@ class ResponseBus:
 
         # Apply each filter in priority order
         for filter_instance in applicable_filters:
+            if not self._can_apply_filter(filter_instance, message):
+                continue
             try:
                 await filter_instance.filter(message)
             except Exception as e:

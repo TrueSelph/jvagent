@@ -15,6 +15,7 @@ from jvagent.cli.commands import (
     handle_action_command,
     handle_agent_command,
     handle_bundle_command,
+    handle_skill_command,
     load_app_env,
     print_usage,
     purge_app_data,
@@ -48,6 +49,7 @@ def main() -> None:
         "run",
         "status",
         "agent",
+        "skill",
         "action",
         "bootstrap",
         "bundle",
@@ -157,6 +159,9 @@ def main() -> None:
     elif args[0] == "action":
         # Action management commands
         handle_action_command(args[1:], app_root=app_root)
+    elif args[0] == "skill":
+        # Skill bundle commands
+        handle_skill_command(args[1:], app_root=app_root)
     elif args[0] == "bootstrap":
         # Bootstrap application graph
         asyncio.run(bootstrap_only(update_mode=update_mode, app_root=app_root))

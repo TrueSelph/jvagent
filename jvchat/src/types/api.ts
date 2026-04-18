@@ -80,6 +80,9 @@ export interface ResponseMessageData {
   message_type: string
   content: string
   channel: string
+  category?: 'user' | 'thought'
+  thought_type?: 'reasoning' | 'tool_call' | 'tool_result' | 'status'
+  segment_id?: string
   metadata: Record<string, any>
   observability_data?: Record<string, any>
   // timestamp is omitted for stream_chunk messages (not useful - chunks arrive in order,

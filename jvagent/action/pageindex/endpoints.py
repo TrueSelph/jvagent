@@ -1435,7 +1435,9 @@ async def add_user_group_member_endpoint(
 async def remove_user_group_member_endpoint(
     agent_id: str,
     group: str = Query(..., description="Access group name"),
-    user_session: str = Query(..., description="User session id to remove from the group"),
+    user_session: str = Query(
+        ..., description="User session id to remove from the group"
+    ),
     can_delete_group: bool = Query(
         default=False,
         description="If true, remove the group key when the last member is removed; "

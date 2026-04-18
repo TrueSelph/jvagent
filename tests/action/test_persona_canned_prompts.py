@@ -10,7 +10,7 @@ def test_canned_lead_in_context_prompt_includes_text():
     out = CANNED_LEAD_IN_CONTEXT_PROMPT.format(canned_text="One sec—looking that up.")
     assert "IMMEDIATE MESSAGE ALREADY SENT" in out
     assert "One sec—looking that up." in out
-    assert "Continue naturally" in out
+    assert "Natural Transition" in out
 
 
 def test_system_prompt_template_has_canned_placeholder():
