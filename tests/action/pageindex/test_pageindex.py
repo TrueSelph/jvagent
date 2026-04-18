@@ -1,5 +1,6 @@
 """Tests for PageIndex named collections and metadata."""
 
+import json
 import os
 
 import pytest
@@ -10,7 +11,9 @@ pytest.importorskip("litellm")
 pytest.importorskip("PyPDF2")
 
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from jvspatial.api.exceptions import ValidationError
 
 from jvspatial.core.context import get_default_context, set_default_context
 from jvspatial.db import get_database_manager, unregister_database
@@ -37,7 +40,11 @@ from jvagent.action.pageindex.documents import (
     list_document_chunks,
     list_documents,
 )
-from jvagent.action.pageindex.endpoints import _do_assimilate
+from jvagent.action.pageindex.endpoints import (
+    _do_assimilate,
+    _import_graph_from_remote_url,
+    pageindex_llm_webhook,
+)
 from jvagent.action.pageindex.md_tree_enriched import (
     annotate_content_type_and_enabled,
     assign_hierarchy_breadcrumbs,
@@ -1001,3 +1008,94 @@ def test_docling_convert_requires_installed_package(tmp_path):
         pytest.skip(f"docling convert failed in this environment: {e}")
     assert isinstance(md, str)
     assert len(md) >= 0
+
+
+@pytest.mark.asyncio
+async def test_import_graph_from_remote_url_fetch_and_import(pageindex_temp_db):
+    """Remote URL path: fetch bytes, stage (mocked), coerce, import."""
+    graph = {"roots": [], "nodes": [], "edges": []}
+    raw = json.dumps(graph).encode("utf-8")
+    with patch(
+        "jvagent.action.pageindex.endpoints._fetch_url_bytes_capped",
+        new_callable=AsyncMock,
+        return_value=(raw, "g.json", "application/json"),
+    ):
+        with patch(
+            "jvagent.action.pageindex.endpoints._save_pageindex_staging",
+            new_callable=AsyncMock,
+            return_value="staged/path",
+        ):
+            with patch(
+                "jvagent.action.pageindex.endpoints._delete_staged_file",
+                new_callable=AsyncMock,
+            ) as del_staged:
+                await _import_graph_from_remote_url(
+                    "agent_col",
+                    "https://example.com/graph.json",
+                    purge=False,
+                )
+    del_staged.assert_called_once_with("staged/path")
+
+
+@pytest.mark.asyncio
+async def test_pageindex_llm_webhook_process_document_url():
+    """Webhook import mode delegates to _import_graph_from_remote_url."""
+    request = MagicMock()
+    request.state = MagicMock()
+    request.state.parsed_payload = {
+        "process_document_url": "https://forge.example/v1/artifacts/job-1",
+    }
+    mock_agent = MagicMock()
+    mock_agent.id = "n.Agent.x"
+    mock_action = MagicMock(spec=PageIndexRetrievalInteractAction)
+
+    with patch(
+        "jvagent.action.pageindex.endpoints.Agent.get",
+        new_callable=AsyncMock,
+        return_value=mock_agent,
+    ):
+        mock_agent.get_action_by_type = AsyncMock(return_value=mock_action)
+        with patch(
+            "jvagent.action.pageindex.endpoints._import_graph_from_remote_url",
+            new_callable=AsyncMock,
+        ) as imp:
+            with patch(
+                "jvagent.action.pageindex.endpoints.initialize_pageindex_database",
+            ):
+                with patch(
+                    "jvagent.action.pageindex.endpoints._get_app_id_from_node",
+                    new_callable=AsyncMock,
+                    return_value=None,
+                ):
+                    out = await pageindex_llm_webhook(request, "n.Agent.x")
+
+    assert out["status"] == "received"
+    assert out["result"]["imported"] is True
+    assert "successfully" in out["result"]["message"]
+    imp.assert_called_once()
+    assert imp.call_args[0][0] == "n.Agent.x"
+    assert imp.call_args[0][1] == "https://forge.example/v1/artifacts/job-1"
+    assert imp.call_args[1]["staging_subdir"] == "pageindex_webhook_import"
+    assert imp.call_args[1]["purge"] is False
+
+
+@pytest.mark.asyncio
+async def test_pageindex_llm_webhook_process_document_url_rejects_with_prompt():
+    """process_document_url must not be combined with prompt."""
+    request = MagicMock()
+    request.state = MagicMock()
+    request.state.parsed_payload = {
+        "process_document_url": "https://example.com/a.json",
+        "prompt": "hello",
+    }
+    mock_agent = MagicMock()
+    mock_action = MagicMock(spec=PageIndexRetrievalInteractAction)
+
+    with patch(
+        "jvagent.action.pageindex.endpoints.Agent.get",
+        new_callable=AsyncMock,
+        return_value=mock_agent,
+    ):
+        mock_agent.get_action_by_type = AsyncMock(return_value=mock_action)
+        with pytest.raises(ValidationError, match="Cannot combine"):
+            await pageindex_llm_webhook(request, "n.Agent.x")

@@ -8,9 +8,16 @@ import copy
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+from jvspatial.api.auth.api_key_service import APIKeyService
+from jvspatial.api.exceptions import ValidationError
 from jvspatial.core.annotations import attribute
+from jvspatial.core.context import GraphContext
+from jvspatial.db import get_prime_database
+from jvspatial.env import env
+from jvspatial.exceptions import DatabaseError
 
 from jvagent.action.interact.base import InteractAction
+from jvagent.core.public_url import get_public_base_url
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.model.context import get_interaction, set_interaction
 from jvagent.action.pageindex.config import (
@@ -27,7 +34,9 @@ from jvagent.action.pageindex.config import (
     set_pageindex_retrieval_excerpt_source,
     set_pageindex_summary_token_threshold,
 )
-from jvagent.action.pageindex.llm_bridge import set_pageindex_model_action
+from . import llm_bridge
+from .core import utils as pageindex_core_utils
+from .webhook_auth import get_or_create_system_user
 from jvagent.action.pageindex.prompts import (
     DIRECTIVE_TEMPLATE,
     DIRECTIVE_TEMPLATE_NO_REFS,
@@ -250,6 +259,14 @@ class PageIndexRetrievalInteractAction(InteractAction):
         default_factory=dict,
         description="Add user groups to use document filter. group to user ids.",
     )
+    webhook_url: Optional[str] = attribute(
+        default=None,
+        description="Full inbound LLM webhook URL (includes api_key query when generated)",
+    )
+    webhook_api_key_id: Optional[str] = attribute(
+        default=None,
+        description="API key row id for LLM webhook auth",
+    )
 
     def _resolve_collection(self) -> str:
         """Resolve collection name from attribute, config, or agent_id."""
@@ -349,6 +366,122 @@ class PageIndexRetrievalInteractAction(InteractAction):
             self.retrieval_excerpt_source, "summary"
         )
 
+    async def get_webhook_url(
+        self, allowed_ip: Optional[str] = None, regenerate: bool = False
+    ) -> str:
+        """Generate or return the inbound LLM webhook URL (API key in query string)."""
+        base_url = (get_public_base_url() or "").strip().rstrip("/")
+        if not base_url.startswith(("http://", "https://")):
+            raise ValidationError(
+                message="Set JVAGENT_PUBLIC_BASE_URL to a valid http(s) URL",
+                details={"JVAGENT_PUBLIC_BASE_URL": base_url or "(empty)"},
+            )
+
+        try:
+            agent = await self.get_agent()
+            agent_id = str(agent.id)
+            expected_url_base = (
+                f"{base_url}/api/pageindex_retrieval_interact_action/interact/webhook/"
+                f"{agent_id}"
+            )
+
+            prime_ctx = GraphContext(database=get_prime_database())
+            api_key_service = APIKeyService(context=prime_ctx)
+
+            if (
+                not regenerate
+                and self.webhook_url
+                and "?api_key=" in self.webhook_url
+                and self.webhook_url.startswith(expected_url_base)
+            ):
+                if allowed_ip is not None and self.webhook_api_key_id:
+                    try:
+                        existing_key = await api_key_service.get_key(
+                            self.webhook_api_key_id
+                        )
+                        if existing_key and existing_key.is_active:
+                            requested_ips = [allowed_ip] if allowed_ip else []
+                            existing_ips = (
+                                getattr(existing_key, "allowed_ips", None) or []
+                            )
+                            if requested_ips == existing_ips:
+                                return self.webhook_url
+                    except Exception:
+                        pass
+                else:
+                    return self.webhook_url
+
+            system_user_id = await get_or_create_system_user()
+
+            if regenerate and self.webhook_api_key_id:
+                try:
+                    await api_key_service.revoke_key(
+                        self.webhook_api_key_id, system_user_id
+                    )
+                except Exception:
+                    pass
+
+            plaintext_key, api_key = await api_key_service.generate_key(
+                user_id=system_user_id,
+                name=f"PageIndex LLM webhook — {agent.name}",
+                permissions=["webhook:pageindex_retrieval_interact_action"],
+                expires_in_days=None,
+                allowed_ips=[allowed_ip] if allowed_ip else [],
+                allowed_endpoints=[
+                    "/api/pageindex_retrieval_interact_action/interact/webhook/*"
+                ],
+                key_prefix="jv_",
+            )
+
+            self.webhook_api_key_id = api_key.id
+            self.webhook_url = f"{expected_url_base}?api_key={plaintext_key}"
+            await self.save()
+            return self.webhook_url
+
+        except DatabaseError:
+            raise
+        except ValidationError:
+            raise
+        except Exception as e:
+            raise ValidationError(
+                message=f"Webhook URL generation failed: {e}",
+                details={},
+            )
+
+    async def handle_webhook_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Run a single LLM completion using this action's model action (PageIndex bridge).
+
+        Body JSON:
+            - ``prompt`` (str, required): user message / prompt text.
+            - ``model`` (str, optional): model id; else action ``model`` or
+              ``PAGEINDEX_TREE_SEARCH_MODEL`` (default ``gpt-4o-mini``).
+        """
+        prompt = (payload.get("prompt") or "").strip()
+        if not prompt:
+            raise ValidationError(
+                message="prompt is required",
+                details={"prompt": payload.get("prompt")},
+            )
+
+        model = payload.get("model")
+        if model is None or (isinstance(model, str) and not str(model).strip()):
+            model = self.model or env("PAGEINDEX_TREE_SEARCH_MODEL", default="gpt-4o-mini")
+        else:
+            model = str(model).strip()
+
+        model_action = await self.get_model_action(required=False)
+        try:
+            llm_bridge.set_pageindex_model_action(model_action)
+            text = await llm_bridge.llm_acompletion(
+                model,
+                prompt,
+                _real_impl=pageindex_core_utils.llm_acompletion,
+            )
+        finally:
+            llm_bridge.set_pageindex_model_action(None)
+
+        return {"text": text or "", "model": model}
+
     async def on_register(self) -> None:
         """Push ingestion config and initialize PageIndex db when action is registered."""
         await super().on_register()
@@ -356,6 +489,7 @@ class PageIndexRetrievalInteractAction(InteractAction):
         app = await self.get_app()
         app_id = getattr(app, "app_id", None) if app else None
         initialize_pageindex_database(app_id=app_id)
+        await self.get_webhook_url()
 
     async def on_reload(self) -> None:
         """Re-apply ingestion config and re-init PageIndex db when action is reloaded."""
@@ -364,6 +498,7 @@ class PageIndexRetrievalInteractAction(InteractAction):
         app = await self.get_app()
         app_id = getattr(app, "app_id", None) if app else None
         initialize_pageindex_database(app_id=app_id)
+        await self.get_webhook_url()
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute vectorless retrieval and add directive to interaction."""
@@ -379,7 +514,7 @@ class PageIndexRetrievalInteractAction(InteractAction):
         try:
             set_interaction(interaction)
             if model_action:
-                set_pageindex_model_action(model_action)
+                llm_bridge.set_pageindex_model_action(model_action)
 
             query = self._get_search_query(interaction)
             if not query:
@@ -429,7 +564,7 @@ class PageIndexRetrievalInteractAction(InteractAction):
                 exc_info=True,
             )
         finally:
-            set_pageindex_model_action(None)
+            llm_bridge.set_pageindex_model_action(None)
             set_interaction(prev_interaction)
 
     def _get_search_query(self, interaction: "Interaction") -> Optional[str]:
