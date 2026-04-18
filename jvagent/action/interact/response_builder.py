@@ -1,14 +1,59 @@
 """Response builder for interact endpoint with production filtering."""
 
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from jvagent.core.config import is_production_mode
 from jvagent.memory.interaction import Interaction
 
+_TERMINAL_COMPLETED_STATUSES = {"completed"}
+
+
+def _parse_interaction_timestamp(value: Any) -> Optional[datetime]:
+    """Parse datetime-like values from interaction/task payloads."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _completed_tasks_for_interaction(
+    interaction: Interaction,
+    conversation: Any,
+) -> List[Dict[str, Any]]:
+    """Return tasks completed during this interaction window."""
+    started_at = _parse_interaction_timestamp(getattr(interaction, "started_at", None))
+    completed_at = _parse_interaction_timestamp(
+        getattr(interaction, "completed_at", None)
+    )
+    if not started_at:
+        return []
+
+    completed: List[Dict[str, Any]] = []
+    for task in getattr(conversation, "active_tasks", []):
+        if task.get("status") not in _TERMINAL_COMPLETED_STATUSES:
+            continue
+        updated_at = _parse_interaction_timestamp(task.get("updated_at"))
+        if not updated_at:
+            continue
+        if updated_at < started_at:
+            continue
+        if completed_at and updated_at > completed_at:
+            continue
+        completed.append(task)
+    return completed
+
 
 def build_interaction_payload(
     interaction: Interaction,
     active_tasks: Optional[List[Dict[str, Any]]] = None,
+    completed_tasks: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Build interaction payload, filtering debug data in production.
 
@@ -41,6 +86,7 @@ def build_interaction_payload(
             "actions": interaction.actions,
             "directives": interaction.directives,
             "active_tasks": active_tasks if active_tasks is not None else [],
+            "completed_tasks": completed_tasks if completed_tasks is not None else [],
             "parameters": interaction.parameters,
             "events": interaction.events,
             "observability_metrics": interaction.observability_metrics,
@@ -88,8 +134,17 @@ async def build_interact_response(
             conversation = await Conversation.get(interaction.conversation_id)
             if conversation:
                 active_tasks = conversation.get_active_tasks(status="active")
+                completed_tasks = _completed_tasks_for_interaction(
+                    interaction, conversation
+                )
+            else:
+                completed_tasks = []
+        else:
+            completed_tasks = []
         response["interaction"] = build_interaction_payload(
-            interaction, active_tasks=active_tasks
+            interaction,
+            active_tasks=active_tasks,
+            completed_tasks=completed_tasks,
         )
 
     # Include report only in development mode

@@ -1,7 +1,5 @@
 import logging
 import re
-import uuid
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
@@ -222,38 +220,23 @@ class TaskCreationInteractAction(InteractAction):
                 completions = re.findall(
                     r"COMPLETE_TASK:\s*([a-fA-F0-9\-]+|[0-9]+)", response
                 )
-                tasks = getattr(conversation, "active_tasks", [])
-                modified = False
                 for task_id in completions:
-                    for t in tasks:
-                        if t.get("task_id") == task_id:
-                            t["status"] = "completed"
-                            t["updated_at"] = datetime.now(timezone.utc).isoformat()
-                            modified = True
-                if modified:
-                    await conversation.save()
+                    await visitor.tasks.complete(task_id=task_id)
 
                 # 2. Process New Tasks
                 new_tasks = self._extract_tasks(response)
                 for task in new_tasks:
-                    new_task_id = f"task_{uuid.uuid4().hex}"
-                    tasks.append(
-                        {
-                            "task_id": new_task_id,
-                            "description": task["description"],
-                            "task_type": "PROACTIVE",
-                            "status": "active",
-                            "created_at": datetime.now(timezone.utc).isoformat(),
-                            "metadata": {
-                                "trigger_time": task["trigger_time"],
-                                "trigger_condition": task["trigger_condition"],
-                                "context": task["context"],
-                                "channel": interaction.channel or "default",
-                            },
-                        }
+                    await visitor.tasks.start(
+                        description=task["description"],
+                        task_type="PROACTIVE",
+                        action_name=self.get_class_name(),
+                        metadata={
+                            "context": task["context"],
+                            "channel": interaction.channel or "default",
+                        },
+                        trigger_at=task["trigger_time"],
+                        trigger_condition=task["trigger_condition"],
                     )
-                if new_tasks:
-                    await conversation.save()
 
                 for task in new_tasks:
                     logger.info(

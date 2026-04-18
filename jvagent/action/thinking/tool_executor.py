@@ -14,7 +14,9 @@ import sys
 import time
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
+from jvagent.action.mcp.mcp_action import _normalize_call_result
 from jvagent.action.model.language.tools import ToolCall, ToolDefinition, ToolManager
+from jvagent.action.thinking.tool_registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,7 @@ class ToolExecutor:
     ) -> None:
         self._tool_manager = ToolManager()
         self._handlers: Dict[str, Tuple[str, Any]] = {}  # name -> (kind, handler)
+        self._registry = ToolRegistry()
         self._skill_bundles: Dict[str, Dict[str, Any]] = {}
         self._active_skill_bundles: Set[str] = set()
         self.call_timeout = call_timeout
@@ -116,6 +119,35 @@ class ToolExecutor:
             list(self._tool_manager.tools.keys()),
         )
 
+    def _register_tool_with_registry(
+        self,
+        *,
+        name: str,
+        description: str,
+        parameters: Dict[str, Any],
+        source: str,
+        handler_kind: str,
+        handler: Any,
+        fq_name: Optional[str] = None,
+        prefix: Optional[str] = None,
+    ) -> str:
+        """Register a tool across registry, ToolManager, and dispatch handlers."""
+        handle = self._registry.register(
+            name=name,
+            source=source,
+            schema=parameters if isinstance(parameters, dict) else {},
+            dispatch=handler,
+            fq_name=fq_name,
+            prefix=prefix,
+        )
+        self._tool_manager.register_tool(
+            name=handle.name,
+            description=description,
+            parameters=parameters,
+        )
+        self._handlers[handle.name] = (handler_kind, handler)
+        return handle.name
+
     async def _register_mcp_server(self, visitor: Any, server_name: str) -> None:
         """Register all tools from an MCP server.
 
@@ -174,7 +206,7 @@ class ToolExecutor:
                 or {"type": "object", "properties": {}}
             )
             try:
-                self._tool_manager.register_tool(
+                registered_name = self._register_tool_with_registry(
                     name=name,
                     description=description,
                     parameters=(
@@ -182,8 +214,17 @@ class ToolExecutor:
                         if isinstance(input_schema, dict)
                         else {"type": "object", "properties": {}}
                     ),
+                    source="mcp",
+                    handler_kind="mcp",
+                    handler=mcp_action,
+                    fq_name=f"mcp:{server_name}:{name}",
+                    prefix=f"mcp_{server_name}",
                 )
-                self._handlers[name] = ("mcp", mcp_action)
+                logger.debug(
+                    "ToolExecutor: registered MCP tool '%s' as '%s'",
+                    name,
+                    registered_name,
+                )
             except ValueError as e:
                 logger.warning("ToolExecutor: skipping MCP tool '%s': %s", name, e)
 
@@ -270,13 +311,21 @@ class ToolExecutor:
         ) or tool_def_dict.get("parameters", {"type": "object", "properties": {}})
 
         try:
-            self._tool_manager.register_tool(
+            registered_name = self._register_tool_with_registry(
                 name=name,
                 description=description,
                 parameters=parameters,
+                source="dynamic",
+                handler_kind="local",
+                handler=handler,
+                fq_name=f"dynamic:{name}",
+                prefix="dynamic",
             )
-            self._handlers[name] = ("local", handler)
-            logger.debug("ToolExecutor: registered dynamic tool '%s'", name)
+            logger.debug(
+                "ToolExecutor: registered dynamic tool '%s' as '%s'",
+                name,
+                registered_name,
+            )
         except ValueError as e:
             logger.warning("ToolExecutor: skipping dynamic tool '%s': %s", name, e)
 
@@ -342,6 +391,7 @@ class ToolExecutor:
         for name in removed:
             del self._tool_manager.tools[name]
             self._handlers.pop(name, None)
+            self._registry.remove(name)
 
     def register_local_tool(
         self,
@@ -361,8 +411,19 @@ class ToolExecutor:
         Returns:
             The registered ToolDefinition.
         """
-        tool_def = self._tool_manager.register_tool(name, description, parameters)
-        self._handlers[name] = ("local", handler)
+        registered_name = self._register_tool_with_registry(
+            name=name,
+            description=description,
+            parameters=parameters,
+            source="local",
+            handler_kind="local",
+            handler=handler,
+            fq_name=f"local:{name}",
+            prefix="local",
+        )
+        tool_def = self._tool_manager.get_tool(registered_name)
+        if tool_def is None:
+            raise ValueError(f"Failed to register local tool '{name}'")
         return tool_def
 
     async def dispatch(
@@ -475,27 +536,18 @@ class ToolExecutor:
             Tool result as string.
         """
         client = mcp_action.get_client()
-        call_result = await client.call_tool(call.name, call.arguments)
+        raw_tool_name = call.name
+        handle = self._registry.get(call.name)
+        if handle and handle.source == "mcp":
+            fq = handle.fq_name.split(":")
+            if len(fq) >= 3:
+                raw_tool_name = fq[-1]
 
-        # Normalize result (same logic as mcp_action._normalize_call_result)
-        is_error = getattr(call_result, "is_error", False)
-        content = getattr(call_result, "content", None) or []
-        raw_content = list(content) if isinstance(content, (list, tuple)) else []
-        text_parts = []
-        for item in raw_content:
-            if (
-                hasattr(item, "type")
-                and getattr(item, "type") == "text"
-                and hasattr(item, "text")
-            ):
-                text_parts.append(getattr(item, "text", ""))
-            elif isinstance(item, dict) and item.get("type") == "text":
-                text_parts.append(item.get("text", ""))
-
-        text = "\n".join(text_parts).strip() or ("Tool error" if is_error else "")
-        if is_error and text:
-            raise ToolDispatchError(text)
-        return text
+        call_result = await client.call_tool(raw_tool_name, call.arguments)
+        normalized = _normalize_call_result(call_result, raw_tool_name)
+        if normalized.is_error and normalized.text:
+            raise ToolDispatchError(normalized.text)
+        return normalized.text
 
     async def _dispatch_local_tool(
         self, call: ToolCall, handler: Callable, visitor: Any = None
@@ -556,7 +608,7 @@ class ToolExecutor:
 
     def get_tool_names(self) -> Set[str]:
         """Return the set of registered tool names."""
-        return set(self._tool_manager.tools.keys())
+        return set(self._registry.names())
 
     async def cleanup(self) -> None:
         """Clean up resources after the loop completes.

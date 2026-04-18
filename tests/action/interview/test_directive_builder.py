@@ -24,6 +24,12 @@ def _active_task_description(metadata_title: str, action_description: str) -> st
     )
 
 
+def _task_result(task_id: str = "t-1"):
+    result = MagicMock()
+    result.task_id = task_id
+    return result
+
+
 class TestDirectiveBuilderResetTaskTracking:
     """Test reset_task_tracking."""
 
@@ -48,7 +54,8 @@ class TestDirectiveBuilderEventOncePerRun:
         action.description = ""
 
         visitor = MagicMock()
-        visitor.add_active_task = AsyncMock()
+        visitor.tasks = MagicMock()
+        visitor.tasks.start = AsyncMock(return_value=_task_result())
         visitor.add_directive = AsyncMock()
         visitor.interview_session = MagicMock()
         visitor.interview_session.state = InterviewState.ACTIVE
@@ -59,12 +66,14 @@ class TestDirectiveBuilderEventOncePerRun:
         await builder.queue_directive(visitor, "First directive")
         await builder.queue_directive(visitor, "Second directive")
 
-        visitor.add_active_task.assert_called_once()
-        call_kwargs = visitor.add_active_task.call_args[1]
+        visitor.tasks.start.assert_called_once()
+        call_kwargs = visitor.tasks.start.call_args[1]
         assert call_kwargs["description"] == _active_task_description(
             "TestInterview InteractAction", ""
         )
         assert call_kwargs["action_name"] == "TestInterview"
+        assert call_kwargs["task_type"] == "INTERVIEW"
+        assert call_kwargs["singleton_action"] is True
         assert visitor.add_directive.call_count == 2
 
     @pytest.mark.asyncio
@@ -76,7 +85,8 @@ class TestDirectiveBuilderEventOncePerRun:
         action.description = ""
 
         visitor = MagicMock()
-        visitor.add_active_task = AsyncMock()
+        visitor.tasks = MagicMock()
+        visitor.tasks.start = AsyncMock(return_value=_task_result())
         visitor.add_directive = AsyncMock()
         visitor.interview_session = MagicMock()
         visitor.interview_session.state = InterviewState.ACTIVE
@@ -85,11 +95,11 @@ class TestDirectiveBuilderEventOncePerRun:
         builder = DirectiveBuilder(action)
 
         await builder.queue_directive(visitor, "First run")
-        assert visitor.add_active_task.call_count == 1
+        assert visitor.tasks.start.call_count == 1
 
         builder.reset_task_tracking()
         await builder.queue_directive(visitor, "Second run")
-        assert visitor.add_active_task.call_count == 2
+        assert visitor.tasks.start.call_count == 2
 
 
 class TestDirectiveBuilderGenerateCancelledDirective:
@@ -113,7 +123,8 @@ class TestDirectiveBuilderGenerateCancelledDirective:
         visitor = MagicMock()
         visitor.add_event = AsyncMock()
         visitor.add_directive = AsyncMock()
-        visitor.update_task = AsyncMock()
+        visitor.tasks = MagicMock()
+        visitor.tasks.update_status = AsyncMock()
 
         session = MagicMock()
         session.interview_type = "default"
@@ -131,7 +142,7 @@ class TestDirectiveBuilderGenerateCancelledDirective:
             class_name="SignupInterviewInteractAction"
         )
         visitor.add_event.assert_called_once_with(expected_event)
-        visitor.update_task.assert_called_once_with(
+        visitor.tasks.update_status.assert_called_once_with(
             status="cancelled",
             description=_active_task_description(
                 "SignupInterviewInteractAction InteractAction", ""
@@ -158,7 +169,8 @@ class TestDirectiveBuilderGenerateCompletedDirective:
         visitor = MagicMock()
         visitor.add_event = AsyncMock()
         visitor.add_directive = AsyncMock()
-        visitor.update_task = AsyncMock()
+        visitor.tasks = MagicMock()
+        visitor.tasks.update_status = AsyncMock()
 
         session = MagicMock()
         session.interview_type = "default"
@@ -172,7 +184,7 @@ class TestDirectiveBuilderGenerateCompletedDirective:
         ):
             await builder.generate_completed_directive(session, visitor)
 
-        visitor.update_task.assert_called_once_with(
+        visitor.tasks.update_status.assert_called_once_with(
             status="completed",
             description=_active_task_description(
                 "ReportInterviewInteractAction InteractAction", ""

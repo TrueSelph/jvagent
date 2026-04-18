@@ -7,24 +7,24 @@ them, and results feed back into the conversation for the next iteration.
 """
 
 import logging
-import os
 import time
+from datetime import datetime, timezone
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
+from jvagent.action.model.utils.token_estimation import estimate_tokens
 from jvagent.action.thinking.prompts import (
-    ERROR_ANNOUNCE_TEMPLATE,
     FORCED_TERMINATION_PROMPT,
     READ_SKILL_RESULT_TEMPLATE,
     SKILL_INDEX_INTRO,
     THINKING_AGENT_SYSTEM_PROMPT,
     TOOL_CALL_ANNOUNCE_TEMPLATE,
-    TOOL_RESULT_ANNOUNCE_TEMPLATE,
 )
-from jvagent.action.thinking.task_tracker import TaskTracker
 from jvagent.action.thinking.tool_executor import ToolExecutor
+from jvagent.core.app_context import get_app_root
 from jvagent.scaffold.skill_resolve import (
     apply_skill_selector,
     resolve_agent_skills,
@@ -34,11 +34,25 @@ from jvagent.scaffold.skill_resolve import (
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
+    from jvagent.memory.services.task_service import TaskHandle
 
 logger = logging.getLogger(__name__)
 
 # How many full tool results to keep before summarizing older ones
 _DEFAULT_MAX_FULL_TOOL_RESULTS = 10
+
+
+class LoopState(str, Enum):
+    MODEL = "MODEL"
+    TOOLS = "TOOLS"
+    TERMINATE = "TERMINATE"
+
+
+class TerminationReason(str, Enum):
+    COMPLETED = "completed"
+    ITER_CAP = "max_iterations"
+    TIME_CAP = "timed_out"
+    ERROR = "failed"
 
 
 class ThinkingInteractAction(InteractAction):
@@ -48,7 +62,7 @@ class ThinkingInteractAction(InteractAction):
     1. Resolves skill bundles from built-in/app-local catalogs
     2. Initializes a ToolExecutor with tools from configured MCP servers
     3. Runs the agentic loop: LLM thinks → calls tools → observes results → repeats
-    4. Tracks multi-step progress via TaskTracker on Conversation.active_tasks
+    4. Tracks multi-step progress via TaskService on Conversation.active_tasks
     5. Streams intermediate progress as transient adhoc messages
     6. Publishes the final response when the loop completes
 
@@ -132,6 +146,15 @@ class ThinkingInteractAction(InteractAction):
         default=True,
         description="Stream tool call status as adhoc",
     )
+    commit_intermediate_messages: bool = attribute(
+        default=True,
+        description=(
+            "If True, any text the model emits alongside tool calls (mid-loop "
+            "user-facing commentary) is published as a user-category message and "
+            "appended to interaction.response so the conversation history reflects "
+            "what the assistant said to the user."
+        ),
+    )
     relay_thoughts_to_channels: bool = attribute(
         default=False,
         description="If True, thought messages may be relayed to channel adapters that opt in.",
@@ -139,6 +162,26 @@ class ThinkingInteractAction(InteractAction):
     max_full_tool_results: int = attribute(
         default=_DEFAULT_MAX_FULL_TOOL_RESULTS,
         description="Keep last N tool results in full; summarize older",
+    )
+    max_tool_result_tokens: int = attribute(
+        default=400,
+        description="Max estimated tokens retained for an individual tool result message",
+    )
+    tool_result_truncation_chars: int = attribute(
+        default=500,
+        description="Max characters streamed for individual tool-result thought updates",
+    )
+    history_limit: int = attribute(
+        default=5,
+        description="How many prior interactions to include in initial context",
+    )
+    call_timeout_seconds: float = attribute(
+        default=60.0,
+        description="Timeout in seconds for each tool call",
+    )
+    task_sync_every_steps: int = attribute(
+        default=3,
+        description="How many tracker steps to buffer before persisting metadata",
     )
     local_tools_path: Optional[str] = attribute(
         default=None,
@@ -163,7 +206,7 @@ class ThinkingInteractAction(InteractAction):
             await visitor.unrecord_action_execution()
             return
 
-        task_tracker: Optional[TaskTracker] = None
+        tool_executor: Optional[ToolExecutor] = None
         try:
             # 1. Discover Claude-style skill bundles under agents/<ns>/<id>/skills
             discovered_skills = await self._discover_skill_bundles(visitor)
@@ -174,7 +217,7 @@ class ThinkingInteractAction(InteractAction):
 
             # 2. Initialize ToolExecutor
             tool_executor = ToolExecutor(
-                call_timeout=60.0,
+                call_timeout=self.call_timeout_seconds,
                 sanitize_errors=True,
             )
             await tool_executor.initialize(
@@ -235,51 +278,50 @@ class ThinkingInteractAction(InteractAction):
                     "proceeding without tools (reasoning-only mode)"
                 )
 
-            # 3. Initialize TaskTracker
-            task_tracker = TaskTracker(
-                conversation=conversation,
-                action_name=self.get_class_name(),
-            )
             task_description = (
                 f"Agentic task: {interaction.utterance[:100]}"
                 if interaction.utterance
                 else "Agentic task"
             )
-            await task_tracker.create_task(
+            async with visitor.tasks.track(
                 description=task_description,
                 task_type="AGENTIC_LOOP",
+                action_name=self.get_class_name(),
                 metadata={
                     "skills": self.skills,
                     "skills_source": self.skills_source,
+                    "started_at": datetime.now(timezone.utc).isoformat(),
+                    "iterations": 0,
+                    "tools_called": [],
+                    "thinking_tokens_used": 0,
+                    "steps": [],
+                    "completed_at": None,
+                    "total_duration_seconds": None,
                 },
-            )
-
-            # 5. Run the agentic loop
-            final_response = await self._run_agentic_loop(
-                visitor=visitor,
-                tool_executor=tool_executor,
-                task_tracker=task_tracker,
-                discovered_skills=discovered_skills,
-            )
-
-            # 5. Publish final response
-            if final_response:
-                await self.publish(
-                    visitor,
-                    content=final_response,
-                    streaming_complete=True,
+            ) as task:
+                # 5. Run the agentic loop
+                final_response, termination_reason = await self._run_agentic_loop(
+                    visitor=visitor,
+                    tool_executor=tool_executor,
+                    task_handle=task,
+                    discovered_skills=discovered_skills,
                 )
-                # Mark directives as executed
-                interaction.set_to_executed()
 
-            # 6. Complete task
-            await task_tracker.complete_task(
-                final_status="completed",
-                summary=final_response[:200] if final_response else None,
-            )
+                # 6. Publish final response
+                if final_response:
+                    await self.publish(
+                        visitor,
+                        content=final_response,
+                        streaming_complete=True,
+                    )
+                    # Mark directives as executed
+                    interaction.set_to_executed()
 
-            # 7. Cleanup
-            await tool_executor.cleanup()
+                # 7. Complete task explicitly with final reason/summary.
+                await task.complete(
+                    status=termination_reason,
+                    summary=final_response[:200] if final_response else None,
+                )
 
         except Exception as e:
             logger.error(
@@ -287,13 +329,16 @@ class ThinkingInteractAction(InteractAction):
                 e,
                 exc_info=True,
             )
-            # Try to fail the task gracefully
-            try:
-                if task_tracker:
-                    await task_tracker.fail_task(str(e))
-            except Exception:
-                pass
             await visitor.unrecord_action_execution()
+        finally:
+            if tool_executor:
+                try:
+                    await tool_executor.cleanup()
+                except Exception as cleanup_error:
+                    logger.warning(
+                        "ThinkingInteractAction: tool cleanup failed: %s",
+                        cleanup_error,
+                    )
 
     async def _discover_skill_bundles(
         self, visitor: "InteractWalker"
@@ -313,9 +358,10 @@ class ThinkingInteractAction(InteractAction):
             return {}
 
         try:
+            app_root = get_app_root()
             if source == "both":
                 discovered_skills = resolve_merged_skill_bundles(
-                    app_root=os.getcwd(),
+                    app_root=app_root,
                     namespace=agent.namespace,
                     agent_name=agent.name,
                     include_builtin=True,
@@ -324,7 +370,7 @@ class ThinkingInteractAction(InteractAction):
                 discovered_skills = resolve_builtin_skills()
             elif source == "app":
                 discovered_skills = resolve_agent_skills(
-                    app_root=os.getcwd(),
+                    app_root=app_root,
                     namespace=agent.namespace,
                     agent_name=agent.name,
                 )
@@ -360,9 +406,9 @@ class ThinkingInteractAction(InteractAction):
         self,
         visitor: "InteractWalker",
         tool_executor: ToolExecutor,
-        task_tracker: TaskTracker,
+        task_handle: "TaskHandle",
         discovered_skills: Optional[Dict[str, Dict[str, Any]]] = None,
-    ) -> Optional[str]:
+    ) -> tuple[str, str]:
         """Core agentic loop: think → act → observe → repeat."""
         model_kwargs = self._build_model_kwargs()
 
@@ -372,30 +418,26 @@ class ThinkingInteractAction(InteractAction):
         loop_start = time.monotonic()
         iteration = 0
         final_response = ""
+        termination_reason = TerminationReason.COMPLETED.value
+        loop_state = LoopState.MODEL
 
         while iteration < self.max_iterations:
             # Check duration limit
             elapsed = time.monotonic() - loop_start
             if elapsed >= self.max_duration_seconds:
+                loop_state = LoopState.TERMINATE
                 final_response = await self._force_termination(
                     messages,
                     tool_executor.get_tools_list(),
                     visitor,
                     model_kwargs,
                 )
-                break
-
-            if iteration == self.max_iterations - 1:
-                final_response = await self._force_termination(
-                    messages,
-                    tool_executor.get_tools_list(),
-                    visitor,
-                    model_kwargs,
-                )
+                termination_reason = TerminationReason.TIME_CAP.value
                 break
 
             iteration += 1
-            await task_tracker.add_step("thinking", iteration=iteration)
+            await task_handle.record_step("thinking", iteration=iteration)
+            loop_state = LoopState.MODEL
 
             # Re-fetch tools each iteration to include newly activated skill tools.
             tools = tool_executor.get_tools_list()
@@ -416,22 +458,37 @@ class ThinkingInteractAction(InteractAction):
                         "tokens": model_result.thinking_tokens or 0,
                     },
                 )
-                await task_tracker.add_step(
-                    "thinking",
-                    iteration=iteration,
-                    details={"tokens": model_result.thinking_tokens or 0},
-                )
-
             if not model_result.tool_calls:
                 final_response = await model_result.get_response()
                 if not final_response and model_result.response:
                     final_response = model_result.response
+                termination_reason = TerminationReason.COMPLETED.value
+                loop_state = LoopState.TERMINATE
                 break
 
             tool_calls = model_result.tool_calls
-            await task_tracker.add_step(
+            loop_state = LoopState.TOOLS
+            await task_handle.record_step(
                 "tool_call", iteration=iteration, details={"count": len(tool_calls)}
             )
+
+            # Surface any mid-loop user-facing commentary the model emitted alongside
+            # tool calls. The model already records this text in its internal message
+            # list, but without explicit publication it is invisible to the end user
+            # and absent from interaction.response (and therefore from conversation
+            # history on subsequent turns), causing inconsistencies.
+            intermediate_text = (model_result.response or "").strip()
+            if self.commit_intermediate_messages and intermediate_text:
+                await self.publish(
+                    visitor=visitor,
+                    content=intermediate_text,
+                    streaming_complete=True,
+                    metadata={
+                        "action_name": self.get_class_name(),
+                        "iteration": iteration,
+                        "intermediate": True,
+                    },
+                )
 
             if self.stream_tool_progress:
                 for idx, tc in enumerate(tool_calls):
@@ -462,7 +519,7 @@ class ThinkingInteractAction(InteractAction):
                     tool_call_id = tr_msg.get("tool_call_id", "")
                     await self.publish_thought(
                         visitor=visitor,
-                        content=content[:500],
+                        content=content[: self.tool_result_truncation_chars],
                         thought_type="tool_result",
                         segment_id=f"iter-{iteration}-result-{tool_call_id or 'unknown'}",
                         streaming_complete=True,
@@ -474,22 +531,40 @@ class ThinkingInteractAction(InteractAction):
                     )
 
             messages.extend(tool_result_messages)
-            await task_tracker.add_step(
+            await task_handle.record_step(
                 "tool_result",
                 iteration=iteration,
                 details={"duration_ms": tool_duration_ms},
             )
             messages = self._maybe_truncate_messages(messages)
 
+        if (
+            not final_response
+            and termination_reason == TerminationReason.COMPLETED.value
+            and iteration >= self.max_iterations
+        ):
+            loop_state = LoopState.TERMINATE
+            final_response = await self._force_termination(
+                messages,
+                tool_executor.get_tools_list(),
+                visitor,
+                model_kwargs,
+            )
+            termination_reason = TerminationReason.ITER_CAP.value
+
         if not final_response:
             final_response = (
                 "I was unable to complete the task within the allowed steps."
             )
+            if termination_reason == TerminationReason.COMPLETED.value:
+                termination_reason = TerminationReason.ITER_CAP.value
 
-        await task_tracker.add_step(
-            "response", iteration=iteration, details={"length": len(final_response)}
+        await task_handle.record_step(
+            "response",
+            iteration=iteration,
+            details={"length": len(final_response), "loop_state": loop_state.value},
         )
-        return final_response
+        return final_response, termination_reason
 
     def _build_model_kwargs(self) -> Dict[str, Any]:
         kwargs: Dict[str, Any] = {
@@ -531,7 +606,7 @@ class ThinkingInteractAction(InteractAction):
         if conversation and interaction:
             try:
                 history = await conversation.get_interaction_history(
-                    limit=5,
+                    limit=self.history_limit,
                     excluded=interaction.id,
                     with_utterance=True,
                     with_response=True,
@@ -554,11 +629,11 @@ class ThinkingInteractAction(InteractAction):
         visitor: "InteractWalker",
         model_kwargs: Dict[str, Any],
     ) -> Any:
-        """Call LanguageModelAction._query() directly with pre-formatted messages.
+        """Call LanguageModelAction.query_messages() with pre-formatted messages.
 
-        Bypasses query() because query() expects a prompt string and calls
-        format_messages() internally. The agentic loop maintains its own
-        message list with tool-call/result pairs, so we call _query() directly.
+        The agentic loop maintains its own message list with tool-call/result
+        pairs, so it uses query_messages() to preserve this full context while
+        still getting standard observability/profiling tracking.
 
         Args:
             messages: Current conversation messages (pre-formatted).
@@ -571,16 +646,16 @@ class ThinkingInteractAction(InteractAction):
         """
         model_action = await self.get_model_action(required=True)
 
-        # Convert messages for provider-specific format requirements
-        provider = getattr(model_action, "provider", "")
-        converted_messages = self._convert_messages_for_provider(messages, provider)
-
-        result = await model_action._query(
-            converted_messages,
+        return await model_action.query_messages(
+            messages=messages,
+            stream=False,
+            system=messages[0].get("content") if messages else None,
+            history=messages[1:-1] if len(messages) > 2 else None,
             tools=tools if tools else None,
+            calling_action_name=self.get_class_name(),
+            prompt_for_observability=visitor.utterance,
             **model_kwargs,
         )
-        return result
 
     def _convert_messages_for_provider(
         self,
@@ -798,6 +873,14 @@ class ThinkingInteractAction(InteractAction):
         truncated = []
         for i, msg in enumerate(messages):
             if i in keep_indices or msg.get("role") != "tool":
+                if msg.get("role") == "tool" and isinstance(msg.get("content"), str):
+                    token_estimate = estimate_tokens(msg["content"])
+                    if token_estimate > self.max_tool_result_tokens:
+                        msg = dict(msg)
+                        msg["content"] = (
+                            f"{msg['content'][: self.tool_result_truncation_chars]}... "
+                            "(truncated)"
+                        )
                 truncated.append(msg)
             else:
                 # Replace with summary

@@ -113,8 +113,8 @@ def discover_action_dependencies(app_root: Path) -> Dict[str, List[str]]:
 def generate_dockerfile_run_commands(dependencies: Dict[str, List[str]]) -> str:
     """Generate RUN commands for pip dependencies.
 
-    Creates separate RUN commands per action for better Docker layer caching.
-    Handles duplicate dependencies by deduplicating within each action's command.
+    Creates one consolidated RUN command across all actions.
+    Handles duplicate dependencies by deduplicating package names.
 
     Args:
         dependencies: Dictionary mapping action names to pip dependency lists
@@ -127,25 +127,21 @@ def generate_dockerfile_run_commands(dependencies: Dict[str, List[str]]) -> str:
 
     commands = []
     commands.append("# Action-specific pip dependencies")
-
-    for action_name, deps in sorted(dependencies.items()):
-        # Deduplicate dependencies for this action (preserve order)
-        seen = set()
-        unique_deps = []
+    seen = set()
+    consolidated: List[str] = []
+    for _action_name, deps in sorted(dependencies.items()):
         for dep in deps:
-            # Extract package name for comparison (handle version specifiers)
             pkg_name = (
                 dep.split(">=")[0].split("==")[0].split("<")[0].split("~")[0].strip()
             )
             if pkg_name not in seen:
                 seen.add(pkg_name)
-                unique_deps.append(dep)
+                consolidated.append(dep)
 
-        if unique_deps:
-            commands.append(f"# Dependencies for {action_name}")
-            commands.append(
-                f'RUN /opt/venv/bin/pip install --no-cache-dir {" ".join(unique_deps)}'
-            )
+    if consolidated:
+        commands.append(
+            f'RUN /opt/venv/bin/pip install --no-cache-dir {" ".join(consolidated)}'
+        )
 
     return "\n".join(commands)
 

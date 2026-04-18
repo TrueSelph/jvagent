@@ -2,8 +2,6 @@
 
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from jvspatial.api import endpoint
-from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
 
@@ -250,36 +248,6 @@ class Agents(Node):
         return {"statistics": statistics}
 
 
-# ============================================================================
-# ENDPOINT: Get Agents Status/Statistics
-# ============================================================================
-
-
-@endpoint(
-    "/status",
-    methods=["GET"],
-    auth=True,  # Requires authentication - statistics contain sensitive system information
-    roles=["admin"],
-    tags=["App"],
-    response=success_response(
-        data={
-            "statistics": ResponseField(
-                field_type=Dict[str, Any],
-                description="Comprehensive statistics about all agents",
-                example={
-                    "counters": {"total_agents": 10, "active_agents": 8},
-                    "enabled_breakdown": {"enabled": 8, "disabled": 2, "total": 10},
-                    "healthcheck": {
-                        "total_agents": 10,
-                        "healthy_agents": 9,
-                        "unhealthy_agents": 1,
-                        "agent_health": [],
-                    },
-                },
-            )
-        }
-    ),
-)
 async def get_status(
     sync: bool = False,
     include_health: bool = True,
@@ -290,43 +258,7 @@ async def get_status(
     and optional healthcheck data for all agents in the system.
 
 
-    This endpoint requires authentication as it exposes sensitive system
-    information including agent counts, status breakdowns, and health data.
-
-
-    **Args:**
-
-    - sync: If True, recalculate counters from actual agent data before returning
-    - include_health: If True, include healthcheck data for each agent
-
-
-    **Returns:**
-
-    Dictionary with comprehensive statistics:
-
-    ```json
-    {
-        "statistics": {
-            "counters": {
-                "total_agents": 10,
-                "active_agents": 8
-            },
-            "enabled_breakdown": {
-                "enabled": 8,
-                "disabled": 2,
-                "total": 10
-            },
-            "healthcheck": {
-                "total_agents": 10,
-                "healthy_agents": 9,
-                "unhealthy_agents": 1,
-                "agent_health": []
-            }
-        }
-    }
-    ```
-
-    Note: The `healthcheck` field is only included if `include_health=True`.
+    Shared helper used by API endpoints.
     """
     # Get Agents node
     agents_node = await Agents.get()

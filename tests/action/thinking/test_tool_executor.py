@@ -357,3 +357,40 @@ class TestToolExecutorMCP:
 
         result = await executor._dispatch_mcp_tool(call, mcp_action)
         assert result == "ok"
+
+    @pytest.mark.asyncio
+    async def test_dispatch_mcp_tool_handles_camelcase_is_error(self):
+        """Regression: real MCP SDK CallToolResult uses camelCase ``isError``.
+
+        Previously _normalize_call_result() looked for snake_case and
+        defaulted is_error to True, causing every successful MCP tool call
+        (e.g. ``list_allowed_directories``) to surface as a sanitized
+        ``Tool execution failed: <name>`` error to the LLM.
+        """
+        from pydantic import BaseModel
+
+        class _StubContent(BaseModel):
+            type: str = "text"
+            text: str = ""
+
+        class _StubCallResult(BaseModel):
+            content: list[_StubContent] = []
+            isError: bool = False
+            structuredContent: dict | None = None
+
+        executor = ToolExecutor(validate_calls=False)
+        call = MagicMock()
+        call.name = "list_allowed_directories"
+        call.arguments = {}
+        call_result = _StubCallResult(
+            content=[_StubContent(type="text", text="/tmp\n/var")],
+            isError=False,
+        )
+
+        client = MagicMock()
+        client.call_tool = AsyncMock(return_value=call_result)
+        mcp_action = MagicMock()
+        mcp_action.get_client = MagicMock(return_value=client)
+
+        result = await executor._dispatch_mcp_tool(call, mcp_action)
+        assert result == "/tmp\n/var"

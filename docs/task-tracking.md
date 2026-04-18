@@ -1,221 +1,112 @@
 # Task Tracking
 
-The task tracker provides a central mechanism for the AI to track current and upcoming tasks that require user intervention. Tasks are stored on the **Conversation** node (not per-interaction), ensuring a single source of truth that persists across turns and is not affected by history pruning.
+Task lifecycle management is now centralized in `TaskService`, scoped per conversation and exposed through `visitor.tasks`.
 
 ## Overview
 
-- **Location**: `Conversation.active_tasks` (list of task dicts)
-- **Purpose**: Track ongoing activities (e.g., active interviews) that require user input
-- **Consumers**: InteractRouter (context signals), PersonaAction (prompt awareness, reminder parameter), interact response payload (development mode)
+- **Storage**: `Conversation.active_tasks` remains the canonical store.
+- **Writer**: `TaskService` is the single write path for create/update/complete/fail/cancel/reserve.
+- **Scope**: One service instance per conversation (`TaskService(conversation)`), lazily available as `InteractWalker.tasks`.
+- **Consumers**: Thinking loop, interview flows, proactive task creation/dispatch/trigger, router/persona context, and response payloads.
 
 ## Task Model
 
-Each task entry has the following structure:
+Each entry in `active_tasks` uses this normalized shape:
 
 ```json
 {
-  "task_id": "ReportInterviewInteractAction:35a045f50ab7",
-  "description": "Guide user to complete ReportInterviewInteractAction",
-  "action_name": "ReportInterviewInteractAction",
+  "task_id": "ThinkingInteractAction:907b4a8af2e5",
+  "task_type": "AGENTIC_LOOP",
+  "description": "Agentic task: ...",
+  "action_name": "ThinkingInteractAction",
   "status": "active",
+  "next_trigger_at": null,
+  "trigger_condition": null,
   "metadata": {
-    "interview_type": "ReportInterviewInteractAction",
-    "state": "active"
+    "steps": [],
+    "iterations": 0
   },
-  "created_at": "2026-02-28T13:00:23.397095+00:00",
-  "updated_at": "2026-02-28T13:00:23.397095+00:00"
+  "created_at": "2026-04-18T19:01:05.853007+00:00",
+  "updated_at": "2026-04-18T19:01:05.853017+00:00",
+  "last_heartbeat_at": "2026-04-18T19:01:05.853017+00:00",
+  "terminal_at": null
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `task_id` | str | Unique identifier. Auto-generated as `{action_name}:{uuid}` when `action_name` is provided, else `task_{uuid}`. Preserved on upsert. |
-| `description` | str | Human/AI-readable task description (e.g., "Guide user to complete SignupInterviewInteractAction") |
-| `action_name` | str | Optional. Action class name for actions that manage their own tasks. Used for cleanup and filtering. |
-| `status` | str | `"active"` \| `"inactive"` \| `"upcoming"` \| `"completed"` \| `"cancelled"` |
-| `metadata` | dict | Optional. Interview type, state, current question, etc. |
-| `created_at` | str | ISO datetime |
-| `updated_at` | str | ISO datetime |
+### Status model
 
-## Conversation API
+- Active statuses: `pending`, `active`, `triggered`, `reserved`
+- Terminal statuses: `completed`, `failed`, `cancelled`, `timed_out`, `max_iterations`, `superseded`
+- Terminal statuses are one-way; completed tasks remain in the list for audit history.
 
-### add_active_task
+## Preferred API (`visitor.tasks`)
+
+Use `TaskService` directly from actions:
 
 ```python
-await conversation.add_active_task(
-    description="Guide user to complete SignupInterviewInteractAction",
-    metadata={"interview_type": "SignupInterview", "state": "ACTIVE"},
-    task_id=None,  # Optional; auto-generated when not provided
-    action_name="SignupInterviewInteractAction",
-)
+async with visitor.tasks.track(
+    description="Agentic task: ...",
+    task_type="AGENTIC_LOOP",
+    action_name=self.get_class_name(),
+    metadata={"skills": self.skills},
+) as task:
+    await task.record_step("thinking", iteration=1)
+    await task.record_step("tool_call", iteration=1, details={"count": 2})
+    await task.update_metadata(current_phase="tool_dispatch")
+    await task.complete(status="completed", summary="Done")
 ```
 
-- **Upsert behavior**: Matches by `task_id`, `description`, or `action_name`. Updates existing task if found.
-- **task_id**: When not provided, generates `{action_name}:{12-char-uuid}` or `task_{32-char-uuid}`.
-
-### update_task
+For scheduler-style flows:
 
 ```python
-updated = await conversation.update_task(
-    status="completed",  # or "cancelled"
-    task_id="SignupInterviewInteractAction:abc123",  # optional, for exact match
-    description="Guide user to complete SignupInterviewInteractAction",  # optional
-    action_name="SignupInterviewInteractAction",  # optional
-)
-```
-
-- Tasks are **never removed**; they are updated in status to preserve an audit log.
-- Provide at least one of `task_id`, `description`, or `action_name`. When multiple tasks exist per action, use `task_id` or `description` to distinguish.
-- Valid `status` values: `"completed"`, `"cancelled"` (and `"active"`, `"inactive"`, `"upcoming"` for other use cases).
-
-### remove_active_task
-
-```python
-updated = await conversation.remove_active_task(
-    task_id="SignupInterviewInteractAction:abc123",  # optional
-    description="Guide user to complete SignupInterviewInteractAction",  # optional
-    action_name="SignupInterviewInteractAction",  # optional
-)
-```
-
-- Delegates to `update_task` with `status="completed"`. Kept for backward compatibility.
-- Task remains in the list with updated status; it is not removed.
-
-### get_active_tasks
-
-```python
-tasks = conversation.get_active_tasks(
-    status="active",  # Optional filter
-    action_name="SignupInterviewInteractAction",  # Optional filter
-)
-```
-
-### get_active_tasks_for_context
-
-```python
-descriptions = conversation.get_active_tasks_for_context()
-# Returns ["Guide user to complete SignupInterviewInteractAction", ...]
-```
-
-Returns list of descriptions for active tasks (status=active). Used by InteractRouter for context signals.
-
-### Task lookup (get_active_task)
-
-```python
-task = conversation.get_active_task(description="Guide user to complete SignupInterviewInteractAction")
-task = conversation.get_active_task(action_name="SignupInterviewInteractAction")
-task = conversation.get_active_task(task_type="INTERVIEW", status="active")
-task = conversation.get_active_task(task_id="SignupInterviewInteractAction:abc123")
-```
-
-Returns the first matching task dict if found, `None` otherwise. Optional filters: `task_id`, `task_type`, `description`, `action_name`, `status`. Use `task.get("action_name")` when you need the action name. Useful for lookup before update or conditional logic.
-
-## InteractWalker Helpers
-
-When executing within an InteractAction, use the walker's convenience methods (they delegate to the conversation):
-
-```python
-await visitor.add_active_task(
-    description="Guide user to complete MyInterviewInteractAction",
-    metadata={"state": "ACTIVE"},
-    action_name="MyInterviewInteractAction",
+task = await visitor.tasks.start(
+    description="Follow up tomorrow",
+    task_type="PROACTIVE",
+    trigger_at="2026-04-19T09:00",
+    trigger_condition="none",
+    metadata={"context": "follow-up", "channel": "sms"},
 )
 
-updated = await visitor.update_task(
-    status="completed",
-    description="Guide user to complete MyInterviewInteractAction",
-    action_name="MyInterviewInteractAction",
-)
-# Or for cancellation:
-updated = await visitor.update_task(
-    status="cancelled",
-    description="Guide user to complete MyInterviewInteractAction",
-    action_name="MyInterviewInteractAction",
-)
-
-tasks = await visitor.get_active_tasks(status="active", action_name="MyInterviewInteractAction")
+await visitor.tasks.complete(task_id=task.task_id, status="completed")
 ```
 
-Requires `visitor.conversation` to be set (the walker sets this during initialization).
+## Backward compatibility
 
-## Interview Integration
+`Conversation.add_active_task`, `Conversation.update_task`, `Conversation.remove_active_task`,
+and `InteractWalker` task helper methods still work; they delegate to `TaskService`.
 
-The **DirectiveBuilder** (used by InterviewInteractAction) automatically:
+- Legacy description/action-name upsert behavior is preserved on `add_active_task` for compatibility.
+- New code should prefer explicit `task_id` and `visitor.tasks`.
 
-- **Registers** an active task when the session is ACTIVE or REVIEW (in `queue_directive`)
-- **Updates** the task to `"completed"` or `"cancelled"` when the interview completes or is cancelled (in `generate_completed_directive` and `generate_cancelled_directive`). Tasks are never removed; they remain for audit.
+## Lifecycle callbacks
 
-**Cancellation gate**: Interview cancellation is only permitted when the interview is listed in active tasks. If the user says "cancel" but no active task exists for that interview, the cancellation is ignored (treated as NONE).
+`TaskService` emits callbacks through `jvagent/core/callback.py`:
 
-Description format: `"Guide user to complete {action_name}"` (from `ACTIVE_TASK_DESCRIPTION_TEMPLATE`).
+- `task_created`
+- `task_updated`
+- `task_completed`
+- `task_failed`
+- `task_cancelled`
 
-## Persona Integration
+Webhook URLs can be configured with:
 
-PersonaAction uses active tasks for:
+- `JVAGENT_TASK_CREATED_WEBHOOK_URL`
+- `JVAGENT_TASK_UPDATED_WEBHOOK_URL`
+- `JVAGENT_TASK_COMPLETED_WEBHOOK_URL`
+- `JVAGENT_TASK_FAILED_WEBHOOK_URL`
+- `JVAGENT_TASK_CANCELLED_WEBHOOK_URL`
 
-1. **Prompt context**: An "ACTIVE TASKS" section lists pending tasks when `remind_on_active_tasks=True`
-2. **Reminder parameter**: When the user strays from completing tasks, the persona is instructed to briefly remind them to return
-3. **Filtering**: Tasks with `metadata.requires_user_intervention=False` are excluded (default is True)
+## Integration notes
 
-## Response Payload (Development Mode)
+- **ThinkingInteractAction** uses `visitor.tasks.track(...)` and records structured steps.
+- **DirectiveBuilder** starts and completes/cancels interview tasks through `visitor.tasks`.
+- **TaskCreationInteractAction** creates proactive tasks via `visitor.tasks.start(...)`.
+- **TaskDispatcher** reserves tasks (`reserved`) before dispatch and completes/fails through service APIs.
+- **TaskTriggerInteractAction** marks matched proactive tasks complete through the service.
 
-In development mode, the interact endpoint response includes `interaction.active_tasks`:
+## See also
 
-```json
-{
-  "interaction": {
-    "id": "int_123",
-    "utterance": "Hello",
-    "response": "...",
-    "directives": [],
-    "parameters": [],
-    "events": [],
-    "active_tasks": [
-      {
-        "task_id": "ReportInterviewInteractAction:35a045f50ab7",
-        "description": "Guide user to complete ReportInterviewInteractAction",
-        "action_name": "ReportInterviewInteractAction",
-        "status": "active",
-        "metadata": {...},
-        "created_at": "...",
-        "updated_at": "..."
-      }
-    ],
-    "observability_metrics": [],
-    "streamed": false
-  }
-}
-```
-
-Active tasks are fetched from the conversation when building the response; they are not stored on the Interaction model.
-
-## Creating Custom Task-Managing Actions
-
-For multi-turn flows that require user input (beyond interviews):
-
-```python
-class MyInteractAction(InteractAction):
-    async def execute(self, visitor: InteractWalker) -> None:
-        if some_condition_requiring_user_input:
-            await visitor.add_active_task(
-                description="Complete the X flow",
-                action_name=self.get_class_name(),
-                metadata={"step": "awaiting_confirmation"},
-            )
-        # ...
-        if flow_complete:
-            await visitor.update_task(
-                status="completed",
-                description="Complete the X flow",
-                action_name=self.get_class_name(),
-            )
-```
-
-Use `action_name` for cleanup so your action can remove its task when done.
-
-## See Also
-
-- [Conversation](jvagent/memory/conversation.py) - Task tracker implementation
-- [InteractWalker](jvagent/action/interact/interact_walker.py) - `add_active_task`, `update_task`, `remove_active_task`, `get_active_tasks`
-- [DirectiveBuilder](jvagent/action/interview/core/processing/directive_builder.py) - Interview task registration
-- [InteractAction API](jvagent/action/interact/README.md) - Interact endpoint and response format
+- [Conversation](jvagent/memory/conversation.py)
+- [TaskService](jvagent/memory/services/task_service.py)
+- [InteractWalker](jvagent/action/interact/interact_walker.py)
+- [ThinkingInteractAction](jvagent/action/thinking/thinking_interact_action.py)

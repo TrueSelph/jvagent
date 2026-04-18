@@ -4,6 +4,7 @@ Each handler is an async function(context, node, orphan_ids, dry_run) -> bool
 that returns True if the node was reattached (and node_id was discarded from orphan_ids).
 """
 
+from collections import deque
 from typing import Any, Callable, Dict, Set
 
 _REATTACH_HANDLERS: Dict[str, Callable] = {}
@@ -93,16 +94,53 @@ async def _reattach_memory(
 ) -> bool:
     from jvagent.core.agent import Agent
 
+    async def has_descendant_memory_data(memory_node: Any) -> bool:
+        queue = deque([memory_node])
+        seen = {memory_node.id}
+        while queue:
+            current = queue.popleft()
+            try:
+                children = await current.nodes(direction="out")
+            except Exception:
+                continue
+            for child in children:
+                if child.id in seen:
+                    continue
+                seen.add(child.id)
+                if child.__class__.__name__ in {"User", "Conversation", "Interaction"}:
+                    return True
+                queue.append(child)
+        return False
+
+    if getattr(node, "agent_id", None):
+        owning_agent = await Agent.get(node.agent_id)
+        if owning_agent and not await owning_agent.is_connected_to(node):
+            if not dry_run:
+                await owning_agent.connect(node, direction="out")
+            orphan_ids.discard(node.id)
+            return True
+
+    incoming_agents = await node.nodes(direction="in", node=Agent)
+    if incoming_agents:
+        orphan_ids.discard(node.id)
+        return True
+
     agents_without_memory = []
-    for a in await Agent.find({}):
-        mem = await a.node(node="Memory")
+    for agent in await Agent.find({}):
+        mem = await agent.node(node="Memory")
         if not mem:
-            agents_without_memory.append(a)
+            agents_without_memory.append(agent)
     if len(agents_without_memory) == 1 and not await agents_without_memory[
         0
     ].is_connected_to(node):
         if not dry_run:
             await agents_without_memory[0].connect(node, direction="out")
+        orphan_ids.discard(node.id)
+        return True
+
+    # If this Memory contains descendant user data but we cannot confidently
+    # reattach it, preserve it from deletion.
+    if await has_descendant_memory_data(node):
         orphan_ids.discard(node.id)
         return True
     return False
@@ -116,12 +154,26 @@ async def _reattach_user(
     user_id = getattr(node, "user_id", None)
     if not user_id:
         return False
-    if node.edge_ids:
-        return False
+
+    incoming_memories = await node.nodes(direction="in", node=Memory)
+    if incoming_memories:
+        primary = incoming_memories[0]
+        if not dry_run and getattr(node, "memory_id", "") != primary.id:
+            setattr(node, "memory_id", primary.id)
+            await node.save()
+        orphan_ids.discard(node.id)
+        return True
+
     memories = await Memory.find({})
-    for memory in memories:
+    preferred_id = getattr(node, "memory_id", "")
+    preferred = [m for m in memories if preferred_id and m.id == preferred_id]
+    others = sorted(
+        [m for m in memories if m.id != preferred_id],
+        key=lambda memory: memory.id,
+    )
+    for memory in preferred + others:
         connected_users = await memory.nodes(node="User")
-        if any(u.user_id == user_id for u in connected_users):
+        if any(u.user_id == user_id and u.id != node.id for u in connected_users):
             continue
         if not await memory.is_connected_to(node):
             if not dry_run:
@@ -155,7 +207,34 @@ async def _reattach_conversation(
                 await user.connect(node, direction="out")
             orphan_ids.discard(node.id)
             return True
-    return False
+
+    interactions = await node.nodes(node="Interaction", direction="out")
+    if not interactions:
+        return False
+
+    memories = sorted(await Memory.find({}), key=lambda memory: memory.id)
+    target_memory = None
+    conversation_memory_id = getattr(node, "memory_id", "")
+    if conversation_memory_id:
+        target_memory = next(
+            (memory for memory in memories if memory.id == conversation_memory_id), None
+        )
+    if target_memory is None and len(memories) == 1:
+        target_memory = memories[0]
+    if target_memory is None:
+        return False
+
+    recovery_user_id = user_id or f"recovery_{node.id}"
+    recovery_user = await target_memory.get_user(
+        recovery_user_id, create_if_missing=True
+    )
+    if not recovery_user:
+        return False
+    if not await recovery_user.is_connected_to(node):
+        if not dry_run:
+            await recovery_user.connect(node, direction="out")
+    orphan_ids.discard(node.id)
+    return True
 
 
 async def _reattach_action(

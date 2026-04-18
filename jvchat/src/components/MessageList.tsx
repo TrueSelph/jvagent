@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Message } from "../types/message";
 import React from "react";
 import { resolveMediaUrl } from "../utils/mediaUrl";
+import { JsonViewer } from "./JsonViewer";
 
 function metaString(v: unknown): string {
   if (typeof v === "string") return v.trim();
@@ -113,6 +114,27 @@ interface MessageListProps {
   thinkingText?: string;
 }
 
+type DisplayMessage = {
+  message: Message;
+  source: "messages" | "thoughts";
+  index: number;
+};
+
+function formatThoughtType(thoughtType: Message["thoughtType"]): string {
+  if (!thoughtType) return "Thought";
+  return thoughtType
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function isToolingThought(message: Message): boolean {
+  return (
+    message.category === "thought" &&
+    (message.thoughtType === "tool_call" || message.thoughtType === "tool_result")
+  );
+}
+
 export function MessageList({
   messages,
   thoughtMessages = [],
@@ -122,7 +144,38 @@ export function MessageList({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const prevLenRef = useRef<number>(0);
   const [debugMessage, setDebugMessage] = useState<Message | null>(null);
-  const totalVisibleMessages = messages.length + thoughtMessages.length;
+  const displayMessages = useMemo<DisplayMessage[]>(() => {
+    const combined: DisplayMessage[] = [
+      ...messages.map((message, index) => ({
+        message,
+        source: "messages" as const,
+        index,
+      })),
+      ...thoughtMessages.map((message, index) => ({
+        message,
+        source: "thoughts" as const,
+        index,
+      })),
+    ];
+
+    return combined.sort((a, b) => {
+      const leftTime = Date.parse(a.message.timestamp || "");
+      const rightTime = Date.parse(b.message.timestamp || "");
+      const leftValid = Number.isFinite(leftTime);
+      const rightValid = Number.isFinite(rightTime);
+
+      if (leftValid && rightValid && leftTime !== rightTime) {
+        return leftTime - rightTime;
+      }
+
+      if (a.source !== b.source) {
+        return a.source === "messages" ? -1 : 1;
+      }
+
+      return a.index - b.index;
+    });
+  }, [messages, thoughtMessages]);
+  const totalVisibleMessages = displayMessages.length;
 
   useEffect(() => {
     // Avoid smooth-scroll on every token append (prevents visible flicker).
@@ -131,67 +184,61 @@ export function MessageList({
     prevLenRef.current = totalVisibleMessages;
   }, [messages, thoughtMessages, totalVisibleMessages]);
 
-  if (messages.length === 0 && thoughtMessages.length === 0) {
+  if (displayMessages.length === 0) {
     return null;
   }
 
   return (
     <>
       <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4">
-        {thoughtMessages.length > 0 && (
-          <div className="rounded-xl border border-amber-300/40 dark:border-amber-500/30 bg-amber-50/70 dark:bg-amber-900/10 p-3 sm:p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs sm:text-sm font-semibold text-amber-800 dark:text-amber-300">
-                Thinking & Tooling Stream
-              </h3>
-              <span className="text-[11px] sm:text-xs text-amber-700/80 dark:text-amber-400/80">
-                separate from chat transcript
-              </span>
-            </div>
-            <div className="space-y-2">
-              {thoughtMessages.map((message) => (
-                <div
-                  key={message.id}
-                  className="rounded-lg bg-white/70 dark:bg-slate-800/70 border border-amber-200/60 dark:border-slate-700 px-3 py-2"
-                >
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[11px] sm:text-xs font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
-                      {message.thoughtType || "thought"}
-                    </span>
-                    <span className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
-                      {new Date(message.timestamp).toLocaleTimeString()}
-                    </span>
-                  </div>
-                  <div className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-words">
+        {displayMessages.map(({ message }) => {
+          const isThought = message.category === "thought";
+          const isUser = message.role === "user";
+          return (
+          <div
+            key={message.id}
+            className={`flex ${
+                isUser ? "justify-end" : "justify-start"
+            } animate-fade-in`}
+          >
+            <div
+              data-message-category={message.category || "transcript"}
+              data-message-role={message.role}
+              className={`max-w-[85%] sm:max-w-3xl rounded-2xl px-3 sm:px-4 py-2 sm:py-3 relative shadow-sm ${
+                isThought
+                  ? "bg-amber-50 text-amber-950 border border-amber-200/70 dark:bg-amber-900/20 dark:text-amber-100 dark:border-amber-700/40"
+                  : isUser
+                  ? "bg-slate-600 text-white dark:bg-indigo-900/40 dark:text-indigo-200"
+                  : "bg-gray-200 text-gray-900 dark:bg-slate-800 dark:text-slate-100 dark:border dark:border-slate-700"
+              }`}
+            >
+              {isThought && (
+                <div className="flex items-center justify-between mb-1 gap-2">
+                  <span className="text-[11px] sm:text-xs uppercase tracking-wide font-semibold text-amber-700 dark:text-amber-300">
+                    {formatThoughtType(message.thoughtType)}
+                  </span>
+                  <span className="text-[11px] sm:text-xs text-amber-700/80 dark:text-amber-300/80">
+                    internal stream
+                  </span>
+                </div>
+              )}
+              <div className="break-words text-sm sm:text-base">
+                {!isThought && <MessageMediaBlock message={message} />}
+                {isThought ? (
+                  <div
+                    className={`whitespace-pre-wrap break-words ${
+                      isToolingThought(message)
+                        ? "font-mono text-xs sm:text-sm"
+                        : "text-sm sm:text-base"
+                    }`}
+                  >
                     {message.content}
                     {message.streaming && (
                       <span className="inline-block w-0.5 sm:w-1 h-3 sm:h-4 ml-0.5 sm:ml-1 bg-current animate-pulse align-middle" />
                     )}
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex ${
-              message.role === "user" ? "justify-end" : "justify-start"
-            } animate-fade-in`}
-          >
-            <div
-              className={`max-w-[85%] sm:max-w-3xl rounded-2xl px-3 sm:px-4 py-2 sm:py-3 relative shadow-sm ${
-                message.role === "user"
-                  ? "bg-slate-600 text-white dark:bg-indigo-900/40 dark:text-indigo-200"
-                  : "bg-gray-200 text-gray-900 dark:bg-slate-800 dark:text-slate-100 dark:border dark:border-slate-700"
-              }`}
-            >
-              <div className="break-words text-sm sm:text-base">
-                <MessageMediaBlock message={message} />
-                {message.content?.trim() ? (
-                <div className="markdown-content">
+                ) : message.content?.trim() ? (
+                  <div className="markdown-content">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     components={{
@@ -361,13 +408,15 @@ export function MessageList({
                   >
                     {message.content}
                   </ReactMarkdown>
-                </div>
+                  </div>
                 ) : null}
               </div>
               <div className="flex items-center justify-between mt-1 sm:mt-2 gap-2">
                 <div
                   className={`text-xs ${
-                    message.role === "user"
+                      isThought
+                        ? "text-amber-800/80 dark:text-amber-300/80"
+                        : isUser
                       ? "text-slate-300 dark:text-indigo-200"
                       : "text-slate-500 dark:text-slate-400"
                   }`}
@@ -379,7 +428,8 @@ export function MessageList({
                   // 1. Message has debugData, OR
                   // 2. Message is the last assistant message for its interactionId
                   const shouldShowDebug =
-                    message.debugData ||
+                    !isThought &&
+                    (message.debugData ||
                     (message.role === "assistant" &&
                       message.interactionId &&
                       (() => {
@@ -393,7 +443,7 @@ export function MessageList({
                             messagesForInteraction.length - 1
                           ];
                         return lastMessageForInteraction?.id === message.id;
-                      })());
+                      })()));
 
                   return shouldShowDebug ? (
                     <button
@@ -419,7 +469,8 @@ export function MessageList({
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
 
         {showThinking && (
           <div className="flex justify-start animate-fade-in">
@@ -480,11 +531,12 @@ export function MessageList({
                   <h4 className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                     Full JSON Response (type=final):
                   </h4>
-                  <div className="bg-gray-900 p-2 sm:p-4 rounded border border-gray-700 overflow-x-auto">
-                    <pre className="text-xs text-green-400">
-                      {JSON.stringify(debugMessage.debugData, null, 2)}
-                    </pre>
-                  </div>
+                  <JsonViewer
+                    data={debugMessage.debugData}
+                    defaultExpandDepth={2}
+                    dark
+                    maxHeight="60vh"
+                  />
                 </div>
               ) : (
                 <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 italic">

@@ -536,6 +536,10 @@ class LanguageModelAction(BaseModelAction, ABC):
             "max_tokens": kwargs.get("max_tokens", self.max_tokens),
             "top_p": kwargs.get("top_p", self.top_p),
         }
+        # Preserve provider-specific kwargs (e.g., Anthropic extended thinking).
+        for key, value in kwargs.items():
+            if key not in query_params:
+                query_params[key] = value
 
         # Debug logging to track model selection
         if "model" in kwargs:
@@ -544,19 +548,54 @@ class LanguageModelAction(BaseModelAction, ABC):
                 f"(passed from caller: '{kwargs.get('model')}', instance default: '{self.model}')"
             )
 
+        # Convert prompt to string if it's a list (multimodal content)
+        prompt_str = prompt if isinstance(prompt, str) else str(prompt)
+        return await self.query_messages(
+            messages=messages,
+            stream=stream,
+            system=system,
+            history=history,
+            tools=tools,
+            calling_action_name=calling_action_name,
+            prompt_for_observability=prompt_str,
+            start_time=start_time,
+            **query_params,
+        )
+
+    async def query_messages(
+        self,
+        messages: List[Dict[str, Any]],
+        stream: bool = False,
+        system: Optional[str] = None,
+        history: Optional[List[Dict[str, Any]]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        calling_action_name: Optional[str] = None,
+        prompt_for_observability: Optional[str] = None,
+        start_time: Optional[float] = None,
+        **kwargs: Any,
+    ) -> ModelActionResult:
+        """Execute a query from already-formatted messages with standard tracking.
+
+        This is the common path for callers that maintain full message state
+        themselves (e.g., think-act-observe loops with tool messages) and still
+        need the same observability/profiling behavior as query().
+        """
+        import time
+
+        if start_time is None:
+            start_time = time.time()
+
         # Route to appropriate implementation
         if stream:
-            result = await self._query_stream(messages, tools, **query_params)
+            result = await self._query_stream(messages, tools, **kwargs)
         else:
-            result = await self._query(messages, tools, **query_params)
+            result = await self._query(messages, tools, **kwargs)
 
         # Calculate duration
         duration = time.time() - start_time
 
-        # Store the prompt, system, and history in the result for logging/observability
-        # Convert prompt to string if it's a list (multimodal content)
-        prompt_str = prompt if isinstance(prompt, str) else str(prompt)
-        result.prompt = prompt_str
+        # Store context for logging/observability
+        result.prompt = prompt_for_observability
         result.system = system
         result.history = history
 
@@ -571,7 +610,6 @@ class LanguageModelAction(BaseModelAction, ABC):
         try:
             from jvagent.core.profiling import record_lm_call
 
-            # Use calling_action_name to identify the LM call source
             lm_label = f"lm:{calling_action_name or self.__class__.__name__}"
             record_lm_call(lm_label, duration)
         except ImportError:
@@ -583,11 +621,10 @@ class LanguageModelAction(BaseModelAction, ABC):
         # Store messages and context for token estimation (for streaming)
         if stream:
             result._messages_for_estimation = messages
-            result._model_for_estimation = query_params.get("model", self.model)
+            result._model_for_estimation = kwargs.get("model", self.model)
             result._provider_for_estimation = getattr(self, "provider", "")
 
         # Track usage metrics (including duration)
-        # Extract usage dict from metrics for tracking
         usage_dict = {
             "prompt_tokens": result.metrics.get("prompt_tokens", 0),
             "completion_tokens": result.metrics.get("completion_tokens", 0),
@@ -596,7 +633,6 @@ class LanguageModelAction(BaseModelAction, ABC):
 
         # For streaming results, skip initial observability emission
         # We'll emit after token estimation completes to avoid duplicate entries
-        # For non-streaming, emit immediately
         if not (stream and result.is_streaming):
             await self.track_usage(usage_dict, duration)
 

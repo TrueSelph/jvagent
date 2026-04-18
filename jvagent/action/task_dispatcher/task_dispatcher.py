@@ -1,12 +1,12 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from jvagent.action.base import Action
 from jvagent.action.interact.endpoints import interact_endpoint
 from jvagent.memory.conversation import Conversation
+from jvagent.memory.services.task_service import TaskService
 
 try:
     from jvspatial.api.integrations.scheduler.decorators import on_schedule
@@ -234,12 +234,9 @@ class TaskDispatcher(Action):
                                 )
                                 return
 
-                            # 2. Atomic Status Check & Completion
-                            tasks = getattr(conversation, "active_tasks", [])
-                            t_obj = next(
-                                (t for t in tasks if t.get("task_id") == task_id), None
-                            )
-
+                            # 2. Atomic status check + reservation
+                            svc = TaskService(conversation)
+                            t_obj = svc.get(task_id=task_id)
                             if not t_obj:
                                 logger.warning(
                                     f"TaskDispatcher: Task {task_id} not found in conversation {conv_id} tasks."
@@ -257,19 +254,25 @@ class TaskDispatcher(Action):
                                 )
                                 return
 
-                            # MARK AS COMPLETED IMMEDIATELY to reserve it
-                            logger.info(
-                                f"TaskDispatcher: RESERVING task {task_id} by setting status to 'completed'."
-                            )
-                            t_obj["status"] = "completed"
-                            t_obj["updated_at"] = datetime.now(timezone.utc).isoformat()
-                            await conversation.save()
+                            reserved = await svc.reserve(task_id=task_id)
+                            if not reserved:
+                                logger.info(
+                                    "TaskDispatcher: SKIPPING task %s because reservation failed",
+                                    task_id,
+                                )
+                                return
                             logger.debug(
-                                f"TaskDispatcher: Task {task_id} status saved as 'completed'."
+                                "TaskDispatcher: Task %s reserved as 'reserved'.",
+                                task_id,
                             )
 
                             if dry_run:
                                 logger.info(f"Dry Run: Would dispatch {description}")
+                                await svc.complete(
+                                    task_id=task_id,
+                                    status="completed",
+                                    summary="Dry-run proactive dispatch.",
+                                )
                                 return
 
                             # 3. Setup Walker & Persona
@@ -311,8 +314,22 @@ class TaskDispatcher(Action):
                                 walker.interaction = interaction
                                 await persona.respond(interaction, visitor=walker)
                                 await walker._finalize()
+                                await svc.complete(
+                                    task_id=task_id,
+                                    status="completed",
+                                    summary="Proactive dispatch completed.",
+                                )
                                 dispatched_count += 1
                     except Exception as e:
+                        try:
+                            conversation = await Conversation.get(conv_id)
+                            if conversation:
+                                await TaskService(conversation).fail(
+                                    task_id=task_id,
+                                    error=f"Dispatcher error: {e}",
+                                )
+                        except Exception:
+                            pass
                         logger.error(f"Dispatch Error {task_id}: {e}", exc_info=True)
 
             dispatch_jobs = []

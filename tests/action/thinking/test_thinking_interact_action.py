@@ -344,17 +344,18 @@ class TestThinkingInteractActionThoughtPublishing:
             ]
         )
 
-        task_tracker = MagicMock()
-        task_tracker.add_step = AsyncMock()
+        task_handle = MagicMock()
+        task_handle.record_step = AsyncMock()
 
-        response = await action._run_agentic_loop(
+        response, termination_reason = await action._run_agentic_loop(
             visitor=visitor,
             tool_executor=tool_executor,
-            task_tracker=task_tracker,
+            task_handle=task_handle,
             discovered_skills=None,
         )
 
         assert response == "Final answer"
+        assert termination_reason == "completed"
 
         thought_types = [
             call.kwargs.get("thought_type")
@@ -370,6 +371,159 @@ class TestThinkingInteractActionThoughtPublishing:
         assert "iter-1-reasoning" in segment_ids
         assert "iter-1-call-read_file-0" in segment_ids
         assert "iter-1-result-tc_1" in segment_ids
+
+    @pytest.mark.asyncio
+    async def test_run_agentic_loop_publishes_intermediate_user_text(self):
+        """Mid-loop assistant text alongside tool_calls must be published as
+        category='user' so it is rendered AND committed to interaction.response."""
+        action = _make_thinking_action()
+        action.publish = AsyncMock()
+        action.publish_thought = AsyncMock()
+        action.relay_thoughts_to_channels = False
+
+        first_result = MagicMock()
+        first_result.thinking_content = None
+        first_result.thinking_tokens = 0
+        first_result.tool_calls = [
+            {"id": "tc_1", "function": {"name": "read_file", "arguments": "{}"}}
+        ]
+        first_result.response = "Sure, let me look that up for you."
+        first_result.provider = "openai"
+        first_result.get_response = AsyncMock(return_value="")
+
+        second_result = MagicMock()
+        second_result.thinking_content = None
+        second_result.thinking_tokens = 0
+        second_result.tool_calls = []
+        second_result.response = "Final answer"
+        second_result.provider = "openai"
+        second_result.get_response = AsyncMock(return_value="Final answer")
+
+        action._call_model = AsyncMock(side_effect=[first_result, second_result])
+
+        visitor = MagicMock()
+        visitor.utterance = "look it up"
+        visitor.conversation = None
+        visitor.interaction = None
+
+        tool_executor = MagicMock()
+        tool_executor.get_tools_list = MagicMock(return_value=[])
+        tool_executor.dispatch = AsyncMock(
+            return_value=[
+                {"role": "tool", "tool_call_id": "tc_1", "content": "ok"},
+            ]
+        )
+
+        task_handle = MagicMock()
+        task_handle.record_step = AsyncMock()
+
+        await action._run_agentic_loop(
+            visitor=visitor,
+            tool_executor=tool_executor,
+            task_handle=task_handle,
+            discovered_skills=None,
+        )
+
+        published_user_messages = [
+            call.kwargs.get("content") for call in action.publish.await_args_list
+        ]
+        assert "Sure, let me look that up for you." in published_user_messages
+        # The intermediate publish must not be flagged transient (default False)
+        # so it is committed to interaction.response.
+        intermediate_calls = [
+            call
+            for call in action.publish.await_args_list
+            if call.kwargs.get("content") == "Sure, let me look that up for you."
+        ]
+        assert intermediate_calls, "intermediate user text was not published"
+        assert intermediate_calls[0].kwargs.get("transient") in (False, None)
+
+    @pytest.mark.asyncio
+    async def test_run_agentic_loop_skips_intermediate_when_disabled(self):
+        action = _make_thinking_action(commit_intermediate_messages=False)
+        action.publish = AsyncMock()
+        action.publish_thought = AsyncMock()
+
+        first_result = MagicMock()
+        first_result.thinking_content = None
+        first_result.thinking_tokens = 0
+        first_result.tool_calls = [
+            {"id": "tc_1", "function": {"name": "read_file", "arguments": "{}"}}
+        ]
+        first_result.response = "preface"
+        first_result.provider = "openai"
+        first_result.get_response = AsyncMock(return_value="")
+
+        second_result = MagicMock()
+        second_result.thinking_content = None
+        second_result.thinking_tokens = 0
+        second_result.tool_calls = []
+        second_result.response = "Final"
+        second_result.provider = "openai"
+        second_result.get_response = AsyncMock(return_value="Final")
+
+        action._call_model = AsyncMock(side_effect=[first_result, second_result])
+
+        visitor = MagicMock()
+        visitor.utterance = "x"
+        visitor.conversation = None
+        visitor.interaction = None
+
+        tool_executor = MagicMock()
+        tool_executor.get_tools_list = MagicMock(return_value=[])
+        tool_executor.dispatch = AsyncMock(
+            return_value=[{"role": "tool", "tool_call_id": "tc_1", "content": "ok"}]
+        )
+
+        task_handle = MagicMock()
+        task_handle.record_step = AsyncMock()
+
+        await action._run_agentic_loop(
+            visitor=visitor,
+            tool_executor=tool_executor,
+            task_handle=task_handle,
+            discovered_skills=None,
+        )
+        published_user_messages = [
+            call.kwargs.get("content") for call in action.publish.await_args_list
+        ]
+        assert "preface" not in published_user_messages
+
+    @pytest.mark.asyncio
+    async def test_run_agentic_loop_with_single_iteration_makes_model_call(self):
+        action = _make_thinking_action(max_iterations=1)
+
+        first_result = MagicMock()
+        first_result.thinking_content = None
+        first_result.thinking_tokens = 0
+        first_result.tool_calls = []
+        first_result.response = "Done in one step"
+        first_result.provider = "openai"
+        first_result.get_response = AsyncMock(return_value="Done in one step")
+        action._call_model = AsyncMock(return_value=first_result)
+
+        visitor = MagicMock()
+        visitor.utterance = "quick task"
+        visitor.conversation = None
+        visitor.interaction = None
+
+        tool_executor = MagicMock()
+        tool_executor.get_tools_list = MagicMock(return_value=[])
+        tool_executor.dispatch = AsyncMock(return_value=[])
+
+        task_handle = MagicMock()
+        task_handle.record_step = AsyncMock()
+
+        response, termination_reason = await action._run_agentic_loop(
+            visitor=visitor,
+            tool_executor=tool_executor,
+            task_handle=task_handle,
+            discovered_skills=None,
+        )
+
+        assert response == "Done in one step"
+        assert termination_reason == "completed"
+        action._call_model.assert_awaited_once()
 
 
 # --- Helpers ---
@@ -397,7 +551,18 @@ def _make_thinking_action(**kwargs):
     action.allow_local_tools = kwargs.get("allow_local_tools", False)
     action.stream_thinking = kwargs.get("stream_thinking", True)
     action.stream_tool_progress = kwargs.get("stream_tool_progress", True)
+    action.commit_intermediate_messages = kwargs.get(
+        "commit_intermediate_messages", True
+    )
+    action.relay_thoughts_to_channels = kwargs.get("relay_thoughts_to_channels", False)
     action.max_full_tool_results = kwargs.get("max_full_tool_results", 10)
+    action.max_tool_result_tokens = kwargs.get("max_tool_result_tokens", 400)
+    action.tool_result_truncation_chars = kwargs.get(
+        "tool_result_truncation_chars", 500
+    )
+    action.history_limit = kwargs.get("history_limit", 5)
+    action.call_timeout_seconds = kwargs.get("call_timeout_seconds", 60.0)
+    action.task_sync_every_steps = kwargs.get("task_sync_every_steps", 3)
 
     # Wire up real methods
     action._build_model_kwargs = lambda: ThinkingInteractAction._build_model_kwargs(
@@ -421,8 +586,8 @@ def _make_thinking_action(**kwargs):
     action._discover_skill_bundles = (
         lambda visitor: ThinkingInteractAction._discover_skill_bundles(action, visitor)
     )
-    action._run_agentic_loop = lambda visitor, tool_executor, task_tracker, discovered_skills=None: ThinkingInteractAction._run_agentic_loop(
-        action, visitor, tool_executor, task_tracker, discovered_skills
+    action._run_agentic_loop = lambda visitor, tool_executor, task_handle, discovered_skills=None: ThinkingInteractAction._run_agentic_loop(
+        action, visitor, tool_executor, task_handle, discovered_skills
     )
     action._parse_tool_arguments = (
         lambda args: ThinkingInteractAction._parse_tool_arguments(action, args)

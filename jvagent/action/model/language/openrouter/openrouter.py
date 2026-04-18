@@ -103,31 +103,22 @@ class OpenRouterLanguageModelAction(OpenAILanguageModelAction):
         Returns:
             ModelActionResult with complete response
         """
-        # OpenRouter uses OpenAI-compatible API, but we need to add headers
-        # Ensure HTTP client is initialized
-        await self._initialize_http_client()
-
-        # Add OpenRouter-specific headers
-        original_headers = self._http_client.headers.copy()  # type: ignore[union-attr]
-
-        # Set OpenRouter headers
+        extra_headers: Dict[str, str] = {}
         if self.http_referer:
-            self._http_client.headers["HTTP-Referer"] = self.http_referer  # type: ignore[union-attr]
+            extra_headers["HTTP-Referer"] = self.http_referer
 
         if self.site_name:
-            self._http_client.headers["X-Title"] = self.site_name  # type: ignore[union-attr]
+            extra_headers["X-Title"] = self.site_name
 
-        try:
-            # Call parent OpenAI implementation
-            result = await super()._query(messages, tools, **kwargs)
-
-            # Update provider name
-            result.provider = "openrouter"
-
-            return result
-        finally:
-            # Restore original headers
-            self._http_client.headers = original_headers  # type: ignore[union-attr]
+        # Call parent OpenAI implementation with per-request headers.
+        result = await super()._query(
+            messages,
+            tools,
+            _extra_headers=extra_headers or None,
+            **kwargs,
+        )
+        result.provider = "openrouter"
+        return result
 
     async def _query_stream(
         self,
@@ -145,36 +136,31 @@ class OpenRouterLanguageModelAction(OpenAILanguageModelAction):
         Returns:
             ModelActionResult with streaming generator
         """
-        await self._initialize_http_client()
-
-        # Add OpenRouter-specific headers
-        original_headers = self._http_client.headers.copy()  # type: ignore[union-attr]
-
+        extra_headers: Dict[str, str] = {}
         if self.http_referer:
-            self._http_client.headers["HTTP-Referer"] = self.http_referer  # type: ignore[union-attr]
+            extra_headers["HTTP-Referer"] = self.http_referer
 
         if self.site_name:
-            self._http_client.headers["X-Title"] = self.site_name  # type: ignore[union-attr]
+            extra_headers["X-Title"] = self.site_name
 
-        try:
-            # Call parent OpenAI implementation
-            result = await super()._query_stream(messages, tools, **kwargs)
+        result = await super()._query_stream(
+            messages,
+            tools,
+            _extra_headers=extra_headers or None,
+            **kwargs,
+        )
 
-            # Update provider name
-            result.provider = "openrouter"
+        result.provider = "openrouter"
 
-            # Ensure messages are stored for token estimation (parent should have done this, but ensure it)
-            if not hasattr(result, "_messages_for_estimation"):
-                result._messages_for_estimation = messages
-            if not hasattr(result, "_model_for_estimation"):
-                result._model_for_estimation = kwargs.get("model", self.model)
-            if not hasattr(result, "_provider_for_estimation"):
-                result._provider_for_estimation = "openrouter"
+        # Ensure messages are stored for token estimation (parent should have done this, but ensure it)
+        if not hasattr(result, "_messages_for_estimation"):
+            result._messages_for_estimation = messages
+        if not hasattr(result, "_model_for_estimation"):
+            result._model_for_estimation = kwargs.get("model", self.model)
+        if not hasattr(result, "_provider_for_estimation"):
+            result._provider_for_estimation = "openrouter"
 
-            return result
-        finally:
-            # Restore original headers
-            self._http_client.headers = original_headers  # type: ignore[union-attr]
+        return result
 
     # ============================================================================
     # Helper Methods

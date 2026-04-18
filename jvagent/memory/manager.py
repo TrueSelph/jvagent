@@ -637,7 +637,10 @@ class Memory(Node):
         first_restored = 0
         conv_branch_removed = 0
 
-        conversations = await Conversation.find()
+        users = await self.users_scoped_to_this_memory()
+        conversations = []
+        for user in users:
+            conversations.extend(await user.nodes(node=Conversation))
         for conv in conversations:
             if conv.interaction_count <= 0:
                 continue
@@ -745,7 +748,7 @@ class Memory(Node):
         connected = await self.nodes(node=User)
         connected_ids = {u.id for u in connected}
 
-        all_users = await User.find()
+        all_users = await User.find({"context.memory_id": self.id})
         context = await self.get_context()
         reconnected = 0
         for user in all_users:
@@ -813,7 +816,7 @@ class Memory(Node):
     async def _cleanup_orphaned_interactions(
         self, recent_minutes: Optional[int] = None
     ) -> int:
-        """Delete orphaned interactions (no graph edge to a valid conversation).
+        """Delete orphaned interactions whose conversation node no longer exists.
 
         Internal helper for repair_memory. When recent_minutes is set, only
         cleans orphans from the last N minutes.
@@ -830,7 +833,10 @@ class Memory(Node):
         from jvagent.memory.conversation import Conversation
         from jvagent.memory.interaction import Interaction
 
-        remaining_conversations = await Conversation.find()
+        users = await self.users_scoped_to_this_memory()
+        remaining_conversations = []
+        for user in users:
+            remaining_conversations.extend(await user.nodes(node=Conversation))
         valid_conv_ids = list({c.id for c in remaining_conversations}) + [""]
 
         from jvagent.core.app import App
@@ -838,7 +844,12 @@ class Memory(Node):
         app = await App.get()
         now = await app.now() if app else datetime.now(timezone.utc)
 
-        query: Dict[str, Any] = {"context.conversation_id": {"$nin": valid_conv_ids}}
+        query: Dict[str, Any] = {
+            "$and": [
+                {"context.conversation_id": {"$nin": valid_conv_ids}},
+                {"context.conversation_id": {"$ne": ""}},
+            ]
+        }
         if recent_minutes is not None and recent_minutes > 0:
             cutoff = now - timedelta(minutes=recent_minutes)
             query["context.started_at"] = {"$gte": cutoff}
@@ -848,8 +859,13 @@ class Memory(Node):
         for interaction in orphaned:
             if interaction.conversation_id:
                 try:
-                    await interaction.delete(cascade=True)
-                    deleted += 1
+                    # Only hard-delete when the referenced conversation node is
+                    # truly gone. If the conversation still exists (for example
+                    # under another Memory root), preserve the interaction.
+                    conversation = await Conversation.get(interaction.conversation_id)
+                    if conversation is None:
+                        await interaction.delete(cascade=True)
+                        deleted += 1
                 except Exception:
                     pass
         return deleted

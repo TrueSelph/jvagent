@@ -299,11 +299,8 @@ async def embed_batch(
     initial_tokens = action.total_tokens
     initial_duration = action.total_duration
 
-    # Generate embeddings for all texts
-    embeddings = []
-    for text in texts:
-        embedding = await action.embed(text)
-        embeddings.append(embedding)
+    # Generate embeddings using provider batch implementation when available.
+    embeddings = await action.embed_batch(texts)
 
     # Calculate aggregate metrics
     requests_made = action.total_requests - initial_requests

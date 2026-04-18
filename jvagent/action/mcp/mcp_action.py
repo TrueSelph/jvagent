@@ -60,10 +60,39 @@ def _parse_tool_selection(response_text: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _coerce_result_field(
+    result: Any, camel_name: str, snake_name: str, default: Any
+) -> Any:
+    """Read an MCP CallToolResult field tolerating camelCase/snake_case spellings.
+
+    The official MCP Python SDK exposes pydantic field names in camelCase
+    (e.g. ``isError``, ``structuredContent``). Some adapters, tests, or
+    future SDK changes may surface snake_case aliases instead. We prefer
+    whichever name is actually set on the instance ``__dict__`` (so test
+    doubles like ``MagicMock`` that only set one spelling do not get
+    auto-created child mocks for the other spelling), then fall back to
+    plain ``getattr`` with the documented default.
+    """
+    inst_dict = getattr(result, "__dict__", None)
+    if isinstance(inst_dict, dict):
+        if camel_name in inst_dict:
+            return inst_dict[camel_name]
+        if snake_name in inst_dict:
+            return inst_dict[snake_name]
+    sentinel = object()
+    val = getattr(result, camel_name, sentinel)
+    if val is not sentinel:
+        return val
+    val = getattr(result, snake_name, sentinel)
+    if val is not sentinel:
+        return val
+    return default
+
+
 def _normalize_call_result(result: Any, tool_name: str) -> MCPFulfillResult:
     """Convert MCP CallToolResult to MCPFulfillResult."""
-    is_error = getattr(result, "is_error", True)
-    content = getattr(result, "content", None) or []
+    is_error = bool(_coerce_result_field(result, "isError", "is_error", False))
+    content = _coerce_result_field(result, "content", "content", None) or []
     raw_content: List[Any] = list(content) if isinstance(content, (list, tuple)) else []
     text_parts = []
     for item in raw_content:
@@ -77,7 +106,9 @@ def _normalize_call_result(result: Any, tool_name: str) -> MCPFulfillResult:
             if item.get("type") == "text":
                 text_parts.append(item.get("text", ""))
     text = "\n".join(text_parts).strip() or ("Tool error" if is_error else "")
-    structured = getattr(result, "structured_content", None)
+    structured = _coerce_result_field(
+        result, "structuredContent", "structured_content", None
+    )
     if structured is not None and not isinstance(structured, dict):
         structured = None
     error_kind = "tool_failed" if is_error else None

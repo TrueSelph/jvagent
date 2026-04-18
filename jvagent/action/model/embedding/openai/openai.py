@@ -103,6 +103,8 @@ class OpenAIEmbeddingModelAction(EmbeddingModelAction):
             )
             response.raise_for_status()
             data = response.json()
+            usage = data.get("usage", {})
+            self._record_usage_tokens(int(usage.get("total_tokens", 0) or 0))
 
             # Extract embedding vector
             embedding_data = data["data"][0]
@@ -127,4 +129,52 @@ class OpenAIEmbeddingModelAction(EmbeddingModelAction):
             raise
         except Exception as e:
             logger.error(f"OpenAI embedding failed: {e}", exc_info=True)
+            raise
+
+    async def _embed_batch(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings in one OpenAI batch request."""
+        await self._initialize_http_client()
+
+        payload: Dict[str, object] = {
+            "model": self.model,
+            "input": texts,
+        }
+
+        if self.embedding_dimensions > 0 and "text-embedding-3" in self.model:
+            payload["dimensions"] = self.embedding_dimensions
+
+        try:
+            api_key = self.api_key_from_context("OPENAI_API_KEY")
+            response = await self._http_client.post(  # type: ignore[union-attr]
+                f"{self.api_endpoint}/embeddings",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            usage = data.get("usage", {})
+            self._record_usage_tokens(int(usage.get("total_tokens", 0) or 0))
+
+            vectors: List[List[float]] = []
+            for item in data.get("data", []):
+                vectors.append(item.get("embedding", []))
+            if len(vectors) != len(texts):
+                raise ValueError("OpenAI embedding batch response count mismatch")
+            return vectors
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"OpenAI embedding batch API error: {e.response.status_code} - {e.response.text}"
+            )
+            raise
+        except httpx.TimeoutException as e:
+            logger.error(f"OpenAI embedding batch API timeout: {e}")
+            raise
+        except httpx.RequestError as e:
+            logger.error(f"OpenAI embedding batch API request failed: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"OpenAI embedding batch failed: {e}", exc_info=True)
             raise

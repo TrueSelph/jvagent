@@ -6,6 +6,7 @@ synchronous and streaming responses.
 
 import json
 import logging
+import uuid
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import httpx
@@ -92,6 +93,49 @@ class OllamaLanguageModelAction(LanguageModelAction):
             "total_tokens": prompt_tokens + completion_tokens,
         }
 
+    def _normalize_tool_calls(self, raw_tool_calls: Any) -> List[Dict[str, Any]]:
+        """Normalize Ollama-native tool calls to OpenAI function-call shape."""
+        if not isinstance(raw_tool_calls, list):
+            return []
+
+        normalized: List[Dict[str, Any]] = []
+        for item in raw_tool_calls:
+            if not isinstance(item, dict):
+                continue
+
+            function = item.get("function")
+            if not isinstance(function, dict):
+                continue
+
+            tool_name = function.get("name")
+            if not isinstance(tool_name, str) or not tool_name:
+                continue
+
+            arguments = function.get("arguments", {})
+            if isinstance(arguments, dict):
+                arguments_text = json.dumps(arguments)
+            elif isinstance(arguments, str):
+                arguments_text = arguments
+            else:
+                arguments_text = "{}"
+
+            tool_id = item.get("id")
+            if not isinstance(tool_id, str) or not tool_id:
+                tool_id = f"call_{uuid.uuid4().hex[:12]}"
+
+            normalized.append(
+                {
+                    "id": tool_id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": arguments_text,
+                    },
+                }
+            )
+
+        return normalized
+
     def _build_payload(
         self,
         messages: List[Dict[str, Any]],
@@ -145,7 +189,7 @@ class OllamaLanguageModelAction(LanguageModelAction):
                 model=model_override,
                 provider="ollama",
                 finish_reason=data.get("done_reason"),
-                tool_calls=message.get("tool_calls", []),
+                tool_calls=self._normalize_tool_calls(message.get("tool_calls", [])),
             )
         except httpx.HTTPStatusError:
             raise
@@ -205,7 +249,9 @@ class OllamaLanguageModelAction(LanguageModelAction):
 
                         if chunk.get("done"):
                             result.finish_reason = chunk.get("done_reason")
-                            result.tool_calls = msg.get("tool_calls", [])
+                            result.tool_calls = self._normalize_tool_calls(
+                                msg.get("tool_calls", [])
+                            )
                             result.metrics.update(self._extract_usage(chunk))
             except httpx.HTTPStatusError:
                 raise

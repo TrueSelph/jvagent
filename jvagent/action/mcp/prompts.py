@@ -1,5 +1,7 @@
 """Prompt template for NL -> tool name + arguments selection."""
 
+MCP_PROMPTS_VERSION = 1
+
 TOOL_SELECTION_SYSTEM = """You are a tool selector. Given a user request and a list of MCP tools (name, description, inputSchema), output exactly one tool name and a JSON object of arguments to call it with.
 Output only valid JSON in this format, with no other text:
 {"tool_name": "<name>", "arguments": {<key-value pairs for the tool's inputSchema>}}

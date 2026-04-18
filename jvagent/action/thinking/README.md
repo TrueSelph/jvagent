@@ -9,8 +9,8 @@ When activated by the InteractRouter, this action:
 1. Resolves **skill bundles** from built-in and app-local catalogs
 2. Initializes a **ToolExecutor** with tools from configured MCP servers
 3. Runs the agentic loop: LLM thinks, calls tools, observes results, and iterates
-4. Tracks multi-step progress via **TaskTracker** on `Conversation.active_tasks`
-5. Streams intermediate progress (thinking, tool calls, tool results) as transient adhoc messages
+4. Tracks multi-step progress via shared **TaskService** on `Conversation.active_tasks`
+5. Streams intermediate progress (thinking, tool calls, tool results) as thought-track messages via `publish_thought()`
 6. Publishes the final response when the loop completes
 
 ### Key Capabilities
@@ -18,7 +18,7 @@ When activated by the InteractRouter, this action:
 - **Progressive skill disclosure**: Skills are exposed via a `read_skill` tool. Their Python tool modules are only loaded when the LLM calls `read_skill`, keeping the tool list lean until specialization is needed.
 - **Deterministic tool dispatch**: The LLM decides which tool to call; ToolExecutor dispatches directly via `MCPClientWrapper.call_tool()`, bypassing `MCPAction.fulfill()` NL-to-tool mapping.
 - **Multi-provider support**: OpenAI and Anthropic message formats handled transparently via `_convert_messages_for_provider()`.
-- **Extended thinking**: Anthropic extended thinking with configurable token budget, streamed as transient metadata.
+- **Extended thinking**: Anthropic extended thinking with configurable token budget, streamed as `thought_type="reasoning"`.
 - **Context window management**: Old tool results automatically summarized to stay within limits.
 - **Forced termination**: Graceful summarization when iteration or duration limits are reached.
 
@@ -29,7 +29,6 @@ jvagent/action/thinking/
   __init__.py                      # Package exports
   thinking_interact_action.py      # ThinkingInteractAction (InteractAction)
   tool_executor.py                 # ToolExecutor (runtime helper)
-  task_tracker.py                  # TaskTracker (runtime helper)
   prompts.py                       # System prompt templates
   info.yaml                        # Package: jvagent/thinking_interact_action
 
@@ -66,7 +65,7 @@ ThinkingInteractAction.execute(visitor)
   +--->register_dynamic_tool("read_skill")
   |       Handler: activate_skill() + return SOP content
   |
-  +--->TaskTracker.create_task(description)
+  +--->visitor.tasks.track(description, task_type="AGENTIC_LOOP")
   |
   +--->_run_agentic_loop()
           |
@@ -77,17 +76,22 @@ ThinkingInteractAction.execute(visitor)
           |       |
           |       +--->tools = tool_executor.get_tools_list()  # re-fetched each iteration
           |       +--->_call_model(messages, tools, visitor, kwargs)
-          |       +--->IF thinking_content: publish(transient=True)
+          |       +--->IF thinking_content: publish_thought(thought_type="reasoning")
           |       +--->IF no tool_calls: final_response -> BREAK
           |       +--->IF tool_calls:
+          |       |       publish(category="user") any mid-loop assistant text
+          |       |         (so it is rendered to the user AND appended to
+          |       |          interaction.response for conversation history)
+          |       |       publish_thought(thought_type="tool_call") per call
           |       |       _build_assistant_content() -> append
           |       |       tool_executor.dispatch() -> result messages
+          |       |       publish_thought(thought_type="tool_result") per result
           |       |       Append results, truncate if needed
           |       |
           |       +--->IF at limit: _force_termination()
           |
           +--->publish(visitor, final_response, streaming_complete=True)
-          +--->task_tracker.complete_task()
+          +--->task.complete(status, summary)
           +--->tool_executor.cleanup()
 ```
 
@@ -155,22 +159,26 @@ The core algorithm in `_run_agentic_loop()`:
 3. LOOP:
    a. Check iteration and duration limits
    b. Re-fetch tool list (includes newly activated skill tools)
-   c. Record "thinking" step on TaskTracker
+   c. Record "thinking" step on TaskService task handle
    d. Call LLM with current messages + tools
-   e. Stream thinking content (if Anthropic extended thinking)
+   e. Publish reasoning thought (if Anthropic extended thinking)
    f. If no tool_calls -> extract text, BREAK
    g. If tool_calls present:
-      i.   Record "tool_call" step
-      ii.  Stream tool call announcement (transient adhoc)
-      iii. Build assistant message, append to messages
-      iv.  Dispatch tool calls via ToolExecutor
-      v.   Stream tool result preview (transient adhoc)
-      vi.  Append tool result messages
-      vii. Record "tool_result" step
-      viii. Truncate messages if context window too large
+      i.    Record "tool_call" step
+      ii.   If commit_intermediate_messages and the model emitted text
+            alongside the tool calls, publish that text as
+            category="user" so it is rendered to the user AND appended
+            to interaction.response (keeps conversation history complete)
+      iii.  Publish tool_call thought (thought_type="tool_call")
+      iv.   Build assistant message, append to messages
+      v.    Dispatch tool calls via ToolExecutor
+      vi.   Publish tool_result thought (thought_type="tool_result")
+      vii.  Append tool result messages
+      viii. Record "tool_result" step
+      ix.   Truncate messages if context window too large
    h. Increment iteration
 4. If limit hit without response: forced termination call
-5. Publish final response (non-transient)
+5. Publish final response (category="user", persisted to interaction.response)
 ```
 
 ## Configuration
@@ -194,8 +202,9 @@ All attributes can be overridden via `context` in agent.yaml.
 | `skills_source` | str | `"both"` | Bundle source: `"builtin"`, `"app"`, `"both"`, or `"none"` |
 | `tool_servers` | List[str] | `[]` | Names of MCPAction instances providing tools |
 | `allow_local_tools` | bool | `False` | Whether ToolExecutor can register local Python tools |
-| `stream_thinking` | bool | `True` | Stream extended thinking content as transient adhoc |
-| `stream_tool_progress` | bool | `True` | Stream tool call/result status as transient adhoc |
+| `stream_thinking` | bool | `True` | Publish reasoning thoughts via `publish_thought()` |
+| `stream_tool_progress` | bool | `True` | Publish tool_call and tool_result thoughts via `publish_thought()` |
+| `commit_intermediate_messages` | bool | `True` | Publish (and persist) any text the model emits alongside tool calls as a `category="user"` message so the conversation history matches what the assistant said. |
 | `relay_thoughts_to_channels` | bool | `False` | Relay thought messages to channel adapters only when adapters opt in (`deliver_thoughts=True`) |
 | `max_full_tool_results` | int | `10` | Keep last N tool results in full; summarize older |
 | `local_tools_path` | str | `None` | Absolute path to a directory of local .py tool modules |
@@ -358,8 +367,11 @@ The LLM decides which tool to call (deterministic dispatch). ToolExecutor bypass
 MCP tool results are normalized from the SDK's content format:
 
 ```python
-# Each content item with type="text" is extracted
-# is_error defaults to False (not True)
+# Each content item with type="text" is extracted.
+# The MCP Python SDK's CallToolResult uses camelCase field names
+# (isError, structuredContent). _normalize_call_result() reads
+# isError first and falls back to is_error for adapters/tests,
+# defaulting to False when neither is set.
 text = "\n".join(text_parts).strip()
 if is_error and text:
     raise ToolDispatchError(text)
@@ -540,7 +552,7 @@ When `model_action_type` is `AnthropicLanguageModelAction` and `thinking_budget_
 
 ThinkingInteractAction publishes two logical tracks:
 
-- **User track** (`category="user"`): final end-user response; persisted to `interaction.response`.
+- **User track** (`category="user"`): end-user-facing assistant utterances. Both the final response and any mid-loop commentary the model emits alongside tool calls (when `commit_intermediate_messages=True`, the default) are published on this track and appended to `interaction.response` so the persisted conversation history matches what the user saw.
 - **Thought track** (`category="thought"`): reasoning/tool telemetry for observability and specialized client rendering.
 
 Thought track events include:
@@ -553,7 +565,7 @@ Thought messages are never appended to `interaction.response`; they are stored i
 
 ## Task Tracking
 
-TaskTracker creates one `active_task` per agentic loop invocation and records structured step data within its `metadata` field.
+Thinking actions now use the shared `TaskService` (`visitor.tasks`) instead of a local tracker helper. Each run creates one `AGENTIC_LOOP` task scoped to the current conversation and guarantees terminal status through `async with visitor.tasks.track(...)`.
 
 ### Step Types
 
@@ -569,7 +581,6 @@ TaskTracker creates one `active_task` per agentic loop invocation and records st
 
 ```json
 {
-  "task_type_detail": "AGENTIC_LOOP",
   "skills": ["code_review"],
   "skills_source": "both",
   "iterations": 7,
@@ -587,27 +598,22 @@ TaskTracker creates one `active_task` per agentic loop invocation and records st
 }
 ```
 
-### TaskTracker API
+### TaskService API (Thinking usage)
 
 ```python
-tracker = TaskTracker(conversation, action_name="ThinkingInteractAction")
-
-# Create task
-task_id = await tracker.create_task("Analyze codebase", task_type="AGENTIC_LOOP")
-
-# Record steps
-await tracker.add_step("thinking", iteration=1)
-await tracker.add_step("tool_call", iteration=1, details={"count": 2})
-await tracker.add_step("tool_result", iteration=1, details={"duration_ms": 150})
-
-# Complete or fail
-await tracker.complete_task("completed", summary="Found 3 issues")
-await tracker.fail_task("Timeout exceeded")
-
-# Get progress
-progress = tracker.get_progress_summary()
-# {"iteration": 5, "steps_completed": 12, "tools_called": [...], "last_action": "tool_result"}
+async with visitor.tasks.track(
+    description=f"Agentic task: {interaction.utterance[:100]}",
+    task_type="AGENTIC_LOOP",
+    action_name=self.get_class_name(),
+    metadata={"skills": self.skills, "skills_source": self.skills_source},
+) as task:
+    await task.record_step("thinking", iteration=1)
+    await task.record_step("tool_call", iteration=1, details={"count": 2})
+    await task.record_step("tool_result", iteration=1, details={"duration_ms": 150})
+    await task.complete(status="completed", summary="Found 3 issues")
 ```
+
+See `docs/task-tracking.md` for the shared lifecycle, status model, and callback events.
 
 ## Message Format Conversion
 
@@ -798,7 +804,7 @@ Overridable methods:
 | Max iterations reached | Forced termination call (no tools, no thinking) |
 | Max duration reached | Forced termination call (no tools, no thinking) |
 | Invalid `skills_source` | Logs warning, returns empty skill set |
-| Exception in loop | Logs error, attempts to fail the task, unrecords action |
+| Exception in loop | Logs error, task context marks failed, unrecords action |
 
 ## Testing
 
@@ -809,7 +815,7 @@ pytest tests/action/thinking/ -v
 # Run specific test files
 pytest tests/action/thinking/test_tool_executor.py -v
 pytest tests/action/thinking/test_thinking_interact_action.py -v
-pytest tests/action/thinking/test_task_tracker.py -v
+pytest tests/memory/services/test_task_service.py -v
 pytest tests/action/thinking/test_anthropic_thinking.py -v
 pytest tests/action/thinking/test_progressive_disclosure.py -v
 pytest tests/action/thinking/test_skill_bundle_discovery.py -v
@@ -827,7 +833,7 @@ pytest tests/scaffold/test_skill_resolve.py -v
 | `test_progressive_disclosure.py` | Skill tools hidden until activation, `allowed_tools` enforcement |
 | `test_skill_bundle_discovery.py` | Selector filtering (`-all`, lists, globs), `denied_skills` |
 | `test_skill_resolve.py` | `resolve_builtin_skills`, `resolve_agent_skills`, `resolve_merged_skill_bundles`, `apply_skill_selector`, frontmatter parsing, override precedence |
-| `test_task_tracker.py` | Task creation, step recording, completion, failure, progress summary |
+| `test_task_service.py` | Shared task service lifecycle, reserve/complete/fail, step metadata |
 | `test_anthropic_thinking.py` | `_build_payload` with/without thinking, temperature omission, max_tokens auto-adjustment, `_extract_result_fields` with thinking blocks, `ModelActionResult` thinking defaults |
 
 ## Troubleshooting
@@ -852,9 +858,9 @@ pytest tests/scaffold/test_skill_resolve.py -v
 
 ### Tool Results Treated as Errors
 
-**Cause**: `is_error` default must be `False` in `_dispatch_mcp_tool()`.
+**Cause**: The MCP Python SDK exposes the error flag as `isError` (camelCase). Earlier versions of `_normalize_call_result()` read `is_error` and defaulted to `True`, which caused every successful MCP tool call to surface as `Tool execution failed: <tool_name>`.
 
-**Fix**: Verify `is_error = getattr(call_result, "is_error", False)`.
+**Fix**: `_normalize_call_result()` in `jvagent/action/mcp/mcp_action.py` must read `isError` (with `is_error` as a fallback) and default to `False` when neither is present.
 
 ### Agent Returns "NO RESPONSE" / 0 Tokens
 
@@ -879,7 +885,7 @@ class ThinkingInteractAction(InteractAction):
 
     # Protected (overridable)
     async def _discover_skill_bundles(visitor) -> Dict[str, Dict[str, Any]]
-    async def _run_agentic_loop(visitor, tool_executor, task_tracker, discovered_skills) -> Optional[str]
+    async def _run_agentic_loop(visitor, tool_executor, task_handle, discovered_skills) -> Optional[str]
     def _build_model_kwargs() -> Dict[str, Any]
     async def _build_initial_messages(visitor, discovered_skills=None) -> List[Dict[str, Any]]
     async def _call_model(messages, tools, visitor, model_kwargs) -> ModelActionResult
@@ -907,21 +913,17 @@ class ToolExecutor:
     async def cleanup() -> None
 ```
 
-### TaskTracker
+### TaskService
 
 ```python
-class TaskTracker:
-    def __init__(conversation, action_name="ThinkingInteractAction")
-
-    async def create_task(description, task_type="AGENTIC_LOOP", metadata=None) -> str
-    async def add_step(step_type, iteration=0, details=None) -> None
-    async def update_step(step_index, updates) -> None
-    async def complete_task(final_status="completed", summary=None) -> None
-    async def fail_task(error) -> None
-    def get_progress_summary() -> Dict[str, Any]
-
-    @property
-    def task_id -> Optional[str]
+class TaskService:
+    async def start(..., task_type, metadata=None, trigger_at=None, trigger_condition=None) -> TaskHandle
+    async def record_step(task_id, step_type, iteration=0, details=None) -> bool
+    async def update_metadata(task_id, **patch) -> bool
+    async def complete(task_id, status="completed", summary=None) -> bool
+    async def fail(task_id, error, status="failed") -> bool
+    async def reserve(task_id) -> bool
+    def track(...) -> AsyncContextManager[TaskHandle]
 ```
 
 ### Skill Resolver

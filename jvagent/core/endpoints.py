@@ -20,6 +20,7 @@ from jvspatial.core.pager import ObjectPager
 
 from jvagent.core.agent import Agent
 from jvagent.core.agents import Agents
+from jvagent.core.agents import get_status as get_agents_status
 from jvagent.core.app import App, set_app_update_mode
 from jvagent.core.bootstrap_update_mode import validate_admin_update_mode
 from jvagent.core.graph_repair import repair_agent_graph
@@ -393,40 +394,82 @@ async def list_agents(
     if enabled is not None:
         filters["context.enabled"] = enabled
 
-    # Create pager with filters
-    pager = ObjectPager(Agent, page_size=per_page, filters=filters)
+    # Use ObjectPager for non-search requests.
+    if not search:
+        pager = ObjectPager(Agent, page_size=per_page, filters=filters)
+        agents: List[Agent] = await pager.get_page(page=page)
+        agents_list = await asyncio.gather(*[agent.export() for agent in agents])
+        pagination_info = pager.to_dict()
+        return {
+            "agents": agents_list,
+            "total": pagination_info["total_items"],
+            "page": pagination_info["current_page"],
+            "per_page": pagination_info["page_size"],
+            "total_pages": pagination_info["total_pages"],
+            "has_previous": pagination_info["has_previous"],
+            "has_next": pagination_info["has_next"],
+            "previous_page": pagination_info["previous_page"],
+            "next_page": pagination_info["next_page"],
+        }
 
-    # Get the requested page
-    agents: List[Agent] = await pager.get_page(page=page)
+    # Search requires filtering across the full matching set so pagination metadata
+    # reflects the filtered results instead of only the current page.
+    search_lower = search.lower()
+    all_agents: List[Agent] = await Agent.find(filters)
+    filtered_agents = [
+        agent
+        for agent in all_agents
+        if search_lower in agent.name.lower()
+        or search_lower in (agent.alias.lower() if agent.alias else "")
+        or search_lower in agent.description.lower()
+    ]
 
-    # Apply text search if provided (post-filter on results)
-    if search:
-        search_lower = search.lower()
-        agents = [
-            a
-            for a in agents
-            if search_lower in a.name.lower()
-            or search_lower in (a.alias.lower() if a.alias else "")
-            or search_lower in a.description.lower()
-        ]
+    total_items = len(filtered_agents)
+    if per_page <= 0:
+        per_page = 10
+    total_pages = max(1, (total_items + per_page - 1) // per_page) if total_items else 0
+    page = max(1, page)
+    if total_pages and page > total_pages:
+        page = total_pages
 
-    # Convert to dictionaries using export
-    agents_list = await asyncio.gather(*[agent.export() for agent in agents])
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    paged_agents = filtered_agents[start_idx:end_idx]
+    agents_list = await asyncio.gather(*[agent.export() for agent in paged_agents])
 
-    # Get pagination info from pager
-    pagination_info = pager.to_dict()
-
+    has_previous = page > 1 and total_pages > 0
+    has_next = page < total_pages
     return {
         "agents": agents_list,
-        "total": pagination_info["total_items"],
-        "page": pagination_info["current_page"],
-        "per_page": pagination_info["page_size"],
-        "total_pages": pagination_info["total_pages"],
-        "has_previous": pagination_info["has_previous"],
-        "has_next": pagination_info["has_next"],
-        "previous_page": pagination_info["previous_page"],
-        "next_page": pagination_info["next_page"],
+        "total": total_items,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
+        "has_previous": has_previous,
+        "has_next": has_next,
+        "previous_page": page - 1 if has_previous else None,
+        "next_page": page + 1 if has_next else None,
     }
+
+
+@endpoint(
+    "/status",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["App"],
+    response=success_response(
+        data={
+            "statistics": ResponseField(
+                field_type=Dict[str, Any],
+                description="Comprehensive statistics about all agents",
+            )
+        }
+    ),
+)
+async def get_status(sync: bool = False, include_health: bool = True) -> Dict[str, Any]:
+    """Get aggregate status across all agents."""
+    return await get_agents_status(sync=sync, include_health=include_health)
 
 
 @endpoint(
@@ -637,7 +680,7 @@ async def put_app_update_mode(update_mode: str) -> Dict[str, Any]:
             ),
             "status": ResponseField(
                 field_type=str,
-                description="completed or in_progress when batch_size/max_seconds is used",
+                description="completed or in_progress for bounded repair execution",
                 example="completed",
             ),
             "phase": ResponseField(
@@ -645,10 +688,23 @@ async def put_app_update_mode(update_mode: str) -> Dict[str, Any]:
                 description="Current repair phase when status is in_progress",
                 example="dead_edges",
             ),
-            "next_repair_cursor": ResponseField(
-                field_type=str,
-                description="Opaque cursor to pass as repair_cursor on the next call when status is in_progress",
-                example="eyJ2IjoxLCJwaGFzZSI6...",
+            "dry_run": ResponseField(
+                field_type=Optional[bool],
+                description="Present and true when running in dry-run mode",
+                example=True,
+                default=None,
+            ),
+            "started_at": ResponseField(
+                field_type=Optional[str],
+                description="ISO timestamp when the current repair session started",
+                example="2026-04-18T11:28:20+00:00",
+                default=None,
+            ),
+            "elapsed_seconds": ResponseField(
+                field_type=Optional[float],
+                description="Elapsed wall-clock seconds since started_at",
+                example=2.31,
+                default=None,
             ),
         }
     ),
@@ -662,21 +718,11 @@ async def repair_graph(
         None,
         description="Only clean orphan interactions from last N minutes (None = all)",
     ),
-    repair_cursor: Optional[str] = Query(
-        None,
-        description="Cursor from prior next_repair_cursor to continue batched repair (no server storage)",
-    ),
-    batch_size: Optional[int] = Query(
-        None,
-        ge=1,
-        le=50000,
-        description="When set, run repair in bounded batches (stateless; use repair_cursor to continue)",
-    ),
-    max_seconds: Optional[float] = Query(
-        None,
+    max_seconds: float = Query(
+        30.0,
         ge=0.5,
-        le=86400.0,
-        description="Wall-clock budget per request when batching (optional)",
+        le=600.0,
+        description="Wall-clock budget per request; call again until status is completed",
     ),
 ) -> Dict[str, Any]:
     """Run memory repair (all agents) then agent graph repair (admin only, manually triggered).
@@ -690,15 +736,16 @@ async def repair_graph(
         dry_run: Optional - report issues without making changes (memory repair and
             interaction pruning skipped)
         recent_minutes: Optional - passed to memory repair to limit orphan interaction cleanup
+        max_seconds: Per-request wall-clock budget; call endpoint again until
+            returned status becomes completed.
 
     Returns:
-        Dictionary with memory repair counts, graph repair counts, and interactions_pruned
+        Dictionary with memory repair counts, graph repair counts, interactions_pruned,
+        and progress fields (status/phase) for bounded execution.
     """
     result = await repair_agent_graph(
         dry_run=dry_run,
         recent_minutes=recent_minutes,
-        repair_cursor=repair_cursor,
-        batch_size=batch_size,
         max_seconds=max_seconds,
     )
     return result

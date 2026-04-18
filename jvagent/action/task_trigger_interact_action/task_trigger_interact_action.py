@@ -125,14 +125,12 @@ class TaskTriggerInteractAction(InteractAction):
 
                 # Mark as completed
                 task_id = task.get("task_id")
-                success = await conversation.update_task(
-                    status="completed", task_id=task_id
+                success = await visitor.tasks.complete(
+                    task_id=task_id,
+                    status="completed",
                 )
                 if success:
-                    await conversation.save()
-                    logger.info(
-                        f"TaskTrigger: Marked task {task_id} as completed and saved conversation."
-                    )
+                    logger.info(f"TaskTrigger: Marked task {task_id} as completed.")
                 else:
                     logger.warning(
                         f"TaskTrigger: Failed to find task {task_id} to mark as completed!"

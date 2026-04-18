@@ -45,6 +45,7 @@ class OllamaEmbeddingModelAction(EmbeddingModelAction):
             )
             response.raise_for_status()
             data = response.json()
+            self._record_usage_tokens(int(data.get("prompt_eval_count", 0) or 0))
 
             # /api/embed supports batches, but this action accepts a single input string.
             embeddings = data.get("embeddings", [])
@@ -69,4 +70,43 @@ class OllamaEmbeddingModelAction(EmbeddingModelAction):
             raise
         except Exception as e:
             logger.error(f"Ollama embedding failed: {e}", exc_info=True)
+            raise
+
+    async def _embed_batch(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings in one Ollama batch request."""
+        await self._initialize_http_client()
+        payload = {"model": self.model, "input": texts}
+
+        try:
+            response = await self._http_client.post(  # type: ignore[union-attr]
+                f"{self.api_endpoint}/api/embed",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            self._record_usage_tokens(int(data.get("prompt_eval_count", 0) or 0))
+            embeddings = data.get("embeddings", [])
+            if not embeddings:
+                raise ValueError("No embeddings returned from Ollama API")
+            if len(embeddings) != len(texts):
+                raise ValueError("Ollama embedding batch response count mismatch")
+
+            if self.embedding_dimensions == 0 and embeddings[0]:
+                self.embedding_dimensions = len(embeddings[0])
+            return embeddings
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"Ollama embedding batch API error: {e.response.status_code} - {e.response.text}"
+            )
+            raise
+        except httpx.TimeoutException as e:
+            logger.error(f"Ollama embedding batch API timeout: {e}")
+            raise
+        except httpx.RequestError as e:
+            logger.error(f"Ollama embedding batch API request failed: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Ollama embedding batch failed: {e}", exc_info=True)
             raise

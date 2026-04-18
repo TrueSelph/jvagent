@@ -609,7 +609,17 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
     setRepairMessage(null)
     setRepairError(null)
     try {
-      const result = await apiClient.repairGraph()
+      let result: Record<string, unknown> | null = null
+      let guard = 0
+      while (guard < 200) {
+        const next = await apiClient.repairGraph({ max_seconds: 2 })
+        result = next
+        if (next?.status !== 'in_progress') break
+        guard += 1
+      }
+      if (result?.status === 'in_progress') {
+        throw new Error('Graph repair did not complete within expected retries.')
+      }
       setRepairMessage(formatRepairResult(result))
       await fetchGraph()
     } catch (err: unknown) {

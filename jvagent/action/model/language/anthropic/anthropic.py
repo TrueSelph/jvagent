@@ -11,7 +11,6 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
 import httpx
 from jvspatial.core.annotations import attribute
-from jvspatial.env import env
 
 from jvagent.action.model.language.base import LanguageModelAction, ModelActionResult
 
@@ -34,8 +33,71 @@ class AnthropicLanguageModelAction(LanguageModelAction):
         """Called when action is registered during installation."""
         await super().on_register()
 
-        if not env("ANTHROPIC_API_KEY"):
+        if not self.api_key_from_context("ANTHROPIC_API_KEY"):
             logger.warning(f"Anthropic action {self.label} has no API key configured")
+
+    def _normalize_messages_for_anthropic(
+        self, messages: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Normalize OpenAI-style tool messages into Anthropic message blocks."""
+        normalized: List[Dict[str, Any]] = []
+        for message in messages:
+            role = message.get("role", "user")
+            content = message.get("content", "")
+
+            if role == "assistant" and message.get("tool_calls"):
+                blocks: List[Dict[str, Any]] = []
+                if isinstance(content, str) and content.strip():
+                    blocks.append({"type": "text", "text": content})
+                elif isinstance(content, list):
+                    for part in content:
+                        if isinstance(part, dict):
+                            blocks.append(part)
+
+                for call in message.get("tool_calls", []):
+                    function = call.get("function", {})
+                    if not isinstance(function, dict):
+                        continue
+                    arguments = function.get("arguments", {})
+                    if isinstance(arguments, str):
+                        try:
+                            arguments = json.loads(arguments)
+                        except json.JSONDecodeError:
+                            arguments = {}
+                    if not isinstance(arguments, dict):
+                        arguments = {}
+                    blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": call.get("id", ""),
+                            "name": function.get("name", ""),
+                            "input": arguments,
+                        }
+                    )
+
+                normalized.append({"role": "assistant", "content": blocks})
+                continue
+
+            if role == "tool":
+                normalized.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": message.get("tool_call_id", ""),
+                                "content": str(content or ""),
+                            }
+                        ],
+                    }
+                )
+                continue
+
+            normalized.append(
+                {"role": role, "content": content if content is not None else ""}
+            )
+
+        return normalized
 
     def _extract_system_and_messages(
         self, messages: List[Dict[str, Any]]
@@ -114,6 +176,10 @@ class AnthropicLanguageModelAction(LanguageModelAction):
                 text = part.get("text", "")
                 if text:
                     blocks.append({"type": "text", "text": text})
+                continue
+
+            if part_type in {"tool_use", "tool_result"}:
+                blocks.append(part)
                 continue
 
             if part_type == "image_url":
@@ -199,7 +265,10 @@ class AnthropicLanguageModelAction(LanguageModelAction):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Build Anthropic Messages API payload."""
-        system_text, normalized_messages = self._extract_system_and_messages(messages)
+        normalized_input_messages = self._normalize_messages_for_anthropic(messages)
+        system_text, normalized_messages = self._extract_system_and_messages(
+            normalized_input_messages
+        )
         anthropic_messages = [
             {
                 "role": message.get("role", "user"),
@@ -283,7 +352,7 @@ class AnthropicLanguageModelAction(LanguageModelAction):
         return "".join(text_parts), tool_calls, finish_reason
 
     def _headers(self) -> Dict[str, str]:
-        api_key = env("ANTHROPIC_API_KEY") or ""
+        api_key = self.api_key_from_context("ANTHROPIC_API_KEY") or ""
         return {
             "x-api-key": api_key,
             "anthropic-version": self.anthropic_version,

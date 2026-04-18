@@ -32,15 +32,17 @@ setup(
     long_description_content_type="text/markdown",
     author="TrueSelph Inc.",
     author_email="adminh@trueselph.com",
-    url="https://github.com/your-org/jvagent",
+    url="https://github.com/trueselph/jvagent",
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
+        "aiohttp>=3.9.0",
         "jvspatial>=0.0.6",
         "python-dotenv>=1.0.0",
         "pyyaml>=6.0.0",
         "httpx>=0.27.0",
         "jinja2>=3.1.0",
+        "pymupdf>=1.24.0",
     ],
     extras_require={
         "dev": [

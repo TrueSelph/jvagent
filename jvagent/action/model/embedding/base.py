@@ -35,6 +35,14 @@ class EmbeddingModelAction(BaseModelAction, ABC):
         default=0, description="Expected embedding dimensions (0 = auto-detect)", ge=0
     )
 
+    def _consume_recorded_usage_tokens(self) -> int:
+        tokens = int(getattr(self, "_recorded_usage_tokens", 0) or 0)
+        self._recorded_usage_tokens = 0
+        return tokens
+
+    def _record_usage_tokens(self, tokens: int) -> None:
+        self._recorded_usage_tokens = max(0, int(tokens or 0))
+
     async def embed(
         self, text: str, calling_action_name: Optional[str] = None
     ) -> List[float]:
@@ -79,17 +87,55 @@ class EmbeddingModelAction(BaseModelAction, ABC):
         if self.embedding_dimensions == 0 and vector:
             self.embedding_dimensions = len(vector)
 
-        # Track usage (approximate token count for embeddings)
-        # Most embedding APIs don't provide token counts, so we estimate
-        estimated_tokens = len(text.split())
-        await self.track_usage({"total_tokens": estimated_tokens}, duration)
+        # Track usage. Prefer provider-reported token counts when available.
+        total_tokens = self._consume_recorded_usage_tokens()
+        if total_tokens <= 0:
+            total_tokens = len(text.split())
+        await self.track_usage({"total_tokens": total_tokens}, duration)
 
         logger.debug(
             f"Generated embedding: {len(vector)} dimensions, "
-            f"{duration:.3f}s, {estimated_tokens} tokens (estimated)"
+            f"{duration:.3f}s, {total_tokens} tokens"
         )
 
         return vector
+
+    async def embed_batch(
+        self, texts: List[str], calling_action_name: Optional[str] = None
+    ) -> List[List[float]]:
+        """Generate embedding vectors for multiple texts in one call."""
+        import time
+
+        if not texts:
+            raise ValueError("Texts list cannot be empty")
+        if any(not text or not text.strip() for text in texts):
+            raise ValueError("All texts must be non-empty")
+
+        self._calling_action_name = calling_action_name
+        start_time = time.time()
+
+        try:
+            vectors = await self._embed_batch(texts)
+        except Exception as e:
+            logger.error(f"Batch embedding generation failed: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to generate batch embeddings: {e}") from e
+
+        duration = time.time() - start_time
+        if self.embedding_dimensions == 0 and vectors and vectors[0]:
+            self.embedding_dimensions = len(vectors[0])
+
+        total_tokens = self._consume_recorded_usage_tokens()
+        if total_tokens <= 0:
+            total_tokens = sum(len(text.split()) for text in texts)
+        await self.track_usage({"total_tokens": total_tokens}, duration)
+        return vectors
+
+    async def _embed_batch(self, texts: List[str]) -> List[List[float]]:
+        """Default batch implementation (provider subclasses can override)."""
+        vectors: List[List[float]] = []
+        for text in texts:
+            vectors.append(await self._embed(text))
+        return vectors
 
     @abstractmethod
     async def _embed(self, text: str) -> List[float]:

@@ -99,6 +99,38 @@ async def test_ollama_lm_query_sync_parses_response():
 
 
 @pytest.mark.asyncio
+async def test_ollama_lm_query_sync_normalizes_tool_calls():
+    action = OllamaLanguageModelAction()
+    action._http_client = _MockHttpClient(
+        post_response=_MockResponse(
+            {
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "read_file",
+                                "arguments": {"path": "/tmp/test.txt"},
+                            }
+                        }
+                    ],
+                },
+                "done_reason": "tool_calls",
+                "prompt_eval_count": 7,
+                "eval_count": 11,
+            }
+        )
+    )
+
+    result = await action.query_sync("Use a tool")
+    assert len(result.tool_calls) == 1
+    call = result.tool_calls[0]
+    assert call["type"] == "function"
+    assert call["function"]["name"] == "read_file"
+    assert call["function"]["arguments"] == '{"path": "/tmp/test.txt"}'
+
+
+@pytest.mark.asyncio
 async def test_ollama_lm_query_stream_parses_chunks_and_usage():
     action = OllamaLanguageModelAction()
     action._http_client = _MockHttpClient(
@@ -135,6 +167,47 @@ async def test_ollama_lm_query_stream_parses_chunks_and_usage():
 
 
 @pytest.mark.asyncio
+async def test_ollama_lm_query_stream_normalizes_tool_calls():
+    action = OllamaLanguageModelAction()
+    action._http_client = _MockHttpClient(
+        stream_response=_MockStreamResponse(
+            [
+                json.dumps({"message": {"content": ""}, "done": False}),
+                json.dumps(
+                    {
+                        "message": {
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "function": {
+                                        "name": "read_file",
+                                        "arguments": {"path": "/tmp/from_stream.txt"},
+                                    }
+                                }
+                            ],
+                        },
+                        "done": True,
+                        "done_reason": "tool_calls",
+                        "prompt_eval_count": 4,
+                        "eval_count": 5,
+                    }
+                ),
+            ]
+        )
+    )
+
+    result = await action.query_stream("Use tool")
+    async for _ in result.iter_stream():
+        pass
+
+    assert len(result.tool_calls) == 1
+    call = result.tool_calls[0]
+    assert call["type"] == "function"
+    assert call["function"]["name"] == "read_file"
+    assert call["function"]["arguments"] == '{"path": "/tmp/from_stream.txt"}'
+
+
+@pytest.mark.asyncio
 async def test_ollama_embedding_parses_vector_and_dimensions():
     action = OllamaEmbeddingModelAction()
     action._http_client = _MockHttpClient(
@@ -145,6 +218,17 @@ async def test_ollama_embedding_parses_vector_and_dimensions():
 
     assert vector == [0.1, 0.2, 0.3]
     assert action.embedding_dimensions == 3
+
+
+@pytest.mark.asyncio
+async def test_ollama_embedding_batch_parses_vectors():
+    action = OllamaEmbeddingModelAction()
+    action._http_client = _MockHttpClient(
+        post_response=_MockResponse({"embeddings": [[0.1, 0.2], [0.3, 0.4]]})
+    )
+
+    vectors = await action.embed_batch(["one", "two"])
+    assert vectors == [[0.1, 0.2], [0.3, 0.4]]
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,6 @@
 """Conversation node for managing conversation sessions."""
 
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -11,6 +12,9 @@ from jvspatial.core.mixins import DeferredSaveMixin
 
 if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
+
+logger = logging.getLogger(__name__)
+_LEGACY_TASK_UPSERT_WARNED = False
 
 
 @compound_index([("context.session_id", 1)], name="conversation_session_id")
@@ -860,49 +864,27 @@ class Conversation(DeferredSaveMixin, Node):
             action_name: Optional action class name for actions that manage their tasks
             task_type: Optional task type (e.g. 'INTERVIEW') for router routing
         """
-        now = datetime.now(timezone.utc).isoformat()
-        short_uuid = uuid.uuid4().hex[:12]
-        default_tid = (
-            f"{action_name}:{short_uuid}" if action_name else f"task_{uuid.uuid4().hex}"
+        from jvagent.memory.services.task_service import TaskService
+
+        global _LEGACY_TASK_UPSERT_WARNED
+        if not task_id and not _LEGACY_TASK_UPSERT_WARNED:
+            logger.warning(
+                "Conversation.add_active_task legacy description/action upsert is deprecated; "
+                "prefer explicit task_id or TaskService singleton_action."
+            )
+            _LEGACY_TASK_UPSERT_WARNED = True
+
+        service = TaskService(self)
+        await service.start(
+            description=description,
+            task_type=task_type or "TASK",
+            metadata=metadata,
+            task_id=task_id,
+            action_name=action_name,
+            trigger_at=(metadata or {}).get("trigger_time"),
+            trigger_condition=(metadata or {}).get("trigger_condition"),
+            legacy_upsert=True,
         )
-        metadata = metadata or {}
-
-        entry: Dict[str, Any] = {
-            "task_id": task_id or default_tid,
-            "task_type": task_type,
-            "description": description,
-            "action_name": action_name,
-            "status": "active",
-            # Promote trigger fields to top level for indexing
-            "next_trigger_at": metadata.get("trigger_time"),
-            "trigger_condition": metadata.get("trigger_condition"),
-            "metadata": metadata,
-            "created_at": now,
-            "updated_at": now,
-        }
-
-        for i, t in enumerate(self.active_tasks):
-            if (
-                (task_id and t.get("task_id") == task_id)
-                or t.get("description") == description
-                or (action_name and t.get("action_name") == action_name)
-            ):
-                entry["task_id"] = t.get("task_id") or task_id or default_tid
-                entry["created_at"] = t.get("created_at", now)
-                self.active_tasks[i] = entry
-                await self.save()
-                return
-        self.active_tasks.append(entry)
-        await self.save()
-
-        # Fire task created callback (push-based notification)
-        try:
-            from jvagent.core.callback import trigger_task_created_callback
-
-            await trigger_task_created_callback(self, entry)
-        except Exception:
-            # Callbacks are non-blocking and shouldn't fail the primary task creation
-            pass
 
     async def update_task(
         self,
@@ -928,17 +910,15 @@ class Conversation(DeferredSaveMixin, Node):
         """
         if not task_id and not description and not action_name:
             return False
-        now = datetime.now(timezone.utc).isoformat()
-        for i, t in enumerate(self.active_tasks):
-            if (
-                (task_id and t.get("task_id") == task_id)
-                or (description and t.get("description") == description)
-                or (action_name and t.get("action_name") == action_name)
-            ):
-                self.active_tasks[i] = {**t, "status": status, "updated_at": now}
-                await self.save()
-                return True
-        return False
+        from jvagent.memory.services.task_service import TaskService
+
+        service = TaskService(self)
+        return await service.update_status(
+            status=status,
+            task_id=task_id,
+            description=description,
+            action_name=action_name,
+        )
 
     async def remove_active_task(
         self,
@@ -959,7 +939,10 @@ class Conversation(DeferredSaveMixin, Node):
         Returns:
             True if task was updated, False if not found
         """
-        return await self.update_task(
+        from jvagent.memory.services.task_service import TaskService
+
+        service = TaskService(self)
+        return await service.update_status(
             status="completed",
             task_id=task_id,
             description=description,
@@ -980,16 +963,10 @@ class Conversation(DeferredSaveMixin, Node):
         Returns:
             List of task dicts
         """
-        tasks = list(self.active_tasks)
-        if status is not None:
-            if isinstance(status, list):
-                tasks = [t for t in tasks if t.get("status") in status]
-            else:
-                tasks = [t for t in tasks if t.get("status") == status]
+        from jvagent.memory.services.task_service import TaskService
 
-        if action_name is not None:
-            tasks = [t for t in tasks if t.get("action_name") == action_name]
-        return tasks
+        service = TaskService(self)
+        return service.list(status=status, action_name=action_name)
 
     def get_active_task(
         self,
@@ -1016,19 +993,16 @@ class Conversation(DeferredSaveMixin, Node):
         Returns:
             First matching task dict, or None
         """
-        for t in self.active_tasks:
-            if task_id is not None and t.get("task_id") != task_id:
-                continue
-            if task_type is not None and t.get("task_type") != task_type:
-                continue
-            if description is not None and t.get("description") != description:
-                continue
-            if action_name is not None and t.get("action_name") != action_name:
-                continue
-            if status is not None and t.get("status") != status:
-                continue
-            return t
-        return None
+        from jvagent.memory.services.task_service import TaskService
+
+        service = TaskService(self)
+        return service.get(
+            task_id=task_id,
+            task_type=task_type,
+            description=description,
+            action_name=action_name,
+            status=status,
+        )
 
     def get_active_tasks_for_context(self) -> List[str]:
         """Return list of task descriptions for context line.

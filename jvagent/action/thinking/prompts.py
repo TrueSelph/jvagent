@@ -1,5 +1,7 @@
 """System prompt templates for the ThinkingInteractAction agentic loop."""
 
+THINKING_PROMPTS_VERSION = 1
+
 THINKING_AGENT_SYSTEM_PROMPT = """\
 You are an intelligent agent with access to tools. You operate by thinking step-by-step, \
 using tools when needed, and observing their results before continuing.

@@ -219,6 +219,56 @@ async def test_anthropic_lm_query_sync_parses_tool_calls():
 
 
 @pytest.mark.asyncio
+async def test_anthropic_lm_query_sync_normalizes_openai_tool_messages():
+    action = AnthropicLanguageModelAction()
+    client = _MockHttpClient(
+        post_response=_MockResponse(
+            {
+                "content": [{"type": "text", "text": "ok"}],
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 3, "output_tokens": 2},
+            }
+        )
+    )
+    action._http_client = client
+    messages = [
+        {"role": "user", "content": "Run a tool"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "read_file",
+                        "arguments": '{"path": "/tmp/data.txt"}',
+                    },
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_1", "content": "tool result"},
+    ]
+
+    await action.query_messages(messages=messages)
+    assert client.last_post_json is not None
+    payload_messages = client.last_post_json["messages"]
+    assert payload_messages[1]["role"] == "assistant"
+    assert payload_messages[1]["content"][0]["type"] == "tool_use"
+    assert payload_messages[2]["role"] == "user"
+    assert payload_messages[2]["content"][0]["type"] == "tool_result"
+
+
+def test_anthropic_headers_use_api_key_attribute(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    action = AnthropicLanguageModelAction()
+    action.api_key = "attr-token"
+
+    headers = action._headers()
+    assert headers["x-api-key"] == "attr-token"
+
+
+@pytest.mark.asyncio
 async def test_anthropic_lm_query_http_error_raises():
     action = AnthropicLanguageModelAction()
     action._http_client = _MockHttpClient(

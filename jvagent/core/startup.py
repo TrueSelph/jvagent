@@ -39,11 +39,11 @@ async def run_app_startup() -> bool:
             logger.warning(
                 f"Startup completed with {failed_count} action(s) failing initialization"
             )
+            return False
         else:
             logger.info("App startup completed successfully")
-
-        _startup_completed = True
-        return True
+            _startup_completed = True
+            return True
 
     except Exception as e:
         logger.error(f"Error during app startup: {e}", exc_info=True)

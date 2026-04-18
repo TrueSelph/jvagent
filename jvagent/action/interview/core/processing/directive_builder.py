@@ -32,10 +32,12 @@ class DirectiveBuilder:
         """
         self.action = action
         self._task_added = False
+        self._task_id: Optional[str] = None
 
     def reset_task_tracking(self) -> None:
         """Reset task tracking flag for new execution."""
         self._task_added = False
+        self._task_id = None
 
     def _build_review_data(self, session: InterviewSession) -> Dict[str, Any]:
         """Build key-value dict of collected interview data from session (display only)."""
@@ -49,6 +51,43 @@ class DirectiveBuilder:
                 continue
             data[field_name] = value
         return data
+
+    async def _start_active_task(
+        self,
+        visitor: "InteractWalker",
+        *,
+        description: str,
+        action_name: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Start active interview task via conversation task service."""
+        task = await visitor.tasks.start(
+            description=description,
+            metadata=metadata,
+            action_name=action_name,
+            task_type="INTERVIEW",
+            singleton_action=True,
+        )
+        self._task_id = getattr(task, "task_id", None)
+
+    async def _update_task_status(
+        self,
+        visitor: "InteractWalker",
+        *,
+        status: str,
+        description: str,
+        action_name: str,
+    ) -> None:
+        """Update/complete interview task via conversation task service."""
+        if self._task_id:
+            await visitor.tasks.complete(task_id=self._task_id, status=status)
+            return
+
+        await visitor.tasks.update_status(
+            status=status,
+            description=description,
+            action_name=action_name,
+        )
 
     async def format_summary(
         self,
@@ -185,11 +224,11 @@ class DirectiveBuilder:
                             "interview_type": session.interview_type,
                             "state": session.state.value,
                         }
-                        await visitor.add_active_task(
+                        await self._start_active_task(
+                            visitor,
                             description=description,
-                            metadata=metadata,
                             action_name=action_name,
-                            task_type="INTERVIEW",
+                            metadata=metadata,
                         )
                 else:
                     # No session available, default to active task
@@ -204,10 +243,10 @@ class DirectiveBuilder:
                         action_title=action_title, action_description=action_description
                     )
 
-                    await visitor.add_active_task(
+                    await self._start_active_task(
+                        visitor,
                         description=description,
                         action_name=action_name,
-                        task_type="INTERVIEW",
                     )
                 self._task_added = True
 
@@ -247,7 +286,8 @@ class DirectiveBuilder:
         description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(
             action_title=action_title, action_description=action_description
         )
-        await visitor.update_task(
+        await self._update_task_status(
+            visitor,
             status=task_status,
             description=description,
             action_name=action_name,

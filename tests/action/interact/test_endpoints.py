@@ -2,6 +2,7 @@
 
 import logging
 import os
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -148,6 +149,7 @@ class TestResponseBuilder:
             payload = build_interaction_payload(
                 interaction,
                 active_tasks=[{"description": "Guide user to complete Signup"}],
+                completed_tasks=[{"description": "Completed task"}],
             )
 
             # Development should include all fields including usage
@@ -160,6 +162,7 @@ class TestResponseBuilder:
                 "parameters": [{"test": "parameter"}],
                 "events": [{"test": "event"}],
                 "active_tasks": [{"description": "Guide user to complete Signup"}],
+                "completed_tasks": [{"description": "Completed task"}],
                 "observability_metrics": [{"test": "metric"}],
                 "usage": {},
                 "streamed": False,
@@ -244,6 +247,82 @@ class TestResponseBuilder:
             assert response["response"] == "Hi there!"
             assert "report" in response
             assert response["report"] == [{"test": "report"}]
+            assert "interaction" in response
+            assert "completed_tasks" in response["interaction"]
+        finally:
+            if original:
+                os.environ["JVSPATIAL_ENVIRONMENT"] = original
+            else:
+                os.environ.pop("JVSPATIAL_ENVIRONMENT", None)
+
+    @pytest.mark.asyncio
+    async def test_build_interact_response_includes_completed_tasks_for_window(self):
+        original = os.environ.get("JVSPATIAL_ENVIRONMENT")
+        try:
+            os.environ["JVSPATIAL_ENVIRONMENT"] = "development"
+            started = datetime.now(timezone.utc)
+            finished = started + timedelta(seconds=5)
+
+            interaction = MagicMock()
+            interaction.id = "int_123"
+            interaction.utterance = "Hello"
+            interaction.response = "Hi there!"
+            interaction.actions = []
+            interaction.directives = []
+            interaction.parameters = []
+            interaction.events = []
+            interaction.observability_metrics = []
+            interaction.streamed = False
+            interaction.conversation_id = "conv_123"
+            interaction.started_at = started
+            interaction.completed_at = finished
+
+            in_window_completed = {
+                "task_id": "t1",
+                "description": "done in this interaction",
+                "status": "completed",
+                "updated_at": (started + timedelta(seconds=2)).isoformat(),
+            }
+            out_window_completed = {
+                "task_id": "t2",
+                "description": "done earlier",
+                "status": "completed",
+                "updated_at": (started - timedelta(seconds=2)).isoformat(),
+            }
+            active_task = {
+                "task_id": "t3",
+                "description": "still active",
+                "status": "active",
+                "updated_at": (started + timedelta(seconds=1)).isoformat(),
+            }
+
+            conversation = MagicMock()
+            conversation.active_tasks = [
+                in_window_completed,
+                out_window_completed,
+                active_task,
+            ]
+            conversation.get_active_tasks = MagicMock(
+                side_effect=lambda status=None, action_name=None: [
+                    t
+                    for t in conversation.active_tasks
+                    if status is None or t.get("status") == status
+                ]
+            )
+
+            with patch(
+                "jvagent.memory.conversation.Conversation.get",
+                AsyncMock(return_value=conversation),
+            ):
+                response = await build_interact_response(
+                    user_id="usr_123",
+                    session_id="sess_456",
+                    interaction=interaction,
+                    report=None,
+                )
+
+            assert response["interaction"]["active_tasks"] == [active_task]
+            assert response["interaction"]["completed_tasks"] == [in_window_completed]
         finally:
             if original:
                 os.environ["JVSPATIAL_ENVIRONMENT"] = original

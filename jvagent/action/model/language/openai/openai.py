@@ -94,6 +94,7 @@ class OpenAILanguageModelAction(LanguageModelAction):
     ) -> ModelActionResult:
         """Execute a synchronous query to OpenAI."""
         await self._initialize_http_client()
+        extra_headers = kwargs.pop("_extra_headers", None)
 
         # Build request payload
         # Use model from kwargs if provided, otherwise use instance default
@@ -113,13 +114,16 @@ class OpenAILanguageModelAction(LanguageModelAction):
         # Make API request
         try:
             api_key = self._http_bearer_token()
+            request_headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+            if isinstance(extra_headers, dict):
+                request_headers.update(extra_headers)
             response = await self._http_client.post(  # type: ignore[union-attr]
                 f"{self.api_endpoint}/chat/completions",
                 json=payload,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=request_headers,
             )
             response.raise_for_status()
             data = response.json()
@@ -145,7 +149,7 @@ class OpenAILanguageModelAction(LanguageModelAction):
             }
 
             # Estimate cost (use raw_usage for cost calculation as it may have more details)
-            self._estimate_cost(raw_usage)
+            self._estimate_cost(raw_usage, model_name=model_override)
 
             return ModelActionResult(
                 response=content,
@@ -178,6 +182,7 @@ class OpenAILanguageModelAction(LanguageModelAction):
     ) -> ModelActionResult:
         """Execute a streaming query to OpenAI."""
         await self._initialize_http_client()
+        extra_headers = kwargs.pop("_extra_headers", None)
 
         # Build request payload
         # Use model from kwargs if provided, otherwise use instance default
@@ -203,14 +208,17 @@ class OpenAILanguageModelAction(LanguageModelAction):
 
             try:
                 api_key = self._http_bearer_token()
+                request_headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                }
+                if isinstance(extra_headers, dict):
+                    request_headers.update(extra_headers)
                 async with self._http_client.stream(  # type: ignore[union-attr]
                     "POST",
                     f"{self.api_endpoint}/chat/completions",
                     json=payload,
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
+                    headers=request_headers,
                 ) as response:
                     response.raise_for_status()
 
@@ -279,14 +287,16 @@ class OpenAILanguageModelAction(LanguageModelAction):
     # Helper Methods
     # ============================================================================
 
-    def _estimate_cost(self, usage: Dict[str, Any]) -> None:
+    def _estimate_cost(
+        self, usage: Dict[str, Any], model_name: Optional[str] = None
+    ) -> None:
         """Estimate cost based on token usage.
 
         Args:
             usage: Usage dict with prompt_tokens and completion_tokens (may include additional fields)
         """
         # Get pricing for current model
-        pricing = self._model_pricing.get(self.model)
+        pricing = self._model_pricing.get(model_name or self.model)
         if not pricing:
             # Use default pricing if model not found
             pricing = {"input": 1.0, "output": 2.0}

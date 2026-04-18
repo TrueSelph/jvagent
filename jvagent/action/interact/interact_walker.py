@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from jvagent.core.agent import Agent
     from jvagent.memory.conversation import Conversation
     from jvagent.memory.manager import Memory
+    from jvagent.memory.services.task_service import TaskService
     from jvagent.memory.user import User
 else:
     # Import at runtime for Pydantic model_rebuild
@@ -100,9 +101,21 @@ class InteractWalker(Walker):
         False  # Allow actions to opt-out of being recorded as executed
     )
     _agent: Optional["Agent"] = None  # Agent node, set in on_agent for access control
+    _task_service: Optional["TaskService"] = None
     background_actions: List["InteractAction"] = (
         []
     )  # Actions deferred for post-interaction execution
+
+    @property
+    def tasks(self) -> "TaskService":
+        """Return conversation-scoped task service."""
+        if not self.conversation:
+            raise RuntimeError("No conversation available for task tracker")
+        if self._task_service is None:
+            from jvagent.memory.services.task_service import TaskService
+
+            self._task_service = TaskService(self.conversation)
+        return self._task_service
 
     async def record_action_execution(
         self, action_name: Optional[str] = None
@@ -929,12 +942,15 @@ class InteractWalker(Walker):
         """
         if not self.conversation:
             raise RuntimeError("No conversation available for task tracker")
-        await self.conversation.add_active_task(
+        await self.tasks.start(
             description=description,
             metadata=metadata,
-            task_id=task_id,
             action_name=action_name,
-            task_type=task_type,
+            task_id=task_id,
+            task_type=task_type or "TASK",
+            trigger_at=(metadata or {}).get("trigger_time"),
+            trigger_condition=(metadata or {}).get("trigger_condition"),
+            legacy_upsert=True,
         )
 
     async def update_task(
@@ -963,7 +979,7 @@ class InteractWalker(Walker):
         """
         if not self.conversation:
             raise RuntimeError("No conversation available for task tracker")
-        return await self.conversation.update_task(
+        return await self.tasks.update_status(
             status=status,
             task_id=task_id,
             description=description,
@@ -993,8 +1009,11 @@ class InteractWalker(Walker):
         """
         if not self.conversation:
             raise RuntimeError("No conversation available for task tracker")
-        return await self.conversation.remove_active_task(
-            task_id=task_id, description=description, action_name=action_name
+        return await self.tasks.update_status(
+            status="completed",
+            task_id=task_id,
+            description=description,
+            action_name=action_name,
         )
 
     async def get_active_tasks(
@@ -1018,9 +1037,7 @@ class InteractWalker(Walker):
         """
         if not self.conversation:
             raise RuntimeError("No conversation available for task tracker")
-        return self.conversation.get_active_tasks(
-            status=status, action_name=action_name
-        )
+        return self.tasks.list(status=status, action_name=action_name)
 
 
 # Rebuild Pydantic model to resolve forward references

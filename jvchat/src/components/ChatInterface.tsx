@@ -688,7 +688,7 @@ export function ChatInterface() {
           </div>
 
           <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            {messages.length === 0 ? (
+            {messages.length === 0 && thoughtMessages.length === 0 ? (
               <WelcomeScreen agentName={agent.alias || agent.name || "Agent"} />
             ) : (
               <MessageList
@@ -696,7 +696,8 @@ export function ChatInterface() {
                 thoughtMessages={thoughtMessages}
                 showThinking={
                   isStreaming &&
-                  !messages.some((m) => m.role === "assistant" && m.streaming)
+                  !messages.some((m) => m.role === "assistant" && m.streaming) &&
+                  !thoughtMessages.some((m) => m.streaming)
                 }
               />
             )}

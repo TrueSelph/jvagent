@@ -206,7 +206,7 @@ class MCPClientWrapper:
             arguments: Optional dict of arguments.
 
         Returns:
-            MCP CallToolResult (has .content, .is_error, .structured_content, etc.).
+            MCP CallToolResult (has .content, .isError, .structuredContent, etc.).
         """
         await self.connect()
         return await asyncio.wait_for(

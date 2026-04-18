@@ -6,6 +6,12 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Set
 
+from jvagent.core.yaml_validation_utils import expect_type as expect_type_generic
+from jvagent.core.yaml_validation_utils import warn_once as warn_once_generic
+from jvagent.core.yaml_validation_utils import (
+    warn_unknown_keys as warn_unknown_keys_generic,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,25 +35,24 @@ def _mk(path: str, message: str, hint: str = "") -> AgentYamlWarning:
 
 
 def _warn_once(warnings: Iterable[AgentYamlWarning], source: str) -> None:
-    for w in warnings:
-        key = f"{source}|{w.path}|{w.message}|{w.hint}"
-        if key in _SEEN_WARNING_KEYS:
-            continue
-        _SEEN_WARNING_KEYS.add(key)
-        suffix = f" Hint: {w.hint}" if w.hint else ""
-        logger.warning(
-            "agent.yaml validation warning [%s]: %s.%s", w.path, w.message, suffix
-        )
+    warn_once_generic(
+        warnings=warnings,
+        source=source,
+        seen_keys=_SEEN_WARNING_KEYS,
+        emit=lambda msg: logger.warning("agent.yaml validation warning %s", msg),
+    )
 
 
 def _expect_type(
     warnings: List[AgentYamlWarning], path: str, value: Any, expected: tuple[type, ...]
 ) -> None:
-    if value is None:
-        return
-    if not isinstance(value, expected):
-        names = "/".join(t.__name__ for t in expected)
-        warnings.append(_mk(path, f"Expected {names}, got {type(value).__name__}"))
+    expect_type_generic(
+        warnings=warnings,
+        path=path,
+        value=value,
+        types=expected,
+        factory=lambda p, m, h: _mk(p, m, hint=h),
+    )
 
 
 def _warn_unknown_keys(
@@ -56,10 +61,13 @@ def _warn_unknown_keys(
     payload: Dict[str, Any],
     allowed_keys: Set[str],
 ) -> None:
-    for key in payload.keys():
-        if key not in allowed_keys:
-            full_path = f"{base_path}.{key}" if base_path else key
-            warnings.append(_mk(full_path, "Unexpected key"))
+    warn_unknown_keys_generic(
+        warnings=warnings,
+        base_path=base_path,
+        payload=payload,
+        allowed_keys=allowed_keys,
+        factory=lambda p, m, h: _mk(p, m, hint=h),
+    )
 
 
 def validate_agent_yaml(data: Dict[str, Any]) -> List[AgentYamlWarning]:

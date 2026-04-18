@@ -5,7 +5,10 @@ Used by Interaction.compute_usage() and other consumers that need
 per-call cost estimation from observability event data.
 """
 
+import logging
 from typing import Any, Dict
+
+logger = logging.getLogger(__name__)
 
 # Pricing per 1M tokens (USD). Keys: model identifier. Values: {"input": float, "output": float}
 # For embeddings, "output" is typically 0 or same as input (single rate).
@@ -13,6 +16,21 @@ _LLM_PRICING: Dict[str, Dict[str, float]] = {
     "gpt-4o": {"input": 2.50, "output": 10.00},
     "gpt-4o-mini": {"input": 0.150, "output": 0.600},
     "gpt-3.5-turbo": {"input": 0.50, "output": 1.50},
+}
+
+_LLM_PRICING_BY_PROVIDER: Dict[str, Dict[str, Dict[str, float]]] = {
+    "openai": _LLM_PRICING,
+    "openrouter": {
+        "gpt-4o": {"input": 2.50, "output": 10.00},
+        "gpt-4o-mini": {"input": 0.150, "output": 0.600},
+        "claude-3-5-sonnet": {"input": 3.00, "output": 15.00},
+        "claude-3-7-sonnet": {"input": 3.00, "output": 15.00},
+    },
+    "anthropic": {
+        "claude-3-5-sonnet": {"input": 3.00, "output": 15.00},
+        "claude-3-7-sonnet": {"input": 3.00, "output": 15.00},
+    },
+    "ollama": {},
 }
 
 # Embedding models: single rate per 1M tokens
@@ -26,6 +44,7 @@ _EMBEDDING_PRICING: Dict[str, float] = {
 _DEFAULT_INPUT_RATE = 1.0
 _DEFAULT_OUTPUT_RATE = 2.0
 _DEFAULT_EMBEDDING_RATE = 0.10
+_UNKNOWN_PROVIDER_WARNED: set[str] = set()
 
 
 def estimate_cost(
@@ -51,14 +70,30 @@ def estimate_cost(
     # Normalize model for lookup (OpenRouter uses provider/model format)
     lookup_model = model.split("/")[-1] if "/" in model else model
 
+    provider_key = (provider or "").strip().lower()
+
     if event_type == "embedding_call":
         rate = _EMBEDDING_PRICING.get(lookup_model, _DEFAULT_EMBEDDING_RATE)
         total_tokens = usage.get("total_tokens", 0) or 0
         return (total_tokens / 1_000_000) * rate
 
     # LLM: separate input/output
-    pricing = _LLM_PRICING.get(lookup_model) or _LLM_PRICING.get(model)
+    if provider_key in {"openai", "openrouter", "anthropic", "ollama"}:
+        provider_pricing = _LLM_PRICING_BY_PROVIDER.get(provider_key, {})
+        pricing = provider_pricing.get(lookup_model) or provider_pricing.get(model)
+    else:
+        pricing = _LLM_PRICING.get(lookup_model) or _LLM_PRICING.get(model)
+        if provider_key and provider_key not in _UNKNOWN_PROVIDER_WARNED:
+            logger.warning(
+                "Unknown provider '%s' in estimate_cost(); returning 0 for model '%s'",
+                provider,
+                model,
+            )
+            _UNKNOWN_PROVIDER_WARNED.add(provider_key)
+            return 0.0
+
     if not pricing:
+        # Unknown model for known provider: conservative non-zero fallback.
         pricing = {"input": _DEFAULT_INPUT_RATE, "output": _DEFAULT_OUTPUT_RATE}
 
     prompt_tokens = usage.get("prompt_tokens", 0) or 0

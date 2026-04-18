@@ -4,12 +4,12 @@ The bundle module generates Dockerfiles for jvagent applications by extending a 
 
 ## Overview
 
-**Note:** The generated Dockerfile is currently tuned for AWS Lambda deployment with EFS support. It uses the AWS Lambda Python base image and includes Lambda Web Adapter for HTTP API support.
+**Note:** The generated Dockerfile extends the local `jvagent/bundle/Dockerfile.base` template. In this repository that template is intentionally minimal and starts from `registry.v75inc.dev/jvagent/jvagent-base:latest`.
 
 The bundler generates a ready-to-use Dockerfile directly in your jvagent app directory. The Dockerfile:
-- Extends a base template optimized for AWS Lambda with EFS support
+- Extends your selected base template (`jvagent/bundle/Dockerfile.base`)
 - Automatically discovers pip dependencies from all actions in your app
-- Includes separate RUN commands per action for better Docker layer caching
+- Installs deduplicated action dependencies in one consolidated RUN layer
 
 ## Usage
 
@@ -65,27 +65,19 @@ jvagent /path/to/my_app bundle
 
 ## Generated Dockerfile
 
-**AWS Lambda Optimized:** The generated Dockerfile is specifically tuned for AWS Lambda deployment with EFS support.
+**Template-driven:** The generated Dockerfile behavior depends on your `Dockerfile.base`.
 
 The generated Dockerfile:
-- Uses AWS Lambda Python 3.12 base image (`public.ecr.aws/lambda/python:3.12`)
-- Includes Lambda Web Adapter for HTTP API Gateway integration
-- Clones and installs jvagent and jvspatial as editable packages from GitHub
-- Installs action-specific pip dependencies (one RUN command per action)
-- Sets up EFS-compatible virtual environment (`/mnt/venv`)
-- Configures Lambda-specific environment variables and paths
-- Includes runtime script optimized for Lambda execution
+- Uses the base image and runtime setup defined in your `Dockerfile.base`
+- Installs action-specific pip dependencies (deduplicated in one RUN command)
+- Copies your app into the image
 
 ## Base Template
 
-The base Dockerfile template (`Dockerfile.base`) is optimized for AWS Lambda deployment and includes:
-- AWS Lambda Python 3.12 base image
-- Lambda Web Adapter setup for HTTP API Gateway integration
-- Base Python environment with numpy, tiktoken, pydantic (installed in read-only `/opt/venv`)
-- jvagent and jvspatial installation from GitHub (dev branch)
-- EFS virtual environment setup (`/mnt/venv`) with system-site-packages inheritance
-- Lambda-specific environment variables (port 8080, paths, readiness checks)
-- Runtime script that creates EFS venv on first run and executes jvagent
+The base Dockerfile template (`Dockerfile.base`) controls base image and runtime wiring. In this repo it is a thin template that:
+- Starts from `registry.v75inc.dev/jvagent/jvagent-base:latest`
+- Copies the app into `/var/task`
+- Injects discovered action dependencies at `{{ACTION_DEPENDENCIES}}`
 
 Action-specific dependencies are inserted into the template at the `{{ACTION_DEPENDENCIES}}` placeholder.
 
@@ -157,26 +149,9 @@ Configure the following environment variables when running the container:
 - `JVSPATIAL_MONGODB_URI`: MongoDB connection string (if using MongoDB)
 - Other variables as defined in your `app.yaml`
 
-### AWS Lambda Deployment (Primary Use Case)
+### Deployment Target
 
-The generated Dockerfile is specifically optimized for AWS Lambda container-based deployments with EFS support:
-
-- **Base Image**: AWS Lambda Python 3.12 (`public.ecr.aws/lambda/python:3.12`)
-- **Lambda Web Adapter**: Included for HTTP API Gateway integration
-- **EFS Virtual Environment**: Uses `/mnt/venv` for writable package installation
-- **Read-Only Base Packages**: Heavy dependencies (numpy, pydantic) in `/opt/venv`
-- **Lambda-Specific Configuration**: Port 8080, proper PATH setup, readiness checks
-
-**Deployment Steps:**
-1. Generate Dockerfile: `jvagent bundle`
-2. Build image: `docker build -t my-jvagent-app .`
-3. Push to ECR: Tag and push to your ECR repository
-4. Create Lambda function: Use container image from ECR
-5. Configure EFS: Mount EFS to `/mnt` for persistent venv
-6. Set environment variables: Configure Lambda environment variables
-7. Create API Gateway: Set up HTTP API trigger
-
-**Note:** This Dockerfile is currently tuned for AWS Lambda. For other deployment targets, you may need to modify the base image and configuration.
+Choose your deployment target by editing `jvagent/bundle/Dockerfile.base`. The bundler does not enforce Lambda-specific behavior; it only injects action dependencies and emits `Dockerfile` for the current app.
 
 ## Implementation
 

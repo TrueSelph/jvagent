@@ -12,7 +12,7 @@ from jvagent.action.base import Action
 from jvagent.core.agent_yaml_validator import warn_agent_yaml
 from jvagent.core.env_resolver import resolve_env_placeholders
 
-from . import core_discovery
+from . import core_discovery, factory
 from . import importer as _importer_module
 from . import info_yaml, module_loading
 from .importer import JvagentActionsImporter
@@ -1397,24 +1397,13 @@ class ActionLoader:
                     ):
                         loaded_modules.append(parent_module)
 
-            action.metadata = {
-                "name": metadata.name,
-                "title": metadata.title,
-                "namespace": metadata.namespace,
-                "version": metadata.version,
-                "module": metadata.module,
-                "module_root": str(metadata.path),
-                "class": metadata.class_name,
-                "archetype": metadata.archetype,
-                "author": metadata.author,
-                "group": metadata.group,
-                "type": metadata.type,
-                "config": merged_config,
-                "config_overrides": config_overrides or {},
-                "dependencies": metadata.dependencies,
-                "agent_name": agent_name,
-                "loaded_modules": loaded_modules,
-            }
+            action.metadata = factory.build_action_metadata_payload(
+                metadata=metadata,
+                merged_config=merged_config,
+                config_overrides=config_overrides,
+                agent_name=agent_name,
+                loaded_modules=loaded_modules,
+            )
 
             action._property_override_keys = (
                 set(property_overrides.keys()) if property_overrides else set()

@@ -12,10 +12,11 @@ from jvspatial.logging.filter_utils import validate_log_filter
 
 from jvagent.core.agent import Agent
 from jvagent.memory.manager import Memory
+from jvagent.memory.services.long_memory_service import LongMemoryService
 from jvagent.memory.user import User
-from jvagent.memory.user_long_memory import UserLongMemory
 
 logger = logging.getLogger(__name__)
+_long_memory_service = LongMemoryService()
 
 
 def _user_context_matches(user: User, filter_query: Dict[str, Any]) -> bool:
@@ -430,9 +431,7 @@ async def repair_memory(
 )
 async def get_my_memory(
     agent_id: str,
-    user_id: Optional[str] = Query(
-        None, description="Caller's user_id (from client storage)"
-    ),
+    user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get the current user's long-term memory for an agent.
 
@@ -441,7 +440,7 @@ async def get_my_memory(
 
     **Args:**
     - `agent_id`: Agent node ID
-    - `user_id`: The caller's user identifier (passed as query param from the client)
+    - `user_id`: Authenticated caller user identifier (injected by auth middleware)
 
     **Returns:**
     - `memory`: { category_key: { title, content, updated_at } }
@@ -461,21 +460,7 @@ async def get_my_memory(
     if not user:
         return {"memory": {}}
 
-    long_memory = await UserLongMemory.get_for_user(user)
-    if not long_memory:
-        return {"memory": {}}
-
-    content_map = {}
-    categories = await long_memory.get_all_categories()
-    for cat in categories:
-        if not cat.is_empty():
-            content_map[cat.category] = {
-                "title": cat.title,
-                "content": cat.content,
-                "updated_at": cat.updated_at.isoformat() if cat.updated_at else None,
-            }
-
-    return {"memory": content_map}
+    return {"memory": await _long_memory_service.get_memory_content(user)}
 
 
 @endpoint(
@@ -520,18 +505,4 @@ async def get_user_memory_content(
     if not user:
         raise ResourceNotFoundError(f"User '{user_id}' not found")
 
-    long_memory = await UserLongMemory.get_for_user(user)
-    if not long_memory:
-        return {"memory": {}}
-
-    content_map = {}
-    categories = await long_memory.get_all_categories()
-    for cat in categories:
-        if not cat.is_empty():
-            content_map[cat.category] = {
-                "title": cat.title,
-                "content": cat.content,
-                "updated_at": cat.updated_at.isoformat() if cat.updated_at else None,
-            }
-
-    return {"memory": content_map}
+    return {"memory": await _long_memory_service.get_memory_content(user)}

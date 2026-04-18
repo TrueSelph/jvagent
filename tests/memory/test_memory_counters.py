@@ -237,6 +237,53 @@ async def test_recalculate_counters_returns_zero_when_accurate(test_db):
 
 
 # ---------------------------------------------------------------------------
+# orphaned interaction cleanup safety
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_cleanup_orphaned_interactions_preserves_existing_foreign_conversation(
+    test_db,
+):
+    """Do not delete interactions when their conversation node still exists."""
+    memory_a = await _setup_memory()
+    memory_b = await _setup_memory()
+    user_b = await _make_user(memory_b)
+    conv_b = await _make_conversation(memory_b, user_b)
+    interaction = await Interaction.create(
+        conversation_id=conv_b.id,
+        user_id=user_b.user_id,
+        utterance="keep me",
+        channel=conv_b.channel,
+        session_id=conv_b.session_id,
+    )
+    await conv_b.connect(interaction)
+
+    deleted = await memory_a._cleanup_orphaned_interactions()
+
+    assert deleted == 0
+    assert await Interaction.get(interaction.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_cleanup_orphaned_interactions_deletes_missing_conversation(test_db):
+    """Delete interactions only when their referenced conversation is missing."""
+    memory = await _setup_memory()
+    interaction = await Interaction.create(
+        conversation_id=f"n.Conversation.missing_{uuid.uuid4().hex[:8]}",
+        user_id=_uid(),
+        utterance="orphaned",
+        channel="default",
+        session_id=_sid(),
+    )
+
+    deleted = await memory._cleanup_orphaned_interactions()
+
+    assert deleted == 1
+    assert await Interaction.get(interaction.id) is None
+
+
+# ---------------------------------------------------------------------------
 # repair_memory flow (end-to-end)
 # ---------------------------------------------------------------------------
 

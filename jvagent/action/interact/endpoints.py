@@ -167,6 +167,7 @@ def _build_interaction_log_data(
     app_id,
     agent_id=None,
     active_tasks=None,
+    completed_tasks=None,
     visitor_data: Optional[Dict[str, Any]] = None,
 ):
     """Build comprehensive log data dictionary for interaction logging.
@@ -290,6 +291,7 @@ def _build_interaction_log_data(
         "parameters": parameters,
         "events": events,
         "active_tasks": active_tasks if active_tasks is not None else [],
+        "completed_tasks": completed_tasks if completed_tasks is not None else [],
         "interpretation": interpretation,
         "anchors": anchors,
         "streamed": streamed,
@@ -410,7 +412,7 @@ _initialize_rate_limiter_from_config()
                 description=(
                     "Interaction details (development mode only). Excluded in production mode. "
                     "Includes: id, utterance, response, actions, directives, parameters, "
-                    "events, active_tasks, observability_metrics, streamed."
+                    "events, active_tasks, completed_tasks, observability_metrics, streamed."
                 ),
                 example={
                     "id": "int_123",
@@ -422,6 +424,7 @@ _initialize_rate_limiter_from_config()
                     "parameters": [],
                     "events": [],
                     "active_tasks": [],
+                    "completed_tasks": [],
                     "observability_metrics": [],
                 },
                 default=None,
@@ -640,15 +643,20 @@ async def interact_endpoint(
                     app = await App.get()
                     app_id = app.id if app else ""
                     active_tasks = []
+                    completed_tasks = []
                     if walker.conversation:
                         active_tasks = walker.conversation.get_active_tasks(
                             status="active"
+                        )
+                        completed_tasks = walker.conversation.get_active_tasks(
+                            status="completed"
                         )
                     log_data, message = _build_interaction_log_data(
                         interaction,
                         app_id,
                         agent_id,
                         active_tasks=active_tasks,
+                        completed_tasks=completed_tasks,
                         visitor_data=walker.data,
                     )
                     logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
@@ -863,8 +871,12 @@ async def _stream_interaction(
                 app = await App.get()
                 app_id = app.id if app else ""
                 active_tasks = []
+                completed_tasks = []
                 if walker.conversation:
                     active_tasks = walker.conversation.get_active_tasks(status="active")
+                    completed_tasks = walker.conversation.get_active_tasks(
+                        status="completed"
+                    )
                 agent_id_for_logging = (
                     walker.agent_id if hasattr(walker, "agent_id") else agent.id
                 )
@@ -873,6 +885,7 @@ async def _stream_interaction(
                     app_id,
                     agent_id_for_logging,
                     active_tasks=active_tasks,
+                    completed_tasks=completed_tasks,
                     visitor_data=walker.data,
                 )
                 logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
@@ -937,8 +950,12 @@ async def _stream_interaction(
                 app = await App.get()
                 app_id = app.id if app else ""
                 active_tasks = []
+                completed_tasks = []
                 if walker.conversation:
                     active_tasks = walker.conversation.get_active_tasks(status="active")
+                    completed_tasks = walker.conversation.get_active_tasks(
+                        status="completed"
+                    )
                 agent_id_from_walker = (
                     walker.agent_id if hasattr(walker, "agent_id") else None
                 )
@@ -947,6 +964,7 @@ async def _stream_interaction(
                     app_id,
                     agent_id_from_walker,
                     active_tasks=active_tasks,
+                    completed_tasks=completed_tasks,
                     visitor_data=walker.data,
                 )
                 logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)

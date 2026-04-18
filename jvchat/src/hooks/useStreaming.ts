@@ -19,15 +19,26 @@ function normalizeThoughtType(msg: ResponseMessageData): Message['thoughtType'] 
   if (metadata.thinking) return 'reasoning'
   if (metadata.tool_call) return 'tool_call'
   if (metadata.tool_result) return 'tool_result'
+  if (metadata.status) return 'status'
   return undefined
 }
 
 function isThoughtMessage(msg: ResponseMessageData): boolean {
+  // Server-declared category should always win.
   if (msg.category === 'thought') return true
+  if (msg.category === 'user') return false
   if (msg.thought_type) return true
-  if (msg.segment_id) return true
+
   const metadata = msg.metadata || {}
-  return Boolean(metadata.thinking || metadata.tool_call || metadata.tool_result)
+  const hasThoughtMetadata = Boolean(
+    metadata.thinking || metadata.tool_call || metadata.tool_result || metadata.status
+  )
+
+  // segment_id alone can appear in other streams; require additional signal.
+  if (msg.segment_id && hasThoughtMetadata) return true
+
+  // Fallback for older payloads that omit category but include thought metadata.
+  return hasThoughtMetadata
 }
 
 export function useStreaming(agentId: string, sessionId?: string) {

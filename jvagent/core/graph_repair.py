@@ -9,7 +9,8 @@ conversations), last in the pipeline.
 """
 
 import logging
-from collections import defaultdict
+from collections import defaultdict, deque
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
 from jvspatial.core import Edge, Node, Root, get_default_context
@@ -21,64 +22,111 @@ async def repair_agent_graph(
     dry_run: bool = False,
     recent_minutes: Optional[int] = None,
     *,
-    repair_cursor: Optional[str] = None,
-    batch_size: Optional[int] = None,
-    max_seconds: Optional[float] = None,
+    max_seconds: float = 30.0,
+    batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Run memory repair (all agents) then agent graph repair procedures.
+    """Run one bounded wave of app-wide graph repair with persisted state.
 
-    Memory repair executes first for all agents to ensure a consistent memory
-    state before structural graph validation. Graph repair then validates
-    structure, removes dead edges, syncs node edge_ids, reattaches or removes
-    orphaned nodes, and removes duplicate edges. Finally, rolling-window
-    interaction pruning runs per user (each Memory's users and their
-    conversations) when the agent has a positive interaction_limit.
-
-    When ``batch_size`` and/or ``max_seconds`` is set, or a non-empty
-    ``repair_cursor`` is passed, work runs via
-    :mod:`jvagent.core.graph_repair_job` in bounded chunks with **no server-side
-    persistence**. Pass ``next_repair_cursor`` from the previous response as
-    ``repair_cursor`` to continue mid-pipeline. Omit ``repair_cursor`` to restart
-    from the beginning (already-fixed entities are skipped via the graph).
-
-    Args:
-        dry_run: If True, report issues without making changes.
-        recent_minutes: Passed to memory repair to limit orphan interaction
-            cleanup to last N minutes (None = all).
-        repair_cursor: Opaque cursor from a prior ``next_repair_cursor`` when
-            continuing a batched repair (must match ``dry_run`` semantics).
-        batch_size: Max entities processed per internal batch when using the
-            session engine. If both this and ``max_seconds`` are None, the legacy
-            single-pass repair runs in-process until completion.
-        max_seconds: Wall-clock budget per call for the session engine (batched
-            mode only).
-
-    Returns:
-        Dict with repair counters, ``message``, and when batched: ``status``,
-        ``phase``, and ``next_repair_cursor`` if ``status`` is ``in_progress``.
+    Callers should re-invoke this API until ``status`` becomes ``completed``.
+    Progress is stored in a temporary ``RepairState`` node attached to ``App``.
     """
+    from jvagent.core.app import App
     from jvagent.core.graph_repair_job import (
+        PH_DONE,
+        STATE_VERSION,
         RepairLimits,
+        _build_message,
+        _initial_session_state,
         run_repair_session,
-        run_repair_until_done,
+        state_from_dict,
+        state_to_dict,
     )
+    from jvagent.core.repair_state import RepairState
 
-    batched = (
-        batch_size is not None
-        or max_seconds is not None
-        or (repair_cursor is not None and bool(repair_cursor.strip()))
+    limits = RepairLimits(batch_size=batch_size, max_seconds=max_seconds)
+    app = await App.get()
+    # App.get() uses a class-level cache; across context switches (tests, workers)
+    # the cached node can point at a different database. Re-resolve if stale.
+    if app is not None:
+        live_app = await get_default_context().get(Node, app.id)
+        if live_app is None:
+            App.clear_cache()
+            app = await App.get()
+    started_at = datetime.now(timezone.utc)
+
+    if app is None:
+        state = _initial_session_state(dry_run, recent_minutes)
+        state = await run_repair_session(state, limits)
+        return _build_http_response(state, _build_message, PH_DONE, started_at)
+
+    async with RepairState._lock:
+        repair_state = await RepairState.current(app)
+        if repair_state and (
+            repair_state.dry_run != dry_run
+            or (
+                recent_minutes is not None
+                and repair_state.recent_minutes != recent_minutes
+            )
+            or repair_state.version != STATE_VERSION
+        ):
+            await repair_state.finish()
+            repair_state = None
+
+        if repair_state is None:
+            repair_state = await RepairState.begin(
+                app,
+                dry_run=dry_run,
+                recent_minutes=recent_minutes,
+                version=STATE_VERSION,
+            )
+            state = _initial_session_state(dry_run, recent_minutes)
+        else:
+            state = state_from_dict(
+                {
+                    "v": repair_state.version,
+                    "phase": repair_state.phase,
+                    "cursor": repair_state.cursor,
+                    "result": repair_state.result,
+                    "dry_run": repair_state.dry_run,
+                    "recent_minutes": repair_state.recent_minutes,
+                },
+                dry_run=dry_run,
+                recent_minutes=recent_minutes,
+            )
+        started_at = repair_state.started_at or started_at
+
+        state = await run_repair_session(state, limits)
+        payload = state_to_dict(state)
+
+        if state.get("phase") == PH_DONE:
+            await repair_state.finish()
+        else:
+            await repair_state.save_progress(
+                phase=payload["phase"],
+                cursor=payload["cursor"],
+                result=payload["result"],
+            )
+
+    return _build_http_response(state, _build_message, PH_DONE, started_at)
+
+
+def _build_http_response(
+    state: Dict[str, Any], build_message: Any, done_phase: str, started_at: datetime
+) -> Dict[str, Any]:
+    """Convert internal state to API payload."""
+    now = datetime.now(timezone.utc)
+    started = (
+        started_at if started_at.tzinfo else started_at.replace(tzinfo=timezone.utc)
     )
-    if batched:
-        limits = RepairLimits(
-            batch_size=batch_size if batch_size is not None else 500,
-            max_seconds=max_seconds,
-        )
-        return await run_repair_session(
-            dry_run, recent_minutes, limits, repair_cursor=repair_cursor
-        )
-
-    limits = RepairLimits(batch_size=10**9, max_seconds=None)
-    return await run_repair_until_done(dry_run, recent_minutes, limits)
+    out = dict(state.get("result") or {})
+    out["message"] = build_message(state)
+    out["status"] = "completed" if state.get("phase") == done_phase else "in_progress"
+    out["phase"] = state.get("phase", done_phase)
+    out["started_at"] = started.isoformat()
+    out["elapsed_seconds"] = max(0.0, (now - started).total_seconds())
+    if state.get("dry_run"):
+        out["dry_run"] = True
+    return out
 
 
 async def _reconcile_all_memory_counters() -> int:
@@ -253,10 +301,10 @@ async def _sync_node_edge_ids(context: Any, dry_run: bool) -> int:
 async def _compute_reachable_nodes(context: Any, root: Node) -> Set[str]:
     """BFS from root to compute all reachable node IDs."""
     reachable: Set[str] = {root.id}
-    queue = [root]
+    queue = deque([root])
 
     while queue:
-        node = queue.pop(0)
+        node = queue.popleft()
         try:
             neighbors = await node.nodes(direction="both")
             for neighbor in neighbors:
@@ -265,6 +313,36 @@ async def _compute_reachable_nodes(context: Any, root: Node) -> Set[str]:
                     queue.append(neighbor)
         except Exception as e:
             logger.debug("Error traversing from %s: %s", node.id, e)
+
+    return reachable
+
+
+async def _compute_reachable_nodes_excluding_root(context: Any, root: Node) -> Set[str]:
+    """Return reachable node IDs from root, excluding the global Root node id."""
+    reachable = await _compute_reachable_nodes(context, root)
+    reachable.discard("n.Root.root")
+    return reachable
+
+
+async def _compute_reachable_nodes_below(context: Any, root: Node) -> Set[str]:
+    """BFS from root following outgoing edges only.
+
+    Used by dedupe heuristics to score how much descendant data (for example,
+    Memory -> User -> Conversation -> Interaction) exists under a candidate.
+    """
+    reachable: Set[str] = {root.id}
+    queue = deque([root])
+
+    while queue:
+        node = queue.popleft()
+        try:
+            neighbors = await node.nodes(direction="out")
+            for neighbor in neighbors:
+                if neighbor.id not in reachable:
+                    reachable.add(neighbor.id)
+                    queue.append(neighbor)
+        except Exception as e:
+            logger.debug("Error traversing descendants from %s: %s", node.id, e)
 
     return reachable
 

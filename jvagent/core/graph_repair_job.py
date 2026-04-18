@@ -1,30 +1,33 @@
-"""Stateless batched graph repair (in-memory only, optional client-held cursor).
+"""Batched graph repair session engine.
 
-Each :func:`run_repair_session` call runs bounded work. If it stops before
-``PH_DONE``, the response includes ``next_repair_cursor`` (base64url JSON).
-Pass that value back as ``repair_cursor`` on the next call to continue without
-server-side job files or ``job_id``. Omit the cursor to restart from the
-beginning (already-repaired graph entities are naturally skipped via queries).
+Each :func:`run_repair_session` call runs bounded work over a mutable repair
+state dict. State serialization/deserialization helpers are provided for
+persisting progress between API calls.
 """
 
 from __future__ import annotations
 
-import base64
-import binascii
 import json
 import logging
 import time
+from collections import deque
 from dataclasses import dataclass
+from inspect import isawaitable
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
 SORT_ID_ASC: List[Tuple[str, int]] = [("id", 1)]
-CURSOR_VERSION = 1
+STATE_VERSION = 2
 
 # Phases (ordered)
 PH_MEMORY_COUNTERS = "memory_counters"
 PH_MEMORY_AGENTS = "memory_agents"
+PH_SCHEMA_APP_DEDUPE = "schema_app_dedupe"
+PH_SCHEMA_AGENT_DEDUPE = "schema_agent_dedupe"
+PH_SCHEMA_ACTIONS_DEDUPE = "schema_actions_dedupe"
+PH_SCHEMA_MEMORY_DEDUPE = "schema_memory_dedupe"
+PH_SCHEMA_SINGLETON_ACTIONS = "schema_singleton_actions"
 PH_DEAD_EDGES = "dead_edges"
 PH_SYNC_PREPARE = "sync_prepare"
 PH_SYNC_APPLY = "sync_apply"
@@ -55,6 +58,11 @@ def _new_result_counters() -> Dict[str, Any]:
         "dual_edges_removed": 0,
         "conversation_first_edges_restored": 0,
         "conversation_branch_edges_removed": 0,
+        "duplicate_apps_removed": 0,
+        "duplicate_agents_removed": 0,
+        "duplicate_actions_managers_removed": 0,
+        "duplicate_memory_nodes_removed": 0,
+        "duplicate_singleton_actions_removed": 0,
         "dead_edges_removed": 0,
         "orphaned_nodes_reattached": 0,
         "orphaned_nodes_deleted": 0,
@@ -70,7 +78,7 @@ def _initial_session_state(
     recent_minutes: Optional[int],
 ) -> Dict[str, Any]:
     return {
-        "phase": PH_MEMORY_COUNTERS if not dry_run else PH_DEAD_EDGES,
+        "phase": PH_MEMORY_COUNTERS if not dry_run else PH_SCHEMA_APP_DEDUPE,
         "dry_run": dry_run,
         "recent_minutes": recent_minutes,
         "result": _new_result_counters(),
@@ -78,42 +86,35 @@ def _initial_session_state(
     }
 
 
-def encode_repair_cursor(state: Dict[str, Any]) -> str:
-    """Serialize resumable session slice for the client (opaque string)."""
-    payload = {
-        "v": CURSOR_VERSION,
-        "phase": state["phase"],
+def state_to_dict(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Serialize repair state for persistence."""
+    return {
+        "v": STATE_VERSION,
+        "phase": state.get("phase", PH_DONE),
         "cursor": state.get("cursor") or {},
         "result": state.get("result") or _new_result_counters(),
         "dry_run": bool(state.get("dry_run")),
         "recent_minutes": state.get("recent_minutes"),
     }
-    raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    return base64.urlsafe_b64encode(raw).decode("ascii")
 
 
-def decode_repair_cursor(
-    repair_cursor: Optional[str],
+def state_from_dict(
+    payload: Optional[Dict[str, Any]],
+    *,
     dry_run: bool,
     recent_minutes: Optional[int],
 ) -> Dict[str, Any]:
-    """Restore session from client cursor, or start fresh."""
-    if not repair_cursor or not repair_cursor.strip():
+    """Restore session state from persisted dict or start fresh."""
+    if not payload:
         return _initial_session_state(dry_run, recent_minutes)
-    try:
-        raw = base64.urlsafe_b64decode(repair_cursor.strip().encode("ascii"))
-        payload = json.loads(raw.decode("utf-8"))
-    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, KeyError) as e:
-        logger.warning("Invalid repair_cursor, restarting repair: %s", e)
-        return _initial_session_state(dry_run, recent_minutes)
-    if payload.get("v") != CURSOR_VERSION:
-        logger.warning("Unknown repair_cursor version, restarting repair")
+    if payload.get("v") != STATE_VERSION:
+        logger.warning("Unknown repair state version, restarting repair")
         return _initial_session_state(dry_run, recent_minutes)
     if bool(payload.get("dry_run")) != dry_run:
-        logger.warning("repair_cursor dry_run mismatch, restarting repair")
+        logger.warning("Repair state dry_run mismatch, restarting repair")
         return _initial_session_state(dry_run, recent_minutes)
     return {
-        "phase": payload["phase"],
+        "phase": payload.get("phase", PH_DONE),
         "dry_run": dry_run,
         "recent_minutes": (
             recent_minutes
@@ -197,6 +198,327 @@ async def _tick_memory_agents(state: Dict[str, Any], limits: RepairLimits) -> bo
             res[key] = res.get(key, 0) + repair.get(key, 0)
 
     cur["agent_index"] = idx
+    if idx >= len(agent_ids):
+        state["phase"] = PH_SCHEMA_APP_DEDUPE
+        state["cursor"] = {}
+    return True
+
+
+async def _tick_schema_app_dedupe(
+    context: Any, state: Dict[str, Any], limits: RepairLimits
+) -> bool:
+    from jvagent.core.app import App
+    from jvagent.core.graph_repair import _compute_reachable_nodes_excluding_root
+
+    apps = await App.find({})
+    if len(apps) <= 1:
+        state["phase"] = PH_SCHEMA_AGENT_DEDUPE
+        state["cursor"] = {}
+        return True
+
+    scored: List[Tuple[int, str, Any]] = []
+    for app in apps:
+        reachable = await _compute_reachable_nodes_excluding_root(context, app)
+        density = len(reachable)
+        scored.append((density, app.id, app))
+
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    keep_id = scored[0][1]
+    removed = 0
+    for _, _, app in scored[1:]:
+        if app.id == keep_id:
+            continue
+        if not state["dry_run"]:
+            await app.delete(cascade=True)
+        removed += 1
+
+    if removed:
+        App.clear_cache()
+    state["result"]["duplicate_apps_removed"] += removed
+    state["phase"] = PH_SCHEMA_AGENT_DEDUPE
+    state["cursor"] = {}
+    return True
+
+
+async def _tick_schema_agent_dedupe(
+    state: Dict[str, Any], limits: RepairLimits
+) -> bool:
+    from collections import defaultdict
+
+    from jvspatial.core import get_default_context
+
+    from jvagent.core.agent import Agent
+    from jvagent.core.graph_repair import _compute_reachable_nodes_below
+
+    cur = state["cursor"]
+    if cur.get("dup_groups") is None:
+        grouped: Dict[str, List[str]] = defaultdict(list)
+        for agent in await Agent.find({}):
+            ns = getattr(agent, "namespace", "")
+            name = getattr(agent, "name", "")
+            grouped[f"{ns}\n{name}"].append(agent.id)
+        dup_groups = []
+        for key, ids in grouped.items():
+            if len(ids) > 1:
+                dup_groups.append({"key": key, "ids": sorted(ids)})
+        cur["dup_groups"] = dup_groups
+        cur["group_index"] = 0
+
+    groups: List[Dict[str, Any]] = cur.get("dup_groups", [])
+    idx = int(cur.get("group_index", 0))
+    batch = limits.batch_size
+    deadline = time.monotonic() + (limits.max_seconds or 1e9)
+    processed = 0
+    removed = 0
+    dry = state["dry_run"]
+    context = get_default_context()
+
+    while idx < len(groups) and processed < batch:
+        if limits.max_seconds and time.monotonic() >= deadline:
+            break
+        group = groups[idx]
+        idx += 1
+        processed += 1
+        ids = sorted(group.get("ids", []))
+        candidates = []
+        for candidate_id in ids:
+            candidate = await Agent.get(candidate_id)
+            if candidate:
+                candidates.append(candidate)
+        if len(candidates) <= 1:
+            continue
+        scored: List[Tuple[int, str, Any]] = []
+        for candidate in candidates:
+            reachable = await _compute_reachable_nodes_below(context, candidate)
+            scored.append((len(reachable), candidate.id, candidate))
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        keep_id = scored[0][1]
+        for _, _, dup in scored[1:]:
+            if dup.id == keep_id:
+                continue
+            if not dup:
+                continue
+            if not dry:
+                await dup.delete(cascade=True)
+            removed += 1
+
+    cur["group_index"] = idx
+    state["result"]["duplicate_agents_removed"] += removed
+    if removed:
+        clear_cache = getattr(Agent, "clear_cache", None)
+        if callable(clear_cache):
+            clear_cache()
+    if idx >= len(groups):
+        state["phase"] = PH_SCHEMA_ACTIONS_DEDUPE
+        state["cursor"] = {"agent_ids": None, "agent_index": 0}
+    return True
+
+
+async def _tick_schema_actions_dedupe(
+    state: Dict[str, Any], limits: RepairLimits
+) -> bool:
+    from jvagent.core.agent import Agent
+
+    cur = state["cursor"]
+    if cur.get("agent_ids") is None:
+        agents = await Agent.find({})
+        cur["agent_ids"] = [a.id for a in agents]
+        cur["agent_index"] = 0
+    agent_ids: List[str] = cur.get("agent_ids", [])
+    idx = int(cur.get("agent_index", 0))
+    deadline = time.monotonic() + (limits.max_seconds or 1e9)
+    batch = limits.batch_size
+    processed = 0
+    removed = 0
+    dry = state["dry_run"]
+
+    while idx < len(agent_ids) and processed < batch:
+        if limits.max_seconds and time.monotonic() >= deadline:
+            break
+        agent = await Agent.get(agent_ids[idx])
+        idx += 1
+        processed += 1
+        if not agent:
+            continue
+        actions_nodes = await agent.nodes(node="Actions")
+        if len(actions_nodes) <= 1:
+            continue
+        actions_nodes = sorted(actions_nodes, key=lambda node: node.id)
+        keep = actions_nodes[0]
+        keep_actions = 0
+        keep_nodes = getattr(keep, "nodes", None)
+        if callable(keep_nodes):
+            keep_result = keep_nodes(direction="out")
+            keep_actions = len(
+                await keep_result if isawaitable(keep_result) else keep_result
+            )
+        if keep_actions == 0:
+            for candidate in actions_nodes[1:]:
+                candidate_actions = 0
+                candidate_nodes = getattr(candidate, "nodes", None)
+                if callable(candidate_nodes):
+                    candidate_result = candidate_nodes(direction="out")
+                    candidate_actions = len(
+                        await candidate_result
+                        if isawaitable(candidate_result)
+                        else candidate_result
+                    )
+                if candidate_actions > keep_actions:
+                    keep = candidate
+                    keep_actions = candidate_actions
+        for dup in actions_nodes:
+            if dup.id == keep.id:
+                continue
+            if not dry:
+                await dup.delete(cascade=True)
+            removed += 1
+
+    cur["agent_index"] = idx
+    state["result"]["duplicate_actions_managers_removed"] += removed
+    if idx >= len(agent_ids):
+        state["phase"] = PH_SCHEMA_MEMORY_DEDUPE
+        state["cursor"] = {"agent_ids": agent_ids, "agent_index": 0}
+    return True
+
+
+async def _tick_schema_memory_dedupe(
+    state: Dict[str, Any], limits: RepairLimits
+) -> bool:
+    from jvspatial.core import get_default_context
+
+    from jvagent.core.agent import Agent
+    from jvagent.core.graph_repair import _compute_reachable_nodes_below
+    from jvagent.memory.manager import Memory
+
+    cur = state["cursor"]
+    if cur.get("agent_ids") is None:
+        agents = await Agent.find({})
+        cur["agent_ids"] = [a.id for a in agents]
+        cur["agent_index"] = 0
+    agent_ids: List[str] = cur.get("agent_ids", [])
+    idx = int(cur.get("agent_index", 0))
+    deadline = time.monotonic() + (limits.max_seconds or 1e9)
+    batch = limits.batch_size
+    processed = 0
+    removed = 0
+    dry = state["dry_run"]
+    context = get_default_context()
+
+    while idx < len(agent_ids) and processed < batch:
+        if limits.max_seconds and time.monotonic() >= deadline:
+            break
+        agent = await Agent.get(agent_ids[idx])
+        idx += 1
+        processed += 1
+        if not agent:
+            continue
+        memories = await agent.nodes(node="Memory")
+        if len(memories) <= 1:
+            continue
+        memories = sorted(memories, key=lambda node: node.id)
+        scored: List[Tuple[int, str, Any]] = []
+        for memory in memories:
+            reachable = await _compute_reachable_nodes_below(context, memory)
+            scored.append((len(reachable), memory.id, memory))
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        keep_id = scored[0][1]
+        for _, _, dup in scored[1:]:
+            if dup.id == keep_id:
+                continue
+            if not dry:
+                await dup.delete(cascade=True)
+            removed += 1
+
+    cur["agent_index"] = idx
+    state["result"]["duplicate_memory_nodes_removed"] += removed
+    if removed:
+        clear_cache = getattr(Memory, "clear_cache", None)
+        if callable(clear_cache):
+            clear_cache()
+    if idx >= len(agent_ids):
+        state["phase"] = PH_SCHEMA_SINGLETON_ACTIONS
+        state["cursor"] = {"agent_ids": None, "agent_index": 0}
+    return True
+
+
+async def _tick_schema_singleton_actions(
+    context: Any, state: Dict[str, Any], limits: RepairLimits
+) -> bool:
+    from collections import defaultdict
+
+    from jvspatial.core.entities.node import Node
+
+    from jvagent.action.base import Action
+    from jvagent.core.agent import Agent
+
+    cur = state["cursor"]
+    if cur.get("agent_ids") is None:
+        agents = await Agent.find({})
+        cur["agent_ids"] = [a.id for a in agents]
+        cur["agent_index"] = 0
+    agent_ids: List[str] = cur.get("agent_ids", [])
+    idx = int(cur.get("agent_index", 0))
+    deadline = time.monotonic() + (limits.max_seconds or 1e9)
+    batch = limits.batch_size
+    processed = 0
+    removed = 0
+    dry = state["dry_run"]
+
+    while idx < len(agent_ids) and processed < batch:
+        if limits.max_seconds and time.monotonic() >= deadline:
+            break
+        agent_id = agent_ids[idx]
+        idx += 1
+        processed += 1
+
+        raw = await context.database.find("node", {"context.agent_id": agent_id})
+        records = [
+            r
+            for r in raw
+            if r.get("context", {}).get("namespace")
+            and r.get("context", {}).get("label")
+        ]
+        singleton_by_archetype: Dict[str, List[str]] = defaultdict(list)
+        for record in records:
+            record_ctx = record.get("context", {})
+            metadata = record_ctx.get("metadata", {}) or {}
+            base_config = metadata.get("config", {}) or {}
+            config_overrides = metadata.get("config_overrides", {}) or {}
+            merged_config = {**base_config, **config_overrides}
+            if merged_config.get("singleton", True) is not True:
+                continue
+            archetype = metadata.get("class") or record.get("entity", "")
+            if not archetype:
+                continue
+            record_id = record.get("id")
+            if record_id:
+                singleton_by_archetype[archetype].append(record_id)
+
+        for archetype_ids in singleton_by_archetype.values():
+            ordered_ids = sorted(set(archetype_ids))
+            for dup_id in ordered_ids[1:]:
+                if dry:
+                    removed += 1
+                    continue
+                action = await Action.get(dup_id)
+                if action:
+                    agent = await Agent.get(agent_id)
+                    managers = await agent.nodes(node="Actions") if agent else []
+                    action_removed = False
+                    for manager in sorted(managers, key=lambda m: m.id):
+                        if await manager.deregister_action(dup_id):
+                            action_removed = True
+                            break
+                    if action_removed:
+                        removed += 1
+                        continue
+                ghost_node = await Node.get(dup_id)
+                if ghost_node:
+                    await ghost_node.delete(cascade=True)
+                    removed += 1
+
+    cur["agent_index"] = idx
+    state["result"]["duplicate_singleton_actions_removed"] += removed
     if idx >= len(agent_ids):
         state["phase"] = PH_DEAD_EDGES
         state["cursor"] = {"last_edge_id": ""}
@@ -411,7 +733,7 @@ async def _tick_orphans_bfs(
     from jvspatial.core import Node, Root
 
     cur = state["cursor"]
-    queue: List[str] = list(cur.get("bfs_queue", []))
+    queue = deque(cur.get("bfs_queue", []))
     seen: Set[str] = set(cur.get("bfs_seen", []) or [])
     batch = limits.batch_size
     deadline = time.monotonic() + (limits.max_seconds or 1e9)
@@ -420,7 +742,7 @@ async def _tick_orphans_bfs(
     while queue and steps < batch:
         if limits.max_seconds and time.monotonic() >= deadline:
             break
-        nid = queue.pop(0)
+        nid = queue.popleft()
         if nid in seen:
             continue
         seen.add(nid)
@@ -436,7 +758,7 @@ async def _tick_orphans_bfs(
         except Exception as e:
             logger.debug("BFS error at %s: %s", nid, e)
 
-    cur["bfs_queue"] = queue
+    cur["bfs_queue"] = list(queue)
     cur["bfs_seen"] = sorted(seen)
     if not queue:
         root = await Root.get()
@@ -510,6 +832,8 @@ async def _tick_orphans_delete(
     dry = state["dry_run"]
     root_id = "n.Root.root"
     deleted = 0
+    protected_entities = {"Memory", "User", "Conversation", "Interaction"}
+    structural_entities = {"App", "Agents", "Agent", "Actions", "Action"}
 
     while idx < len(oids):
         if limits.max_seconds and time.monotonic() >= deadline:
@@ -522,10 +846,23 @@ async def _tick_orphans_delete(
             continue
         try:
             node = await context.get(Node, node_id)
-            if node and not dry:
-                await node.delete(cascade=True)
+            if not node:
+                continue
+            entity_name = node.__class__.__name__
+            if entity_name in protected_entities:
+                incoming_edges = await node.edges(direction="in")
+                if incoming_edges:
+                    logger.warning(
+                        "Skipping orphan delete for %s %s; incoming edges still present",
+                        entity_name,
+                        node_id,
+                    )
+                    continue
+            if not dry:
+                cascade = entity_name in structural_entities
+                await node.delete(cascade=cascade)
                 deleted += 1
-            elif node and dry:
+            else:
                 deleted += 1
         except Exception as e:
             logger.warning("Failed to delete orphan node %s: %s", node_id, e)
@@ -697,6 +1034,22 @@ def _build_message(state: Dict[str, Any]) -> str:
         parts.append(
             f"{r['conversation_branch_edges_removed']} conv-branch edge(s) removed"
         )
+    if r.get("duplicate_apps_removed"):
+        parts.append(f"{r['duplicate_apps_removed']} app node(s) removed")
+    if r.get("duplicate_agents_removed"):
+        parts.append(f"{r['duplicate_agents_removed']} duplicate agent(s) removed")
+    if r.get("duplicate_actions_managers_removed"):
+        parts.append(
+            f"{r['duplicate_actions_managers_removed']} duplicate actions manager(s) removed"
+        )
+    if r.get("duplicate_memory_nodes_removed"):
+        parts.append(
+            f"{r['duplicate_memory_nodes_removed']} duplicate memory node(s) removed"
+        )
+    if r.get("duplicate_singleton_actions_removed"):
+        parts.append(
+            f"{r['duplicate_singleton_actions_removed']} duplicate singleton action(s) removed"
+        )
     if r.get("dead_edges_removed"):
         parts.append(f"{r['dead_edges_removed']} dead edge(s) removed")
     if r.get("orphaned_nodes_reattached"):
@@ -718,15 +1071,11 @@ def _build_message(state: Dict[str, Any]) -> str:
 
 
 async def run_repair_session(
-    dry_run: bool,
-    recent_minutes: Optional[int],
-    limits: RepairLimits,
-    repair_cursor: Optional[str] = None,
+    state: Dict[str, Any], limits: RepairLimits
 ) -> Dict[str, Any]:
-    """Run one bounded repair wave; return aggregates and optional ``next_repair_cursor``."""
+    """Run one bounded repair wave and return mutated state."""
     from jvspatial.core import get_default_context
 
-    state = decode_repair_cursor(repair_cursor, dry_run, recent_minutes)
     context = get_default_context()
     deadline = time.monotonic() + (limits.max_seconds or 86400.0)
 
@@ -740,6 +1089,16 @@ async def run_repair_session(
             await _tick_memory_counters(state, limits)
         elif phase == PH_MEMORY_AGENTS:
             await _tick_memory_agents(state, limits)
+        elif phase == PH_SCHEMA_APP_DEDUPE:
+            await _tick_schema_app_dedupe(context, state, limits)
+        elif phase == PH_SCHEMA_AGENT_DEDUPE:
+            await _tick_schema_agent_dedupe(state, limits)
+        elif phase == PH_SCHEMA_ACTIONS_DEDUPE:
+            await _tick_schema_actions_dedupe(state, limits)
+        elif phase == PH_SCHEMA_MEMORY_DEDUPE:
+            await _tick_schema_memory_dedupe(state, limits)
+        elif phase == PH_SCHEMA_SINGLETON_ACTIONS:
+            await _tick_schema_singleton_actions(context, state, limits)
         elif phase == PH_DEAD_EDGES:
             await _tick_dead_edges(context, state, limits)
         elif phase == PH_SYNC_PREPARE:
@@ -770,30 +1129,4 @@ async def run_repair_session(
         if state["phase"] == PH_DONE:
             break
 
-    status = "completed" if state["phase"] == PH_DONE else "in_progress"
-    out = dict(state["result"])
-    out["message"] = _build_message(state)
-    out["status"] = status
-    out["phase"] = state["phase"]
-    if dry_run:
-        out["dry_run"] = True
-    if status == "in_progress":
-        out["next_repair_cursor"] = encode_repair_cursor(state)
-    return out
-
-
-async def run_repair_until_done(
-    dry_run: bool,
-    recent_minutes: Optional[int],
-    limits: RepairLimits,
-) -> Dict[str, Any]:
-    """Run repair in-process until completed (no client cursor; in-memory only)."""
-    cursor: Optional[str] = None
-    while True:
-        out = await run_repair_session(
-            dry_run, recent_minutes, limits, repair_cursor=cursor
-        )
-        if out.get("status") == "completed":
-            out.pop("next_repair_cursor", None)
-            return out
-        cursor = out.get("next_repair_cursor")
+    return state

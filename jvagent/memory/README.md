@@ -13,11 +13,11 @@ The memory module provides the graph-based storage for user conversations and in
 
 ### App-Wide Repair
 
-`POST /graph/repair` is the recommended entry point for maintenance. It runs **memory repair for all agents first** (before any graph repair), then performs full structural graph repair (dead edges, orphaned nodes, duplicate edges). Query parameters: `dry_run`, `recent_minutes`. For large graphs, pass `batch_size` and/or `max_seconds`; when `status` is `in_progress`, repeat the call with the same flags and pass `repair_cursor` set to the previous response's `next_repair_cursor` until `status` is `completed` (no server-side job storage).
+`POST /graph/repair` is the recommended entry point for maintenance. It runs **memory repair for all agents first** (before any graph repair), then performs full structural graph repair (dead edges, orphaned nodes, duplicate edges). Query parameters: `dry_run`, `recent_minutes`, `max_seconds`. For large graphs, keep calling the same endpoint until `status` becomes `completed`; the server persists progress in a temporary `RepairState` node attached to `App`, and clears it automatically when the repair completes.
 
 Use `/api/agents/{agent_id}/memory/repair` only when you need to target a single agent's memory in isolation.
 
-**Note:** Endpoints marked Admin require the `admin` role. The GET users endpoint requires authentication only.
+**Note:** Endpoints marked Admin require the `admin` role. This includes `GET /api/agents/{agent_id}/memory/users`. The self-memory endpoint (`GET /api/agents/{agent_id}/memory/me`) requires authentication and resolves the caller's `user_id` from auth context.
 
 ## Entity Relationships
 
