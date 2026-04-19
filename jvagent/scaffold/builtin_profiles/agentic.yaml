@@ -18,7 +18,7 @@ actions:
       max_tokens: 8192
       timeout: 60
 
-  - action: jvagent/thinking_interact_action
+  - action: jvagent/skill_interact_action
     context:
       enabled: true
       description: Think-act-observe loop with progressive skill loading

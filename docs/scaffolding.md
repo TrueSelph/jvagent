@@ -182,7 +182,7 @@ Thinking agents support two skill sources:
 When a skill name exists in both, app-local overrides built-in.
 
 Runtime exposure is controlled per agent in `agents/<ns>/<id>/agent.yaml` on
-`jvagent/thinking_interact_action` via:
+`jvagent/skill_interact_action` via:
 
 - `skills`: `-all` or a list of names/globs (default unset = expose none)
 - `denied_skills`: optional subtractive names/globs

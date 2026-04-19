@@ -1,0 +1,12 @@
+package:
+  name: jvagent/pageindex_action
+  author: jvagent
+  archetype: PageIndexAction
+  version: 0.0.1
+  meta:
+    title: PageIndex Action
+    description: Vectorless RAG - search, ingest, and manage PageIndex documents
+    group: jvagent
+    type: action
+  dependencies:
+    jvagent: ~0.0.1

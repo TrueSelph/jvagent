@@ -749,7 +749,7 @@ def _load_agent_thinking_skill_config(
     for action in actions:
         if not isinstance(action, dict):
             continue
-        if action.get("action") != "jvagent/thinking_interact_action":
+        if action.get("action") != "jvagent/skill_interact_action":
             continue
         context = action.get("context", {})
         if not isinstance(context, dict):

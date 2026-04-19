@@ -1,0 +1,17 @@
+package:
+  name: jvagent/skill_interact_action
+  author: jvagent
+  archetype: SkillInteractAction
+  version: 0.0.1
+  meta:
+    title: Skill Interact Action
+    description: >-
+      Long-running agentic loop action implementing think-act-observe with
+      tool execution, skill loading, and extended thinking support.
+    group: jvagent
+    type: action
+  config:
+    singleton: false
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []

@@ -116,3 +116,147 @@ def test_apply_skill_selector_denied_filter_removes_matches() -> None:
         denied=["tri*", "research"],
     )
     assert set(selected.keys()) == {"code_review"}
+
+
+# ── requires-actions parsing ──────────────────────────────────────────
+
+
+def test_parse_skill_bundle_extracts_requires_actions(tmp_path: Path) -> None:
+    """requires-actions frontmatter key is parsed into bundle metadata."""
+    from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+    skill_dir = tmp_path / "my_skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """\
+---
+name: my_skill
+description: Needs an action
+requires-actions:
+  - GoogleCalendarAction
+  - EmailAction
+---
+
+SOP content.
+""",
+        encoding="utf-8",
+    )
+    data = parse_skill_bundle(skill_dir, source="builtin")
+    assert data is not None
+    assert data["requires_actions"] == ["GoogleCalendarAction", "EmailAction"]
+
+
+def test_parse_skill_bundle_requires_actions_defaults_empty(tmp_path: Path) -> None:
+    """Bundles without requires-actions get an empty list (backward compat)."""
+    from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+    skill_dir = tmp_path / "plain_skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """\
+---
+name: plain_skill
+description: No action deps
+---
+
+SOP content.
+""",
+        encoding="utf-8",
+    )
+    data = parse_skill_bundle(skill_dir, source="builtin")
+    assert data is not None
+    assert data["requires_actions"] == []
+
+
+def test_parse_skill_bundle_requires_actions_string_form(tmp_path: Path) -> None:
+    """Single-string requires-actions is normalized to a one-item list."""
+    from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+    skill_dir = tmp_path / "single_action"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """\
+---
+name: single_action
+description: One action
+requires-actions: GoogleCalendarAction
+---
+
+SOP content.
+""",
+        encoding="utf-8",
+    )
+    data = parse_skill_bundle(skill_dir, source="builtin")
+    assert data is not None
+    assert data["requires_actions"] == ["GoogleCalendarAction"]
+
+
+# ── response-mode parsing ─────────────────────────────────────────────
+
+
+def test_parse_skill_bundle_response_mode_respond(tmp_path: Path) -> None:
+    """response-mode: respond is parsed into bundle metadata."""
+    from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+    skill_dir = tmp_path / "respond_skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """\
+---
+name: respond_skill
+description: Uses respond mode
+response-mode: respond
+---
+
+SOP content.
+""",
+        encoding="utf-8",
+    )
+    data = parse_skill_bundle(skill_dir, source="builtin")
+    assert data is not None
+    assert data["response_mode"] == "respond"
+
+
+def test_parse_skill_bundle_response_mode_defaults_none(tmp_path: Path) -> None:
+    """Bundles without response-mode get None (inherit action default)."""
+    from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+    skill_dir = tmp_path / "no_response_mode"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """\
+---
+name: no_response_mode
+description: No response mode
+---
+
+SOP content.
+""",
+        encoding="utf-8",
+    )
+    data = parse_skill_bundle(skill_dir, source="builtin")
+    assert data is not None
+    assert data["response_mode"] is None
+
+
+def test_parse_skill_bundle_response_mode_invalid_warns(tmp_path: Path) -> None:
+    """Invalid response-mode values default to None with a warning."""
+    from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+    skill_dir = tmp_path / "bad_mode"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """\
+---
+name: bad_mode
+description: Bad mode
+response-mode: teleport
+---
+
+SOP content.
+""",
+        encoding="utf-8",
+    )
+    data = parse_skill_bundle(skill_dir, source="builtin")
+    assert data is not None
+    assert data["response_mode"] is None

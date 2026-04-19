@@ -325,23 +325,21 @@ CMD ["jvagent", "run", "--host", "0.0.0.0", "--port", "8000"]
     )
 
 
-def _has_thinking_interact_action(actions: List[Dict[str, Any]]) -> bool:
+def _has_skill_interact_action(actions: List[Dict[str, Any]]) -> bool:
     for item in actions:
         if not isinstance(item, dict):
             continue
-        if item.get("action") == "jvagent/thinking_interact_action":
+        if item.get("action") == "jvagent/skill_interact_action":
             return True
     return False
 
 
-def _inject_thinking_skill_defaults(
-    actions: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
-    """Ensure scaffolded thinking actions opt into full skill exposure."""
+def _inject_skill_defaults(actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Ensure scaffolded skill actions opt into full skill exposure."""
     for item in actions:
         if not isinstance(item, dict):
             continue
-        if item.get("action") != "jvagent/thinking_interact_action":
+        if item.get("action") != "jvagent/skill_interact_action":
             continue
 
         context = item.get("context")
@@ -466,7 +464,7 @@ def create_app(ctx: CreateAppContext) -> None:
             _default_agent_alias(agent_ref),
             f"{ctx.title} — {_default_agent_alias(agent_ref)}",
         )
-        actions = _inject_thinking_skill_defaults(actions)
+        actions = _inject_skill_defaults(actions)
         agent_dir = agents_root / ns / aid
         agent_dir.mkdir(parents=True, exist_ok=True)
         write_agent_yaml(
@@ -484,7 +482,7 @@ def create_app(ctx: CreateAppContext) -> None:
             f"Defined as `{agent_ref}`. Edit `agent.yaml` to change actions.\n",
             encoding="utf-8",
         )
-        if _has_thinking_interact_action(actions):
+        if _has_skill_interact_action(actions):
             _write_starter_skills_bundle(agent_dir)
 
     _write_readme_app(root, ctx)
@@ -561,7 +559,7 @@ def create_agent_in_app(ctx: CreateAgentContext) -> None:
         _default_agent_alias(agent_ref),
         f"{app_title} — {_default_agent_alias(agent_ref)}",
     )
-    actions = _inject_thinking_skill_defaults(actions)
+    actions = _inject_skill_defaults(actions)
 
     agent_dir.mkdir(parents=True, exist_ok=True)
     write_agent_yaml(
@@ -579,7 +577,7 @@ def create_agent_in_app(ctx: CreateAgentContext) -> None:
         f"Defined as `{agent_ref}`. Edit `agent.yaml` to change actions.\n",
         encoding="utf-8",
     )
-    if _has_thinking_interact_action(actions):
+    if _has_skill_interact_action(actions):
         _write_starter_skills_bundle(agent_dir)
 
     if agent_ref not in agents_list:

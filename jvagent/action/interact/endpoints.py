@@ -14,6 +14,7 @@ from jvspatial import create_task, flush_deferred_entities
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import (
+    JVSpatialAPIException,
     RateLimitError,
     ResourceNotFoundError,
     ValidationError,
@@ -679,6 +680,11 @@ async def interact_endpoint(
 
                 return result
 
+        except JVSpatialAPIException:
+            # Preserve typed API errors (404 ResourceNotFoundError, 429 RateLimitError,
+            # 422 ValidationError, etc.) so the correct HTTP status and message are
+            # returned to the client instead of being collapsed into a generic 422.
+            raise
         except ValueError as e:
             raise ValidationError(message=str(e), details={"error": str(e)})
         except Exception as e:

@@ -57,12 +57,51 @@ def _normalize_allowed_tools(raw_value: Any, skill_path: Path) -> List[str]:
     return []
 
 
+def _normalize_requires_actions(raw_value: Any, skill_path: Path) -> List[str]:
+    """Normalize requires-actions into a list of non-empty action type names."""
+    if raw_value is None:
+        return []
+    if isinstance(raw_value, str):
+        value = raw_value.strip()
+        return [value] if value else []
+    if isinstance(raw_value, list):
+        normalized = []
+        for item in raw_value:
+            value = str(item).strip()
+            if value:
+                normalized.append(value)
+        return normalized
+    logger.warning(
+        "Skill bundle %s has invalid requires-actions type: %s",
+        skill_path,
+        type(raw_value).__name__,
+    )
+    return []
+
+
+def _normalize_response_mode(raw_value: Any, skill_path: Path) -> Optional[str]:
+    """Normalize response-mode into 'publish', 'respond', or None (inherit)."""
+    if raw_value is None:
+        return None
+    value = str(raw_value).strip().lower()
+    if value in ("publish", "respond"):
+        return value
+    if value:
+        logger.warning(
+            "Skill bundle %s has invalid response-mode '%s'; expected 'publish' or 'respond'. "
+            "Defaulting to inherit (None).",
+            skill_path,
+            raw_value,
+        )
+    return None
+
+
 def parse_skill_bundle(
     skill_dir: Path,
     *,
     source: str,
 ) -> Optional[Dict[str, Any]]:
-    """Parse one skill directory into ThinkingInteractAction-compatible metadata."""
+    """Parse one skill directory into SkillInteractAction-compatible metadata."""
     skill_file = skill_dir / "SKILL.md"
     if not skill_file.is_file():
         return None
@@ -101,6 +140,12 @@ def parse_skill_bundle(
     allowed_tools = _normalize_allowed_tools(
         frontmatter.get("allowed-tools"), skill_file
     )
+    requires_actions = _normalize_requires_actions(
+        frontmatter.get("requires-actions"), skill_file
+    )
+    response_mode = _normalize_response_mode(
+        frontmatter.get("response-mode"), skill_file
+    )
     tool_files = [
         str(path)
         for path in sorted(skill_dir.glob("*.py"))
@@ -114,6 +159,8 @@ def parse_skill_bundle(
         "dir": str(skill_dir),
         "tool_files": tool_files,
         "allowed_tools": allowed_tools,
+        "requires_actions": requires_actions,
+        "response_mode": response_mode,
         "source": source,
         "metadata": {
             "version": frontmatter.get("version"),

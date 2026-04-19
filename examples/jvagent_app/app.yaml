@@ -76,4 +76,4 @@ config:
 agents:
   - jvagent/example_agent
   - resolv/resolv_demo
-  - jvagent/thinking_agent
+  - jvagent/skills_agent

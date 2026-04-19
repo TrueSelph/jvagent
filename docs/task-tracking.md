@@ -15,10 +15,10 @@ Each entry in `active_tasks` uses this normalized shape:
 
 ```json
 {
-  "task_id": "ThinkingInteractAction:907b4a8af2e5",
+  "task_id": "SkillInteractAction:907b4a8af2e5",
   "task_type": "AGENTIC_LOOP",
   "description": "Agentic task: ...",
-  "action_name": "ThinkingInteractAction",
+  "action_name": "SkillInteractAction",
   "status": "active",
   "next_trigger_at": null,
   "trigger_condition": null,
@@ -103,7 +103,7 @@ Webhook URLs can be configured with:
 
 ## Integration notes
 
-- **ThinkingInteractAction** uses `visitor.tasks.track(...)` and records structured steps.
+- **SkillInteractAction** uses `visitor.tasks.track(...)` and records structured steps.
 - **DirectiveBuilder** starts and completes/cancels interview tasks through `visitor.tasks`.
 - **TaskCreationInteractAction** creates proactive tasks via `visitor.tasks.start(...)`.
 - **TaskDispatcher** reserves tasks (`reserved`) before dispatch and completes/fails through service APIs.
@@ -114,4 +114,4 @@ Webhook URLs can be configured with:
 - [Conversation](jvagent/memory/conversation.py)
 - [TaskService](jvagent/memory/services/task_service.py)
 - [InteractWalker](jvagent/action/interact/interact_walker.py)
-- [ThinkingInteractAction](jvagent/action/thinking/thinking_interact_action.py)
+- [SkillInteractAction](jvagent/action/skill/skill_interact_action.py)

@@ -1,6 +1,6 @@
 # Skill Bundles
 
-Claude-style skill bundles for `ThinkingInteractAction`. Each bundle is a directory containing a `SKILL.md` SOP file and optional Python tool modules.
+Claude-style skill bundles for `SkillInteractAction`. Each bundle is a directory containing a `SKILL.md` SOP file and optional Python tool modules.
 
 ## Layout
 
@@ -41,6 +41,8 @@ tags:
 | `name` | Recommended | str | Skill identifier. Defaults to directory name if omitted. |
 | `description` | Recommended | str | Shown in the skill index that the LLM sees at loop start. |
 | `allowed-tools` | Optional | list[str] or str | Whitelist of Python tool names to activate from this bundle. If omitted, all `.py` tools are activated. |
+| `requires-actions` | Optional | list[str] or str | Action entity types this skill depends on (e.g. `GoogleCalendarAction`). If any are missing or disabled at activation time, `read_skill` returns an error. |
+| `response-mode` | Optional | str | Override the action's response mode for this skill: `respond` (route through PersonaAction) or `publish` (direct bus delivery). If omitted, inherits the action's `response_mode` attribute. |
 | `version` | Optional | int/str | Version number for tracking |
 | `license` | Optional | str | License identifier |
 | `tags` | Optional | list[str] | Tags for categorization |
@@ -84,6 +86,29 @@ async def execute(arguments: dict) -> Any:
 
 If `allowed-tools` is set in the frontmatter, only tools whose names appear in the whitelist are activated. Tools not in the whitelist are silently skipped.
 
+### Action-Bound Tools
+
+Tool modules that need to call methods on graph-persisted Actions (like `GoogleCalendarAction.list_events()`) should:
+
+1. Declare the required actions in `SKILL.md` frontmatter:
+
+   ```yaml
+   requires-actions:
+     - GoogleCalendarAction
+   ```
+
+2. Accept a `visitor` keyword argument in `execute()`:
+
+   ```python
+   async def execute(arguments: dict, *, visitor: Any) -> Any:
+       action = await visitor.action_resolver.resolve("GoogleCalendarAction")
+       if action is None:
+           return {"error": "GoogleCalendarAction not available"}
+       return await action.list_events()
+   ```
+
+The `visitor` kwarg is automatically injected by ToolExecutor when it detects it in the function signature via `inspect.signature()`. The `visitor.action_resolver` attribute is set by SkillInteractAction at loop startup and provides per-interaction caching of resolved Actions.
+
 ## Sources
 
 Skill bundles are resolved from two locations:
@@ -92,6 +117,49 @@ Skill bundles are resolved from two locations:
 
 ```text
 jvagent/skills/
+  calendar/
+    SKILL.md
+    list_events.py
+    create_event.py
+    delete_event.py
+  gmail/
+    SKILL.md
+    send_email.py
+    list_messages.py
+    get_message.py
+    mark_read.py
+    get_profile.py
+  google_sheets/
+    SKILL.md
+    read_spreadsheet.py
+    ...
+  google_drive/
+    SKILL.md
+    upload_file.py
+    ...
+  outlook_calendar/
+    SKILL.md
+    ...
+  outlook_mail/
+    SKILL.md
+    ...
+  microsoft_excel/
+    SKILL.md
+    ...
+  microsoft_onedrive/
+    SKILL.md
+    ...
+  web_search/
+    SKILL.md
+    search.py
+  pageindex_search/
+    SKILL.md
+    search.py
+  pageindex_docs/
+    SKILL.md
+    list_documents.py
+    assimilate.py
+    delete_document.py
   code_review/
     SKILL.md
   research/
@@ -106,7 +174,7 @@ These ship with jvagent and are available to all agents.
 ### 2. App-Local (`agents/<namespace>/<agent_id>/skills/*`)
 
 ```text
-agents/jvagent/thinking_agent/
+agents/jvagent/skills_agent/
   skills/
     local_research/
       SKILL.md
@@ -129,7 +197,7 @@ This lets you customize or replace any built-in skill without modifying the jvag
 
 Skills are **not** eagerly loaded. The flow is:
 
-1. `ThinkingInteractAction` resolves bundles from the configured source.
+1. `SkillInteractAction` resolves bundles from the configured source.
 2. Bundle metadata is registered on `ToolExecutor`, but Python tools are **hidden** from the LLM.
 3. A `read_skill` tool is injected, along with a skill index in the system prompt:
 
@@ -152,10 +220,10 @@ This mirrors the Claude Code skill model: the LLM discovers capabilities on dema
 
 ## Per-Agent Configuration
 
-In `agent.yaml`, control which bundles are exposed via `ThinkingInteractAction`:
+In `agent.yaml`, control which bundles are exposed via `SkillInteractAction`:
 
 ```yaml
-- action: jvagent/thinking_interact_action
+- action: jvagent/skill_interact_action
   context:
     # Skill bundle selector
     skills: -all                # Expose all discovered bundles
@@ -214,11 +282,22 @@ Displays the full SKILL.md content and metadata.
 
 ## Built-in Skills
 
-| Skill | Description | Tools |
-|-------|-------------|-------|
-| `code_review` | Review code for correctness, security, and maintainability | (SOP only) |
-| `research` | Investigate a topic with evidence-first synthesis and citations | (SOP only) |
-| `triage` | Rapidly triage issues by severity, impact, and next action | `prioritize_findings` |
+| Skill | Description | Tools | Requires Actions |
+|-------|-------------|-------|-----------------|
+| `calendar` | Manage Google Calendar events (list, create, delete) | `list_events`, `create_event`, `delete_event` | `GoogleCalendarAction` |
+| `gmail` | Send and manage Gmail messages | `send_email`, `list_messages`, `get_message`, `mark_read`, `get_profile` | `GoogleGmailAction` |
+| `google_sheets` | Read, write, and manage Google Sheets | `read_spreadsheet`, `last_filled_row`, `update_spreadsheet`, `append_spreadsheet`, `batch_clear`, `format_cells`, `merge_cells`, `unmerge_cells`, `create_spreadsheet`, `create_worksheet`, `update_worksheet`, `delete_worksheet`, `share_spreadsheet`, `delete_spreadsheet` | `GoogleSheetsAction` |
+| `google_drive` | Upload, share, and manage Google Drive files | `upload_file`, `delete_file`, `get_file_metadata`, `list_files`, `share_file`, `get_media` | `GoogleDriveAction` |
+| `outlook_calendar` | Manage Outlook Calendar events (list, create, delete) | `list_events`, `create_event`, `delete_event` | `MicrosoftOutlookCalendarAction` |
+| `outlook_mail` | Send and manage Outlook mail messages | `send_email`, `list_messages`, `list_inbox_messages`, `get_message`, `mark_read`, `get_profile` | `MicrosoftOutlookMailAction` |
+| `microsoft_excel` | Read, write, and manage Excel workbooks | `read_spreadsheet`, `update_spreadsheet`, `append_spreadsheet`, `batch_clear`, `create_spreadsheet`, `create_worksheet`, `update_worksheet`, `delete_worksheet`, `share_spreadsheet`, `delete_spreadsheet` | `MicrosoftExcelAction` |
+| `microsoft_onedrive` | Upload, share, and manage OneDrive files | `upload_file`, `delete_file`, `list_files`, `share_file` | `MicrosoftOneDriveAction` |
+| `web_search` | Search the web for current information | `search` | `SerperWebSearchAction` |
+| `pageindex_search` | Search PageIndex documents using vectorless retrieval | `search` | `PageIndexAction` |
+| `pageindex_docs` | List, ingest, and remove PageIndex documents | `list_documents`, `assimilate`, `delete_document` | `PageIndexAction` |
+| `code_review` | Review code for correctness, security, and maintainability | (SOP only) | — |
+| `research` | Investigate a topic with evidence-first synthesis and citations | (SOP only) | — |
+| `triage` | Rapidly triage issues by severity, impact, and next action | `prioritize_findings` | — |
 
 ## Creating a New Built-in Skill
 
@@ -299,10 +378,10 @@ data = parse_skill_bundle(Path("jvagent/skills/triage"), source="builtin")
 builtin = resolve_builtin_skills()
 
 # Resolve app-local skills for an agent
-app_local = resolve_agent_skills(app_root=".", namespace="jvagent", agent_name="thinking_agent")
+app_local = resolve_agent_skills(app_root=".", namespace="jvagent", agent_name="skills_agent")
 
 # Merge with precedence
-merged = resolve_merged_skill_bundles(".", "jvagent", "thinking_agent", include_builtin=True)
+merged = resolve_merged_skill_bundles(".", "jvagent", "skills_agent", include_builtin=True)
 
 # Apply selector and deny filters
 filtered = apply_skill_selector(merged, selector="-all", denied=["triage"])
@@ -311,10 +390,10 @@ filtered = apply_skill_selector(merged, selector=["code_*"], denied=None)
 
 ## See Also
 
-- [ThinkingInteractAction README](../action/thinking/README.md) -- The agentic loop that consumes skill bundles
+- [SkillInteractAction README](../action/skill/README.md) -- The agentic loop that consumes skill bundles
 - [MCPAction README](../action/mcp/README.md) -- MCP server configuration for tool providers
 
 ---
 
-**Last Updated**: April 18, 2026
+**Last Updated**: April 19, 2026
 **Version**: 0.0.1
