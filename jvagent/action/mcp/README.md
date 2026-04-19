@@ -1,6 +1,6 @@
 # MCPAction
 
-MCPAction is a core action that pairs with a **named MCP server** and exposes `fulfill(natural_language_command: str)` so other actions (e.g. InteractActions) can pass a natural language request and receive the MCP tool result.
+MCPAction is a core singleton gateway action that manages **one or more named MCP servers** and exposes `fulfill(natural_language_command: str)` so other actions (e.g. InteractActions) can pass a natural language request and receive the MCP tool result.
 
 ## Requirements
 
@@ -8,30 +8,35 @@ MCPAction is a core action that pairs with a **named MCP server** and exposes `f
 
 ## Configuration
 
-Configure one named server per MCPAction instance. All attributes can be overridden via `context` in agent.yaml.
+Configure MCP servers in `context.servers` (one MCPAction instance can host many providers). All attributes can be overridden via `context` in `agent.yaml`.
+
+Top-level context attributes:
 
 | Attribute | Description | Default |
 |-----------|-------------|---------|
-| `server_name` | Logical name (logging, default label) | `mcp` |
-| `transport` | `stdio` or `streamable_http` | `streamable_http` |
-| **stdio** | | |
-| `command` | Executable to run | `""` |
-| `args` | Command line arguments | `[]` |
-| `env` | Optional environment dict | `null` |
-| **streamable_http** | | |
-| `url` | Endpoint URL (e.g. `http://localhost:8000/mcp`) | `""` |
-| **Model (NL→tool)** | | |
-| `model_action_type` | LanguageModelAction type | `OpenAILanguageModelAction` |
+| `model_action_type` | LanguageModelAction type for NL→tool mapping | `OpenAILanguageModelAction` |
 | `model` | Model name for tool selection | `gpt-4o-mini` |
-| **Timeouts** | | |
+| `servers` | List of MCP server configs | `[]` |
+
+Per-server config (`servers[]`):
+
+| Attribute | Description | Default |
+|-----------|-------------|---------|
+| `name` | Logical server name used by callers (`tool_servers`) | required |
+| `enabled` | Whether this server is available | `true` |
+| `transport` | `stdio` or `streamable_http` | `streamable_http` |
+| `command` | For stdio: executable to run | `""` |
+| `args` | For stdio: command line arguments | `[]` |
+| `env` | For stdio: optional environment dict | `null` |
+| `url` | For streamable_http: endpoint URL | `""` |
 | `mcp_connect_timeout` | Connect + initialize timeout (seconds) | `10.0` |
 | `mcp_call_timeout` | Tool call timeout (seconds) | `30.0` |
-
-**Label uniqueness**: Each MCPAction on an agent must have a distinct `label`. If you omit `label`, it defaults to `MCP ({server_name})`. When adding a second MCP server, set an explicit unique label (e.g. `"Weather MCP"`, `"Files MCP"`).
+| `tools` | Tool selector: `"-all"` or list of names/globs | `"-all"` |
+| `denied_tools` | Subtractive tool filter (supports globs) | `[]` |
 
 ## Agent wiring (agent.yaml)
 
-The agent must have a LanguageModelAction. Add one or more MCP actions with distinct labels:
+The agent must have a LanguageModelAction. Add one MCP action with all desired MCP servers:
 
 ```yaml
 actions:
@@ -40,24 +45,35 @@ actions:
 
   - action: jvagent/mcp
     context:
-      label: "Weather MCP"
-      server_name: weather
-      transport: streamable_http
-      url: "http://localhost:8000/mcp"
       model_action_type: OpenAILanguageModelAction
       model: gpt-4o-mini
-      mcp_connect_timeout: 10.0
-      mcp_call_timeout: 30.0
+      servers:
+        - name: weather
+          transport: streamable_http
+          url: "http://localhost:8000/mcp"
+          tools: "-all"
+          denied_tools: []
+        - name: filesystem
+          transport: stdio
+          command: npx
+          args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+          mcp_connect_timeout: 10.0
+          mcp_call_timeout: 30.0
+          tools: ["read_*", "list_*"]
+          denied_tools: ["list_secrets*"]
 ```
-
-Multiple MCP servers = multiple `jvagent/mcp` entries with distinct `label` and connection config.
 
 ## Caller usage
 
 From an **InteractAction** (or any action that can call `get_action`):
 
-- **Single MCPAction**: `mcp = await self.get_action(MCPAction)` then `result = await mcp.fulfill("What's the weather in Kansas tomorrow?")`.
-- **Multiple MCPAction instances**: Use label — e.g. `agent = await self.get_agent(); mcp = await agent.get_action("Weather MCP")`, then `result = await mcp.fulfill(...)`.
+- `mcp = await self.get_action(MCPAction)` then `result = await mcp.fulfill("What's the weather in Kansas tomorrow?")`.
+- `fulfill()` aggregates tools across all enabled configured servers and asks the model to choose `{server_name, tool_name, arguments}`.
+
+From `SkillInteractAction` / `ToolExecutor` integration:
+
+- `tool_servers` still references server names (`servers[].name`).
+- `ToolExecutor` registers tools with collision-safe names like `mcp_<server>_<tool>` internally and dispatches to the owning server.
 
 Use `result.text` and optionally `result.structured` or `result.error_kind` (e.g. `no_tool`, `tool_failed`, `gateway_error`) for branching.
 
@@ -68,6 +84,6 @@ Use `result.text` and optionally `result.structured` or `result.error_kind` (e.g
 
 ## Session and tool list
 
-- **Tool list**: Cached per session; invalidated on reconnect or disconnect. No TTL or live refresh during the session.
-- **Stdio**: One long-lived session (one subprocess) per MCPAction instance. If the process dies, the next `fulfill()` will reconnect.
-- **Streamable HTTP**: One shared session with connection reuse; same per-instance lock so only one logical request uses the client at a time.
+- **Tool list**: Cached per server session; invalidated on reconnect/disconnect. No TTL or live refresh during a session.
+- **Stdio**: One long-lived subprocess session per configured server.
+- **Streamable HTTP**: One shared reusable session per configured server.

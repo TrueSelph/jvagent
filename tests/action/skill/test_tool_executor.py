@@ -118,11 +118,11 @@ async def execute(arguments):
             tool_files=[str(tool_file)],
             allowed_tools=["echo_tool"],
         )
-        assert "echo_tool" not in executor.get_tool_names()
+        assert "example_skill__echo_tool" not in executor.get_tool_names()
 
         activated = await executor.activate_skill("example_skill")
-        assert activated == ["echo_tool"]
-        assert "echo_tool" in executor.get_tool_names()
+        assert activated == ["example_skill__echo_tool"]
+        assert "example_skill__echo_tool" in executor.get_tool_names()
 
 
 class TestToolExecutorDispatch:
@@ -305,7 +305,7 @@ class TestToolExecutorMCP:
         # Mock MCP action
         mock_mcp = MagicMock(spec=MCPAction)
         mock_mcp.enabled = True
-        mock_mcp.server_name = "filesystem"
+        mock_mcp.get_server_names = MagicMock(return_value=["filesystem"])
         mock_tool = MagicMock()
         mock_tool.name = "fs_read"
         mock_tool.description = "Read a file"
@@ -355,7 +355,7 @@ class TestToolExecutorMCP:
         mcp_action = MagicMock()
         mcp_action.get_client = MagicMock(return_value=client)
 
-        result = await executor._dispatch_mcp_tool(call, mcp_action)
+        result = await executor._dispatch_mcp_tool(call, (mcp_action, "filesystem"))
         assert result == "ok"
 
     @pytest.mark.asyncio
@@ -392,5 +392,5 @@ class TestToolExecutorMCP:
         mcp_action = MagicMock()
         mcp_action.get_client = MagicMock(return_value=client)
 
-        result = await executor._dispatch_mcp_tool(call, mcp_action)
+        result = await executor._dispatch_mcp_tool(call, (mcp_action, "filesystem"))
         assert result == "/tmp\n/var"

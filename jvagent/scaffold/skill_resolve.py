@@ -146,6 +146,12 @@ def parse_skill_bundle(
     response_mode = _normalize_response_mode(
         frontmatter.get("response-mode"), skill_file
     )
+    tags = frontmatter.get("tags") or []
+    if isinstance(tags, str):
+        tags = [tags]
+    scope_hint = ", ".join(str(tag) for tag in tags if str(tag).strip())
+    if not scope_hint:
+        scope_hint = description
     tool_files = [
         str(path)
         for path in sorted(skill_dir.glob("*.py"))
@@ -161,11 +167,12 @@ def parse_skill_bundle(
         "allowed_tools": allowed_tools,
         "requires_actions": requires_actions,
         "response_mode": response_mode,
+        "scope_hint": scope_hint,
         "source": source,
         "metadata": {
             "version": frontmatter.get("version"),
             "license": frontmatter.get("license"),
-            "tags": frontmatter.get("tags"),
+            "tags": tags,
         },
     }
 

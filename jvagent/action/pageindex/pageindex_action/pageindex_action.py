@@ -93,13 +93,12 @@ class PageIndexAction(Action):
             or "default"
         )
 
-    def _resolve_model_action(self) -> Any:
+    async def _resolve_model_action(self) -> Any:
         """Resolve the model action for tree_search LLM calls."""
         cfg = self.config or {}
         model_action_type = cfg.get("model_action_type", "OpenAILanguageModelAction")
-        # Lazy resolution — avoids circular imports at module level
         try:
-            return self.get_action(model_action_type)
+            return await self.get_action(model_action_type)
         except Exception:
             return None
 
@@ -169,7 +168,7 @@ class PageIndexAction(Action):
         if cfg.get("retrieval_excerpt_source") is not None:
             set_pageindex_retrieval_excerpt_source(cfg["retrieval_excerpt_source"])
 
-        model_action = self._resolve_model_action()
+        model_action = await self._resolve_model_action()
         prev_model_action = None
         try:
             if model_action:
@@ -232,7 +231,7 @@ class PageIndexAction(Action):
         from ..documents import assimilate_document
         from ..llm_bridge import set_pageindex_model_action
 
-        model_action = self._resolve_model_action()
+        model_action = await self._resolve_model_action()
         prev_model_action = None
         try:
             if model_action:

@@ -1,19 +1,19 @@
-"""Prompt template for NL -> tool name + arguments selection."""
+"""Prompt template for NL -> server/tool/arguments selection."""
 
 MCP_PROMPTS_VERSION = 1
 
-TOOL_SELECTION_SYSTEM = """You are a tool selector. Given a user request and a list of MCP tools (name, description, inputSchema), output exactly one tool name and a JSON object of arguments to call it with.
+TOOL_SELECTION_SYSTEM = """You are a tool selector. Given a user request and a list of MCP tools (server, name, description, inputSchema), output exactly one server+tool pair and a JSON object of arguments to call it with.
 Output only valid JSON in this format, with no other text:
-{"tool_name": "<name>", "arguments": {<key-value pairs for the tool's inputSchema>}}
-If no tool fits the request, use: {"tool_name": "", "arguments": {}}
+{{"server_name": "<server>", "tool_name": "<name>", "arguments": {{<key-value pairs for the tool's inputSchema>}}}}
+If no tool fits the request, use: {{"server_name": "", "tool_name": "", "arguments": {{}}}}
 """
 
 TOOL_SELECTION_USER_TEMPLATE = """User request: {natural_language_command}
 
-Available tools (name, description, inputSchema):
+Available tools (server, name, description, inputSchema):
 {tools_description}
 
-Respond with exactly one JSON object: {"tool_name": "...", "arguments": {...}}
+Respond with exactly one JSON object: {{"server_name": "...", "tool_name": "...", "arguments": {{...}}}}
 """
 
 

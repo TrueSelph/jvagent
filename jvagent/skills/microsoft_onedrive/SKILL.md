@@ -4,10 +4,10 @@ description: Upload, share, and manage OneDrive files.
 requires-actions:
   - MicrosoftOneDriveAction
 allowed-tools:
-  - upload_file
-  - delete_file
-  - list_files
-  - share_file
+  - microsoft_onedrive__upload_file
+  - microsoft_onedrive__delete_file
+  - microsoft_onedrive__list_files
+  - microsoft_onedrive__share_file
 version: 1
 tags:
   - storage
@@ -23,4 +23,14 @@ tags:
 ### Constraints
 
 - Always confirm with the user before deleting files.
-- For `upload_file`, provide either `content` (text content) or `source_url` (URL to download from).
+- For `microsoft_onedrive__upload_file`, provide either `content` (text content) or `source_url` (URL to download from).
+
+## Scope
+
+This skill is for OneDrive file operations: upload, list, share, and delete. Use it when the user is managing files in Microsoft OneDrive. Do not use it for Excel cell edits, Outlook mail, or calendar workflows.
+
+## Grounding
+
+- Only report file names, IDs, and share results that are returned by OneDrive tools.
+- If listing returns no files, explicitly state that no matching files were found.
+- Always confirm before `microsoft_onedrive__delete_file` or broad sharing operations.

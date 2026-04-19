@@ -8,11 +8,11 @@ package:
   version: 0.0.1
   meta:
     title: MCP Action
-    description: Gateway action that pairs with a named MCP server; exposes fulfill(natural_language_command) for use by other actions (e.g. InteractActions).
+    description: Gateway action that manages one or more named MCP servers and exposes fulfill(natural_language_command) for use by other actions (e.g. InteractActions).
     group: jvagent
     type: action
   config:
-    singleton: false  # Multiple MCPAction instances per agent allowed (one per MCP server).
+    singleton: true  # One MCPAction can host multiple MCP servers.
   dependencies:
     jvagent: ~0.0.1
     actions: []

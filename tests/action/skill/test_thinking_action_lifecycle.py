@@ -14,7 +14,7 @@ def _mock_action():
     action.get_class_name = MagicMock(return_value="SkillInteractAction")
     action._ensure_interaction = MagicMock(return_value=True)
     action._discover_skill_bundles = AsyncMock(return_value={})
-    action._run_agentic_loop = AsyncMock(return_value=("final", "completed"))
+    action._run_agentic_loop = AsyncMock(return_value=("final", "completed", 0))
     action.publish = AsyncMock()
     action.unrecord_action_execution = AsyncMock()
     action.task_sync_every_steps = 3
@@ -23,10 +23,19 @@ def _mock_action():
     action.call_timeout_seconds = 30.0
     action.skills = []
     action.skills_source = "both"
+    action.denied_skills = []
     action.stream_tool_progress = False
     action.stream_thinking = False
     action.commit_intermediate_messages = True
     action.relay_thoughts_to_channels = False
+    action.strict_grounding = True
+    action.plan_first = True
+    action.final_review = False
+    action.max_skill_activations = 5
+    action.stuck_detection_window = 3
+    action.max_midcourse_corrections = 2
+    action.enable_skill_helper_tools = True
+    action.response_mode = "publish"
     return action
 
 
@@ -41,6 +50,8 @@ def _visitor_with_tasks():
 
     task_handle = MagicMock()
     task_handle.complete = AsyncMock(return_value=True)
+    task_handle.update_metadata = AsyncMock()
+    task_handle.record_step = AsyncMock()
 
     @asynccontextmanager
     async def _track(**_kwargs):

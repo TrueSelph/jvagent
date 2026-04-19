@@ -15,23 +15,22 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
-from jvagent.action.model.utils.token_estimation import estimate_tokens
 from jvagent.action.skill.action_resolver import ActionResolver
+from jvagent.action.skill.loop_context import LoopContext, LoopContextConfig
 from jvagent.action.skill.prompts import (
+    FINAL_REVIEW_PROMPT,
     FORCED_TERMINATION_PROMPT,
+    GROUNDING_INSTRUCTION_TEMPLATE,
+    LIST_SKILLS_TOOL_DESCRIPTION,
     READ_SKILL_RESULT_TEMPLATE,
-    SKILL_INDEX_INTRO,
-    THINKING_AGENT_SYSTEM_PROMPT,
+    SKILL_AGENT_SYSTEM_PROMPT,
+    SKILL_FIRST_RETRY_PROMPT,
+    SKILL_SEARCH_TOOL_DESCRIPTION,
     TOOL_CALL_ANNOUNCE_TEMPLATE,
 )
+from jvagent.action.skill.skill_catalog import SkillCatalog
+from jvagent.action.skill.stuck_detector import StuckDetector, StuckDetectorConfig
 from jvagent.action.skill.tool_executor import ToolExecutor
-from jvagent.core.app_context import get_app_root
-from jvagent.scaffold.skill_resolve import (
-    apply_skill_selector,
-    resolve_agent_skills,
-    resolve_builtin_skills,
-    resolve_merged_skill_bundles,
-)
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -196,6 +195,45 @@ class SkillInteractAction(InteractAction):
         default=None,
         description="Optional absolute path to a folder containing local Python tools (.py files)",
     )
+    strict_grounding: bool = attribute(
+        default=True,
+        description="If True, enforce grounding-focused prompting and skill scope constraints",
+    )
+    plan_first: bool = attribute(
+        default=True,
+        description="If True, instruct model to provide a brief plan before non-trivial tool use",
+    )
+    enable_skill_helper_tools: bool = attribute(
+        default=True,
+        description="If True, register list_skills and skill_search helper tools",
+    )
+    max_skill_activations: int = attribute(
+        default=5,
+        description="Maximum number of skill activations allowed within one loop",
+    )
+    stuck_detection_window: int = attribute(
+        default=3,
+        description="Number of identical consecutive tool-call signatures before stuck warning",
+    )
+    max_midcourse_corrections: int = attribute(
+        default=2,
+        description="Maximum stuck-detection reminders before forced termination",
+    )
+    final_review: bool = attribute(
+        default=False,
+        description="If True, run a final grounding review pass before publishing response",
+    )
+    prioritize_skills_first: bool = attribute(
+        default=True,
+        description=(
+            "If True, enforce one skill-first retry before accepting a no-tool final answer "
+            "when skills are available"
+        ),
+    )
+    skill_first_retry_limit: int = attribute(
+        default=1,
+        description="Maximum number of skill-first retry nudges in a loop",
+    )
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Entry point: load skill, build tool registry, run the agentic loop.
@@ -221,8 +259,14 @@ class SkillInteractAction(InteractAction):
             agent = getattr(visitor, "_agent", None)
             visitor.action_resolver = ActionResolver(agent) if agent else None
 
-            # 1. Discover Claude-style skill bundles under agents/<ns>/<id>/skills
-            discovered_skills = await self._discover_skill_bundles(visitor)
+            # 1. Discover skill bundles via SkillCatalog
+            skill_catalog = await SkillCatalog.discover(
+                visitor=visitor,
+                skills_selector=self.skills,
+                skills_source=self.skills_source,
+                denied_skills=getattr(self, "denied_skills", None),
+            )
+            discovered_skills = skill_catalog.skills
 
             local_paths: List[str] = []
             if self.local_tools_path:
@@ -240,7 +284,7 @@ class SkillInteractAction(InteractAction):
             )
 
             # 4. Register skill bundles and inject read_skill tool
-            if discovered_skills:
+            if not skill_catalog.is_empty:
                 for skill_name, skill_data in discovered_skills.items():
                     tool_executor.register_skill_bundle(
                         skill_name=skill_name,
@@ -255,27 +299,31 @@ class SkillInteractAction(InteractAction):
                         return f"Error: Skill '{skill_name}' not found."
 
                     skill_data = discovered_skills[skill_name]
-                    requires_actions = skill_data.get("requires_actions", [])
+
+                    # Check activation limit
+                    limit_error = skill_catalog.check_activation_limit(
+                        skill_name=skill_name,
+                        activated_skills=tool_executor.activated_skills,
+                        max_activations=self.max_skill_activations,
+                    )
+                    if limit_error:
+                        return limit_error
 
                     # Validate required actions are available
-                    if requires_actions:
-                        if not visitor.action_resolver:
-                            return (
-                                f"Error: Skill '{skill_name}' cannot be activated. "
-                                f"It requires actions {requires_actions} but no agent "
-                                f"context is available to resolve them."
-                            )
-                        errors = await visitor.action_resolver.validate_requirements(
-                            requires_actions
-                        )
-                        if errors:
-                            return (
-                                f"Error: Skill '{skill_name}' cannot be activated. "
-                                f"Required actions unavailable: {', '.join(errors)}"
-                            )
+                    req_error = await skill_catalog.validate_requirements(
+                        skill_name=skill_name,
+                        action_resolver=visitor.action_resolver,
+                    )
+                    if req_error:
+                        return req_error
 
                     registered_tools = await tool_executor.activate_skill(skill_name)
-                    return READ_SKILL_RESULT_TEMPLATE.format(
+                    scope_hint = str(
+                        skill_data.get("scope_hint")
+                        or skill_data.get("description")
+                        or "the workflow described in this skill"
+                    )
+                    result_text = READ_SKILL_RESULT_TEMPLATE.format(
                         skill_name=skill_name,
                         tools=(
                             ", ".join(registered_tools)
@@ -284,6 +332,12 @@ class SkillInteractAction(InteractAction):
                         ),
                         content=skill_data["content"],
                     )
+                    if self.strict_grounding:
+                        result_text += "\n\n" + GROUNDING_INSTRUCTION_TEMPLATE.format(
+                            skill_name=skill_name,
+                            scope_hint=scope_hint,
+                        )
+                    return result_text
 
                 tool_executor.register_dynamic_tool(
                     name="read_skill",
@@ -303,6 +357,54 @@ class SkillInteractAction(InteractAction):
                     },
                     handler=read_skill_handler,
                 )
+                if self.enable_skill_helper_tools:
+                    tool_executor.register_dynamic_tool(
+                        name="list_skills",
+                        tool_def_dict={
+                            "name": "list_skills",
+                            "description": LIST_SKILLS_TOOL_DESCRIPTION,
+                            "parameters": {
+                                "type": "object",
+                                "properties": {},
+                            },
+                        },
+                        handler=lambda args: skill_catalog.render_catalog(),
+                    )
+
+                    async def skill_search_handler(args):
+                        query = str(args.get("query", "")).strip()
+                        top_k_raw = args.get("top_k", 5)
+                        try:
+                            top_k = max(1, int(top_k_raw))
+                        except (TypeError, ValueError):
+                            top_k = 5
+                        return SkillCatalog(discovered_skills).search(
+                            query, top_k=top_k
+                        )
+
+                    tool_executor.register_dynamic_tool(
+                        name="skill_search",
+                        tool_def_dict={
+                            "name": "skill_search",
+                            "description": SKILL_SEARCH_TOOL_DESCRIPTION,
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "query": {
+                                        "type": "string",
+                                        "description": "Search phrase for skill intent.",
+                                    },
+                                    "top_k": {
+                                        "type": "integer",
+                                        "description": "Maximum number of skills to return.",
+                                        "default": 5,
+                                    },
+                                },
+                                "required": ["query"],
+                            },
+                        },
+                        handler=skill_search_handler,
+                    )
 
             if not tool_executor.get_tool_names():
                 logger.warning(
@@ -322,6 +424,12 @@ class SkillInteractAction(InteractAction):
                 metadata={
                     "skills": self.skills,
                     "skills_source": self.skills_source,
+                    "strict_grounding": self.strict_grounding,
+                    "plan_first": self.plan_first,
+                    "final_review": self.final_review,
+                    "max_skill_activations": self.max_skill_activations,
+                    "stuck_detection_window": self.stuck_detection_window,
+                    "max_midcourse_corrections": self.max_midcourse_corrections,
                     "started_at": datetime.now(timezone.utc).isoformat(),
                     "iterations": 0,
                     "tools_called": [],
@@ -332,11 +440,17 @@ class SkillInteractAction(InteractAction):
                 },
             ) as task:
                 # 5. Run the agentic loop
-                final_response, termination_reason = await self._run_agentic_loop(
-                    visitor=visitor,
-                    tool_executor=tool_executor,
-                    task_handle=task,
-                    discovered_skills=discovered_skills,
+                final_response, termination_reason, stuck_corrections = (
+                    await self._run_agentic_loop(
+                        visitor=visitor,
+                        tool_executor=tool_executor,
+                        task_handle=task,
+                        discovered_skills=discovered_skills,
+                    )
+                )
+                await task.update_metadata(
+                    activated_skills=sorted(tool_executor.activated_skills),
+                    stuck_corrections=stuck_corrections,
                 )
 
                 # 6. Deliver final response
@@ -381,68 +495,6 @@ class SkillInteractAction(InteractAction):
                         cleanup_error,
                     )
 
-    async def _discover_skill_bundles(
-        self, visitor: "InteractWalker"
-    ) -> Dict[str, Dict[str, Any]]:
-        """Resolve skill bundles from configured sources and apply selector filters."""
-
-        agent = getattr(visitor, "_agent", None)
-        if not agent:
-            return {}
-
-        selector = getattr(self, "skills", None)
-        source = str(getattr(self, "skills_source", "both") or "both").strip().lower()
-
-        if source == "none":
-            return {}
-        if selector is None or selector == [] or selector == "":
-            return {}
-
-        try:
-            app_root = get_app_root()
-            if source == "both":
-                discovered_skills = resolve_merged_skill_bundles(
-                    app_root=app_root,
-                    namespace=agent.namespace,
-                    agent_name=agent.name,
-                    include_builtin=True,
-                )
-            elif source == "builtin":
-                discovered_skills = resolve_builtin_skills()
-            elif source == "app":
-                discovered_skills = resolve_agent_skills(
-                    app_root=app_root,
-                    namespace=agent.namespace,
-                    agent_name=agent.name,
-                )
-            else:
-                logger.warning(
-                    "SkillInteractAction: invalid skills_source '%s' (expected builtin|app|both|none)",
-                    source,
-                )
-                return {}
-
-            discovered_skills = apply_skill_selector(
-                discovered_skills,
-                selector=selector,
-                denied=getattr(self, "denied_skills", None),
-            )
-            logger.info(
-                "SkillInteractAction resolved %d skill bundles for %s/%s (source=%s)",
-                len(discovered_skills),
-                agent.namespace,
-                agent.name,
-                source,
-            )
-            return discovered_skills
-        except Exception as e:
-            logger.warning(
-                "SkillInteractAction: error resolving skill bundles: %s",
-                e,
-                exc_info=True,
-            )
-            return {}
-
     def _resolve_response_mode(
         self,
         discovered_skills: Optional[Dict[str, Dict[str, Any]]] = None,
@@ -461,24 +513,79 @@ class SkillInteractAction(InteractAction):
                     return "respond"
         return self.response_mode
 
+    def _should_retry_for_skill_first(
+        self,
+        discovered_skills: Optional[Dict[str, Dict[str, Any]]],
+        tool_executor: ToolExecutor,
+        utterance: str,
+        retries: int,
+    ) -> bool:
+        """Check if the loop should nudge the model toward skill activation.
+
+        Simplified: relies on model intelligence rather than keyword matching.
+        Only nudges when skills are available but none activated and the
+        retry limit hasn't been exceeded.
+        """
+        if not self.prioritize_skills_first:
+            return False
+        if not discovered_skills:
+            return False
+        if not tool_executor or tool_executor.activated_skills:
+            return False
+        if retries >= self.skill_first_retry_limit:
+            return False
+        return True
+
     async def _run_agentic_loop(
         self,
         visitor: "InteractWalker",
         tool_executor: ToolExecutor,
         task_handle: "TaskHandle",
         discovered_skills: Optional[Dict[str, Dict[str, Any]]] = None,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, int]:
         """Core agentic loop: think → act → observe → repeat."""
         model_kwargs = self._build_model_kwargs()
 
-        # Build initial messages
-        messages = await self._build_initial_messages(visitor, discovered_skills)
+        # Build initial messages using LoopContext
+        loop_ctx = LoopContext(
+            LoopContextConfig(
+                max_full_tool_results=self.max_full_tool_results,
+                max_tool_result_tokens=self.max_tool_result_tokens,
+                tool_result_truncation_chars=self.tool_result_truncation_chars,
+                history_limit=self.history_limit,
+            )
+        )
+        system_prompt = SKILL_AGENT_SYSTEM_PROMPT
+        if not self.plan_first:
+            system_prompt += "\n\nOverride: Skip plan-first behavior unless the user explicitly asks for a plan."
+        if not self.strict_grounding:
+            system_prompt += "\n\nOverride: You may answer with best-effort general reasoning when tool evidence is unavailable."
+        skill_index_section = None
+        if discovered_skills:
+            skill_index_section = SkillCatalog(
+                discovered_skills
+            ).render_system_prompt_section()
+
+        messages = await loop_ctx.build_initial_messages(
+            system_prompt=system_prompt,
+            utterance=visitor.utterance,
+            conversation=visitor.conversation,
+            interaction=visitor.interaction,
+            skill_index_section=skill_index_section,
+        )
 
         loop_start = time.monotonic()
         iteration = 0
         final_response = ""
         termination_reason = TerminationReason.COMPLETED.value
         loop_state = LoopState.MODEL
+        stuck_detector = StuckDetector(
+            StuckDetectorConfig(
+                window_size=max(1, int(self.stuck_detection_window or 1)),
+                max_corrections=self.max_midcourse_corrections,
+            )
+        )
+        skill_first_retries = 0
 
         while iteration < self.max_iterations:
             # Check duration limit
@@ -518,14 +625,38 @@ class SkillInteractAction(InteractAction):
                     },
                 )
             if not model_result.tool_calls:
-                final_response = await model_result.get_response()
-                if not final_response and model_result.response:
-                    final_response = model_result.response
+                candidate_response = await model_result.get_response()
+                if not candidate_response and model_result.response:
+                    candidate_response = model_result.response
+
+                if self._should_retry_for_skill_first(
+                    discovered_skills=discovered_skills,
+                    tool_executor=tool_executor,
+                    utterance=visitor.utterance,
+                    retries=skill_first_retries,
+                ):
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": candidate_response or "",
+                        }
+                    )
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": SKILL_FIRST_RETRY_PROMPT,
+                        }
+                    )
+                    skill_first_retries += 1
+                    continue
+
+                final_response = candidate_response
                 termination_reason = TerminationReason.COMPLETED.value
                 loop_state = LoopState.TERMINATE
                 break
 
             tool_calls = model_result.tool_calls
+            stuck_result = stuck_detector.record(tool_calls)
             loop_state = LoopState.TOOLS
             await task_handle.record_step(
                 "tool_call", iteration=iteration, details={"count": len(tool_calls)}
@@ -565,7 +696,7 @@ class SkillInteractAction(InteractAction):
                         },
                     )
 
-            assistant_msg = self._build_assistant_content(model_result)
+            assistant_msg = LoopContext.build_assistant_content(model_result)
             messages.append(assistant_msg)
 
             tool_start = time.monotonic()
@@ -595,7 +726,20 @@ class SkillInteractAction(InteractAction):
                 iteration=iteration,
                 details={"duration_ms": tool_duration_ms},
             )
-            messages = self._maybe_truncate_messages(messages)
+            if stuck_result:
+                if stuck_result == "FORCE_TERMINATE":
+                    loop_state = LoopState.TERMINATE
+                    final_response = await self._force_termination(
+                        messages,
+                        tool_executor.get_tools_list(),
+                        visitor,
+                        model_kwargs,
+                    )
+                    termination_reason = TerminationReason.ITER_CAP.value
+                    break
+                else:
+                    messages.append({"role": "user", "content": stuck_result})
+            messages = loop_ctx.maybe_truncate(messages)
 
         if (
             not final_response
@@ -617,13 +761,20 @@ class SkillInteractAction(InteractAction):
             )
             if termination_reason == TerminationReason.COMPLETED.value:
                 termination_reason = TerminationReason.ITER_CAP.value
+        elif self.final_review:
+            final_response = await self._final_review_pass(
+                messages=messages,
+                candidate_response=final_response,
+                visitor=visitor,
+                model_kwargs=model_kwargs,
+            )
 
         await task_handle.record_step(
             "response",
             iteration=iteration,
             details={"length": len(final_response), "loop_state": loop_state.value},
         )
-        return final_response, termination_reason
+        return final_response, termination_reason, stuck_detector.corrections
 
     def _build_model_kwargs(self) -> Dict[str, Any]:
         kwargs: Dict[str, Any] = {
@@ -639,47 +790,6 @@ class SkillInteractAction(InteractAction):
             if kwargs.get("max_tokens", 0) < self.thinking_budget_tokens + 1:
                 kwargs["max_tokens"] = self.thinking_budget_tokens + 1
         return kwargs
-
-    async def _build_initial_messages(
-        self,
-        visitor: "InteractWalker",
-        discovered_skills: Optional[Dict[str, Dict[str, Any]]] = None,
-    ) -> List[Dict[str, Any]]:
-        system_prompt = THINKING_AGENT_SYSTEM_PROMPT
-
-        if discovered_skills:
-            skill_index = [SKILL_INDEX_INTRO]
-            for s_name, s_data in discovered_skills.items():
-                skill_index.append(f"- {s_name}: {s_data['description']}")
-            system_prompt += "\n\n" + "\n".join(skill_index)
-
-        utterance = visitor.utterance
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-        ]
-
-        # Include conversation history from prior interactions
-        conversation = visitor.conversation
-        interaction = visitor.interaction
-        if conversation and interaction:
-            try:
-                history = await conversation.get_interaction_history(
-                    limit=self.history_limit,
-                    excluded=interaction.id,
-                    with_utterance=True,
-                    with_response=True,
-                    formatted=True,
-                )
-                if history:
-                    messages.extend(history)
-            except Exception as e:
-                logger.warning(
-                    "SkillInteractAction: failed to load conversation history: %s", e
-                )
-
-        messages.append({"role": "user", "content": utterance})
-        return messages
 
     async def _call_model(
         self,
@@ -704,92 +814,23 @@ class SkillInteractAction(InteractAction):
             ModelActionResult from the LLM.
         """
         model_action = await self.get_model_action(required=True)
+        provider = getattr(model_action, "provider", "") or ""
+        final_messages = (
+            LoopContext.convert_for_provider(messages, provider)
+            if provider == "anthropic"
+            else messages
+        )
 
         return await model_action.query_messages(
-            messages=messages,
+            messages=final_messages,
             stream=False,
-            system=messages[0].get("content") if messages else None,
-            history=messages[1:-1] if len(messages) > 2 else None,
+            system=final_messages[0].get("content") if final_messages else None,
+            history=final_messages[1:-1] if len(final_messages) > 2 else None,
             tools=tools if tools else None,
             calling_action_name=self.get_class_name(),
             prompt_for_observability=visitor.utterance,
             **model_kwargs,
         )
-
-    def _convert_messages_for_provider(
-        self,
-        messages: List[Dict[str, Any]],
-        provider: str,
-    ) -> List[Dict[str, Any]]:
-        """Convert internal message format to provider-specific format.
-
-        The agentic loop maintains messages in OpenAI-compatible format
-        (tool_calls at message level, tool role for results). Anthropic
-        requires different formatting:
-        - tool_calls become content blocks with type: "tool_use"
-        - tool results become user messages with type: "tool_result" content blocks
-
-        Args:
-            messages: Messages in internal format.
-            provider: Provider name ("openai", "anthropic", etc.).
-
-        Returns:
-            Messages formatted for the provider.
-        """
-        if provider != "anthropic":
-            # OpenAI and compatible providers use the format as-is
-            return messages
-
-        # Convert for Anthropic
-        converted = []
-        # Collect consecutive tool results to merge into a single user message
-        pending_tool_results: List[Dict[str, Any]] = []
-
-        for msg in messages:
-            role = msg.get("role", "")
-            # Flush any pending tool results before non-tool messages
-            if role != "tool" and pending_tool_results:
-                converted.append(
-                    {"role": "user", "content": list(pending_tool_results)}
-                )
-                pending_tool_results = []
-
-            if role == "tool":
-                # Convert OpenAI tool result to Anthropic tool_result content block
-                pending_tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": msg.get("tool_call_id", ""),
-                        "content": msg.get("content", ""),
-                    }
-                )
-            elif role == "assistant" and msg.get("tool_calls"):
-                # Convert OpenAI tool_calls to Anthropic content blocks
-                content_blocks = []
-                text = msg.get("content")
-                if text:
-                    content_blocks.append({"type": "text", "text": text})
-                for tc in msg["tool_calls"]:
-                    func = tc.get("function", {})
-                    content_blocks.append(
-                        {
-                            "type": "tool_use",
-                            "id": tc.get("id", ""),
-                            "name": func.get("name", ""),
-                            "input": self._parse_tool_arguments(
-                                func.get("arguments", "{}")
-                            ),
-                        }
-                    )
-                converted.append({"role": "assistant", "content": content_blocks})
-            else:
-                converted.append(msg)
-
-        # Flush any remaining tool results
-        if pending_tool_results:
-            converted.append({"role": "user", "content": list(pending_tool_results)})
-
-        return converted
 
     async def _force_termination(
         self,
@@ -825,131 +866,34 @@ class SkillInteractAction(InteractAction):
             logger.error("SkillInteractAction: forced termination call failed: %s", e)
             return "I was unable to complete the task within the allowed steps."
 
-    def _build_assistant_content(self, model_result: Any) -> Dict[str, Any]:
-        """Build the assistant message dict for appending to the conversation.
-
-        Formats the assistant message based on the provider:
-        - OpenAI: {"role": "assistant", "content": text, "tool_calls": [...]}
-        - Anthropic: {"role": "assistant", "content": [content blocks with tool_use]}
-
-        The format is determined by checking the provider on the model result.
-
-        Args:
-            model_result: The ModelActionResult.
-
-        Returns:
-            Complete assistant message dict.
-        """
-        tool_calls = model_result.tool_calls or []
-        response_text = model_result.response or ""
-        provider = getattr(model_result, "provider", "")
-
-        if not tool_calls:
-            return {"role": "assistant", "content": response_text}
-
-        if provider == "anthropic":
-            # Anthropic format: content blocks with tool_use
-            content_blocks = []
-            if response_text:
-                content_blocks.append({"type": "text", "text": response_text})
-
-            for tc in tool_calls:
-                func = tc.get("function", {})
-                content_blocks.append(
-                    {
-                        "type": "tool_use",
-                        "id": tc.get("id", ""),
-                        "name": func.get("name", ""),
-                        "input": self._parse_tool_arguments(
-                            func.get("arguments", "{}")
-                        ),
-                    }
-                )
-
-            return {"role": "assistant", "content": content_blocks or response_text}
-        else:
-            # OpenAI format: tool_calls at message level
-            return {
-                "role": "assistant",
-                "content": response_text if response_text else None,
-                "tool_calls": tool_calls,
-            }
-
-    def _parse_tool_arguments(self, arguments: Any) -> Dict[str, Any]:
-        """Parse tool call arguments from string or dict.
-
-        Args:
-            arguments: Arguments as JSON string or dict.
-
-        Returns:
-            Parsed arguments dict.
-        """
-        import json
-
-        if isinstance(arguments, dict):
-            return arguments
-        if isinstance(arguments, str):
-            try:
-                return json.loads(arguments)
-            except json.JSONDecodeError:
-                return {}
-        return {}
-
-    def _maybe_truncate_messages(
-        self, messages: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """Truncate old tool results to keep context window manageable.
-
-        Keeps the system message, first user message, and last N tool result
-        messages in full. Older tool results are replaced with a summary.
-
-        Args:
-            messages: Current message list.
-
-        Returns:
-            Truncated message list.
-        """
-        if len(messages) <= self.max_full_tool_results * 2 + 4:
-            return messages
-
-        # Find tool result messages
-        tool_result_indices = [
-            i for i, m in enumerate(messages) if m.get("role") == "tool"
-        ]
-
-        if len(tool_result_indices) <= self.max_full_tool_results:
-            return messages
-
-        # Keep only the last N tool results in full, summarize older ones
-        keep_indices = set(tool_result_indices[-self.max_full_tool_results :])
-        # Always keep system, first user, and last assistant messages
-        keep_indices.update({0, 1})
-        if messages:
-            keep_indices.add(len(messages) - 1)
-
-        truncated = []
-        for i, msg in enumerate(messages):
-            if i in keep_indices or msg.get("role") != "tool":
-                if msg.get("role") == "tool" and isinstance(msg.get("content"), str):
-                    token_estimate = estimate_tokens(msg["content"])
-                    if token_estimate > self.max_tool_result_tokens:
-                        msg = dict(msg)
-                        msg["content"] = (
-                            f"{msg['content'][: self.tool_result_truncation_chars]}... "
-                            "(truncated)"
-                        )
-                truncated.append(msg)
-            else:
-                # Replace with summary
-                truncated.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": msg.get("tool_call_id", ""),
-                        "content": "(Earlier tool result summarized)",
-                    }
-                )
-
-        return truncated
+    async def _final_review_pass(
+        self,
+        messages: List[Dict[str, Any]],
+        candidate_response: str,
+        visitor: "InteractWalker",
+        model_kwargs: Dict[str, Any],
+    ) -> str:
+        """Run an optional no-tools final review pass for grounding."""
+        final_kwargs = {k: v for k, v in model_kwargs.items() if k != "thinking"}
+        review_messages = list(messages)
+        review_messages.append({"role": "assistant", "content": candidate_response})
+        review_messages.append({"role": "user", "content": FINAL_REVIEW_PROMPT})
+        try:
+            reviewed = await self._call_model(
+                review_messages, None, visitor, final_kwargs
+            )
+            reviewed_text = await reviewed.get_response()
+            if reviewed_text:
+                return reviewed_text
+            if reviewed.response:
+                return reviewed.response
+            return candidate_response
+        except Exception as exc:
+            logger.warning(
+                "SkillInteractAction: final review pass failed, using original response: %s",
+                exc,
+            )
+            return candidate_response
 
     async def healthcheck(self) -> bool:
         """Validate thinking action configuration."""

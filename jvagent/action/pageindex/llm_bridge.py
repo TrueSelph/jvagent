@@ -83,7 +83,7 @@ async def llm_acompletion(
     action = get_pageindex_model_action()
     if action:
         try:
-            result = await action.query_sync(prompt, model=model)
+            result = await action.query_sync(prompt)
             return await result.get_response() if result else ""
         except PageIndexCancelled:
             raise
@@ -116,7 +116,7 @@ def llm_completion(
     action = get_pageindex_model_action()
     if action:
         try:
-            result = _run_async_from_sync(action.query_sync(prompt, model=model))
+            result = _run_async_from_sync(action.query_sync(prompt))
             if return_finish_reason:
                 if not result:
                     return "", "error"

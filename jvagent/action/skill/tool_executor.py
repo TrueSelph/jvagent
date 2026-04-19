@@ -10,6 +10,7 @@ import fnmatch
 import importlib.util
 import logging
 import os
+import re
 import sys
 import time
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
@@ -47,6 +48,7 @@ class ToolExecutor:
         validate_calls: bool = True,
         max_concurrent_calls: int = 5,
         sanitize_errors: bool = True,
+        allowed_tool_paths: Optional[List[str]] = None,
     ) -> None:
         self._tool_manager = ToolManager()
         self._handlers: Dict[str, Tuple[str, Any]] = {}  # name -> (kind, handler)
@@ -57,6 +59,7 @@ class ToolExecutor:
         self.max_concurrent_calls = max_concurrent_calls
         self.validate_calls = validate_calls
         self.sanitize_errors = sanitize_errors
+        self._allowed_tool_paths: List[str] = allowed_tool_paths or []
 
     @property
     def activated_skills(self) -> Set[str]:
@@ -170,16 +173,15 @@ class ToolExecutor:
             )
             return
 
-        # Find the MCPAction by server_name — iterate all agent actions
+        # Find an MCPAction hosting this server_name — iterate all agent actions
         # (Agent doesn't have get_action() with filter support)
         mcp_action = None
         try:
             all_actions = await agent.get_actions()
             for action in all_actions:
-                if (
-                    isinstance(action, MCPAction)
-                    and getattr(action, "server_name", None) == server_name
-                ):
+                if not isinstance(action, MCPAction):
+                    continue
+                if server_name in action.get_server_names():
                     mcp_action = action
                     break
         except Exception as e:
@@ -199,8 +201,7 @@ class ToolExecutor:
             return
 
         # Access the client and tools directly, bypassing fulfill()
-        client = mcp_action.get_client()
-        tools = await mcp_action.get_tools_cached()
+        tools = await mcp_action.get_tools_cached(server_name)
 
         for mcp_tool in tools:
             name = getattr(mcp_tool, "name", "") or ""
@@ -221,7 +222,7 @@ class ToolExecutor:
                     ),
                     source="mcp",
                     handler_kind="mcp",
-                    handler=mcp_action,
+                    handler=(mcp_action, server_name),
                     fq_name=f"mcp:{server_name}:{name}",
                     prefix=f"mcp_{server_name}",
                 )
@@ -364,6 +365,7 @@ class ToolExecutor:
                 file_path=file_path,
                 module_prefix=f"jvagent_skill_{skill_name}",
                 allowed_tools=allowed_tools if allowed_tools else None,
+                tool_name_prefix=skill_name,
             )
             if loaded_tool:
                 registered.append(loaded_tool)
@@ -528,19 +530,20 @@ class ToolExecutor:
                 )
             return self._make_error_result(call.id, str(e))
 
-    async def _dispatch_mcp_tool(self, call: ToolCall, mcp_action: Any) -> str:
+    async def _dispatch_mcp_tool(self, call: ToolCall, mcp_handler: Any) -> str:
         """Execute a tool call against an MCP server.
 
         Calls MCPClientWrapper.call_tool() directly, bypassing fulfill().
 
         Args:
             call: The ToolCall.
-            mcp_action: The MCPAction instance.
+            mcp_handler: Tuple of (MCPAction instance, server_name).
 
         Returns:
             Tool result as string.
         """
-        client = mcp_action.get_client()
+        mcp_action, server_name = mcp_handler
+        client = mcp_action.get_client(server_name)
         raw_tool_name = call.name
         handle = self._registry.get(call.name)
         if handle and handle.source == "mcp":
@@ -616,30 +619,50 @@ class ToolExecutor:
         return set(self._registry.names())
 
     async def cleanup(self) -> None:
-        """Clean up resources after the loop completes.
-
-        Currently a no-op since MCP sessions are owned by MCPAction.
-        """
-        pass
+        """Clean up resources after the loop completes."""
+        self._handlers.clear()
+        self._skill_bundles.clear()
+        self._active_skill_bundles.clear()
+        for name in list(self._registry.names()):
+            self._registry.remove(name)
 
     def _load_dynamic_tool_from_file(
         self,
         file_path: str,
         module_prefix: str,
         allowed_tools: Optional[Set[str]] = None,
+        tool_name_prefix: Optional[str] = None,
     ) -> Optional[str]:
         """Import one local tool module and register it if valid."""
         from pathlib import Path
 
-        source = Path(file_path)
+        source = Path(file_path).resolve()
         if not source.is_file():
             return None
         if source.name.startswith("_") or source.suffix != ".py":
             return None
 
-        module_name = (
-            f"{module_prefix}_{source.stem}_{abs(hash(str(source.resolve())))}"
-        )
+        # Path validation: reject traversal and enforce allowed directories
+        try:
+            source.relative_to(Path.cwd().resolve())
+        except ValueError:
+            if self._allowed_tool_paths:
+                allowed = any(
+                    str(source).startswith(str(Path(p).resolve()))
+                    for p in self._allowed_tool_paths
+                )
+                if not allowed:
+                    logger.warning(
+                        "ToolExecutor: rejected file outside allowed paths: %s",
+                        source,
+                    )
+                    return None
+            # If no allowed_tool_paths configured, allow cwd-relative only
+
+        # Deterministic, safe module name
+        safe_stem = re.sub(r"[^a-zA-Z0-9_]", "_", source.stem)
+        module_name = f"{module_prefix}_{safe_stem}"
+
         spec = importlib.util.spec_from_file_location(module_name, str(source))
         if not spec or not spec.loader:
             return None
@@ -662,8 +685,27 @@ class ToolExecutor:
         )
         if not tool_name:
             return None
-        if allowed_tools is not None and tool_name not in allowed_tools:
-            return None
 
-        self.register_dynamic_tool(tool_name, tool_def_dict, handler)
-        return tool_name
+        # Check allowed_tools: match both bare and namespaced names
+        if allowed_tools is not None:
+            namespaced_name = (
+                f"{tool_name_prefix}__{tool_name}" if tool_name_prefix else None
+            )
+            if tool_name not in allowed_tools and (
+                namespaced_name is None or namespaced_name not in allowed_tools
+            ):
+                return None
+
+        # Namespace tool name with skill prefix to avoid collisions
+        # e.g. "search" from pageindex_search → "pageindex_search__search"
+        registered_name = tool_name
+        if tool_name_prefix:
+            registered_name = f"{tool_name_prefix}__{tool_name}"
+            # Update the tool definition so the LLM sees the namespaced name
+            if "function" in tool_def_dict:
+                tool_def_dict["function"]["name"] = registered_name
+            else:
+                tool_def_dict["name"] = registered_name
+
+        self.register_dynamic_tool(registered_name, tool_def_dict, handler)
+        return registered_name

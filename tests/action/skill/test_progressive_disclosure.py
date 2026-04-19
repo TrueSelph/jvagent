@@ -35,8 +35,8 @@ async def execute(arguments):
     assert "summarize" not in executor.get_tool_names()
 
     activated = await executor.activate_skill("analysis")
-    assert activated == ["summarize"]
-    assert "summarize" in executor.get_tool_names()
+    assert activated == ["analysis__summarize"]
+    assert "analysis__summarize" in executor.get_tool_names()
 
 
 @pytest.mark.asyncio
@@ -76,6 +76,6 @@ async def execute(arguments):
         allowed_tools=["allowed_tool"],
     )
     activated = await executor.activate_skill("ops")
-    assert activated == ["allowed_tool"]
-    assert "allowed_tool" in executor.get_tool_names()
-    assert "blocked_tool" not in executor.get_tool_names()
+    assert activated == ["ops__allowed_tool"]
+    assert "ops__allowed_tool" in executor.get_tool_names()
+    assert "ops__blocked_tool" not in executor.get_tool_names()

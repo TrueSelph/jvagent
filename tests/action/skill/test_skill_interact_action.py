@@ -5,7 +5,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from jvagent.action.skill.loop_context import LoopContext, LoopContextConfig
+from jvagent.action.skill.skill_catalog import SkillCatalog
 from jvagent.action.skill.skill_interact_action import SkillInteractAction
+from jvagent.action.skill.stuck_detector import StuckDetector
 
 
 class TestSkillInteractActionModelKwargs:
@@ -37,11 +40,13 @@ class TestSkillInteractActionMessages:
 
     @pytest.mark.asyncio
     async def test_build_initial_messages(self):
-        action = _make_thinking_action()
-        visitor = MagicMock()
-        visitor.utterance = "Review this code"
-
-        messages = await action._build_initial_messages(visitor)
+        ctx = LoopContext(LoopContextConfig())
+        messages = await ctx.build_initial_messages(
+            system_prompt="You are an agent.",
+            utterance="Review this code",
+            conversation=None,
+            interaction=None,
+        )
         assert len(messages) == 2
         assert messages[0]["role"] == "system"
         assert messages[1]["role"] == "user"
@@ -218,15 +223,18 @@ class TestSkillInteractActionTermination:
 class TestSkillInteractActionSkillDiscovery:
     @pytest.mark.asyncio
     async def test_discover_skill_bundles_uses_resolver(self):
-        action = _make_thinking_action(skills="-all", skills_source="both")
         visitor = MagicMock()
         visitor._agent = SimpleNamespace(namespace="demo", name="assistant")
         with patch(
-            "jvagent.action.skill.skill_interact_action.resolve_merged_skill_bundles",
+            "jvagent.action.skill.skill_catalog.resolve_merged_skill_bundles",
             return_value={"resolved_skill": {"description": "Resolved by resolver"}},
         ) as mocked_resolver:
-            discovered = await action._discover_skill_bundles(visitor)
-        assert "resolved_skill" in discovered
+            catalog = await SkillCatalog.discover(
+                visitor=visitor,
+                skills_selector="-all",
+                skills_source="both",
+            )
+        assert "resolved_skill" in catalog.skills
         mocked_resolver.assert_called_once()
 
     @pytest.mark.asyncio
@@ -262,15 +270,18 @@ async def execute(arguments):
             encoding="utf-8",
         )
 
-        action = _make_thinking_action(skills="-all", skills_source="app")
         visitor = MagicMock()
         visitor._agent = SimpleNamespace(namespace="demo", name="assistant")
 
-        discovered = await action._discover_skill_bundles(visitor)
-        assert "audit_skill" in discovered
-        assert discovered["audit_skill"]["description"] == "Perform audits."
-        assert discovered["audit_skill"]["allowed_tools"] == ["summarize_findings"]
-        assert discovered["audit_skill"]["tool_files"]
+        catalog = await SkillCatalog.discover(
+            visitor=visitor,
+            skills_selector="-all",
+            skills_source="app",
+        )
+        assert "audit_skill" in catalog.skills
+        assert catalog.skills["audit_skill"]["description"] == "Perform audits."
+        assert catalog.skills["audit_skill"]["allowed_tools"] == ["summarize_findings"]
+        assert catalog.skills["audit_skill"]["tool_files"]
 
 
 class TestSkillInteractActionHealthcheck:
@@ -347,15 +358,18 @@ class TestSkillInteractActionThoughtPublishing:
         task_handle = MagicMock()
         task_handle.record_step = AsyncMock()
 
-        response, termination_reason = await action._run_agentic_loop(
-            visitor=visitor,
-            tool_executor=tool_executor,
-            task_handle=task_handle,
-            discovered_skills=None,
+        response, termination_reason, stuck_corrections = (
+            await action._run_agentic_loop(
+                visitor=visitor,
+                tool_executor=tool_executor,
+                task_handle=task_handle,
+                discovered_skills=None,
+            )
         )
 
         assert response == "Final answer"
         assert termination_reason == "completed"
+        assert stuck_corrections == 0
 
         thought_types = [
             call.kwargs.get("thought_type")
@@ -514,16 +528,164 @@ class TestSkillInteractActionThoughtPublishing:
         task_handle = MagicMock()
         task_handle.record_step = AsyncMock()
 
-        response, termination_reason = await action._run_agentic_loop(
-            visitor=visitor,
-            tool_executor=tool_executor,
-            task_handle=task_handle,
-            discovered_skills=None,
+        response, termination_reason, stuck_corrections = (
+            await action._run_agentic_loop(
+                visitor=visitor,
+                tool_executor=tool_executor,
+                task_handle=task_handle,
+                discovered_skills=None,
+            )
         )
 
         assert response == "Done in one step"
         assert termination_reason == "completed"
+        assert stuck_corrections == 0
         action._call_model.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_run_agentic_loop_retries_once_for_skill_first_when_skills_available(
+        self,
+    ):
+        action = _make_thinking_action(max_iterations=3, skill_first_retry_limit=1)
+
+        first_result = MagicMock()
+        first_result.thinking_content = None
+        first_result.thinking_tokens = 0
+        first_result.tool_calls = []
+        first_result.response = "Direct answer without skills"
+        first_result.provider = "openai"
+        first_result.get_response = AsyncMock(
+            return_value="Direct answer without skills"
+        )
+
+        second_result = MagicMock()
+        second_result.thinking_content = None
+        second_result.thinking_tokens = 0
+        second_result.tool_calls = []
+        second_result.response = "Final after skill-first retry"
+        second_result.provider = "openai"
+        second_result.get_response = AsyncMock(
+            return_value="Final after skill-first retry"
+        )
+
+        action._call_model = AsyncMock(side_effect=[first_result, second_result])
+
+        visitor = MagicMock()
+        visitor.utterance = "Search internal pageindex documents about jvagent."
+        visitor.conversation = None
+        visitor.interaction = None
+
+        tool_executor = MagicMock()
+        tool_executor.get_tools_list = MagicMock(return_value=[])
+        tool_executor.dispatch = AsyncMock(return_value=[])
+        tool_executor.activated_skills = set()
+
+        task_handle = MagicMock()
+        task_handle.record_step = AsyncMock()
+
+        discovered_skills = {
+            "pageindex_search": {
+                "description": "Search internal knowledge base documents.",
+                "scope_hint": "internal retrieval",
+                "metadata": {"tags": ["retrieval", "pageindex"]},
+                "tool_files": [],
+                "requires_actions": [],
+            }
+        }
+
+        response, termination_reason, stuck_corrections = (
+            await action._run_agentic_loop(
+                visitor=visitor,
+                tool_executor=tool_executor,
+                task_handle=task_handle,
+                discovered_skills=discovered_skills,
+            )
+        )
+
+        assert response == "Final after skill-first retry"
+        assert termination_reason == "completed"
+        assert stuck_corrections == 0
+        assert action._call_model.await_count == 2
+
+    def test_skill_first_retry_fires_when_skills_available_and_none_activated(self):
+        """Simplified skill-first retry: fires when skills are available and none activated."""
+        action = _make_thinking_action()
+        discovered_skills = {
+            "code_review": {
+                "description": "Review code for quality, security, and correctness.",
+                "metadata": {"tags": ["code", "review"]},
+            },
+        }
+        tool_executor = MagicMock()
+        tool_executor.activated_skills = set()
+
+        assert (
+            action._should_retry_for_skill_first(
+                discovered_skills, tool_executor, "any utterance", 0
+            )
+            is True
+        )
+
+        # Does not fire when skills already activated
+        tool_executor.activated_skills = {"code_review"}
+        assert (
+            action._should_retry_for_skill_first(
+                discovered_skills, tool_executor, "any utterance", 0
+            )
+            is False
+        )
+
+        # Does not fire when no skills configured
+        assert (
+            action._should_retry_for_skill_first(
+                None, tool_executor, "any utterance", 0
+            )
+            is False
+        )
+
+        # Does not fire when retry limit exceeded
+        tool_executor.activated_skills = set()
+        assert (
+            action._should_retry_for_skill_first(
+                discovered_skills, tool_executor, "any utterance", 1
+            )
+            is False
+        )
+
+    def test_search_skills_returns_metadata_driven_matches(self):
+        catalog = SkillCatalog(
+            {
+                "research": {
+                    "description": "Investigate topics and synthesize findings.",
+                    "scope_hint": "analysis and synthesis",
+                    "metadata": {"tags": ["research", "analysis"]},
+                    "tool_files": [],
+                    "requires_actions": [],
+                },
+                "web_search": {
+                    "description": "Search the public web for supplemental information.",
+                    "scope_hint": "external search",
+                    "metadata": {"tags": ["search", "retrieval"]},
+                    "tool_files": ["search.py"],
+                    "requires_actions": [],
+                },
+                "pageindex_search": {
+                    "description": "Search internal knowledge base documents first.",
+                    "scope_hint": "internal retrieval",
+                    "metadata": {"tags": ["retrieval", "pageindex"]},
+                    "tool_files": ["search.py"],
+                    "requires_actions": [],
+                },
+            }
+        )
+
+        result = catalog.search(
+            query="Hello what is jvagent and explain the relationship between Eldon Marks, V75 and jvagent",
+            top_k=3,
+        )
+
+        lines = result.splitlines()
+        assert lines[0].startswith("Skill matches for")
 
 
 # --- Helpers ---
@@ -563,36 +725,48 @@ def _make_thinking_action(**kwargs):
     action.history_limit = kwargs.get("history_limit", 5)
     action.call_timeout_seconds = kwargs.get("call_timeout_seconds", 60.0)
     action.task_sync_every_steps = kwargs.get("task_sync_every_steps", 3)
+    action.strict_grounding = kwargs.get("strict_grounding", True)
+    action.plan_first = kwargs.get("plan_first", True)
+    action.enable_skill_helper_tools = kwargs.get("enable_skill_helper_tools", True)
+    action.max_skill_activations = kwargs.get("max_skill_activations", 5)
+    action.stuck_detection_window = kwargs.get("stuck_detection_window", 3)
+    action.max_midcourse_corrections = kwargs.get("max_midcourse_corrections", 2)
+    action.final_review = kwargs.get("final_review", False)
+    action.prioritize_skills_first = kwargs.get("prioritize_skills_first", True)
+    action.skill_first_retry_limit = kwargs.get("skill_first_retry_limit", 1)
 
-    # Wire up real methods
+    # Wire up real methods — delegate to extracted modules
     action._build_model_kwargs = lambda: SkillInteractAction._build_model_kwargs(action)
-    action._build_initial_messages = (
-        lambda v, discovered_skills=None: SkillInteractAction._build_initial_messages(
-            action, v, discovered_skills
+    action._maybe_truncate_messages = lambda msgs: LoopContext(
+        LoopContextConfig(
+            max_full_tool_results=action.max_full_tool_results,
+            max_tool_result_tokens=action.max_tool_result_tokens,
+            tool_result_truncation_chars=action.tool_result_truncation_chars,
+            history_limit=action.history_limit,
         )
-    )
-    action._maybe_truncate_messages = (
-        lambda msgs: SkillInteractAction._maybe_truncate_messages(action, msgs)
-    )
-    action._build_assistant_content = (
-        lambda mr: SkillInteractAction._build_assistant_content(action, mr)
-    )
+    ).maybe_truncate(msgs)
+    action._build_assistant_content = lambda mr: LoopContext.build_assistant_content(mr)
     action._convert_messages_for_provider = (
-        lambda messages, provider: SkillInteractAction._convert_messages_for_provider(
-            action, messages, provider
-        )
+        lambda messages, provider: LoopContext.convert_for_provider(messages, provider)
     )
     action._force_termination = lambda messages, tools, visitor, model_kwargs: SkillInteractAction._force_termination(
         action, messages, tools, visitor, model_kwargs
     )
-    action._discover_skill_bundles = (
-        lambda visitor: SkillInteractAction._discover_skill_bundles(action, visitor)
-    )
     action._run_agentic_loop = lambda visitor, tool_executor, task_handle, discovered_skills=None: SkillInteractAction._run_agentic_loop(
         action, visitor, tool_executor, task_handle, discovered_skills
     )
-    action._parse_tool_arguments = (
-        lambda args: SkillInteractAction._parse_tool_arguments(action, args)
+    action._parse_tool_arguments = lambda args: LoopContext.parse_tool_arguments(args)
+    action._tool_call_signature = lambda tool_calls: StuckDetector._build_signature(
+        tool_calls
+    )
+    action._final_review_pass = lambda messages, candidate_response, visitor, model_kwargs: SkillInteractAction._final_review_pass(
+        action, messages, candidate_response, visitor, model_kwargs
+    )
+    action._search_skills = lambda discovered_skills, query, top_k=5: SkillCatalog(
+        discovered_skills
+    ).search(query, top_k=top_k)
+    action._should_retry_for_skill_first = lambda discovered_skills, tool_executor, utterance, retries: SkillInteractAction._should_retry_for_skill_first(
+        action, discovered_skills, tool_executor, utterance, retries
     )
 
     async def _healthcheck():

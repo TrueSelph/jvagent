@@ -36,7 +36,7 @@ actions:
 
   - action: jvagent/interact_router
     context:
-      enabled: true
+      enabled: false
       description: "Intent-based routing: dispatches multi-step tasks to SkillInteractAction"
       model_action_type: "OpenAILanguageModelAction"
       model: "gpt-4.1-mini"
@@ -56,7 +56,7 @@ actions:
       api_endpoint: "https://api.openai.com/v1"
       model: "gpt-4.1"
       temperature: 0.2
-      max_tokens: 16384
+      max_tokens: 32768
       timeout: 120
 
   # ──────────────────────────────────────────────
@@ -68,13 +68,27 @@ actions:
   - action: jvagent/mcp
     context:
       enabled: true
-      description: "Filesystem MCP server for file operations"
-      server_name: "filesystem"
-      transport: "stdio"
-      command: "npx"
-      args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
-      mcp_connect_timeout: 15
-      mcp_call_timeout: 60
+      description: "MCP gateway for filesystem and optional web search servers"
+      model_action_type: "OpenAILanguageModelAction"
+      model: "gpt-4o-mini"
+      servers:
+        - name: "filesystem"
+          enabled: true
+          transport: "stdio"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+          mcp_connect_timeout: 15
+          mcp_call_timeout: 60
+          tools: "-all"
+          denied_tools: []
+        # - name: "websearch"
+        #   enabled: true
+        #   transport: "streamable_http"
+        #   url: "http://localhost:3001/mcp"
+        #   mcp_connect_timeout: 10
+        #   mcp_call_timeout: 30
+        #   tools: "-all"
+        #   denied_tools: []
 
   - action: jvagent/serper_web_search
     context:
@@ -92,17 +106,7 @@ actions:
       limit: 10
       node_summary: true
 
-  # Web Search MCP — search the web for information
-  # Uncomment and configure URL when a web search MCP server is available
-  # - action: jvagent/mcp
-  #   context:
-  #     enabled: true
-  #     description: "Web search MCP server for information retrieval"
-  #     server_name: "websearch"
-  #     transport: "streamable_http"
-  #     url: "http://localhost:3001/mcp"
-  #     mcp_connect_timeout: 10
-  #     mcp_call_timeout: 30
+  # Web Search MCP can be enabled by uncommenting the "websearch" servers entry above.
 
   # ──────────────────────────────────────────────
   # Skills Agent (Core Agentic Loop)
@@ -129,7 +133,7 @@ actions:
       model_action_type: "OpenAILanguageModelAction"
       model: "gpt-4.1"
       model_temperature: 0.2
-      model_max_tokens: 16384
+      model_max_tokens: 32768
 
       # Agentic loop limits
       max_iterations: 25
@@ -148,11 +152,21 @@ actions:
       # added under agents/<ns>/<id>/skills/*/SKILL.md.
       skills:
         - "code_review"
-        - "local_research"
-        - "web_search"
+        - "research"
         - "pageindex_search"
         - "pageindex_docs"
+        - "web_search"
       skills_source: both
+      denied_skills: []
+
+      # Reliability / grounding controls (new defaults, set explicitly here)
+      strict_grounding: true
+      plan_first: true
+      enable_skill_helper_tools: true
+      max_skill_activations: 10
+      stuck_detection_window: 3
+      max_midcourse_corrections: 2
+      final_review: false
 
       # MCP servers to expose as tools in the agentic loop
       tool_servers:
@@ -188,7 +202,7 @@ actions:
       model_action_type: "OpenAILanguageModelAction"
       model: "gpt-4.1-mini"
       model_temperature: 0.2
-      model_max_tokens: 4096
+      model_max_tokens: 32768
 
   # ──────────────────────────────────────────────
   # Fallback
@@ -196,6 +210,6 @@ actions:
 
   - action: jvagent/converse_interact_action
     context:
-      enabled: true
+      enabled: false
       description: "Smalltalk fallback for casual conversation"
       weight: 100

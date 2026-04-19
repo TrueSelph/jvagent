@@ -1,19 +1,11 @@
-"""Tests for Claude-style SKILL.md bundle discovery."""
+"""Tests for Claude-style SKILL.md bundle discovery via SkillCatalog."""
 
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
-from jvagent.action.skill.skill_interact_action import SkillInteractAction
-
-
-def _make_action():
-    action = MagicMock(spec=SkillInteractAction)
-    action.skills = None
-    action.denied_skills = []
-    action.skills_source = "both"
-    return action
+from jvagent.action.skill.skill_catalog import SkillCatalog
 
 
 @pytest.mark.asyncio
@@ -28,9 +20,12 @@ async def test_discover_skill_bundle_without_selector_returns_none(
     visitor = MagicMock()
     visitor._agent = SimpleNamespace(namespace="demo", name="assistant")
 
-    action = _make_action()
-    discovered = await SkillInteractAction._discover_skill_bundles(action, visitor)
-    assert discovered == {}
+    catalog = await SkillCatalog.discover(
+        visitor=visitor,
+        skills_selector=None,
+        skills_source="app",
+    )
+    assert catalog.is_empty
 
 
 @pytest.mark.asyncio
@@ -55,13 +50,14 @@ Follow these steps.
     visitor = MagicMock()
     visitor._agent = SimpleNamespace(namespace="demo", name="assistant")
 
-    action = _make_action()
-    action.skills = "-all"
-    action.skills_source = "app"
-    discovered = await SkillInteractAction._discover_skill_bundles(action, visitor)
-    assert "ops_skill" in discovered
-    assert discovered["ops_skill"]["description"] == "Operations workflow"
-    assert discovered["ops_skill"]["allowed_tools"] == ["apply_patch", "run_checks"]
+    catalog = await SkillCatalog.discover(
+        visitor=visitor,
+        skills_selector="-all",
+        skills_source="app",
+    )
+    assert "ops_skill" in catalog.skills
+    assert catalog.skills["ops_skill"]["description"] == "Operations workflow"
+    assert catalog.skills["ops_skill"]["allowed_tools"] == ["apply_patch", "run_checks"]
 
 
 @pytest.mark.asyncio
@@ -79,11 +75,12 @@ async def test_discover_skill_bundle_filters_by_list_and_glob(tmp_path, monkeypa
     visitor = MagicMock()
     visitor._agent = SimpleNamespace(namespace="demo", name="assistant")
 
-    action = _make_action()
-    action.skills = ["code_*", "research"]
-    action.skills_source = "app"
-    discovered = await SkillInteractAction._discover_skill_bundles(action, visitor)
-    assert set(discovered.keys()) == {"code_review", "research"}
+    catalog = await SkillCatalog.discover(
+        visitor=visitor,
+        skills_selector=["code_*", "research"],
+        skills_source="app",
+    )
+    assert set(catalog.skills.keys()) == {"code_review", "research"}
 
 
 @pytest.mark.asyncio
@@ -101,9 +98,10 @@ async def test_discover_skill_bundle_applies_denied_filters(tmp_path, monkeypatc
     visitor = MagicMock()
     visitor._agent = SimpleNamespace(namespace="demo", name="assistant")
 
-    action = _make_action()
-    action.skills = "-all"
-    action.skills_source = "app"
-    action.denied_skills = ["tri*", "research"]
-    discovered = await SkillInteractAction._discover_skill_bundles(action, visitor)
-    assert set(discovered.keys()) == {"code_review"}
+    catalog = await SkillCatalog.discover(
+        visitor=visitor,
+        skills_selector="-all",
+        skills_source="app",
+        denied_skills=["tri*", "research"],
+    )
+    assert set(catalog.skills.keys()) == {"code_review"}

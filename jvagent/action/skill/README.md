@@ -19,6 +19,9 @@ When activated by the InteractRouter, this action:
 - **Deterministic tool dispatch**: The LLM decides which tool to call; ToolExecutor dispatches directly via `MCPClientWrapper.call_tool()`, bypassing `MCPAction.fulfill()` NL-to-tool mapping.
 - **Multi-provider support**: OpenAI and Anthropic message formats handled transparently via `_convert_messages_for_provider()`.
 - **Extended thinking**: Anthropic extended thinking with configurable token budget, streamed as `thought_type="reasoning"`.
+- **Grounding by default**: Prompt policy, per-skill activation reminders, and forced-termination constraints discourage hallucinations and unsupported claims.
+- **Skill helper tools**: Optional `list_skills` and `skill_search` tools improve skill selection when many bundles are available.
+- **Stuck-loop recovery**: Signature-based repeated-call detection injects mid-course correction prompts and forces graceful termination when needed.
 - **Context window management**: Old tool results automatically summarized to stay within limits.
 - **Forced termination**: Graceful summarization when iteration or duration limits are reached.
 
@@ -164,13 +167,26 @@ agents/<namespace>/<agent_id>/
 1. At action start, bundles are resolved from the configured source (`builtin`, `app`, or `both`).
 2. The resolved set is filtered by `skills` and `denied_skills`.
 3. Each bundle is **registered** on the ToolExecutor but its Python tools are **not yet exposed** to the LLM.
-4. The loop injects a `read_skill` tool and a skill index in the system prompt.
+4. The loop injects a `read_skill` tool and a skill index in the system prompt (and optionally `list_skills` / `skill_search` helper tools).
 5. When the model calls `read_skill(skill_name=...)`, the action:
    - **activates** the bundle's Python tool modules via `tool_executor.activate_skill()`
-   - returns the full SOP content and a list of newly available tools
+   - returns the full SOP content, a list of newly available tools, and grounding/scope reminders
 6. Tool definitions are re-fetched each iteration, so newly activated skill tools become available on the next turn.
 
 This mirrors the Claude Code skill model: the LLM discovers capabilities on demand rather than being overwhelmed with every tool at once.
+
+## Intelligence & Grounding
+
+SkillInteractAction now defaults to a stricter reliability posture:
+
+- **Default-on guardrails**: `strict_grounding=True`, `plan_first=True`, and `enable_skill_helper_tools=True`.
+- **Skill selection discipline**: Prompt instructions include when to use skills and when *not* to use them; `list_skills` / `skill_search` are available for disambiguation.
+- **Per-skill scope grounding**: `read_skill` responses append `GROUNDING_INSTRUCTION_TEMPLATE` guidance using each bundle's resolved `scope_hint`.
+- **Activation guard**: `max_skill_activations` caps speculative skill loading; overflow returns `SKILL_ACTIVATION_LIMIT_MESSAGE`.
+- **Stuck detection**: the loop tracks per-iteration tool-call signatures; repeated identical signatures trigger `STUCK_DETECTION_PROMPT`. After `max_midcourse_corrections`, the action forces termination.
+- **Optional final review**: `final_review=True` runs a no-tools cleanup pass (`FINAL_REVIEW_PROMPT`) before publishing.
+
+Skill bundles also resolve a derived `scope_hint` (from frontmatter `tags` or `description`) via `jvagent.scaffold.skill_resolve.parse_skill_bundle()`.
 
 ## The Agentic Loop
 
@@ -198,14 +214,16 @@ The core algorithm in `_run_agentic_loop()`:
       v.    Dispatch tool calls via ToolExecutor
       vi.   Publish tool_result thought (thought_type="tool_result", truncated to tool_result_truncation_chars)
       vii.  Append tool result messages
-      viii. Record "tool_result" step
-      ix.   Truncate messages if context window too large
+      viii. Run stuck-state detection over tool-call signatures; inject mid-course correction prompt when needed
+      ix.   Record "tool_result" step
+      x.    Truncate messages if context window too large
 5. If loop exhausted iterations: forced termination, termination_reason=ITER_CAP
-6. Record "response" step (with loop_state)
-7. Return (final_response, termination_reason)
+6. If final_review enabled: run no-tools grounding review pass
+7. Record "response" step (with loop_state)
+8. Return (final_response, termination_reason, stuck_corrections)
 ```
 
-Returns `tuple[str, str]` where the second element is a `TerminationReason` value.
+Returns `tuple[str, str, int]` where the second element is a `TerminationReason` value and the third is stuck-correction count.
 
 ## Configuration
 
@@ -241,6 +259,13 @@ All attributes can be overridden via `context` in agent.yaml.
 | `call_timeout_seconds` | float | `60.0` | Timeout in seconds for each tool call (passed to ToolExecutor) |
 | `task_sync_every_steps` | int | `3` | How many tracker steps to buffer before persisting metadata |
 | `local_tools_path` | str | `None` | Absolute path to a directory of local .py tool modules |
+| `strict_grounding` | bool | `True` | Enable grounding-focused prompt constraints and per-skill scope reminders |
+| `plan_first` | bool | `True` | Instruct model to emit a brief plan before non-trivial tool use |
+| `enable_skill_helper_tools` | bool | `True` | Register `list_skills` and `skill_search` dynamic tools |
+| `max_skill_activations` | int | `5` | Maximum number of skill activations in one loop |
+| `stuck_detection_window` | int | `3` | Consecutive identical tool-call signatures needed to trigger stuck detection |
+| `max_midcourse_corrections` | int | `2` | Maximum injected stuck-detection corrections before forced termination |
+| `final_review` | bool | `False` | Run optional no-tools final grounding review pass before publish/respond |
 
 ### ToolExecutor Constructor Parameters
 
@@ -281,12 +306,17 @@ actions:
   - action: jvagent/mcp
     context:
       enabled: true
-      server_name: "filesystem"
-      transport: "stdio"
-      command: "npx"
-      args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
-      mcp_connect_timeout: 15
-      mcp_call_timeout: 60
+      model_action_type: "OpenAILanguageModelAction"
+      model: "gpt-4o-mini"
+      servers:
+        - name: "filesystem"
+          transport: "stdio"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+          mcp_connect_timeout: 15
+          mcp_call_timeout: 60
+          tools: "-all"
+          denied_tools: []
 
   # ── Thinking Agent (Core Loop) ─────────────────
   - action: jvagent/skill_interact_action
@@ -382,14 +412,14 @@ When `thinking_budget_tokens > 0`, the action injects `thinking: {type: "enabled
 
 ## MCP Tool Integration
 
-SkillInteractAction uses MCP servers as tool providers. Configure one `jvagent/mcp` action per server, then reference them by `server_name` in `tool_servers`.
+SkillInteractAction uses MCP servers as tool providers. Configure MCP providers under one `jvagent/mcp` action (`context.servers`), then reference each provider by `servers[].name` in `tool_servers`.
 
 ### How Tools Are Discovered
 
-1. ToolExecutor finds the MCPAction by `server_name` via `agent.get_actions()` iteration
-2. Calls `mcp_action.get_tools_cached()` to get the tool list (cached per session)
+1. ToolExecutor finds the MCPAction that hosts the requested server name via `agent.get_actions()` iteration
+2. Calls `mcp_action.get_tools_cached(server_name)` to get the filtered tool list (cached per server session)
 3. Registers each tool in ToolManager with name, description, and input schema
-4. Maps `tool_name -> ("mcp", mcp_action)` in the handlers registry
+4. Maps `tool_name -> ("mcp", (mcp_action, server_name))` in the handlers registry
 
 ### How Tools Are Dispatched
 
@@ -882,21 +912,23 @@ description: Custom research workflow for our domain.
 
 ### Adding a New MCP Server
 
-1. Add a `jvagent/mcp` action with a unique `server_name`:
+1. Add a server entry to `jvagent/mcp.context.servers` with a unique `name`:
 
 ```yaml
 - action: jvagent/mcp
   context:
     enabled: true
-    label: "Web Search MCP"
-    server_name: "websearch"
-    transport: "streamable_http"
-    url: "http://localhost:3001/mcp"
-    mcp_connect_timeout: 10
-    mcp_call_timeout: 30
+    servers:
+      - name: "websearch"
+        transport: "streamable_http"
+        url: "http://localhost:3001/mcp"
+        mcp_connect_timeout: 10
+        mcp_call_timeout: 30
+        tools: "-all"
+        denied_tools: []
 ```
 
-2. Add the `server_name` to `tool_servers`:
+2. Add the server `name` to `tool_servers`:
 
 ```yaml
 - action: jvagent/skill_interact_action

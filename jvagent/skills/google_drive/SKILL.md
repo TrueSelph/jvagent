@@ -4,11 +4,11 @@ description: Upload, share, and manage Google Drive files.
 requires-actions:
   - GoogleDriveAction
 allowed-tools:
-  - upload_file
-  - delete_file
+  - google_drive__upload_file
+  - google_drive__delete_file
   - get_file_metadata
-  - list_files
-  - share_file
+  - google_drive__list_files
+  - google_drive__share_file
   - get_media
 version: 1
 tags:
@@ -25,5 +25,15 @@ tags:
 ### Constraints
 
 - Always confirm with the user before deleting files.
-- For `upload_file`, provide either `content` (text content) or `source_url` (URL to download from).
+- For `google_drive__upload_file`, provide either `content` (text content) or `source_url` (URL to download from).
 - Default file metadata fields are `id, name, mimeType` unless the user specifies otherwise.
+
+## Scope
+
+This skill is for Google Drive file storage tasks: upload, list, metadata lookup, sharing, download, and deletion. Use it when the user needs Drive file management. Do not use it for spreadsheet cell edits, calendar scheduling, or email content operations.
+
+## Grounding
+
+- Only report file IDs, names, permissions, and metadata that are returned by Drive tools.
+- If no files are returned, say that explicitly rather than implying files exist.
+- Always confirm before `google_drive__delete_file` and before broad sharing actions.
