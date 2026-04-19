@@ -602,13 +602,18 @@ class SkillInteractAction(InteractAction):
                 break
 
             iteration += 1
-            await task_handle.record_step("thinking", iteration=iteration)
             loop_state = LoopState.MODEL
 
             # Re-fetch tools each iteration to include newly activated skill tools.
             tools = tool_executor.get_tools_list()
             model_result = await self._call_model(
                 messages, tools, visitor, model_kwargs
+            )
+
+            await task_handle.record_step(
+                "thinking",
+                iteration=iteration,
+                details={"tokens": model_result.thinking_tokens or 0},
             )
 
             if model_result.thinking_content and self.stream_thinking:
@@ -658,8 +663,26 @@ class SkillInteractAction(InteractAction):
             tool_calls = model_result.tool_calls
             stuck_result = stuck_detector.record(tool_calls)
             loop_state = LoopState.TOOLS
+            tool_names = [
+                tc.get("function", {}).get("name", "unknown") for tc in tool_calls
+            ]
+            tool_summaries = []
+            for tc in tool_calls:
+                fn = tc.get("function", {})
+                args_str = fn.get("arguments", "")
+                if len(args_str) > 120:
+                    args_str = args_str[:117] + "..."
+                tool_summaries.append(
+                    {"name": fn.get("name", "unknown"), "arguments": args_str}
+                )
             await task_handle.record_step(
-                "tool_call", iteration=iteration, details={"count": len(tool_calls)}
+                "tool_call",
+                iteration=iteration,
+                details={
+                    "count": len(tool_calls),
+                    "tools": tool_names,
+                    "tool_summaries": tool_summaries,
+                },
             )
 
             # Surface any mid-loop user-facing commentary the model emitted alongside
@@ -721,10 +744,25 @@ class SkillInteractAction(InteractAction):
                     )
 
             messages.extend(tool_result_messages)
+            result_statuses = []
+            for tr_msg in tool_result_messages:
+                content = tr_msg.get("content", "")
+                is_error = tr_msg.get("is_error", False)
+                result_statuses.append(
+                    {
+                        "tool_call_id": tr_msg.get("tool_call_id", ""),
+                        "is_error": is_error,
+                        "content_preview": content[:200] if content else "",
+                    }
+                )
             await task_handle.record_step(
                 "tool_result",
                 iteration=iteration,
-                details={"duration_ms": tool_duration_ms},
+                details={
+                    "duration_ms": tool_duration_ms,
+                    "count": len(tool_result_messages),
+                    "results": result_statuses,
+                },
             )
             if stuck_result:
                 if stuck_result == "FORCE_TERMINATE":
@@ -772,7 +810,12 @@ class SkillInteractAction(InteractAction):
         await task_handle.record_step(
             "response",
             iteration=iteration,
-            details={"length": len(final_response), "loop_state": loop_state.value},
+            details={
+                "length": len(final_response),
+                "loop_state": loop_state.value,
+                "termination_reason": termination_reason,
+                "preview": final_response[:300],
+            },
         )
         return final_response, termination_reason, stuck_detector.corrections
 

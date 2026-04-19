@@ -142,7 +142,7 @@ actions:
       # Response delivery mode:
       #   "publish" (default) — direct bus delivery, fast
       #   "respond" — route through PersonaAction for persona-enriched responses
-      response_mode: respond
+      # response_mode: respond
 
       # Extended thinking (Anthropic only; 0 = disabled for OpenAI)
       thinking_budget_tokens: 0
@@ -152,7 +152,7 @@ actions:
       # added under agents/<ns>/<id>/skills/*/SKILL.md.
       skills:
         - "code_review"
-        - "research"
+        - "answer"
         - "pageindex_search"
         - "pageindex_docs"
         - "web_search"
@@ -171,7 +171,6 @@ actions:
       # MCP servers to expose as tools in the agentic loop
       tool_servers:
         - "filesystem"
-        # - "websearch"
 
       # Streaming behavior
       stream_tool_progress: true

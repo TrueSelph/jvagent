@@ -6,7 +6,7 @@
 
 When activated by the InteractRouter, this action:
 
-1. Resolves **skill bundles** from built-in and app-local catalogs
+1. Resolves **skill bundles** from built-in and app-local catalogs via `SkillCatalog`
 2. Initializes a **ToolExecutor** with tools from configured MCP servers
 3. Runs the agentic loop: LLM thinks, calls tools, observes results, and iterates
 4. Tracks multi-step progress via shared **TaskService** on `Conversation.active_tasks`
@@ -16,23 +16,28 @@ When activated by the InteractRouter, this action:
 ### Key Capabilities
 
 - **Progressive skill disclosure**: Skills are exposed via a `read_skill` tool. Their Python tool modules are only loaded when the LLM calls `read_skill`, keeping the tool list lean until specialization is needed.
+- **Tool name namespacing**: Skill bundle tools are registered with a `{skill_name}__` prefix (e.g., `calendar__list_events`) to prevent silent handler overwrites when multiple bundles share tool filenames.
 - **Deterministic tool dispatch**: The LLM decides which tool to call; ToolExecutor dispatches directly via `MCPClientWrapper.call_tool()`, bypassing `MCPAction.fulfill()` NL-to-tool mapping.
-- **Multi-provider support**: OpenAI and Anthropic message formats handled transparently via `_convert_messages_for_provider()`.
+- **Multi-provider support**: OpenAI and Anthropic message formats handled transparently via `LoopContext.convert_for_provider()`.
 - **Extended thinking**: Anthropic extended thinking with configurable token budget, streamed as `thought_type="reasoning"`.
 - **Grounding by default**: Prompt policy, per-skill activation reminders, and forced-termination constraints discourage hallucinations and unsupported claims.
 - **Skill helper tools**: Optional `list_skills` and `skill_search` tools improve skill selection when many bundles are available.
-- **Stuck-loop recovery**: Signature-based repeated-call detection injects mid-course correction prompts and forces graceful termination when needed.
-- **Context window management**: Old tool results automatically summarized to stay within limits.
+- **Metadata-driven skill search**: `SkillCatalog.search()` uses weighted token overlap over structured skill metadata (name, tags, description, scope_hint) — language-agnostic, no hardcoded synonyms or domain biases.
+- **Stuck-loop recovery**: `StuckDetector` tracks tool-call signatures in a sliding window, injects mid-course correction prompts, and forces graceful termination when needed.
+- **Context window management**: `LoopContext.maybe_truncate()` automatically summarizes old tool results, handling both OpenAI and Anthropic message formats.
 - **Forced termination**: Graceful summarization when iteration or duration limits are reached.
 
 ## Architecture
 
 ```
 jvagent/action/skill/
-  __init__.py                      # Package exports (SkillInteractAction, ToolExecutor)
-  skill_interact_action.py         # SkillInteractAction (InteractAction) + LoopState, TerminationReason
-  tool_executor.py                 # ToolExecutor (runtime helper)
-  action_resolver.py               # ActionResolver (resolves graph-persisted Actions for skill tools)
+  __init__.py                      # Package exports (SkillInteractAction, ToolExecutor, SkillCatalog, LoopContext, StuckDetector)
+  skill_interact_action.py         # SkillInteractAction (InteractAction) + LoopState, TerminationReason (~810 lines)
+  skill_catalog.py                 # SkillCatalog: discovery, rendering, search, activation validation, response mode
+  loop_context.py                  # LoopContext + LoopContextConfig: message building, truncation, format conversion
+  stuck_detector.py                 # StuckDetector + StuckDetectorConfig: stuck-loop detection
+  tool_executor.py                 # ToolExecutor: tool dispatch, skill activation, namespacing, security
+  action_resolver.py               # ActionResolver: resolves graph-persisted Actions for skill tools
   tool_registry.py                  # ToolRegistry + ToolHandle (internal to ToolExecutor)
   prompts.py                       # System prompt templates
   info.yaml                        # Package: jvagent/skill_interact_action
@@ -52,6 +57,7 @@ jvagent/skills/                    # Built-in skill catalog
   web_search/     SKILL.md + search.py
   pageindex_search/ SKILL.md + search.py
   pageindex_docs/  SKILL.md + list_documents.py + assimilate.py + delete_document.py
+  answer/         SKILL.md + search.py
   code_review/    SKILL.md
   research/       SKILL.md
   triage/         SKILL.md + prioritize_findings.py
@@ -65,7 +71,7 @@ InteractRouter
   v (activates by weight/classification)
 SkillInteractAction.execute(visitor)
   |
-  +--->_discover_skill_bundles(visitor)
+  +--->SkillCatalog.discover(visitor, skills, skills_source, denied_skills)
   |       Resolves bundles via jvagent.scaffold.skill_resolve
   |       Applies skills/denied_skills/skills_source filters
   |
@@ -89,13 +95,14 @@ SkillInteractAction.execute(visitor)
   +--->_run_agentic_loop()
           |
           +--->_build_model_kwargs()
-          +--->_build_initial_messages(visitor, discovered_skills)
-          |       Injects SKILL_INDEX_INTRO + skill index
+          +--->LoopContext.build_initial_messages(system_prompt, utterance, conversation, interaction, skill_index_section)
+          |       Injects skill index section from SkillCatalog.render_system_prompt_section()
           +---> LOOP (iteration < max, elapsed < timeout):
           |       |
           |       +--->tools = tool_executor.get_tools_list()  # re-fetched each iteration
           |       +--->_call_model(messages, tools, visitor, kwargs)
           |       |       calls model_action.query_messages()
+          |       |       applies LoopContext.convert_for_provider() when provider is "anthropic"
           |       +--->IF thinking_content: publish_thought(thought_type="reasoning")
           |       +--->IF no tool_calls: loop_state=TERMINATE -> BREAK
           |       +--->IF tool_calls:
@@ -104,14 +111,17 @@ SkillInteractAction.execute(visitor)
           |       |         (so it is rendered to the user AND appended to
           |       |          interaction.response for conversation history)
           |       |       publish_thought(thought_type="tool_call") per call
-          |       |       _build_assistant_content() -> append
+          |       |       LoopContext.build_assistant_content() -> append
           |       |       tool_executor.dispatch() -> result messages
           |       |       publish_thought(thought_type="tool_result") per result
-          |       |       Append results, truncate if needed
+          |       |       Append results
+          |       |       StuckDetector.record() -> inject correction or FORCE_TERMINATE
+          |       |       LoopContext.maybe_truncate() -> summarize old results
           |       |
           |       +--->IF at limit: _force_termination(), set termination_reason
           |
           +--->return (final_response, termination_reason)
+          +--->SkillCatalog.get_response_mode_override() -> resolve "respond" vs "publish"
           +--->IF response_mode == "respond":
           |       visitor.add_directive(final_response)
           |       self.respond(visitor)
@@ -160,30 +170,47 @@ agents/<namespace>/<agent_id>/
 - `name` (recommended)
 - `description` (recommended)
 - `allowed-tools` (optional) -- whitelist of Python tool names to activate from this bundle
+- `requires-actions` (optional) -- Action entity types this skill depends on
+- `response-mode` (optional) -- override the action's response_mode for this skill
 - `version`, `license`, `tags` (optional metadata)
 
 ### Progressive Disclosure Flow
 
-1. At action start, bundles are resolved from the configured source (`builtin`, `app`, or `both`).
+1. At action start, bundles are resolved from the configured source (`builtin`, `app`, or `both`) via `SkillCatalog.discover()`.
 2. The resolved set is filtered by `skills` and `denied_skills`.
 3. Each bundle is **registered** on the ToolExecutor but its Python tools are **not yet exposed** to the LLM.
 4. The loop injects a `read_skill` tool and a skill index in the system prompt (and optionally `list_skills` / `skill_search` helper tools).
 5. When the model calls `read_skill(skill_name=...)`, the action:
    - **activates** the bundle's Python tool modules via `tool_executor.activate_skill()`
+   - tools are registered with a `{skill_name}__` prefix (e.g., `gmail__send_email`) to prevent collisions
    - returns the full SOP content, a list of newly available tools, and grounding/scope reminders
 6. Tool definitions are re-fetched each iteration, so newly activated skill tools become available on the next turn.
 
 This mirrors the Claude Code skill model: the LLM discovers capabilities on demand rather than being overwhelmed with every tool at once.
 
+### Tool Name Namespacing
+
+When a skill bundle is activated, its tool modules are registered with a namespaced name:
+
+```
+{skill_name}__{tool_name}
+```
+
+For example, the `calendar` skill's `list_events` tool becomes `calendar__list_events`. This prevents silent handler overwrites when multiple bundles share the same tool filename (e.g., `search.py` exists in both `web_search` and `pageindex_search`).
+
+The `allowed-tools` whitelist in SKILL.md frontmatter accepts both bare names (`search`) and namespaced names (`pageindex_search__search`). The LLM sees and calls tools using the namespaced names.
+
 ## Intelligence & Grounding
 
-SkillInteractAction now defaults to a stricter reliability posture:
+SkillInteractAction defaults to a stricter reliability posture:
 
 - **Default-on guardrails**: `strict_grounding=True`, `plan_first=True`, and `enable_skill_helper_tools=True`.
 - **Skill selection discipline**: Prompt instructions include when to use skills and when *not* to use them; `list_skills` / `skill_search` are available for disambiguation.
+- **Metadata-driven search**: `SkillCatalog.search()` uses weighted token overlap over structured skill metadata — language-agnostic, no hardcoded synonyms or domain biases.
+- **Skill-first retry**: When skills are available but none are activated, the loop nudges the model with `SKILL_FIRST_RETRY_PROMPT` once before proceeding.
 - **Per-skill scope grounding**: `read_skill` responses append `GROUNDING_INSTRUCTION_TEMPLATE` guidance using each bundle's resolved `scope_hint`.
 - **Activation guard**: `max_skill_activations` caps speculative skill loading; overflow returns `SKILL_ACTIVATION_LIMIT_MESSAGE`.
-- **Stuck detection**: the loop tracks per-iteration tool-call signatures; repeated identical signatures trigger `STUCK_DETECTION_PROMPT`. After `max_midcourse_corrections`, the action forces termination.
+- **Stuck detection**: `StuckDetector` tracks per-iteration tool-call signatures in a sliding window; repeated identical signatures trigger `STUCK_DETECTION_PROMPT`. After `max_midcourse_corrections`, the action forces termination.
 - **Optional final review**: `final_review=True` runs a no-tools cleanup pass (`FINAL_REVIEW_PROMPT`) before publishing.
 
 Skill bundles also resolve a derived `scope_hint` (from frontmatter `tags` or `description`) via `jvagent.scaffold.skill_resolve.parse_skill_bundle()`.
@@ -194,13 +221,15 @@ The core algorithm in `_run_agentic_loop()`:
 
 ```
 1. Build model kwargs (base config + thinking config)
-2. Compose initial messages (system prompt + skill index + history + user utterance)
+2. Compose initial messages via LoopContext.build_initial_messages()
+   (system prompt + skill index + history + user utterance)
 3. Initialize loop_state=MODEL, termination_reason=COMPLETED
 4. LOOP (iteration < max_iterations):
    a. Check duration limit -> if exceeded: loop_state=TERMINATE, forced termination, termination_reason=TIME_CAP, BREAK
    b. Re-fetch tool list (includes newly activated skill tools)
    c. Record "thinking" step on TaskHandle, loop_state=MODEL
    d. Call LLM via model_action.query_messages()
+      (applies LoopContext.convert_for_provider() for Anthropic)
    e. Publish reasoning thought (if Anthropic extended thinking)
    f. If no tool_calls -> extract text, termination_reason=COMPLETED, loop_state=TERMINATE, BREAK
    g. If tool_calls present:
@@ -210,13 +239,13 @@ The core algorithm in `_run_agentic_loop()`:
             category="user" so it is rendered to the user AND appended
             to interaction.response (keeps conversation history complete)
       iii.  Publish tool_call thought (thought_type="tool_call")
-      iv.   Build assistant message, append to messages
+      iv.   LoopContext.build_assistant_content() -> append
       v.    Dispatch tool calls via ToolExecutor
       vi.   Publish tool_result thought (thought_type="tool_result", truncated to tool_result_truncation_chars)
       vii.  Append tool result messages
-      viii. Run stuck-state detection over tool-call signatures; inject mid-course correction prompt when needed
+      viii. StuckDetector.record() -> inject correction or FORCE_TERMINATE
       ix.   Record "tool_result" step
-      x.    Truncate messages if context window too large
+      x.    LoopContext.maybe_truncate() -> summarize old results
 5. If loop exhausted iterations: forced termination, termination_reason=ITER_CAP
 6. If final_review enabled: run no-tools grounding review pass
 7. Record "response" step (with loop_state)
@@ -248,6 +277,8 @@ All attributes can be overridden via `context` in agent.yaml.
 | `response_mode` | str | `"publish"` | How to deliver the final response: `"publish"` (direct bus delivery) or `"respond"` (route through PersonaAction for persona-enriched responses with parameters, directives, and persona attributes) |
 | `tool_servers` | List[str] | `[]` | Names of MCPAction instances providing tools |
 | `allow_local_tools` | bool | `False` | Whether ToolExecutor can register local Python tools |
+| `prioritize_skills_first` | bool | `True` | When skills are available but none activated, inject a nudge on the first failed iteration |
+| `skill_first_retry_limit` | int | `1` | Maximum skill-first retry nudges per loop |
 | `stream_thinking` | bool | `True` | Publish reasoning thoughts via `publish_thought()` |
 | `stream_tool_progress` | bool | `True` | Publish tool_call and tool_result thoughts via `publish_thought()` |
 | `commit_intermediate_messages` | bool | `True` | Publish (and persist) any text the model emits alongside tool calls as a `category="user"` message so the conversation history matches what the assistant said. |
@@ -267,6 +298,26 @@ All attributes can be overridden via `context` in agent.yaml.
 | `max_midcourse_corrections` | int | `2` | Maximum injected stuck-detection corrections before forced termination |
 | `final_review` | bool | `False` | Run optional no-tools final grounding review pass before publish/respond |
 
+### LoopContextConfig Attributes
+
+Configures message lifecycle management in `LoopContext`.
+
+| Attribute | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `max_full_tool_results` | int | `10` | Keep last N tool results in full; summarize older |
+| `max_tool_result_tokens` | int | `400` | Max estimated tokens retained for an individual tool result |
+| `tool_result_truncation_chars` | int | `500` | Max characters for individually truncated tool results |
+| `history_limit` | int | `5` | How many prior interactions to include |
+
+### StuckDetectorConfig Attributes
+
+Configures stuck-loop detection behavior in `StuckDetector`.
+
+| Attribute | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `window_size` | int | `3` | Consecutive identical signatures to trigger detection |
+| `max_corrections` | int | `2` | Maximum corrections before forced termination |
+
 ### ToolExecutor Constructor Parameters
 
 | Parameter | Type | Default | Description |
@@ -275,6 +326,7 @@ All attributes can be overridden via `context` in agent.yaml.
 | `validate_calls` | bool | `True` | Validate tool calls against schema before dispatch |
 | `max_concurrent_calls` | int | `5` | Maximum concurrent tool executions (semaphore) |
 | `sanitize_errors` | bool | `True` | Replace internal error details with generic messages |
+| `allowed_tool_paths` | Optional[List[str]] | `None` | Additional base directories allowed for dynamic tool loading |
 
 ## Agent Wiring (agent.yaml)
 
@@ -468,7 +520,7 @@ async def execute(arguments: dict) -> str:
     return str(result)
 ```
 
-ToolExecutor scans all `.py` files, imports `get_tool_definition()` and `execute()`, and registers them.
+ToolExecutor scans all `.py` files, imports `get_tool_definition()` and `execute()`, and registers them. **Security**: files outside the current working directory are rejected unless their parent directory is listed in `allowed_tool_paths`.
 
 ### 2. Programmatically via `register_local_tool()`
 
@@ -482,9 +534,9 @@ tool_def = executor.register_local_tool(
 )
 ```
 
-### 3. Skill Bundle Tools (Progressive)
+### 3. Skill Bundle Tools (Progressive, Namespaced)
 
-Tools inside a skill bundle directory are hidden until the LLM calls `read_skill`. See [Progressive Disclosure Flow](#progressive-disclosure-flow).
+Tools inside a skill bundle directory are hidden until the LLM calls `read_skill`. Upon activation, tools are registered with a `{skill_name}__` prefix. See [Progressive Disclosure Flow](#progressive-disclosure-flow) and [Tool Name Namespacing](#tool-name-namespacing).
 
 ## Action-Bound Skill Tools
 
@@ -513,7 +565,7 @@ allowed-tools:
 ---
 ```
 
-When the LLM calls `read_skill` for a skill with `requires-actions`, the activation handler validates that each required action is present and enabled on the agent's graph. If any are missing or disabled, the skill fails to activate with a clear error message.
+When the LLM calls `read_skill` for a skill with `requires-actions`, `SkillCatalog.validate_requirements()` checks that each required action is present and enabled on the agent's graph. If any are missing or disabled, the skill fails to activate with a clear error message.
 
 ### ActionResolver API
 
@@ -547,24 +599,25 @@ async def execute(arguments: dict, *, visitor: Any) -> Any:
 
 ## Built-in Skills
 
-jvagent ships with fourteen built-in skill bundles:
+jvagent ships with fifteen built-in skill bundles. Tool names are shown in their namespaced form (`{skill_name}__{tool_name}`):
 
 | Skill | Description | Tools | Requires Actions |
 |-------|-------------|-------|-----------------|
-| `calendar` | Manage Google Calendar events (list, create, delete) | `list_events`, `create_event`, `delete_event` | `GoogleCalendarAction` |
-| `gmail` | Send and manage Gmail messages | `send_email`, `list_messages`, `get_message`, `mark_read`, `get_profile` | `GoogleGmailAction` |
-| `google_sheets` | Read, write, and manage Google Sheets | `read_spreadsheet`, `last_filled_row`, `update_spreadsheet`, `append_spreadsheet`, `batch_clear`, `format_cells`, `merge_cells`, `unmerge_cells`, `create_spreadsheet`, `create_worksheet`, `update_worksheet`, `delete_worksheet`, `share_spreadsheet`, `delete_spreadsheet` | `GoogleSheetsAction` |
-| `google_drive` | Upload, share, and manage Google Drive files | `upload_file`, `delete_file`, `get_file_metadata`, `list_files`, `share_file`, `get_media` | `GoogleDriveAction` |
-| `outlook_calendar` | Manage Outlook Calendar events (list, create, delete) | `list_events`, `create_event`, `delete_event` | `MicrosoftOutlookCalendarAction` |
-| `outlook_mail` | Send and manage Outlook mail messages | `send_email`, `list_messages`, `list_inbox_messages`, `get_message`, `mark_read`, `get_profile` | `MicrosoftOutlookMailAction` |
-| `microsoft_excel` | Read, write, and manage Excel workbooks | `read_spreadsheet`, `update_spreadsheet`, `append_spreadsheet`, `batch_clear`, `create_spreadsheet`, `create_worksheet`, `update_worksheet`, `delete_worksheet`, `share_spreadsheet`, `delete_spreadsheet` | `MicrosoftExcelAction` |
-| `microsoft_onedrive` | Upload, share, and manage OneDrive files | `upload_file`, `delete_file`, `list_files`, `share_file` | `MicrosoftOneDriveAction` |
-| `web_search` | Search the web for current information | `search` | `SerperWebSearchAction` |
-| `pageindex_search` | Search PageIndex documents using vectorless retrieval | `search` | `PageIndexAction` |
-| `pageindex_docs` | List, ingest, and remove PageIndex documents | `list_documents`, `assimilate`, `delete_document` | `PageIndexAction` |
+| `calendar` | Manage Google Calendar events (list, create, delete) | `calendar__list_events`, `calendar__create_event`, `calendar__delete_event` | `GoogleCalendarAction` |
+| `gmail` | Send and manage Gmail messages | `gmail__send_email`, `gmail__list_messages`, `gmail__get_message`, `gmail__mark_read`, `gmail__get_profile` | `GoogleGmailAction` |
+| `google_sheets` | Read, write, and manage Google Sheets | `google_sheets__read_spreadsheet`, `google_sheets__last_filled_row`, `google_sheets__update_spreadsheet`, `google_sheets__append_spreadsheet`, `google_sheets__batch_clear`, `google_sheets__format_cells`, `google_sheets__merge_cells`, `google_sheets__unmerge_cells`, `google_sheets__create_spreadsheet`, `google_sheets__create_worksheet`, `google_sheets__update_worksheet`, `google_sheets__delete_worksheet`, `google_sheets__share_spreadsheet`, `google_sheets__delete_spreadsheet` | `GoogleSheetsAction` |
+| `google_drive` | Upload, share, and manage Google Drive files | `google_drive__upload_file`, `google_drive__delete_file`, `google_drive__get_file_metadata`, `google_drive__list_files`, `google_drive__share_file`, `google_drive__get_media` | `GoogleDriveAction` |
+| `outlook_calendar` | Manage Outlook Calendar events (list, create, delete) | `outlook_calendar__list_events`, `outlook_calendar__create_event`, `outlook_calendar__delete_event` | `MicrosoftOutlookCalendarAction` |
+| `outlook_mail` | Send and manage Outlook mail messages | `outlook_mail__send_email`, `outlook_mail__list_messages`, `outlook_mail__list_inbox_messages`, `outlook_mail__get_message`, `outlook_mail__mark_read`, `outlook_mail__get_profile` | `MicrosoftOutlookMailAction` |
+| `microsoft_excel` | Read, write, and manage Excel workbooks | `microsoft_excel__read_spreadsheet`, `microsoft_excel__update_spreadsheet`, `microsoft_excel__append_spreadsheet`, `microsoft_excel__batch_clear`, `microsoft_excel__create_spreadsheet`, `microsoft_excel__create_worksheet`, `microsoft_excel__update_worksheet`, `microsoft_excel__delete_worksheet`, `microsoft_excel__share_spreadsheet`, `microsoft_excel__delete_spreadsheet` | `MicrosoftExcelAction` |
+| `microsoft_onedrive` | Upload, share, and manage OneDrive files | `microsoft_onedrive__upload_file`, `microsoft_onedrive__delete_file`, `microsoft_onedrive__list_files`, `microsoft_onedrive__share_file` | `MicrosoftOneDriveAction` |
+| `answer` | RAG with structured retrieval cascade (PageIndex → web → parametric knowledge), citations, and uncertainty signaling | `answer__search` | `PageIndexAction`, `SerperWebSearchAction` |
+| `web_search` | Search the web for current information | `web_search__search` | `SerperWebSearchAction` |
+| `pageindex_search` | Search PageIndex documents using vectorless retrieval | `pageindex_search__search` | `PageIndexAction` |
+| `pageindex_docs` | List, ingest, and remove PageIndex documents | `pageindex_docs__list_documents`, `pageindex_docs__assimilate`, `pageindex_docs__delete_document` | `PageIndexAction` |
 | `code_review` | Review code for correctness, security, and maintainability | (SOP only) | — |
 | `research` | Investigate a topic with evidence-first synthesis and citations | (SOP only) | — |
-| `triage` | Rapidly triage issues by severity, impact, and next action | `prioritize_findings` | — |
+| `triage` | Rapidly triage issues by severity, impact, and next action | `triage__prioritize_findings` | — |
 
 The `triage` skill includes `prioritize_findings.py`, which sorts findings by severity. It is only exposed to the LLM after `read_skill(skill_name="triage")` is called.
 
@@ -614,7 +667,7 @@ tags:
 | `response-mode` | Optional | str | Override the action's `response_mode` for this skill: `"respond"` (route through PersonaAction) or `"publish"` (direct bus delivery). If omitted, inherits the action's `response_mode` attribute. |
 | `version` | Optional | int/str | Version number for tracking |
 | `license` | Optional | str | License identifier |
-| `tags` | Optional | list[str] | Tags for categorization |
+| `tags` | Optional | list[str] | Tags for categorization and search |
 
 ### Tool Modules in Skill Bundles
 
@@ -633,7 +686,7 @@ async def execute(arguments: dict) -> Any:
     return result
 ```
 
-If `allowed-tools` is set in the frontmatter, only tools whose names match the whitelist are activated.
+If `allowed-tools` is set in the frontmatter, only tools whose names match the whitelist are activated. Upon activation, tools are registered with the `{skill_name}__` prefix.
 
 ## Response Mode
 
@@ -663,7 +716,7 @@ response-mode: respond        # Override action default for this skill only
 
 ### Resolution Logic
 
-When the agentic loop completes with a final response:
+`SkillCatalog.get_response_mode_override()` resolves the effective mode:
 
 1. If any activated skill has `response-mode: respond` → use `respond`
 2. Otherwise → use the action's `response_mode` attribute (default: `publish`)
@@ -794,7 +847,7 @@ See `docs/task-tracking.md` for the shared lifecycle, status model, and callback
 
 ## Message Format Conversion
 
-The agentic loop maintains messages internally in OpenAI-compatible format. When the model provider is Anthropic, `_convert_messages_for_provider()` transforms them:
+The agentic loop maintains messages internally in OpenAI-compatible format. When the model provider is Anthropic, `LoopContext.convert_for_provider()` transforms them:
 
 **OpenAI format** (internal):
 ```json
@@ -827,12 +880,13 @@ Key differences:
 
 ## Context Window Management
 
-`_maybe_truncate_messages()` keeps the context window from growing unbounded during long loops:
+`LoopContext.maybe_truncate()` keeps the context window from growing unbounded during long loops:
 
 - Keeps the **system message**, **first user message**, and **last message** always
 - Keeps the **last N tool result messages** in full (configurable via `max_full_tool_results`, default 10)
 - Older tool results are replaced with `"(Earlier tool result summarized)"`
 - Individual tool results exceeding `max_tool_result_tokens` estimated tokens (via `estimate_tokens()`) are truncated to `tool_result_truncation_chars` characters with a `... (truncated)` suffix
+- Handles **both OpenAI and Anthropic message formats**: detects `role: "tool"` (OpenAI) and `type: "tool_result"` content blocks inside user messages (Anthropic)
 
 ## Forced Termination
 
@@ -943,21 +997,19 @@ from jvagent.action.skill import SkillInteractAction
 
 class CustomThinkingAction(SkillInteractAction):
     max_iterations: int = attribute(default=50)
-
-    async def _build_initial_messages(self, visitor, discovered_skills=None):
-        messages = await super()._build_initial_messages(visitor, discovered_skills)
-        # Add custom context
-        messages.insert(0, {"role": "system", "content": "Domain-specific instructions..."})
-        return messages
 ```
 
 Overridable methods:
 - `_build_model_kwargs()` -- customize model parameters
-- `_build_initial_messages(visitor, discovered_skills)` -- customize system prompt / history
-- `_build_assistant_content(model_result)` -- customize message format
-- `_maybe_truncate_messages(messages)` -- customize context window management
-- `_force_termination(messages, tools, visitor, model_kwargs)` -- customize limit behavior
-- `_discover_skill_bundles(visitor)` -- customize skill resolution
+- `_run_agentic_loop()` -- customize the agentic loop
+- `_call_model()` -- customize model invocation
+- `_force_termination()` -- customize limit behavior
+
+For deeper customization of message handling, subclass or replace the extracted modules:
+- **SkillCatalog** -- customize skill discovery, search, or rendering
+- **LoopContext** -- customize message building, truncation, or format conversion
+- **StuckDetector** -- customize stuck detection thresholds or behavior
+- **ToolExecutor** -- customize tool dispatch or skill activation
 
 ## Error Handling
 
@@ -973,6 +1025,7 @@ Overridable methods:
 | Skill not registered | `activate_skill()` raises `ToolDispatchError` |
 | Skill already active | `activate_skill()` returns `[]` (idempotent) |
 | Tool not in `allowed-tools` | Skipped during activation; not registered |
+| Tool file outside allowed paths | `activate_skill()` logs warning; tool skipped (security) |
 
 ### Agentic Loop Errors
 
@@ -989,20 +1042,25 @@ Overridable methods:
 ## Testing
 
 ```bash
-# Run all thinking action tests
-pytest tests/action/thinking/ -v
+# Run all skill action tests
+pytest tests/action/skill/ -v
 
 # Run specific test files
-pytest tests/action/thinking/test_tool_executor.py -v
-pytest tests/action/thinking/test_tool_registry.py -v
-pytest tests/action/thinking/test_skill_interact_action.py -v
-pytest tests/action/thinking/test_thinking_action_lifecycle.py -v
+pytest tests/action/skill/test_skill_interact_action.py -v
+pytest tests/action/skill/test_skill_catalog.py -v
+pytest tests/action/skill/test_loop_context.py -v
+pytest tests/action/skill/test_stuck_detector.py -v
+pytest tests/action/skill/test_agentic_loop.py -v
+pytest tests/action/skill/test_tool_executor.py -v
+pytest tests/action/skill/test_tool_registry.py -v
+pytest tests/action/skill/test_progressive_disclosure.py -v
+pytest tests/action/skill/test_skill_bundle_discovery.py -v
+pytest tests/action/skill/test_skill_resolution_app_root.py -v
+pytest tests/action/skill/test_prompts_snapshots.py -v
+pytest tests/action/skill/test_action_resolver.py -v
+pytest tests/action/skill/test_thinking_action_lifecycle.py -v
+pytest tests/action/skill/test_anthropic_thinking.py -v
 pytest tests/memory/services/test_task_service.py -v
-pytest tests/action/thinking/test_anthropic_thinking.py -v
-pytest tests/action/thinking/test_progressive_disclosure.py -v
-pytest tests/action/thinking/test_skill_bundle_discovery.py -v
-pytest tests/action/thinking/test_skill_resolution_app_root.py -v
-pytest tests/action/thinking/test_prompts_snapshots.py -v
 
 # Run skill resolver tests
 pytest tests/scaffold/test_skill_resolve.py -v
@@ -1012,14 +1070,16 @@ pytest tests/scaffold/test_skill_resolve.py -v
 
 | File | Coverage |
 |------|----------|
-| `test_tool_executor.py` | Tool registration, pattern filters, dispatch (local, unknown, validation, timeout, error sanitization, concurrent), MCP registration + dispatch, skill bundle registration + activation |
+| `test_skill_interact_action.py` | `_build_model_kwargs`, message construction, `_force_termination`, healthcheck, `_should_retry_for_skill_first` |
+| `test_skill_catalog.py` | `SkillCatalog.discover()`, `format_index_entry()`, `render_catalog()`, `render_system_prompt_section()`, `check_activation_limit()`, `validate_requirements()`, `get_response_mode_override()`, `search()`, `_normalize_tokens()`, `_compute_relevance()`, multilingual matching |
+| `test_loop_context.py` | `build_initial_messages()` (async), `maybe_truncate()` (OpenAI + Anthropic), `convert_for_provider()`, `build_assistant_content()`, `parse_tool_arguments()` |
+| `test_stuck_detector.py` | `StuckDetector.record()`, correction limits, `reset()`, `_build_signature()` |
+| `test_agentic_loop.py` | Skill-first retry logic, stuck detector integration, catalog search integration, Anthropic format conversion |
+| `test_tool_executor.py` | Tool registration, pattern filters, dispatch (local, unknown, validation, timeout, error sanitization, concurrent), MCP registration + dispatch, skill bundle registration + activation, namespaced tool names |
 | `test_tool_registry.py` | `ToolRegistry` register/remove/get/names, `ToolHandle` frozen dataclass, collision-safe namespacing with prefix |
-| `test_skill_interact_action.py` | `_build_model_kwargs`, `_build_initial_messages`, message truncation, `_build_assistant_content`, `_convert_messages_for_provider`, `_force_termination`, `_discover_skill_bundles`, healthcheck |
-| `test_thinking_action_lifecycle.py` | Full agentic loop lifecycle: execute → loop → task completion → cleanup |
-| `test_progressive_disclosure.py` | Skill tools hidden until activation, `allowed_tools` enforcement |
-| `test_skill_bundle_discovery.py` | Selector filtering (`-all`, lists, globs), `denied_skills` |
+| `test_progressive_disclosure.py` | Skill tools hidden until activation, `allowed_tools` enforcement, namespaced tool names |
+| `test_skill_bundle_discovery.py` | Selector filtering (`-all`, lists, globs), `denied_skills`, `SkillCatalog.discover()` |
 | `test_skill_resolution_app_root.py` | `get_app_root()` integration with skill resolution |
-| `test_skill_resolve.py` | `resolve_builtin_skills`, `resolve_agent_skills`, `resolve_merged_skill_bundles`, `apply_skill_selector`, frontmatter parsing, override precedence |
 | `test_prompts_snapshots.py` | Prompt template snapshot tests (regression guard) |
 | `test_task_service.py` | Shared task service lifecycle, reserve/complete/fail, step metadata |
 | `test_anthropic_thinking.py` | `_build_payload` with/without thinking, temperature omission, max_tokens auto-adjustment, `_extract_result_fields` with thinking blocks, `ModelActionResult` thinking defaults |
@@ -1037,6 +1097,12 @@ pytest tests/scaffold/test_skill_resolve.py -v
 **Cause**: The tool module may not export `get_tool_definition()` and `execute()`, or the tool name may not be in the `allowed-tools` whitelist.
 
 **Fix**: Verify the `.py` file exports both functions and the tool name matches an entry in `allowed-tools` (or omit `allowed-tools` to allow all tools).
+
+### Tool Name Collision Across Skills
+
+**Cause**: Multiple skill bundles have `.py` files with the same name (e.g., `search.py` in both `web_search` and `pageindex_search`).
+
+**Fix**: This is handled automatically by tool name namespacing. Each skill's tools are registered with a `{skill_name}__` prefix (e.g., `web_search__search`, `pageindex_search__search`). SKILL.md workflow instructions should use namespaced tool names.
 
 ### MCP Connection Failures (BrokenResourceError)
 
@@ -1062,6 +1128,12 @@ pytest tests/scaffold/test_skill_resolve.py -v
 
 **Fix**: Verify both SKILL.md files have the same `name` value in their frontmatter.
 
+### Coroutine Not Awaited
+
+**Cause**: Async methods called without `await` (e.g., `self.get_action()` or `conversation.get_interaction_history()`).
+
+**Fix**: Ensure all `async def` methods are called with `await`. LoopContext's `build_initial_messages()` and ActionResolver's `resolve()`/`validate_requirements()` are async.
+
 ## API Reference
 
 ### SkillInteractAction
@@ -1072,16 +1144,64 @@ class SkillInteractAction(InteractAction):
     async def healthcheck() -> bool
 
     # Protected (overridable)
-    async def _discover_skill_bundles(visitor) -> Dict[str, Dict[str, Any]]
-    async def _run_agentic_loop(visitor, tool_executor, task_handle, discovered_skills) -> tuple[str, str]
+    async def _run_agentic_loop(visitor, tool_executor, task_handle, discovered_skills) -> tuple[str, str, int]
     def _build_model_kwargs() -> Dict[str, Any]
-    async def _build_initial_messages(visitor, discovered_skills=None) -> List[Dict[str, Any]]
     async def _call_model(messages, tools, visitor, model_kwargs) -> Any
-    def _convert_messages_for_provider(messages, provider) -> List[Dict[str, Any]]
     async def _force_termination(messages, tools, visitor, model_kwargs) -> str
-    def _build_assistant_content(model_result) -> Dict[str, Any]
-    def _parse_tool_arguments(arguments) -> Dict[str, Any]
-    def _maybe_truncate_messages(messages) -> List[Dict[str, Any]]
+```
+
+### SkillCatalog
+
+```python
+class SkillCatalog:
+    def __init__(discovered_skills: Dict[str, Dict[str, Any]])
+    @classmethod async def discover(cls, visitor, skills_selector, skills_source, denied_skills=None) -> SkillCatalog
+
+    @property skills -> Dict[str, Dict[str, Any]]
+    @property is_empty -> bool
+
+    def format_index_entry(skill_name, skill_data) -> str
+    def render_catalog() -> str
+    def render_system_prompt_section() -> str
+    def check_activation_limit(skill_name, activated_skills, max_activations) -> Optional[str]
+    async def validate_requirements(skill_name, action_resolver) -> Optional[str]
+    def get_response_mode_override(activated_skills, default_mode) -> str
+    def search(query, top_k=5) -> str
+```
+
+### LoopContext + LoopContextConfig
+
+```python
+@dataclass
+class LoopContextConfig:
+    max_full_tool_results: int = 10
+    max_tool_result_tokens: int = 400
+    tool_result_truncation_chars: int = 500
+    history_limit: int = 5
+
+class LoopContext:
+    def __init__(config: LoopContextConfig)
+    async def build_initial_messages(system_prompt, utterance, conversation, interaction, skill_index_section=None) -> List[Dict[str, Any]]
+    def maybe_truncate(messages) -> List[Dict[str, Any]]
+
+    @staticmethod convert_for_provider(messages, provider) -> List[Dict[str, Any]]
+    @staticmethod build_assistant_content(model_result) -> Dict[str, Any]
+    @staticmethod parse_tool_arguments(arguments) -> Dict[str, Any]
+```
+
+### StuckDetector + StuckDetectorConfig
+
+```python
+@dataclass
+class StuckDetectorConfig:
+    window_size: int = 3
+    max_corrections: int = 2
+
+class StuckDetector:
+    def __init__(config: StuckDetectorConfig)
+    @property corrections -> int
+    def record(tool_calls) -> Optional[str]   # returns STUCK_DETECTION_PROMPT or "FORCE_TERMINATE"
+    def reset() -> None
 ```
 
 ### LoopState Enum
@@ -1127,7 +1247,7 @@ class ToolRegistry:
 
 ```python
 class ToolExecutor:
-    def __init__(call_timeout=60.0, validate_calls=True, max_concurrent_calls=5, sanitize_errors=True)
+    def __init__(call_timeout=60.0, validate_calls=True, max_concurrent_calls=5, sanitize_errors=True, allowed_tool_paths=None)
 
     async def initialize(visitor, tool_servers=None, allowed_tool_patterns=None, denied_tool_patterns=None, local_tools_paths=None) -> None
     def register_local_tool(name, handler, description, parameters) -> ToolDefinition

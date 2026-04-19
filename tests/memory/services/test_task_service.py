@@ -108,6 +108,102 @@ async def test_record_step_tracks_iterations_and_tool_usage():
 
 
 @pytest.mark.asyncio
+async def test_record_step_tool_call_with_tools_list():
+    conversation = _conversation_stub()
+    svc = TaskService(conversation)
+    task = await svc.start(description="Run", task_type="AGENTIC_LOOP")
+
+    await task.record_step(
+        "tool_call",
+        iteration=1,
+        details={"count": 2, "tools": ["read_file", "bash"]},
+    )
+
+    metadata = svc.get(task_id=task.task_id)["metadata"]
+    assert "read_file" in metadata["tools_called"]
+    assert "bash" in metadata["tools_called"]
+    step = metadata["steps"][0]
+    assert step["tools"] == ["read_file", "bash"]
+    assert step["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_record_step_tool_call_with_tool_summaries():
+    conversation = _conversation_stub()
+    svc = TaskService(conversation)
+    task = await svc.start(description="Run", task_type="AGENTIC_LOOP")
+
+    summaries = [
+        {"name": "read_file", "arguments": '{"path": "/foo/bar.txt"}'},
+        {"name": "bash", "arguments": '{"command": "ls -la"}'},
+    ]
+    await task.record_step(
+        "tool_call",
+        iteration=1,
+        details={
+            "count": 2,
+            "tools": ["read_file", "bash"],
+            "tool_summaries": summaries,
+        },
+    )
+
+    metadata = svc.get(task_id=task.task_id)["metadata"]
+    assert metadata["tools_called"] == ["read_file", "bash"]
+    step = metadata["steps"][0]
+    assert step["tool_summaries"] == summaries
+
+
+@pytest.mark.asyncio
+async def test_record_step_tool_result_with_result_details():
+    conversation = _conversation_stub()
+    svc = TaskService(conversation)
+    task = await svc.start(description="Run", task_type="AGENTIC_LOOP")
+
+    results = [
+        {"tool_call_id": "tc_1", "is_error": False, "content_preview": "file contents"},
+        {
+            "tool_call_id": "tc_2",
+            "is_error": True,
+            "content_preview": "error: not found",
+        },
+    ]
+    await task.record_step(
+        "tool_result",
+        iteration=1,
+        details={"duration_ms": 150, "count": 2, "results": results},
+    )
+
+    metadata = svc.get(task_id=task.task_id)["metadata"]
+    step = metadata["steps"][0]
+    assert step["duration_ms"] == 150
+    assert step["count"] == 2
+    assert step["results"] == results
+
+
+@pytest.mark.asyncio
+async def test_record_step_response_with_preview():
+    conversation = _conversation_stub()
+    svc = TaskService(conversation)
+    task = await svc.start(description="Run", task_type="AGENTIC_LOOP")
+
+    await task.record_step(
+        "response",
+        iteration=1,
+        details={
+            "length": 50,
+            "loop_state": "TERMINATE",
+            "termination_reason": "completed",
+            "preview": "Here is the answer to your question...",
+        },
+    )
+
+    metadata = svc.get(task_id=task.task_id)["metadata"]
+    step = metadata["steps"][0]
+    assert step["preview"] == "Here is the answer to your question..."
+    assert step["termination_reason"] == "completed"
+
+
+@pytest.mark.asyncio
 async def test_complete_sets_terminal_metadata():
     conversation = _conversation_stub()
     svc = TaskService(conversation)

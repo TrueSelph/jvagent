@@ -300,11 +300,19 @@ class TaskService:
         metadata["steps"] = steps
         metadata["iterations"] = max(int(metadata.get("iterations", 0)), int(iteration))
         if step_type == "tool_call":
-            tool_name = (details or {}).get("tool") or (details or {}).get("tool_name")
-            if tool_name:
+            tools_list = (details or {}).get("tools")
+            if tools_list and isinstance(tools_list, list):
                 tools_called = list(metadata.get("tools_called") or [])
-                tools_called.append(str(tool_name))
+                tools_called.extend(str(t) for t in tools_list)
                 metadata["tools_called"] = tools_called
+            else:
+                tool_name = (details or {}).get("tool") or (details or {}).get(
+                    "tool_name"
+                )
+                if tool_name:
+                    tools_called = list(metadata.get("tools_called") or [])
+                    tools_called.append(str(tool_name))
+                    metadata["tools_called"] = tools_called
         if step_type == "thinking":
             tokens = int((details or {}).get("tokens", 0))
             metadata["thinking_tokens_used"] = (

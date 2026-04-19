@@ -30,9 +30,10 @@ from .config import (
     get_pageindex_max_summary_chars,
     get_pageindex_max_tree_prompt_tokens,
     get_pageindex_retrieval_excerpt_source,
+    initialize_pageindex_database,
 )
 from .document_walker import DocumentWalker
-from .documents import get_document_root, get_document_roots
+from .documents import _get_app_id_from_node, get_document_root, get_document_roots
 from .llm_bridge import get_pageindex_model_action
 from .models import (
     DocumentContentEdge,
@@ -54,13 +55,70 @@ def _row_from_node(
     return copy_included_fields(node, base, include)
 
 
+def _strip_json_fences(text: str) -> str:
+    """Strip markdown code fences from LLM output before JSON extraction.
+
+    Handles case-insensitive fences (```json, ```JSON, etc.) and bare
+    fences (``` without a language tag) that LLMs—especially Anthropic/Claude—
+    commonly add around structured output.
+
+    This wraps the contrib ``get_json_content`` which only handles lowercase
+    ```json. All adaptations live outside the core/ contrib folder.
+    """
+    fence_match = re.search(r"```json\s*", text, re.IGNORECASE)
+    if fence_match:
+        text = text[fence_match.end() :]
+    elif "```" in text:
+        # Bare code fence (no language tag) — skip opening fence
+        start = text.find("```") + 3
+        if start < len(text) and text[start] == "\n":
+            start += 1
+        text = text[start:]
+
+    end_idx = text.rfind("```")
+    if end_idx != -1:
+        text = text[:end_idx]
+
+    return text.strip()
+
+
 def _parse_llm_json_object(raw: str) -> Dict[str, Any]:
-    """Parse the first JSON object from model output (ignore trailing prose)."""
+    """Parse the first JSON object from model output.
+
+    Handles leading/trailing prose and markdown code fences that LLMs
+    (especially Anthropic/Claude models) commonly add around structured output.
+    Falls back to a more tolerant extractor for Python-style None / trailing
+    commas before giving up entirely.
+    """
+    from .core.utils import extract_json
+
+    text = raw.strip()
+
+    # Try direct parse first (fast path)
     decoder = json.JSONDecoder()
-    obj, _ = decoder.raw_decode(raw.strip())
-    if not isinstance(obj, dict):
-        raise ValueError("expected JSON object from tree search")
-    return obj
+    try:
+        obj, _ = decoder.raw_decode(text)
+        if isinstance(obj, dict):
+            return obj
+    except json.JSONDecodeError:
+        pass
+
+    # Scan for the first '{' to skip leading prose
+    brace_idx = text.find("{")
+    if brace_idx != -1:
+        try:
+            obj, _ = decoder.raw_decode(text[brace_idx:])
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            pass
+
+    # Last resort: use extract_json which handles Python None, trailing commas
+    result = extract_json(text)
+    if isinstance(result, dict):
+        return result
+
+    raise ValueError("expected JSON object from tree search")
 
 
 def _truncate_tree_excerpt(text: str, max_chars: int) -> str:
@@ -234,7 +292,6 @@ async def _search_via_tree_search(
     """LLM-based tree search with lexical pre-selection of documents."""
     from .core.utils import (
         count_tokens,
-        get_json_content,
         llm_acompletion,
         remove_fields,
     )
@@ -375,7 +432,7 @@ Directly return the final JSON structure. Do not output anything else.
                     include=include,
                 )
 
-            raw = get_json_content(response)
+            raw = _strip_json_fences(response)
             parsed_resp = _parse_llm_json_object(raw)
             node_list = parsed_resp.get("node_list") or []
             if not isinstance(node_list, list):
@@ -698,6 +755,12 @@ async def search_documents(
         List of dicts with title, text, summary, doc_name, node_id, structure, content,
         start_index, end_index, physical_index, and doc_url when include_references is True
     """
+    # Lazy DB init (mirrors documents.py / endpoints.py): retrieval may be the
+    # first PageIndex entrypoint hit in a worker process where the action's
+    # on_register lifecycle hook has not run, so we must register the database
+    # here before any retrieval helper tries to read from it.
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
+
     try:
         manager = get_database_manager()
         db = manager.get_database(PAGEINDEX_DB_NAME)
