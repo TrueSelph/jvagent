@@ -128,10 +128,15 @@ class PageIndexAction(Action):
         when not explicitly provided.
         """
         from ..config import (
-            _push_retrieval_config,
             get_pageindex_config,
-            set_pageindex_model_action,
+            set_pageindex_candidate_k,
+            set_pageindex_enable_lexical_index,
+            set_pageindex_max_docs_for_tree_search,
+            set_pageindex_max_summary_chars,
+            set_pageindex_max_tree_prompt_tokens,
+            set_pageindex_retrieval_excerpt_source,
         )
+        from ..llm_bridge import set_pageindex_model_action
         from ..retrieval import search_documents
 
         cfg = self.config or {}
@@ -151,18 +156,18 @@ class PageIndexAction(Action):
         )
 
         # Push retrieval config for tree_search strategy
-        _push_retrieval_config(
-            {
-                "max_summary_chars": max_summary_chars,
-                "max_tree_prompt_tokens": max_tree_prompt_tokens,
-                "enable_lexical_index": cfg.get("enable_lexical_index"),
-                "candidate_k": cfg.get("candidate_k"),
-                "max_docs_for_tree_search": cfg.get("max_docs_for_tree_search"),
-                "retrieval_excerpt_source": cfg.get(
-                    "retrieval_excerpt_source", "summary"
-                ),
-            }
-        )
+        if max_summary_chars is not None:
+            set_pageindex_max_summary_chars(max_summary_chars)
+        if max_tree_prompt_tokens is not None:
+            set_pageindex_max_tree_prompt_tokens(max_tree_prompt_tokens)
+        if cfg.get("enable_lexical_index") is not None:
+            set_pageindex_enable_lexical_index(cfg["enable_lexical_index"])
+        if cfg.get("candidate_k") is not None:
+            set_pageindex_candidate_k(cfg["candidate_k"])
+        if cfg.get("max_docs_for_tree_search") is not None:
+            set_pageindex_max_docs_for_tree_search(cfg["max_docs_for_tree_search"])
+        if cfg.get("retrieval_excerpt_source") is not None:
+            set_pageindex_retrieval_excerpt_source(cfg["retrieval_excerpt_source"])
 
         model_action = self._resolve_model_action()
         prev_model_action = None
@@ -224,8 +229,8 @@ class PageIndexAction(Action):
         ocr: bool = False,
     ) -> Dict[str, Any]:
         """Assimilate a document into the PageIndex index."""
-        from ..config import set_pageindex_model_action
         from ..documents import assimilate_document
+        from ..llm_bridge import set_pageindex_model_action
 
         model_action = self._resolve_model_action()
         prev_model_action = None

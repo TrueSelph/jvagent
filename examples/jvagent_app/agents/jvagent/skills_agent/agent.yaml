@@ -151,6 +151,7 @@ actions:
         - "local_research"
         - "web_search"
         - "pageindex_search"
+        - "pageindex_docs"
       skills_source: both
 
       # MCP servers to expose as tools in the agentic loop
