@@ -92,3 +92,4 @@ dist/
 build/
 Dockerfile
 
+ollama_app/
