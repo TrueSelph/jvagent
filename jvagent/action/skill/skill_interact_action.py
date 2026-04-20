@@ -439,6 +439,20 @@ class SkillInteractAction(InteractAction):
                     "total_duration_seconds": None,
                 },
             ) as task:
+                # Inject persona context into the loop
+                persona_action = None
+                agent = getattr(visitor, "_agent", None)
+                if agent:
+                    actions_manager = await agent.get_actions_manager()
+                    if actions_manager:
+                        enabled_actions = await actions_manager.get_actions(
+                            enabled_only=True
+                        )
+                        for action in enabled_actions:
+                            if action.get_class_name() == "PersonaAction":
+                                persona_action = action
+                                break
+
                 # 5. Run the agentic loop
                 final_response, termination_reason, stuck_corrections = (
                     await self._run_agentic_loop(
@@ -446,6 +460,7 @@ class SkillInteractAction(InteractAction):
                         tool_executor=tool_executor,
                         task_handle=task,
                         discovered_skills=discovered_skills,
+                        persona_action=persona_action,
                     )
                 )
                 await task.update_metadata(
@@ -460,7 +475,11 @@ class SkillInteractAction(InteractAction):
                     )
                     if effective_mode == "respond":
                         # Route through PersonaAction for persona-enriched response
-                        await visitor.add_directive(final_response)
+                        # We pass the final_response as a specialized directive that
+                        # explicitly asks the persona to present this verified data.
+                        await visitor.add_directive(
+                            f"The agentic loop has completed the task with the following verified result:\n\n{final_response}\n\nPresent this result naturally in your persona. Do not strip technical details or evidence, but refine the delivery to be human-like."
+                        )
                         await self.respond(visitor)
                     else:
                         # Direct bus delivery
@@ -542,6 +561,7 @@ class SkillInteractAction(InteractAction):
         tool_executor: ToolExecutor,
         task_handle: "TaskHandle",
         discovered_skills: Optional[Dict[str, Dict[str, Any]]] = None,
+        persona_action: Optional[Any] = None,
     ) -> tuple[str, str, int]:
         """Core agentic loop: think → act → observe → repeat."""
         model_kwargs = self._build_model_kwargs()
@@ -555,7 +575,23 @@ class SkillInteractAction(InteractAction):
                 history_limit=self.history_limit,
             )
         )
-        system_prompt = SKILL_AGENT_SYSTEM_PROMPT
+
+        # Integrate persona into system prompt
+        agent_name = "Agent"
+        agent_description = "An intelligent skills-based agent."
+        if persona_action:
+            agent_name = getattr(persona_action, "persona_name", "Agent")
+            agent_description = getattr(
+                persona_action,
+                "persona_description",
+                "An intelligent skills-based agent.",
+            )
+
+        system_prompt = SKILL_AGENT_SYSTEM_PROMPT.format(
+            agent_name=agent_name,
+            agent_description=agent_description,
+        )
+
         if not self.plan_first:
             system_prompt += "\n\nOverride: Skip plan-first behavior unless the user explicitly asks for a plan."
         if not self.strict_grounding:
@@ -706,9 +742,15 @@ class SkillInteractAction(InteractAction):
             if self.stream_tool_progress:
                 for idx, tc in enumerate(tool_calls):
                     tool_name = tc.get("function", {}).get("name", "unknown")
+                    # Use the model's own intermediate response if available to provide a human-like announcement
+                    announcement = (
+                        intermediate_text
+                        if intermediate_text
+                        else TOOL_CALL_ANNOUNCE_TEMPLATE.format(tool_name=tool_name)
+                    )
                     await self.publish_thought(
                         visitor=visitor,
-                        content=TOOL_CALL_ANNOUNCE_TEMPLATE.format(tool_name=tool_name),
+                        content=announcement,
                         thought_type="tool_call",
                         segment_id=f"iter-{iteration}-call-{tool_name}-{idx}",
                         streaming_complete=True,

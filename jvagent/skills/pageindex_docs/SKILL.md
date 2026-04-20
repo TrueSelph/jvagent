@@ -1,6 +1,6 @@
 ---
 name: pageindex_docs
-description: List, ingest, and remove document-based content from your knowledge base.
+description: List, ingest, update, and remove document-based content from your knowledge base.
 requires-actions:
   - PageIndexAction
 allowed-tools:
@@ -16,7 +16,7 @@ tags:
 
 ## Workflow
 
-1. Determine the document management operation the user needs (list, ingest, or remove).
+1. Determine the document management operation the user needs (list, ingest, update, or remove).
 2. Use the appropriate tool to perform the operation.
 3. Format the results clearly for the user.
 
@@ -37,9 +37,16 @@ tags:
 - Always confirm with the user before deleting a document.
 - Use `pageindex_docs__delete_document` with the `doc_name` to remove a document and all its chunks.
 
+### Updating Documents
+
+- To update a document, you must first delete the existing version and then ingest the updated one.
+- 1. Use `pageindex_docs__delete_document` with the `doc_name`.
+- 2. Use `pageindex_docs__assimilate` to ingest the updated content using the same `doc_name`.
+
 ### Constraints
 
 - Always confirm with the user before deleting documents.
+- When updating a document, you MUST successfully delete the existing document before assimilating the new version to avoid duplication.
 - For `pageindex_docs__assimilate`, the `doc` parameter is a file path (e.g., `/path/to/file.pdf`) or URL.
 - Ingestion is an async operation that may take time for large documents.
 

@@ -22,9 +22,11 @@ tags:
 ## Workflow
 
 1. Classify the question's knowledge domain and whether it likely needs internal KB, external web, or general knowledge.
-2. Search internal PageIndex first using `answer__search` with `source="pageindex"` (default). If strong results are returned, synthesize from those and cite with `[PageIndex: <doc_name>]`.
-3. If PageIndex results are weak, missing, or incomplete, supplement with `answer__search` using `source="web"`. Cite web results with `[Web: <title>](<link>)`.
-4. If the question needs both perspectives (internal + external), use `source="all"` in a single call.
+2. Search internal PageIndex first using `answer__search` with `source="pageindex"` (default).
+3. **Evaluate Applicability**: Critically analyze the PageIndex results. If they are missing, incomplete, or tangential to the core intent, do not settle for a partial answer.
+4. **Failover to Web**: If the internal KB evaluation determines results are insufficient, supplement with `answer__search` using `source="web"`.
+5. Synthesize the final answer, citing internal results with `[PageIndex: <doc_name>]` and web results with `[Web: <title>](<link>)`.
+6. If the question needs both perspectives (internal + external) from the start, use `source="all"` in a single call.
 5. If user profile or memory context appears in conversation directives (injected by the pipeline), incorporate it naturally. Do not mention "profile", "memory", or "long-term storage" — just weave the facts in as your own understanding.
 6. **Uncertainty signaling** (critical):
    - If retrieval returned strong, relevant evidence → answer confidently with citations.

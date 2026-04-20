@@ -242,6 +242,11 @@ class MCPAction(Action):
             else:
                 self.label = "MCP"
 
+    async def on_startup(self) -> None:
+        """Rebuild in-memory server registry after app restart."""
+        await super().on_startup()
+        self._build_server_entries()
+
     async def on_disable(self) -> None:
         """Disconnect MCP clients when action is disabled."""
         await super().on_disable()

@@ -128,6 +128,7 @@ class PageIndexAction(Action):
         """
         from ..config import (
             get_pageindex_config,
+            initialize_pageindex_database,
             set_pageindex_candidate_k,
             set_pageindex_enable_lexical_index,
             set_pageindex_max_docs_for_tree_search,
@@ -137,6 +138,11 @@ class PageIndexAction(Action):
         )
         from ..llm_bridge import set_pageindex_model_action
         from ..retrieval import search_documents
+
+        # Ensure database is initialized before search
+        app = await self.get_app()
+        app_id = getattr(app, "app_id", None) if app else None
+        initialize_pageindex_database(app_id=app_id)
 
         cfg = self.config or {}
 

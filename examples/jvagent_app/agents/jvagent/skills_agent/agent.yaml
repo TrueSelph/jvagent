@@ -142,7 +142,7 @@ actions:
       # Response delivery mode:
       #   "publish" (default) — direct bus delivery, fast
       #   "respond" — route through PersonaAction for persona-enriched responses
-      # response_mode: respond
+      response_mode: respond
 
       # Extended thinking (Anthropic only; 0 = disabled for OpenAI)
       thinking_budget_tokens: 0

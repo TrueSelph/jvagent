@@ -47,6 +47,12 @@ def _visitor_with_tasks():
         set_to_executed=MagicMock(),
     )
     visitor.conversation = MagicMock()
+    visitor.unrecord_action_execution = AsyncMock()
+
+    # Mock agent to avoid TypeError on await agent.get_actions_manager()
+    agent = MagicMock()
+    agent.get_actions_manager = AsyncMock(return_value=None)
+    visitor._agent = agent
 
     task_handle = MagicMock()
     task_handle.complete = AsyncMock(return_value=True)
