@@ -6,6 +6,7 @@ as configured. The LLM decides which tools to call, ToolExecutor dispatches
 them, and results feed back into the conversation for the next iteration.
 """
 
+import json
 import logging
 import time
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ from jvagent.action.interact.base import InteractAction
 from jvagent.action.skill.action_resolver import ActionResolver
 from jvagent.action.skill.loop_context import LoopContext, LoopContextConfig
 from jvagent.action.skill.prompts import (
+    ERROR_ANNOUNCE_TEMPLATE,
     FINAL_REVIEW_PROMPT,
     FORCED_TERMINATION_PROMPT,
     GROUNDING_INSTRUCTION_TEMPLATE,
@@ -27,6 +29,7 @@ from jvagent.action.skill.prompts import (
     SKILL_FIRST_RETRY_PROMPT,
     SKILL_SEARCH_TOOL_DESCRIPTION,
     TOOL_CALL_ANNOUNCE_TEMPLATE,
+    TOOL_RESULT_ANNOUNCE_TEMPLATE,
 )
 from jvagent.action.skill.skill_catalog import SkillCatalog
 from jvagent.action.skill.stuck_detector import StuckDetector, StuckDetectorConfig
@@ -514,6 +517,61 @@ class SkillInteractAction(InteractAction):
                         cleanup_error,
                     )
 
+    @staticmethod
+    def _extract_tool_intent(args_str: str, max_len: int = 80) -> str:
+        """Extract a brief intent description from tool call arguments."""
+        _PRIORITY_KEYS = (
+            "query",
+            "search",
+            "skill_name",
+            "name",
+            "input",
+            "message",
+            "text",
+            "question",
+            "command",
+            "url",
+            "file_path",
+            "path",
+        )
+
+        try:
+            args = json.loads(args_str) if args_str else {}
+        except (json.JSONDecodeError, TypeError):
+            return args_str[:max_len] if args_str else "process request"
+
+        for key in _PRIORITY_KEYS:
+            if key in args:
+                value = str(args[key])
+                if len(value) > max_len:
+                    value = value[: max_len - 3] + "..."
+                return value
+
+        if args:
+            key, value = next(iter(args.items()))
+            value = str(value)
+            if len(value) > max_len:
+                value = value[: max_len - 3] + "..."
+            return f"{key}={value}"
+
+        return "process request"
+
+    @staticmethod
+    def _format_result_preview(
+        content: str, max_lines: int = 2, max_chars: int = 200
+    ) -> str:
+        """Format a brief preview of a tool result."""
+        if not content:
+            return "(empty)"
+        lines = content.strip().splitlines()
+        preview_lines = [line.rstrip() for line in lines[:max_lines]]
+        preview = " | ".join(preview_lines) if preview_lines else "(empty)"
+        if len(preview) > max_chars:
+            preview = preview[: max_chars - 3] + "..."
+        if len(lines) > max_lines:
+            preview += f" (+{len(lines) - max_lines} more lines)"
+        return preview
+
     def _resolve_response_mode(
         self,
         discovered_skills: Optional[Dict[str, Dict[str, Any]]] = None,
@@ -743,11 +801,14 @@ class SkillInteractAction(InteractAction):
                 for idx, tc in enumerate(tool_calls):
                     tool_name = tc.get("function", {}).get("name", "unknown")
                     # Use the model's own intermediate response if available to provide a human-like announcement
-                    announcement = (
-                        intermediate_text
-                        if intermediate_text
-                        else TOOL_CALL_ANNOUNCE_TEMPLATE.format(tool_name=tool_name)
-                    )
+                    if intermediate_text:
+                        announcement = intermediate_text
+                    else:
+                        args_str = tc.get("function", {}).get("arguments", "")
+                        intent = self._extract_tool_intent(args_str)
+                        announcement = TOOL_CALL_ANNOUNCE_TEMPLATE.format(
+                            tool_name=tool_name, intent=intent
+                        )
                     await self.publish_thought(
                         visitor=visitor,
                         content=announcement,
@@ -768,13 +829,37 @@ class SkillInteractAction(InteractAction):
             tool_result_messages = await tool_executor.dispatch(tool_calls, visitor)
             tool_duration_ms = int((time.monotonic() - tool_start) * 1000)
 
+            # Map tool_call_id → tool_name for result announcements
+            tool_call_id_to_name = {}
+            for tc in tool_calls:
+                tc_id = tc.get("id", "")
+                tc_name = tc.get("function", {}).get("name", "unknown")
+                if tc_id:
+                    tool_call_id_to_name[tc_id] = tc_name
+
             if self.stream_tool_progress:
                 for tr_msg in tool_result_messages:
                     content = tr_msg.get("content", "")
                     tool_call_id = tr_msg.get("tool_call_id", "")
+                    tool_name = tool_call_id_to_name.get(tool_call_id, "unknown")
+                    is_error = content.startswith("Error:")
+
+                    if is_error:
+                        error_detail = content[len("Error:") :].strip()
+                        announcement = ERROR_ANNOUNCE_TEMPLATE.format(
+                            tool_name=tool_name,
+                            error=error_detail[:120],
+                        )
+                    else:
+                        preview = self._format_result_preview(content)
+                        announcement = TOOL_RESULT_ANNOUNCE_TEMPLATE.format(
+                            tool_name=tool_name,
+                            preview=preview,
+                        )
+
                     await self.publish_thought(
                         visitor=visitor,
-                        content=content[: self.tool_result_truncation_chars],
+                        content=announcement,
                         thought_type="tool_result",
                         segment_id=f"iter-{iteration}-result-{tool_call_id or 'unknown'}",
                         streaming_complete=True,
@@ -782,6 +867,7 @@ class SkillInteractAction(InteractAction):
                         metadata={
                             "action_name": self.get_class_name(),
                             "tool_call_id": tool_call_id,
+                            "tool_name": tool_name,
                         },
                     )
 

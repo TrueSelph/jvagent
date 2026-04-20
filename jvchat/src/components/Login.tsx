@@ -313,7 +313,7 @@ export function Login() {
     <div className="h-full min-h-0 overflow-y-auto flex items-center justify-center bg-gray-50 dark:bg-slate-950 py-12 px-4 sm:px-6 lg:px-8 relative">
       <button
         onClick={toggleTheme}
-        className="absolute top-4 right-4 p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+        className="absolute top-4 right-4 z-50 p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
         aria-label={
           theme === "dark" ? "Switch to light mode" : "Switch to dark mode"
         }
@@ -468,231 +468,260 @@ export function Login() {
         </div>
       )}
 
-      <div className="max-w-5xl w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900 dark:text-gray-100">
-            Sign in to jvchat
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-400">
-            Enter your jvagent admin credentials
-          </p>
-        </div>
-
-        {/* Saved accounts — grid A–Z; import/export */}
-        <div className="space-y-3 w-full">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                Saved accounts
-              </p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+      <div className="w-full max-w-6xl rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl overflow-hidden">
+        <div className="flex flex-col lg:flex-row">
+          <div className="lg:w-2/3 flex flex-col border-r border-gray-200 dark:border-gray-700">
+            <div className="p-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                Saved Accounts
+              </h2>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                 {sortedSavedCreds.length === 0
-                  ? "None yet — sign in below or import a JSON backup."
-                  : `${sortedSavedCreds.length} ${sortedSavedCreds.length === 1 ? "account" : "accounts"}, A–Z · localhost last`}
+                  ? "No saved accounts yet"
+                  : `${sortedSavedCreds.length} ${sortedSavedCreds.length === 1 ? "account" : "accounts"} available`}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleExportAccounts}
-                disabled={sortedSavedCreds.length === 0}
-                className="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-45 disabled:cursor-not-allowed"
-              >
-                Export JSON
-              </button>
-              <button
-                type="button"
-                onClick={() => triggerImport("merge")}
-                className="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
-              >
-                Import (merge)
-              </button>
-              <button
-                type="button"
-                onClick={() => triggerImport("replace")}
-                className="px-3 py-1.5 text-xs font-medium rounded-md border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/30"
-              >
-                Import (replace all)
-              </button>
+
+            <div className="px-6 pb-4">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportAccounts}
+                  disabled={sortedSavedCreds.length === 0}
+                  className="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-45 disabled:cursor-not-allowed"
+                >
+                  Export JSON
+                </button>
+                <button
+                  type="button"
+                  onClick={() => triggerImport("merge")}
+                  className="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  Import (merge)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => triggerImport("replace")}
+                  className="px-3 py-1.5 text-xs font-medium rounded-md border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+                >
+                  Import (replace all)
+                </button>
+              </div>
+
+              {accountsNotice && (
+                <div className="mt-3 rounded-md bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-3 py-2 text-sm text-emerald-800 dark:text-emerald-200">
+                  {accountsNotice}
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 pb-6" style={{ maxHeight: "50vh" }}>
+              {sortedSavedCreds.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center py-12">
+                  <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mb-4">
+                    <svg
+                      className="w-8 h-8 text-gray-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                      />
+                    </svg>
+                  </div>
+                  <p className="text-gray-900 dark:text-gray-100 font-medium">
+                    No saved accounts
+                  </p>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 max-w-xs">
+                    Sign in with your credentials on the right, or import a JSON backup to get started
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {sortedSavedCreds.map((cred) => {
+                    const agentLabel = cred.name?.trim() || cred.email;
+                    return (
+                      <div
+                        key={cred.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => handleSelectCredential(cred)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            handleSelectCredential(cred);
+                          }
+                        }}
+                        className="group flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700/50 shadow-sm px-3 py-3 min-w-0 cursor-pointer transition-colors hover:border-indigo-300 dark:hover:border-indigo-600 hover:shadow-md outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:focus-visible:ring-indigo-400"
+                      >
+                        <p
+                          className="min-w-0 flex-1 text-left font-medium text-gray-900 dark:text-gray-100 truncate"
+                          title={agentLabel}
+                        >
+                          {agentLabel}
+                        </p>
+                        <div className="flex flex-shrink-0 items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={(e) => openEditModal(e, cred)}
+                            className="p-2 text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600/80"
+                            aria-label={`Edit ${agentLabel}`}
+                            title="Edit"
+                          >
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                              />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleRemoveCredential(e, cred.id)}
+                            className="p-2 text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30"
+                            aria-label={`Remove saved account ${agentLabel}`}
+                            title="Remove"
+                          >
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
-          {accountsNotice && (
-            <div className="rounded-md bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-3 py-2 text-sm text-emerald-800 dark:text-emerald-200">
-              {accountsNotice}
-            </div>
-          )}
+          <div className="lg:w-1/3 p-6 lg:p-8 bg-gray-50 dark:bg-gray-800/50">
+            <div className="w-full max-w-md mx-auto space-y-6">
+              <div className="text-center">
+                <h2 className="text-2xl font-extrabold text-gray-900 dark:text-gray-100">
+                  Sign in
+                </h2>
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                  Enter your jvagent admin credentials
+                </p>
+              </div>
 
-          {sortedSavedCreds.length > 0 && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 w-full">
-              {sortedSavedCreds.map((cred) => {
-                const agentLabel = cred.name?.trim() || cred.email;
-                return (
-                  <div
-                    key={cred.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => handleSelectCredential(cred)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        handleSelectCredential(cred);
-                      }
-                    }}
-                    className="group flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800/80 shadow-sm px-3 py-3 min-w-0 cursor-pointer transition-colors hover:border-indigo-300 dark:hover:border-indigo-600 hover:shadow-md outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:focus-visible:ring-indigo-400"
-                  >
-                    <p
-                      className="min-w-0 flex-1 text-left font-medium text-gray-900 dark:text-gray-100 truncate"
-                      title={agentLabel}
-                    >
-                      {agentLabel}
-                    </p>
-                    <div className="flex flex-shrink-0 items-center gap-0.5">
-                      <button
-                        type="button"
-                        onClick={(e) => openEditModal(e, cred)}
-                        className="p-2 text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/80"
-                        aria-label={`Edit ${agentLabel}`}
-                        title="Edit"
-                      >
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                          />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => handleRemoveCredential(e, cred.id)}
-                        className="p-2 text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30"
-                        aria-label={`Remove saved account ${agentLabel}`}
-                        title="Remove"
-                      >
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                          />
-                        </svg>
-                      </button>
+              <form className="space-y-6" onSubmit={handleSubmit}>
+                <div className="rounded-md shadow-sm -space-y-px">
+                  <div>
+                    <label htmlFor="server-url" className="sr-only">
+                      Server URL
+                    </label>
+                    <input
+                      id="server-url"
+                      name="server-url"
+                      type="text"
+                      required
+                      className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-500 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 dark:[color-scheme:dark] rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                      placeholder="Server URL (e.g., localhost:8000)"
+                      value={serverUrl}
+                      onChange={(e) => setServerUrl(e.target.value)}
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="email" className="sr-only">
+                      Email address
+                    </label>
+                    <input
+                      id="email"
+                      name="email"
+                      type="email"
+                      autoComplete="email"
+                      required
+                      className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-500 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 dark:[color-scheme:dark] focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                      placeholder="Enter your email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="password" className="sr-only">
+                      Password
+                    </label>
+                    <input
+                      id="password"
+                      name="password"
+                      type="password"
+                      autoComplete="current-password"
+                      required
+                      className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-500 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 dark:[color-scheme:dark] focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="name" className="sr-only">
+                      Display name (optional)
+                    </label>
+                    <input
+                      id="name"
+                      name="name"
+                      type="text"
+                      autoComplete="name"
+                      className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-500 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 dark:[color-scheme:dark] rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                      placeholder="Display name (optional)"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+
+                {displayError && (
+                  <div className="rounded-md bg-red-50 dark:bg-red-900/30 p-4">
+                    <div className="flex">
+                      <div className="ml-3">
+                        <h3 className="text-sm font-medium text-red-800 dark:text-red-300">
+                          {displayError}
+                        </h3>
+                      </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                )}
 
-        <form className="mt-8 space-y-6 max-w-md mx-auto" onSubmit={handleSubmit}>
-          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-            Or sign in with new credentials
-          </p>
-          <div className="rounded-md shadow-sm -space-y-px">
-            <div>
-              <label htmlFor="server-url" className="sr-only">
-                Server URL
-              </label>
-              <input
-                id="server-url"
-                name="server-url"
-                type="text"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-500 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 dark:[color-scheme:dark] rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Server URL (e.g., localhost:8000 or http://localhost:8000)"
-                value={serverUrl}
-                onChange={(e) => setServerUrl(e.target.value)}
-                disabled={loading}
-              />
-            </div>
-            <div>
-              <label htmlFor="email" className="sr-only">
-                Email address
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-500 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 dark:[color-scheme:dark] focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={loading}
-              />
-            </div>
-            <div>
-              <label htmlFor="password" className="sr-only">
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-500 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 dark:[color-scheme:dark] focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={loading}
-              />
-            </div>
-            <div>
-              <label htmlFor="name" className="sr-only">
-                Display name (optional)
-              </label>
-              <input
-                id="name"
-                name="name"
-                type="text"
-                autoComplete="name"
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-500 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 dark:[color-scheme:dark] rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Display name (optional, for saved account card)"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                disabled={loading}
-              />
-            </div>
-          </div>
-
-          {displayError && (
-            <div className="rounded-md bg-red-50 dark:bg-red-900/30 p-4">
-              <div className="flex">
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-red-800 dark:text-red-300">
-                    {displayError}
-                  </h3>
+                <div>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? "Signing in..." : "Sign in"}
+                  </button>
                 </div>
-              </div>
+              </form>
             </div>
-          )}
-
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? "Signing in..." : "Sign in"}
-            </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
