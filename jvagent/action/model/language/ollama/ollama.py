@@ -2,6 +2,10 @@
 
 Provides integration with Ollama's native chat API with support for both
 synchronous and streaming responses.
+
+Supports both:
+- Local Ollama (no API key required)
+- Ollama Cloud or other hosted Ollama-native endpoints (API key optional/configurable)
 """
 
 import json
@@ -25,7 +29,12 @@ class OllamaLanguageModelAction(LanguageModelAction):
     """
 
     api_endpoint: str = attribute(
-        default="http://localhost:11434", description="Ollama API endpoint URL"
+        default="http://localhost:11434",
+        description="Ollama API endpoint URL",
+    )
+    api_key: str = attribute(
+        default="",
+        description="Optional Ollama API key for hosted/cloud deployments",
     )
     model: str = attribute(default="llama3.1", description="Ollama model identifier")
     provider: str = attribute(default="ollama", description="Provider name")
@@ -34,6 +43,17 @@ class OllamaLanguageModelAction(LanguageModelAction):
         """Called when action is registered during installation."""
         await super().on_register()
         logger.info(f"Ollama action registered: {self.label} (model: {self.model})")
+
+    def _build_headers(self) -> Dict[str, str]:
+        """Build request headers.
+
+        Local Ollama generally does not require auth.
+        Hosted/cloud Ollama deployments may require bearer auth.
+        """
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
 
     def _extract_images(self, content: Any) -> tuple[str, List[str]]:
         """Extract text + base64 images from structured content."""
@@ -172,9 +192,9 @@ class OllamaLanguageModelAction(LanguageModelAction):
 
         try:
             response = await self._http_client.post(  # type: ignore[union-attr]
-                f"{self.api_endpoint}/api/chat",
+                f"{self.api_endpoint.rstrip('/')}/api/chat",
                 json=payload,
-                headers={"Content-Type": "application/json"},
+                headers=self._build_headers(),
             )
             response.raise_for_status()
             data = response.json()
@@ -226,9 +246,9 @@ class OllamaLanguageModelAction(LanguageModelAction):
             try:
                 async with self._http_client.stream(  # type: ignore[union-attr]
                     "POST",
-                    f"{self.api_endpoint}/api/chat",
+                    f"{self.api_endpoint.rstrip('/')}/api/chat",
                     json=payload,
-                    headers={"Content-Type": "application/json"},
+                    headers=self._build_headers(),
                 ) as response:
                     response.raise_for_status()
                     async for line in response.aiter_lines():
