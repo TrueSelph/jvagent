@@ -3,6 +3,11 @@ export interface JvagentConfig {
   timeout: number
 }
 
+/** Standalone jvforge service (async jobs, ``/v1/queue``, ``/v1/jobs``, …) — not the jvagent host. */
+export interface JvforgeConfig {
+  url: string
+}
+
 export interface UIConfig {
   theme: 'light' | 'dark'
   messages_per_page: number
@@ -11,6 +16,7 @@ export interface UIConfig {
 
 export interface AppConfig {
   jvagent: JvagentConfig
+  jvforge: JvforgeConfig
   ui: UIConfig
 }
 
@@ -18,6 +24,12 @@ const DEFAULT_CONFIG: AppConfig = {
   jvagent: {
     url: import.meta.env.VITE_JVAGENT_URL || 'http://localhost:8000',
     timeout: 900000, // 15 minutes
+  },
+  jvforge: {
+    url:
+      import.meta.env.VITE_JVFORGE_URL ||
+      import.meta.env.VITE_JVAGENT_JVFORGE_BASE_URL ||
+      'http://127.0.0.1:8088',
   },
   ui: {
     theme: 'light',
@@ -71,6 +83,11 @@ export async function getConfigAsync(): Promise<AppConfig> {
         ...fileConfig.jvagent,
         ...storedConfig.jvagent,
       },
+      jvforge: {
+        ...DEFAULT_CONFIG.jvforge,
+        ...fileConfig.jvforge,
+        ...storedConfig.jvforge,
+      },
       ui: {
         ...DEFAULT_CONFIG.ui,
         ...fileConfig.ui,
@@ -96,6 +113,10 @@ export function getConfig(): AppConfig {
       ...DEFAULT_CONFIG.jvagent,
       ...storedConfig.jvagent,
     },
+    jvforge: {
+      ...DEFAULT_CONFIG.jvforge,
+      ...storedConfig.jvforge,
+    },
     ui: {
       ...DEFAULT_CONFIG.ui,
       ...storedConfig.ui,
@@ -105,13 +126,18 @@ export function getConfig(): AppConfig {
   return cachedConfig
 }
 
-export function saveConfig(config: { jvagent?: Partial<JvagentConfig>; ui?: Partial<UIConfig> }): void {
+export function saveConfig(config: {
+  jvagent?: Partial<JvagentConfig>
+  jvforge?: Partial<JvforgeConfig>
+  ui?: Partial<UIConfig>
+}): void {
   if (typeof window === 'undefined') return
 
   try {
     const current = getConfig()
     const updated = {
       jvagent: { ...current.jvagent, ...config.jvagent },
+      jvforge: { ...current.jvforge, ...config.jvforge },
       ui: { ...current.ui, ...config.ui },
     }
     localStorage.setItem('jvchat_config', JSON.stringify(updated))
@@ -127,5 +153,9 @@ export function getJvagentUrl(): string {
 
 export function getJvagentTimeout(): number {
   return getConfig().jvagent.timeout
+}
+
+export function getJvforgeUrl(): string {
+  return getConfig().jvforge.url.replace(/\/$/, '')
 }
 

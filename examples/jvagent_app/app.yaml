@@ -74,6 +74,6 @@ config:
 # Agents
 # Agents are discovered from agents/{namespace}/{agent_name}/ and installed from this list.
 agents:
-  - jvagent/example_agent
-  - resolv/resolv_demo
+  # - jvagent/example_agent
+  # - resolv/resolv_demo
   - jvagent/skills_agent

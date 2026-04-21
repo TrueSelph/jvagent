@@ -65,6 +65,11 @@ PAGEINDEX_OFFICE_LIKE_EXTENSIONS = frozenset(
 # UTF-8 text sources ingested as markdown-enriched (no Docling).
 PAGEINDEX_TEXT_LIKE_EXTENSIONS = frozenset({".md", ".markdown", ".txt"})
 
+# Aligned with jvforge ``multipart_ingest.ALLOWED_EXTENSIONS`` (upload / jvforge POST).
+PAGEINDEX_UPLOAD_EXTENSIONS = frozenset(
+    {".pdf"} | PAGEINDEX_TEXT_LIKE_EXTENSIONS | PAGEINDEX_OFFICE_LIKE_EXTENSIONS
+)
+
 
 async def _ensure_pageindex_work_dir() -> str:
     """Resolved ``.../pageindex/tmp`` under App file_storage; created if missing."""

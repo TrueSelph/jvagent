@@ -37,7 +37,16 @@ on the action context (for example `api_endpoint: http://localhost:11434`).
 
 | Variable | Role |
 |----------|------|
-| **`JVAGENT_PUBLIC_BASE_URL`** | Public origin for WhatsApp/Facebook/Google webhooks, OAuth redirects, and resolving relative media URLs. |
+| **`JVAGENT_PUBLIC_BASE_URL`** | Public origin for WhatsApp/Facebook/Google webhooks, OAuth redirects, and resolving relative media URLs. Required for PageIndex LLM webhook URL generation when using **jvforge** (delegated ingest). |
+
+## jvforge (PageIndex)
+
+When jvforge runs as a separate service, set **`JVAGENT_JVFORGE_BASE_URL`** to its origin (for example `http://127.0.0.1:8088`). REST ingest and Google Drive sync then POST documents to jvforge `POST /v1/process` with an `llm_webhook_url` pointing at jvagent. If jvforge is configured to require authentication, set **`JVAGENT_JVFORGE_API_KEY`** or **`JVFORGE_API_KEY`** (sent as `X-API-Key`). See `jvforge/README.md` in the jvforge package.
+
+| Variable | Role |
+|----------|------|
+| **`JVAGENT_JVFORGE_BASE_URL`** | jvforge service origin; when set, PageIndex ingest is delegated to jvforge. |
+| **`JVAGENT_JVFORGE_API_KEY`** / **`JVFORGE_API_KEY`** | Optional API key for jvforge inbound requests. |
 
 ## WhatsApp
 

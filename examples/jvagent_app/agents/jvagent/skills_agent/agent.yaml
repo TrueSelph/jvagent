@@ -128,6 +128,7 @@ actions:
         - "User wants the agent to search files and synthesize information"
         - "User asks the agent to read files and provide feedback"
         - "User requests debugging or troubleshooting with file inspection"
+        - "User wants to take a quiz"
 
       # Model configuration (OpenAI for agentic loop)
       model_action_type: "OpenAILanguageModelAction"
@@ -156,6 +157,7 @@ actions:
         - "pageindex_search"
         - "pageindex_docs"
         - "web_search"
+        - "quiz_maker"
       skills_source: both
       denied_skills: []
 

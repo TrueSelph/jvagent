@@ -1,5 +1,10 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios'
-import { getJvagentUrl, getJvagentTimeout, getConfigAsync } from './config'
+import {
+  getJvagentUrl,
+  getJvagentTimeout,
+  getConfigAsync,
+  getJvforgeUrl,
+} from './config'
 import { getToken, removeToken, getUserId, getRefreshToken, setToken as setStorageToken, setRefreshToken, removeRefreshToken, isTokenExpired } from '../utils/storage'
 import type {
   LoginRequest,
@@ -29,6 +34,8 @@ import type {
 class ApiClient {
   private client: AxiosInstance
   private baseUrls: string[]
+  /** jvforge HTTP API (``/v1/*``) — separate host/port from jvagent */
+  private jvforgeBaseUrls: string[]
   private resolvedLoginPath?: string
   private isRefreshing = false
   private failedQueue: Array<{
@@ -40,7 +47,9 @@ class ApiClient {
     // Initialize with default config, will be updated when config loads
     const baseURL = getJvagentUrl()
     this.baseUrls = this._buildBaseUrls(baseURL)
+    this.jvforgeBaseUrls = this._buildBaseUrls(getJvforgeUrl())
     console.log('API Client initialized with baseURLs:', this.baseUrls)
+    console.log('jvforge baseURLs:', this.jvforgeBaseUrls)
 
     this.client = axios.create({
       baseURL: baseURL,
@@ -57,6 +66,7 @@ class ApiClient {
       if (config.jvagent.url !== baseURL) {
         this.updateBaseUrl(config.jvagent.url)
       }
+      this.jvforgeBaseUrls = this._buildBaseUrls(config.jvforge.url.replace(/\/$/, ''))
     }).catch((err) => {
       console.warn('Failed to load async config:', err)
     })
@@ -84,6 +94,10 @@ class ApiClient {
 
         if (isAuth || isAnonymousInteract) {
           console.log('Skipping Authorization header for:', config.url)
+          return config
+        }
+
+        if (this._isJvforgeRequest(config)) {
           return config
         }
 
@@ -285,6 +299,13 @@ class ApiClient {
     return null
   }
 
+  /** True when the request targets the jvforge host (per-request baseURL), not jvagent. */
+  private _isJvforgeRequest(config: InternalAxiosRequestConfig): boolean {
+    const base = (config.baseURL || '').replace(/\/$/, '')
+    if (!base) return false
+    return this.jvforgeBaseUrls.some((u) => u.replace(/\/$/, '') === base)
+  }
+
   private async _withFallback<T>(fn: (baseURL: string) => Promise<T>): Promise<T> {
     let lastError: unknown
     for (const baseURL of this.baseUrls) {
@@ -294,6 +315,34 @@ class ApiClient {
         lastError = error
         console.warn('Request failed for baseURL', baseURL, 'error:', (error as Error)?.message || error)
         // Try next baseURL
+      }
+    }
+    throw lastError
+  }
+
+  private _jvforgeHeaders(): Record<string, string> {
+    const key = import.meta.env.VITE_JVFORGE_API_KEY as string | undefined
+    if (key && String(key).trim() !== '') {
+      return { 'X-API-Key': String(key).trim() }
+    }
+    return {}
+  }
+
+  private async _withJvforgeFallback<T>(
+    fn: (baseURL: string) => Promise<T>
+  ): Promise<T> {
+    let lastError: unknown
+    for (const baseURL of this.jvforgeBaseUrls) {
+      try {
+        return await fn(baseURL)
+      } catch (error: unknown) {
+        lastError = error
+        console.warn(
+          'jvforge request failed for baseURL',
+          baseURL,
+          'error:',
+          (error as Error)?.message || error
+        )
       }
     }
     throw lastError
@@ -1111,10 +1160,10 @@ class ApiClient {
   }
 
   /**
-   * Upload a document to the agent's PageIndex collection.
-   * Path: POST /api/agents/{agentId}/pageindex/documents
-   * Provide either `file` or `options.fileUrl` (server downloads and ingests).
-   */
+    * Upload a document to the agent's PageIndex collection.
+    * Path: POST /api/agents/{agentId}/pageindex/documents
+    * Provide either `file` or `options.fileUrl` (server downloads and ingests).
+    */
   async uploadPageIndexDocument(
     agentId: string,
     file: File | null,
@@ -1127,8 +1176,14 @@ class ApiClient {
       ifAddNodeSummary?: boolean
       convertToMarkdown?: boolean
       ocr?: boolean
+      emergency?: boolean  // NEW: Mark as emergency priority
     }
-  ): Promise<PageIndexUploadResponse> {
+  ): Promise<PageIndexUploadResponse & {
+    status?: 'queued' | 'already_queued'
+    job_id?: string
+    queue_position?: { overall: number, per_agent: number }
+    message?: string
+  }> {
     const formData = new FormData()
     const remote = options?.fileUrl?.trim()
     if (remote) {
@@ -1151,17 +1206,101 @@ class ApiClient {
     if (options?.ocr !== undefined) {
       formData.append('ocr', options.ocr ? 'yes' : 'no')
     }
+    if (options?.emergency !== undefined) {
+      formData.append('emergency', options.emergency ? 'true' : 'false')
+    }
 
     const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents`
     const response = await this._withFallback((baseURL) =>
       this.client.post(path, formData, {
         baseURL,
-        timeout: 1000000 // 5 minutes for file uploads
+        timeout: 30000 // Shorter timeout for async mode
       })
     )
     const data = response.data
     if (data?.success && data?.data) return data.data
     return data
+  }
+
+  /**
+   * Get jvforge queue for an agent.
+   * Path: GET /v1/queue?agent_id={id}
+   */
+  async getJvforgeQueue(agentId: string): Promise<{
+    jobs: Array<{
+      job_id: string
+      doc_name: string
+      status: 'queued' | 'processing' | 'completed' | 'failed' | 'webhook_failed'
+      queue_position?: { overall: number, per_agent: number }
+      enqueued_at: string
+      agent_id?: string
+      client_ref?: string
+      artifact_url?: string
+      error?: string
+      status_url?: string
+    }>
+    total: number
+  }> {
+    const path = `/v1/queue?agent_id=${encodeURIComponent(agentId)}`
+    const headers = this._jvforgeHeaders()
+    const response = await this._withJvforgeFallback((baseURL) =>
+      this.client.get(path, { baseURL, headers })
+    )
+    return response.data
+  }
+
+  /**
+   * Get job queue position.
+   * Path: GET /v1/jobs/{jobId}/position
+   */
+  async getJvforgeJobPosition(jobId: string): Promise<{
+    job_id: string
+    queue_position: { overall: number, per_agent: number }
+    overall: number
+    per_agent: number
+  }> {
+    const path = `/v1/jobs/${encodeURIComponent(jobId)}/position`
+    const headers = this._jvforgeHeaders()
+    const response = await this._withJvforgeFallback((baseURL) =>
+      this.client.get(path, { baseURL, headers })
+    )
+    return response.data
+  }
+
+  /**
+   * Boost job to front of queue (emergency).
+   * Path: POST /v1/jobs/{jobId}/boost
+   */
+  async boostJvforgeJob(jobId: string): Promise<{
+    job_id: string
+    status: 'boosted'
+    queue_position: { overall: number, per_agent: number }
+    message: string
+    status_url?: string
+  }> {
+    const path = `/v1/jobs/${encodeURIComponent(jobId)}/boost`
+    const headers = this._jvforgeHeaders()
+    const response = await this._withJvforgeFallback((baseURL) =>
+      this.client.post(path, {}, { baseURL, headers })
+    )
+    return response.data
+  }
+
+  /**
+   * Cancel job and remove from queue.
+   * Path: DELETE /v1/jobs/{jobId}
+   */
+  async cancelJvforgeJob(jobId: string): Promise<{
+    job_id: string
+    status: 'cancelled'
+    message: string
+  }> {
+    const path = `/v1/jobs/${encodeURIComponent(jobId)}`
+    const headers = this._jvforgeHeaders()
+    const response = await this._withJvforgeFallback((baseURL) =>
+      this.client.delete(path, { baseURL, headers })
+    )
+    return response.data
   }
 
   /**

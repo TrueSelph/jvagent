@@ -24,9 +24,10 @@ import logging
 import mimetypes
 import tempfile
 import uuid
+import os
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import unquote, urlparse
 
 import httpx
@@ -41,12 +42,14 @@ from pydantic import Field
 from python_multipart.multipart import FormParser, parse_options_header
 
 from jvagent.core.agent import Agent
+from jvagent.env import get_jvagent_jvforge_base_url
 
-from .config import initialize_pageindex_database
+from .config import get_pageindex_node_summary, initialize_pageindex_database
 from .documents import (
     CHUNK_LIST_MAX,
     PAGEINDEX_OFFICE_LIKE_EXTENSIONS,
     PAGEINDEX_TEXT_LIKE_EXTENSIONS,
+    PAGEINDEX_UPLOAD_EXTENSIONS,
     _ensure_pageindex_work_dir,
     assimilate_document,
     delete_document,
@@ -61,6 +64,7 @@ from .documents import (
     update_document_chunk,
     update_document_metadata,
 )
+from .jvforge_assimilate import assimilate_via_jvforge, assimilate_via_jvforge_async
 from .pageindex_retrieval_interact_action import (
     PageIndexRetrievalInteractAction,
     ensure_ingestion_config_for_agent,
@@ -69,9 +73,7 @@ from .retrieval import search_documents
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_EXTENSIONS = (
-    {".pdf"} | PAGEINDEX_TEXT_LIKE_EXTENSIONS | PAGEINDEX_OFFICE_LIKE_EXTENSIONS
-)
+ALLOWED_EXTENSIONS = PAGEINDEX_UPLOAD_EXTENSIONS
 
 
 def _strip_nonempty(label: str, value: Optional[str]) -> str:
@@ -195,6 +197,24 @@ def _filename_from_url(url: str) -> str:
     path = urlparse(url).path
     name = unquote(Path(path).name)
     return name if name else "download"
+
+
+def _is_pageindex_graph_artifact_url(url: str) -> bool:
+    """True for jvforge ``GET /v1/artifacts/{job_id}`` graph JSON (path has no ``.json`` suffix)."""
+    raw = (url or "").strip()
+    if not raw.startswith(("http://", "https://")):
+        return False
+    try:
+        path = urlparse(raw).path.rstrip("/")
+        parts = [p for p in path.split("/") if p]
+        if len(parts) < 3:
+            return False
+        if parts[-3] != "v1" or parts[-2] != "artifacts":
+            return False
+        uuid.UUID(parts[-1])
+        return True
+    except (ValueError, IndexError):
+        return False
 
 
 def _safe_pageindex_relative_path(*segments: str) -> str:
@@ -349,6 +369,39 @@ async def _run_import_parsed(
         if isinstance(ctx, dict):
             ctx["collection_name"] = agent_id
     await import_documents(parsed, purge=purge, collection_name=agent_id)
+
+
+async def _import_graph_from_remote_url(
+    agent_id: str,
+    url: str,
+    *,
+    purge: bool = False,
+    staging_subdir: str = "pageindex_import",
+    extra_staging_metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Download PageIndex graph JSON/YAML from ``url`` and import into ``agent_id`` collection.
+
+    Stages a copy under App file storage (for audit), then deletes it in ``finally``.
+    """
+    staged_path: Optional[str] = None
+    try:
+        raw, _fname_hint, ct = await _fetch_url_bytes_capped(url)
+        staging_fn = _import_staging_filename(url, ct)
+        meta: Dict[str, Any] = {"source_url": url, "agent_id": agent_id}
+        if extra_staging_metadata:
+            meta = {**meta, **extra_staging_metadata}
+        staged_path = await _save_pageindex_staging(
+            staging_subdir,
+            agent_id,
+            raw,
+            staging_fn,
+            meta,
+        )
+        text = raw.decode("utf-8", errors="replace")
+        parsed = _coerce_import_payload_to_dict(text)
+        await _run_import_parsed(agent_id, parsed, purge)
+    finally:
+        await _delete_staged_file(staged_path)
 
 
 def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
@@ -580,7 +633,7 @@ async def ingest_document_endpoint(
     | Field | Type | Required | Description |
     |-------|------|----------|-------------|
     | file | File | One of file / file_url | `.pdf`, `.md`, `.markdown`, `.txt`, or office (`.docx`, `.doc`, `.xls`, `.xlsx`, `.ppt`, `.pptx`) |
-    | file_url | string | One of file / file_url | HTTPS/HTTP URL; server downloads, stages under `.files`, ingests, then deletes the staged file |
+    | file_url | string | One of file / file_url | HTTPS/HTTP URL to a **document** (pdf, md, …), or a **jvforge** graph URL ``.../v1/artifacts/{job_id}`` (JSON export); server downloads and ingests or imports the graph |
     | doc_name | string | No | Override document identifier (default: derived from filename) |
     | doc_description | string | No | Human-readable document description |
     | doc_url | string | No | Source URL for reference citations (default when using file_url: the same download URL) |
@@ -589,9 +642,15 @@ async def ingest_document_endpoint(
     | ocr | string | No | "yes" or "no" – enable OCR when using Docling on PDF (default: no) |
     | metadata | string | No | JSON object for tagging, e.g. `{"topic": "finance", "year": 2024}` |
 
-    **Response:** `doc_name`, `root_id`, `doc_description`
+    **Response:** `doc_name`, `root_id`, `doc_description`. With ``JVAGENT_JVFORGE_ASYNC=true``,
+    responses also include ``status``, ``job_id``, ``queue_position``, and ``message``; ``root_id``
+    is empty and ``doc_description`` is null until the webhook finishes importing the graph.
 
     Documents are stored in the agent's collection (collection = `agent_id` from path).
+
+    When ``JVAGENT_JVFORGE_BASE_URL`` is set, ingestion is delegated to that jvforge service
+    (``POST /v1/process``) with ``llm_webhook_url`` from the agent's PageIndex retrieval action;
+    set ``JVAGENT_JVFORGE_API_KEY`` (or ``JVFORGE_API_KEY``) if jvforge requires ``X-API-Key``.
     """
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     content_type = request.headers.get("content-type", "")
@@ -638,6 +697,49 @@ async def ingest_document_endpoint(
 
     staged_path: Optional[str] = None
     try:
+        if file_url and _is_pageindex_graph_artifact_url(file_url):
+            before_docs = await list_documents(
+                collection_name=agent_id, metadata_filter=None
+            )
+            before_names: Set[str] = {
+                n for d in before_docs if (n := (d.get("doc_name") or "").strip())
+            }
+            await _import_graph_from_remote_url(
+                agent_id,
+                file_url,
+                purge=False,
+                staging_subdir="pageindex_ingest",
+            )
+            after_docs = await list_documents(
+                collection_name=agent_id, metadata_filter=None
+            )
+            new_docs = [
+                d
+                for d in after_docs
+                if (d.get("doc_name") or "").strip() not in before_names
+            ]
+            pick: Optional[Dict[str, Any]] = None
+            effective_dn = (doc_name or "").strip()
+            if effective_dn:
+                for d in new_docs:
+                    if (d.get("doc_name") or "").strip() == effective_dn:
+                        pick = d
+                        break
+                if pick is None:
+                    for d in after_docs:
+                        if (d.get("doc_name") or "").strip() == effective_dn:
+                            pick = d
+                            break
+            if pick is None and len(new_docs) == 1:
+                pick = new_docs[0]
+            elif pick is None and new_docs:
+                pick = new_docs[-1]
+            return {
+                "doc_name": (pick or {}).get("doc_name") or effective_dn or "",
+                "root_id": (pick or {}).get("root_id", ""),
+                "doc_description": (pick or {}).get("doc_description") if pick else None,
+            }
+
         if file_url:
             dl_content, fname_hint, ct = await _fetch_url_bytes_capped(file_url)
             resolved_name = _resolve_ingest_filename(fname_hint, ct)
@@ -664,20 +766,83 @@ async def ingest_document_endpoint(
         if not content:
             raise ValidationError("Empty file")
 
+        effective_doc_name = doc_name or filename
+        forge_base = get_jvagent_jvforge_base_url()
+        
+        # Check if async mode is enabled
+        async_mode = os.environ.get("JVAGENT_JVFORGE_ASYNC", "false").lower() == "true"
+        
         try:
-            result = await _do_assimilate(
-                content,
-                ext,
-                doc_name=doc_name or filename,
-                model=model,
-                if_add_node_summary=if_add_node_summary,
-                collection_name=collection_name,
-                metadata=metadata,
-                doc_description=doc_description,
-                doc_url=doc_url_effective or None,
-                convert_to_markdown=convert_to_markdown,
-                ocr=ocr_flag,
-            )
+            if forge_base:
+                retrieval_action = await _get_pageindex_retrieval_action(agent_id)
+                llm_wh_url = await retrieval_action.get_webhook_url()
+                summary_for_forge = if_add_node_summary
+                if summary_for_forge is None:
+                    summary_for_forge = "yes" if get_pageindex_node_summary() else "no"
+                
+                if async_mode:
+                    # Async mode: queue job and return immediately
+                    result = await assimilate_via_jvforge_async(
+                        base_url=forge_base,
+                        agent_id=agent_id,
+                        filename=filename,
+                        content=content,
+                        doc_name=effective_doc_name,
+                        model=model,
+                        if_add_node_summary=summary_for_forge,
+                        collection_name=collection_name,
+                        metadata=metadata,
+                        doc_description=doc_description,
+                        doc_url=doc_url_effective or None,
+                        convert_to_markdown=convert_to_markdown,
+                        ocr=ocr_flag,
+                        llm_webhook_url=llm_wh_url,
+                        emergency=False,  # Can be made configurable via form field
+                    )
+                    
+                    # Return async response with queue position (root_id/description
+                    # only exist after processing; schema requires these keys)
+                    return {
+                        "status": result["status"],
+                        "job_id": result["job_id"],
+                        "queue_position": result["queue_position"],
+                        "doc_name": result["doc_name"],
+                        "message": result["message"],
+                        "root_id": "",
+                        "doc_description": None,
+                    }
+                else:
+                    # Sync mode: wait for processing to complete
+                    result = await assimilate_via_jvforge(
+                        base_url=forge_base,
+                        agent_id=agent_id,
+                        filename=filename,
+                        content=content,
+                        doc_name=effective_doc_name,
+                        model=model,
+                        if_add_node_summary=summary_for_forge,
+                        collection_name=collection_name,
+                        metadata=metadata,
+                        doc_description=doc_description,
+                        doc_url=doc_url_effective or None,
+                        convert_to_markdown=convert_to_markdown,
+                        ocr=ocr_flag,
+                        llm_webhook_url=llm_wh_url,
+                    )
+            else:
+                result = await _do_assimilate(
+                    content,
+                    ext,
+                    doc_name=effective_doc_name,
+                    model=model,
+                    if_add_node_summary=if_add_node_summary,
+                    collection_name=collection_name,
+                    metadata=metadata,
+                    doc_description=doc_description,
+                    doc_url=doc_url_effective or None,
+                    convert_to_markdown=convert_to_markdown,
+                    ocr=ocr_flag,
+                )
         except ImportError as e:
             raise ValidationError(str(e))
         except ValueError as e:
@@ -1283,18 +1448,9 @@ async def import_documents_endpoint(
         if url:
             if data is not None:
                 raise ValidationError("Provide either import_url or data, not both")
-            raw, _fname_hint, ct = await _fetch_url_bytes_capped(url)
-            staging_fn = _import_staging_filename(url, ct)
-            staged_path = await _save_pageindex_staging(
-                "pageindex_import",
-                agent_id,
-                raw,
-                staging_fn,
-                {"source_url": url, "agent_id": agent_id},
+            await _import_graph_from_remote_url(
+                agent_id, url, purge=purge, staging_subdir="pageindex_import"
             )
-            text = raw.decode("utf-8", errors="replace")
-            parsed = _coerce_import_payload_to_dict(text)
-            await _run_import_parsed(agent_id, parsed, purge)
         else:
             if data is None:
                 raise ValidationError("Provide data or import_url")
@@ -1529,3 +1685,111 @@ async def delete_user_group_endpoint(
         await action.save()
         return {"user_groups": ug, "message": "Group removed"}
     return {"user_groups": ug, "message": "Group not present; nothing removed"}
+
+
+@endpoint(
+    "/pageindex_retrieval_interact_action/interact/webhook/{agent_id}",
+    methods=["POST"],
+    webhook=True,
+    auth=False,
+    webhook_auth="api_key",
+    tags=["PageIndex"],
+    summary="PageIndex LLM webhook",
+    description=(
+        "Two modes (mutually exclusive): "
+        "(1) **LLM completion** — JSON with **prompt** (required) and optional **model** "
+        "(jvforge PageIndex LLM bridge). "
+        "(2) **Graph import** — optional **process_document_url** (https URL of a PageIndex "
+        "export JSON/YAML, e.g. jvforge job ``artifact_url``). Downloads and imports like "
+        "``POST /api/agents/{agent_id}/pageindex/import`` with ``import_url``; optional **purge** "
+        "(bool). Do not combine ``process_document_url`` with ``prompt``. "
+        "Import responses are not valid LLM completions — do not send import payloads through "
+        "the jvforge LLM webhook client. "
+        "Authenticate with **api_key** query parameter or header."
+    ),
+    response=success_response(
+        data={
+            "status": ResponseField(field_type=str, example="received"),
+            "result": ResponseField(
+                field_type=Dict[str, Any],
+                description=(
+                    "LLM mode: text and model. Import mode: imported flag and message."
+                ),
+                example={"text": "Example reply", "model": "gpt-4o-mini"},
+            ),
+        }
+    ),
+)
+async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, Any]:
+    """Inbound webhook: LLM call or process-document URL import for PageIndex retrieval."""
+    agent = await Agent.get(agent_id)
+    if not agent:
+        raise ResourceNotFoundError(
+            message=f"Agent with ID '{agent_id}' not found",
+            details={"agent_id": agent_id},
+        )
+    action = await agent.get_action_by_type("PageIndexRetrievalInteractAction")
+    if not action or not isinstance(action, PageIndexRetrievalInteractAction):
+        raise ResourceNotFoundError(
+            message="PageIndexRetrievalInteractAction not found for this agent",
+            details={"agent_id": agent_id},
+        )
+
+    data = getattr(request.state, "parsed_payload", None)
+    if data is None:
+        try:
+            body = await request.body()
+            if body:
+                data = await request.json()
+            else:
+                data = {}
+        except Exception:
+            data = {}
+
+    if not isinstance(data, dict):
+        data = {}
+
+    process_url = (data.get("process_document_url") or "").strip()
+    if process_url:
+        if (data.get("prompt") or "").strip():
+            raise ValidationError(
+                message="Cannot combine process_document_url with prompt",
+                details={"agent_id": agent_id},
+            )
+        purge_flag = data.get("purge")
+        purge = bool(purge_flag) if purge_flag is not None else False
+        initialize_pageindex_database(app_id=await _get_app_id_from_node())
+        try:
+            await _import_graph_from_remote_url(
+                agent_id,
+                process_url,
+                purge=purge,
+                staging_subdir="pageindex_webhook_import",
+            )
+        except ValidationError:
+            raise
+        except Exception as e:
+            logger.error("PageIndex process_document_url import failed: %s", e, exc_info=True)
+            raise ValidationError(
+                message=f"process_document_url import failed: {e}",
+                details={"agent_id": agent_id},
+            )
+        return {
+            "status": "received",
+            "result": {
+                "imported": True,
+                "message": "Documents imported successfully",
+            },
+        }
+
+    try:
+        result = await action.handle_webhook_payload(data)
+        return {"status": "received", "result": result}
+    except ValidationError:
+        raise
+    except Exception as e:
+        logger.error("PageIndex LLM webhook failed: %s", e, exc_info=True)
+        raise ValidationError(
+            message=f"LLM webhook failed: {e}",
+            details={"agent_id": agent_id},
+        )

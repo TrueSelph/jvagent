@@ -296,6 +296,25 @@ export function PageIndexDocumentsModal({
 
   const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 
+  // Queue state
+  const [queueJobs, setQueueJobs] = useState<Array<{
+    job_id: string
+    doc_name: string
+    status: 'queued' | 'processing' | 'completed' | 'failed' | 'webhook_failed'
+    queue_position?: { overall: number, per_agent: number }
+    enqueued_at: string
+    agent_id?: string
+    client_ref?: string
+  }>>([])
+  const [queueLoading, setQueueLoading] = useState(false)
+  const [emergencyMode, setEmergencyMode] = useState(false)
+  const [uploadStatus, setUploadStatus] = useState<{
+    status: 'queued' | 'already_queued'
+    job_id: string
+    queue_position: { overall: number, per_agent: number }
+    message: string
+  } | null>(null)
+
   const parseMetadata = (): Record<string, unknown> | undefined => {
     const trimmed = metadataJson.trim()
     if (!trimmed) return undefined
@@ -306,6 +325,19 @@ export function PageIndexDocumentsModal({
       return undefined
     }
   }
+
+  const fetchQueue = useCallback(async () => {
+    setQueueLoading(true)
+    try {
+      const res = await apiClient.getJvforgeQueue(agentId)
+      setQueueJobs(res.jobs || [])
+    } catch (err: any) {
+      console.error('Failed to fetch queue:', err)
+      // Don't show error to user - queue might not be enabled
+    } finally {
+      setQueueLoading(false)
+    }
+  }, [agentId])
 
   const fetchDocuments = useCallback(async () => {
     setLoading(true)
@@ -321,9 +353,21 @@ export function PageIndexDocumentsModal({
     }
   }, [agentId])
 
+  /** Refresh jvforge processing queue and indexed documents together */
+  const refreshPageIndexData = useCallback(async () => {
+    await Promise.all([fetchQueue(), fetchDocuments()])
+  }, [fetchQueue, fetchDocuments])
+
   useEffect(() => {
     fetchDocuments()
   }, [fetchDocuments])
+
+  // Load queue once when opening the documents tab (no polling; refresh page for updates)
+  useEffect(() => {
+    if (activeTab === 'documents') {
+      void fetchQueue()
+    }
+  }, [activeTab, fetchQueue])
 
   useEffect(() => {
     setMergeQueue([])
@@ -519,23 +563,43 @@ export function PageIndexDocumentsModal({
         ifAddNodeSummary: addNodeSummary,
         convertToMarkdown,
         ocr: doclingOcr,
+        emergency: emergencyMode,
       }
       if (remoteUrl) {
-        await apiClient.uploadPageIndexDocument(agentId, null, {
+        const result = await apiClient.uploadPageIndexDocument(agentId, null, {
           ...opts,
           fileUrl: remoteUrl,
         })
         setIngestFileUrl('')
+        // Handle async response
+        if (result.status === 'queued' || result.status === 'already_queued') {
+          setUploadStatus({
+            status: result.status,
+            job_id: result.job_id!,
+            queue_position: result.queue_position!,
+            message: result.message!,
+          })
+        }
       } else {
         const fileToUpload = await normalizeMarkdownForUpload(selectedFile!)
-        await apiClient.uploadPageIndexDocument(agentId, fileToUpload, opts)
+        const result = await apiClient.uploadPageIndexDocument(agentId, fileToUpload, opts)
         setSelectedFile(null)
+        // Handle async response
+        if (result.status === 'queued' || result.status === 'already_queued') {
+          setUploadStatus({
+            status: result.status,
+            job_id: result.job_id!,
+            queue_position: result.queue_position!,
+            message: result.message!,
+          })
+        }
       }
       setDocName('')
       setDocDescription('')
       setDocUrl('')
       setMetadataJson('')
-      await fetchDocuments()
+      setEmergencyMode(false)
+      await refreshPageIndexData()
     } catch (err: any) {
       console.error('Upload failed:', err)
       const errorMsg = err.message || 'Upload failed'
@@ -559,6 +623,27 @@ export function PageIndexDocumentsModal({
       setError(err.message || 'Delete failed')
     } finally {
       setDeleting(null)
+    }
+  }
+
+  const handleBoostJob = async (jobId: string) => {
+    try {
+      await apiClient.boostJvforgeJob(jobId)
+      await fetchQueue()
+    } catch (err: any) {
+      console.error('Boost failed:', err)
+      setUploadError(err.message || 'Failed to boost job')
+    }
+  }
+
+  const handleCancelJob = async (jobId: string) => {
+    if (!confirm('Are you sure you want to cancel this job?')) return
+    try {
+      await apiClient.cancelJvforgeJob(jobId)
+      await fetchQueue()
+    } catch (err: any) {
+      console.error('Cancel failed:', err)
+      setUploadError(err.message || 'Failed to cancel job')
     }
   }
 
@@ -2153,6 +2238,20 @@ export function PageIndexDocumentsModal({
 
         {activeTab === 'documents' && (
           <div className="space-y-6">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => void refreshPageIndexData()}
+                disabled={loading || queueLoading}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                  dark
+                    ? 'border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:opacity-50'
+                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50'
+                }`}
+              >
+                {loading || queueLoading ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </div>
             <div className="space-y-3">
               <h3 className={`text-sm font-medium ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
                 Upload document
@@ -2308,6 +2407,120 @@ export function PageIndexDocumentsModal({
               </div>
               {uploadError && (
                 <p className="text-sm text-red-600 dark:text-red-400">{uploadError}</p>
+              )}
+              
+              {/* Emergency mode checkbox */}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={emergencyMode}
+                  onChange={(e) => setEmergencyMode(e.target.checked)}
+                  className="rounded border-gray-300 dark:border-slate-600 text-red-600 focus:ring-red-500"
+                />
+                <span className={`text-sm font-medium ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                  ⚡ Emergency (priority processing - moves to front of queue)
+                </span>
+              </label>
+            </div>
+
+            {/* Processing Queue — use Refresh above (queue + indexed documents) */}
+            <div className="space-y-3">
+              <h3 className={`text-sm font-medium ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                📋 Processing Queue
+              </h3>
+              {queueLoading && queueJobs.length === 0 && (
+                <p className={`text-sm ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                  Loading queue…
+                </p>
+              )}
+              {!queueLoading && queueJobs.length === 0 && (
+                <p className={`text-sm ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                  No jobs in the processing queue.
+                </p>
+              )}
+              {queueJobs.length > 0 && (
+                <div className={`border rounded-lg overflow-hidden ${dark ? 'border-slate-600' : 'border-gray-200'}`}>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-600">
+                      <thead className={dark ? 'bg-slate-800' : 'bg-gray-50'}>
+                        <tr>
+                          <th className={`px-4 py-2 text-left text-xs font-medium uppercase ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                            Document
+                          </th>
+                          <th className={`px-4 py-2 text-left text-xs font-medium uppercase ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                            Status
+                          </th>
+                          <th className={`px-4 py-2 text-left text-xs font-medium uppercase ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                            Position
+                          </th>
+                          <th className={`px-4 py-2 text-left text-xs font-medium uppercase ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                            Queued At
+                          </th>
+                          <th className={`px-4 py-2 text-right text-xs font-medium uppercase ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className={`divide-y ${dark ? 'divide-slate-700 bg-slate-900' : 'divide-gray-200 bg-white'}`}>
+                        {queueJobs.map((job) => (
+                          <tr key={job.job_id}>
+                            <td className={`px-4 py-3 text-sm ${dark ? 'text-slate-100' : 'text-gray-900'}`}>
+                              {job.doc_name}
+                            </td>
+                            <td className="px-4 py-3 text-sm">
+                              {job.status === 'processing' ? (
+                                <span className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                                  <span className="animate-spin h-3 w-3 border-b-2 border-current rounded-full" />
+                                  Processing...
+                                </span>
+                              ) : job.status === 'queued' ? (
+                                <span className="text-amber-600 dark:text-amber-400">Queued</span>
+                              ) : job.status === 'completed' ? (
+                                <span className="text-green-600 dark:text-green-400">Completed</span>
+                              ) : job.status === 'webhook_failed' ? (
+                                <span className="text-red-600 dark:text-red-400">Webhook Failed</span>
+                              ) : (
+                                <span className="text-red-600 dark:text-red-400">Failed</span>
+                              )}
+                            </td>
+                            <td className={`px-4 py-3 text-sm ${dark ? 'text-slate-300' : 'text-gray-600'}`}>
+                              {job.queue_position ? (
+                                <div>
+                                  <div># {job.queue_position.overall} overall</div>
+                                  <div className="text-xs opacity-75">#{job.queue_position.per_agent} for this agent</div>
+                                </div>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td className={`px-4 py-3 text-sm ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                              {new Date(job.enqueued_at).toLocaleString()}
+                            </td>
+                            <td className="px-4 py-3 text-right space-x-2">
+                              {job.status === 'queued' && (
+                                <button
+                                  onClick={() => handleBoostJob(job.job_id)}
+                                  className="text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300 text-sm font-medium"
+                                  title="Boost to front of queue"
+                                >
+                                  ⚡ Boost
+                                </button>
+                              )}
+                              {(job.status === 'queued' || job.status === 'failed') && (
+                                <button
+                                  onClick={() => handleCancelJob(job.job_id)}
+                                  className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 text-sm font-medium"
+                                >
+                                  Cancel
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
             </div>
 
