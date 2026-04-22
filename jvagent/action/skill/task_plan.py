@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 
 @dataclass
@@ -15,7 +15,7 @@ class TaskStep:
 
     id: int
     description: str
-    status: str = "pending"  # pending | in_progress | done | skipped
+    status: Literal["pending", "in_progress", "done", "skipped"] = "pending"
     skip_reason: Optional[str] = field(default=None)
 
 

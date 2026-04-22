@@ -1,7 +1,7 @@
 """Unified runtime registry for thinking-action tools."""
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 @dataclass(frozen=True)
@@ -58,5 +58,5 @@ class ToolRegistry:
     def get(self, name: str) -> Optional[ToolHandle]:
         return self._by_name.get(name)
 
-    def names(self) -> list[str]:
+    def names(self) -> List[str]:
         return list(self._by_name.keys())

@@ -62,7 +62,12 @@ class SkillCatalog:
 
     # Class-level cache: {cache_key: (discovered_skills_dict, cached_at)}
     _cache: Dict[str, Tuple[Dict[str, Dict[str, Any]], datetime]] = {}
-    _cache_lock = asyncio.Lock()
+    # Lazily-created lock — NOT created at import time to avoid event-loop binding
+    # in Python < 3.10 (3.2).  Set to None and materialised inside discover().
+    _cache_lock: Optional[asyncio.Lock] = None  # type: ignore[assignment]
+
+    # Maximum number of cache entries before oldest-first eviction (3.3).
+    _CACHE_MAX_ENTRIES: int = 200
 
     def __init__(self, discovered_skills: Dict[str, Dict[str, Any]]):
         self._skills = discovered_skills
@@ -386,8 +391,6 @@ class SkillCatalog:
     @staticmethod
     def _normalize_tokens(text: str) -> List[str]:
         """Language-agnostic tokenization: split on non-alphanumeric, lowercase, drop short."""
-        import re
-
         return [
             t
             for t in re.findall(r"[a-zA-Z0-9_\u00C0-\u024F]+", text.lower())
@@ -568,6 +571,10 @@ class SkillCatalog:
             app_root=str(app_root),
         )
 
+        # Lazy lock initialisation (3.2) — avoids event-loop binding at import time.
+        if cls._cache_lock is None:
+            cls._cache_lock = asyncio.Lock()
+
         # Check cache
         now = datetime.utcnow()
         async with cls._cache_lock:
@@ -629,8 +636,18 @@ class SkillCatalog:
                 source,
             )
 
-            # Store in cache
+            # Store in cache with max-size eviction (3.3).
             async with cls._cache_lock:
+                if len(cls._cache) >= cls._CACHE_MAX_ENTRIES:
+                    # Evict the entry with the oldest cached_at timestamp.
+                    oldest_key = min(cls._cache, key=lambda k: cls._cache[k][1])
+                    del cls._cache[oldest_key]
+                    logger.debug(
+                        "SkillCatalog: evicted oldest cache entry (%s) to stay "
+                        "within %d-entry limit",
+                        oldest_key,
+                        cls._CACHE_MAX_ENTRIES,
+                    )
                 cls._cache[cache_key] = (discovered_skills, now)
 
             return cls(discovered_skills)

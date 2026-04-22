@@ -305,7 +305,6 @@ All attributes can be overridden via `context` in agent.yaml.
 | `tool_result_truncation_chars` | int | `500` | Max characters streamed for individual tool-result thought updates |
 | `history_limit` | int | `5` | How many prior interactions to include in initial context |
 | `call_timeout_seconds` | float | `60.0` | Timeout in seconds for each tool call (passed to ToolExecutor) |
-| `task_sync_every_steps` | int | `3` | How many tracker steps to buffer before persisting metadata |
 | `local_tools_path` | str | `None` | Absolute path to a directory of local .py tool modules |
 | `strict_grounding` | bool | `True` | Enable grounding-focused prompt constraints and per-skill scope reminders |
 | `plan_first` | bool | `True` | Instruct model to emit a brief plan before non-trivial tool use |

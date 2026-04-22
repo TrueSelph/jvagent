@@ -36,7 +36,11 @@ from jvspatial.core.annotations import attribute
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.skill.action_resolver import ActionResolver
 from jvagent.action.skill.skill_action import SkillAction
-from jvagent.action.skill.skill_action_contracts import SkillRunConfig, SkillRunContext
+from jvagent.action.skill.skill_action_contracts import (
+    DEFAULT_SKILL_MODEL,
+    SkillRunConfig,
+    SkillRunContext,
+)
 from jvagent.action.skill.skill_catalog import SkillCatalog
 
 if TYPE_CHECKING:
@@ -96,9 +100,7 @@ class SkillInteractAction(InteractAction):
         default="AnthropicLanguageModelAction",
         description="LanguageModelAction entity type",
     )
-    model: str = attribute(
-        default="claude-sonnet-4-20250514", description="Model identifier"
-    )
+    model: str = attribute(default=DEFAULT_SKILL_MODEL, description="Model identifier")
     model_temperature: float = attribute(
         default=0.3, description="Temperature for LLM generation"
     )
@@ -144,15 +146,23 @@ class SkillInteractAction(InteractAction):
         description="Generic reasoning effort: 'minimal', 'low', 'medium', 'high'.",
     )
     # Backward-compatibility aliases
+    # ---- Deprecated aliases (target removal: next minor release, ~v0.x+1) ----
+    # These aliases are forwarded in _build_run_config and will be removed once
+    # all callers have migrated to the canonical field names above.
     thinking_budget_tokens: int = attribute(
-        default=0, description="[Deprecated] Use reasoning_budget_tokens."
+        default=0,
+        description="[Deprecated since v0.x — remove target: next minor] Use reasoning_budget_tokens.",
     )
     reasoning: Optional[Dict[str, Any]] = attribute(
-        default=None, description="[Deprecated] Use reasoning_extra."
+        default=None,
+        description="[Deprecated since v0.x — remove target: next minor] Use reasoning_extra.",
     )
     mirror_openai_assistant_stream_to_thoughts: Optional[bool] = attribute(
         default=None,
-        description="[Deprecated] Use mirror_assistant_stream_as_thoughts.",
+        description=(
+            "[Deprecated since v0.x — remove target: next minor] "
+            "Use mirror_assistant_stream_as_thoughts."
+        ),
     )
     stream_tool_progress: bool = attribute(
         default=True, description="Stream tool call status as adhoc"
@@ -189,10 +199,6 @@ class SkillInteractAction(InteractAction):
             "How to deliver the final response: 'publish' (direct) or 'respond' (via PersonaAction)"
         ),
     )
-    task_sync_every_steps: int = attribute(
-        default=3,
-        description="How many tracker steps to buffer before persisting metadata",
-    )
     local_tools_path: Optional[str] = attribute(
         default=None,
         description="Optional absolute path to a folder containing local tool .py files",
@@ -202,7 +208,8 @@ class SkillInteractAction(InteractAction):
     )
     plan_first: bool = attribute(
         default=True,
-        description="If True, instruct model to provide a brief plan first",
+        description="If True, require task_tracker create before substantive tools "
+        "(MCP, skill, local) except for meta-utterance turns; skill hub/helpers stay allowed",
     )
     enable_skill_helper_tools: bool = attribute(
         default=True,
@@ -278,6 +285,29 @@ class SkillInteractAction(InteractAction):
     best_candidate_shrink_ratio: float = attribute(
         default=0.4,
         description="If a later candidate is shorter than this ratio of best, prefer best.",
+    )
+    enable_checkpoints: bool = attribute(
+        default=True,
+        description="Persist loop iteration snapshots to conversation context for recovery.",
+    )
+    enable_evidence_log: bool = attribute(
+        default=True,
+        description="Record raw tool results in an evidence log for grounding verification.",
+    )
+    stuck_intent_similarity_threshold: float = attribute(
+        default=0.7,
+        description=(
+            "Cosine-similarity threshold (0–1) for semantic intent matching in stuck detection. "
+            "Lower values flag more repetitions; higher values are more permissive."
+        ),
+    )
+    max_total_task_nudges: int = attribute(
+        default=6,
+        description="Hard ceiling on total task-plan nudges across the entire loop.",
+    )
+    max_task_plan_steps: int = attribute(
+        default=50,
+        description="Maximum number of steps allowed in a single task plan.",
     )
 
     # -----------------------------------------------------------------------
@@ -384,9 +414,15 @@ class SkillInteractAction(InteractAction):
             engine = SkillAction()
             result = await engine.run_to_completion(ctx)
 
+            # Mark interaction executed regardless of response content (1.5).
+            interaction.set_to_executed()
+
             # Deliver final response
             if result.final_response:
-                effective_mode = self._resolve_response_mode_from_result(result)
+                skill_catalog = (visitor._skill_state or {}).get("skill_catalog")
+                effective_mode = self._resolve_response_mode_from_result(
+                    result, skill_catalog=skill_catalog
+                )
                 use_persona = (
                     effective_mode == "respond"
                     and not SkillAction._is_degenerate_response(
@@ -412,7 +448,6 @@ class SkillInteractAction(InteractAction):
                         content=result.final_response,
                         streaming_complete=True,
                     )
-                interaction.set_to_executed()
 
         except Exception as exc:
             logger.error(
@@ -574,9 +609,14 @@ class SkillInteractAction(InteractAction):
             plan_first=self.plan_first,
             final_review=self.final_review,
             task_nudge_retry_limit=self.task_nudge_retry_limit,
+            max_total_task_nudges=self.max_total_task_nudges,
+            max_task_plan_steps=self.max_task_plan_steps,
             stuck_detection_window=self.stuck_detection_window,
+            stuck_intent_similarity_threshold=self.stuck_intent_similarity_threshold,
             max_midcourse_corrections=self.max_midcourse_corrections,
             progress_check_interval=self.progress_check_interval,
+            enable_checkpoints=self.enable_checkpoints,
+            enable_evidence_log=self.enable_evidence_log,
             conversational_skip_patterns=list(self.conversational_skip_patterns or []),
             skill_first_conversational_heuristic=self.skill_first_conversational_heuristic,
             conversational_short_utterance_max_chars=self.conversational_short_utterance_max_chars,
@@ -590,8 +630,25 @@ class SkillInteractAction(InteractAction):
             response_mode=self.response_mode,
         )
 
-    def _resolve_response_mode_from_result(self, result: Any) -> str:
-        """Effective response mode (config default; skill overrides not yet surfaced)."""
+    def _resolve_response_mode_from_result(
+        self, result: Any, *, skill_catalog: Any = None
+    ) -> str:
+        """Effective response mode honoring per-skill frontmatter overrides.
+
+        If any activated skill declared ``response-mode: respond`` in its
+        ``SKILL.md``, that overrides the action-level default so the response
+        is delivered through PersonaAction instead of published directly.
+        """
+        activated = getattr(result, "activated_skills", None) or []
+        if activated and skill_catalog is not None:
+            try:
+                return skill_catalog.get_response_mode_override(
+                    set(activated), self.response_mode
+                )
+            except Exception as exc:
+                logger.warning(
+                    "SkillInteractAction: get_response_mode_override failed: %s", exc
+                )
         return self.response_mode
 
     @staticmethod

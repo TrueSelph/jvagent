@@ -22,6 +22,7 @@ import logging
 import os
 import re
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -89,28 +90,50 @@ def _input_fingerprint(arguments: str) -> str:
     return hashlib.blake2b((arguments or "").encode(), digest_size=4).hexdigest()
 
 
+# Per-directory threading locks for sys.path manipulation (3.7).
+# Prevents a concurrent-import race when multiple tools from the same directory
+# are imported simultaneously: one task must finish inserting+removing before
+# another starts, so the path entry is never removed while a sibling import is
+# still in flight.  Dict is created at module scope (no async needed here).
+_syspath_dir_locks: Dict[str, threading.Lock] = {}
+_syspath_dir_locks_lock = threading.Lock()
+
+
+def _get_syspath_dir_lock(directory: str) -> threading.Lock:
+    with _syspath_dir_locks_lock:
+        if directory not in _syspath_dir_locks:
+            _syspath_dir_locks[directory] = threading.Lock()
+        return _syspath_dir_locks[directory]
+
+
 @contextlib.contextmanager
 def _syspath_containing_tool_file(tool_file: str):
     """Prepend the tool file's directory for the duration of import.
 
     Matches ``python scripts/foo.py``, which puts ``scripts`` on ``sys.path`` so
     sibling modules (e.g. ``from core import ...``) resolve.
+
+    A per-directory threading lock is held for the duration of the context
+    so that concurrent callers from the same directory do not race on
+    sys.path.remove() (3.7).
     """
     from pathlib import Path
 
     parent = str(Path(tool_file).resolve().parent)
-    inserted = False
-    if parent not in sys.path:
-        sys.path.insert(0, parent)
-        inserted = True
-    try:
-        yield
-    finally:
-        if inserted:
-            try:
-                sys.path.remove(parent)
-            except ValueError:
-                pass
+    lock = _get_syspath_dir_lock(parent)
+    with lock:
+        inserted = False
+        if parent not in sys.path:
+            sys.path.insert(0, parent)
+            inserted = True
+        try:
+            yield
+        finally:
+            if inserted:
+                try:
+                    sys.path.remove(parent)
+                except ValueError:
+                    pass
 
 
 class ToolDispatchError(Exception):

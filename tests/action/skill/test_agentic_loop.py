@@ -294,6 +294,8 @@ class TestShouldRetryForSkillFirst:
 class TestTaskTrackerHandler:
     @staticmethod
     def _make_handler(iteration: int = 1, final_review: bool = False):
+        from jvagent.action.skill.skill_action_contracts import SkillRunConfig
+
         task_handle = MagicMock()
         task_handle.record_step = AsyncMock()
         task_handle.update_metadata = AsyncMock()
@@ -302,6 +304,7 @@ class TestTaskTrackerHandler:
         ctx = SimpleNamespace(publish_callback=publish_callback)
         handler = SkillAction()._make_task_tracker_handler(
             ctx=ctx,
+            cfg=SkillRunConfig(),
             task_plan_state=task_plan_state,
             task_handle=task_handle,
             iteration_getter=lambda: iteration,

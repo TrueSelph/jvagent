@@ -18,7 +18,6 @@ def _mock_action() -> MagicMock:
     action.publish_thought = AsyncMock()
     action.respond = AsyncMock()
     action.unrecord_action_execution = AsyncMock()
-    action.task_sync_every_steps = 3
     action.local_tools_path = None
     action.tool_servers = []
     action.call_timeout_seconds = 30.0
@@ -71,12 +70,17 @@ def _mock_action() -> MagicMock:
     action.plan_first = True
     action.final_review = False
     action.progress_check_interval = 3
+    action.enable_checkpoints = True
+    action.enable_evidence_log = True
+    action.stuck_intent_similarity_threshold = 0.7
+    action.max_total_task_nudges = 6
+    action.max_task_plan_steps = 50
     action.stream_thinking = True
     action.stream_reasoning = True
     action.mirror_openai_assistant_stream_to_thoughts = None
     # Delegate _build_run_config to the real method via SkillInteractAction
     action._build_run_config = lambda: SkillInteractAction._build_run_config(action)
-    action._resolve_response_mode_from_result = lambda r: "publish"
+    action._resolve_response_mode_from_result = lambda r, **kwargs: "publish"
     action._format_persona_directive = lambda u, f: f
     return action
 

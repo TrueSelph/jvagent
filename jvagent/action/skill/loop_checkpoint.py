@@ -68,7 +68,13 @@ class CheckpointStore:
         self._conversation = conversation
 
     async def save(self, checkpoint: LoopCheckpoint) -> None:
-        """Persist checkpoint to conversation context (does not call conversation.save)."""
+        """Persist checkpoint to conversation context (does not call conversation.save).
+
+        Declared ``async`` for API stability — callers can always ``await`` this
+        regardless of whether a future implementation needs to perform I/O.
+        The body is currently synchronous; any blocking work added later should
+        be wrapped in ``asyncio.to_thread()``.
+        """
         ctx = self._conversation
         if ctx is None:
             return

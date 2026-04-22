@@ -9,7 +9,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
+
+# Default model used when no explicit model is specified (4.1).
+# Update this constant (not the field default) when rotating model versions.
+DEFAULT_SKILL_MODEL: str = "claude-sonnet-4-20250514"
 
 
 class LoopPhase(str, Enum):
@@ -43,7 +47,7 @@ class SkillRunConfig:
     """
 
     # ---- Model ----
-    model: str = "claude-sonnet-4-20250514"
+    model: str = DEFAULT_SKILL_MODEL
     model_temperature: float = 0.3
     model_max_tokens: int = 8192
     model_action_type: str = "AnthropicLanguageModelAction"
@@ -74,7 +78,8 @@ class SkillRunConfig:
     call_timeout_seconds: float = 60.0
 
     # ---- Skills ----
-    skills: Any = None
+    # Valid values: None (all skills), "-all" (no skills), a glob string, or a list of glob strings.
+    skills: Optional[Union[str, List[str]]] = None
     denied_skills: List[str] = field(default_factory=list)
     skills_source: str = "both"
     enable_skill_helper_tools: bool = True
@@ -90,14 +95,25 @@ class SkillRunConfig:
 
     # ---- Grounding / quality ----
     strict_grounding: bool = True
+    # When True, substantive tools are blocked until task_tracker create (except helpers;
+    # meta-utterance turns skip the gate). See SkillAction._apply_plan_first_tool_gate.
     plan_first: bool = True
     final_review: bool = True
 
     # ---- Task-tracker loop nudges ----
     task_nudge_retry_limit: int = 2
+    # Hard ceiling on total task-plan nudges across the entire loop (5.5).
+    # Prevents unbounded nudging when the counter resets on tool calls.
+    max_total_task_nudges: int = 6
+
+    # ---- Task plan limits ----
+    # Maximum steps allowed in a single task plan (5.8).
+    max_task_plan_steps: int = 50
 
     # ---- Stuck detection ----
     stuck_detection_window: int = 3
+    # Cosine-similarity threshold for semantic intent matching in StuckDetector (3.4).
+    stuck_intent_similarity_threshold: float = 0.7
     max_midcourse_corrections: int = 2
 
     # ---- Progress checks ----
@@ -150,7 +166,7 @@ class SkillRunContext:
         stream: Whether the client expects streamed output.
         agent: Agent node, used for MCP / action resolution.
         user_id: Authenticated end-user id for ToolExecutor / MCP per-user
-            filesystem sandboxes (optional; default anonymous when absent).
+            filesystem sandboxes (optional; system _default directory used when absent).
         publish_callback: Async callable used instead of ResponseBus when
             response_bus is None.  Signature::
 
@@ -202,7 +218,7 @@ class SkillRunResult:
     """
 
     final_response: str
-    termination_reason: str
+    termination_reason: TerminationReason
     stuck_corrections: int
     result_attributions: List[Dict[str, Any]]
     iterations: int
@@ -210,6 +226,8 @@ class SkillRunResult:
     task_id: Optional[str]
     activated_skills: List[str]
     metadata: Dict[str, Any] = field(default_factory=dict)
-    # Number of task-plan steps that remained pending/in-progress at termination.
-    # 0 means all tracked steps were completed or skipped before the loop ended.
-    task_plan_skipped_steps: int = 0
+    # Steps that were still pending/in_progress when the loop ended (abandoned).
+    # 0 means every tracked step was completed or explicitly skipped.
+    task_plan_abandoned_steps: int = 0
+    # Steps that were explicitly skipped by the model via task_tracker skip.
+    task_plan_intentional_skips: int = 0

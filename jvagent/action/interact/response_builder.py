@@ -13,7 +13,7 @@ def _parse_interaction_timestamp(value: Any) -> Optional[datetime]:
     """Parse datetime-like values from interaction/task payloads."""
     if value is None:
         return None
-    
+
     dt: Optional[datetime] = None
     if isinstance(value, datetime):
         dt = value
@@ -22,11 +22,12 @@ def _parse_interaction_timestamp(value: Any) -> Optional[datetime]:
             dt = datetime.fromisoformat(value)
         except ValueError:
             return None
-            
+
     if dt and dt.tzinfo is None:
         from datetime import timezone
+
         dt = dt.replace(tzinfo=timezone.utc)
-        
+
     return dt
 
 

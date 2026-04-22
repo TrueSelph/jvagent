@@ -37,7 +37,13 @@ analyze the request, choose the right capability, call tools carefully, then ans
  - If a step is genuinely impossible, call `task_tracker` with `action="skip"` and a clear reason
    so the plan can advance. Never abandon the plan silently.
  - A response cannot be finalized while any tracked step has a status other than `done` or `skipped`.
- - For simple single-step or conversational requests, do not create a task plan.
+ - For simple single-step or purely conversational requests, do not create a task plan;
+   the runtime will still let you use catalog helpers and `task_tracker` before a plan.
+ - When a plan is required and missing, substantive tools are blocked with an error until
+   you call `task_tracker` with `action="create"`. Exception: tools for a skill you have
+   already activated (or are activating in the same turn with `read_skill`) run without
+   that block (e.g. `answer__search` right after `read_skill` for `answer`). MCP and other
+   non-skill tools still require a plan when `plan_first` is on.
 
 # Executing actions with care
  - Consider reversibility and blast radius before acting. Read-only inspection (listing, searching,
@@ -164,6 +170,7 @@ COMPLETION CHECKLIST (you MUST address each item):
 For each checklist item:
 - If you have tool-confirmed evidence, summarize it with attribution.
 - If you do NOT have evidence for an item, explicitly state: "I was unable to verify [item] because [reason]."
+- For items marked [skipped], include the recorded skip reason in your response.
 - Do NOT fabricate evidence for incomplete items.
 
 Summarize only what was confirmed by tool/skill results.
@@ -173,6 +180,43 @@ Do not fabricate missing details.
 """
 
 FORCED_TERMINATION_PROMPT_NO_CHECKLIST = FORCED_TERMINATION_PROMPT
+
+# Cause-specific forced-termination prompt variants (5.7): the model can phrase
+# the failure report more accurately when it knows why termination was forced.
+
+FORCED_TERMINATION_PROMPT_ITER_CAP = """\
+You have used the maximum number of reasoning steps allowed for this task.
+Provide your best final answer now. Do not make any more tool calls.
+
+{checklist_section}
+Summarize only what was confirmed by tool/skill results.
+For any part of the task that was not reached, state explicitly: \
+"I ran out of steps before completing [part] — [brief reason or last known state]."
+Do not fabricate missing details.
+"""
+
+FORCED_TERMINATION_PROMPT_TIME_CAP = """\
+The time limit for this task has been reached.
+Provide your best final answer now. Do not make any more tool calls.
+
+{checklist_section}
+Summarize only what was confirmed by tool/skill results.
+For any part of the task that was not completed in time, state explicitly: \
+"I ran out of time before completing [part] — [brief reason or last known state]."
+Do not fabricate missing details.
+"""
+
+FORCED_TERMINATION_PROMPT_STUCK = """\
+The task loop was detected to be repeating without progress.
+Provide your best final answer now based on what you have gathered so far. \
+Do not make any more tool calls.
+
+{checklist_section}
+Summarize only what was confirmed by tool/skill results.
+For any part of the task that could not be completed, state explicitly: \
+"I was unable to make progress on [part] — [brief reason or last approach tried]."
+Do not fabricate missing details.
+"""
 
 STUCK_DETECTION_PROMPT = """\
 You appear to be stuck: the last {repeat_count} tool-call cycle(s) produced similar results
@@ -196,6 +240,27 @@ Requirements:
 - Preserve useful conclusions that are evidence-backed.
 - Explicitly state limitations or missing information.
 - Do not introduce new fabricated facts.
+"""
+
+FINAL_REVIEW_PROMPT_WITH_PLAN = """\
+Review your candidate final answer for grounding and accuracy.
+Rewrite it to keep only claims supported by observed tool/skill results.
+
+TASK PLAN — GROUND TRUTH (you MUST honour this exactly; it overrides any contrary claim in the candidate):
+{plan_summary}
+
+CRITICAL RULES:
+- If the candidate claims any SKIPPED step was completed, REMOVE that claim entirely and replace it \
+with the accurate skip reason (e.g. "I was unable to save the file because no file-writing capability \
+is available in this environment.").
+- If the candidate omits skip reasons that the user would care about, ADD a clear acknowledgment of \
+what could not be done and why.
+- Do NOT fabricate tool outcomes for any step, whether done or skipped.
+- Preserve all conclusions that are genuinely backed by tool/skill results for DONE steps.
+- Explicitly state limitations or missing information for SKIPPED steps.
+- Do not introduce new fabricated facts.
+
+If any steps were skipped, the response MUST include an honest account of those steps and their reasons.
 """
 
 SKILL_FIRST_RETRY_PROMPT = (
@@ -240,8 +305,13 @@ COMPACT_DIRECT_RESUME_INSTRUCTION = (
     "re-narrate work already done."
 )
 
+# Sentinel prefix for synthetic loop-internal messages injected as user-role turns.
+# Downstream tooling can filter on this prefix to exclude non-user content from
+# conversation history analysis.
+SYSTEM_INJECTED_MESSAGE_PREFIX = "[system-loop] "
+
 PROGRESS_CHECK_PROMPT_TEMPLATE = """\
-Progress checkpoint: you are on iteration {iteration} of {max_iterations}.
+[system-loop] Progress checkpoint: you are on iteration {iteration} of {max_iterations}.
 
 Please assess your progress:
 1. What have you accomplished so far?

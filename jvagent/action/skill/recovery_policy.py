@@ -22,10 +22,14 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 # Exception substrings that are considered non-recoverable.
+# "not found" was replaced with more specific variants to avoid false positives
+# on transient 404s or "resource not found yet" messages (3.5).
 _NON_RECOVERABLE_MARKERS = (
     "invalid api key",
     "permission denied",
-    "not found",
+    "model not found",
+    "resource not found",
+    "endpoint not found",
     "content policy",
     "unsupported",
     "invalid model",

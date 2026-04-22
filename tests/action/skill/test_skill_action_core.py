@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -190,6 +191,210 @@ class TestSkillActionHelpers:
         assert plan.complete_step(1) is True
         checklist = SkillAction._task_plan_pending_checklist(plan)
         assert checklist == [{"item": "Write report", "status": "in_progress"}]
+
+    def test_reorder_task_calls_create_then_read_skill_then_rest(self):
+        read_file = {
+            "id": "1",
+            "function": {
+                "name": "mcp_filesystem__read",
+                "arguments": json.dumps({"path": "/a"}),
+            },
+        }
+        create = {
+            "id": "2",
+            "function": {
+                "name": "task_tracker",
+                "arguments": json.dumps(
+                    {"action": "create", "steps": ["Read file", "Summarize"]}
+                ),
+            },
+        }
+        o = SkillAction._reorder_task_calls_dependency_first([read_file, create])
+        assert o[0] is create
+        assert o[1] is read_file
+        # read_skill runs before that skill's tools in the same batch
+        rs = {
+            "id": "r",
+            "function": {
+                "name": "read_skill",
+                "arguments": json.dumps({"skill_name": "answer"}),
+            },
+        }
+        st = {
+            "id": "s",
+            "function": {
+                "name": "answer__search",
+                "arguments": json.dumps({"query": "V75"}),
+            },
+        }
+        o2 = SkillAction._reorder_task_calls_dependency_first([st, rs, read_file])
+        assert o2[0] is rs
+        assert o2[1] is st
+        assert o2[2] is read_file
+
+    def test_apply_plan_first_tool_gate_allows_create_batch(self):
+        create = {
+            "id": "1",
+            "function": {
+                "name": "task_tracker",
+                "arguments": json.dumps({"action": "create", "steps": ["A"]}),
+            },
+        }
+        read = {
+            "id": "2",
+            "function": {"name": "mcp_x", "arguments": "{}"},
+        }
+        d, syn, blocked = SkillAction._apply_plan_first_tool_gate(
+            [read, create],
+            plan_first=True,
+            has_task_plan=False,
+            is_meta_utterance=False,
+            activated_skill_names=set(),
+        )
+        assert d == [read, create]
+        assert syn == []
+        assert not blocked
+
+    def test_apply_plan_first_tool_gate_blocks_substantive_without_plan(self):
+        d, syn, blocked = SkillAction._apply_plan_first_tool_gate(
+            [
+                {
+                    "id": "1",
+                    "function": {
+                        "name": "mcp_x",
+                        "arguments": "{}",
+                    },
+                }
+            ],
+            plan_first=True,
+            has_task_plan=False,
+            is_meta_utterance=False,
+            activated_skill_names=set(),
+        )
+        assert d == []
+        assert len(syn) == 1
+        assert "mcp_x" in blocked
+        assert (
+            "create" in syn[0]["content"].lower() or "task_tracker" in syn[0]["content"]
+        )
+
+    def test_apply_plan_first_tool_gate_allows_helpers(self):
+        d, syn, blocked = SkillAction._apply_plan_first_tool_gate(
+            [
+                {
+                    "id": "1",
+                    "function": {
+                        "name": "read_skill",
+                        "arguments": json.dumps({"skill_name": "x"}),
+                    },
+                },
+                {
+                    "id": "2",
+                    "function": {
+                        "name": "mcp_x",
+                        "arguments": "{}",
+                    },
+                },
+            ],
+            plan_first=True,
+            has_task_plan=False,
+            is_meta_utterance=False,
+            activated_skill_names=set(),
+        )
+        assert len(d) == 1
+        assert d[0]["function"]["name"] == "read_skill"
+        assert len(syn) == 1
+        assert "mcp_x" in blocked
+
+    def test_apply_plan_first_skipped_for_meta_utterance(self):
+        d, syn, _ = SkillAction._apply_plan_first_tool_gate(
+            [
+                {
+                    "id": "1",
+                    "function": {
+                        "name": "mcp_x",
+                        "arguments": "{}",
+                    },
+                }
+            ],
+            plan_first=True,
+            has_task_plan=False,
+            is_meta_utterance=True,
+            activated_skill_names=set(),
+        )
+        assert len(d) == 1
+        assert syn == []
+
+    def test_apply_plan_first_allows_skill_tools_after_in_batch_read_skill(self):
+        """Same turn: read_skill(answer) + answer__search must not be blocked (regression)."""
+        batch = [
+            {
+                "id": "1",
+                "function": {
+                    "name": "read_skill",
+                    "arguments": json.dumps({"skill_name": "answer"}),
+                },
+            },
+            {
+                "id": "2",
+                "function": {
+                    "name": "answer__search",
+                    "arguments": json.dumps({"query": "V75 Inc"}),
+                },
+            },
+        ]
+        d, syn, blocked = SkillAction._apply_plan_first_tool_gate(
+            batch,
+            plan_first=True,
+            has_task_plan=False,
+            is_meta_utterance=False,
+            activated_skill_names=set(),
+        )
+        assert len(d) == 2
+        assert not syn
+        assert not blocked
+
+    def test_apply_plan_first_allows_skill_tools_when_activated(self):
+        d, syn, blocked = SkillAction._apply_plan_first_tool_gate(
+            [
+                {
+                    "id": "2",
+                    "function": {
+                        "name": "answer__search",
+                        "arguments": json.dumps({"query": "x"}),
+                    },
+                }
+            ],
+            plan_first=True,
+            has_task_plan=False,
+            is_meta_utterance=False,
+            activated_skill_names={"answer"},
+        )
+        assert len(d) == 1
+        assert not syn
+        assert not blocked
+
+    def test_merge_tool_dispatch_with_synthetic(self):
+        t1 = {"id": "a", "function": {"name": "read_skill", "arguments": "{}"}}
+        t2 = {"id": "b", "function": {"name": "mcp", "arguments": "{}"}}
+        dres = [
+            {
+                "role": "tool",
+                "tool_call_id": "a",
+                "content": "ok-skill",
+            }
+        ]
+        sres = [
+            {
+                "role": "tool",
+                "tool_call_id": "b",
+                "content": "Error: blocked",
+            }
+        ]
+        out = SkillAction._merge_tool_dispatch_with_synthetic([t1, t2], dres, sres)
+        assert len(out) == 2
+        assert out[0]["content"] == "ok-skill"
+        assert "blocked" in out[1]["content"]
 
     def test_is_degenerate_response(self):
         assert SkillAction._is_degenerate_response("")

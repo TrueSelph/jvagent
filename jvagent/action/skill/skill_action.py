@@ -28,6 +28,8 @@ import json
 import logging
 import re
 import time
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from jvagent.action.model.language.base import ReasoningModelConfig
@@ -38,8 +40,12 @@ from jvagent.action.skill.loop_context import LoopContext, LoopContextConfig
 from jvagent.action.skill.prompts import (
     ERROR_ANNOUNCE_TEMPLATE,
     FINAL_REVIEW_PROMPT,
+    FINAL_REVIEW_PROMPT_WITH_PLAN,
+    FORCED_TERMINATION_PROMPT_ITER_CAP,
     FORCED_TERMINATION_PROMPT_NO_CHECKLIST,
+    FORCED_TERMINATION_PROMPT_STUCK,
     FORCED_TERMINATION_PROMPT_TEMPLATE,
+    FORCED_TERMINATION_PROMPT_TIME_CAP,
     GROUNDING_INSTRUCTION_TEMPLATE,
     LIST_SKILLS_TOOL_DESCRIPTION,
     MONOLOGUE_OPENERS,
@@ -78,9 +84,73 @@ from jvagent.memory.evidence_log import EvidenceLog
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass
+class _LoopState:
+    """Carries all mutable state across ``_run_loop`` iterations.
+
+    Passed to ``_handle_no_tool_response`` and ``_handle_tool_calls`` so those
+    helpers can mutate shared loop variables in place and signal control-flow
+    directives back to the caller via ``do_break`` / ``do_continue``.
+    """
+
+    messages: List[Dict[str, Any]]
+    loop_phase: LoopPhase
+    termination_reason: TerminationReason
+    final_response: str
+    candidate_response: Optional[str]
+    best_candidate: Optional[str]
+    task_nudges: int
+    task_nudges_total: int
+    skill_first_retries: int
+    retry_nudges: int
+    tools_ever_called: Set[str]
+    nontrivial_tools_ever_called: Set[str]
+    result_attributions: List[Dict[str, Any]]
+    # Set by helpers to signal loop control flow back to _run_loop.
+    do_break: bool = False
+    do_continue: bool = False
+
+
+@dataclass
+class _NoToolResult:
+    """Result returned by ``_handle_no_tool_response``."""
+
+    loop_phase: LoopPhase
+    termination_reason: TerminationReason
+    final_response: str
+    candidate_response: Optional[str]
+    best_candidate: Optional[str]
+    task_nudges: int
+    task_nudges_total: int
+    skill_first_retries: int
+    retry_nudges: int
+    control: str  # "break" or "continue"
+
+
+@dataclass
+class _ToolCallResult:
+    """Result returned by ``_handle_tool_calls``."""
+
+    loop_phase: LoopPhase
+    termination_reason: TerminationReason
+    final_response: str
+    messages: List[Dict[str, Any]]
+    task_nudges: int
+    result_attributions: List[Dict[str, Any]]
+    control: str  # "break" or empty string (fall through)
+
+
 # Built-in coordination / catalog navigation tools — not considered "real" tool evidence.
 _SKILL_HELPER_TOOL_NAMES: frozenset = frozenset(
     ("list_skills", "skill_search", "plan_skills", "read_skill", "task_tracker")
+)
+
+# Shown when plan_first is enabled, no plan exists yet, and a substantive tool is blocked.
+PLAN_FIRST_BLOCKED_TOOL_MESSAGE: str = (
+    "Error: Create an in-loop task plan before using this tool. Call `task_tracker` with "
+    '`action="create"` and a `steps` array describing the parts of the work (a one-item list '
+    "is fine for a single straightforward request), then invoke this tool again."
 )
 
 
@@ -203,7 +273,7 @@ class SkillAction:
                     pass
             return SkillRunResult(
                 final_response="I was unable to complete the task due to an unexpected error.",
-                termination_reason=TerminationReason.ERROR.value,
+                termination_reason=TerminationReason.ERROR,
                 stuck_corrections=0,
                 result_attributions=[],
                 iterations=0,
@@ -312,13 +382,24 @@ class SkillAction:
 
         # --- Skill preflight: deterministic capability check before first model call ---
         if not skill_catalog.is_empty:
-            action_resolver = ActionResolver(ctx.agent) if ctx.agent else None
             preflight_failures = await skill_catalog.preflight_check(
                 action_resolver=action_resolver,
                 tool_executor=tool_executor,
             )
             if preflight_failures:
-                # Log structured failures into context (non-fatal; loop proceeds)
+                # Emit a WARNING per failure so operators can observe which skills
+                # fail preflight in production without inspecting conversation.context (3.6).
+                for pf in preflight_failures:
+                    skill_name = pf.get("skill") or pf.get("name") or "unknown"
+                    kind = pf.get("kind") or pf.get("type") or "unknown"
+                    detail = pf.get("detail") or pf.get("message") or str(pf)
+                    logger.warning(
+                        "SkillAction: preflight failure [%s] for skill '%s': %s",
+                        kind,
+                        skill_name,
+                        detail,
+                    )
+                # Also persist into conversation context for downstream inspection.
                 context = getattr(ctx.conversation, "context", None)
                 if isinstance(context, dict):
                     context["_skill_preflight_failures"] = preflight_failures
@@ -419,19 +500,20 @@ class SkillAction:
         loop_start = time.monotonic()
         iteration = 0
         final_response = ""
-        termination_reason = TerminationReason.COMPLETED.value
+        termination_reason = TerminationReason.COMPLETED
         loop_phase = LoopPhase.INIT
 
         stuck_detector = StuckDetector(
             StuckDetectorConfig(
                 window_size=max(1, int(cfg.stuck_detection_window or 1)),
                 max_corrections=cfg.max_midcourse_corrections,
-                intent_similarity_threshold=0.7,
+                intent_similarity_threshold=cfg.stuck_intent_similarity_threshold,
             )
         )
 
         skill_first_retries = 0
         task_nudges = 0
+        task_nudges_total = 0
         result_attributions: List[Dict[str, Any]] = []
 
         meta_extra: List[str] = list(cfg.meta_intent_patterns or [])
@@ -451,22 +533,26 @@ class SkillAction:
             tool_def_dict={
                 "name": "task_tracker",
                 "description": (
-                    "Create, read, complete, or skip steps in the in-loop task plan. "
+                    "Create, read, complete, skip, or append steps in the in-loop task plan. "
                     "For multi-step tasks, create the plan first, then complete each step "
                     "before moving to the next. Use skip (with a reason) when a step "
-                    "cannot be performed so the plan can advance."
+                    "cannot be performed so the plan can advance. "
+                    "Use append to add newly-discovered steps without losing prior history."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["create", "read", "complete", "skip"],
+                            "enum": ["create", "read", "complete", "skip", "append"],
                         },
                         "steps": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Ordered step descriptions used when action=create.",
+                            "description": (
+                                "Ordered step descriptions used when action=create or action=append. "
+                                "For append, new steps are added after the last existing step."
+                            ),
                         },
                         "step_id": {
                             "type": "integer",
@@ -485,6 +571,7 @@ class SkillAction:
             },
             handler=self._make_task_tracker_handler(
                 ctx=ctx,
+                cfg=cfg,
                 task_plan_state=task_plan_state,
                 task_handle=task_handle,
                 iteration_getter=lambda: iteration,
@@ -494,6 +581,7 @@ class SkillAction:
 
         tools_ever_called: Set[str] = set()
         nontrivial_tools_ever_called: Set[str] = set()
+        candidate_response: Optional[str] = None
         best_candidate: Optional[str] = None
         thinking_tokens_total: int = 0
         retry_nudges: int = 0
@@ -513,8 +601,9 @@ class SkillAction:
                     checklist=self._task_plan_pending_checklist(
                         task_plan_state["plan"]
                     ),
+                    termination_cause="time_cap",
                 )
-                termination_reason = TerminationReason.TIME_CAP.value
+                termination_reason = TerminationReason.TIME_CAP
                 break
 
             iteration += 1
@@ -527,7 +616,7 @@ class SkillAction:
                     phase=loop_phase.value,
                     elapsed_seconds=elapsed,
                     pending_tool_names=[],
-                    termination_reason_candidate=termination_reason,
+                    termination_reason_candidate=termination_reason.value,
                 )
                 await checkpoint_store.save(ckpt)
 
@@ -574,7 +663,7 @@ class SkillAction:
                     action,
                 )
                 if action == "terminate":
-                    termination_reason = TerminationReason.ERROR.value
+                    termination_reason = TerminationReason.ERROR
                     final_response = await self._force_termination(
                         messages,
                         tools,
@@ -584,6 +673,7 @@ class SkillAction:
                         checklist=self._task_plan_pending_checklist(
                             task_plan_state["plan"]
                         ),
+                        termination_cause="iter_cap",
                     )
                     break
                 # retry: continue to next iteration (messages unchanged)
@@ -607,350 +697,82 @@ class SkillAction:
 
             # ---- No tool calls → candidate response ----
             if not model_result.tool_calls:
-                loop_phase = LoopPhase.OBSERVE
-                candidate_response = await model_result.get_response()
-                if not candidate_response and model_result.response:
-                    candidate_response = model_result.response
-
-                best_candidate = self._update_best_candidate(
-                    best_candidate, candidate_response
-                )
-                await task_handle.record_step(
-                    "candidate",
-                    iteration=iteration,
-                    details={
-                        "length": len((candidate_response or "").strip()),
-                        "preview": (candidate_response or "")[:200],
-                    },
-                )
-
-                # Skill-first nudge
-                if self._should_retry_for_skill_first(
+                r = await self._handle_no_tool_response(
+                    model_result=model_result,
+                    messages=messages,
                     cfg=cfg,
-                    discovered_skills=discovered_skills,
+                    ctx=ctx,
+                    task_plan_state=task_plan_state,
+                    task_handle=task_handle,
                     tool_executor=tool_executor,
-                    utterance=ctx.utterance or "",
-                    retries=skill_first_retries,
+                    base_model_kwargs=base_model_kwargs,
+                    reasoning_cfg=reasoning_cfg,
+                    discovered_skills=discovered_skills,
+                    iteration=iteration,
+                    loop_phase=loop_phase,
+                    termination_reason=termination_reason,
+                    final_response=final_response,
                     candidate_response=candidate_response,
+                    best_candidate=best_candidate,
+                    task_nudges=task_nudges,
+                    task_nudges_total=task_nudges_total,
+                    skill_first_retries=skill_first_retries,
+                    retry_nudges=retry_nudges,
                     tools_ever_called=tools_ever_called,
-                    nontrivial_tools_called=nontrivial_tools_ever_called,
-                ):
-                    loop_phase = LoopPhase.NUDGE
-                    await task_handle.record_step(
-                        "skill_first_retry",
-                        iteration=iteration,
-                        details={"nudge_index": skill_first_retries + 1},
-                    )
-                    retry_nudges += 1
-                    await task_handle.update_metadata(retry_nudges_fired=retry_nudges)
-                    messages.append(
-                        {"role": "assistant", "content": candidate_response or ""}
-                    )
-                    messages.append(
-                        {"role": "user", "content": SKILL_FIRST_RETRY_PROMPT}
-                    )
-                    skill_first_retries += 1
-                    continue
-
-                # Pending-step gate: task-plan state is the source of truth.
-                task_plan = task_plan_state["plan"]
-                if task_plan is not None and task_plan.has_pending_steps():
-                    if task_nudges < cfg.task_nudge_retry_limit:
-                        loop_phase = LoopPhase.NUDGE
-                        is_final_nudge = task_nudges == cfg.task_nudge_retry_limit - 1
-                        nudge_prompt = (
-                            PENDING_STEPS_NUDGE_PROMPT_FINAL
-                            if is_final_nudge
-                            else PENDING_STEPS_NUDGE_PROMPT
-                        )
-                        await task_handle.record_step(
-                            "task_plan_nudge",
-                            iteration=iteration,
-                            details={
-                                "nudge_index": task_nudges + 1,
-                                "is_final_nudge": is_final_nudge,
-                                "pending_steps": task_plan.format_for_model(),
-                            },
-                        )
-                        retry_nudges += 1
-                        await task_handle.update_metadata(
-                            retry_nudges_fired=retry_nudges
-                        )
-                        messages.append(
-                            {"role": "assistant", "content": candidate_response or ""}
-                        )
-                        messages.append(
-                            {
-                                "role": "user",
-                                "content": nudge_prompt.format(
-                                    pending=task_plan.format_for_model()
-                                ),
-                            }
-                        )
-                        task_nudges += 1
-                        continue
-                    else:
-                        # Nudge limit exhausted with steps still pending — escalate to
-                        # forced termination with checklist rather than silently accepting.
-                        pending_count = len(task_plan.pending_steps())
-                        logger.warning(
-                            "SkillAction: nudge limit exhausted with %d pending step(s); "
-                            "escalating to forced termination",
-                            pending_count,
-                        )
-                        await task_handle.update_metadata(
-                            task_plan_incomplete_accepted=True,
-                            task_plan_pending_at_termination=task_plan.format_for_model(),
-                        )
-                        await task_handle.record_step(
-                            "task_plan_incomplete_forced",
-                            iteration=iteration,
-                            details={
-                                "pending_count": pending_count,
-                                "pending_steps": task_plan.format_for_model(),
-                            },
-                        )
-                        messages.append(
-                            {"role": "assistant", "content": candidate_response or ""}
-                        )
-                        final_response = await self._force_termination(
-                            messages,
-                            tool_executor.get_tools_list(),
-                            ctx,
-                            base_model_kwargs,
-                            reasoning_cfg,
-                            checklist=self._task_plan_pending_checklist(task_plan),
-                        )
-                        termination_reason = TerminationReason.ITER_CAP.value
-                        loop_phase = LoopPhase.TERMINATE
-                        break
-
-                # Accept candidate
-                chosen = candidate_response or ""
-                if self._should_prefer_best_over_candidate(cfg, chosen, best_candidate):
-                    await task_handle.record_step(
-                        "candidate_discarded",
-                        iteration=iteration,
-                        details={"reason": "degenerate_or_shrunk_vs_best"},
-                    )
-                    final_response = (best_candidate or chosen) or ""
-                else:
-                    final_response = chosen
-                    await task_handle.record_step(
-                        "candidate_accepted",
-                        iteration=iteration,
-                        details={"length": len(final_response.strip())},
-                    )
-                termination_reason = TerminationReason.COMPLETED.value
-                loop_phase = LoopPhase.TERMINATE
-                break
+                    nontrivial_tools_ever_called=nontrivial_tools_ever_called,
+                )
+                loop_phase = r.loop_phase
+                termination_reason = r.termination_reason
+                final_response = r.final_response
+                candidate_response = r.candidate_response
+                best_candidate = r.best_candidate
+                task_nudges = r.task_nudges
+                task_nudges_total = r.task_nudges_total
+                skill_first_retries = r.skill_first_retries
+                retry_nudges = r.retry_nudges
+                if r.control == "break":
+                    break
+                continue  # all non-break no-tool paths end in continue
 
             # ---- Tool calls ----
-            tool_calls = model_result.tool_calls
-            stuck_result = stuck_detector.record(tool_calls)
-            loop_phase = LoopPhase.TOOL_DISPATCH
-
-            tool_names = [
-                tc.get("function", {}).get("name", "unknown") for tc in tool_calls
-            ]
-            for n in tool_names:
-                if n and n != "unknown":
-                    tools_ever_called.add(n)
-                    if not (
-                        n in _SKILL_HELPER_TOOL_NAMES or n.startswith("skill_hub__")
-                    ):
-                        nontrivial_tools_ever_called.add(n)
-
-            # Helper tool tracking
-            helper_snapshot = sorted(
-                t
-                for t in tools_ever_called
-                if t in _SKILL_HELPER_TOOL_NAMES or t.startswith("skill_hub__")
-            )
-            if helper_snapshot:
-                await task_handle.update_metadata(helper_tools_called=helper_snapshot)
-
-            # Tool call announce
-            intermediate_text = (model_result.response or "").strip()
-            if cfg.commit_intermediate_messages and intermediate_text:
-                await self._emit(
-                    ctx=ctx,
-                    content=intermediate_text,
-                    category="thought",
-                    thought_type="reasoning",
-                    segment_id=None,
-                    streaming_complete=True,
-                    relay_to_adapters=False,
-                    metadata={"iteration": iteration, "intermediate": True},
-                )
-
-            if cfg.stream_tool_progress:
-                for idx, tc in enumerate(tool_calls):
-                    tool_name = tc.get("function", {}).get("name", "unknown")
-                    display_name = self._clean_tool_name(tool_name)
-                    intent = self._extract_tool_intent(
-                        tc.get("function", {}).get("arguments", "")
-                    )
-                    opener = MONOLOGUE_OPENERS[
-                        (iteration + idx) % len(MONOLOGUE_OPENERS)
-                    ]
-                    await self._emit(
-                        ctx=ctx,
-                        content=TOOL_CALL_ANNOUNCE_TEMPLATE.format(
-                            opener=opener, tool_name=display_name, intent=intent
-                        ),
-                        category="thought",
-                        thought_type="tool_call",
-                        segment_id=f"iter-{iteration}-call-{tool_name}-{idx}",
-                        streaming_complete=True,
-                        relay_to_adapters=cfg.relay_thoughts_to_channels,
-                    )
-
-            assistant_msg = LoopContext.build_assistant_content(model_result)
-            messages.append(assistant_msg)
-
-            # Checkpoint before tool dispatch
-            if cfg.enable_checkpoints:
-                ckpt = LoopCheckpoint(
-                    iteration=iteration,
-                    phase=LoopPhase.TOOL_DISPATCH.value,
-                    elapsed_seconds=time.monotonic() - loop_start,
-                    pending_tool_names=tool_names,
-                    termination_reason_candidate=termination_reason,
-                )
-                await checkpoint_store.save(ckpt)
-
-            tool_start = time.monotonic()
-            tool_result_messages = await tool_executor.dispatch(tool_calls)
-            tool_duration_ms = int((time.monotonic() - tool_start) * 1000)
-
-            # Record raw evidence
-            if cfg.enable_evidence_log:
-                for tr_msg, tc in zip(tool_result_messages, tool_calls):
-                    evidence_log.append(
-                        iteration=iteration,
-                        tool_call_id=tr_msg.get("tool_call_id", ""),
-                        tool_name=tc.get("function", {}).get("name", "unknown"),
-                        input_args=tc.get("function", {}).get("arguments", ""),
-                        content=tr_msg.get("content", ""),
-                    )
-
-            # Attribution extraction
-            tool_call_id_to_name: Dict[str, str] = {
-                tc.get("id", ""): tc.get("function", {}).get("name", "unknown")
-                for tc in tool_calls
-            }
-            for tr_msg in tool_result_messages:
-                content = tr_msg.get("content", "")
-                tool_call_id = tr_msg.get("tool_call_id", "")
-                if content and not content.startswith("Error:"):
-                    result_attributions.extend(
-                        self._extract_result_attributions(content, tool_call_id)
-                    )
-
-            # Tool result announce
-            if cfg.stream_tool_progress:
-                for idx, tr_msg in enumerate(tool_result_messages):
-                    content = tr_msg.get("content", "")
-                    tool_call_id = tr_msg.get("tool_call_id", "")
-                    tool_name = tool_call_id_to_name.get(tool_call_id, "unknown")
-                    display_name = self._clean_tool_name(tool_name)
-                    is_error = content.startswith("Error:")
-                    if is_error:
-                        error_detail = content[len("Error:") :].strip()
-                        err_tpl = MONOLOGUE_RESULT_ERR[
-                            (iteration + idx) % len(MONOLOGUE_RESULT_ERR)
-                        ]
-                        announcement = ERROR_ANNOUNCE_TEMPLATE.format(
-                            error_line=err_tpl.format(
-                                tool_name=display_name,
-                                error=error_detail[:120] or "unknown error",
-                            )
-                        )
-                    else:
-                        preview = self._format_result_preview(content)
-                        ok_tpl = MONOLOGUE_RESULT_OK[
-                            (iteration + idx) % len(MONOLOGUE_RESULT_OK)
-                        ]
-                        announcement = TOOL_RESULT_ANNOUNCE_TEMPLATE.format(
-                            result_line=ok_tpl.format(
-                                tool_name=display_name, preview=preview
-                            )
-                        )
-                    await self._emit(
-                        ctx=ctx,
-                        content=announcement,
-                        category="thought",
-                        thought_type="tool_result",
-                        segment_id=f"iter-{iteration}-result-{tool_call_id or 'unknown'}",
-                        streaming_complete=True,
-                        relay_to_adapters=cfg.relay_thoughts_to_channels,
-                    )
-
-            # Accumulate tool results
-            result_statuses = [
-                {
-                    "tool_call_id": tr.get("tool_call_id", ""),
-                    "is_error": tr.get("is_error", False),
-                    "content_preview": (tr.get("content", "") or "")[:200],
-                }
-                for tr in tool_result_messages
-            ]
-            await task_handle.record_step(
-                "tool_result",
+            r2 = await self._handle_tool_calls(
+                model_result=model_result,
+                messages=messages,
+                cfg=cfg,
+                ctx=ctx,
+                task_plan_state=task_plan_state,
+                task_handle=task_handle,
+                tool_executor=tool_executor,
+                base_model_kwargs=base_model_kwargs,
+                reasoning_cfg=reasoning_cfg,
+                loop_start=loop_start,
                 iteration=iteration,
-                details={
-                    "duration_ms": tool_duration_ms,
-                    "count": len(tool_result_messages),
-                    "results": result_statuses,
-                    "attributions_added": len(result_attributions),
-                    "tools": tool_names,
-                },
+                is_meta_utterance=is_meta_utterance,
+                stuck_detector=stuck_detector,
+                checkpoint_store=checkpoint_store,
+                evidence_log=evidence_log,
+                compactor=compactor,
+                result_attributions=result_attributions,
+                loop_phase=loop_phase,
+                termination_reason=termination_reason,
+                final_response=final_response,
+                task_nudges=task_nudges,
+                tools_ever_called=tools_ever_called,
+                nontrivial_tools_ever_called=nontrivial_tools_ever_called,
             )
-
-            # Stuck detection
-            if stuck_result:
-                if stuck_result == "FORCE_TERMINATE":
-                    loop_phase = LoopPhase.TERMINATE
-                    final_response = await self._force_termination(
-                        messages,
-                        tool_executor.get_tools_list(),
-                        ctx,
-                        base_model_kwargs,
-                        reasoning_cfg,
-                        checklist=self._task_plan_pending_checklist(
-                            task_plan_state["plan"]
-                        ),
-                    )
-                    termination_reason = TerminationReason.STUCK.value
-                    messages.extend(tool_result_messages)
-                    break
-                else:
-                    messages.append({"role": "user", "content": stuck_result})
-
-            messages.extend(tool_result_messages)
-
-            # Reset the nudge counter whenever productive (non-helper) tool calls were
-            # dispatched.  This ensures each new termination attempt gets its full quota
-            # of nudges regardless of how many occurred in earlier rounds.
-            if any(n not in _SKILL_HELPER_TOOL_NAMES for n in tool_names):
-                task_nudges = 0
-                # Track productive calls for per-step validation in task_tracker complete.
-                task_plan_state["tool_calls_since_complete"] = task_plan_state.get(
-                    "tool_calls_since_complete", 0
-                ) + sum(
-                    1
-                    for n in tool_names
-                    if n not in _SKILL_HELPER_TOOL_NAMES and n != "task_tracker"
-                )
-
-            # Evidence-aware compaction (replaces bare truncation)
-            messages = compactor.compact(messages, evidence_log=evidence_log)
+            messages = r2.messages
+            loop_phase = r2.loop_phase
+            termination_reason = r2.termination_reason
+            final_response = r2.final_response
+            task_nudges = r2.task_nudges
+            result_attributions = r2.result_attributions
+            if r2.control == "break":
+                break
 
         # ---- Post-loop handling ----
         if (
             not final_response
-            and termination_reason == TerminationReason.COMPLETED.value
+            and termination_reason == TerminationReason.COMPLETED
             and iteration >= cfg.max_iterations
         ):
             loop_phase = LoopPhase.TERMINATE
@@ -961,15 +783,16 @@ class SkillAction:
                 base_model_kwargs,
                 reasoning_cfg,
                 checklist=self._task_plan_pending_checklist(task_plan_state["plan"]),
+                termination_cause="iter_cap",
             )
-            termination_reason = TerminationReason.ITER_CAP.value
+            termination_reason = TerminationReason.ITER_CAP
 
         if not final_response:
             final_response = (
                 "I was unable to complete the task within the allowed steps."
             )
-            if termination_reason == TerminationReason.COMPLETED.value:
-                termination_reason = TerminationReason.ITER_CAP.value
+            if termination_reason == TerminationReason.COMPLETED:
+                termination_reason = TerminationReason.ITER_CAP
         elif cfg.final_review:
             loop_phase = LoopPhase.FINALIZE
             if is_meta_utterance:
@@ -1004,7 +827,17 @@ class SkillAction:
                     ctx=ctx,
                     base_model_kwargs=base_model_kwargs,
                     reasoning_cfg=reasoning_cfg,
+                    task_plan=task_plan_state.get("plan"),
                 )
+
+        # Layer 3 — deterministic faithfulness backstop (5.10).
+        # Catches fabricated completion claims for skipped steps that the
+        # review model may have failed to remove.
+        if final_response:
+            _plan_for_check = task_plan_state.get("plan")
+            final_response = self._check_plan_faithfulness(
+                final_response, _plan_for_check
+            )
 
         # Grounding verification
         if final_response and result_attributions:
@@ -1024,7 +857,7 @@ class SkillAction:
             details={
                 "length": len(final_response),
                 "loop_phase": loop_phase.value,
-                "termination_reason": termination_reason,
+                "termination_reason": termination_reason.value,
                 "preview": final_response[:300],
             },
         )
@@ -1044,10 +877,13 @@ class SkillAction:
         if cfg.enable_checkpoints:
             await checkpoint_store.clear()
 
-        # Count any steps that were still pending at termination time.
+        # Tally abandoned (pending/in_progress) and intentionally skipped steps.
         _final_plan = task_plan_state.get("plan")
-        _skipped_steps = (
+        _abandoned_steps = (
             len(_final_plan.pending_steps()) if _final_plan is not None else 0
+        )
+        _intentional_skips = (
+            len(_final_plan.skipped_steps()) if _final_plan is not None else 0
         )
 
         return SkillRunResult(
@@ -1059,7 +895,8 @@ class SkillAction:
             duration_seconds=time.monotonic() - loop_start,
             task_id=getattr(task_handle, "task_id", None),
             activated_skills=sorted(tool_executor.activated_skills),
-            task_plan_skipped_steps=_skipped_steps,
+            task_plan_abandoned_steps=_abandoned_steps,
+            task_plan_intentional_skips=_intentional_skips,
         )
 
     # ---------------------------------------------------------------------------
@@ -1253,13 +1090,43 @@ class SkillAction:
         base_model_kwargs: Dict[str, Any],
         reasoning_cfg: ReasoningModelConfig,
         checklist: Optional[List[Dict[str, str]]] = None,
+        *,
+        termination_cause: str = "iter_cap",
     ) -> str:
         if checklist:
-            checklist_text = "\n".join(
-                f"- [{c.get('status', 'pending')}] {c.get('item', 'unknown')}"
-                for c in checklist
+            lines = []
+            for c in checklist:
+                status = c.get("status", "pending")
+                item = c.get("item", "unknown")
+                entry = f"- [{status}] {item}"
+                skip_reason = c.get("skip_reason")
+                if skip_reason:
+                    entry += f" (reason: {skip_reason})"
+                lines.append(entry)
+            checklist_text = "\n".join(lines)
+            checklist_section = (
+                "COMPLETION CHECKLIST (you MUST address each item):\n"
+                + checklist_text
+                + "\n\nFor each checklist item:\n"
+                "- If you have tool-confirmed evidence, summarize it with attribution.\n"
+                "- If you do NOT have evidence for an item, explicitly state: "
+                '"I was unable to verify [item] because [reason]."\n'
+                "- For items marked [skipped], include the recorded skip reason.\n"
+                "- Do NOT fabricate evidence for incomplete items.\n"
             )
-            prompt = FORCED_TERMINATION_PROMPT_TEMPLATE.format(checklist=checklist_text)
+            # Use cause-specific template when available, else generic
+            cause_templates = {
+                "iter_cap": FORCED_TERMINATION_PROMPT_ITER_CAP,
+                "time_cap": FORCED_TERMINATION_PROMPT_TIME_CAP,
+                "stuck": FORCED_TERMINATION_PROMPT_STUCK,
+            }
+            template = cause_templates.get(
+                termination_cause, FORCED_TERMINATION_PROMPT_TEMPLATE
+            )
+            if termination_cause in cause_templates:
+                prompt = template.format(checklist_section=checklist_section)
+            else:
+                prompt = template.format(checklist=checklist_text)
         else:
             prompt = FORCED_TERMINATION_PROMPT_NO_CHECKLIST
         messages.append({"role": "user", "content": prompt})
@@ -1272,6 +1139,501 @@ class SkillAction:
             logger.error("SkillAction: forced termination call failed: %s", e)
             return "I was unable to complete the task within the allowed steps."
 
+    # ------------------------------------------------------------------
+    # Loop-iteration helpers (extracted from _run_loop for readability)
+    # ------------------------------------------------------------------
+
+    async def _handle_no_tool_response(
+        self,
+        *,
+        model_result: Any,
+        messages: List[Dict[str, Any]],
+        cfg: "SkillRunConfig",
+        ctx: "SkillRunContext",
+        task_plan_state: Dict[str, Any],
+        task_handle: Any,
+        tool_executor: "ToolExecutor",
+        base_model_kwargs: Dict[str, Any],
+        reasoning_cfg: Any,
+        discovered_skills: Any,
+        iteration: int,
+        loop_phase: "LoopPhase",
+        termination_reason: "TerminationReason",
+        final_response: str,
+        candidate_response: Optional[str],
+        best_candidate: Optional[str],
+        task_nudges: int,
+        task_nudges_total: int,
+        skill_first_retries: int,
+        retry_nudges: int,
+        tools_ever_called: Set[str],
+        nontrivial_tools_ever_called: Set[str],
+    ) -> "_NoToolResult":
+        """Process a model turn that produced no tool calls.
+
+        Handles candidate response collection, skill-first nudging, task-plan
+        nudging, and final candidate acceptance.  Returns a :class:`_NoToolResult`
+        indicating how the loop should proceed.
+        """
+        loop_phase = LoopPhase.OBSERVE
+        candidate_response = await model_result.get_response()
+        if not candidate_response and model_result.response:
+            candidate_response = model_result.response
+
+        best_candidate = self._update_best_candidate(best_candidate, candidate_response)
+        await task_handle.record_step(
+            "candidate",
+            iteration=iteration,
+            details={
+                "length": len((candidate_response or "").strip()),
+                "preview": (candidate_response or "")[:200],
+            },
+        )
+
+        # Skill-first nudge
+        if self._should_retry_for_skill_first(
+            cfg=cfg,
+            discovered_skills=discovered_skills,
+            tool_executor=tool_executor,
+            utterance=ctx.utterance or "",
+            retries=skill_first_retries,
+            candidate_response=candidate_response,
+            tools_ever_called=tools_ever_called,
+            nontrivial_tools_called=nontrivial_tools_ever_called,
+        ):
+            loop_phase = LoopPhase.NUDGE
+            await task_handle.record_step(
+                "skill_first_retry",
+                iteration=iteration,
+                details={"nudge_index": skill_first_retries + 1},
+            )
+            retry_nudges += 1
+            await task_handle.update_metadata(retry_nudges_fired=retry_nudges)
+            messages.append({"role": "assistant", "content": candidate_response or ""})
+            messages.append({"role": "user", "content": SKILL_FIRST_RETRY_PROMPT})
+            skill_first_retries += 1
+            return _NoToolResult(
+                loop_phase=loop_phase,
+                termination_reason=termination_reason,
+                final_response=final_response,
+                candidate_response=candidate_response,
+                best_candidate=best_candidate,
+                task_nudges=task_nudges,
+                task_nudges_total=task_nudges_total,
+                skill_first_retries=skill_first_retries,
+                retry_nudges=retry_nudges,
+                control="continue",
+            )
+
+        # Pending-step gate: task-plan state is the source of truth.
+        task_plan = task_plan_state["plan"]
+        if task_plan is not None and task_plan.has_pending_steps():
+            consecutive_limit = cfg.task_nudge_retry_limit
+            total_limit = cfg.max_total_task_nudges
+            nudge_allowed = (
+                task_nudges < consecutive_limit and task_nudges_total < total_limit
+            )
+            if nudge_allowed:
+                loop_phase = LoopPhase.NUDGE
+                is_final_nudge = (
+                    task_nudges == consecutive_limit - 1
+                    or task_nudges_total == total_limit - 1
+                )
+                nudge_prompt = (
+                    PENDING_STEPS_NUDGE_PROMPT_FINAL
+                    if is_final_nudge
+                    else PENDING_STEPS_NUDGE_PROMPT
+                )
+                await task_handle.record_step(
+                    "task_plan_nudge",
+                    iteration=iteration,
+                    details={
+                        "nudge_index": task_nudges + 1,
+                        "is_final_nudge": is_final_nudge,
+                        "pending_steps": task_plan.format_for_model(),
+                    },
+                )
+                retry_nudges += 1
+                await task_handle.update_metadata(retry_nudges_fired=retry_nudges)
+                messages.append(
+                    {"role": "assistant", "content": candidate_response or ""}
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": nudge_prompt.format(
+                            pending=task_plan.format_for_model()
+                        ),
+                    }
+                )
+                task_nudges += 1
+                task_nudges_total += 1
+                return _NoToolResult(
+                    loop_phase=loop_phase,
+                    termination_reason=termination_reason,
+                    final_response=final_response,
+                    candidate_response=candidate_response,
+                    best_candidate=best_candidate,
+                    task_nudges=task_nudges,
+                    task_nudges_total=task_nudges_total,
+                    skill_first_retries=skill_first_retries,
+                    retry_nudges=retry_nudges,
+                    control="continue",
+                )
+            else:
+                # Nudge limit exhausted — escalate to forced termination.
+                pending_count = len(task_plan.pending_steps())
+                logger.warning(
+                    "SkillAction: nudge limit exhausted with %d pending step(s); "
+                    "escalating to forced termination",
+                    pending_count,
+                )
+                await task_handle.update_metadata(
+                    task_plan_incomplete_accepted=True,
+                    task_plan_pending_at_termination=task_plan.format_for_model(),
+                )
+                await task_handle.record_step(
+                    "task_plan_incomplete_forced",
+                    iteration=iteration,
+                    details={
+                        "pending_count": pending_count,
+                        "pending_steps": task_plan.format_for_model(),
+                    },
+                )
+                messages.append(
+                    {"role": "assistant", "content": candidate_response or ""}
+                )
+                final_response = await self._force_termination(
+                    messages,
+                    tool_executor.get_tools_list(),
+                    ctx,
+                    base_model_kwargs,
+                    reasoning_cfg,
+                    checklist=self._task_plan_pending_checklist(task_plan),
+                    termination_cause="iter_cap",
+                )
+                termination_reason = TerminationReason.ITER_CAP
+                loop_phase = LoopPhase.TERMINATE
+                return _NoToolResult(
+                    loop_phase=loop_phase,
+                    termination_reason=termination_reason,
+                    final_response=final_response,
+                    candidate_response=candidate_response,
+                    best_candidate=best_candidate,
+                    task_nudges=task_nudges,
+                    task_nudges_total=task_nudges_total,
+                    skill_first_retries=skill_first_retries,
+                    retry_nudges=retry_nudges,
+                    control="break",
+                )
+
+        # Accept candidate
+        chosen = candidate_response or ""
+        if self._should_prefer_best_over_candidate(cfg, chosen, best_candidate):
+            await task_handle.record_step(
+                "candidate_discarded",
+                iteration=iteration,
+                details={"reason": "degenerate_or_shrunk_vs_best"},
+            )
+            final_response = (best_candidate or chosen) or ""
+        else:
+            final_response = chosen
+            await task_handle.record_step(
+                "candidate_accepted",
+                iteration=iteration,
+                details={"length": len(final_response.strip())},
+            )
+        termination_reason = TerminationReason.COMPLETED
+        loop_phase = LoopPhase.TERMINATE
+        return _NoToolResult(
+            loop_phase=loop_phase,
+            termination_reason=termination_reason,
+            final_response=final_response,
+            candidate_response=candidate_response,
+            best_candidate=best_candidate,
+            task_nudges=task_nudges,
+            task_nudges_total=task_nudges_total,
+            skill_first_retries=skill_first_retries,
+            retry_nudges=retry_nudges,
+            control="break",
+        )
+
+    async def _handle_tool_calls(
+        self,
+        *,
+        model_result: Any,
+        messages: List[Dict[str, Any]],
+        cfg: "SkillRunConfig",
+        ctx: "SkillRunContext",
+        task_plan_state: Dict[str, Any],
+        task_handle: Any,
+        tool_executor: "ToolExecutor",
+        base_model_kwargs: Dict[str, Any],
+        reasoning_cfg: Any,
+        loop_start: float,
+        iteration: int,
+        is_meta_utterance: bool,
+        stuck_detector: Any,
+        checkpoint_store: Any,
+        evidence_log: Any,
+        compactor: Any,
+        result_attributions: List[Dict[str, Any]],
+        loop_phase: "LoopPhase",
+        termination_reason: "TerminationReason",
+        final_response: str,
+        task_nudges: int,
+        tools_ever_called: Set[str],
+        nontrivial_tools_ever_called: Set[str],
+    ) -> "_ToolCallResult":
+        """Dispatch tool calls and collect results for one loop iteration.
+
+        Handles plan-first gating, stuck detection, evidence logging,
+        attribution extraction, result streaming, and context compaction.
+        Returns a :class:`_ToolCallResult` indicating how the loop should
+        proceed.
+        """
+        tool_calls = model_result.tool_calls
+        reordered = self._reorder_task_calls_dependency_first(tool_calls)
+        to_dispatch, synthetic_plan_blocks, plan_first_blocked_names = (
+            self._apply_plan_first_tool_gate(
+                reordered,
+                plan_first=cfg.plan_first,
+                has_task_plan=task_plan_state.get("plan") is not None,
+                is_meta_utterance=is_meta_utterance,
+                activated_skill_names=set(
+                    getattr(tool_executor, "activated_skills", set()) or ()
+                ),
+            )
+        )
+        if plan_first_blocked_names:
+            await task_handle.record_step(
+                "plan_first_gated",
+                iteration=iteration,
+                details={"blocked_tools": sorted(plan_first_blocked_names)},
+            )
+        stuck_result = stuck_detector.record(reordered)
+        loop_phase = LoopPhase.TOOL_DISPATCH
+
+        tool_names = [tc.get("function", {}).get("name", "unknown") for tc in reordered]
+        for n in tool_names:
+            if n and n != "unknown":
+                tools_ever_called.add(n)
+                if n in plan_first_blocked_names:
+                    continue
+                if not (n in _SKILL_HELPER_TOOL_NAMES or n.startswith("skill_hub__")):
+                    nontrivial_tools_ever_called.add(n)
+
+        helper_snapshot = sorted(
+            t
+            for t in tools_ever_called
+            if t in _SKILL_HELPER_TOOL_NAMES or t.startswith("skill_hub__")
+        )
+        if helper_snapshot:
+            await task_handle.update_metadata(helper_tools_called=helper_snapshot)
+
+        # Tool call announce
+        intermediate_text = (model_result.response or "").strip()
+        if cfg.commit_intermediate_messages and intermediate_text:
+            await self._emit(
+                ctx=ctx,
+                content=intermediate_text,
+                category="thought",
+                thought_type="reasoning",
+                segment_id=None,
+                streaming_complete=True,
+                relay_to_adapters=False,
+                metadata={"iteration": iteration, "intermediate": True},
+            )
+
+        if cfg.stream_tool_progress:
+            for idx, tc in enumerate(reordered):
+                tool_name = tc.get("function", {}).get("name", "unknown")
+                display_name = self._clean_tool_name(tool_name)
+                intent = self._extract_tool_intent(
+                    tc.get("function", {}).get("arguments", "")
+                )
+                opener = MONOLOGUE_OPENERS[(iteration + idx) % len(MONOLOGUE_OPENERS)]
+                await self._emit(
+                    ctx=ctx,
+                    content=TOOL_CALL_ANNOUNCE_TEMPLATE.format(
+                        opener=opener, tool_name=display_name, intent=intent
+                    ),
+                    category="thought",
+                    thought_type="tool_call",
+                    segment_id=f"iter-{iteration}-call-{tool_name}-{idx}",
+                    streaming_complete=True,
+                    relay_to_adapters=cfg.relay_thoughts_to_channels,
+                )
+
+        assistant_msg = LoopContext.build_assistant_content(model_result)
+        messages.append(assistant_msg)
+
+        # Checkpoint before tool dispatch
+        if cfg.enable_checkpoints:
+            ckpt = LoopCheckpoint(
+                iteration=iteration,
+                phase=LoopPhase.TOOL_DISPATCH.value,
+                elapsed_seconds=time.monotonic() - loop_start,
+                pending_tool_names=tool_names,
+                termination_reason_candidate=termination_reason.value,
+            )
+            await checkpoint_store.save(ckpt)
+
+        tool_start = time.monotonic()
+        dispatch_results: List[Dict[str, Any]] = []
+        if to_dispatch:
+            dispatch_results = await tool_executor.dispatch(to_dispatch)
+        tool_result_messages = self._merge_tool_dispatch_with_synthetic(
+            reordered, dispatch_results, synthetic_plan_blocks
+        )
+        tool_duration_ms = int((time.monotonic() - tool_start) * 1000)
+
+        # Record raw evidence
+        if cfg.enable_evidence_log:
+            for tr_msg, tc in zip(tool_result_messages, reordered):
+                evidence_log.append(
+                    iteration=iteration,
+                    tool_call_id=tr_msg.get("tool_call_id", ""),
+                    tool_name=tc.get("function", {}).get("name", "unknown"),
+                    input_args=tc.get("function", {}).get("arguments", ""),
+                    content=tr_msg.get("content", ""),
+                )
+
+        # Attribution extraction
+        tool_call_id_to_name: Dict[str, str] = {
+            tc.get("id", ""): tc.get("function", {}).get("name", "unknown")
+            for tc in reordered
+        }
+        for tr_msg in tool_result_messages:
+            content = tr_msg.get("content", "")
+            tool_call_id = tr_msg.get("tool_call_id", "")
+            if content and not content.startswith("Error:"):
+                result_attributions.extend(
+                    self._extract_result_attributions(content, tool_call_id)
+                )
+
+        # Tool result announce
+        if cfg.stream_tool_progress:
+            for idx, tr_msg in enumerate(tool_result_messages):
+                content = tr_msg.get("content", "")
+                tool_call_id = tr_msg.get("tool_call_id", "")
+                tool_name = tool_call_id_to_name.get(tool_call_id, "unknown")
+                display_name = self._clean_tool_name(tool_name)
+                is_error = content.startswith("Error:")
+                if is_error:
+                    error_detail = content[len("Error:") :].strip()
+                    err_tpl = MONOLOGUE_RESULT_ERR[
+                        (iteration + idx) % len(MONOLOGUE_RESULT_ERR)
+                    ]
+                    announcement = ERROR_ANNOUNCE_TEMPLATE.format(
+                        error_line=err_tpl.format(
+                            tool_name=display_name,
+                            error=error_detail[:120] or "unknown error",
+                        )
+                    )
+                else:
+                    preview = self._format_result_preview(content)
+                    ok_tpl = MONOLOGUE_RESULT_OK[
+                        (iteration + idx) % len(MONOLOGUE_RESULT_OK)
+                    ]
+                    announcement = TOOL_RESULT_ANNOUNCE_TEMPLATE.format(
+                        result_line=ok_tpl.format(
+                            tool_name=display_name, preview=preview
+                        )
+                    )
+                await self._emit(
+                    ctx=ctx,
+                    content=announcement,
+                    category="thought",
+                    thought_type="tool_result",
+                    segment_id=f"iter-{iteration}-result-{tool_call_id or 'unknown'}",
+                    streaming_complete=True,
+                    relay_to_adapters=cfg.relay_thoughts_to_channels,
+                )
+
+        # Accumulate tool results
+        result_statuses = [
+            {
+                "tool_call_id": tr.get("tool_call_id", ""),
+                "is_error": tr.get("is_error", False),
+                "content_preview": (tr.get("content", "") or "")[:200],
+            }
+            for tr in tool_result_messages
+        ]
+        await task_handle.record_step(
+            "tool_result",
+            iteration=iteration,
+            details={
+                "duration_ms": tool_duration_ms,
+                "count": len(tool_result_messages),
+                "results": result_statuses,
+                "attributions_added": len(result_attributions),
+                "tools": tool_names,
+            },
+        )
+
+        # Stuck detection
+        if stuck_result:
+            if stuck_result == "FORCE_TERMINATE":
+                loop_phase = LoopPhase.TERMINATE
+                final_response = await self._force_termination(
+                    messages,
+                    tool_executor.get_tools_list(),
+                    ctx,
+                    base_model_kwargs,
+                    reasoning_cfg,
+                    checklist=self._task_plan_pending_checklist(
+                        task_plan_state["plan"]
+                    ),
+                    termination_cause="stuck",
+                )
+                termination_reason = TerminationReason.STUCK
+                messages.extend(tool_result_messages)
+                return _ToolCallResult(
+                    loop_phase=loop_phase,
+                    termination_reason=termination_reason,
+                    final_response=final_response,
+                    messages=messages,
+                    task_nudges=task_nudges,
+                    result_attributions=result_attributions,
+                    control="break",
+                )
+            else:
+                messages.append({"role": "user", "content": stuck_result})
+
+        messages.extend(tool_result_messages)
+
+        # Reset the consecutive nudge counter only when a plan advance occurred (5.5).
+        if "task_tracker" in tool_names and task_plan_state.get(
+            "_nudge_reset_requested"
+        ):
+            task_nudges = 0
+            task_plan_state["_nudge_reset_requested"] = False
+
+        if any(n not in _SKILL_HELPER_TOOL_NAMES for n in tool_names):
+            task_plan_state["tool_calls_since_complete"] = task_plan_state.get(
+                "tool_calls_since_complete", 0
+            ) + sum(
+                1
+                for n in tool_names
+                if n not in _SKILL_HELPER_TOOL_NAMES
+                and n != "task_tracker"
+                and n not in plan_first_blocked_names
+            )
+
+        # Evidence-aware compaction
+        messages = compactor.compact(messages, evidence_log=evidence_log)
+
+        return _ToolCallResult(
+            loop_phase=loop_phase,
+            termination_reason=termination_reason,
+            final_response=final_response,
+            messages=messages,
+            task_nudges=task_nudges,
+            result_attributions=result_attributions,
+            control="",
+        )
+
     async def _final_review_pass(
         self,
         messages: List[Dict[str, Any]],
@@ -1279,10 +1641,38 @@ class SkillAction:
         ctx: SkillRunContext,
         base_model_kwargs: Dict[str, Any],
         reasoning_cfg: ReasoningModelConfig,
+        *,
+        task_plan: Optional[InLoopTaskPlan] = None,
     ) -> str:
+        # Layer 2 — pre-review skipped-step suffix injection.
+        # Append a grounded "could not complete" section so the reviewer sees
+        # both the candidate claim AND the truth side-by-side.
+        skipped_steps = task_plan.skipped_steps() if task_plan else []
+        if skipped_steps:
+            suffix_lines = ["\n\n**Steps that could not be completed:**"]
+            for s in skipped_steps:
+                reason = s.skip_reason or "no reason recorded"
+                suffix_lines.append(f"- {s.description}: {reason}")
+            candidate_response = candidate_response + "\n".join(suffix_lines)
+
+        # Layer 1 — plan-aware review prompt.
+        if task_plan and task_plan.steps:
+            plan_lines = []
+            for s in task_plan.steps:
+                entry = f"- step {s.id}: [{s.status}] {s.description}"
+                if s.status == "skipped" and s.skip_reason:
+                    entry += f" REASON: {s.skip_reason}"
+                plan_lines.append(entry)
+            plan_summary = "\n".join(plan_lines)
+            review_prompt = FINAL_REVIEW_PROMPT_WITH_PLAN.format(
+                plan_summary=plan_summary
+            )
+        else:
+            review_prompt = FINAL_REVIEW_PROMPT
+
         review_msgs = list(messages)
         review_msgs.append({"role": "assistant", "content": candidate_response})
-        review_msgs.append({"role": "user", "content": FINAL_REVIEW_PROMPT})
+        review_msgs.append({"role": "user", "content": review_prompt})
         try:
             reviewed = await self._call_model(
                 review_msgs,
@@ -1416,6 +1806,181 @@ class SkillAction:
     # Decision / task-tracker helpers
     # ---------------------------------------------------------------------------
 
+    @staticmethod
+    def _function_arguments_to_dict(args_raw: Any) -> Dict[str, Any]:
+        if args_raw is None:
+            return {}
+        if isinstance(args_raw, dict):
+            return args_raw
+        s = str(args_raw).strip()
+        if not s:
+            return {}
+        try:
+            parsed: Any = json.loads(s)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+
+    @staticmethod
+    def _tool_calls_include_task_tracker_create(
+        tool_calls: List[Dict[str, Any]]
+    ) -> bool:
+        for tc in tool_calls:
+            fn = tc.get("function") or {}
+            if (fn.get("name") or "") != "task_tracker":
+                continue
+            args = SkillAction._function_arguments_to_dict(fn.get("arguments"))
+            if str(args.get("action", "")).strip().lower() == "create":
+                return True
+        return False
+
+    @staticmethod
+    def _reorder_task_calls_dependency_first(
+        tool_calls: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Order tool batch for safe execution: task_tracker create, then read_skill, then rest.
+
+        Creating a plan first lets later tools see an active task. Running ``read_skill``
+        before that skill's namespaced tools (e.g. ``answer__search``) ensures activation
+        has completed when those tools run (dispatch may be concurrent).
+        """
+        if not tool_calls:
+            return []
+        creates: List[Dict[str, Any]] = []
+        read_skills: List[Dict[str, Any]] = []
+        rest: List[Dict[str, Any]] = []
+        for tc in tool_calls:
+            fn = tc.get("function") or {}
+            name = (fn.get("name") or "").strip()
+            if name == "task_tracker":
+                args = SkillAction._function_arguments_to_dict(fn.get("arguments"))
+                if str(args.get("action", "")).strip().lower() == "create":
+                    creates.append(tc)
+                    continue
+            if name == "read_skill":
+                read_skills.append(tc)
+                continue
+            rest.append(tc)
+        if not creates and not read_skills:
+            return list(tool_calls)
+        return creates + read_skills + rest
+
+    @staticmethod
+    def _is_plan_exempt_helper_tool_name(name: str) -> bool:
+        n = (name or "").strip()
+        if not n or n == "unknown":
+            return False
+        if n in _SKILL_HELPER_TOOL_NAMES or n.startswith("skill_hub__"):
+            return True
+        return False
+
+    @staticmethod
+    def _read_skill_target_names_from_calls(
+        tool_calls: List[Dict[str, Any]],
+    ) -> Set[str]:
+        """Skill names being loaded in this batch (``read_skill``), for plan-gate allowance."""
+        out: Set[str] = set()
+        for tc in tool_calls:
+            fn = tc.get("function") or {}
+            if (fn.get("name") or "") != "read_skill":
+                continue
+            args = SkillAction._function_arguments_to_dict(fn.get("arguments"))
+            name = str(args.get("skill_name", "")).strip()
+            if name:
+                out.add(name)
+        return out
+
+    @staticmethod
+    def _plan_first_skill_work_allowed(
+        tool_name: str, allowed_skill_prefixes: Set[str]
+    ) -> bool:
+        """True for ``skill__tool`` when *skill* is already active or in-batch via read_skill."""
+        n = (tool_name or "").strip()
+        if not allowed_skill_prefixes or n == "unknown" or "__" not in n:
+            return False
+        prefix, _, _ = n.partition("__")
+        if not prefix:
+            return False
+        return prefix in allowed_skill_prefixes
+
+    @staticmethod
+    def _apply_plan_first_tool_gate(
+        tool_calls: List[Dict[str, Any]],
+        *,
+        plan_first: bool,
+        has_task_plan: bool,
+        is_meta_utterance: bool,
+        activated_skill_names: Set[str],
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Set[str]]:
+        """Enforce a task plan before substantive tools when :attr:`plan_first` is on.
+
+        Namespaced tools for an **activated** or **in-batch-activating** skill
+        (e.g. ``answer__search`` with ``read_skill`` for ``answer``) are allowed
+        without task_tracker, so a skill workflow can start without a spurious
+        plan gate error.
+
+        Returns:
+            (calls_to_dispatch, synthetic_error_tool_results, blocked_tool_names).
+        """
+        if not tool_calls:
+            return ([], [], set())
+        if not plan_first or has_task_plan or is_meta_utterance:
+            return (list(tool_calls), [], set())
+        if SkillAction._tool_calls_include_task_tracker_create(tool_calls):
+            return (list(tool_calls), [], set())
+
+        in_batch = SkillAction._read_skill_target_names_from_calls(tool_calls)
+        allowed_prefixes: Set[str] = set(activated_skill_names) | set(in_batch)
+
+        to_dispatch: List[Dict[str, Any]] = []
+        synthetic: List[Dict[str, Any]] = []
+        blocked: Set[str] = set()
+        for tc in tool_calls:
+            fn = tc.get("function") or {}
+            name = (fn.get("name") or "unknown") or "unknown"
+            if SkillAction._is_plan_exempt_helper_tool_name(name):
+                to_dispatch.append(tc)
+                continue
+            if SkillAction._plan_first_skill_work_allowed(name, allowed_prefixes):
+                to_dispatch.append(tc)
+                continue
+            tid = str(tc.get("id") or "")
+            blocked.add(name)
+            synthetic.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tid,
+                    "content": PLAN_FIRST_BLOCKED_TOOL_MESSAGE,
+                }
+            )
+        if blocked:
+            logger.info(
+                "SkillAction: plan_first gate held back %d substantive tool(s) "
+                "until task_tracker create: %s",
+                len(synthetic),
+                sorted(blocked),
+            )
+        return (to_dispatch, synthetic, blocked)
+
+    @staticmethod
+    def _merge_tool_dispatch_with_synthetic(
+        tool_calls: List[Dict[str, Any]],
+        dispatch_results: List[Dict[str, Any]],
+        synthetic_results: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Assemble per-call tool messages in the same order as *tool_calls*."""
+        by_id: Dict[str, Dict[str, Any]] = {}
+        for r in dispatch_results + synthetic_results:
+            tid = str(r.get("tool_call_id") or "")
+            if tid:
+                by_id[tid] = r
+        out: List[Dict[str, Any]] = []
+        for tc in tool_calls:
+            tid = str(tc.get("id") or "")
+            if tid in by_id:
+                out.append(by_id[tid])
+        return out
+
     def _should_retry_for_skill_first(
         self,
         *,
@@ -1468,6 +2033,7 @@ class SkillAction:
         self,
         *,
         ctx: SkillRunContext,
+        cfg: SkillRunConfig,
         task_plan_state: Dict[str, Any],
         task_handle: Any,
         iteration_getter: Any,
@@ -1485,6 +2051,50 @@ class SkillAction:
                 steps = [str(step).strip() for step in raw_steps if str(step).strip()]
                 if not steps:
                     return "Error: `steps` must contain at least one non-empty step."
+
+                # 5.8 — Enforce step count ceiling and warn when plan exceeds budget.
+                if len(steps) > cfg.max_task_plan_steps:
+                    return (
+                        f"Error: plan has {len(steps)} steps which exceeds the "
+                        f"maximum of {cfg.max_task_plan_steps}. Split the task into "
+                        "smaller phases or reduce the number of steps."
+                    )
+                remaining_iterations = cfg.max_iterations - iteration
+                if len(steps) > remaining_iterations:
+                    logger.warning(
+                        "SkillAction: task plan has %d steps but only %d iterations remain; "
+                        "plan may not complete within the iteration budget.",
+                        len(steps),
+                        remaining_iterations,
+                    )
+
+                # 5.1 — Guard against silent plan re-creation mid-execution.
+                existing_plan = task_plan_state.get("plan")
+                if existing_plan is not None:
+                    if existing_plan.has_pending_steps():
+                        # Block re-creation while steps are still pending to
+                        # prevent the model from "escaping" nudging by resetting
+                        # to a shorter plan.
+                        current = existing_plan.current_step()
+                        return (
+                            "Error: a task plan with pending steps already exists. "
+                            "Complete or skip the remaining steps before creating a "
+                            "new plan. "
+                            + (
+                                f"Current step: {current.id}: {current.description}"
+                                if current
+                                else "Use `action=read` to review remaining steps."
+                            )
+                        )
+                    # Plan finished (all done/skipped) — allow revision but log it.
+                    await task_handle.record_step(
+                        "task_plan_revised",
+                        iteration=iteration,
+                        details={
+                            "old_plan": existing_plan.to_checklist(),
+                            "new_steps": steps,
+                        },
+                    )
 
                 task_plan = InLoopTaskPlan(
                     steps=[
@@ -1560,6 +2170,8 @@ class SkillAction:
 
                 # Reset per-step validation counter after successful completion.
                 task_plan_state["tool_calls_since_complete"] = 0
+                # Signal _run_loop to reset the consecutive nudge counter (5.5).
+                task_plan_state["_nudge_reset_requested"] = True
 
                 next_step = task_plan.current_step()
                 await task_handle.record_step(
@@ -1628,6 +2240,8 @@ class SkillAction:
 
                 # Reset per-step validation counter after skip.
                 task_plan_state["tool_calls_since_complete"] = 0
+                # Signal _run_loop to reset the consecutive nudge counter (5.5).
+                task_plan_state["_nudge_reset_requested"] = True
 
                 next_step = task_plan.current_step()
                 await task_handle.record_step(
@@ -1673,7 +2287,41 @@ class SkillAction:
                     + task_plan.format_for_model()
                 )
 
-            return "Error: `action` must be one of create, read, complete, or skip."
+            if action == "append":
+                # 5.6 — Append new steps without re-creating the plan.
+                raw_new_steps = args.get("steps")
+                if not isinstance(raw_new_steps, list):
+                    return "Error: `steps` must be an array of step descriptions."
+                new_steps_text = [
+                    str(s).strip() for s in raw_new_steps if str(s).strip()
+                ]
+                if not new_steps_text:
+                    return "Error: `steps` must contain at least one non-empty step."
+                if not task_plan:
+                    return (
+                        "Error: no task plan exists yet. "
+                        "Use action=create to start a plan first."
+                    )
+                next_id = max((s.id for s in task_plan.steps), default=0) + 1
+                for text in new_steps_text:
+                    task_plan.steps.append(TaskStep(id=next_id, description=text))
+                    next_id += 1
+                await task_handle.record_step(
+                    "task_plan_appended",
+                    iteration=iteration,
+                    details={"new_steps": new_steps_text},
+                )
+                await task_handle.update_metadata(
+                    task_plan=task_plan.to_checklist(),
+                    task_plan_active=task_plan.has_pending_steps(),
+                    task_plan_pending_count=len(task_plan.pending_steps()),
+                )
+                return (
+                    f"Appended {len(new_steps_text)} step(s) to the plan.\n"
+                    + task_plan.format_for_model()
+                )
+
+            return "Error: `action` must be one of create, read, complete, skip, or append."
 
         return task_tracker_handler
 
@@ -1681,9 +2329,25 @@ class SkillAction:
     def _task_plan_pending_checklist(
         task_plan: Optional[InLoopTaskPlan],
     ) -> Optional[List[Dict[str, str]]]:
-        if task_plan is None or not task_plan.has_pending_steps():
+        """Return checklist of non-done steps (pending, in_progress, and skipped).
+
+        Includes intentionally skipped steps with their reasons so the forced-
+        termination model call can report them accurately rather than silently
+        omitting them.  Returns ``None`` only when the plan is absent or every
+        step is ``done``.
+        """
+        if task_plan is None:
             return None
-        return task_plan.to_checklist(pending_only=True)
+        non_done = [s for s in task_plan.steps if s.status != "done"]
+        if not non_done:
+            return None
+        checklist = []
+        for s in non_done:
+            entry: Dict[str, str] = {"item": s.description, "status": s.status}
+            if s.status == "skipped" and s.skip_reason:
+                entry["skip_reason"] = s.skip_reason
+            checklist.append(entry)
+        return checklist
 
     # ---------------------------------------------------------------------------
     # Static / pure utilities (co-located for testability)
@@ -1787,6 +2451,82 @@ class SkillAction:
         ):
             return True
         return False
+
+    @staticmethod
+    def _check_plan_faithfulness(
+        response: str,
+        task_plan: Optional[InLoopTaskPlan],
+    ) -> str:
+        """Deterministic backstop: detect and replace fabricated completion claims.
+
+        For each skipped task step, scans the response for sentences that
+        contain step-description tokens AND a completion-signal word.  When a
+        contradiction is found the offending sentence is replaced with an
+        accurate note citing the recorded skip reason.
+
+        This runs after ``_final_review_pass`` to catch cases where the review
+        model failed to remove a fabricated success statement.  It is O(steps ×
+        sentences) and requires no model call.
+        """
+        if not task_plan:
+            return response
+        skipped = task_plan.skipped_steps()
+        if not skipped:
+            return response
+
+        _COMPLETION_SIGNALS: frozenset = frozenset(
+            {
+                "saved",
+                "save",
+                "written",
+                "write",
+                "stored",
+                "store",
+                "assimilated",
+                "assimilate",
+                "uploaded",
+                "upload",
+                "created",
+                "added",
+                "complete",
+                "completed",
+                "done",
+                "finished",
+                "succeeded",
+                "success",
+                "performed",
+                "executed",
+            }
+        )
+
+        sentences = re.split(r"(?<=[.!?])\s+", response)
+        replacements_made = 0
+
+        for step in skipped:
+            step_tokens: Set[str] = set(
+                SkillCatalog._normalize_tokens(step.description)
+            )
+            for i, sentence in enumerate(sentences):
+                sent_tokens: Set[str] = set(SkillCatalog._normalize_tokens(sentence))
+                overlap = step_tokens & sent_tokens
+                has_signal = bool(sent_tokens & _COMPLETION_SIGNALS)
+                # Require at least 2 overlapping tokens AND a completion signal
+                # to reduce false positives on incidental keyword matches.
+                if len(overlap) >= 2 and has_signal:
+                    reason = step.skip_reason or "this step could not be completed"
+                    sentences[i] = f"(Note: {step.description} — {reason})"
+                    replacements_made += 1
+                    logger.warning(
+                        "SkillAction._check_plan_faithfulness: replaced fabricated "
+                        "completion claim for skipped step %d (%r). Original: %r",
+                        step.id,
+                        step.description[:60],
+                        sentence[:120],
+                    )
+
+        if replacements_made:
+            return " ".join(sentences)
+        return response
 
     @staticmethod
     def _extract_tool_intent(args_str: str, max_len: int = 80) -> str:

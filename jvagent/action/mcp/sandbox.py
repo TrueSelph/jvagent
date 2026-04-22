@@ -32,7 +32,7 @@ def resolve_sandbox_root(configured: str = "") -> str:
     return os.path.abspath(resolve_file_storage_root())
 
 
-def sanitize_segment(segment: str, *, default: str = "anonymous") -> str:
+def sanitize_segment(segment: str, *, default: str = "_default") -> str:
     """Make a single path component safe for storage keys and directory names."""
     s = (segment or "").strip()
     if not s:
@@ -48,9 +48,11 @@ def resolve_mcp_sandbox_relpath(agent_id: str, user_id: str) -> str:
     Both segments are sanitized for safe directory/object names. The graph
     ``agent_id`` and auth ``user_id`` are the logical names; slashes and
     other unsafe characters are normalized (e.g. ``namespace/name`` → one segment).
+    A real ``user_id`` must always be supplied; the ``_default`` fallback is
+    reserved for system-level (no-user) sandbox provisioning only.
     """
     aid = sanitize_segment(agent_id, default="agent")
-    uid = sanitize_segment(user_id, default="anonymous")
+    uid = sanitize_segment(user_id, default="_default")
     return f"{aid}/{uid}".replace("\\", "/")
 
 

@@ -32,6 +32,25 @@ logger = logging.getLogger(__name__)
 _JVFS_MODULE = "jvagent.action.mcp.jvspatial_fs_server"
 
 
+def _format_mcp_exception(e: BaseException) -> str:
+    """Stringify *e* and unwrap ExceptionGroup / TaskGroup so logs show the root cause.
+
+    The MCP stdio client and asyncio TaskGroup often report failures as
+    "unhandled errors in a TaskGroup (1 sub-exception)"; this expands the
+    nested exception for actionable diagnostics.
+    """
+    subs = getattr(e, "exceptions", None)
+    if isinstance(subs, tuple) and subs and type(e).__name__.endswith("ExceptionGroup"):
+        if len(subs) == 1:
+            inner = subs[0]
+            if isinstance(inner, BaseException):
+                return f"{type(e).__name__} -> {type(inner).__name__}: {inner}"
+        return f"{type(e).__name__} ({len(subs)} sub-exceptions): " + " | ".join(
+            f"{type(x).__name__}: {x}" for x in subs
+        )
+    return f"{type(e).__name__}: {e}"
+
+
 def _coalesce_bool(
     server_val: Any, action_val: Optional[bool], env_key: str, default: bool = False
 ) -> bool:
@@ -85,7 +104,7 @@ class _ServerEntry:
     use_jvfs: bool = False
     files_root: str = ""
     sandbox_agent_id: str = ""
-    default_sandbox_user: str = "anonymous"
+    default_sandbox_user: str = "_default"
     npx_base_args: List[str] = field(default_factory=list)
     connect_timeout: float = 10.0
     call_timeout: float = 30.0
@@ -337,8 +356,8 @@ class MCPAction(Action):
             raw_agent_id = "unknown"
 
         def_user = (
-            os.getenv("MCP_FILESYSTEM_SANDBOX_DEFAULT_USER") or "anonymous"
-        ).strip() or "anonymous"
+            os.getenv("MCP_FILESYSTEM_SANDBOX_DEFAULT_USER") or "_default"
+        ).strip() or "_default"
 
         action_sandbox = _coalesce_sandbox_root(
             self.sandbox_root, "MCP_FILESYSTEM_SANDBOX_ROOT"
@@ -412,6 +431,14 @@ class MCPAction(Action):
             elif sb_mode and is_fs and not use_jvfs:
                 rel = resolve_mcp_sandbox_relpath(raw_agent_id, def_user)
                 abs_r = absolute_under_files_root(files_root, rel)
+                # Eagerly create the directory so the MCP filesystem server can
+                # validate it on startup (it fails with ENOENT otherwise).
+                try:
+                    os.makedirs(abs_r, exist_ok=True)
+                except OSError as exc:
+                    logger.warning(
+                        "MCPAction: could not create sandbox dir %s: %s", abs_r, exc
+                    )
                 command, a, client = self._args_for_npx_filesystem(
                     npx_cmd, npx_base, abs_r, connect_timeout, call_timeout, env_d
                 )
@@ -573,9 +600,12 @@ class MCPAction(Action):
                 entry.tool_cache = tools
                 return self._filter_tools(entry, tools)
             except Exception as e:
-                logger.warning("MCP list_tools failed for %s: %s", server_name, e)
+                detail = _format_mcp_exception(e)
+                logger.warning("MCP list_tools failed for %s: %s", server_name, detail)
                 await self._clear_session(server_name)
-                raise
+                raise RuntimeError(
+                    f"MCP list_tools failed for {server_name}: {detail}"
+                ) from e
 
     async def _resolve_tool_inventory(self) -> List[Tuple[str, Any]]:
         inventory: List[Tuple[str, Any]] = []
@@ -601,7 +631,7 @@ class MCPAction(Action):
             natural_language_command: The natural language request to fulfill.
             user_id: Optional caller identity. When ``sandbox_user_scoped`` is
                 enabled the per-user sandbox client is used instead of the
-                shared default (anonymous) client.
+                shared default (_default) client.
         """
         try:
             inventory = await self._resolve_tool_inventory()
@@ -742,7 +772,7 @@ class MCPAction(Action):
         (and caches) a separate subprocess per sanitized ``user_id`` under
         ``<files_root>/<agentId>/<userId>`` (see ``resolve_mcp_sandbox_relpath``).
         The default client (``entry.client``) uses the ``MCP_FILESYSTEM_SANDBOX_DEFAULT_USER``
-        path (default ``anonymous``) and is returned when no real user ID is available or
+        path (default ``_default``) and is returned when no real user ID is available or
         when sandbox scoping is not enabled.
 
         Used by both ``ToolExecutor._dispatch_mcp_tool`` (LLM-driven dispatch) and
@@ -754,8 +784,8 @@ class MCPAction(Action):
             return entry.client
         if entry.transport != "stdio":
             return entry.client
-        uid = (user_id or "").strip() or entry.default_sandbox_user or "anonymous"
-        if uid == (entry.default_sandbox_user or "anonymous"):
+        uid = (user_id or "").strip() or entry.default_sandbox_user or "_default"
+        if uid == (entry.default_sandbox_user or "_default"):
             return entry.client
         async with entry.user_lock:
             if uid in entry.user_clients:
