@@ -16,9 +16,35 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 import httpx
 from jvspatial.core.annotations import attribute
 
-from jvagent.action.model.language.base import LanguageModelAction, ModelActionResult
+from jvagent.action.model.language.base import (
+    LanguageModelAction,
+    ModelActionResult,
+    ReasoningModelConfig,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _increment_ollama_thinking_stream(
+    previous_snapshot: str, raw: Any
+) -> tuple[str, str]:
+    """Derive delta text from one Ollama streaming ``thinking`` fragment.
+
+    The API commonly sends the **entire reasoning generated so far** on each NDJSON
+    chunk. Treat any fragment that extends ``previous_snapshot`` as cumulative and
+    emit only the suffix; otherwise treat the fragment as a standalone delta for
+    append-only protocols.
+    """
+    if raw is None or raw == "":
+        return previous_snapshot, ""
+    s = str(raw)
+    if not s:
+        return previous_snapshot, ""
+    if previous_snapshot and s.startswith(previous_snapshot):
+        delta = s[len(previous_snapshot) :]
+        return s, delta
+    delta = s
+    return previous_snapshot + s, delta
 
 
 class OllamaLanguageModelAction(LanguageModelAction):
@@ -38,11 +64,28 @@ class OllamaLanguageModelAction(LanguageModelAction):
     )
     model: str = attribute(default="llama3.1", description="Ollama model identifier")
     provider: str = attribute(default="ollama", description="Provider name")
+    reasoning_enabled: Optional[bool] = attribute(
+        default=None,
+        description="Default loop reasoning flag mapped to Ollama think=true.",
+    )
 
     async def on_register(self) -> None:
         """Called when action is registered during installation."""
         await super().on_register()
         logger.info(f"Ollama action registered: {self.label} (model: {self.model})")
+
+    def translate_reasoning_config(self, cfg: ReasoningModelConfig) -> Dict[str, Any]:
+        if cfg.profile == "final":
+            return {}
+        enabled = cfg.reasoning_enabled
+        if enabled is None:
+            enabled = self.reasoning_enabled
+        translated: Dict[str, Any] = {}
+        if enabled is True:
+            translated["think"] = True
+        if cfg.reasoning_extra:
+            translated.update(dict(cfg.reasoning_extra))
+        return translated
 
     def _build_headers(self) -> Dict[str, str]:
         """Build request headers.
@@ -156,6 +199,43 @@ class OllamaLanguageModelAction(LanguageModelAction):
 
         return normalized
 
+    def _merge_stream_tool_calls(
+        self,
+        accumulated: List[Dict[str, Any]],
+        chunk_normalized: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Merge normalized tool calls from a stream chunk into accumulated list.
+
+        Later chunks may complete or replace arguments for the same tool id.
+        """
+        if not chunk_normalized:
+            return accumulated
+        by_id: Dict[str, int] = {}
+        for i, tc in enumerate(accumulated):
+            tid = tc.get("id")
+            if isinstance(tid, str) and tid:
+                by_id[tid] = i
+        merged = list(accumulated)
+        for tc in chunk_normalized:
+            tid = tc.get("id")
+            if isinstance(tid, str) and tid and tid in by_id:
+                idx = by_id[tid]
+                old_fn = merged[idx].get("function", {})
+                new_fn = tc.get("function", {})
+                old_args = old_fn.get("arguments", "{}")
+                new_args = new_fn.get("arguments", "{}")
+                if isinstance(old_args, str) and isinstance(new_args, str):
+                    if len(new_args) >= len(old_args):
+                        merged[idx]["function"]["arguments"] = new_args
+                else:
+                    merged[idx] = tc
+            else:
+                merged.append(tc)
+                tid2 = tc.get("id")
+                if isinstance(tid2, str) and tid2:
+                    by_id[tid2] = len(merged) - 1
+        return merged
+
     def _build_payload(
         self,
         messages: List[Dict[str, Any]],
@@ -177,6 +257,11 @@ class OllamaLanguageModelAction(LanguageModelAction):
         }
         if tools:
             payload["tools"] = tools
+        reasoning = kwargs.get("reasoning")
+        if isinstance(reasoning, dict) and reasoning.get("think") is True:
+            payload["think"] = True
+        elif kwargs.get("think") is True:
+            payload["think"] = True
         return payload
 
     async def _query(
@@ -202,6 +287,8 @@ class OllamaLanguageModelAction(LanguageModelAction):
             message = data.get("message", {})
             content = message.get("content", "")
             usage = self._extract_usage(data)
+            thinking_raw = message.get("thinking") or ""
+            thinking_content = str(thinking_raw) if thinking_raw else None
 
             return ModelActionResult(
                 response=content,
@@ -210,14 +297,13 @@ class OllamaLanguageModelAction(LanguageModelAction):
                 provider="ollama",
                 finish_reason=data.get("done_reason"),
                 tool_calls=self._normalize_tool_calls(message.get("tool_calls", [])),
+                thinking_content=thinking_content,
             )
         except httpx.HTTPStatusError:
             raise
-        except httpx.TimeoutException as e:
-            logger.error(f"Ollama API timeout: {e}", exc_info=True)
+        except httpx.TimeoutException:
             raise
-        except httpx.RequestError as e:
-            logger.error(f"Ollama API request failed: {e}", exc_info=True)
+        except httpx.RequestError:
             raise
         except Exception as e:
             logger.error(f"Ollama query failed: {e}", exc_info=True)
@@ -230,6 +316,7 @@ class OllamaLanguageModelAction(LanguageModelAction):
         **kwargs: Any,
     ) -> ModelActionResult:
         """Execute a streaming query to Ollama."""
+        thinking_queue = kwargs.get("_jv_thinking_queue")
         await self._initialize_http_client()
         payload = self._build_payload(messages, tools, stream=True, **kwargs)
         model_override = kwargs.get("model", self.model)
@@ -240,9 +327,24 @@ class OllamaLanguageModelAction(LanguageModelAction):
             provider="ollama",
             finish_reason=None,
             tool_calls=[],
+            thinking_queue=thinking_queue,
         )
+        thinking_chunks: List[str] = []
+        accumulated_tool_calls: List[Dict[str, Any]] = []
+        thinking_snapshot: str = ""
+
+        def _emit_thinking_fragment(raw: Any) -> None:
+            nonlocal thinking_snapshot
+            thinking_snapshot, delta = _increment_ollama_thinking_stream(
+                thinking_snapshot, raw
+            )
+            if not delta:
+                return
+            thinking_chunks.append(delta)
+            result.push_thinking_delta(delta)
 
         async def stream_generator() -> AsyncGenerator[str, None]:
+            nonlocal accumulated_tool_calls
             try:
                 async with self._http_client.stream(  # type: ignore[union-attr]
                     "POST",
@@ -267,23 +369,37 @@ class OllamaLanguageModelAction(LanguageModelAction):
                         if text_chunk:
                             yield text_chunk
 
+                        think_chunk = msg.get("thinking")
+                        if think_chunk:
+                            _emit_thinking_fragment(think_chunk)
+
+                        raw_tc = msg.get("tool_calls")
+                        if raw_tc:
+                            batch = self._normalize_tool_calls(raw_tc)
+                            accumulated_tool_calls = self._merge_stream_tool_calls(
+                                accumulated_tool_calls, batch
+                            )
+
                         if chunk.get("done"):
                             result.finish_reason = chunk.get("done_reason")
-                            result.tool_calls = self._normalize_tool_calls(
-                                msg.get("tool_calls", [])
-                            )
+                            # tool_calls for this line were already merged via raw_tc above;
+                            # do not merge again (would duplicate when done chunk includes tools).
+                            result.tool_calls = accumulated_tool_calls
                             result.metrics.update(self._extract_usage(chunk))
             except httpx.HTTPStatusError:
                 raise
-            except httpx.TimeoutException as e:
-                logger.error(f"Ollama streaming timeout: {e}", exc_info=True)
+            except httpx.TimeoutException:
                 raise
-            except httpx.RequestError as e:
-                logger.error(f"Ollama streaming request failed: {e}", exc_info=True)
+            except httpx.RequestError:
                 raise
             except Exception as e:
                 logger.error(f"Ollama streaming failed: {e}", exc_info=True)
                 raise
+            finally:
+                if thinking_chunks:
+                    result.thinking_content = "".join(thinking_chunks)
+                if accumulated_tool_calls and not result.tool_calls:
+                    result.tool_calls = accumulated_tool_calls
 
         result.stream = stream_generator()
         result.is_streaming = True

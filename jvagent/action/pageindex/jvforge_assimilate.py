@@ -52,12 +52,10 @@ async def assimilate_via_jvforge(
 
     headers: Dict[str, str] = {}
     api_key = (
-        (
-            os.environ.get("JVAGENT_JVFORGE_API_KEY")
-            or os.environ.get("JVFORGE_API_KEY")
-            or ""
-        ).strip()
-    )
+        os.environ.get("JVAGENT_JVFORGE_API_KEY")
+        or os.environ.get("JVFORGE_API_KEY")
+        or ""
+    ).strip()
     if api_key:
         headers["X-API-Key"] = api_key
 
@@ -135,7 +133,7 @@ async def assimilate_via_jvforge_async(
 ) -> Dict[str, Any]:
     """
     POST document to jvforge /v1/jobs (async), return immediately with job info.
-    
+
     Returns:
         Dict with status, job_id, queue_position, doc_name, message
     """
@@ -161,12 +159,10 @@ async def assimilate_via_jvforge_async(
 
     headers: Dict[str, str] = {}
     api_key = (
-        (
-            os.environ.get("JVAGENT_JVFORGE_API_KEY")
-            or os.environ.get("JVFORGE_API_KEY")
-            or ""
-        ).strip()
-    )
+        os.environ.get("JVAGENT_JVFORGE_API_KEY")
+        or os.environ.get("JVFORGE_API_KEY")
+        or ""
+    ).strip()
     if api_key:
         headers["X-API-Key"] = api_key
 
@@ -193,14 +189,16 @@ async def assimilate_via_jvforge_async(
         )
 
     body = r.json()
-    
+
     # Handle both 200 (duplicate) and 202 (queued) responses
     if r.status_code == 200:
         # Document already in queue
         return {
             "status": "already_queued",
             "job_id": body.get("job_id"),
-            "queue_position": body.get("queue_position", {"overall": 0, "per_agent": 0}),
+            "queue_position": body.get(
+                "queue_position", {"overall": 0, "per_agent": 0}
+            ),
             "doc_name": doc_name,
             "message": body.get("message", "Document already in queue"),
         }
@@ -209,7 +207,9 @@ async def assimilate_via_jvforge_async(
         return {
             "status": "queued",
             "job_id": body.get("job_id"),
-            "queue_position": body.get("queue_position", {"overall": 0, "per_agent": 0}),
+            "queue_position": body.get(
+                "queue_position", {"overall": 0, "per_agent": 0}
+            ),
             "doc_name": doc_name,
             "message": "Document queued for processing",
         }

@@ -370,6 +370,57 @@ class TestSimulatedStreaming:
         ), "Should auto-detect and simulate multiple chunks"
         assert "".join(m.content for m in chunk_messages) == content
 
+    @pytest.mark.asyncio
+    async def test_thought_stream_adhoc_flush_reuses_accumulator_message_id(self):
+        """Flush adhoc must use the same id as stream_chunk rows so clients merge one bubble."""
+        bus = ResponseBus()
+        interaction = MagicMock()
+        interaction.append_agent_trace = MagicMock(return_value=True)
+        interaction._graph_context = MagicMock()
+        interaction.save = AsyncMock()
+        seg = "iter-1-reasoning"
+
+        await bus.publish(
+            session_id="s1",
+            content="a",
+            channel="default",
+            stream=True,
+            interaction_id="i1",
+            interaction=interaction,
+            user_id="u1",
+            streaming_complete=False,
+            category="thought",
+            thought_type="reasoning",
+            segment_id=seg,
+        )
+        await bus.publish(
+            session_id="s1",
+            content="b",
+            channel="default",
+            stream=True,
+            interaction_id="i1",
+            interaction=interaction,
+            user_id="u1",
+            streaming_complete=True,
+            category="thought",
+            thought_type="reasoning",
+            segment_id=seg,
+        )
+
+        messages = bus._message_buffers.get("i1", [])
+        chunks = [
+            m
+            for m in messages
+            if m.message_type == "stream_chunk" and m.category == "thought"
+        ]
+        flushes = [
+            m for m in messages if m.message_type == "adhoc" and m.category == "thought"
+        ]
+        assert len(chunks) == 2
+        assert len(flushes) == 1
+        assert chunks[0].id
+        assert chunks[0].id == flushes[0].id
+
 
 class TestThoughtMessageRouting:
     @pytest.mark.asyncio
@@ -483,3 +534,34 @@ class TestThoughtMessageRouting:
         assert ("i1", "iter-1-call-read_file-0") not in bus._thought_accumulation
         interaction.set_response.assert_called()
         interaction.append_agent_trace.assert_called()
+
+
+class TestThoughtPublishNormalization:
+    """Thought bodies are normalized on flush (whitespace only)."""
+
+    @pytest.mark.asyncio
+    async def test_publish_thought_normalizes_before_agent_trace(self):
+        bus = ResponseBus()
+        interaction = MagicMock()
+        interaction.response = None
+        interaction.set_response = MagicMock(return_value=True)
+        interaction.append_agent_trace = MagicMock(return_value=True)
+        interaction._graph_context = MagicMock()
+        interaction.save = AsyncMock()
+
+        await bus.publish(
+            session_id="s1",
+            content="a\n\n\n\nb",
+            channel="default",
+            stream=False,
+            interaction_id="i1",
+            interaction=interaction,
+            user_id="u1",
+            category="thought",
+            thought_type="reasoning",
+            segment_id="seg-norm",
+        )
+
+        interaction.append_agent_trace.assert_called_once()
+        entry = interaction.append_agent_trace.call_args[0][0]
+        assert entry["content"] == "a\n\nb"

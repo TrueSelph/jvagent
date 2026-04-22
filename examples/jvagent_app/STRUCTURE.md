@@ -10,21 +10,21 @@ jvagent_app/
 ├── CHANGELOG.md              # Project changelog
 ├── LICENSE                   # Project license
 ├── README.md                 # Main project documentation
+├── SETUP.md                  # Setup guide
 ├── STRUCTURE.md              # This file
 │
-├── agents/                   # Custom agent packages
-│   └── example_agent/        # Example agent package
-│       ├── actions/              # Actions packaged with this agent
-│       │   └── jvagent/         # Namespace directory
-│       │       └── example_action/   # Example action package
-│       │           ├── __init__.py        # Package initialization (imports action & endpoints)
-│       │           ├── example_action.py    # Action implementation (Action class)
-│       │           ├── endpoints.py        # API endpoints (standard pattern)
-│       │           ├── info.yaml          # Action metadata
-│       │           ├── requirements.txt   # Python dependencies
-│       │           └── README.md          # Action documentation
-│       ├── agent.yaml           # Agent configuration and action assignments
-│       └── README.md            # Agent documentation
+├── agents/                   # Custom agent packages (namespace / agent_id)
+│   ├── jvagent/
+│   │   ├── example_agent/    # Main demo agent
+│   │   │   ├── actions/jvagent/signup_interview_interact_action/
+│   │   │   ├── agent.yaml
+│   │   │   └── README.md
+│   │   └── skills_agent/     # Optional skills + Ollama agent (enable in app.yaml if needed)
+│   └── resolv/
+│       └── resolv_demo/      # Resolv API + interviews demo
+│           ├── actions/resolv/
+│           ├── agent.yaml
+│           └── README.md
 │
 └── docs/                     # Application documentation
     └── architecture.md       # Architecture overview
@@ -76,8 +76,8 @@ Contains application documentation:
 
 ### Code Files
 
-- **example_action.py**: Action implementation (Python)
-- **requirements.txt**: Python dependencies
+- **{action_name}.py**: Action implementation (Python) in each action package
+- **requirements.txt**: Python dependencies (per action, optional)
 
 ### Documentation
 

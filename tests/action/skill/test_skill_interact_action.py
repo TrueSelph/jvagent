@@ -6,33 +6,117 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from jvagent.action.skill.loop_context import LoopContext, LoopContextConfig
+from jvagent.action.skill.skill_action import SkillAction
+from jvagent.action.skill.skill_action_contracts import SkillRunConfig, SkillRunContext
 from jvagent.action.skill.skill_catalog import SkillCatalog
 from jvagent.action.skill.skill_interact_action import SkillInteractAction
 from jvagent.action.skill.stuck_detector import StuckDetector
 
 
-class TestSkillInteractActionModelKwargs:
-    """Test model keyword argument building."""
+def _agentic_call_model_side_effect(*results):
+    """Build an async side_effect for mocked ``_call_model`` (SkillAction signature).
 
-    def test_build_model_kwargs_defaults(self):
+    The side_effect emits reasoning thoughts via ``ctx.publish_callback`` when
+    ``thinking_content`` is set, mirroring what the real ``_call_model`` does
+    during streaming.
+    """
+    idx = 0
+
+    async def _fn(
+        messages,
+        tools,
+        ctx,
+        base_model_kwargs,
+        reasoning_cfg,
+        *,
+        profile="reasoning",
+        loop_iteration=None,
+    ):
+        nonlocal idx
+        if loop_iteration is None:
+            r = results[-1]
+            if getattr(r, "get_response", None):
+                await r.get_response()
+            return r
+        r = results[idx]
+        idx += 1
+        if ctx.publish_callback and getattr(r, "thinking_content", None):
+            await ctx.publish_callback(
+                r.thinking_content,
+                category="thought",
+                thought_type="reasoning",
+                segment_id=f"iter-{loop_iteration}-reasoning",
+                streaming_complete=False,
+                relay_to_adapters=False,
+            )
+            await ctx.publish_callback(
+                "",
+                category="thought",
+                thought_type="reasoning",
+                segment_id=f"iter-{loop_iteration}-reasoning",
+                streaming_complete=True,
+                relay_to_adapters=False,
+            )
+        if getattr(r, "get_response", None):
+            await r.get_response()
+        return r
+
+    return _fn
+
+
+class TestSkillInteractHelpers:
+    """Unit tests for static helpers and guard methods."""
+
+    def test_resolve_thinking_token_count(self):
+        m = MagicMock()
+        m.thinking_tokens = 42
+        assert SkillAction._resolve_thinking_token_count(m) == 42
+        m2 = MagicMock()
+        m2.thinking_tokens = 0
+        m2.thinking_content = "x" * 100
+        m2.metrics = {}
+        assert SkillAction._resolve_thinking_token_count(m2) == 25
+
+    def test_should_prefer_best_over_degenerate(self):
         action = _make_thinking_action()
-        kwargs = action._build_model_kwargs()
-        assert kwargs["model"] == "claude-sonnet-4-20250514"
-        assert kwargs["temperature"] == 0.3
-        assert "thinking" not in kwargs
+        long_b = "Here is a detailed list of all seven skills with descriptions. " * 3
+        assert action._should_prefer_best_over_candidate("Understood.", long_b) is True
 
-    def test_build_model_kwargs_with_thinking(self):
-        action = _make_thinking_action(thinking_budget_tokens=5000)
-        kwargs = action._build_model_kwargs()
-        assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 5000}
-        # max_tokens should be >= budget_tokens + 1
-        assert kwargs["max_tokens"] >= 5001
+    def test_format_persona_directive_includes_utterance(self):
+        d = SkillInteractAction._format_persona_directive(
+            "What are your skills", "A: 1, B: 2"
+        )
+        assert "What are your skills" in d
+        assert "A: 1, B: 2" in d
 
-    def test_build_model_kwargs_thinking(self):
+
+class TestSkillInteractActionModelKwargs:
+    """Test generic reasoning config building."""
+
+    def test_build_reasoning_model_config_defaults(self):
+        run_cfg = SkillRunConfig()
+        rcfg = SkillAction._build_reasoning_cfg(run_cfg)
+        assert rcfg.reasoning_budget_tokens == 0
+        assert rcfg.reasoning_effort is None
+        assert rcfg.reasoning_enabled is None
+
+    def test_build_reasoning_model_config_with_budget(self):
+        run_cfg = SkillRunConfig(reasoning_budget_tokens=5000)
+        rcfg = SkillAction._build_reasoning_cfg(run_cfg)
+        assert rcfg.reasoning_budget_tokens == 5000
+        assert rcfg.reasoning_enabled is True
+
+    def test_build_reasoning_model_config_legacy_budget(self):
+        # thinking_budget_tokens mapped to reasoning_budget_tokens in _make_thinking_action
         action = _make_thinking_action(thinking_budget_tokens=5000)
-        kwargs = action._build_model_kwargs()
-        assert "thinking" in kwargs
-        assert kwargs["max_tokens"] >= 5001
+        rcfg = action._build_reasoning_model_config()
+        assert rcfg.reasoning_budget_tokens == 5000
+        assert rcfg.reasoning_enabled is True
+
+    def test_build_reasoning_model_config_with_reasoning_extra(self):
+        run_cfg = SkillRunConfig(reasoning_extra={"effort": "medium"})
+        rcfg = SkillAction._build_reasoning_cfg(run_cfg)
+        assert rcfg.reasoning_extra == {"effort": "medium"}
 
 
 class TestSkillInteractActionMessages:
@@ -195,29 +279,37 @@ class TestSkillInteractActionProviderConversion:
 
 class TestSkillInteractActionTermination:
     @pytest.mark.asyncio
-    async def test_force_termination_makes_final_call_without_thinking(self):
-        action = _make_thinking_action()
+    async def test_force_termination_uses_final_profile(self):
+        run_cfg = SkillRunConfig()
+        sa = SkillAction()
+
         model_result = MagicMock()
         model_result.get_response = AsyncMock(return_value="Final answer")
         model_result.response = "Final answer"
-        action._call_model = AsyncMock(return_value=model_result)
 
-        messages = [{"role": "user", "content": "Do work"}]
-        model_kwargs = {
-            "model": "claude-sonnet-4-20250514",
-            "max_tokens": 4096,
-            "thinking": {"type": "enabled", "budget_tokens": 2000},
-        }
-        result = await action._force_termination(
-            messages=messages,
-            tools=[],
-            visitor=MagicMock(),
-            model_kwargs=model_kwargs,
+        mock_call_model = AsyncMock(return_value=model_result)
+        sa._call_model = mock_call_model  # type: ignore[method-assign]
+
+        ctx = SkillRunContext(
+            utterance="Do work",
+            conversation=None,
+            model_action=MagicMock(),
+            task_service=None,
+            config=run_cfg,
         )
+        messages = [{"role": "user", "content": "Do work"}]
+        base_model_kwargs = {"model": "claude-sonnet-4-20250514", "max_tokens": 4096}
+        reasoning_cfg = SkillAction._build_reasoning_cfg(run_cfg)
+
+        result = await sa._force_termination(
+            messages, [], ctx, base_model_kwargs, reasoning_cfg
+        )
+
         assert result == "Final answer"
-        call_args = action._call_model.await_args
-        assert call_args.args[1] is None
-        assert "thinking" not in call_args.args[3]
+        call_args = mock_call_model.await_args
+        assert call_args.args[1] is None  # tools=None
+        assert call_args.kwargs.get("profile") == "final"
+        assert call_args.kwargs.get("loop_iteration") is None
 
 
 class TestSkillInteractActionSkillDiscovery:
@@ -336,7 +428,9 @@ class TestSkillInteractActionThoughtPublishing:
         second_result.provider = "openai"
         second_result.get_response = AsyncMock(return_value="Final answer")
 
-        action._call_model = AsyncMock(side_effect=[first_result, second_result])
+        action._call_model = AsyncMock(
+            side_effect=_agentic_call_model_side_effect(first_result, second_result)
+        )
 
         visitor = MagicMock()
         visitor.utterance = "Please investigate and summarize"
@@ -357,14 +451,18 @@ class TestSkillInteractActionThoughtPublishing:
 
         task_handle = MagicMock()
         task_handle.record_step = AsyncMock()
+        task_handle.update_metadata = AsyncMock()
 
-        response, termination_reason, stuck_corrections = (
-            await action._run_agentic_loop(
-                visitor=visitor,
-                tool_executor=tool_executor,
-                task_handle=task_handle,
-                discovered_skills=None,
-            )
+        (
+            response,
+            termination_reason,
+            stuck_corrections,
+            result_attributions,
+        ) = await action._run_agentic_loop(
+            visitor=visitor,
+            tool_executor=tool_executor,
+            task_handle=task_handle,
+            discovered_skills=None,
         )
 
         assert response == "Final answer"
@@ -387,9 +485,9 @@ class TestSkillInteractActionThoughtPublishing:
         assert "iter-1-result-tc_1" in segment_ids
 
     @pytest.mark.asyncio
-    async def test_run_agentic_loop_publishes_intermediate_user_text(self):
-        """Mid-loop assistant text alongside tool_calls must be published as
-        category='user' so it is rendered AND committed to interaction.response."""
+    async def test_run_agentic_loop_publishes_intermediate_reasoning_thought(self):
+        """Mid-loop assistant text alongside tool_calls should stay in the
+        reasoning stream instead of being committed to the user channel."""
         action = _make_thinking_action()
         action.publish = AsyncMock()
         action.publish_thought = AsyncMock()
@@ -413,7 +511,9 @@ class TestSkillInteractActionThoughtPublishing:
         second_result.provider = "openai"
         second_result.get_response = AsyncMock(return_value="Final answer")
 
-        action._call_model = AsyncMock(side_effect=[first_result, second_result])
+        action._call_model = AsyncMock(
+            side_effect=_agentic_call_model_side_effect(first_result, second_result)
+        )
 
         visitor = MagicMock()
         visitor.utterance = "look it up"
@@ -430,6 +530,7 @@ class TestSkillInteractActionThoughtPublishing:
 
         task_handle = MagicMock()
         task_handle.record_step = AsyncMock()
+        task_handle.update_metadata = AsyncMock()
 
         await action._run_agentic_loop(
             visitor=visitor,
@@ -438,19 +539,22 @@ class TestSkillInteractActionThoughtPublishing:
             discovered_skills=None,
         )
 
+        published_thought_messages = [
+            call.kwargs.get("content")
+            for call in action.publish_thought.await_args_list
+        ]
+        assert "Sure, let me look that up for you." in published_thought_messages
+        intermediate_calls = [
+            call
+            for call in action.publish_thought.await_args_list
+            if call.kwargs.get("content") == "Sure, let me look that up for you."
+        ]
+        assert intermediate_calls, "intermediate reasoning text was not published"
+        assert intermediate_calls[0].kwargs.get("thought_type") == "reasoning"
         published_user_messages = [
             call.kwargs.get("content") for call in action.publish.await_args_list
         ]
-        assert "Sure, let me look that up for you." in published_user_messages
-        # The intermediate publish must not be flagged transient (default False)
-        # so it is committed to interaction.response.
-        intermediate_calls = [
-            call
-            for call in action.publish.await_args_list
-            if call.kwargs.get("content") == "Sure, let me look that up for you."
-        ]
-        assert intermediate_calls, "intermediate user text was not published"
-        assert intermediate_calls[0].kwargs.get("transient") in (False, None)
+        assert "Sure, let me look that up for you." not in published_user_messages
 
     @pytest.mark.asyncio
     async def test_run_agentic_loop_skips_intermediate_when_disabled(self):
@@ -476,7 +580,9 @@ class TestSkillInteractActionThoughtPublishing:
         second_result.provider = "openai"
         second_result.get_response = AsyncMock(return_value="Final")
 
-        action._call_model = AsyncMock(side_effect=[first_result, second_result])
+        action._call_model = AsyncMock(
+            side_effect=_agentic_call_model_side_effect(first_result, second_result)
+        )
 
         visitor = MagicMock()
         visitor.utterance = "x"
@@ -491,6 +597,7 @@ class TestSkillInteractActionThoughtPublishing:
 
         task_handle = MagicMock()
         task_handle.record_step = AsyncMock()
+        task_handle.update_metadata = AsyncMock()
 
         await action._run_agentic_loop(
             visitor=visitor,
@@ -514,7 +621,9 @@ class TestSkillInteractActionThoughtPublishing:
         first_result.response = "Done in one step"
         first_result.provider = "openai"
         first_result.get_response = AsyncMock(return_value="Done in one step")
-        action._call_model = AsyncMock(return_value=first_result)
+        action._call_model = AsyncMock(
+            side_effect=_agentic_call_model_side_effect(first_result)
+        )
 
         visitor = MagicMock()
         visitor.utterance = "quick task"
@@ -527,14 +636,18 @@ class TestSkillInteractActionThoughtPublishing:
 
         task_handle = MagicMock()
         task_handle.record_step = AsyncMock()
+        task_handle.update_metadata = AsyncMock()
 
-        response, termination_reason, stuck_corrections = (
-            await action._run_agentic_loop(
-                visitor=visitor,
-                tool_executor=tool_executor,
-                task_handle=task_handle,
-                discovered_skills=None,
-            )
+        (
+            response,
+            termination_reason,
+            stuck_corrections,
+            result_attributions,
+        ) = await action._run_agentic_loop(
+            visitor=visitor,
+            tool_executor=tool_executor,
+            task_handle=task_handle,
+            discovered_skills=None,
         )
 
         assert response == "Done in one step"
@@ -568,7 +681,9 @@ class TestSkillInteractActionThoughtPublishing:
             return_value="Final after skill-first retry"
         )
 
-        action._call_model = AsyncMock(side_effect=[first_result, second_result])
+        action._call_model = AsyncMock(
+            side_effect=_agentic_call_model_side_effect(first_result, second_result)
+        )
 
         visitor = MagicMock()
         visitor.utterance = "Search internal pageindex documents about jvagent."
@@ -582,6 +697,7 @@ class TestSkillInteractActionThoughtPublishing:
 
         task_handle = MagicMock()
         task_handle.record_step = AsyncMock()
+        task_handle.update_metadata = AsyncMock()
 
         discovered_skills = {
             "pageindex_search": {
@@ -593,13 +709,16 @@ class TestSkillInteractActionThoughtPublishing:
             }
         }
 
-        response, termination_reason, stuck_corrections = (
-            await action._run_agentic_loop(
-                visitor=visitor,
-                tool_executor=tool_executor,
-                task_handle=task_handle,
-                discovered_skills=discovered_skills,
-            )
+        (
+            response,
+            termination_reason,
+            stuck_corrections,
+            result_attributions,
+        ) = await action._run_agentic_loop(
+            visitor=visitor,
+            tool_executor=tool_executor,
+            task_handle=task_handle,
+            discovered_skills=discovered_skills,
         )
 
         assert response == "Final after skill-first retry"
@@ -607,21 +726,159 @@ class TestSkillInteractActionThoughtPublishing:
         assert stuck_corrections == 0
         assert action._call_model.await_count == 2
 
-    def test_skill_first_retry_fires_when_skills_available_and_none_activated(self):
-        """Simplified skill-first retry: fires when skills are available and none activated."""
-        action = _make_thinking_action()
+    @pytest.mark.asyncio
+    async def test_run_agentic_loop_single_call_for_conversational_utterance(self):
+        """Smalltalk / meta questions skip skill-first nudge (one model call)."""
+        action = _make_thinking_action(max_iterations=3, skill_first_retry_limit=1)
+
+        first_result = MagicMock()
+        first_result.thinking_content = None
+        first_result.thinking_tokens = 0
+        first_result.tool_calls = []
+        first_result.response = "I can help with code review, search, and more."
+        first_result.provider = "openai"
+        first_result.get_response = AsyncMock(
+            return_value="I can help with code review, search, and more."
+        )
+
+        action._call_model = AsyncMock(
+            side_effect=_agentic_call_model_side_effect(first_result)
+        )
+
+        visitor = MagicMock()
+        visitor.utterance = "What can you do?"
+        visitor.conversation = None
+        visitor.interaction = None
+
+        tool_executor = MagicMock()
+        tool_executor.get_tools_list = MagicMock(return_value=[])
+        tool_executor.dispatch = AsyncMock(return_value=[])
+        tool_executor.activated_skills = set()
+
+        task_handle = MagicMock()
+        task_handle.record_step = AsyncMock()
+        task_handle.update_metadata = AsyncMock()
+
         discovered_skills = {
             "code_review": {
                 "description": "Review code for quality, security, and correctness.",
                 "metadata": {"tags": ["code", "review"]},
+                "tool_files": [],
+                "requires_actions": [],
+            }
+        }
+
+        (
+            response,
+            termination_reason,
+            stuck_corrections,
+            result_attributions,
+        ) = await action._run_agentic_loop(
+            visitor=visitor,
+            tool_executor=tool_executor,
+            task_handle=task_handle,
+            discovered_skills=discovered_skills,
+        )
+
+        assert response == "I can help with code review, search, and more."
+        assert termination_reason == "completed"
+        assert action._call_model.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_run_agentic_loop_skips_skill_first_when_prioritize_disabled(self):
+        action = _make_thinking_action(
+            max_iterations=3,
+            skill_first_retry_limit=1,
+            prioritize_skills_first=False,
+        )
+
+        first_result = MagicMock()
+        first_result.thinking_content = None
+        first_result.thinking_tokens = 0
+        first_result.tool_calls = []
+        first_result.response = "Direct answer"
+        first_result.provider = "openai"
+        first_result.get_response = AsyncMock(return_value="Direct answer")
+
+        action._call_model = AsyncMock(
+            side_effect=_agentic_call_model_side_effect(first_result)
+        )
+
+        visitor = MagicMock()
+        visitor.utterance = "Search internal pageindex documents about jvagent."
+        visitor.conversation = None
+        visitor.interaction = None
+
+        tool_executor = MagicMock()
+        tool_executor.get_tools_list = MagicMock(return_value=[])
+        tool_executor.dispatch = AsyncMock(return_value=[])
+        tool_executor.activated_skills = set()
+
+        task_handle = MagicMock()
+        task_handle.record_step = AsyncMock()
+        task_handle.update_metadata = AsyncMock()
+
+        discovered_skills = {
+            "pageindex_search": {
+                "description": "Search internal knowledge base documents.",
+                "scope_hint": "internal retrieval",
+                "metadata": {"tags": ["retrieval", "pageindex"]},
+                "tool_files": [],
+                "requires_actions": [],
+            }
+        }
+
+        (
+            response,
+            termination_reason,
+            _,
+            _,
+        ) = await action._run_agentic_loop(
+            visitor=visitor,
+            tool_executor=tool_executor,
+            task_handle=task_handle,
+            discovered_skills=discovered_skills,
+        )
+
+        assert response == "Direct answer"
+        assert termination_reason == "completed"
+        assert action._call_model.await_count == 1
+
+    def test_skill_first_retry_fires_when_skills_available_and_none_activated(self):
+        """Skill-first retry fires when utterance matches catalog and nudges are enabled."""
+        sa = SkillAction()
+        cfg = SkillRunConfig(
+            prioritize_skills_first=True,
+            skill_first_retry_limit=1,
+            skill_first_retry_min_relevance=0.25,
+            plan_first=False,
+            final_review=False,
+            enable_checkpoints=False,
+            enable_evidence_log=False,
+        )
+        discovered_skills = {
+            "code_review": {
+                "description": "Review code for quality, security, and correctness.",
+                "metadata": {"tags": ["code", "review"]},
+                "tool_files": [],
+                "requires_actions": [],
             },
         }
         tool_executor = MagicMock()
         tool_executor.activated_skills = set()
+        utterance = "review this code for security issues"
+        candidate = "Here is a direct answer without activating a skill yet."
 
         assert (
-            action._should_retry_for_skill_first(
-                discovered_skills, tool_executor, "any utterance", 0
+            sa._should_retry_for_skill_first(
+                cfg=cfg,
+                discovered_skills=discovered_skills,
+                tool_executor=tool_executor,
+                utterance=utterance,
+                retries=0,
+                candidate_response=candidate,
+                tools_ever_called=None,
+                nontrivial_tools_called=None,
             )
             is True
         )
@@ -629,25 +886,46 @@ class TestSkillInteractActionThoughtPublishing:
         # Does not fire when skills already activated
         tool_executor.activated_skills = {"code_review"}
         assert (
-            action._should_retry_for_skill_first(
-                discovered_skills, tool_executor, "any utterance", 0
+            sa._should_retry_for_skill_first(
+                cfg=cfg,
+                discovered_skills=discovered_skills,
+                tool_executor=tool_executor,
+                utterance=utterance,
+                retries=0,
+                candidate_response=candidate,
+                tools_ever_called=None,
+                nontrivial_tools_called=None,
             )
             is False
         )
 
         # Does not fire when no skills configured
+        tool_executor.activated_skills = set()
         assert (
-            action._should_retry_for_skill_first(
-                None, tool_executor, "any utterance", 0
+            sa._should_retry_for_skill_first(
+                cfg=cfg,
+                discovered_skills=None,
+                tool_executor=tool_executor,
+                utterance=utterance,
+                retries=0,
+                candidate_response=candidate,
+                tools_ever_called=None,
+                nontrivial_tools_called=None,
             )
             is False
         )
 
         # Does not fire when retry limit exceeded
-        tool_executor.activated_skills = set()
         assert (
-            action._should_retry_for_skill_first(
-                discovered_skills, tool_executor, "any utterance", 1
+            sa._should_retry_for_skill_first(
+                cfg=cfg,
+                discovered_skills=discovered_skills,
+                tool_executor=tool_executor,
+                utterance=utterance,
+                retries=1,
+                candidate_response=candidate,
+                tools_ever_called=None,
+                nontrivial_tools_called=None,
             )
             is False
         )
@@ -692,86 +970,228 @@ class TestSkillInteractActionThoughtPublishing:
 
 
 def _make_thinking_action(**kwargs):
-    """Create a SkillInteractAction-like object for testing without graph persistence."""
-    action = MagicMock(spec=SkillInteractAction)
+    """Create a test harness backed by SkillAction + SkillRunConfig.
 
-    # Set defaults from the class attributes
-    action.weight = kwargs.get("weight", -60)
-    action.max_iterations = kwargs.get("max_iterations", 25)
-    action.max_duration_seconds = kwargs.get("max_duration_seconds", 300.0)
-    action.thinking_budget_tokens = kwargs.get("thinking_budget_tokens", 0)
-    action.model_action_type = kwargs.get(
-        "model_action_type", "AnthropicLanguageModelAction"
+    Returns a SimpleNamespace that exposes the same surface as the old mock
+    helper, but wires all logic directly to SkillAction and SkillRunConfig
+    without any backward-compat shims.
+    """
+    # Map legacy thinking_budget_tokens → reasoning_budget_tokens
+    reasoning_budget = kwargs.get("reasoning_budget_tokens", 0) or kwargs.get(
+        "thinking_budget_tokens", 0
     )
-    action.model = kwargs.get("model", "claude-sonnet-4-20250514")
-    action.model_temperature = kwargs.get("model_temperature", 0.3)
-    action.model_max_tokens = kwargs.get("model_max_tokens", 8192)
-    action.skills = kwargs.get("skills", None)
-    action.denied_skills = kwargs.get("denied_skills", [])
-    action.skills_source = kwargs.get("skills_source", "both")
-    action.tool_servers = kwargs.get("tool_servers", [])
-    action.allow_local_tools = kwargs.get("allow_local_tools", False)
-    action.stream_thinking = kwargs.get("stream_thinking", True)
-    action.stream_tool_progress = kwargs.get("stream_tool_progress", True)
-    action.commit_intermediate_messages = kwargs.get(
-        "commit_intermediate_messages", True
-    )
-    action.relay_thoughts_to_channels = kwargs.get("relay_thoughts_to_channels", False)
-    action.max_full_tool_results = kwargs.get("max_full_tool_results", 10)
-    action.max_tool_result_tokens = kwargs.get("max_tool_result_tokens", 400)
-    action.tool_result_truncation_chars = kwargs.get(
-        "tool_result_truncation_chars", 500
-    )
-    action.history_limit = kwargs.get("history_limit", 5)
-    action.call_timeout_seconds = kwargs.get("call_timeout_seconds", 60.0)
-    action.task_sync_every_steps = kwargs.get("task_sync_every_steps", 3)
-    action.strict_grounding = kwargs.get("strict_grounding", True)
-    action.plan_first = kwargs.get("plan_first", True)
-    action.enable_skill_helper_tools = kwargs.get("enable_skill_helper_tools", True)
-    action.max_skill_activations = kwargs.get("max_skill_activations", 5)
-    action.stuck_detection_window = kwargs.get("stuck_detection_window", 3)
-    action.max_midcourse_corrections = kwargs.get("max_midcourse_corrections", 2)
-    action.final_review = kwargs.get("final_review", False)
-    action.prioritize_skills_first = kwargs.get("prioritize_skills_first", True)
-    action.skill_first_retry_limit = kwargs.get("skill_first_retry_limit", 1)
 
-    # Wire up real methods — delegate to extracted modules
-    action._build_model_kwargs = lambda: SkillInteractAction._build_model_kwargs(action)
+    run_cfg = SkillRunConfig(
+        max_iterations=kwargs.get("max_iterations", 25),
+        max_duration_seconds=kwargs.get("max_duration_seconds", 300.0),
+        reasoning_budget_tokens=reasoning_budget,
+        model=kwargs.get("model", "claude-sonnet-4-20250514"),
+        model_temperature=kwargs.get("model_temperature", 0.3),
+        model_max_tokens=kwargs.get("model_max_tokens", 8192),
+        model_action_type=kwargs.get(
+            "model_action_type", "AnthropicLanguageModelAction"
+        ),
+        skills=kwargs.get("skills", None),
+        denied_skills=kwargs.get("denied_skills", []),
+        skills_source=kwargs.get("skills_source", "both"),
+        tool_servers=kwargs.get("tool_servers", []),
+        allow_local_tools=kwargs.get("allow_local_tools", False),
+        stream_thinking=kwargs.get("stream_thinking", True),
+        stream_reasoning=kwargs.get("stream_reasoning", True),
+        reasoning_enabled=kwargs.get("reasoning_enabled", None),
+        reasoning_extra=kwargs.get("reasoning_extra", None),
+        reasoning_effort=kwargs.get("reasoning_effort", None),
+        mirror_assistant_stream_as_thoughts=kwargs.get(
+            "mirror_assistant_stream_as_thoughts", None
+        ),
+        stream_tool_progress=kwargs.get("stream_tool_progress", True),
+        commit_intermediate_messages=kwargs.get("commit_intermediate_messages", True),
+        relay_thoughts_to_channels=kwargs.get("relay_thoughts_to_channels", False),
+        max_full_tool_results=kwargs.get("max_full_tool_results", 10),
+        max_tool_result_tokens=kwargs.get("max_tool_result_tokens", 400),
+        tool_result_truncation_chars=kwargs.get("tool_result_truncation_chars", 500),
+        history_limit=kwargs.get("history_limit", 5),
+        call_timeout_seconds=kwargs.get("call_timeout_seconds", 60.0),
+        strict_grounding=kwargs.get("strict_grounding", True),
+        plan_first=kwargs.get("plan_first", False),
+        enable_skill_helper_tools=kwargs.get("enable_skill_helper_tools", True),
+        max_skill_activations=kwargs.get("max_skill_activations", 5),
+        stuck_detection_window=kwargs.get("stuck_detection_window", 3),
+        max_midcourse_corrections=kwargs.get("max_midcourse_corrections", 2),
+        final_review=kwargs.get("final_review", False),
+        prioritize_skills_first=kwargs.get("prioritize_skills_first", True),
+        skill_first_retry_limit=kwargs.get("skill_first_retry_limit", 1),
+        skill_first_retry_min_relevance=kwargs.get(
+            "skill_first_retry_min_relevance", 0.25
+        ),
+        conversational_skip_patterns=kwargs.get("conversational_skip_patterns", []),
+        skill_first_conversational_heuristic=kwargs.get(
+            "skill_first_conversational_heuristic", True
+        ),
+        conversational_short_utterance_max_chars=kwargs.get(
+            "conversational_short_utterance_max_chars", 60
+        ),
+        conversational_short_utterance_max_tokens=kwargs.get(
+            "conversational_short_utterance_max_tokens", 8
+        ),
+        conversational_heuristic_max_relevance=kwargs.get(
+            "conversational_heuristic_max_relevance", 3.0
+        ),
+        conversational_min_response_chars=kwargs.get(
+            "conversational_min_response_chars", 20
+        ),
+        meta_intent_skip_nudge=kwargs.get("meta_intent_skip_nudge", True),
+        meta_intent_patterns=kwargs.get("meta_intent_patterns", []),
+        degenerate_response_max_chars=kwargs.get("degenerate_response_max_chars", 25),
+        best_candidate_shrink_ratio=kwargs.get("best_candidate_shrink_ratio", 0.4),
+        task_nudge_retry_limit=kwargs.get("task_nudge_retry_limit", 2),
+        enable_checkpoints=False,
+        enable_evidence_log=False,
+    )
+
+    action = SimpleNamespace()
+    action._run_cfg = run_cfg
+
+    # Expose attributes tests read directly
+    action.max_iterations = run_cfg.max_iterations
+    action.model_action_type = run_cfg.model_action_type
+    action.stream_thinking = run_cfg.stream_thinking
+    action.stream_reasoning = run_cfg.stream_reasoning
+    action.relay_thoughts_to_channels = run_cfg.relay_thoughts_to_channels
+    action.commit_intermediate_messages = run_cfg.commit_intermediate_messages
+    action.max_full_tool_results = run_cfg.max_full_tool_results
+    action.max_tool_result_tokens = run_cfg.max_tool_result_tokens
+    action.tool_result_truncation_chars = run_cfg.tool_result_truncation_chars
+    action.history_limit = run_cfg.history_limit
+
+    # Placeholder for tests that set action._call_model = AsyncMock(...)
+    action._call_model = None
+    # Placeholder for thought / user publish mocks
+    action.publish_thought = None
+    action.publish = None
+
+    # Wire SkillAction helpers
+    action._build_reasoning_model_config = lambda: SkillAction._build_reasoning_cfg(
+        run_cfg
+    )
     action._maybe_truncate_messages = lambda msgs: LoopContext(
         LoopContextConfig(
-            max_full_tool_results=action.max_full_tool_results,
-            max_tool_result_tokens=action.max_tool_result_tokens,
-            tool_result_truncation_chars=action.tool_result_truncation_chars,
-            history_limit=action.history_limit,
+            max_full_tool_results=run_cfg.max_full_tool_results,
+            max_tool_result_tokens=run_cfg.max_tool_result_tokens,
+            tool_result_truncation_chars=run_cfg.tool_result_truncation_chars,
+            history_limit=run_cfg.history_limit,
         )
     ).maybe_truncate(msgs)
     action._build_assistant_content = lambda mr: LoopContext.build_assistant_content(mr)
     action._convert_messages_for_provider = (
         lambda messages, provider: LoopContext.convert_for_provider(messages, provider)
     )
-    action._force_termination = lambda messages, tools, visitor, model_kwargs: SkillInteractAction._force_termination(
-        action, messages, tools, visitor, model_kwargs
-    )
-    action._run_agentic_loop = lambda visitor, tool_executor, task_handle, discovered_skills=None: SkillInteractAction._run_agentic_loop(
-        action, visitor, tool_executor, task_handle, discovered_skills
-    )
     action._parse_tool_arguments = lambda args: LoopContext.parse_tool_arguments(args)
     action._tool_call_signature = lambda tool_calls: StuckDetector._build_signature(
         tool_calls
     )
-    action._final_review_pass = lambda messages, candidate_response, visitor, model_kwargs: SkillInteractAction._final_review_pass(
-        action, messages, candidate_response, visitor, model_kwargs
-    )
     action._search_skills = lambda discovered_skills, query, top_k=5: SkillCatalog(
         discovered_skills
     ).search(query, top_k=top_k)
-    action._should_retry_for_skill_first = lambda discovered_skills, tool_executor, utterance, retries: SkillInteractAction._should_retry_for_skill_first(
-        action, discovered_skills, tool_executor, utterance, retries
+    action._should_prefer_best_over_candidate = (
+        lambda c, b: SkillAction()._should_prefer_best_over_candidate(run_cfg, c, b)
     )
+    action._is_degenerate_response = lambda r, **k: SkillAction._is_degenerate_response(
+        r, **k
+    )
+    action._should_retry_for_skill_first = lambda ds, te, u, r, cr=None, tools_ever_called=None, nontrivial_tools_called=None: SkillAction()._should_retry_for_skill_first(
+        cfg=run_cfg,
+        discovered_skills=ds,
+        tool_executor=te,
+        utterance=u,
+        retries=r,
+        candidate_response=cr,
+        tools_ever_called=tools_ever_called,
+        nontrivial_tools_called=nontrivial_tools_called,
+    )
+    action._should_nudge_to_execute = lambda *, candidate_response, tool_executor, retries: SkillAction()._should_nudge_to_execute(
+        cfg=run_cfg,
+        candidate_response=candidate_response,
+        tool_executor=tool_executor,
+        retries=retries,
+    )
+    action._should_nudge_for_followthrough = lambda *, utterance, tool_executor, retries, nontrivial_tools_called: SkillAction()._should_nudge_for_followthrough(
+        cfg=run_cfg,
+        utterance=utterance,
+        tool_executor=tool_executor,
+        retries=retries,
+        nontrivial_tools_called=nontrivial_tools_called,
+    )
+
+    async def _run_agentic_loop(
+        visitor, tool_executor, task_handle, discovered_skills=None
+    ):
+        """Bridge to SkillAction._run_loop with publish routing."""
+        sa = SkillAction()
+        # If test set action._call_model, bridge it to SkillAction's _call_model signature
+        if callable(action._call_model):
+            bridged = action._call_model
+            sa._call_model = bridged  # type: ignore[method-assign]
+
+        async def _publish_cb(
+            content,
+            *,
+            category,
+            thought_type,
+            segment_id,
+            streaming_complete,
+            relay_to_adapters,
+        ):
+            if category == "thought" and action.publish_thought:
+                await action.publish_thought(
+                    visitor=visitor,
+                    content=content,
+                    thought_type=thought_type or "reasoning",
+                    segment_id=segment_id,
+                    streaming_complete=streaming_complete,
+                    stream=True,
+                    relay_to_adapters=relay_to_adapters,
+                )
+            elif (
+                category == "user"
+                and action.publish
+                and run_cfg.commit_intermediate_messages
+            ):
+                await action.publish(
+                    visitor=visitor,
+                    content=content,
+                    streaming_complete=streaming_complete,
+                )
+
+        ctx = SkillRunContext(
+            utterance=getattr(visitor, "utterance", "") or "",
+            conversation=getattr(visitor, "conversation", None),
+            model_action=MagicMock(),
+            task_service=None,
+            config=run_cfg,
+            publish_callback=_publish_cb,
+        )
+        result = await sa._run_loop(
+            ctx=ctx,
+            tool_executor=tool_executor,
+            task_handle=task_handle,
+            discovered_skills=discovered_skills or {},
+            system_prompt="",
+            skill_index_section=None,
+        )
+        return (
+            result.final_response,
+            result.termination_reason,
+            result.stuck_corrections,
+            result.result_attributions,
+        )
+
+    action._run_agentic_loop = _run_agentic_loop
 
     async def _healthcheck():
         return await SkillInteractAction.healthcheck(action)
 
     action.healthcheck = _healthcheck
+    action.get_class_name = MagicMock(return_value="SkillInteractAction")
 
     return action

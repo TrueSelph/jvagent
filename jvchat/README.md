@@ -9,6 +9,7 @@ React-based chat interface for interacting with jvagent agents. A ChatGPT-like e
 - 💬 **Chat Interface**: ChatGPT-like conversation experience
 - 📱 **Responsive Design**: Works on desktop and mobile devices
 - 🔄 **Real-time Streaming**: SSE-based streaming responses
+- 🧠 **Thinking Panel**: Reasoning/tool thoughts grouped per interaction in a collapsible panel
 - 💾 **Conversation Management**: Switch between multiple conversations
 - 🎨 **Modern UI**: Clean, intuitive interface built with React and Tailwind CSS
 
@@ -88,6 +89,12 @@ npm run preview
 3. **Select Agent**: Choose an agent from the list
 4. **Start Chatting**: Type your first message to create a new conversation
 5. **Manage Conversations**: Use the sidebar to switch between conversations or create new ones
+
+### Thinking stream behavior
+
+- Thought messages (`category: "thought"`) are persisted in the same `messages` array as user/assistant messages.
+- The transcript renders one collapsible **Thoughts** panel per interaction (`interactionId`), with one compact line per thought entry.
+- Panels auto-expand while thought chunks are streaming, then can be reopened later from persisted history.
 
 ## Project Structure
 

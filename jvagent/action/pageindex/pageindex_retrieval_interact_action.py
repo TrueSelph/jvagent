@@ -19,7 +19,6 @@ from jvspatial.exceptions import DatabaseError
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.model.context import get_interaction, set_interaction
-from jvagent.core.public_url import get_public_base_url
 from jvagent.action.pageindex.config import (
     initialize_pageindex_database,
     set_pageindex_candidate_k,
@@ -41,6 +40,7 @@ from jvagent.action.pageindex.prompts import (
     DIRECTIVE_TEMPLATE_STR,
 )
 from jvagent.action.pageindex.retrieval import search_documents
+from jvagent.core.public_url import get_public_base_url
 
 from . import llm_bridge
 from .core import utils as pageindex_core_utils
@@ -466,7 +466,9 @@ class PageIndexRetrievalInteractAction(InteractAction):
 
         model = payload.get("model")
         if model is None or (isinstance(model, str) and not str(model).strip()):
-            model = self.model or env("PAGEINDEX_TREE_SEARCH_MODEL", default="gpt-4o-mini")
+            model = self.model or env(
+                "PAGEINDEX_TREE_SEARCH_MODEL", default="gpt-4o-mini"
+            )
         else:
             model = str(model).strip()
 

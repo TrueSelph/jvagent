@@ -308,7 +308,7 @@ export function PageIndexDocumentsModal({
   }>>([])
   const [queueLoading, setQueueLoading] = useState(false)
   const [emergencyMode, setEmergencyMode] = useState(false)
-  const [uploadStatus, setUploadStatus] = useState<{
+  const [, setUploadStatus] = useState<{
     status: 'queued' | 'already_queued'
     job_id: string
     queue_position: { overall: number, per_agent: number }
@@ -2408,7 +2408,7 @@ export function PageIndexDocumentsModal({
               {uploadError && (
                 <p className="text-sm text-red-600 dark:text-red-400">{uploadError}</p>
               )}
-              
+
               {/* Emergency mode checkbox */}
               <label className="flex items-center gap-2 cursor-pointer">
                 <input

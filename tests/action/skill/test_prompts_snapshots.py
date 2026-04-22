@@ -5,11 +5,31 @@ from jvagent.action.skill import prompts as skill_prompts
 
 
 def test_skill_prompts_version_and_key_phrases():
-    assert skill_prompts.SKILL_PROMPTS_VERSION == 2
+    assert skill_prompts.SKILL_PROMPTS_VERSION == 5
     assert "You are an intelligent skills-based agent with access to tools" in (
         skill_prompts.SKILL_AGENT_SYSTEM_PROMPT
     )
+    # claw-code-style section headers adopted in Fix 1
+    assert "# Doing tasks" in skill_prompts.SKILL_AGENT_SYSTEM_PROMPT
+    assert "# Task planning" in skill_prompts.SKILL_AGENT_SYSTEM_PROMPT
+    assert "# Executing actions with care" in skill_prompts.SKILL_AGENT_SYSTEM_PROMPT
+    # Faithful-reporting rule (direct adoption from claw-code)
+    assert "Report outcomes faithfully" in skill_prompts.SKILL_AGENT_SYSTEM_PROMPT
+    assert "`task_tracker`" in skill_prompts.SKILL_AGENT_SYSTEM_PROMPT
+    # Compaction resume instruction is present and has a detectable sentinel
+    assert (
+        skill_prompts.COMPACT_DIRECT_RESUME_SENTINEL
+        in skill_prompts.COMPACT_DIRECT_RESUME_INSTRUCTION
+    )
+    assert "Resume directly" in skill_prompts.COMPACT_DIRECT_RESUME_INSTRUCTION
+    assert "pending steps" in skill_prompts.PENDING_STEPS_NUDGE_PROMPT
+    assert '`action="complete"`' in skill_prompts.PENDING_STEPS_NUDGE_PROMPT
     assert "maximum number of steps allowed" in skill_prompts.FORCED_TERMINATION_PROMPT
+    assert "{opener}" in skill_prompts.TOOL_CALL_ANNOUNCE_TEMPLATE
+    assert "{intent}" in skill_prompts.TOOL_CALL_ANNOUNCE_TEMPLATE
+    assert skill_prompts.TOOL_CALL_ANNOUNCE_TEMPLATE.strip().endswith(".")
+    assert "{result_line}" in skill_prompts.TOOL_RESULT_ANNOUNCE_TEMPLATE
+    assert "{error_line}" in skill_prompts.ERROR_ANNOUNCE_TEMPLATE
 
 
 def test_mcp_prompts_version_and_shape():

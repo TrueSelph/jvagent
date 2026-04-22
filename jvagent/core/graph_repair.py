@@ -57,7 +57,33 @@ async def repair_agent_graph(
         return _build_http_response(state, _build_message, PH_DONE, started_at)
 
     async with RepairState._lock:
-        repair_state = await RepairState.current(app)
+        # Collect ALL RepairState nodes — previous crashed runs may have left
+        # more than one attached to App.
+        all_states = await RepairState.find_all(app)
+
+        if len(all_states) > 1:
+            # Evict all but the most recently started node.
+            all_states.sort(
+                key=lambda s: s.started_at or datetime.min.replace(tzinfo=timezone.utc)
+            )
+            for stale in all_states[:-1]:
+                logger.warning(
+                    "repair_agent_graph: removing stale RepairState %s", stale.id
+                )
+                try:
+                    await stale.finish()
+                except Exception:
+                    logger.warning(
+                        "repair_agent_graph: could not remove stale RepairState %s",
+                        stale.id,
+                        exc_info=True,
+                    )
+            repair_state: Optional[RepairState] = all_states[-1]
+        elif all_states:
+            repair_state = all_states[0]
+        else:
+            repair_state = None
+
         if repair_state and (
             repair_state.dry_run != dry_run
             or (
@@ -92,17 +118,33 @@ async def repair_agent_graph(
             )
         started_at = repair_state.started_at or started_at
 
-        state = await run_repair_session(state, limits)
-        payload = state_to_dict(state)
+        try:
+            state = await run_repair_session(state, limits)
+            payload = state_to_dict(state)
 
-        if state.get("phase") == PH_DONE:
-            await repair_state.finish()
-        else:
-            await repair_state.save_progress(
-                phase=payload["phase"],
-                cursor=payload["cursor"],
-                result=payload["result"],
+            if state.get("phase") == PH_DONE:
+                await repair_state.finish()
+            else:
+                await repair_state.save_progress(
+                    phase=payload["phase"],
+                    cursor=payload["cursor"],
+                    result=payload["result"],
+                )
+        except Exception:
+            logger.error(
+                "repair_agent_graph: session raised unexpectedly; cleaning up RepairState %s",
+                repair_state.id,
+                exc_info=True,
             )
+            try:
+                await repair_state.finish()
+            except Exception:
+                logger.warning(
+                    "repair_agent_graph: could not clean up RepairState %s after session error",
+                    repair_state.id,
+                    exc_info=True,
+                )
+            raise
 
     return _build_http_response(state, _build_message, PH_DONE, started_at)
 

@@ -154,7 +154,7 @@ def parse_skill_bundle(
         scope_hint = description
     tool_files = [
         str(path)
-        for path in sorted(skill_dir.glob("*.py"))
+        for path in sorted(skill_dir.rglob("*.py"))
         if path.is_file() and not path.name.startswith("_")
     ]
 

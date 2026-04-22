@@ -1,216 +1,147 @@
-# Skills Agent Configuration
-# A skill-driven agent with agentic loop, tool execution, and MCP integration.
-# Demonstrates jvagent's SkillInteractAction with SKILL.md bundle selectors.
-#
-# Requirements:
-#   - OPENAI_API_KEY set in .env
-#   - MCP servers running (filesystem, web search) or adjust tool_servers
-#
-# The agent uses a skill-driven think-act-observe loop:
-#   1. InteractRouter classifies the user's intent
-#   2. SkillInteractAction activates for multi-step/tool-use tasks
-#   3. The LLM reasons, calls tools via MCP, observes results, and iterates
-#   4. SKILL.md bundles provide reusable capability instructions and optional tools
-#   5. PersonaAction handles simple conversational responses
-#   6. ConverseInteractAction handles smalltalk fallback
-
 agent: jvagent/skills_agent
-
 version: 1.0.0
 author: V75 Inc.
-
 jvagent: ~0.0.1
-
 context:
   alias: Skills Agent
-  description: >-
-    A skill-driven agent with agentic loop capabilities, tool execution
-    via MCP, skill loading, and extended thinking support. Excels at multi-step
-    tasks like code review, research, and analysis.
+  description: A skill-driven agent with agentic loop capabilities, tool execution via MCP, skill loading,
+    and extended thinking support. Excels at multi-step tasks like code review, research, and analysis.
   enabled: true
-
 actions:
-  # ──────────────────────────────────────────────
-  # Routing
-  # ──────────────────────────────────────────────
-
-  - action: jvagent/interact_router
-    context:
-      enabled: false
-      description: "Intent-based routing: dispatches multi-step tasks to SkillInteractAction"
-      model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4.1-mini"
-      history_limit: 3
-      enable_routing_cache: true
-
-  # ──────────────────────────────────────────────
-  # Model Providers
-  # ──────────────────────────────────────────────
-
-  # OpenAI LLM — primary model for agentic loop, routing, and conversational responses
-  - action: jvagent/openai_lm
-    context:
+- action: jvagent/interact_router
+  context:
+    enabled: false
+    description: 'Intent-based routing: dispatches multi-step tasks to SkillInteractAction'
+    model_action_type: OpenAILanguageModelAction
+    model: gpt-4.1-mini
+    history_limit: 3
+    enable_routing_cache: true
+- action: jvagent/openai_lm
+  context:
+    enabled: true
+    description: Default OpenAI LM for this agent; SkillInteractAction overrides `model` / reasoning in
+      its own context. Align defaults here with the loop model for predictable behavior when resolving
+      the same action type.
+    api_key: ${OPENAI_API_KEY}
+    api_endpoint: https://api.openai.com/v1
+    model: gpt-4.1
+    max_tokens: 32768
+    reasoning_effort: medium
+    timeout: 180
+- action: jvagent/ollama_lm
+  context:
+    enabled: true
+    description: Optional Ollama endpoint — switch skill_interact_action to OllamaLanguageModelAction
+      and set model to use this provider instead of OpenAI.
+    api_endpoint: https://ollama.com
+    api_key: ${OLLAMA_API_KEY}
+    model: kimi-k2.6:cloud
+    temperature: 0.2
+    max_tokens: 16384
+    timeout: 120
+- action: jvagent/mcp
+  context:
+    enabled: true
+    description: MCP gateway for filesystem and optional web search servers
+    model_action_type: OpenAILanguageModelAction
+    model: gpt-4o-mini
+    # Sandboxed filesystem: allowed root = JVSPATIAL_FILES_ROOT_PATH/<agentId>/<userId>/
+    # (agent graph id + user id; set MCP_FILESYSTEM_SANDBOX_MODE=false to disable). S3: jvspatial_fs_server.
+    # Default user for list_tools/fulfill: MCP_FILESYSTEM_SANDBOX_DEFAULT_USER (default anonymous).
+    sandbox_mode: true
+    sandbox_user_scoped: true
+    servers:
+    - name: filesystem
       enabled: true
-      description: "OpenAI GPT-4.1 model for agentic reasoning, routing, and responses"
-      api_key: ${OPENAI_API_KEY}
-      api_endpoint: "https://api.openai.com/v1"
-      model: "gpt-4.1"
-      temperature: 0.2
-      max_tokens: 32768
-      timeout: 120
-
-  # ──────────────────────────────────────────────
-  # MCP Servers (Tool Providers)
-  # ──────────────────────────────────────────────
-
-  # Filesystem MCP — read, write, search files
-  # Requires: npx (Node.js) installed
-  - action: jvagent/mcp
-    context:
-      enabled: true
-      description: "MCP gateway for filesystem and optional web search servers"
-      model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4o-mini"
-      servers:
-        - name: "filesystem"
-          enabled: true
-          transport: "stdio"
-          command: "npx"
-          args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
-          mcp_connect_timeout: 15
-          mcp_call_timeout: 60
-          tools: "-all"
-          denied_tools: []
-        # - name: "websearch"
-        #   enabled: true
-        #   transport: "streamable_http"
-        #   url: "http://localhost:3001/mcp"
-        #   mcp_connect_timeout: 10
-        #   mcp_call_timeout: 30
-        #   tools: "-all"
-        #   denied_tools: []
-
-  - action: jvagent/serper_web_search
-    context:
-      enabled: true
-      description: "Serper Google Search provider"
-      engine: google_light
-      hl: en
-      max_results: 10
-
-  - action: jvagent/pageindex_action
-    context:
-      enabled: true
-      description: "PageIndex vectorless RAG — search, ingest, and manage documents"
-      strategy: tree_search
-      limit: 10
-      node_summary: true
-
-  # Web Search MCP can be enabled by uncommenting the "websearch" servers entry above.
-
-  # ──────────────────────────────────────────────
-  # Skills Agent (Core Agentic Loop)
-  # ──────────────────────────────────────────────
-
-  - action: jvagent/skill_interact_action
-    context:
-      enabled: true
-      description: >-
-        Agentic loop for multi-step tasks: thinks, calls tools, observes results,
-        and iterates until the task is complete. Uses OpenAI GPT-4.1 with
-        native function calling for tool dispatch.
-      weight: -60  # After InteractRouter (-100), before Persona (0)
-
-      # Routing anchors — InteractRouter uses these to decide when to activate
-      anchors:
-        - "User asks to review, analyze, audit, or fix code"
-        - "User requests a multi-step task that requires tool use"
-        - "User wants the agent to search files and synthesize information"
-        - "User asks the agent to read files and provide feedback"
-        - "User requests debugging or troubleshooting with file inspection"
-        - "User wants to take a quiz"
-
-      # Model configuration (OpenAI for agentic loop)
-      model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4.1"
-      model_temperature: 0.2
-      model_max_tokens: 32768
-
-      # Agentic loop limits
-      max_iterations: 25
-      max_duration_seconds: 300
-
-      # Response delivery mode:
-      #   "publish" (default) — direct bus delivery, fast
-      #   "respond" — route through PersonaAction for persona-enriched responses
-      response_mode: respond
-
-      # Extended thinking (Anthropic only; 0 = disabled for OpenAI)
-      thinking_budget_tokens: 0
-
-      # Skill bundle selector.
-      # Built-in catalog lives at jvagent/skills/* and app-local bundles can be
-      # added under agents/<ns>/<id>/skills/*/SKILL.md.
-      skills:
-        - "code_review"
-        - "answer"
-        - "pageindex_search"
-        - "pageindex_docs"
-        - "web_search"
-        - "quiz_maker"
-      skills_source: both
-      denied_skills: []
-
-      # Reliability / grounding controls (new defaults, set explicitly here)
-      strict_grounding: true
-      plan_first: true
-      enable_skill_helper_tools: true
-      max_skill_activations: 10
-      stuck_detection_window: 3
-      max_midcourse_corrections: 2
-      final_review: false
-
-      # MCP servers to expose as tools in the agentic loop
-      tool_servers:
-        - "filesystem"
-
-      # Streaming behavior
-      stream_tool_progress: true
-
-      # Context management
-      max_full_tool_results: 10
-
-  # ──────────────────────────────────────────────
-  # Persona (Conversational Responses)
-  # ──────────────────────────────────────────────
-
-  - action: jvagent/persona
-    context:
-      enabled: true
-      description: "Persona for simple conversational responses (non-tool-use queries)"
-      persona_name: "Skills Assistant"
-      persona_description: |
-        You are a helpful, skillful assistant. For simple questions, respond
-        directly. For complex tasks that require file operations, web searches,
-        or multi-step reasoning, inform the user that you can perform those
-        tasks and describe what you would do.
-      persona_capabilities:
-        - "Answer general knowledge questions"
-        - "Explain concepts clearly and concisely"
-        - "Perform multi-step code reviews with tool use"
-        - "Search and analyze files in the workspace"
-        - "Research topics with web search (when configured)"
-      model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4.1-mini"
-      model_temperature: 0.2
-      model_max_tokens: 32768
-
-  # ──────────────────────────────────────────────
-  # Fallback
-  # ──────────────────────────────────────────────
-
-  - action: jvagent/converse_interact_action
-    context:
-      enabled: false
-      description: "Smalltalk fallback for casual conversation"
-      weight: 100
+      transport: stdio
+      command: npx
+      args:
+      - -y
+      - '@modelcontextprotocol/server-filesystem'
+      mcp_connect_timeout: 15
+      mcp_call_timeout: 60
+      tools: -all
+      denied_tools: []
+- action: jvagent/serper_web_search
+  context:
+    enabled: true
+    description: Serper Google Search provider
+    engine: google_light
+    hl: en
+    max_results: 10
+- action: jvagent/pageindex_action
+  context:
+    enabled: true
+    description: PageIndex vectorless RAG — search, ingest, and manage documents
+    strategy: tree_search
+    limit: 10
+    node_summary: true
+- action: jvagent/skill_interact_action
+  context:
+    enabled: true
+    description: 'Agentic loop for multi-step tasks: thinks, calls tools, observes results, and iterates
+      until the task is complete. Uses OpenAI o4-mini; OpenAILanguageModelAction maps ReasoningModelConfig
+      (below) to native Chat Completions fields. Swap model_action_type / model to use Anthropic, OpenRouter,
+      or Ollama — the same generic keys apply; each provider translates them (see docs/language-models.md).'
+    weight: -60
+    anchors:
+    - User asks to review, analyze, audit, or fix code
+    - User requests a multi-step task that requires tool use
+    - User wants the agent to search files and synthesize information
+    - User asks the agent to read files and provide feedback
+    - User requests debugging or troubleshooting with file inspection
+    model_action_type: OpenAILanguageModelAction
+    model: gpt-4.1
+    # model_action_type: OllamaLanguageModelAction
+    # model: kimi-k2.6:cloud
+    reasoning_enabled: false
+    model_max_tokens: 32768
+    stream_thinking: true
+    stream_reasoning: true
+    max_iterations: 25
+    max_duration_seconds: 300
+    response_mode: respond
+    skills:
+    - code_review
+    - answer
+    - pageindex_search
+    - pageindex_docs
+    - web_search
+    - skill_hub
+    skills_source: both
+    denied_skills: []
+    strict_grounding: true
+    plan_first: true
+    enable_skill_helper_tools: true
+    max_skill_activations: 10
+    stuck_detection_window: 3
+    max_midcourse_corrections: 2
+    task_nudge_retry_limit: 4
+    final_review: true
+    tool_servers:
+    - filesystem
+    stream_tool_progress: true
+    max_full_tool_results: 10
+- action: jvagent/persona
+  context:
+    enabled: true
+    description: Persona for simple conversational responses (non-tool-use queries)
+    persona_name: Skills Assistant
+    persona_description: You are a helpful, skillful assistant. For simple questions, respond directly.
+      For complex tasks that require file operations, web searches, or multi-step reasoning, inform the
+      user that you can perform those tasks and describe what you would do.
+    persona_capabilities:
+    - Answer general knowledge questions
+    - Explain concepts clearly and concisely
+    - Perform multi-step code reviews with tool use
+    - Search and analyze files in the workspace
+    - Research topics with web search (when configured)
+    model_action_type: OpenAILanguageModelAction
+    model: gpt-4.1-mini
+    model_temperature: 0.2
+    model_max_tokens: 32768
+- action: jvagent/converse_interact_action
+  context:
+    enabled: false
+    description: Smalltalk fallback for casual conversation
+    weight: 100

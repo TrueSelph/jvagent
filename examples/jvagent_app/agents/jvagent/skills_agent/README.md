@@ -55,8 +55,11 @@ Create a `.env` file in your app root:
 # Required for OpenAI (routing + conversational responses)
 OPENAI_API_KEY=sk-...
 
-# Optional: filesystem MCP root (defaults to /workspace)
-MCP_FILESYSTEM_ROOT=/path/to/your/project
+# MCP filesystem sandbox: <JVSPATIAL_FILES_ROOT_PATH>/<agentId>/<userId>/
+# MCP_FILESYSTEM_SANDBOX_MODE=true
+# MCP_FILESYSTEM_SANDBOX_ROOT=
+# MCP_FILESYSTEM_SANDBOX_USER_SCOPED=true
+# MCP_FILESYSTEM_SANDBOX_DEFAULT_USER=anonymous
 ```
 
 ### 2. Register the Agent

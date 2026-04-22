@@ -1,78 +1,65 @@
-"""SkillInteractAction: agentic loop implementing think-act-observe.
+"""SkillInteractAction: interact-subsystem facade over SkillAction.
 
-An InteractAction that runs the think-act-observe loop, enabling long-running
-agents that intelligently execute skills, track tasks, and run tools/MCPs
-as configured. The LLM decides which tools to call, ToolExecutor dispatches
-them, and results feed back into the conversation for the next iteration.
+This action participates in the InteractWalker pipeline and adapts all
+interact-specific constructs (InteractWalker, response_bus, interaction,
+session_id, PersonaAction) into a ``SkillRunContext``, then delegates the
+full agentic loop to ``SkillAction.run_to_completion()``.
+
+All loop logic, tool management, skill discovery, checkpointing, evidence
+logging, task tracking, and grounding verification now live in
+``SkillAction``.  This module is intentionally thin.
+
+Direct programmatic usage (non-interact)
+----------------------------------------
+Other Actions that want to run a reasoning-based, long-running skill task
+without going through the interact subsystem should instantiate
+``SkillAction`` directly::
+
+    from jvagent.action.skill.skill_action import SkillAction
+    from jvagent.action.skill.skill_action_contracts import SkillRunContext, SkillRunConfig
+
+    ctx = SkillRunContext(
+        utterance=my_task,
+        conversation=conversation,
+        model_action=await self.get_model_action(required=True),
+        task_service=TaskService(conversation),
+        config=SkillRunConfig(skills="-all"),
+    )
+    result = await SkillAction().run_to_completion(ctx)
 """
 
-import json
 import logging
-import time
-from datetime import datetime, timezone
-from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.skill.action_resolver import ActionResolver
-from jvagent.action.skill.loop_context import LoopContext, LoopContextConfig
-from jvagent.action.skill.prompts import (
-    ERROR_ANNOUNCE_TEMPLATE,
-    FINAL_REVIEW_PROMPT,
-    FORCED_TERMINATION_PROMPT,
-    GROUNDING_INSTRUCTION_TEMPLATE,
-    LIST_SKILLS_TOOL_DESCRIPTION,
-    READ_SKILL_RESULT_TEMPLATE,
-    SKILL_AGENT_SYSTEM_PROMPT,
-    SKILL_FIRST_RETRY_PROMPT,
-    SKILL_SEARCH_TOOL_DESCRIPTION,
-    TOOL_CALL_ANNOUNCE_TEMPLATE,
-    TOOL_RESULT_ANNOUNCE_TEMPLATE,
-)
+from jvagent.action.skill.skill_action import SkillAction
+from jvagent.action.skill.skill_action_contracts import SkillRunConfig, SkillRunContext
 from jvagent.action.skill.skill_catalog import SkillCatalog
-from jvagent.action.skill.stuck_detector import StuckDetector, StuckDetectorConfig
-from jvagent.action.skill.tool_executor import ToolExecutor
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
-    from jvagent.memory.services.task_service import TaskHandle
 
 logger = logging.getLogger(__name__)
 
-# How many full tool results to keep before summarizing older ones
-_DEFAULT_MAX_FULL_TOOL_RESULTS = 10
-
-
-class LoopState(str, Enum):
-    MODEL = "MODEL"
-    TOOLS = "TOOLS"
-    TERMINATE = "TERMINATE"
-
-
-class TerminationReason(str, Enum):
-    COMPLETED = "completed"
-    ITER_CAP = "max_iterations"
-    TIME_CAP = "timed_out"
-    ERROR = "failed"
-
 
 class SkillInteractAction(InteractAction):
-    """InteractAction implementing a think-act-observe agentic loop.
+    """Interact-subsystem adapter that delegates to ``SkillAction``.
 
     When activated by the InteractRouter, this action:
-    1. Resolves skill bundles from built-in/app-local catalogs
-    2. Initializes a ToolExecutor with tools from configured MCP servers
-    3. Runs the agentic loop: LLM thinks → calls tools → observes results → repeats
-    4. Tracks multi-step progress via TaskService on Conversation.active_tasks
-    5. Streams intermediate progress as transient adhoc messages
-    6. Publishes the final response when the loop completes
+    1. Translates the ``InteractWalker`` into a ``SkillRunContext``.
+    2. Calls ``SkillAction.run_to_completion(ctx)``.
+    3. Delivers the result via the normal interact publish/respond pipeline.
+
+    All loop parameters are still declared as ``attribute()`` fields so they
+    can be configured from YAML/graph as before.
 
     Attributes:
         max_iterations: Hard cap on think-act-observe cycles.
         max_duration_seconds: Wall-clock timeout for the agentic loop.
-        thinking_budget_tokens: Anthropic extended thinking budget (0 = disabled).
+        reasoning_budget_tokens: Generic reasoning budget tokens.
         model_action_type: LanguageModelAction entity type.
         model: Model identifier.
         model_temperature: Temperature for LLM generation.
@@ -80,9 +67,11 @@ class SkillInteractAction(InteractAction):
         tool_servers: Names of MCPAction instances providing tools.
         allow_local_tools: Whether ToolExecutor can register local Python tools.
         stream_thinking: Stream extended thinking content as adhoc.
+        stream_reasoning: Stream reasoning deltas for non-Anthropic providers.
+        reasoning_extra: Optional provider-specific config escape hatch.
         stream_tool_progress: Stream tool call status as adhoc.
         max_full_tool_results: Keep last N tool results in full; summarize older.
-        local_tools_path: Optional absolute path to a directory containing tool modules.
+        local_tools_path: Optional absolute path to a directory of tool modules.
     """
 
     weight: int = attribute(
@@ -94,100 +83,110 @@ class SkillInteractAction(InteractAction):
         description="Action description",
     )
     max_iterations: int = attribute(
-        default=25,
-        description="Hard cap on think-act-observe cycles",
+        default=25, description="Hard cap on think-act-observe cycles"
     )
     max_duration_seconds: float = attribute(
-        default=300.0,
-        description="Wall-clock timeout for the agentic loop (seconds)",
+        default=300.0, description="Wall-clock timeout for the agentic loop (seconds)"
     )
-    thinking_budget_tokens: int = attribute(
+    reasoning_budget_tokens: int = attribute(
         default=0,
-        description="Anthropic extended thinking budget (0 = disabled)",
+        description="Generic reasoning budget_tokens (0 disables budgeted reasoning).",
     )
     model_action_type: str = attribute(
         default="AnthropicLanguageModelAction",
         description="LanguageModelAction entity type",
     )
     model: str = attribute(
-        default="claude-sonnet-4-20250514",
-        description="Model identifier",
+        default="claude-sonnet-4-20250514", description="Model identifier"
     )
     model_temperature: float = attribute(
-        default=0.3,
-        description="Temperature for LLM generation",
+        default=0.3, description="Temperature for LLM generation"
     )
     model_max_tokens: int = attribute(
-        default=8192,
-        description="Max tokens for LLM generation",
+        default=8192, description="Max tokens for LLM generation"
     )
     skills: Any = attribute(
         default=None,
-        description="Skill selector: '-all' | list of names/globs | None (no skill bundles exposed)",
+        description="Skill selector: '-all' | list of names/globs | None",
     )
     denied_skills: List[str] = attribute(
-        default_factory=list,
-        description="Names/globs to exclude from the resolved skill bundle set",
+        default_factory=list, description="Names/globs to exclude from skill bundles"
     )
     skills_source: str = attribute(
-        default="both",
-        description="Skill bundle source: 'builtin' | 'app' | 'both' | 'none'",
+        default="both", description="Skill source: 'builtin' | 'app' | 'both' | 'none'"
     )
     tool_servers: List[str] = attribute(
-        default_factory=list,
-        description="Names of MCPAction instances providing tools",
+        default_factory=list, description="Names of MCPAction instances providing tools"
     )
     allow_local_tools: bool = attribute(
         default=False,
         description="Whether ToolExecutor can register local Python tools",
     )
     stream_thinking: bool = attribute(
+        default=True, description="Stream extended thinking content as adhoc"
+    )
+    stream_reasoning: bool = attribute(
         default=True,
-        description="Stream extended thinking content as adhoc",
+        description="Stream reasoning deltas from non-Anthropic providers as thought messages.",
+    )
+    mirror_assistant_stream_as_thoughts: Optional[bool] = attribute(
+        default=None,
+        description="Provider-agnostic toggle to mirror assistant stream into thought stream.",
+    )
+    reasoning_enabled: Optional[bool] = attribute(
+        default=None, description="Generic reasoning enable flag."
+    )
+    reasoning_extra: Optional[Dict[str, Any]] = attribute(
+        default=None, description="Optional provider-native reasoning override dict."
+    )
+    reasoning_effort: Optional[str] = attribute(
+        default=None,
+        description="Generic reasoning effort: 'minimal', 'low', 'medium', 'high'.",
+    )
+    # Backward-compatibility aliases
+    thinking_budget_tokens: int = attribute(
+        default=0, description="[Deprecated] Use reasoning_budget_tokens."
+    )
+    reasoning: Optional[Dict[str, Any]] = attribute(
+        default=None, description="[Deprecated] Use reasoning_extra."
+    )
+    mirror_openai_assistant_stream_to_thoughts: Optional[bool] = attribute(
+        default=None,
+        description="[Deprecated] Use mirror_assistant_stream_as_thoughts.",
     )
     stream_tool_progress: bool = attribute(
-        default=True,
-        description="Stream tool call status as adhoc",
+        default=True, description="Stream tool call status as adhoc"
     )
     commit_intermediate_messages: bool = attribute(
         default=True,
-        description=(
-            "If True, any text the model emits alongside tool calls (mid-loop "
-            "user-facing commentary) is published as a user-category message and "
-            "appended to interaction.response so the conversation history reflects "
-            "what the assistant said to the user."
-        ),
+        description="Publish mid-loop assistant text as user-category messages.",
     )
     relay_thoughts_to_channels: bool = attribute(
         default=False,
-        description="If True, thought messages may be relayed to channel adapters that opt in.",
+        description="If True, thought messages may be relayed to channel adapters.",
     )
     max_full_tool_results: int = attribute(
-        default=_DEFAULT_MAX_FULL_TOOL_RESULTS,
-        description="Keep last N tool results in full; summarize older",
+        default=10, description="Keep last N tool results in full; summarize older"
     )
     max_tool_result_tokens: int = attribute(
         default=400,
-        description="Max estimated tokens retained for an individual tool result message",
+        description="Max estimated tokens for an individual tool result message",
     )
     tool_result_truncation_chars: int = attribute(
         default=500,
-        description="Max characters streamed for individual tool-result thought updates",
+        description="Max chars streamed for individual tool-result thought updates",
     )
     history_limit: int = attribute(
         default=5,
         description="How many prior interactions to include in initial context",
     )
     call_timeout_seconds: float = attribute(
-        default=60.0,
-        description="Timeout in seconds for each tool call",
+        default=60.0, description="Timeout in seconds for each tool call"
     )
     response_mode: str = attribute(
         default="publish",
         description=(
-            "How to deliver the final response: 'publish' (direct bus delivery, default) "
-            "or 'respond' (route through PersonaAction for persona-enriched responses "
-            "with parameters, directives, and persona attributes)"
+            "How to deliver the final response: 'publish' (direct) or 'respond' (via PersonaAction)"
         ),
     )
     task_sync_every_steps: int = attribute(
@@ -196,54 +195,97 @@ class SkillInteractAction(InteractAction):
     )
     local_tools_path: Optional[str] = attribute(
         default=None,
-        description="Optional absolute path to a folder containing local Python tools (.py files)",
+        description="Optional absolute path to a folder containing local tool .py files",
     )
     strict_grounding: bool = attribute(
-        default=True,
-        description="If True, enforce grounding-focused prompting and skill scope constraints",
+        default=True, description="If True, enforce grounding-focused prompting"
     )
     plan_first: bool = attribute(
         default=True,
-        description="If True, instruct model to provide a brief plan before non-trivial tool use",
+        description="If True, instruct model to provide a brief plan first",
     )
     enable_skill_helper_tools: bool = attribute(
         default=True,
         description="If True, register list_skills and skill_search helper tools",
     )
     max_skill_activations: int = attribute(
-        default=5,
+        default=8,
         description="Maximum number of skill activations allowed within one loop",
     )
     stuck_detection_window: int = attribute(
-        default=3,
-        description="Number of identical consecutive tool-call signatures before stuck warning",
+        default=3, description="Consecutive identical signatures before stuck warning"
     )
     max_midcourse_corrections: int = attribute(
         default=2,
         description="Maximum stuck-detection reminders before forced termination",
     )
+    progress_check_interval: int = attribute(
+        default=5,
+        description="Iterations between progress self-assessment prompts (0=disabled)",
+    )
     final_review: bool = attribute(
-        default=False,
-        description="If True, run a final grounding review pass before publishing response",
+        default=True,
+        description="If True, run a final grounding review pass before publishing",
     )
     prioritize_skills_first: bool = attribute(
         default=True,
-        description=(
-            "If True, enforce one skill-first retry before accepting a no-tool final answer "
-            "when skills are available"
-        ),
+        description="If True, enforce skill-first retry before accepting a no-tool final answer",
     )
     skill_first_retry_limit: int = attribute(
-        default=1,
-        description="Maximum number of skill-first retry nudges in a loop",
+        default=1, description="Maximum number of skill-first retry nudges in a loop."
+    )
+    task_nudge_retry_limit: int = attribute(
+        default=2,
+        description="Maximum retries when a task plan still has pending steps.",
+    )
+    skill_first_retry_min_relevance: float = attribute(
+        default=0.25,
+        description="Minimum skill relevance score before issuing skill-first nudge.",
+    )
+    conversational_skip_patterns: List[str] = attribute(
+        default_factory=list,
+        description="Optional regex strings for conversational skip.",
+    )
+    skill_first_conversational_heuristic: bool = attribute(
+        default=True,
+        description="Skip skill-first nudge for short low-relevance utterances.",
+    )
+    conversational_short_utterance_max_chars: int = attribute(
+        default=60,
+        description="Max utterance length (characters) for conversational heuristic.",
+    )
+    conversational_short_utterance_max_tokens: int = attribute(
+        default=8, description="Max token count for conversational heuristic."
+    )
+    conversational_heuristic_max_relevance: float = attribute(
+        default=3.0, description="Skip nudge only if top_relevance_score is below this."
+    )
+    conversational_min_response_chars: int = attribute(
+        default=20,
+        description="Minimum candidate length before conversational skip applies.",
+    )
+    meta_intent_skip_nudge: bool = attribute(
+        default=True, description="Skip skill-first nudge for meta/identity questions."
+    )
+    meta_intent_patterns: List[str] = attribute(
+        default_factory=list,
+        description="Extra regex patterns for meta intent detection.",
+    )
+    degenerate_response_max_chars: int = attribute(
+        default=25,
+        description="Candidates shorter than this are treated as degenerate acks.",
+    )
+    best_candidate_shrink_ratio: float = attribute(
+        default=0.4,
+        description="If a later candidate is shorter than this ratio of best, prefer best.",
     )
 
-    async def execute(self, visitor: "InteractWalker") -> None:
-        """Entry point: load skill, build tool registry, run the agentic loop.
+    # -----------------------------------------------------------------------
+    # InteractAction entry point
+    # -----------------------------------------------------------------------
 
-        Args:
-            visitor: The InteractWalker visiting this action.
-        """
+    async def execute(self, visitor: "InteractWalker") -> None:
+        """Adapt InteractWalker to SkillRunContext and delegate to SkillAction."""
         if not self._ensure_interaction(visitor):
             logger.warning("SkillInteractAction: No interaction available")
             await visitor.unrecord_action_execution()
@@ -256,818 +298,315 @@ class SkillInteractAction(InteractAction):
             await visitor.unrecord_action_execution()
             return
 
-        tool_executor: Optional[ToolExecutor] = None
         try:
-            # 0. Create ActionResolver and attach to visitor for skill tool access
+            # Resolve model action and attach ActionResolver to visitor
+            model_action = await self.get_model_action(required=True)
             agent = getattr(visitor, "_agent", None)
             visitor.action_resolver = ActionResolver(agent) if agent else None
 
-            # 1. Discover skill bundles via SkillCatalog
-            skill_catalog = await SkillCatalog.discover(
-                visitor=visitor,
-                skills_selector=self.skills,
-                skills_source=self.skills_source,
-                denied_skills=getattr(self, "denied_skills", None),
-            )
-            discovered_skills = skill_catalog.skills
-
-            local_paths: List[str] = []
-            if self.local_tools_path:
-                local_paths.append(self.local_tools_path)
-
-            # 2. Initialize ToolExecutor
-            tool_executor = ToolExecutor(
-                call_timeout=self.call_timeout_seconds,
-                sanitize_errors=True,
-            )
-            await tool_executor.initialize(
-                visitor=visitor,
-                tool_servers=self.tool_servers,
-                local_tools_paths=local_paths,
-            )
-
-            # 4. Register skill bundles and inject read_skill tool
-            if not skill_catalog.is_empty:
-                for skill_name, skill_data in discovered_skills.items():
-                    tool_executor.register_skill_bundle(
-                        skill_name=skill_name,
-                        dir_path=skill_data["dir"],
-                        tool_files=skill_data.get("tool_files", []),
-                        allowed_tools=skill_data.get("allowed_tools", []),
+            # Resolve persona for system prompt enrichment
+            agent_name = "Agent"
+            agent_description = "An intelligent skills-based agent."
+            if agent:
+                actions_manager = await agent.get_actions_manager()
+                if actions_manager:
+                    enabled_actions = await actions_manager.get_actions(
+                        enabled_only=True
                     )
+                    for action in enabled_actions:
+                        if action.get_class_name() == "PersonaAction":
+                            agent_name = getattr(action, "persona_name", "Agent")
+                            agent_description = getattr(
+                                action,
+                                "persona_description",
+                                "An intelligent skills-based agent.",
+                            )
+                            break
 
-                async def read_skill_handler(args):
-                    skill_name = args.get("skill_name")
-                    if skill_name not in discovered_skills:
-                        return f"Error: Skill '{skill_name}' not found."
+            # Build run config from declared attributes (with deprecated alias mapping)
+            cfg = self._build_run_config()
 
-                    skill_data = discovered_skills[skill_name]
-
-                    # Check activation limit
-                    limit_error = skill_catalog.check_activation_limit(
-                        skill_name=skill_name,
-                        activated_skills=tool_executor.activated_skills,
-                        max_activations=self.max_skill_activations,
-                    )
-                    if limit_error:
-                        return limit_error
-
-                    # Validate required actions are available
-                    req_error = await skill_catalog.validate_requirements(
-                        skill_name=skill_name,
-                        action_resolver=visitor.action_resolver,
-                    )
-                    if req_error:
-                        return req_error
-
-                    registered_tools = await tool_executor.activate_skill(skill_name)
-                    scope_hint = str(
-                        skill_data.get("scope_hint")
-                        or skill_data.get("description")
-                        or "the workflow described in this skill"
-                    )
-                    result_text = READ_SKILL_RESULT_TEMPLATE.format(
-                        skill_name=skill_name,
-                        tools=(
-                            ", ".join(registered_tools)
-                            if registered_tools
-                            else "(none)"
-                        ),
-                        content=skill_data["content"],
-                    )
-                    if self.strict_grounding:
-                        result_text += "\n\n" + GROUNDING_INSTRUCTION_TEMPLATE.format(
-                            skill_name=skill_name,
-                            scope_hint=scope_hint,
-                        )
-                    return result_text
-
-                tool_executor.register_dynamic_tool(
-                    name="read_skill",
-                    tool_def_dict={
-                        "name": "read_skill",
-                        "description": "Read the full instructions/SOP for a specific capability/skill.",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "skill_name": {
-                                    "type": "string",
-                                    "description": "The name of the skill to read.",
-                                }
-                            },
-                            "required": ["skill_name"],
-                        },
-                    },
-                    handler=read_skill_handler,
-                )
-                if self.enable_skill_helper_tools:
-                    tool_executor.register_dynamic_tool(
-                        name="list_skills",
-                        tool_def_dict={
-                            "name": "list_skills",
-                            "description": LIST_SKILLS_TOOL_DESCRIPTION,
-                            "parameters": {
-                                "type": "object",
-                                "properties": {},
-                            },
-                        },
-                        handler=lambda args: skill_catalog.render_catalog(),
-                    )
-
-                    async def skill_search_handler(args):
-                        query = str(args.get("query", "")).strip()
-                        top_k_raw = args.get("top_k", 5)
-                        try:
-                            top_k = max(1, int(top_k_raw))
-                        except (TypeError, ValueError):
-                            top_k = 5
-                        return SkillCatalog(discovered_skills).search(
-                            query, top_k=top_k
-                        )
-
-                    tool_executor.register_dynamic_tool(
-                        name="skill_search",
-                        tool_def_dict={
-                            "name": "skill_search",
-                            "description": SKILL_SEARCH_TOOL_DESCRIPTION,
-                            "parameters": {
-                                "type": "object",
-                                "properties": {
-                                    "query": {
-                                        "type": "string",
-                                        "description": "Search phrase for skill intent.",
-                                    },
-                                    "top_k": {
-                                        "type": "integer",
-                                        "description": "Maximum number of skills to return.",
-                                        "default": 5,
-                                    },
-                                },
-                                "required": ["query"],
-                            },
-                        },
-                        handler=skill_search_handler,
-                    )
-
-            if not tool_executor.get_tool_names():
-                logger.warning(
-                    "SkillInteractAction: No tools available, "
-                    "proceeding without tools (reasoning-only mode)"
-                )
-
-            task_description = (
-                f"Agentic task: {interaction.utterance[:100]}"
-                if interaction.utterance
-                else "Agentic task"
-            )
-            async with visitor.tasks.track(
-                description=task_description,
-                task_type="AGENTIC_LOOP",
-                action_name=self.get_class_name(),
-                metadata={
-                    "skills": self.skills,
-                    "skills_source": self.skills_source,
-                    "strict_grounding": self.strict_grounding,
-                    "plan_first": self.plan_first,
-                    "final_review": self.final_review,
-                    "max_skill_activations": self.max_skill_activations,
-                    "stuck_detection_window": self.stuck_detection_window,
-                    "max_midcourse_corrections": self.max_midcourse_corrections,
-                    "started_at": datetime.now(timezone.utc).isoformat(),
-                    "iterations": 0,
-                    "tools_called": [],
-                    "thinking_tokens_used": 0,
-                    "steps": [],
-                    "completed_at": None,
-                    "total_duration_seconds": None,
-                },
-            ) as task:
-                # Inject persona context into the loop
-                persona_action = None
-                agent = getattr(visitor, "_agent", None)
-                if agent:
-                    actions_manager = await agent.get_actions_manager()
-                    if actions_manager:
-                        enabled_actions = await actions_manager.get_actions(
-                            enabled_only=True
-                        )
-                        for action in enabled_actions:
-                            if action.get_class_name() == "PersonaAction":
-                                persona_action = action
-                                break
-
-                # 5. Run the agentic loop
-                final_response, termination_reason, stuck_corrections = (
-                    await self._run_agentic_loop(
+            # Publish callback bridges SkillAction output to the interact bus
+            async def _publish_cb(
+                content: str,
+                *,
+                category: str,
+                thought_type: Optional[str],
+                segment_id: Optional[str],
+                streaming_complete: bool,
+                relay_to_adapters: bool,
+            ) -> None:
+                if category == "thought":
+                    await self.publish_thought(
                         visitor=visitor,
-                        tool_executor=tool_executor,
-                        task_handle=task,
-                        discovered_skills=discovered_skills,
-                        persona_action=persona_action,
+                        content=content,
+                        thought_type=thought_type or "reasoning",
+                        segment_id=segment_id,
+                        streaming_complete=streaming_complete,
+                        relay_to_adapters=relay_to_adapters,
+                        allow_empty=not content,
                     )
-                )
-                await task.update_metadata(
-                    activated_skills=sorted(tool_executor.activated_skills),
-                    stuck_corrections=stuck_corrections,
-                )
-
-                # 6. Deliver final response
-                if final_response:
-                    effective_mode = self._resolve_response_mode(
-                        discovered_skills, tool_executor
-                    )
-                    if effective_mode == "respond":
-                        # Route through PersonaAction for persona-enriched response
-                        # We pass the final_response as a specialized directive that
-                        # explicitly asks the persona to present this verified data.
-                        await visitor.add_directive(
-                            f"The agentic loop has completed the task with the following verified result:\n\n{final_response}\n\nPresent this result naturally in your persona. Do not strip technical details or evidence, but refine the delivery to be human-like."
-                        )
-                        await self.respond(visitor)
-                    else:
-                        # Direct bus delivery
+                else:
+                    if content:
                         await self.publish(
-                            visitor,
-                            content=final_response,
-                            streaming_complete=True,
+                            visitor=visitor,
+                            content=content,
+                            streaming_complete=streaming_complete,
                         )
-                    # Mark directives as executed
-                    interaction.set_to_executed()
 
-                # 7. Complete task explicitly with final reason/summary.
-                await task.complete(
-                    status=termination_reason,
-                    summary=final_response[:200] if final_response else None,
+            # skill_state shim for hot-reload (populated by SkillAction after prepare_run)
+            visitor._skill_state = {
+                "discovered_skills": {},
+                "skill_catalog": None,
+                "tool_executor": None,
+                "action": self,
+            }
+
+            ctx = SkillRunContext(
+                utterance=visitor.utterance or "",
+                conversation=conversation,
+                interaction=interaction,
+                response_bus=visitor.response_bus,
+                session_id=visitor.session_id,
+                channel=getattr(visitor, "channel", None),
+                stream=getattr(visitor, "stream", False),
+                agent=agent,
+                user_id=getattr(visitor, "user_id", None) or None,
+                model_action=model_action,
+                task_service=visitor.tasks,
+                config=cfg,
+                agent_name=agent_name,
+                agent_description=agent_description,
+                publish_callback=_publish_cb,
+                skill_state=visitor._skill_state,
+            )
+
+            engine = SkillAction()
+            result = await engine.run_to_completion(ctx)
+
+            # Deliver final response
+            if result.final_response:
+                effective_mode = self._resolve_response_mode_from_result(result)
+                use_persona = (
+                    effective_mode == "respond"
+                    and not SkillAction._is_degenerate_response(
+                        result.final_response,
+                        max_chars=cfg.degenerate_response_max_chars,
+                    )
                 )
+                if use_persona:
+                    await visitor.add_directive(
+                        self._format_persona_directive(
+                            visitor.utterance, result.final_response
+                        )
+                    )
+                    await self.respond(visitor)
+                else:
+                    if effective_mode == "respond":
+                        logger.warning(
+                            "SkillInteractAction: skipping Persona; degenerate response; "
+                            "publishing directly"
+                        )
+                    await self.publish(
+                        visitor,
+                        content=result.final_response,
+                        streaming_complete=True,
+                    )
+                interaction.set_to_executed()
 
-        except Exception as e:
+        except Exception as exc:
             logger.error(
-                "SkillInteractAction: Error during agentic loop: %s",
-                e,
-                exc_info=True,
+                "SkillInteractAction: Error during agentic loop: %s", exc, exc_info=True
             )
             await visitor.unrecord_action_execution()
-        finally:
-            if tool_executor:
-                try:
-                    await tool_executor.cleanup()
-                except Exception as cleanup_error:
-                    logger.warning(
-                        "SkillInteractAction: tool cleanup failed: %s",
-                        cleanup_error,
-                    )
 
-    @staticmethod
-    def _extract_tool_intent(args_str: str, max_len: int = 80) -> str:
-        """Extract a brief intent description from tool call arguments."""
-        _PRIORITY_KEYS = (
-            "query",
-            "search",
-            "skill_name",
-            "name",
-            "input",
-            "message",
-            "text",
-            "question",
-            "command",
-            "url",
-            "file_path",
-            "path",
+    # -----------------------------------------------------------------------
+    # Hot-reload helpers (unchanged API for tool modules)
+    # -----------------------------------------------------------------------
+
+    @classmethod
+    async def refresh_skills(cls, visitor: "InteractWalker") -> List[str]:
+        """Re-discover skills and register any newly installed bundles."""
+        state = getattr(visitor, "_skill_state", None)
+        if state is None:
+            logger.warning("refresh_skills: no _skill_state on visitor")
+            return []
+
+        discovered_skills: Dict[str, Any] = state.get("discovered_skills") or {}
+        skill_catalog = state.get("skill_catalog")
+        tool_executor = state.get("tool_executor")
+        action = state.get("action")
+
+        await SkillCatalog.invalidate_cache(
+            namespace=visitor._agent.namespace,
+            agent_name=visitor._agent.name,
         )
+        new_catalog = await SkillCatalog.discover(
+            visitor=visitor,
+            skills_selector=action.skills if action else None,
+            skills_source=action.skills_source if action else "both",
+            denied_skills=getattr(action, "denied_skills", None) if action else None,
+        )
+        new_skills = new_catalog.skills
+        newly_found = [name for name in new_skills if name not in discovered_skills]
 
-        try:
-            args = json.loads(args_str) if args_str else {}
-        except (json.JSONDecodeError, TypeError):
-            return args_str[:max_len] if args_str else "process request"
+        if not newly_found and new_catalog.skills.keys() == discovered_skills.keys():
+            return []
 
-        for key in _PRIORITY_KEYS:
-            if key in args:
-                value = str(args[key])
-                if len(value) > max_len:
-                    value = value[: max_len - 3] + "..."
-                return value
+        if tool_executor:
+            for skill_name in newly_found:
+                skill_data = new_skills[skill_name]
+                tool_executor.register_skill_bundle(
+                    skill_name=skill_name,
+                    dir_path=skill_data["dir"],
+                    tool_files=skill_data.get("tool_files", []),
+                    allowed_tools=skill_data.get("allowed_tools", []),
+                )
 
-        if args:
-            key, value = next(iter(args.items()))
-            value = str(value)
-            if len(value) > max_len:
-                value = value[: max_len - 3] + "..."
-            return f"{key}={value}"
+        discovered_skills.update(new_skills)
+        if skill_catalog is not None:
+            skill_catalog.skills = discovered_skills
 
-        return "process request"
+        logger.info(
+            "refresh_skills: registered %d new skill(s): %s",
+            len(newly_found),
+            newly_found,
+        )
+        return newly_found
 
-    @staticmethod
-    def _format_result_preview(
-        content: str, max_lines: int = 2, max_chars: int = 200
-    ) -> str:
-        """Format a brief preview of a tool result."""
-        if not content:
-            return "(empty)"
-        lines = content.strip().splitlines()
-        preview_lines = [line.rstrip() for line in lines[:max_lines]]
-        preview = " | ".join(preview_lines) if preview_lines else "(empty)"
-        if len(preview) > max_chars:
-            preview = preview[: max_chars - 3] + "..."
-        if len(lines) > max_lines:
-            preview += f" (+{len(lines) - max_lines} more lines)"
-        return preview
-
-    def _resolve_response_mode(
-        self,
-        discovered_skills: Optional[Dict[str, Dict[str, Any]]] = None,
-        tool_executor: Optional[ToolExecutor] = None,
-    ) -> str:
-        """Resolve the effective response mode for the final response.
-
-        If any activated skill has ``response-mode: respond`` in its frontmatter,
-        use ``respond``. Otherwise, fall back to the action's ``response_mode``
-        attribute (default: ``publish``).
-        """
-        if discovered_skills and tool_executor:
-            for skill_name in tool_executor.activated_skills:
-                skill_data = discovered_skills.get(skill_name, {})
-                if skill_data.get("response_mode") == "respond":
-                    return "respond"
-        return self.response_mode
-
-    def _should_retry_for_skill_first(
-        self,
-        discovered_skills: Optional[Dict[str, Dict[str, Any]]],
-        tool_executor: ToolExecutor,
-        utterance: str,
-        retries: int,
-    ) -> bool:
-        """Check if the loop should nudge the model toward skill activation.
-
-        Simplified: relies on model intelligence rather than keyword matching.
-        Only nudges when skills are available but none activated and the
-        retry limit hasn't been exceeded.
-        """
-        if not self.prioritize_skills_first:
+    @classmethod
+    async def remove_skill(cls, visitor: "InteractWalker", skill_name: str) -> bool:
+        """Hot-unload a skill from the current session."""
+        state = getattr(visitor, "_skill_state", None)
+        if state is None:
             return False
-        if not discovered_skills:
+        discovered_skills = state.get("discovered_skills") or {}
+        skill_catalog = state.get("skill_catalog")
+        tool_executor = state.get("tool_executor")
+
+        if skill_name not in discovered_skills:
             return False
-        if not tool_executor or tool_executor.activated_skills:
-            return False
-        if retries >= self.skill_first_retry_limit:
-            return False
+
+        if tool_executor:
+            tool_executor.unregister_skill_bundle(skill_name)
+
+        discovered_skills.pop(skill_name, None)
+        if skill_catalog and isinstance(getattr(skill_catalog, "skills", None), dict):
+            skill_catalog.skills.pop(skill_name, None)
+
+        await SkillCatalog.invalidate_cache(
+            namespace=visitor._agent.namespace,
+            agent_name=visitor._agent.name,
+        )
+        logger.info("remove_skill: removed skill '%s' from session", skill_name)
         return True
 
-    async def _run_agentic_loop(
-        self,
-        visitor: "InteractWalker",
-        tool_executor: ToolExecutor,
-        task_handle: "TaskHandle",
-        discovered_skills: Optional[Dict[str, Dict[str, Any]]] = None,
-        persona_action: Optional[Any] = None,
-    ) -> tuple[str, str, int]:
-        """Core agentic loop: think → act → observe → repeat."""
-        model_kwargs = self._build_model_kwargs()
+    # -----------------------------------------------------------------------
+    # Private helpers
+    # -----------------------------------------------------------------------
 
-        # Build initial messages using LoopContext
-        loop_ctx = LoopContext(
-            LoopContextConfig(
-                max_full_tool_results=self.max_full_tool_results,
-                max_tool_result_tokens=self.max_tool_result_tokens,
-                tool_result_truncation_chars=self.tool_result_truncation_chars,
-                history_limit=self.history_limit,
-            )
-        )
-
-        # Integrate persona into system prompt
-        agent_name = "Agent"
-        agent_description = "An intelligent skills-based agent."
-        if persona_action:
-            agent_name = getattr(persona_action, "persona_name", "Agent")
-            agent_description = getattr(
-                persona_action,
-                "persona_description",
-                "An intelligent skills-based agent.",
-            )
-
-        system_prompt = SKILL_AGENT_SYSTEM_PROMPT.format(
-            agent_name=agent_name,
-            agent_description=agent_description,
-        )
-
-        if not self.plan_first:
-            system_prompt += "\n\nOverride: Skip plan-first behavior unless the user explicitly asks for a plan."
-        if not self.strict_grounding:
-            system_prompt += "\n\nOverride: You may answer with best-effort general reasoning when tool evidence is unavailable."
-        skill_index_section = None
-        if discovered_skills:
-            skill_index_section = SkillCatalog(
-                discovered_skills
-            ).render_system_prompt_section()
-
-        messages = await loop_ctx.build_initial_messages(
-            system_prompt=system_prompt,
-            utterance=visitor.utterance,
-            conversation=visitor.conversation,
-            interaction=visitor.interaction,
-            skill_index_section=skill_index_section,
-        )
-
-        loop_start = time.monotonic()
-        iteration = 0
-        final_response = ""
-        termination_reason = TerminationReason.COMPLETED.value
-        loop_state = LoopState.MODEL
-        stuck_detector = StuckDetector(
-            StuckDetectorConfig(
-                window_size=max(1, int(self.stuck_detection_window or 1)),
-                max_corrections=self.max_midcourse_corrections,
-            )
-        )
-        skill_first_retries = 0
-
-        while iteration < self.max_iterations:
-            # Check duration limit
-            elapsed = time.monotonic() - loop_start
-            if elapsed >= self.max_duration_seconds:
-                loop_state = LoopState.TERMINATE
-                final_response = await self._force_termination(
-                    messages,
-                    tool_executor.get_tools_list(),
-                    visitor,
-                    model_kwargs,
-                )
-                termination_reason = TerminationReason.TIME_CAP.value
-                break
-
-            iteration += 1
-            loop_state = LoopState.MODEL
-
-            # Re-fetch tools each iteration to include newly activated skill tools.
-            tools = tool_executor.get_tools_list()
-            model_result = await self._call_model(
-                messages, tools, visitor, model_kwargs
-            )
-
-            await task_handle.record_step(
-                "thinking",
-                iteration=iteration,
-                details={"tokens": model_result.thinking_tokens or 0},
-            )
-
-            if model_result.thinking_content and self.stream_thinking:
-                await self.publish_thought(
-                    visitor=visitor,
-                    content=model_result.thinking_content,
-                    thought_type="reasoning",
-                    segment_id=f"iter-{iteration}-reasoning",
-                    streaming_complete=True,
-                    relay_to_adapters=self.relay_thoughts_to_channels,
-                    metadata={
-                        "action_name": self.get_class_name(),
-                        "tokens": model_result.thinking_tokens or 0,
-                    },
-                )
-            if not model_result.tool_calls:
-                candidate_response = await model_result.get_response()
-                if not candidate_response and model_result.response:
-                    candidate_response = model_result.response
-
-                if self._should_retry_for_skill_first(
-                    discovered_skills=discovered_skills,
-                    tool_executor=tool_executor,
-                    utterance=visitor.utterance,
-                    retries=skill_first_retries,
-                ):
-                    messages.append(
-                        {
-                            "role": "assistant",
-                            "content": candidate_response or "",
-                        }
-                    )
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": SKILL_FIRST_RETRY_PROMPT,
-                        }
-                    )
-                    skill_first_retries += 1
-                    continue
-
-                final_response = candidate_response
-                termination_reason = TerminationReason.COMPLETED.value
-                loop_state = LoopState.TERMINATE
-                break
-
-            tool_calls = model_result.tool_calls
-            stuck_result = stuck_detector.record(tool_calls)
-            loop_state = LoopState.TOOLS
-            tool_names = [
-                tc.get("function", {}).get("name", "unknown") for tc in tool_calls
-            ]
-            tool_summaries = []
-            for tc in tool_calls:
-                fn = tc.get("function", {})
-                args_str = fn.get("arguments", "")
-                if len(args_str) > 120:
-                    args_str = args_str[:117] + "..."
-                tool_summaries.append(
-                    {"name": fn.get("name", "unknown"), "arguments": args_str}
-                )
-            await task_handle.record_step(
-                "tool_call",
-                iteration=iteration,
-                details={
-                    "count": len(tool_calls),
-                    "tools": tool_names,
-                    "tool_summaries": tool_summaries,
-                },
-            )
-
-            # Surface any mid-loop user-facing commentary the model emitted alongside
-            # tool calls. The model already records this text in its internal message
-            # list, but without explicit publication it is invisible to the end user
-            # and absent from interaction.response (and therefore from conversation
-            # history on subsequent turns), causing inconsistencies.
-            intermediate_text = (model_result.response or "").strip()
-            if self.commit_intermediate_messages and intermediate_text:
-                await self.publish(
-                    visitor=visitor,
-                    content=intermediate_text,
-                    streaming_complete=True,
-                    metadata={
-                        "action_name": self.get_class_name(),
-                        "iteration": iteration,
-                        "intermediate": True,
-                    },
-                )
-
-            if self.stream_tool_progress:
-                for idx, tc in enumerate(tool_calls):
-                    tool_name = tc.get("function", {}).get("name", "unknown")
-                    # Use the model's own intermediate response if available to provide a human-like announcement
-                    if intermediate_text:
-                        announcement = intermediate_text
-                    else:
-                        args_str = tc.get("function", {}).get("arguments", "")
-                        intent = self._extract_tool_intent(args_str)
-                        announcement = TOOL_CALL_ANNOUNCE_TEMPLATE.format(
-                            tool_name=tool_name, intent=intent
-                        )
-                    await self.publish_thought(
-                        visitor=visitor,
-                        content=announcement,
-                        thought_type="tool_call",
-                        segment_id=f"iter-{iteration}-call-{tool_name}-{idx}",
-                        streaming_complete=True,
-                        relay_to_adapters=self.relay_thoughts_to_channels,
-                        metadata={
-                            "action_name": self.get_class_name(),
-                            "tool_name": tool_name,
-                        },
-                    )
-
-            assistant_msg = LoopContext.build_assistant_content(model_result)
-            messages.append(assistant_msg)
-
-            tool_start = time.monotonic()
-            tool_result_messages = await tool_executor.dispatch(tool_calls, visitor)
-            tool_duration_ms = int((time.monotonic() - tool_start) * 1000)
-
-            # Map tool_call_id → tool_name for result announcements
-            tool_call_id_to_name = {}
-            for tc in tool_calls:
-                tc_id = tc.get("id", "")
-                tc_name = tc.get("function", {}).get("name", "unknown")
-                if tc_id:
-                    tool_call_id_to_name[tc_id] = tc_name
-
-            if self.stream_tool_progress:
-                for tr_msg in tool_result_messages:
-                    content = tr_msg.get("content", "")
-                    tool_call_id = tr_msg.get("tool_call_id", "")
-                    tool_name = tool_call_id_to_name.get(tool_call_id, "unknown")
-                    is_error = content.startswith("Error:")
-
-                    if is_error:
-                        error_detail = content[len("Error:") :].strip()
-                        announcement = ERROR_ANNOUNCE_TEMPLATE.format(
-                            tool_name=tool_name,
-                            error=error_detail[:120],
-                        )
-                    else:
-                        preview = self._format_result_preview(content)
-                        announcement = TOOL_RESULT_ANNOUNCE_TEMPLATE.format(
-                            tool_name=tool_name,
-                            preview=preview,
-                        )
-
-                    await self.publish_thought(
-                        visitor=visitor,
-                        content=announcement,
-                        thought_type="tool_result",
-                        segment_id=f"iter-{iteration}-result-{tool_call_id or 'unknown'}",
-                        streaming_complete=True,
-                        relay_to_adapters=self.relay_thoughts_to_channels,
-                        metadata={
-                            "action_name": self.get_class_name(),
-                            "tool_call_id": tool_call_id,
-                            "tool_name": tool_name,
-                        },
-                    )
-
-            messages.extend(tool_result_messages)
-            result_statuses = []
-            for tr_msg in tool_result_messages:
-                content = tr_msg.get("content", "")
-                is_error = tr_msg.get("is_error", False)
-                result_statuses.append(
-                    {
-                        "tool_call_id": tr_msg.get("tool_call_id", ""),
-                        "is_error": is_error,
-                        "content_preview": content[:200] if content else "",
-                    }
-                )
-            await task_handle.record_step(
-                "tool_result",
-                iteration=iteration,
-                details={
-                    "duration_ms": tool_duration_ms,
-                    "count": len(tool_result_messages),
-                    "results": result_statuses,
-                },
-            )
-            if stuck_result:
-                if stuck_result == "FORCE_TERMINATE":
-                    loop_state = LoopState.TERMINATE
-                    final_response = await self._force_termination(
-                        messages,
-                        tool_executor.get_tools_list(),
-                        visitor,
-                        model_kwargs,
-                    )
-                    termination_reason = TerminationReason.ITER_CAP.value
-                    break
-                else:
-                    messages.append({"role": "user", "content": stuck_result})
-            messages = loop_ctx.maybe_truncate(messages)
-
-        if (
-            not final_response
-            and termination_reason == TerminationReason.COMPLETED.value
-            and iteration >= self.max_iterations
-        ):
-            loop_state = LoopState.TERMINATE
-            final_response = await self._force_termination(
-                messages,
-                tool_executor.get_tools_list(),
-                visitor,
-                model_kwargs,
-            )
-            termination_reason = TerminationReason.ITER_CAP.value
-
-        if not final_response:
-            final_response = (
-                "I was unable to complete the task within the allowed steps."
-            )
-            if termination_reason == TerminationReason.COMPLETED.value:
-                termination_reason = TerminationReason.ITER_CAP.value
-        elif self.final_review:
-            final_response = await self._final_review_pass(
-                messages=messages,
-                candidate_response=final_response,
-                visitor=visitor,
-                model_kwargs=model_kwargs,
-            )
-
-        await task_handle.record_step(
-            "response",
-            iteration=iteration,
-            details={
-                "length": len(final_response),
-                "loop_state": loop_state.value,
-                "termination_reason": termination_reason,
-                "preview": final_response[:300],
-            },
-        )
-        return final_response, termination_reason, stuck_detector.corrections
-
-    def _build_model_kwargs(self) -> Dict[str, Any]:
-        kwargs: Dict[str, Any] = {
-            "model": self.model,
-            "temperature": self.model_temperature,
-            "max_tokens": self.model_max_tokens,
-        }
-        if self.thinking_budget_tokens > 0:
-            kwargs["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": self.thinking_budget_tokens,
-            }
-            if kwargs.get("max_tokens", 0) < self.thinking_budget_tokens + 1:
-                kwargs["max_tokens"] = self.thinking_budget_tokens + 1
-        return kwargs
-
-    async def _call_model(
-        self,
-        messages: List[Dict[str, Any]],
-        tools: Optional[List[Dict[str, Any]]],
-        visitor: "InteractWalker",
-        model_kwargs: Dict[str, Any],
-    ) -> Any:
-        """Call LanguageModelAction.query_messages() with pre-formatted messages.
-
-        The agentic loop maintains its own message list with tool-call/result
-        pairs, so it uses query_messages() to preserve this full context while
-        still getting standard observability/profiling tracking.
-
-        Args:
-            messages: Current conversation messages (pre-formatted).
-            tools: Available tool definitions.
-            visitor: The InteractWalker.
-            model_kwargs: Model-specific keyword arguments.
-
-        Returns:
-            ModelActionResult from the LLM.
-        """
-        model_action = await self.get_model_action(required=True)
-        provider = getattr(model_action, "provider", "") or ""
-        final_messages = (
-            LoopContext.convert_for_provider(messages, provider)
-            if provider == "anthropic"
-            else messages
-        )
-
-        return await model_action.query_messages(
-            messages=final_messages,
-            stream=False,
-            system=final_messages[0].get("content") if final_messages else None,
-            history=final_messages[1:-1] if len(final_messages) > 2 else None,
-            tools=tools if tools else None,
-            calling_action_name=self.get_class_name(),
-            prompt_for_observability=visitor.utterance,
-            **model_kwargs,
-        )
-
-    async def _force_termination(
-        self,
-        messages: List[Dict[str, Any]],
-        tools: List[Dict[str, Any]],
-        visitor: "InteractWalker",
-        model_kwargs: Dict[str, Any],
-    ) -> str:
-        """Force a final summarization call when limits are reached.
-
-        Appends a system message instructing the model to summarize, then
-        makes one final call without tools.
-
-        Args:
-            messages: Current conversation messages.
-            tools: Tool definitions (will be excluded from this call).
-            visitor: The InteractWalker.
-            model_kwargs: Model keyword arguments.
-
-        Returns:
-            Final response text.
-        """
-        messages.append({"role": "user", "content": FORCED_TERMINATION_PROMPT})
-        # Remove thinking config for final call to avoid token budget issues
-        final_kwargs = {k: v for k, v in model_kwargs.items() if k != "thinking"}
-
-        try:
-            model_result = await self._call_model(
-                messages, None, visitor, final_kwargs  # No tools for final call
-            )
-            return await model_result.get_response() or model_result.response or ""
-        except Exception as e:
-            logger.error("SkillInteractAction: forced termination call failed: %s", e)
-            return "I was unable to complete the task within the allowed steps."
-
-    async def _final_review_pass(
-        self,
-        messages: List[Dict[str, Any]],
-        candidate_response: str,
-        visitor: "InteractWalker",
-        model_kwargs: Dict[str, Any],
-    ) -> str:
-        """Run an optional no-tools final review pass for grounding."""
-        final_kwargs = {k: v for k, v in model_kwargs.items() if k != "thinking"}
-        review_messages = list(messages)
-        review_messages.append({"role": "assistant", "content": candidate_response})
-        review_messages.append({"role": "user", "content": FINAL_REVIEW_PROMPT})
-        try:
-            reviewed = await self._call_model(
-                review_messages, None, visitor, final_kwargs
-            )
-            reviewed_text = await reviewed.get_response()
-            if reviewed_text:
-                return reviewed_text
-            if reviewed.response:
-                return reviewed.response
-            return candidate_response
-        except Exception as exc:
+    def _build_run_config(self) -> SkillRunConfig:
+        """Map declared attributes → SkillRunConfig, handling deprecated aliases."""
+        budget = int(getattr(self, "reasoning_budget_tokens", 0) or 0)
+        legacy_budget = int(getattr(self, "thinking_budget_tokens", 0) or 0)
+        if budget <= 0 and legacy_budget > 0:
             logger.warning(
-                "SkillInteractAction: final review pass failed, using original response: %s",
-                exc,
+                "SkillInteractAction: `thinking_budget_tokens` is deprecated; "
+                "use `reasoning_budget_tokens`."
             )
-            return candidate_response
+            budget = legacy_budget
+
+        reasoning_extra = getattr(self, "reasoning_extra", None)
+        if reasoning_extra is None and getattr(self, "reasoning", None) is not None:
+            logger.warning(
+                "SkillInteractAction: `reasoning` is deprecated; use `reasoning_extra`."
+            )
+            reasoning_extra = getattr(self, "reasoning", None)
+
+        mirror = getattr(self, "mirror_assistant_stream_as_thoughts", None)
+        if (
+            mirror is None
+            and getattr(self, "mirror_openai_assistant_stream_to_thoughts", None)
+            is not None
+        ):
+            logger.warning(
+                "SkillInteractAction: `mirror_openai_assistant_stream_to_thoughts` is "
+                "deprecated; use `mirror_assistant_stream_as_thoughts`."
+            )
+            mirror = getattr(self, "mirror_openai_assistant_stream_to_thoughts", None)
+
+        return SkillRunConfig(
+            model=self.model,
+            model_temperature=self.model_temperature,
+            model_max_tokens=self.model_max_tokens,
+            model_action_type=self.model_action_type,
+            max_iterations=self.max_iterations,
+            max_duration_seconds=self.max_duration_seconds,
+            reasoning_budget_tokens=budget,
+            reasoning_enabled=getattr(self, "reasoning_enabled", None),
+            reasoning_effort=getattr(self, "reasoning_effort", None),
+            reasoning_extra=(
+                reasoning_extra if isinstance(reasoning_extra, dict) else None
+            ),
+            mirror_assistant_stream_as_thoughts=mirror,
+            stream_thinking=self.stream_thinking,
+            stream_reasoning=self.stream_reasoning,
+            stream_tool_progress=self.stream_tool_progress,
+            commit_intermediate_messages=self.commit_intermediate_messages,
+            relay_thoughts_to_channels=self.relay_thoughts_to_channels,
+            max_full_tool_results=self.max_full_tool_results,
+            max_tool_result_tokens=self.max_tool_result_tokens,
+            tool_result_truncation_chars=self.tool_result_truncation_chars,
+            history_limit=self.history_limit,
+            call_timeout_seconds=self.call_timeout_seconds,
+            skills=self.skills,
+            denied_skills=list(getattr(self, "denied_skills", None) or []),
+            skills_source=self.skills_source,
+            enable_skill_helper_tools=self.enable_skill_helper_tools,
+            max_skill_activations=self.max_skill_activations,
+            skill_first_retry_limit=self.skill_first_retry_limit,
+            skill_first_retry_min_relevance=self.skill_first_retry_min_relevance,
+            prioritize_skills_first=self.prioritize_skills_first,
+            tool_servers=list(self.tool_servers or []),
+            allow_local_tools=self.allow_local_tools,
+            local_tools_path=self.local_tools_path,
+            strict_grounding=self.strict_grounding,
+            plan_first=self.plan_first,
+            final_review=self.final_review,
+            task_nudge_retry_limit=self.task_nudge_retry_limit,
+            stuck_detection_window=self.stuck_detection_window,
+            max_midcourse_corrections=self.max_midcourse_corrections,
+            progress_check_interval=self.progress_check_interval,
+            conversational_skip_patterns=list(self.conversational_skip_patterns or []),
+            skill_first_conversational_heuristic=self.skill_first_conversational_heuristic,
+            conversational_short_utterance_max_chars=self.conversational_short_utterance_max_chars,
+            conversational_short_utterance_max_tokens=self.conversational_short_utterance_max_tokens,
+            conversational_heuristic_max_relevance=self.conversational_heuristic_max_relevance,
+            conversational_min_response_chars=self.conversational_min_response_chars,
+            meta_intent_skip_nudge=self.meta_intent_skip_nudge,
+            meta_intent_patterns=list(self.meta_intent_patterns or []),
+            degenerate_response_max_chars=self.degenerate_response_max_chars,
+            best_candidate_shrink_ratio=self.best_candidate_shrink_ratio,
+            response_mode=self.response_mode,
+        )
+
+    def _resolve_response_mode_from_result(self, result: Any) -> str:
+        """Effective response mode (config default; skill overrides not yet surfaced)."""
+        return self.response_mode
+
+    @staticmethod
+    def _format_persona_directive(utterance: Optional[str], final_response: str) -> str:
+        uq = (utterance or "").strip() or "(no utterance)"
+        return (
+            f'The skill loop produced this verified answer for the user\'s request "{uq}":\n\n'
+            f"{final_response}\n\n"
+            "Present the substantive content; preserve facts and names. You may only adjust "
+            "tone and formatting to match the persona. Do not add, remove, or invent "
+            "capabilities, tools, or skills."
+        )
 
     async def healthcheck(self) -> bool:
-        """Validate thinking action configuration."""
+        """Validate action configuration."""
         if not self.model_action_type:
             return False
         if self.max_iterations < 1:

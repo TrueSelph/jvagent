@@ -3,16 +3,28 @@
 Reuses existing ToolManager, ToolDefinition, ToolCall, and MCPClientWrapper.
 Bypasses MCPAction.fulfill() (which does its own NL-to-tool mapping) and calls
 MCPClientWrapper.call_tool() directly for deterministic LLM-driven dispatch.
+
+Observability
+-------------
+Each dispatch produces a ``ToolExecutionEnvelope`` capturing attempt id,
+input fingerprint, latency, error class, and a ``recoverable`` flag.  These
+envelopes are accumulated in ``ToolExecutor.envelopes`` for the duration of
+the loop run and can be linked to task steps and the EvidenceLog.
 """
 
 import asyncio
+import contextlib
 import fnmatch
+import hashlib
 import importlib.util
+import inspect
 import logging
 import os
 import re
 import sys
 import time
+import uuid
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from jvagent.action.mcp.mcp_action import _normalize_call_result
@@ -20,6 +32,85 @@ from jvagent.action.model.language.tools import ToolCall, ToolDefinition, ToolMa
 from jvagent.action.skill.tool_registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Observability envelope
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ToolExecutionEnvelope:
+    """Per-invocation execution record attached to every tool dispatch.
+
+    Attributes:
+        attempt_id: UUID for this specific invocation attempt.
+        tool_name: Registered tool name (possibly namespaced).
+        tool_call_id: Provider-assigned call ID.
+        input_fingerprint: Short hash of the serialised tool arguments.
+        start_ts: Monotonic start time (seconds).
+        end_ts: Monotonic end time (seconds, 0 if not yet complete).
+        latency_ms: Rounded latency in milliseconds.
+        is_error: Whether the result was an error.
+        error_class: Exception class name on failure (empty string on success).
+        recoverable: Whether the failure is considered transient.
+        content_length: Byte length of the raw result content.
+    """
+
+    attempt_id: str
+    tool_name: str
+    tool_call_id: str
+    input_fingerprint: str
+    start_ts: float
+    end_ts: float = 0.0
+    latency_ms: int = 0
+    is_error: bool = False
+    error_class: str = ""
+    recoverable: bool = True
+    content_length: int = 0
+
+    def close(
+        self, *, content: str, is_error: bool, exc: Optional[Exception] = None
+    ) -> None:
+        self.end_ts = time.monotonic()
+        self.latency_ms = int((self.end_ts - self.start_ts) * 1000)
+        self.is_error = is_error
+        self.content_length = len(content)
+        if exc:
+            self.error_class = type(exc).__name__
+            # Non-recoverable if the error looks permanent
+            msg = str(exc).lower()
+            _perm = ("permission denied", "not found", "invalid api key", "unsupported")
+            self.recoverable = not any(m in msg for m in _perm)
+
+
+def _input_fingerprint(arguments: str) -> str:
+    """4-byte hex fingerprint of serialised arguments."""
+    return hashlib.blake2b((arguments or "").encode(), digest_size=4).hexdigest()
+
+
+@contextlib.contextmanager
+def _syspath_containing_tool_file(tool_file: str):
+    """Prepend the tool file's directory for the duration of import.
+
+    Matches ``python scripts/foo.py``, which puts ``scripts`` on ``sys.path`` so
+    sibling modules (e.g. ``from core import ...``) resolve.
+    """
+    from pathlib import Path
+
+    parent = str(Path(tool_file).resolve().parent)
+    inserted = False
+    if parent not in sys.path:
+        sys.path.insert(0, parent)
+        inserted = True
+    try:
+        yield
+    finally:
+        if inserted:
+            try:
+                sys.path.remove(parent)
+            except ValueError:
+                pass
 
 
 class ToolDispatchError(Exception):
@@ -60,6 +151,33 @@ class ToolExecutor:
         self.validate_calls = validate_calls
         self.sanitize_errors = sanitize_errors
         self._allowed_tool_paths: List[str] = allowed_tool_paths or []
+        # Visitor from initialize(); used when dispatch() is called without an explicit visitor
+        # (skill tools need action_resolver on the visitor).
+        self._dispatch_visitor: Optional[Any] = None
+        # Observability: all envelopes produced during this executor's lifetime
+        self.envelopes: List[ToolExecutionEnvelope] = []
+
+    # ------------------------------------------------------------------
+    # Observability helpers
+    # ------------------------------------------------------------------
+
+    def success_rate(self) -> Optional[float]:
+        """Return ratio of successful dispatches, or None if no calls made."""
+        if not self.envelopes:
+            return None
+        successes = sum(1 for e in self.envelopes if not e.is_error)
+        return successes / len(self.envelopes)
+
+    def repeated_call_signatures(self) -> Dict[str, int]:
+        """Return tool names with their call counts (>1 = potential stuck loop)."""
+        from collections import Counter
+
+        counts: Counter = Counter(e.tool_name for e in self.envelopes)
+        return {name: cnt for name, cnt in counts.items() if cnt > 1}
+
+    def total_latency_ms(self) -> int:
+        """Sum of latency_ms across all envelopes."""
+        return sum(e.latency_ms for e in self.envelopes)
 
     @property
     def activated_skills(self) -> Set[str]:
@@ -90,6 +208,7 @@ class ToolExecutor:
             denied_tool_patterns: Glob patterns for tool name to deny.
             local_tools_paths: Optional list of folders to scan for .py tools.
         """
+        self._dispatch_visitor = visitor
         tool_servers = tool_servers or []
 
         # Register MCP tools
@@ -267,7 +386,8 @@ class ToolExecutor:
 
                 module = importlib.util.module_from_spec(spec)
                 sys.modules[name] = module
-                spec.loader.exec_module(module)
+                with _syspath_containing_tool_file(file_path):
+                    spec.loader.exec_module(module)
 
                 # Check for required functions
                 get_def = getattr(module, "get_tool_definition", None)
@@ -444,20 +564,22 @@ class ToolExecutor:
 
         Args:
             tool_calls: List of raw tool call dicts from ModelActionResult.
-            visitor: Optional InteractWalker for context.
+            visitor: Optional InteractWalker for context. When omitted, uses the visitor
+                passed to initialize() (required for skill tools that need ActionResolver).
 
         Returns:
             List of tool result messages in the format:
             [{"role": "tool", "tool_call_id": str, "content": str}]
         """
         parsed_calls = self._tool_manager.parse_tool_calls(tool_calls)
+        effective_visitor = visitor if visitor is not None else self._dispatch_visitor
 
         # Execute concurrently with limit
         semaphore = asyncio.Semaphore(self.max_concurrent_calls)
 
         async def _dispatch_one(call: ToolCall) -> Dict[str, Any]:
             async with semaphore:
-                return await self._dispatch_single(call, visitor=visitor)
+                return await self._dispatch_single(call, visitor=effective_visitor)
 
         results = await asyncio.gather(
             *[_dispatch_one(call) for call in parsed_calls],
@@ -468,7 +590,7 @@ class ToolExecutor:
     async def _dispatch_single(
         self, call: ToolCall, visitor: Any = None
     ) -> Dict[str, Any]:
-        """Dispatch a single tool call with validation and timeout.
+        """Dispatch a single tool call with validation, timeout, and observability.
 
         Args:
             call: The ToolCall to dispatch.
@@ -477,28 +599,49 @@ class ToolExecutor:
         Returns:
             Tool result message dict.
         """
+        # Build observability envelope
+        raw_args = ""
+        if hasattr(call, "arguments"):
+            import json as _json
+
+            raw_args = (
+                _json.dumps(call.arguments)
+                if isinstance(call.arguments, dict)
+                else str(call.arguments or "")
+            )
+        envelope = ToolExecutionEnvelope(
+            attempt_id=uuid.uuid4().hex[:8],
+            tool_name=call.name,
+            tool_call_id=call.id or "",
+            input_fingerprint=_input_fingerprint(raw_args),
+            start_ts=time.monotonic(),
+        )
+        self.envelopes.append(envelope)
+
         # Validate
         if self.validate_calls:
             is_valid, error = self._tool_manager.validate_tool_call(call)
             if not is_valid:
-                return self._make_error_result(call.id, error or "Validation failed")
+                err_msg = error or "Validation failed"
+                envelope.close(content=err_msg, is_error=True)
+                return self._make_error_result(call.id, err_msg)
 
         # Find handler
         handler_entry = self._handlers.get(call.name)
         if handler_entry is None:
             available = list(self._tool_manager.tools.keys())
-            return self._make_error_result(
-                call.id,
-                f"Tool '{call.name}' is not available. Available tools: {available}",
+            err_msg = (
+                f"Tool '{call.name}' is not available. Available tools: {available}"
             )
+            envelope.close(content=err_msg, is_error=True)
+            return self._make_error_result(call.id, err_msg)
 
         kind, handler = handler_entry
 
         try:
-            start = time.monotonic()
             if kind == "mcp":
                 result_text = await asyncio.wait_for(
-                    self._dispatch_mcp_tool(call, handler),
+                    self._dispatch_mcp_tool(call, handler, visitor=visitor),
                     timeout=self.call_timeout,
                 )
             elif kind == "local":
@@ -507,30 +650,36 @@ class ToolExecutor:
                     timeout=self.call_timeout,
                 )
             else:
-                return self._make_error_result(call.id, f"Unknown handler kind: {kind}")
+                err_msg = f"Unknown handler kind: {kind}"
+                envelope.close(content=err_msg, is_error=True)
+                return self._make_error_result(call.id, err_msg)
 
-            duration_ms = int((time.monotonic() - start) * 1000)
-            logger.debug("ToolExecutor: %s completed in %dms", call.name, duration_ms)
+            envelope.close(content=result_text, is_error=False)
+            logger.debug(
+                "ToolExecutor: %s completed in %dms", call.name, envelope.latency_ms
+            )
             return {
                 "role": "tool",
                 "tool_call_id": call.id,
                 "content": result_text,
             }
 
-        except asyncio.TimeoutError:
-            return self._make_error_result(
-                call.id,
-                f"Tool call timed out after {self.call_timeout}s",
-            )
+        except asyncio.TimeoutError as te:
+            err_msg = f"Tool call timed out after {self.call_timeout}s"
+            envelope.close(content=err_msg, is_error=True, exc=te)
+            return self._make_error_result(call.id, err_msg)
         except Exception as e:
             logger.warning("ToolExecutor: %s failed: %s", call.name, e)
+            envelope.close(content=str(e), is_error=True, exc=e)
             if self.sanitize_errors:
                 return self._make_error_result(
                     call.id, f"Tool execution failed: {call.name}"
                 )
             return self._make_error_result(call.id, str(e))
 
-    async def _dispatch_mcp_tool(self, call: ToolCall, mcp_handler: Any) -> str:
+    async def _dispatch_mcp_tool(
+        self, call: ToolCall, mcp_handler: Any, visitor: Any = None
+    ) -> str:
         """Execute a tool call against an MCP server.
 
         Calls MCPClientWrapper.call_tool() directly, bypassing fulfill().
@@ -538,12 +687,26 @@ class ToolExecutor:
         Args:
             call: The ToolCall.
             mcp_handler: Tuple of (MCPAction instance, server_name).
+            visitor: Optional InteractWalker; used for per-user MCP sandboxing.
 
         Returns:
             Tool result as string.
         """
         mcp_action, server_name = mcp_handler
-        client = mcp_action.get_client(server_name)
+        user_id = getattr(visitor, "user_id", None) if visitor is not None else None
+        gcfu = getattr(mcp_action, "get_client_for_user", None)
+
+        if gcfu is not None and inspect.iscoroutinefunction(gcfu):
+            try:
+                client = await mcp_action.get_client_for_user(server_name, user_id)
+            except Exception as e:
+                logger.warning(
+                    "ToolExecutor: get_client_for_user failed, using default client: %s",
+                    e,
+                )
+                client = mcp_action.get_client(server_name)
+        else:
+            client = mcp_action.get_client(server_name)
         raw_tool_name = call.name
         handle = self._registry.get(call.name)
         if handle and handle.source == "mcp":
@@ -618,6 +781,31 @@ class ToolExecutor:
         """Return the set of registered tool names."""
         return set(self._registry.names())
 
+    def unregister_skill_bundle(self, skill_name: str) -> List[str]:
+        """Remove a skill bundle and deregister its tools.
+
+        Returns list of deregistered tool names.
+        """
+        prefix = f"{skill_name}__"
+        deregistered: List[str] = []
+        for name in list(self._handlers.keys()):
+            if name.startswith(prefix):
+                del self._handlers[name]
+                self._registry.remove(name)
+                if name in self._tool_manager.tools:
+                    del self._tool_manager.tools[name]
+                deregistered.append(name)
+
+        self._skill_bundles.pop(skill_name, None)
+        self._active_skill_bundles.discard(skill_name)
+        if deregistered:
+            logger.info(
+                "ToolExecutor: unregistered skill '%s', removed tools: %s",
+                skill_name,
+                deregistered,
+            )
+        return deregistered
+
     async def cleanup(self) -> None:
         """Clean up resources after the loop completes."""
         self._handlers.clear()
@@ -625,6 +813,7 @@ class ToolExecutor:
         self._active_skill_bundles.clear()
         for name in list(self._registry.names()):
             self._registry.remove(name)
+        self.envelopes.clear()
 
     def _load_dynamic_tool_from_file(
         self,
@@ -669,7 +858,8 @@ class ToolExecutor:
 
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
-        spec.loader.exec_module(module)
+        with _syspath_containing_tool_file(str(source)):
+            spec.loader.exec_module(module)
 
         get_def = getattr(module, "get_tool_definition", None)
         handler = getattr(module, "execute", None)

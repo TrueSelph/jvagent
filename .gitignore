@@ -79,6 +79,10 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# jvagent files
+jvagent_files/
+.files/
+
 # jvspatial database files
 jvdb/
 

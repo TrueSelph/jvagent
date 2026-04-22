@@ -455,7 +455,20 @@ export function getMessages(sessionId: string): any[] {
     // Create a deep copy to prevent reference issues
     const messages = parsed[sessionId]
     const result = messages ? JSON.parse(JSON.stringify(messages)) : []
+    if (!Array.isArray(result)) return []
     return result
+      .filter((msg: any) => {
+        if (!msg || typeof msg !== 'object') return false
+        if (msg.category === 'thought' && !msg.interactionId) return false
+        return true
+      })
+      .map((msg: any, idx: number) => ({
+        ...msg,
+        order:
+          typeof msg.order === 'number' && Number.isFinite(msg.order)
+            ? msg.order
+            : idx,
+      }))
   } catch (error) {
     console.error('Error getting messages:', error)
     return []

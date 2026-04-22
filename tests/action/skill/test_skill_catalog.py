@@ -198,9 +198,9 @@ class TestSearch:
         result = catalog.search("search information", top_k=1)
         # Only 1 skill in the top result
         lines = [
-            l
-            for l in result.splitlines()
-            if l.strip() and not l.startswith("Skill matches")
+            line
+            for line in result.splitlines()
+            if line.strip() and not line.startswith("Skill matches")
         ]
         assert len(lines) <= 1
 
@@ -275,3 +275,208 @@ class TestValidateRequirements:
         result = await catalog.validate_requirements("gmail", resolver)
         assert result is not None
         assert "missing_action" in result
+
+
+# --- Discovery caching ---
+
+
+@pytest.fixture(autouse=True)
+def _clear_skill_cache():
+    """Clear the class-level skill cache before and after each test."""
+    SkillCatalog._cache.clear()
+    yield
+    SkillCatalog._cache.clear()
+
+
+class TestDiscoverCaching:
+    @pytest.mark.asyncio
+    async def test_cache_miss_resolves_and_stores(self):
+        from unittest.mock import MagicMock, patch
+
+        visitor = MagicMock()
+        agent = MagicMock()
+        agent.namespace = "test"
+        agent.name = "agent"
+        visitor._agent = agent
+
+        with patch(
+            "jvagent.action.skill.skill_catalog.resolve_merged_skill_bundles",
+            return_value={"cached_skill": {"description": "x"}},
+        ) as mock_resolve:
+            with patch(
+                "jvagent.action.skill.skill_catalog.apply_skill_selector",
+                side_effect=lambda skills, **kw: skills,
+            ):
+                with patch(
+                    "jvagent.action.skill.skill_catalog.get_app_root",
+                    return_value="/fake/app",
+                ):
+                    catalog = await SkillCatalog.discover(
+                        visitor, skills_selector="-all", skills_source="both"
+                    )
+
+        assert "cached_skill" in catalog.skills
+        mock_resolve.assert_called_once()
+        # Cache should now have one entry
+        assert len(SkillCatalog._cache) == 1
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_avoids_redundant_resolution(self):
+        from unittest.mock import MagicMock, patch
+
+        visitor = MagicMock()
+        agent = MagicMock()
+        agent.namespace = "test"
+        agent.name = "agent"
+        visitor._agent = agent
+
+        with patch(
+            "jvagent.action.skill.skill_catalog.resolve_merged_skill_bundles",
+            return_value={"cached_skill": {"description": "x"}},
+        ) as mock_resolve:
+            with patch(
+                "jvagent.action.skill.skill_catalog.apply_skill_selector",
+                side_effect=lambda skills, **kw: skills,
+            ):
+                with patch(
+                    "jvagent.action.skill.skill_catalog.get_app_root",
+                    return_value="/fake/app",
+                ):
+                    # First call — cache miss
+                    await SkillCatalog.discover(
+                        visitor, skills_selector="-all", skills_source="both"
+                    )
+                    # Second call — cache hit
+                    catalog = await SkillCatalog.discover(
+                        visitor, skills_selector="-all", skills_source="both"
+                    )
+
+        assert "cached_skill" in catalog.skills
+        # resolve should only be called once
+        assert mock_resolve.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_cache_expiry_triggers_re_resolution(self):
+        from datetime import datetime, timedelta
+        from unittest.mock import MagicMock, patch
+
+        visitor = MagicMock()
+        agent = MagicMock()
+        agent.namespace = "test"
+        agent.name = "agent"
+        visitor._agent = agent
+
+        with patch(
+            "jvagent.action.skill.skill_catalog.resolve_merged_skill_bundles",
+            return_value={"old_skill": {"description": "x"}},
+        ) as mock_resolve:
+            with patch(
+                "jvagent.action.skill.skill_catalog.apply_skill_selector",
+                side_effect=lambda skills, **kw: skills,
+            ):
+                with patch(
+                    "jvagent.action.skill.skill_catalog.get_app_root",
+                    return_value="/fake/app",
+                ):
+                    await SkillCatalog.discover(
+                        visitor, skills_selector="-all", skills_source="both"
+                    )
+
+        # Artificially age the cache entry past TTL
+        from jvagent.action.skill.skill_catalog import SKILL_DISCOVERY_CACHE_TTL
+
+        for key in list(SkillCatalog._cache.keys()):
+            skills, _ = SkillCatalog._cache[key]
+            SkillCatalog._cache[key] = (
+                skills,
+                datetime.utcnow() - timedelta(seconds=SKILL_DISCOVERY_CACHE_TTL + 1),
+            )
+
+        with patch(
+            "jvagent.action.skill.skill_catalog.resolve_merged_skill_bundles",
+            return_value={"new_skill": {"description": "y"}},
+        ) as mock_resolve2:
+            with patch(
+                "jvagent.action.skill.skill_catalog.apply_skill_selector",
+                side_effect=lambda skills, **kw: skills,
+            ):
+                with patch(
+                    "jvagent.action.skill.skill_catalog.get_app_root",
+                    return_value="/fake/app",
+                ):
+                    catalog = await SkillCatalog.discover(
+                        visitor, skills_selector="-all", skills_source="both"
+                    )
+
+        assert "new_skill" in catalog.skills
+        assert mock_resolve2.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_invalidate_cache_clears_specific_agent(self):
+        from unittest.mock import MagicMock, patch
+
+        visitor_a = MagicMock()
+        agent_a = MagicMock()
+        agent_a.namespace = "ns_a"
+        agent_a.name = "agent_a"
+        visitor_a._agent = agent_a
+
+        visitor_b = MagicMock()
+        agent_b = MagicMock()
+        agent_b.namespace = "ns_b"
+        agent_b.name = "agent_b"
+        visitor_b._agent = agent_b
+
+        with patch(
+            "jvagent.action.skill.skill_catalog.resolve_merged_skill_bundles",
+            return_value={"skill": {"description": "x"}},
+        ):
+            with patch(
+                "jvagent.action.skill.skill_catalog.apply_skill_selector",
+                side_effect=lambda skills, **kw: skills,
+            ):
+                with patch(
+                    "jvagent.action.skill.skill_catalog.get_app_root",
+                    return_value="/fake/app",
+                ):
+                    await SkillCatalog.discover(
+                        visitor_a, skills_selector="-all", skills_source="both"
+                    )
+                    await SkillCatalog.discover(
+                        visitor_b, skills_selector="-all", skills_source="both"
+                    )
+
+        assert len(SkillCatalog._cache) == 2
+
+        await SkillCatalog.invalidate_cache(namespace="ns_a", agent_name="agent_a")
+        assert len(SkillCatalog._cache) == 1
+
+    @pytest.mark.asyncio
+    async def test_invalidate_cache_clears_all(self):
+        from unittest.mock import MagicMock, patch
+
+        visitor = MagicMock()
+        agent = MagicMock()
+        agent.namespace = "ns"
+        agent.name = "agent"
+        visitor._agent = agent
+
+        with patch(
+            "jvagent.action.skill.skill_catalog.resolve_merged_skill_bundles",
+            return_value={"skill": {"description": "x"}},
+        ):
+            with patch(
+                "jvagent.action.skill.skill_catalog.apply_skill_selector",
+                side_effect=lambda skills, **kw: skills,
+            ):
+                with patch(
+                    "jvagent.action.skill.skill_catalog.get_app_root",
+                    return_value="/fake/app",
+                ):
+                    await SkillCatalog.discover(
+                        visitor, skills_selector="-all", skills_source="both"
+                    )
+
+        assert len(SkillCatalog._cache) == 1
+        await SkillCatalog.invalidate_cache()
+        assert len(SkillCatalog._cache) == 0

@@ -186,15 +186,21 @@ async def _tick_memory_agents(state: Dict[str, Any], limits: RepairLimits) -> bo
         if not memory:
             continue
         repair = await memory.repair_memory(recent_minutes=state.get("recent_minutes"))
-        res["memory_repair_agents"] = res.get("memory_repair_agents", 0) + 1
-        for key in (
+        repair_keys = (
             "orphaned_interactions_deleted",
             "orphaned_users_reconnected",
             "dual_edges_removed",
             "conversation_first_edges_restored",
             "conversation_branch_edges_removed",
             "counters_fixed",
-        ):
+        )
+        # Only count this agent as "repaired" when at least one sub-counter is
+        # non-zero.  Previously this was incremented unconditionally (once per
+        # agent processed), which caused the metric to always report N agents
+        # repaired even on a fully healthy graph.
+        if any(repair.get(k, 0) > 0 for k in repair_keys):
+            res["memory_repair_agents"] = res.get("memory_repair_agents", 0) + 1
+        for key in repair_keys:
             res[key] = res.get(key, 0) + repair.get(key, 0)
 
     cur["agent_index"] = idx

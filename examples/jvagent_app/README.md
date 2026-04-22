@@ -10,11 +10,17 @@ To **generate a new app** from the command line (with optional `profiles/`, depl
 jvagent_app/
 ├── app.yaml              # Application descriptor (metadata & agent list)
 ├── agents/               # Custom agent packages
-│   └── example_agent/   # Example agent package
-│       ├── actions/      # Actions packaged with this agent
-│       │   └── example_action/  # Example action package
-│       ├── agent.yaml    # Agent configuration and action assignments
-│       └── README.md    # Agent documentation
+│   ├── jvagent/
+│   │   ├── example_agent/   # Main demo agent (core + PageIndex, signup interview)
+│   │   │   ├── actions/jvagent/signup_interview_interact_action/
+│   │   │   ├── agent.yaml
+│   │   │   └── README.md
+│   │   └── skills_agent/   # Optional Ollama + skills (add to app.yaml to enable)
+│   └── resolv/
+│       └── resolv_demo/     # Resolv API + interview flows (set RESOLV_TEST_* in .env)
+│           ├── actions/resolv/
+│           ├── agent.yaml
+│           └── README.md
 ├── docs/                 # Application documentation
 ├── .env                  # Environment configuration
 ├── .env.example          # Example environment configuration
@@ -38,7 +44,8 @@ After installing jvagent, you can run this example application:
    cp .env.example .env
    # Edit .env and set at minimum:
    # - JVAGENT_ADMIN_PASSWORD (required)
-   # - OPENAI_API_KEY (optional, for openai_lm action)
+   # - OPENAI_API_KEY (needed for the bundled agents' OpenAI actions)
+   # For resolv/resolv_demo only: RESOLV_TEST_* variables (see .env.example)
    cd ../..
    ```
 
@@ -135,6 +142,8 @@ config:
 # Agents listed here are automatically installed when you run jvagent or bootstrap
 agents:
   - jvagent/example_agent
+  - resolv/resolv_demo
+  # Optional: jvagent/skills_agent
 ```
 
 ### How It Works
@@ -209,17 +218,18 @@ agents/
 
 #### Example App Actions
 
-This example app includes:
-- **Core actions** (loaded from jvagent library):
-  - `jvagent/interact_router` - Unified posture classification + intent-based routing
-  - `jvagent/openai_lm` - OpenAI language model
-  - `jvagent/openai_embedding` - OpenAI embeddings
-  - `jvagent/typesense_vectorstore` - Typesense vector store
-  - `jvagent/retrieval_interact_action` - Context retrieval
+**`jvagent/example_agent`** (default in `app.yaml`):
+- **Core actions** (from the jvagent library):
+  - `jvagent/interact_router` — Posture + intent routing
+  - `jvagent/openai_lm` — OpenAI language model
+  - `jvagent/openai_embedding` — Embeddings
+  - `jvagent/intro_interact_action` — First-time user intro
+  - `jvagent/pageindex_retrieval_interact_action` — PageIndex RAG (install `jvagent[pageindex]`)
+  - `jvagent/persona` — Persona
+  - `jvagent/converse_interact_action` — Smalltalk fallback
+- **Local action**: `jvagent/signup_interview_interact_action` (under `agents/jvagent/example_agent/actions/`)
 
-- **Local actions**:
-  - `jvagent/example_action` - Custom example action
-  - `jvagent/persona` - Local override of core persona action
+**`resolv/resolv_demo`**: custom `resolv/*` interview and API actions plus `jvagent/access_control_action` and `jvagent/whatsapp_action`; configure `RESOLV_TEST_*` in `.env` for `resolv/resolv_api_action`.
 
 ### Using Core Actions
 

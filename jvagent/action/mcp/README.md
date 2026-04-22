@@ -33,6 +33,15 @@ Per-server config (`servers[]`):
 | `mcp_call_timeout` | Tool call timeout (seconds) | `30.0` |
 | `tools` | Tool selector: `"-all"` or list of names/globs | `"-all"` |
 | `denied_tools` | Subtractive tool filter (supports globs) | `[]` |
+| `sandbox_mode` | Confine stdio filesystem MCP to ``<files_root>/<agentId>/<userId>/`` | unset (see env) |
+| `sandbox_user_scoped` | Separate MCP subprocess per ``user_id`` when not the default user (see env) | unset (see env) |
+| `sandbox_root` | Optional override for files root (else ``JVSPATIAL_FILES_ROOT_PATH``) | unset |
+
+Top-level MCP action context may set ``sandbox_mode`` / ``sandbox_user_scoped`` / ``sandbox_root`` as defaults; per-server entries can override.
+
+When ``JVSPATIAL_FILE_STORAGE_PROVIDER=s3`` and ``sandbox_mode`` is true, the agent uses ``python -m jvagent.action.mcp.jvspatial_fs_server`` (stdio) instead of ``npx`` + ``@modelcontextprotocol/server-filesystem``.
+
+Env fallbacks: ``MCP_FILESYSTEM_SANDBOX_MODE``, ``MCP_FILESYSTEM_SANDBOX_USER_SCOPED``, ``MCP_FILESYSTEM_SANDBOX_ROOT``.
 
 ## Agent wiring (agent.yaml)
 
@@ -67,8 +76,8 @@ actions:
 
 From an **InteractAction** (or any action that can call `get_action`):
 
-- `mcp = await self.get_action(MCPAction)` then `result = await mcp.fulfill("What's the weather in Kansas tomorrow?")`.
-- `fulfill()` aggregates tools across all enabled configured servers and asks the model to choose `{server_name, tool_name, arguments}`.
+- `mcp = await self.get_action(MCPAction)` then `result = await mcp.fulfill("What's the weather in Kansas tomorrow?", user_id=self.user_id)`.
+- `fulfill()` aggregates tools across all enabled configured servers and asks the model to choose `{server_name, tool_name, arguments}`. Pass `user_id` so the per-user sandbox folder is used instead of the shared `anonymous` default.
 
 From `SkillInteractAction` / `ToolExecutor` integration:
 
