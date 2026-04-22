@@ -60,7 +60,6 @@ from jvagent.action.skill.prompts import (
     SKILL_FIRST_RETRY_PROMPT,
     SKILL_SEARCH_TOOL_DESCRIPTION,
     STATUS_ALL_STEPS_DONE,
-    STATUS_FINAL_REVIEW,
     STATUS_PLAN_CREATED,
     STATUS_STEP_COMPLETED,
     STATUS_STEP_NEXT,
@@ -814,12 +813,15 @@ class SkillAction:
                 )
             else:
                 task_plan = task_plan_state.get("plan")
-                details = ""
-                if task_plan is not None and task_plan.steps:
-                    details = f" - verifying {len(task_plan.steps)} completed steps"
-                await self._emit_task_status(
-                    ctx=ctx,
-                    message=STATUS_FINAL_REVIEW.format(details=details),
+                step_count = (
+                    len(task_plan.steps)
+                    if task_plan is not None and task_plan.steps
+                    else 0
+                )
+                await task_handle.record_step(
+                    "final_review",
+                    iteration=iteration,
+                    details={"steps_to_verify": step_count},
                 )
                 final_response = await self._final_review_pass(
                     messages=messages,
