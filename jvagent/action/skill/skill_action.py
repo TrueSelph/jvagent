@@ -47,6 +47,7 @@ from jvagent.action.skill.prompts import (
     FORCED_TERMINATION_PROMPT_TEMPLATE,
     FORCED_TERMINATION_PROMPT_TIME_CAP,
     GROUNDING_INSTRUCTION_TEMPLATE,
+    INCOMPLETE_STEPS_PRE_RESPONSE_PROMPT,
     LIST_SKILLS_TOOL_DESCRIPTION,
     MONOLOGUE_OPENERS,
     MONOLOGUE_RESULT_ERR,
@@ -59,13 +60,14 @@ from jvagent.action.skill.prompts import (
     SKILL_AGENT_SYSTEM_PROMPT,
     SKILL_FIRST_RETRY_PROMPT,
     SKILL_SEARCH_TOOL_DESCRIPTION,
-    STATUS_ALL_STEPS_DONE,
     STATUS_PLAN_CREATED,
     STATUS_STEP_COMPLETED,
     STATUS_STEP_NEXT,
+    STATUS_STEP_SKIPPED_WITH_NEXT,
     STUCK_DETECTION_PROMPT,
     TOOL_CALL_ANNOUNCE_TEMPLATE,
     TOOL_RESULT_ANNOUNCE_TEMPLATE,
+    plan_final_status_message,
 )
 from jvagent.action.skill.recovery_policy import FailureRecord, RecoveryPolicy
 from jvagent.action.skill.skill_action_contracts import (
@@ -82,33 +84,6 @@ from jvagent.action.skill.tool_executor import ToolExecutor
 from jvagent.memory.evidence_log import EvidenceLog
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class _LoopState:
-    """Carries all mutable state across ``_run_loop`` iterations.
-
-    Passed to ``_handle_no_tool_response`` and ``_handle_tool_calls`` so those
-    helpers can mutate shared loop variables in place and signal control-flow
-    directives back to the caller via ``do_break`` / ``do_continue``.
-    """
-
-    messages: List[Dict[str, Any]]
-    loop_phase: LoopPhase
-    termination_reason: TerminationReason
-    final_response: str
-    candidate_response: Optional[str]
-    best_candidate: Optional[str]
-    task_nudges: int
-    task_nudges_total: int
-    skill_first_retries: int
-    retry_nudges: int
-    tools_ever_called: Set[str]
-    nontrivial_tools_ever_called: Set[str]
-    result_attributions: List[Dict[str, Any]]
-    # Set by helpers to signal loop control flow back to _run_loop.
-    do_break: bool = False
-    do_continue: bool = False
 
 
 @dataclass
@@ -644,6 +619,36 @@ class SkillAction:
                     }
                 )
 
+            # When the plan is finished (no pending/in_progress steps remain) but
+            # some steps were not done, inject a one-time honesty reminder before
+            # the model produces its final response.  This prevents fabricated
+            # "I completed X" claims for steps the model actually skipped.
+            _pre_warn_plan = task_plan_state.get("plan")
+            if (
+                _pre_warn_plan is not None
+                and not _pre_warn_plan.has_pending_steps()
+                and not task_plan_state.get("_incomplete_pre_warned")
+            ):
+                _incomplete_steps = [
+                    s for s in _pre_warn_plan.steps if s.status != "done"
+                ]
+                if _incomplete_steps:
+                    _warn_lines = []
+                    for s in _incomplete_steps:
+                        detail = f"[{s.status}]"
+                        if s.skip_reason:
+                            detail += f" reason: {s.skip_reason}"
+                        _warn_lines.append(f"- Step {s.id}: {s.description} {detail}")
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": INCOMPLETE_STEPS_PRE_RESPONSE_PROMPT.format(
+                                incomplete_list="\n".join(_warn_lines)
+                            ),
+                        }
+                    )
+                    task_plan_state["_incomplete_pre_warned"] = True
+
             tools = tool_executor.get_tools_list()
             try:
                 model_result = await self._call_model(
@@ -848,6 +853,23 @@ class SkillAction:
             final_response = self._check_plan_faithfulness(
                 final_response, _plan_for_check
             )
+
+        # Layer 4 — unconditional non-done footer.
+        # Regardless of what the model wrote, always append an honest accounting
+        # of every step that was not done so the user is never left with a
+        # fabricated success story and no caveat at all.
+        _footer_plan = task_plan_state.get("plan")
+        if _footer_plan:
+            _non_done = [s for s in _footer_plan.steps if s.status != "done"]
+            if _non_done:
+                _footer_lines = ["\n\n**Steps not completed:**"]
+                for _s in _non_done:
+                    _label = "skipped" if _s.status == "skipped" else _s.status
+                    _reason = _s.skip_reason or "could not be completed"
+                    _footer_lines.append(f"- [{_label}] {_s.description}: {_reason}")
+                _footer = "\n".join(_footer_lines)
+                if "steps not completed" not in final_response.lower():
+                    final_response += _footer
 
         # Grounding verification
         if final_response and result_attributions:
@@ -1320,9 +1342,9 @@ class SkillAction:
                     base_model_kwargs,
                     reasoning_cfg,
                     checklist=self._task_plan_pending_checklist(task_plan),
-                    termination_cause="iter_cap",
+                    termination_cause="stuck",
                 )
-                termination_reason = TerminationReason.ITER_CAP
+                termination_reason = TerminationReason.STUCK
                 loop_phase = LoopPhase.TERMINATE
                 return _NoToolResult(
                     loop_phase=loop_phase,
@@ -2206,7 +2228,7 @@ class SkillAction:
                 if next_step is None:
                     await self._emit_task_status(
                         ctx=ctx,
-                        message=STATUS_ALL_STEPS_DONE,
+                        message=plan_final_status_message(task_plan),
                     )
                     return (
                         warning_prefix
@@ -2276,7 +2298,7 @@ class SkillAction:
                 if next_step is None:
                     await self._emit_task_status(
                         ctx=ctx,
-                        message=STATUS_ALL_STEPS_DONE,
+                        message=plan_final_status_message(task_plan),
                     )
                     return (
                         f"Skipped step {step_id} ({reason}). All tracked steps are now done or skipped.\n"
@@ -2284,11 +2306,9 @@ class SkillAction:
                     )
                 await self._emit_task_status(
                     ctx=ctx,
-                    message=STATUS_STEP_COMPLETED.format(
-                        step_desc=f"skipped: {skipped_label}"
-                    )
-                    + STATUS_STEP_NEXT.format(
-                        next_desc=task_plan.step_label(next_step)
+                    message=STATUS_STEP_SKIPPED_WITH_NEXT.format(
+                        step_desc=skipped_label.rstrip(". "),
+                        next_desc=task_plan.step_label(next_step),
                     ),
                 )
                 return (
@@ -2469,19 +2489,26 @@ class SkillAction:
     ) -> str:
         """Deterministic backstop: detect and replace fabricated completion claims.
 
-        For each skipped task step, scans the response for sentences that
-        contain step-description tokens AND a completion-signal word.  When a
-        contradiction is found the offending sentence is replaced with an
-        accurate note citing the recorded skip reason.
+        For every non-done step (skipped, pending, in_progress), scans the
+        response for segments that contain step-description content tokens AND
+        a completion-signal word.  When a contradiction is found the offending
+        segment is replaced with an accurate note citing the recorded reason.
 
-        This runs after ``_final_review_pass`` to catch cases where the review
-        model failed to remove a fabricated success statement.  It is O(steps ×
-        sentences) and requires no model call.
+        Changes vs. original:
+        - Covers all non-done steps, not just skipped ones.
+        - Strips English stop words before computing overlap so short function
+          words ("the", "to", "a") do not inflate the match count.
+        - Threshold lowered to 1 content token + completion signal (after stop
+          words are removed, one meaningful content word is sufficient evidence).
+        - Splits on newlines and markdown bullets in addition to sentence endings
+          so multi-paragraph and bullet-list responses are handled correctly.
+
+        This runs after ``_final_review_pass`` and requires no model call.
         """
         if not task_plan:
             return response
-        skipped = task_plan.skipped_steps()
-        if not skipped:
+        non_done = [s for s in task_plan.steps if s.status != "done"]
+        if not non_done:
             return response
 
         _COMPLETION_SIGNALS: frozenset = frozenset(
@@ -2509,33 +2536,90 @@ class SkillAction:
             }
         )
 
-        sentences = re.split(r"(?<=[.!?])\s+", response)
+        # Common English stop words that carry no semantic specificity.
+        _STOP_WORDS: frozenset = frozenset(
+            {
+                "a",
+                "an",
+                "the",
+                "and",
+                "or",
+                "but",
+                "in",
+                "on",
+                "at",
+                "to",
+                "for",
+                "of",
+                "with",
+                "by",
+                "from",
+                "is",
+                "it",
+                "its",
+                "be",
+                "as",
+                "this",
+                "that",
+                "was",
+                "are",
+                "been",
+                "have",
+                "has",
+                "had",
+                "do",
+                "did",
+                "my",
+                "your",
+                "our",
+                "their",
+                "we",
+                "i",
+                "he",
+                "she",
+                "they",
+                "not",
+                "no",
+                "so",
+                "if",
+                "up",
+                "out",
+            }
+        )
+
+        # Split on sentence boundaries, newlines, and markdown bullet markers.
+        segments = re.split(r"(?<=[.!?])\s+|\n+|(?<=\s)-\s+", response)
         replacements_made = 0
 
-        for step in skipped:
-            step_tokens: Set[str] = set(
-                SkillCatalog._normalize_tokens(step.description)
-            )
-            for i, sentence in enumerate(sentences):
-                sent_tokens: Set[str] = set(SkillCatalog._normalize_tokens(sentence))
+        for step in non_done:
+            raw_tokens = set(SkillCatalog._normalize_tokens(step.description))
+            step_tokens = raw_tokens - _STOP_WORDS
+            if not step_tokens:
+                # Fall back to full token set when description is stop-word-only.
+                step_tokens = raw_tokens
+            for i, segment in enumerate(segments):
+                raw_sent = set(SkillCatalog._normalize_tokens(segment))
+                sent_tokens = raw_sent - _STOP_WORDS
                 overlap = step_tokens & sent_tokens
-                has_signal = bool(sent_tokens & _COMPLETION_SIGNALS)
-                # Require at least 2 overlapping tokens AND a completion signal
-                # to reduce false positives on incidental keyword matches.
-                if len(overlap) >= 2 and has_signal:
+                has_signal = bool(raw_sent & _COMPLETION_SIGNALS)
+                # 1 content-token overlap + completion signal is sufficient after
+                # stop-word removal — meaningful terms like "writeable" or
+                # "assimilate" uniquely identify the step.
+                if len(overlap) >= 1 and has_signal:
                     reason = step.skip_reason or "this step could not be completed"
-                    sentences[i] = f"(Note: {step.description} — {reason})"
+                    segments[i] = f"(Note: {step.description} — {reason})"
                     replacements_made += 1
                     logger.warning(
                         "SkillAction._check_plan_faithfulness: replaced fabricated "
-                        "completion claim for skipped step %d (%r). Original: %r",
+                        "completion claim for step %d [%s] (%r). Original: %r",
                         step.id,
+                        step.status,
                         step.description[:60],
-                        sentence[:120],
+                        segment[:120],
                     )
 
         if replacements_made:
-            return " ".join(sentences)
+            return " ".join(segments)
         return response
 
     @staticmethod

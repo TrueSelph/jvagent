@@ -349,9 +349,32 @@ STATUS_STEP_COMPLETED = "Completed: {step_desc}."
 
 STATUS_STEP_NEXT = " Moving to: {next_desc}."
 
-STATUS_ALL_STEPS_DONE = "All steps complete, finalizing."
+# Mid-plan skip (avoid "Completed: skipped:" — user-facing copy must match reality).
+STATUS_STEP_SKIPPED_WITH_NEXT = "Skipped: {step_desc}. Moving to: {next_desc}."
+
+
+def plan_final_status_message(task_plan) -> str:
+    """User-facing status when the plan has no remaining in-progress/pending work.
+
+    If any step was skipped, the run did not fully complete every step — say so.
+    """
+    if any(getattr(s, "status", None) == "skipped" for s in task_plan.steps):
+        return "Some steps skipped, finalizing."
+    return "All steps complete, finalizing."
+
 
 STATUS_FINAL_REVIEW = "Reviewing my work{details}."
+
+# Injected into the message context before the final model call when the plan has
+# non-done steps.  Uses the [system-loop] prefix so the model treats it as a
+# system-level constraint, not a conversational turn from the user.
+INCOMPLETE_STEPS_PRE_RESPONSE_PROMPT = (
+    "[system-loop] Before writing your final response, note that the following "
+    "task steps were NOT fully completed:\n"
+    "{incomplete_list}\n"
+    "CRITICAL: Do NOT claim any of these steps succeeded or were performed. "
+    "Report each one honestly with its recorded status and reason."
+)
 
 TOOL_CALL_ANNOUNCE_TEMPLATE = "{opener} {intent} with {tool_name}."
 

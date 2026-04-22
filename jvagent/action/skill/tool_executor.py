@@ -533,7 +533,9 @@ class ToolExecutor:
 
                 file_path = os.path.join(dir_path, filename)
                 try:
-                    spec = importlib.util.spec_from_file_location(full_mod_name, file_path)
+                    spec = importlib.util.spec_from_file_location(
+                        full_mod_name, file_path
+                    )
                     if spec and spec.loader:
                         mod = importlib.util.module_from_spec(spec)
                         mod.__package__ = package_name

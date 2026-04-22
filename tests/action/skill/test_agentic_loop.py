@@ -373,6 +373,37 @@ class TestTaskTrackerHandler:
             "All steps complete, finalizing."
         )
 
+    @pytest.mark.asyncio
+    async def test_skip_mid_plan_emits_skipped_moving_next_not_completed_skipped(self):
+        handler, _, _, publish_callback = self._make_handler()
+
+        await handler(
+            {"action": "create", "steps": ["Step one", "Step two", "Step three"]}
+        )
+        skipped = await handler(
+            {
+                "action": "skip",
+                "step_id": 1,
+                "reason": "cannot do step one in this environment",
+            }
+        )
+        assert "Skipped step 1" in skipped
+        published_messages = [call.args[0] for call in publish_callback.await_args_list]
+        assert published_messages == [
+            "Planning my approach - 3 steps.",
+            ("Skipped: step 1/3: Step one. Moving to: step 2/3: Step two."),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_skip_last_step_emits_some_steps_skipped_finalizing(self):
+        handler, _, _, publish_callback = self._make_handler()
+
+        await handler({"action": "create", "steps": ["Only step"]})
+        await handler({"action": "skip", "step_id": 1, "reason": "no tool available"})
+        assert publish_callback.await_args_list[-1].args[0] == (
+            "Some steps skipped, finalizing."
+        )
+
 
 class TestSkillFirstNontrivialToolGating:
     _GMAIL_SKILL = {
